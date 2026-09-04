@@ -56,7 +56,6 @@ import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { createAppSettingsStore } from "@babylonslate/vfs";
 import {
   DEFAULT_PLAY_DEBUGGER_OVERLAY,
   playDebuggerOverlayFromSettings,
@@ -117,10 +116,7 @@ import { planPlayPreviewPrepare, playBundlesNeedCollect } from "../services/play
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
 import { animClipCatalogFromAssets, modelClipAnimationGuidsFromAssets, retargetAnimationLoadsFromAssets } from "../lib/anim-clip-catalog";
-import {
-  ENGINE_SETTINGS_CHANGED_EVENT,
-  type LiveEngineSettings,
-} from "../lib/viewport-render-gate";
+import { useAppSettings } from "./app-settings-context";
 import {
   isUsableEngine,
   nextRegisteredSharedEngine,
@@ -179,6 +175,7 @@ const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
 const OverlayPlayingContext = createContext(false);
 
 export function PlayProvider({ children }: { children: ReactNode }) {
+  const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<Engine | null>(null);
   const ownedEngineRef = useRef<Engine | null>(null);
   const projectEngineRef = useRef(createProjectEngineController());
@@ -442,34 +439,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         setHardwareScalingLevel(settings.hardwareScalingLevel);
       }
     };
-    void createAppSettingsStore()
-      .load()
-      .then((settings) => {
-        setPreviewBuildState(settings.debuggerDefaults.previewBuild === true);
-        setPlayFromSceneState(settings.debuggerDefaults.playFromScene !== false);
-        applyOverlay(settings.debuggerDefaults);
-        apply(settings);
-      });
-    const onSettings = (event: Event) => {
-      const detail = (event as CustomEvent<LiveEngineSettings>).detail;
-      if (detail) apply(detail);
-    };
-    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-    return () => {
-      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-    };
-  }, []);
+    setPreviewBuildState(appSettings.debuggerDefaults.previewBuild === true);
+    setPlayFromSceneState(appSettings.debuggerDefaults.playFromScene !== false);
+    applyOverlay(appSettings.debuggerDefaults);
+    apply(appSettings);
+  }, [appSettings]);
 
   const persistDebuggerDefaults = useCallback(
     async (patch: Partial<PlayDebuggerOverlaySettings> & {
       previewBuild?: boolean;
       playFromScene?: boolean;
     }) => {
-      await createAppSettingsStore().update((settings) => {
-        Object.assign(settings.debuggerDefaults, patch);
-      });
+      await updateDebuggerDefaults(patch);
     },
-    [],
+    [updateDebuggerDefaults],
   );
 
   const setPreviewBuild = useCallback((value: boolean) => {

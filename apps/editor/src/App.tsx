@@ -31,6 +31,7 @@ import { DocumentProvider, useDocuments } from "./context/document-context";
 import { AssetOpenDocumentsProvider } from "./context/asset-open-provider";
 import { EditorThemeProvider } from "./context/theme-context";
 import { PlayProvider, usePlay } from "./context/play-context";
+import { AppSettingsProvider } from "./context/app-settings-context";
 import { ProjectSearchProvider } from "./context/project-search-context";
 import { ValidationProvider } from "./context/validation-context";
 import { MaterialRenderControlProvider } from "./context/material-render-control-context";
@@ -406,25 +407,27 @@ function AppRoutes() {
 export default function App() {
   return (
     <TooltipProvider>
-      <EditorThemeProvider>
-        <DocumentProvider>
-          <AssetOpenDocumentsProvider>
-          <ValidationProvider>
-            <PlayProvider>
-              <MaterialRenderControlProvider>
-                <EditorUtilityRuntime />
-                <TestAudioHostStats />
-                <TestParticleHostStats />
-                <ModelThumbnailCaptureHost />
-                <ProjectSearchProvider>
-                  <AppRoutes />
-                </ProjectSearchProvider>
-              </MaterialRenderControlProvider>
-            </PlayProvider>
-          </ValidationProvider>
-          </AssetOpenDocumentsProvider>
-        </DocumentProvider>
-      </EditorThemeProvider>
+      <AppSettingsProvider>
+        <EditorThemeProvider>
+          <DocumentProvider>
+            <AssetOpenDocumentsProvider>
+              <ValidationProvider>
+                <PlayProvider>
+                  <MaterialRenderControlProvider>
+                    <EditorUtilityRuntime />
+                    <TestAudioHostStats />
+                    <TestParticleHostStats />
+                    <ModelThumbnailCaptureHost />
+                    <ProjectSearchProvider>
+                      <AppRoutes />
+                    </ProjectSearchProvider>
+                  </MaterialRenderControlProvider>
+                </PlayProvider>
+              </ValidationProvider>
+            </AssetOpenDocumentsProvider>
+          </DocumentProvider>
+        </EditorThemeProvider>
+      </AppSettingsProvider>
     </TooltipProvider>
   );
 }
