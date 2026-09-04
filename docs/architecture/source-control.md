@@ -61,7 +61,7 @@ Token is **never** a `project.json` field. Key: `source-control:{projectGuid}`.
 | Host | SecretStore | nativeHttp |
 | --- | --- | --- |
 | iOS / Android | Keychain / Keystore via first-party `BabylonSlateSecrets` Capacitor plugin (not Preferences). iOS: `BabylonSlateSecretsPlugin.swift` is in the App Xcode target and `packageClassList`. | `CapacitorHttp` (bypasses CORS) |
-| Electron | IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage` when encryption is available. If `safeStorage.isEncryptionAvailable()` is false (typical Linux without a keyring), the host stores the packed value unencrypted in `source-control-secrets.json` rather than refusing Save Token. | IPC `lfs:fetch` → `net.fetch` |
+| Electron | IPC `secrets:get` / `secrets:set` / `secrets:delete` → a serialized, versioned secret-file owner. Each value is tagged as plaintext or `safeStorage` ciphertext, so reads do not reinterpret data when encryption capability changes. If an encrypted value cannot temporarily be decrypted, the read fails rather than returning ciphertext as a credential. Linux hosts without a keyring store newly saved values with an explicit plaintext tag. | IPC `lfs:fetch` → `net.fetch` |
 | Web | unavailable — Source Control UI hidden | unused |
 
 ## Settings (`project.json`)
