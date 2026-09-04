@@ -46,4 +46,8 @@ export class TransferablePingPong {
       this.free.push(buffer);
     }
   }
+
+  grow(capacity: number): TransferablePingPong {
+    return capacity > this.maxActors ? new TransferablePingPong(capacity) : this;
+  }
 }

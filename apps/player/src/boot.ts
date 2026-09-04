@@ -99,7 +99,6 @@ export function startPlayer(options: {
 
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
-    maxActors: 256,
     frameCap: manifest.playFrameCap,
     spritePayloads: content.spritePayloads,
     spriteAnimations: content.spriteAnimationPayloads,
@@ -264,6 +263,7 @@ export function startPlayer(options: {
   let raf = 0;
   let halted = false;
   let hudStats: PlayerHudStats | undefined;
+  let snapBuf = new Float32Array(snapshotFloatCount(256));
 
   const emitHudStats = (next: PlayerHudStats) => {
     hudStats = {
@@ -288,6 +288,8 @@ export function startPlayer(options: {
   const materialsWarmed = { current: false };
   let hostSceneGuid: string | null = startup;
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    if (command.type === "snapshotLayout" && runtime) snapBuf = new Float32Array(snapshotFloatCount(Number(command.capacity)));
+    if (command.type === "snapshotLayout") handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
     if (
       applyPlayerActiveScene(handle, game.scenes, command, hostSceneGuid) &&
@@ -321,6 +323,8 @@ export function startPlayer(options: {
           fps: Number(command.fps ?? 0),
           scriptMs: Number(command.scriptMs ?? 0),
           physicsMs: Number(command.physicsMs ?? 0),
+          liveActors: Number(command.liveActors ?? 0),
+          snapshotCapacity: Number(command.snapshotCapacity ?? 0),
         }),
       );
     }
@@ -414,7 +418,6 @@ export function startPlayer(options: {
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
     void handle.unlockAudio();
   }, canvas);
-  const snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
   let frames = 0;
   let fpsWindowStart = last;

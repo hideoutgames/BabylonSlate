@@ -53,6 +53,10 @@ export class SeqLockSnapshotPair {
     );
   }
 
+  static grow(current: SeqLockSnapshotPair, capacity: number): SeqLockSnapshotPair {
+    return capacity > current.maxActors ? SeqLockSnapshotPair.create(capacity) : current;
+  }
+
   writerBuffer(): Float32Array {
     return this.buffers[this.writeIndex]!;
   }

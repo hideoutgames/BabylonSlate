@@ -230,6 +230,7 @@ export type DebugDrawCommand = {
 };
 
 export type CommandMessage =
+  | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
       type: "spawn";
       slotId: number;
@@ -406,6 +407,8 @@ export type CommandMessage =
       scriptMs: number;
       physicsMs: number;
       fps?: number;
+      liveActors?: number;
+      snapshotCapacity?: number;
     }
   | {
       type: "print";
@@ -550,10 +553,11 @@ export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }
   | { channel: "input"; payload: ArrayBuffer | SharedArrayBuffer }
   | { channel: "rpc"; payload: unknown }
+  | { channel: "snapshotLayoutAck"; generation: number }
   /** Hands a consumed transferable snapshot buffer back for reuse (no per-frame alloc). */
   | { channel: "recycleSnapshot"; payload: ArrayBuffer };
 
 export type BridgeWorkerMessage =
   | { channel: "command"; payload: CommandMessage }
-  | { channel: "snapshot"; payload: ArrayBuffer; transferable?: true }
+  | { channel: "snapshot"; payload: ArrayBuffer; generation: number; transferable?: true }
   | { channel: "rpc"; payload: unknown };

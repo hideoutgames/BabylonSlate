@@ -350,6 +350,8 @@ export interface PlayHudStats {
   scriptMs: number;
   physicsMs: number;
   frameId: number;
+  liveActors?: number;
+  snapshotCapacity?: number;
 }
 
 /** Worker `stats` commands are the source of truth for script/physics ms. */
@@ -360,6 +362,8 @@ export function applyWorkerPlayStats(
     scriptMs: number;
     physicsMs: number;
     frameId: number;
+    liveActors?: number;
+    snapshotCapacity?: number;
   },
 ): PlayHudStats {
   return {
@@ -367,6 +371,9 @@ export function applyWorkerPlayStats(
     scriptMs: command.scriptMs,
     physicsMs: command.physicsMs,
     frameId: command.frameId,
+    liveActors: command.liveActors ?? previous?.liveActors ?? 0,
+    snapshotCapacity:
+      command.snapshotCapacity ?? previous?.snapshotCapacity ?? 0,
   };
 }
 
@@ -380,6 +387,8 @@ export function applyPlayFpsSample(
     scriptMs: previous?.scriptMs ?? 0,
     physicsMs: previous?.physicsMs ?? 0,
     frameId: previous?.frameId ?? 0,
+    liveActors: previous?.liveActors ?? 0,
+    snapshotCapacity: previous?.snapshotCapacity ?? 0,
   };
 }
 
@@ -515,7 +524,6 @@ export function startPlaySession(options: {
   const handle = createEngine(canvas, {
     sharedEngine,
     playMode: true,
-    maxActors: 256,
     frameCap: resolvePlayFrameCap(options.frameCap),
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,
@@ -636,10 +644,11 @@ export function startPlaySession(options: {
 
   const onCommand = (command: CommandMessage) => {
     noteCommand();
+    if (command.type === "snapshotLayout" && runtime) snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
     if (command.type === "spawn") {
       spawnedActorGuids.push(command.actorGuid);
     }
-    if (shouldForwardPlayEngineCommand(command.type)) {
+    if (command.type === "snapshotLayout" || shouldForwardPlayEngineCommand(command.type)) {
       handle.applyCommand(command);
     }
     if (command.type === "activeScene") {
@@ -677,6 +686,8 @@ export function startPlaySession(options: {
           scriptMs: command.scriptMs ?? 0,
           physicsMs: command.physicsMs ?? 0,
           frameId: command.frameId ?? 0,
+          liveActors: command.liveActors,
+          snapshotCapacity: command.snapshotCapacity,
         }),
       );
     }
@@ -862,7 +873,7 @@ export function startPlaySession(options: {
   canvas.addEventListener("pointerdown", unlock);
   canvas.addEventListener("touchstart", unlock);
 
-  const snapBuf = new Float32Array(snapshotFloatCount(256));
+  let snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
   let raf = 0;
   let frames = 0;

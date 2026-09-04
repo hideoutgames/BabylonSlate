@@ -17,6 +17,7 @@ export interface SnapshotHeader {
   scriptMs: number;
   physicsMs: number;
   seq: number;
+  layoutGeneration: number;
 }
 
 export interface Vec3 {
@@ -47,8 +48,8 @@ export interface ActorSlot {
 
 export function writeSnapshotHeader(
   buf: Float32Array,
-  header: Omit<SnapshotHeader, "magic" | "version" | "seq"> &
-    Partial<Pick<SnapshotHeader, "magic" | "version" | "seq">>,
+  header: Omit<SnapshotHeader, "magic" | "version" | "seq" | "layoutGeneration"> &
+    Partial<Pick<SnapshotHeader, "magic" | "version" | "seq" | "layoutGeneration">>,
 ): void {
   buf[0] = header.magic ?? SNAPSHOT_MAGIC_F32;
   buf[1] = header.version ?? SNAPSHOT_LAYOUT_VERSION;
@@ -61,7 +62,8 @@ export function writeSnapshotHeader(
     // Seq is an integer stored as raw u32 bits in float slot 7 (seq-lock / Atomics).
     buf[7] = u32ToFloatBits(header.seq >>> 0);
   }
-  for (let i = 8; i < SNAPSHOT_HEADER_FLOATS; i++) {
+  buf[8] = header.layoutGeneration ?? 0;
+  for (let i = 9; i < SNAPSHOT_HEADER_FLOATS; i++) {
     buf[i] = 0;
   }
 }
@@ -76,6 +78,7 @@ export function readSnapshotHeader(buf: Float32Array): SnapshotHeader {
     scriptMs: buf[5]!,
     physicsMs: buf[6]!,
     seq: floatBitsToU32(buf[7]!),
+    layoutGeneration: buf[8]!,
   };
 }
 

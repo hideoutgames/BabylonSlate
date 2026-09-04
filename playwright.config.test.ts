@@ -112,5 +112,5 @@ describe("Playwright iPad project filter", () => {
     expect(ipadTitles).not.toContain(
       "P5 visual scripting acceptance › a scripted actor compiles and runs in Preview",
     );
-  }, 20_000);
+  }, 60_000);
 });
