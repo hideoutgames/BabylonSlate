@@ -663,6 +663,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new ProjectService(projectStorage),
     [projectStorage],
   );
+  useEffect(() => {
+    projectService.initialize();
+    return () => projectService.dispose();
+  }, [projectService]);
   const settingsStore = useMemo(() => createAppSettingsStore(), []);
   const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());

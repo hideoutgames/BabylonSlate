@@ -4,6 +4,81 @@ import { WebStorageAdapter } from "@babylonslate/vfs";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "@babylonslate/assets";
 import { ProjectService } from "./project-service";
+import { setEncodeQueuePauseReason } from "./encode-queue-pause";
+
+function workerFactory() {
+  const workers: Array<{
+    encode: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
+  }> = [];
+  const create = vi.fn(() => {
+    const encode = vi.fn(async () => ({ ktx2: new Uint8Array(), wallMs: 0 }));
+    const dispose = vi.fn();
+    const worker = Object.assign(encode, {
+      dispose,
+      recycleCount: () => 0,
+    });
+    workers.push({ encode, dispose });
+    return worker;
+  });
+  return { create, workers };
+}
+
+describe("ProjectService lifecycle", () => {
+  it("initializes and disposes provider resources idempotently", () => {
+    const factory = workerFactory();
+    const service = new ProjectService(new MemoryStorageAdapter("documents"), {
+      createWorkerEncode: factory.create,
+    });
+
+    expect(factory.create).not.toHaveBeenCalled();
+    service.initialize();
+    service.initialize();
+    expect(factory.create).toHaveBeenCalledTimes(1);
+
+    service.dispose();
+    service.dispose();
+    expect(factory.workers[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps provider resources alive when a project closes", async () => {
+    const factory = workerFactory();
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage, {
+      createWorkerEncode: factory.create,
+    });
+    service.initialize();
+    await storage.openDocumentsProject("CloseLifecycle");
+
+    await service.closeProject();
+
+    expect(factory.workers[0]?.dispose).not.toHaveBeenCalled();
+    service.dispose();
+    expect(factory.workers[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("supports a Strict Mode-style initialize/dispose/remount sequence", () => {
+    const factory = workerFactory();
+    const service = new ProjectService(new MemoryStorageAdapter("documents"), {
+      createWorkerEncode: factory.create,
+    });
+    const pause = vi.spyOn(service.textureEncodeQueue, "pause");
+
+    service.initialize();
+    service.dispose();
+    setEncodeQueuePauseReason("strict-mode-test", true);
+    expect(pause).not.toHaveBeenCalled();
+
+    service.initialize();
+    expect(factory.create).toHaveBeenCalledTimes(2);
+    expect(pause).toHaveBeenCalledTimes(1);
+    service.dispose();
+    expect(
+      factory.workers.map(({ dispose }) => dispose.mock.calls.length),
+    ).toEqual([1, 1]);
+    setEncodeQueuePauseReason("strict-mode-test", false);
+  });
+});
 
 describe("project round-trip", () => {
   it("creates and saves a new project", async () => {
