@@ -1,10 +1,17 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Buffer } from "node:buffer";
-import { app, BrowserWindow, dialog, ipcMain, net, safeStorage } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  net,
+  safeStorage,
+} from "electron";
 import { NodeStorageAdapter } from "@babylonslate/vfs/node";
 import type { ProjectFolderHandle } from "@babylonslate/core";
+import { DesktopSecretStore } from "./desktop-secret-store";
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
 
@@ -44,42 +51,25 @@ function registerIpc(): void {
   });
 
   const secretsPath = userDataFile("source-control-secrets.json");
-
-  async function readSecretMap(): Promise<Record<string, string>> {
-    try {
-      const parsed: unknown = JSON.parse(await readFile(secretsPath, "utf8"));
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, string>;
-      }
-      return {};
-    } catch {
-      return {};
-    }
-  }
-
-  async function writeSecretMap(map: Record<string, string>): Promise<void> {
-    await mkdir(dirname(secretsPath), { recursive: true });
-    await writeFile(secretsPath, JSON.stringify(map));
-  }
+  const secrets = new DesktopSecretStore(
+    {
+      read: () => readFile(secretsPath, "utf8"),
+      write: async (contents) => {
+        await mkdir(dirname(secretsPath), { recursive: true });
+        await writeFile(secretsPath, contents);
+      },
+    },
+    safeStorage,
+  );
 
   ipcMain.handle("secrets:get", async (_event, key) => {
-    const map = await readSecretMap();
-    const packed = map[String(key)];
-    if (!packed) return null;
-    if (!safeStorage.isEncryptionAvailable()) return packed;
-    return safeStorage.decryptString(Buffer.from(packed, "base64"));
+    return secrets.get(String(key));
   });
   ipcMain.handle("secrets:set", async (_event, key, value) => {
-    const map = await readSecretMap();
-    map[String(key)] = safeStorage.isEncryptionAvailable()
-      ? Buffer.from(safeStorage.encryptString(String(value))).toString("base64")
-      : String(value);
-    await writeSecretMap(map);
+    await secrets.set(String(key), String(value));
   });
   ipcMain.handle("secrets:delete", async (_event, key) => {
-    const map = await readSecretMap();
-    delete map[String(key)];
-    await writeSecretMap(map);
+    await secrets.delete(String(key));
   });
 
   ipcMain.handle("lfs:fetch", async (_event, request) => {
@@ -126,10 +116,16 @@ function registerIpc(): void {
   ipcMain.handle("project:release", async () => storage.releaseFolder());
   ipcMain.handle("project:readBinary", async (_event, path) => {
     const bytes = await storage.readBinary(String(path));
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    return bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    );
   });
   ipcMain.handle("project:writeBinary", async (_event, path, data) => {
-    await storage.writeBinary(String(path), new Uint8Array(data as ArrayBuffer));
+    await storage.writeBinary(
+      String(path),
+      new Uint8Array(data as ArrayBuffer),
+    );
   });
   ipcMain.handle("project:exists", async (_event, path) =>
     storage.exists(String(path)),
