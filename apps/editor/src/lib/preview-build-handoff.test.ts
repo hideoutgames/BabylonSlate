@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   canSendPreviewPack,
   editorViewportPausedForSession,
+  isExpectedPreviewMessage,
+  previewTargetFromSrc,
 } from "./preview-build-handoff";
 
 describe("canSendPreviewPack", () => {
@@ -14,6 +16,28 @@ describe("canSendPreviewPack", () => {
   it("refuses a pack resend after Stop so the player cannot relaunch", () => {
     expect(canSendPreviewPack({ files, closing: true })).toBe(false);
     expect(canSendPreviewPack({ files: null, closing: false })).toBe(false);
+  });
+});
+
+describe("Preview Build message boundary", () => {
+  const previewWindow = {} as Window;
+  const otherWindow = {} as Window;
+
+  it("derives and retains the exact iframe origin", () => {
+    expect(previewTargetFromSrc("/BabylonSlate/player/?preview=1", "https://preview.example/editor/"))
+      .toEqual({ src: "/BabylonSlate/player/?preview=1", origin: "https://preview.example" });
+  });
+
+  it("ignores another window or origin", () => {
+    expect(isExpectedPreviewMessage(
+      { source: previewWindow, origin: "https://preview.example" }, previewWindow, "https://preview.example",
+    )).toBe(true);
+    expect(isExpectedPreviewMessage(
+      { source: otherWindow, origin: "https://preview.example" }, previewWindow, "https://preview.example",
+    )).toBe(false);
+    expect(isExpectedPreviewMessage(
+      { source: previewWindow, origin: "https://attacker.example" }, previewWindow, "https://preview.example",
+    )).toBe(false);
   });
 });
 

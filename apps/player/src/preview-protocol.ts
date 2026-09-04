@@ -18,3 +18,21 @@ export type {
   PreviewDiagnosticsMessage,
   PreviewErrorMessage,
 } from "@babylonslate/exporter";
+import { isPreviewPackMessage as isPackMessage, type PreviewPackMessage } from "@babylonslate/exporter";
+
+export function isExpectedPreviewHostMessage(
+  event: Pick<MessageEvent, "source" | "origin">,
+  parentWindow: Window,
+  expectedOrigin: string,
+): boolean {
+  return event.source === parentWindow && event.origin === expectedOrigin;
+}
+
+export function previewPackFromExpectedHostMessage(
+  event: Pick<MessageEvent, "source" | "origin" | "data">,
+  parentWindow: Window,
+  expectedOrigin: string,
+): PreviewPackMessage | null {
+  if (!isExpectedPreviewHostMessage(event, parentWindow, expectedOrigin)) return null;
+  return isPackMessage(event.data) ? event.data : null;
+}

@@ -3,6 +3,7 @@ import {
   filesFromPreviewPack,
   isPreviewPackMessage,
   PREVIEW_PACK_MESSAGE,
+  previewPackFromExpectedHostMessage,
   previewPackFromFiles,
 } from "./preview-protocol";
 
@@ -20,5 +21,23 @@ describe("preview pack protocol", () => {
 
   it("rejects unrelated window messages", () => {
     expect(isPreviewPackMessage({ type: "other" })).toBe(false);
+  });
+
+  it("delivers a pack only from the expected parent and origin", () => {
+    const parentWindow = {} as Window;
+    const otherWindow = {} as Window;
+    const pack = previewPackFromFiles(new Map([["game.json", new Uint8Array([1])]]));
+    expect(previewPackFromExpectedHostMessage(
+      { source: parentWindow, origin: "https://preview.example", data: pack },
+      parentWindow, "https://preview.example",
+    )).toBe(pack);
+    expect(previewPackFromExpectedHostMessage(
+      { source: otherWindow, origin: "https://preview.example", data: pack },
+      parentWindow, "https://preview.example",
+    )).toBeNull();
+    expect(previewPackFromExpectedHostMessage(
+      { source: parentWindow, origin: "https://attacker.example", data: pack },
+      parentWindow, "https://preview.example",
+    )).toBeNull();
   });
 });
