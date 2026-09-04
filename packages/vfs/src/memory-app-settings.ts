@@ -2,7 +2,9 @@ import {
   defaultEngineSettings,
   engineSettingsSchema,
   type AppSettingsStore,
+  type AppSettingsMutation,
   type EngineSettings,
+  runSerializedAppSettingsUpdate,
 } from "./app-settings";
 
 /**
@@ -17,5 +19,13 @@ export class MemoryAppSettingsStore implements AppSettingsStore {
 
   async save(settings: EngineSettings): Promise<void> {
     this.settings = engineSettingsSchema.parse(settings);
+  }
+
+  update(mutate: AppSettingsMutation): Promise<EngineSettings> {
+    return runSerializedAppSettingsUpdate(
+      () => this.load(),
+      (settings) => this.save(settings),
+      mutate,
+    );
   }
 }

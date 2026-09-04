@@ -2,7 +2,9 @@ import {
   defaultEngineSettings,
   engineSettingsSchema,
   type AppSettingsStore,
+  type AppSettingsMutation,
   type EngineSettings,
+  runSerializedAppSettingsUpdate,
 } from "./app-settings";
 import { getElectronUserDataBridge, type ElectronUserDataBridge } from "./platform";
 
@@ -40,5 +42,13 @@ export class ElectronAppSettingsStore implements AppSettingsStore {
     } catch {
       /* memory-only until the desktop host lands */
     }
+  }
+
+  update(mutate: AppSettingsMutation): Promise<EngineSettings> {
+    return runSerializedAppSettingsUpdate(
+      () => this.load(),
+      (settings) => this.save(settings),
+      mutate,
+    );
   }
 }

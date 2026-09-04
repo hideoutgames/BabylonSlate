@@ -3,7 +3,9 @@ import {
   defaultEngineSettings,
   engineSettingsSchema,
   type AppSettingsStore,
+  type AppSettingsMutation,
   type EngineSettings,
+  runSerializedAppSettingsUpdate,
 } from "./app-settings";
 
 const KEY = "babylonslate:engine-settings";
@@ -21,5 +23,13 @@ export class PreferencesAppSettingsStore implements AppSettingsStore {
   async save(settings: EngineSettings): Promise<void> {
     const parsed = engineSettingsSchema.parse(settings);
     await Preferences.set({ key: KEY, value: JSON.stringify(parsed) });
+  }
+
+  update(mutate: AppSettingsMutation): Promise<EngineSettings> {
+    return runSerializedAppSettingsUpdate(
+      () => this.load(),
+      (settings) => this.save(settings),
+      mutate,
+    );
   }
 }

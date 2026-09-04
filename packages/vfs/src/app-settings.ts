@@ -191,6 +191,9 @@ export const engineSettingsSchema = z.object({
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;
 
+export const ENGINE_SETTINGS_CHANGED_EVENT = "babylonslate:engine-settings";
+export type AppSettingsMutation = (settings: EngineSettings) => void;
+
 export function defaultEngineSettings(): EngineSettings {
   return engineSettingsSchema.parse({});
 }
@@ -198,4 +201,40 @@ export function defaultEngineSettings(): EngineSettings {
 export interface AppSettingsStore {
   load(): Promise<EngineSettings>;
   save(settings: EngineSettings): Promise<void>;
+  update(mutate: AppSettingsMutation): Promise<EngineSettings>;
+}
+
+let settingsUpdateQueue: Promise<void> = Promise.resolve();
+
+/** Serialize latest-read, mutation, validation, and persistence across stores. */
+export function runSerializedAppSettingsUpdate(
+  load: () => Promise<EngineSettings>,
+  save: (settings: EngineSettings) => Promise<void>,
+  mutate: AppSettingsMutation,
+): Promise<EngineSettings> {
+  const operation = settingsUpdateQueue.then(async () => {
+    const next = engineSettingsSchema.parse(await load());
+    mutate(next);
+    const validated = engineSettingsSchema.parse(next);
+    await save(validated);
+    if (
+      typeof globalThis.dispatchEvent === "function" &&
+      typeof globalThis.CustomEvent === "function"
+    ) {
+      globalThis.dispatchEvent(
+        new CustomEvent(ENGINE_SETTINGS_CHANGED_EVENT, {
+          detail: {
+            ...validated,
+            theme: validated.appearance.theme,
+          },
+        }),
+      );
+    }
+    return validated;
+  });
+  settingsUpdateQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   defaultEngineSettings,
   engineSettingsSchema,
@@ -252,6 +252,52 @@ describe("app settings", () => {
     });
     await store.save(next);
     expect(await store.load()).toEqual(next);
+  });
+
+  it("serializes debugger, viewport, appearance, and recent updates", async () => {
+    localStorage.clear();
+    const stores = Array.from({ length: 4 }, () => new WebAppSettingsStore());
+    await Promise.all([
+      stores[0]!.update((settings) => {
+        settings.debuggerDefaults.overlayConsole = false;
+      }),
+      stores[1]!.update((settings) => {
+        settings.viewportFlySpeed = 18;
+        settings.viewportGridSize = 2;
+      }),
+      stores[2]!.update((settings) => {
+        settings.appearance.theme = "dark";
+      }),
+      stores[3]!.update((settings) => {
+        settings.recents.unshift({
+          id: "opfs:Concurrent.babproject",
+          name: "Concurrent.babproject",
+          tier: "opfs",
+          lastOpenedAt: "2026-09-04T00:00:00.000Z",
+        });
+      }),
+    ]);
+    const settings = await new WebAppSettingsStore().load();
+    expect(settings.debuggerDefaults.overlayConsole).toBe(false);
+    expect([settings.viewportFlySpeed, settings.viewportGridSize]).toEqual([
+      18, 2,
+    ]);
+    expect(settings.appearance.theme).toBe("dark");
+    expect(settings.recents[0]?.id).toBe("opfs:Concurrent.babproject");
+  });
+
+  it("emits persisted settings after update", async () => {
+    localStorage.clear();
+    const listener = vi.fn();
+    window.addEventListener("babylonslate:engine-settings", listener);
+    const persisted = await new WebAppSettingsStore().update((settings) => {
+      settings.appearance.theme = "light";
+    });
+    expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      ...persisted,
+      theme: "light",
+    });
+    window.removeEventListener("babylonslate:engine-settings", listener);
   });
 
   it("persists through the web store", async () => {

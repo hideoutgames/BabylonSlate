@@ -1,6 +1,9 @@
-import { createAppSettingsStore } from "@babylonslate/vfs";
+import {
+  createAppSettingsStore,
+  ENGINE_SETTINGS_CHANGED_EVENT,
+} from "@babylonslate/vfs";
 
-export const ENGINE_SETTINGS_CHANGED_EVENT = "babylonslate:engine-settings";
+export { ENGINE_SETTINGS_CHANGED_EVENT };
 
 export const BLOCKING_OVERLAY_SELECTOR = [
   '[data-slot="dialog-overlay"]',
