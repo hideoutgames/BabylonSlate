@@ -61,6 +61,7 @@ import {
   ProjectSearchIndex,
   type BlobStore,
   type EncodeFn,
+  stubEncodeKtx2,
   type MigrationPending,
   type PluginDescriptor,
   type PluginDiagnostic,
@@ -85,6 +86,7 @@ import {
   type InspectedBabplugin,
   type PluginImportPlan,
 } from "@babylonslate/assets";
+import { onEncodeQueuePause } from "./encode-queue-pause";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
@@ -212,10 +214,14 @@ export class ProjectService {
   private assetRegistry: AssetRegistry | null = null;
   private projectSearchIndex: ProjectSearchIndex | null = null;
   private readonly encodeQueue: EncodeQueue;
-  private readonly workerEncode:
+  private workerEncode:
+    | (EncodeFn & { dispose: () => void; recycleCount: () => number })
+    | null = null;
+  private encodeQueuePauseUnsubscribe: (() => void) | null = null;
+  private readonly configuredEncode?: EncodeFn;
+  private readonly createWorkerEncode: () =>
     | (EncodeFn & { dispose: () => void; recycleCount: () => number })
     | null;
-  private visibilityBound = false;
   private transcoderAvailable = true;
   private derivedStorage: ProjectStorage | null = null;
   private enginePluginStorage: ProjectStorage | null = null;
@@ -230,17 +236,27 @@ export class ProjectService {
 
   constructor(
     storage: ProjectStorage,
-    options: { encode?: EncodeFn } = {},
+    options: {
+      encode?: EncodeFn;
+      createWorkerEncode?: () =>
+        | (EncodeFn & { dispose: () => void; recycleCount: () => number })
+        | null;
+    } = {},
   ) {
     this.storage = storage;
     this.blobs = createVfsBlobStore(storage);
-    this.workerEncode = options.encode
-      ? null
-      : canUseWorkerEncode()
+    this.configuredEncode = options.encode;
+    this.createWorkerEncode = options.createWorkerEncode ?? (() =>
+      canUseWorkerEncode()
         ? createWorkerEncodeFn({ workerUrl: editorEncodeWorkerUrl() })
-        : null;
+        : null);
     this.encodeQueue = new EncodeQueue({
-      encode: options.encode ?? this.workerEncode ?? undefined,
+      encode: (source, settings, mime) =>
+        (this.configuredEncode ?? this.workerEncode ?? stubEncodeKtx2)(
+          source,
+          settings,
+          mime,
+        ),
       onState: (guid, state) => {
         // `compressed` is written with the KTX2 chunk in onComplete.
         if (state === "compressed") return;
@@ -260,7 +276,26 @@ export class ProjectService {
           .then(() => this.emitRegistryChange());
       },
     });
-    this.bindEncodeQueueVisibility();
+  }
+
+  /** Start provider-lifetime resources; safe across Strict Mode effect probes. */
+  initialize(): void {
+    if (this.encodeQueuePauseUnsubscribe) return;
+    if (!this.configuredEncode) {
+      this.workerEncode = this.createWorkerEncode();
+    }
+    this.encodeQueuePauseUnsubscribe = onEncodeQueuePause((paused) => {
+      if (paused) this.encodeQueue.pause();
+      else this.encodeQueue.resume();
+    });
+  }
+
+  /** Release provider-lifetime resources; project close deliberately does not. */
+  dispose(): void {
+    this.encodeQueuePauseUnsubscribe?.();
+    this.encodeQueuePauseUnsubscribe = null;
+    this.workerEncode?.dispose();
+    this.workerEncode = null;
   }
 
   get sessionDiagnostics(): string[] {
@@ -895,19 +930,6 @@ export class ProjectService {
       return this.assetRegistry.blobsFor(indexed.rootId);
     }
     return this.blobs;
-  }
-
-  private bindEncodeQueueVisibility(): void {
-    if (this.visibilityBound) return;
-    this.visibilityBound = true;
-    // Play + visibility publish reasons via encode-queue-pause; this service owns
-    // the queue and applies the merged paused state (engineplan §2.4 / §3.5).
-    void import("./encode-queue-pause").then(({ onEncodeQueuePause }) => {
-      onEncodeQueuePause((paused) => {
-        if (paused) this.encodeQueue.pause();
-        else this.encodeQueue.resume();
-      });
-    });
   }
 
   /** Re-scan project assets after registry file operations (import, create, delete). */
