@@ -31,9 +31,20 @@ let runtime: RuntimeDriver | null = null;
 const boot = createPlayBootCoordinator();
 // Recycled via the host's `recycleSnapshot` message so the per-frame
 // snapshot transfer never allocates a fresh ArrayBuffer once warmed up.
-const snapshotPing = new TransferablePingPong(256);
+let snapshotPing = new TransferablePingPong(256);
+let installedGeneration = 0;
+let pendingGeneration: number | null = null;
 
 function onCommand(command: CommandMessage): void {
+  if (command.type === "snapshotLayout") {
+    try {
+      snapshotPing = snapshotPing.grow(command.capacity);
+      pendingGeneration = command.generation;
+    } catch (error) {
+      ensureRuntime().reportError(new Error(`Unable to allocate transferable Actor snapshots (${command.capacity}): ${error instanceof Error ? error.message : String(error)}`));
+      return;
+    }
+  }
   postMessage({ channel: "command", payload: command });
 }
 
@@ -228,10 +239,14 @@ function pump(): void {
   const elapsed = (now - lastTick) / 1000;
   lastTick = now;
   rt.advance(elapsed);
+  if (pendingGeneration !== null) {
+    requestAnimationFrame(pump);
+    return;
+  }
   const buf = snapshotPing.beginWrite();
   if (rt.copySnapshot(buf)) {
     const ab = snapshotPing.commitWrite();
-    postMessage({ channel: "snapshot", payload: ab, transferable: true }, [
+    postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration, transferable: true }, [
       ab,
     ]);
   } else {
@@ -254,6 +269,11 @@ self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
   }
   if (msg.channel === "recycleSnapshot") {
     snapshotPing.recycle(msg.payload);
+    return;
+  }
+  if (msg.channel === "snapshotLayoutAck" && msg.generation === pendingGeneration) {
+    installedGeneration = msg.generation;
+    pendingGeneration = null;
   }
 };
 

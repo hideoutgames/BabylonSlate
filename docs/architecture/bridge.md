@@ -31,7 +31,8 @@ Double-buffered `Float32Array`. Views are little-endian; header and per-actor sl
 | 5 | `scriptMs` | Script phase time for last tick |
 | 6 | `physicsMs` | Physics phase time (separate from `scriptMs`; HUD reads the 5 Hz `stats` command, but this header field is per-tick) |
 | 7 | `seq` | Seq-lock sequence (even = stable) for SAB |
-| 8–15 | reserved | Zero |
+| 8 | `layoutGeneration` | Installed snapshot-layout generation |
+| 9–15 | reserved | Zero |
 
 ### Per-actor slot
 
@@ -50,7 +51,9 @@ Slot `i` starts at `16 + i * 16`:
 
 **Actor guid ↔ slotId** is maintained on the reliable command channel (`spawn` / `despawn` / `remap`). Guids never travel in the hot buffer.
 
-Capacity is fixed at create time (`maxActors`). Writer fills slots `[0, actorCount)`; reader interpolates the two most recent stable buffers by `slotId`, not array index. New slots copy their latest pose immediately and removed slots disappear, so a spawn/despawn reorder cannot blend unrelated actors.
+`maxActors` is the initial allocation, not a user-visible Actor limit. Dense slot IDs are recycled after despawn, and capacity grows geometrically before an out-of-range ID is assigned. Growth is subject to memory and performance budgets and allocation success; it is not a promise of mathematically unlimited Actors.
+
+Each replacement has a monotonically increasing `layoutGeneration`. The writer allocates a complete replacement pair, sends ordered `snapshotLayout { capacity, generation }`, and waits for `snapshotLayoutAck` before publishing. SAB mode hands off new buffers because an existing `SharedArrayBuffer` cannot be resized portably; transferable mode replaces both ping-pong buffers under the same handshake. The receiver replaces capacity-sized scratch/index storage and ignores frames from every non-installed generation. Writer rows remain `[0, actorCount)` and interpolation matches recyclable `slotId`, not row index.
 
 ## Channels
 

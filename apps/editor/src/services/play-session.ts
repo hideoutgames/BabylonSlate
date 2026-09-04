@@ -515,7 +515,6 @@ export function startPlaySession(options: {
   const handle = createEngine(canvas, {
     sharedEngine,
     playMode: true,
-    maxActors: 256,
     frameCap: resolvePlayFrameCap(options.frameCap),
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,
@@ -636,10 +635,11 @@ export function startPlaySession(options: {
 
   const onCommand = (command: CommandMessage) => {
     noteCommand();
+    if (command.type === "snapshotLayout" && runtime) snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
     if (command.type === "spawn") {
       spawnedActorGuids.push(command.actorGuid);
     }
-    if (shouldForwardPlayEngineCommand(command.type)) {
+    if (command.type === "snapshotLayout" || shouldForwardPlayEngineCommand(command.type)) {
       handle.applyCommand(command);
     }
     if (command.type === "activeScene") {
@@ -862,7 +862,7 @@ export function startPlaySession(options: {
   canvas.addEventListener("pointerdown", unlock);
   canvas.addEventListener("touchstart", unlock);
 
-  const snapBuf = new Float32Array(snapshotFloatCount(256));
+  let snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
   let raf = 0;
   let frames = 0;

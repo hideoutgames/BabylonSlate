@@ -206,6 +206,8 @@ export interface RuntimeDriver {
   /** Most recent resolved input tick (empty before the first tick). */
   getResolvedInput(): ResolvedInputTick;
   copySnapshot(out: Float32Array): boolean;
+  readonly snapshotCapacity: number;
+  readonly snapshotGeneration: number;
   getWorld(): World;
   getLogRing(): LogRingBuffer;
   getDiagnostics(): SessionDiagnosticAggregator;
@@ -324,7 +326,7 @@ export function createInProcessRuntime(
 class InProcessRuntime implements RuntimeDriver {
   readonly transportMode: TransportMode;
   private readonly world: World;
-  private readonly snapshots: SeqLockSnapshotPair;
+  private snapshots: SeqLockSnapshotPair;
   private readonly input = new InputRingBuffer(512);
   private readonly resolver: InputResolver;
   private resolvedInput: ResolvedInputTick = {
@@ -360,7 +362,9 @@ class InProcessRuntime implements RuntimeDriver {
   private running = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
-  private nextSlot = 0;
+  private readonly freeSlots: number[] = [];
+  private nextUnusedSlot = 0;
+  private _snapshotGeneration = 0;
   private _lastScriptMs = 0;
   private _lastPhysicsMs = 0;
   private phaseScriptMs = 0;
@@ -431,6 +435,8 @@ class InProcessRuntime implements RuntimeDriver {
   get lastPhysicsMs(): number {
     return this._lastPhysicsMs;
   }
+  get snapshotCapacity(): number { return this.snapshots.maxActors; }
+  get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
     this.transportMode = mode;
@@ -1114,7 +1120,7 @@ class InProcessRuntime implements RuntimeDriver {
       const slotId = this.slotByGuid.get(actor.guid);
       if (slotId !== undefined) {
         this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
-        this.slotByGuid.delete(actor.guid);
+        this.releaseSlot(actor.guid, slotId);
       }
       this.overlayDesignPose.delete(actor.guid);
     }
@@ -1501,7 +1507,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.emitParticleStops(actor);
       if (slotId !== undefined) {
         this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
-        this.slotByGuid.delete(actor.guid);
+        this.releaseSlot(actor.guid, slotId);
       }
       this.world.destroyActor(actor.guid);
     }
@@ -3255,7 +3261,9 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private assignSlot(actor: Actor): number {
-    const slotId = this.nextSlot++;
+    const slotId = this.freeSlots.pop() ?? this.nextUnusedSlot;
+    this.ensureSnapshotCapacity(slotId + 1);
+    if (slotId === this.nextUnusedSlot) this.nextUnusedSlot += 1;
     this.slotByGuid.set(actor.guid, slotId);
     this.emit({
       type: "spawn",
@@ -3265,6 +3273,26 @@ class InProcessRuntime implements RuntimeDriver {
       ...(actor.sceneLayerId ? { sceneLayerId: actor.sceneLayerId } : {}),
     });
     return slotId;
+  }
+
+  private ensureSnapshotCapacity(required: number): void {
+    if (required <= this.snapshots.maxActors) return;
+    let capacity = Math.max(1, this.snapshots.maxActors);
+    while (capacity < required) capacity *= 2;
+    try {
+      this.snapshots = SeqLockSnapshotPair.grow(this.snapshots, capacity);
+      this._snapshotGeneration += 1;
+      this.emit({ type: "snapshotLayout", capacity, generation: this._snapshotGeneration });
+    } catch (error) {
+      const message = `Unable to grow Actor snapshot capacity to ${capacity}: ${error instanceof Error ? error.message : String(error)}`;
+      this.reportError(new Error(message));
+      throw new Error(message);
+    }
+  }
+
+  private releaseSlot(actorGuid: string, slotId: number): void {
+    this.slotByGuid.delete(actorGuid);
+    this.freeSlots.push(slotId);
   }
 
   private bindGameInstance(): void {
@@ -3473,6 +3501,8 @@ class InProcessRuntime implements RuntimeDriver {
         tickIndex: this.world.clock.tickIndex,
         scriptMs: this._lastScriptMs,
         physicsMs: this._lastPhysicsMs,
+        liveActors: this.slotByGuid.size,
+        snapshotCapacity: this.snapshots.maxActors,
       });
     }
     if (this.trace.isRecording) {
@@ -3538,6 +3568,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   copySnapshot(out: Float32Array): boolean {
+    if (out.length < this.snapshots.floatCount) return false;
     return this.snapshots.tryRead(out);
   }
 
@@ -3619,8 +3650,14 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private publishSnapshot(): void {
-    const buf = this.snapshots.beginWrite();
     const actors = this.world.getActors();
+    const liveGuids = new Set(actors.map((actor) => actor.guid));
+    for (const [actorGuid, slotId] of this.slotByGuid) {
+      if (liveGuids.has(actorGuid)) continue;
+      this.emit({ type: "despawn", slotId, actorGuid });
+      this.releaseSlot(actorGuid, slotId);
+    }
+    const buf = this.snapshots.beginWrite();
     const worldTransforms = actorWorldTransforms(actors);
     let count = 0;
     for (const actor of actors) {
@@ -3645,6 +3682,7 @@ class InProcessRuntime implements RuntimeDriver {
       actorCount: count,
       scriptMs: this._lastScriptMs,
       physicsMs: this._lastPhysicsMs,
+      layoutGeneration: this._snapshotGeneration,
     });
     this.snapshots.publish();
   }

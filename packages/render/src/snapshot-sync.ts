@@ -33,11 +33,12 @@ export class SnapshotInterpolator {
   private prev: Float32Array | null = null;
   private next: Float32Array | null = null;
   private write = 0;
-  private readonly pair: [Float32Array, Float32Array];
-  private readonly maxActors: number;
-  private readonly scratch: ActorSlot[];
-  private readonly prevIndexBySlot: Int32Array;
+  private pair: [Float32Array, Float32Array];
+  private maxActors: number;
+  private scratch: ActorSlot[];
+  private prevIndexBySlot: Int32Array;
   private readonly sampled: SampledSnapshot;
+  private generation = 0;
 
   constructor(maxActors: number) {
     this.maxActors = maxActors;
@@ -54,14 +55,28 @@ export class SnapshotInterpolator {
     };
   }
 
+  installLayout(capacity: number, generation: number): boolean {
+    if (generation <= this.generation || capacity < 1) return false;
+    const floats = snapshotFloatCount(capacity);
+    this.maxActors = capacity;
+    this.generation = generation;
+    this.pair = [new Float32Array(floats), new Float32Array(floats)];
+    this.scratch = Array.from({ length: capacity }, () => emptySlot());
+    this.prevIndexBySlot = new Int32Array(capacity);
+    this.sampled.actors = this.scratch;
+    this.sampled.actorCount = 0;
+    this.write = 0;
+    this.clear();
+    return true;
+  }
+
   push(buffer: Float32Array): void {
     if (!isPublishedSnapshot(buffer)) return;
+    if (readSnapshotHeader(buffer).layoutGeneration !== this.generation) return;
     const dest = this.pair[this.write]!;
-    if (buffer.length <= dest.length) {
-      dest.set(buffer);
-    } else {
-      for (let i = 0; i < dest.length; i++) dest[i] = buffer[i]!;
-    }
+    if (buffer.length > dest.length) return;
+    dest.fill(0);
+    dest.set(buffer);
     this.prev = this.next;
     this.next = dest;
     this.write = 1 - this.write;

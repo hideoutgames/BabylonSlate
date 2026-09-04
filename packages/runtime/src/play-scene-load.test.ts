@@ -1100,7 +1100,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("changeScene re-possesses the destination Attempt Possess camera on a new slot", () => {
+  it("changeScene re-possesses the destination camera on a recycled slot", () => {
     const level2 = cameraPossessScene(true);
     level2.name = "Level2";
     const commands: CommandMessage[] = [];
@@ -1122,7 +1122,7 @@ describe("p7-play-scene-load", () => {
     runtime.executeConsoleCommand("changescene scene-2");
     const nextPossess = commands.filter((c) => c.type === "possessCamera");
     expect(nextPossess).toHaveLength(1);
-    expect((nextPossess[0] as { slotId: number }).slotId).not.toBe(sourceSlot);
+    expect((nextPossess[0] as { slotId: number }).slotId).toBe(sourceSlot);
     const destCamera = commands.find(
       (c) =>
         c.type === "assignMesh" &&

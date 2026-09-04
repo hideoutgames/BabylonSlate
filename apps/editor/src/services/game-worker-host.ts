@@ -32,6 +32,7 @@ export function createGameWorkerHost(): GameWorkerHost {
 
   const commandHandlers: Array<(command: CommandMessage) => void> = [];
   const snapshotHandlers: Array<(buffer: Float32Array) => void> = [];
+  let installedGeneration = 0;
 
   const post = (message: BridgeHostMessage, transfer?: Transferable[]) => {
     worker.postMessage(message, transfer ?? []);
@@ -40,11 +41,19 @@ export function createGameWorkerHost(): GameWorkerHost {
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
     const msg = event.data;
     if (msg.channel === "command") {
+      if (msg.payload.type === "snapshotLayout") {
+        installedGeneration = msg.payload.generation;
+        post({ channel: "snapshotLayoutAck", generation: installedGeneration });
+      }
       for (const handler of commandHandlers) handler(msg.payload);
       return;
     }
     if (msg.channel === "snapshot") {
       const ab = msg.payload;
+      if (msg.generation !== installedGeneration) {
+        post({ channel: "recycleSnapshot", payload: ab }, [ab]);
+        return;
+      }
       const buffer = new Float32Array(ab);
       for (const handler of snapshotHandlers) handler(buffer);
       // Consumers (SnapshotInterpolator.push) copy synchronously, so the

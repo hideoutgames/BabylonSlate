@@ -1556,6 +1556,11 @@ export function createEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      if (command.type === "snapshotLayout") {
+        interpolator.installLayout(command.capacity, command.generation);
+        scheduler.invalidate("snapshot");
+        return;
+      }
       if (options.playMode) {
         applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
       }

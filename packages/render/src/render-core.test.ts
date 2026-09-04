@@ -194,6 +194,18 @@ describe("render scheduler", () => {
 });
 
 describe("snapshot interpolator", () => {
+  it("replaces capacity state and ignores stale layout generations", () => {
+    const interp = new SnapshotInterpolator(1);
+    const stale = new Float32Array(snapshotFloatCount(1));
+    writeSnapshotHeader(stale, { frameId: 1, tickIndex: 1, actorCount: 0, scriptMs: 0, physicsMs: 0, layoutGeneration: 0 });
+    expect(interp.installLayout(4, 1)).toBe(true);
+    interp.push(stale);
+    expect(interp.sample(1)).toBeNull();
+    const current = new Float32Array(snapshotFloatCount(4));
+    writeSnapshotHeader(current, { frameId: 2, tickIndex: 2, actorCount: 0, scriptMs: 0, physicsMs: 0, layoutGeneration: 1 });
+    interp.push(current);
+    expect(interp.sample(1)?.frameId).toBe(2);
+  });
   it("lerps positions between two snapshots", () => {
     const floats = snapshotFloatCount(1);
     const a = new Float32Array(floats);
