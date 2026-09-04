@@ -6,7 +6,8 @@ import { applyPlayerLayout } from "./layout";
 import { registerPackedFonts } from "./fonts";
 import {
   filesFromPreviewPack,
-  isPreviewPackMessage,
+  isExpectedPreviewHostMessage,
+  previewPackFromExpectedHostMessage,
   PREVIEW_DIAGNOSTICS_MESSAGE,
   PREVIEW_ERROR_MESSAGE,
   PREVIEW_READY_MESSAGE,
@@ -14,6 +15,8 @@ import {
   PREVIEW_STATS_MESSAGE,
   PREVIEW_STOP_MESSAGE,
 } from "./preview-protocol";
+
+const previewHostOrigin = window.location.origin;
 
 function rootEl(): HTMLElement {
   return document.getElementById("player-root") ?? document.body;
@@ -90,7 +93,7 @@ async function launchLoaded(
             scriptMs: stats.scriptMs,
             physicsMs: stats.physicsMs,
           },
-          "*",
+          previewHostOrigin,
         );
       }
     },
@@ -98,7 +101,7 @@ async function launchLoaded(
       if (window.parent === window) return;
       window.parent.postMessage(
         { type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics },
-        "*",
+        previewHostOrigin,
       );
     },
   });
@@ -126,10 +129,11 @@ async function launchLoaded(
         type: PREVIEW_READY_MESSAGE,
         startupSceneGuid: game.manifest.startupSceneGuid,
       },
-      "*",
+      previewHostOrigin,
     );
   }
   window.addEventListener("message", (event) => {
+    if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) return;
     if (
       event.data &&
       typeof event.data === "object" &&
@@ -141,7 +145,7 @@ async function launchLoaded(
       if (window.parent !== window && result.diagnostics.length > 0) {
         window.parent.postMessage(
           { type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics: result.diagnostics },
-          "*",
+          previewHostOrigin,
         );
       }
     }
@@ -157,23 +161,24 @@ function bootFailure(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   rootEl().dataset.error = message;
   if (window.parent !== window) {
-    window.parent.postMessage({ type: PREVIEW_ERROR_MESSAGE, message }, "*");
+    window.parent.postMessage({ type: PREVIEW_ERROR_MESSAGE, message }, previewHostOrigin);
   }
 }
 
 if (previewMode()) {
   let launched = false;
   window.addEventListener("message", (event) => {
-    if (!isPreviewPackMessage(event.data)) return;
+    const pack = previewPackFromExpectedHostMessage(event, window.parent, previewHostOrigin);
+    if (!pack) return;
     // The host may resend the pack until it sees the player boot; ignore repeats.
     if (launched) return;
     launched = true;
-    void launchFromFiles(filesFromPreviewPack(event.data)).catch(bootFailure);
+    void launchFromFiles(filesFromPreviewPack(pack)).catch(bootFailure);
   });
   // Ask only once the listener above exists. Waiting for the parent's iframe
   // `load` event alone raced module evaluation and silently dropped the pack.
   if (window.parent !== window) {
-    window.parent.postMessage({ type: PREVIEW_REQUEST_PACK_MESSAGE }, "*");
+    window.parent.postMessage({ type: PREVIEW_REQUEST_PACK_MESSAGE }, previewHostOrigin);
   }
 } else {
   void launchFromHttp().catch(bootFailure);

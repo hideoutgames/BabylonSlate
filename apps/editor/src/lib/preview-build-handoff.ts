@@ -9,6 +9,18 @@ export function canSendPreviewPack(options: {
   return Boolean(options.files) && !options.closing;
 }
 
+export function previewTargetFromSrc(src: string, documentUrl: string): { src: string; origin: string } {
+  return { src, origin: new URL(src, documentUrl).origin };
+}
+
+export function isExpectedPreviewMessage(
+  event: Pick<MessageEvent, "source" | "origin">,
+  expectedSource: Window | null | undefined,
+  expectedOrigin: string,
+): boolean {
+  return event.source === expectedSource && event.origin === expectedOrigin;
+}
+
 /** Overlay Play, Preparing Preview, and the Preview iframe all own GPU. */
 export function editorViewportPausedForSession(options: {
   playing: boolean;

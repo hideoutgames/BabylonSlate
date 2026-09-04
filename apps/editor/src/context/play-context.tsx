@@ -64,7 +64,7 @@ import {
 } from "../lib/play-debugger-defaults";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { playerPreviewSrc } from "../lib/player-host-url";
-import { canSendPreviewPack } from "../lib/preview-build-handoff";
+import { canSendPreviewPack, isExpectedPreviewMessage, previewTargetFromSrc } from "../lib/preview-build-handoff";
 import {
   sessionEntriesFromPreviewDiagnostics,
   shouldClosePreviewOnDiagnostics,
@@ -228,7 +228,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [startupAlertOpen, setStartupAlertOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const previewOpenRef = useRef(false);
-  const [previewSrc, setPreviewSrc] = useState(() => playerPreviewSrc(0));
+  const initialPreviewTarget = useMemo(
+    () => previewTargetFromSrc(playerPreviewSrc(0), window.location.href),
+    [],
+  );
+  const [previewSrc, setPreviewSrc] = useState(initialPreviewTarget.src);
+  const previewOriginRef = useRef(initialPreviewTarget.origin);
   const [previewPhase, setPreviewPhase] = useState<PreviewPreparePhase | null>(
     null,
   );
@@ -627,7 +632,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     previewClosingRef.current = true;
     const frame = previewIframeRef.current;
     if (frame?.contentWindow) {
-      frame.contentWindow.postMessage({ type: PREVIEW_STOP_MESSAGE }, "*");
+      frame.contentWindow.postMessage({ type: PREVIEW_STOP_MESSAGE }, previewOriginRef.current);
     }
     previewFilesRef.current = null;
     setPreviewOpen(false);
@@ -657,7 +662,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      frame.postMessage(previewPackFromFiles(handoff.files), "*");
+      frame.postMessage(previewPackFromFiles(handoff.files), previewOriginRef.current);
     } catch (error) {
       setPreviewError(
         `Preview Build could not send the game data: ${
@@ -669,6 +674,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      if (!isExpectedPreviewMessage(
+        event,
+        previewIframeRef.current?.contentWindow,
+        previewOriginRef.current,
+      )) return;
       // The player asks once its listener exists, which removes the race
       // between iframe `load` and the player module evaluating.
       if (isPreviewRequestPackMessage(event.data)) {
@@ -749,7 +759,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setEncodeQueuePauseReason("play", true);
       setPlaying(true);
       setPreviewError(null);
-      setPreviewSrc(playerPreviewSrc(Date.now()));
+      const previewTarget = previewTargetFromSrc(playerPreviewSrc(Date.now()), window.location.href);
+      previewOriginRef.current = previewTarget.origin;
+      setPreviewSrc(previewTarget.src);
       setPreviewOpen(true);
     } catch (error) {
       previewFilesRef.current = null;
