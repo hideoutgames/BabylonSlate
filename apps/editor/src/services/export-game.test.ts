@@ -12,12 +12,16 @@ import {
   isOk,
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
-import { MISSING_STARTUP_SCENE_MESSAGE, parseScriptRegistry } from "@babylonslate/exporter";
+import {
+  MISSING_STARTUP_SCENE_MESSAGE,
+  parseScriptRegistry,
+} from "@babylonslate/exporter";
 import { collectAndExportGame } from "./export-game";
 import type { ExportIndexedAsset } from "@babylonslate/exporter";
 
 function asset(
-  partial: Partial<ExportIndexedAsset> & Pick<ExportIndexedAsset, "guid" | "type" | "name">,
+  partial: Partial<ExportIndexedAsset> &
+    Pick<ExportIndexedAsset, "guid" | "type" | "name">,
 ): ExportIndexedAsset {
   return {
     dependencies: [],
@@ -33,6 +37,68 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
+  it("uses startup reachability for boot and a stable shared-asset policy", async () => {
+    const start = {
+      ...createDefaultScene(),
+      settings: {
+        ...createDefaultScene().settings,
+        environmentTextureGuid: "boot-only",
+        sceneLayers: [
+          { assetGuid: "scene-z", zOrder: 0, enabled: true },
+          { assetGuid: "scene-a", zOrder: 1, enabled: true },
+        ],
+      },
+    };
+    const secondary = createDefaultScene();
+    const assets = [
+      asset({ guid: "scene-start", type: "Scene", name: "Start" }),
+      asset({
+        guid: "scene-z",
+        type: "Scene",
+        name: "Zed",
+        dependencies: ["shared"],
+      }),
+      asset({
+        guid: "scene-a",
+        type: "Scene",
+        name: "Alpha",
+        dependencies: ["shared"],
+      }),
+      asset({ guid: "boot-only", type: "Texture", name: "Boot" }),
+      asset({ guid: "shared", type: "Texture", name: "Shared" }),
+    ];
+    const run = (registry: ExportIndexedAsset[]) =>
+      collectAndExportGame({
+        startupSceneGuid: "scene-start",
+        assets: registry,
+        plugins: [],
+        projectPluginOverrides: {},
+        parentOf: () => null,
+        sceneByGuid: (guid) => (guid === "scene-start" ? start : secondary),
+        graphByGuid: () => null,
+        bytesByGuid: (guid) => new TextEncoder().encode(guid),
+        customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+        playFrameCap: 60,
+        physicsWorld: "3d",
+        playerFiles,
+      });
+    const first = await run(assets);
+    const reversed = await run([...assets].reverse());
+    expect(first.ok).toBe(true);
+    expect(reversed.ok).toBe(true);
+    if (!isOk(first) || !isOk(reversed)) return;
+    const packs = (result: typeof first.value) =>
+      Object.fromEntries(
+        result.manifest.assets.map((entry) => [entry.guid, entry.pack]),
+      );
+    expect(packs(first.value)).toEqual(packs(reversed.value));
+    expect(packs(first.value)).toMatchObject({
+      "scene-start": "boot.babpack",
+      "boot-only": "boot.babpack",
+      shared: "scene-scene-a.babpack",
+    });
+  });
+
   it("fails with the startup scene copy when the guid is missing", async () => {
     const result = await collectAndExportGame({
       startupSceneGuid: null,
@@ -105,9 +171,9 @@ describe("collectAndExportGame", () => {
     expect(result.value.manifest.mode).toBe("packed");
     expect(result.value.manifest.bundleDebugger).toBe(false);
     expect(result.value.files.has("boot.babpack")).toBe(true);
-    expect(result.value.manifest.assets.some((entry) => entry.guid === "euo-1")).toBe(
-      false,
-    );
+    expect(
+      result.value.manifest.assets.some((entry) => entry.guid === "euo-1"),
+    ).toBe(false);
   });
 
   it("warns when a packed Material samples a Texture that has no bytes", async () => {
@@ -117,7 +183,10 @@ describe("collectAndExportGame", () => {
       ...createDefaultScene(),
       actors: [createActor("hero", "Hero", { components: [mesh] })],
     };
-    const material = migrateLegacyShaderPayload({}, { textureGuids: ["tex-missing"] });
+    const material = migrateLegacyShaderPayload(
+      {},
+      { textureGuids: ["tex-missing"] },
+    );
     const result = await collectAndExportGame({
       startupSceneGuid: "scene-1",
       assets: [
@@ -132,8 +201,10 @@ describe("collectAndExportGame", () => {
       graphByGuid: () => null,
       payloadByGuid: (guid) => (guid === "mat-rock" ? material : null),
       bytesByGuid: (guid) => {
-        if (guid === "scene-1") return new TextEncoder().encode(JSON.stringify(scene));
-        if (guid === "mat-rock") return new TextEncoder().encode(JSON.stringify(material));
+        if (guid === "scene-1")
+          return new TextEncoder().encode(JSON.stringify(scene));
+        if (guid === "mat-rock")
+          return new TextEncoder().encode(JSON.stringify(material));
         return null;
       },
       customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -180,9 +251,9 @@ describe("collectAndExportGame", () => {
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
     expect(result.value.manifest.gameInstanceClass).toBe("MyGame");
-    expect(result.value.manifest.assets.some((entry) => entry.guid === "class-game")).toBe(
-      true,
-    );
+    expect(
+      result.value.manifest.assets.some((entry) => entry.guid === "class-game"),
+    ).toBe(true);
   });
 
   it("packs a sprite textureGuid reached through the sprite payload", async () => {
@@ -226,7 +297,9 @@ describe("collectAndExportGame", () => {
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
     const guids = result.value.manifest.assets.map((entry) => entry.guid);
-    expect(guids).toEqual(expect.arrayContaining(["scene-1", "sprite-1", "tex-atlas"]));
+    expect(guids).toEqual(
+      expect.arrayContaining(["scene-1", "sprite-1", "tex-atlas"]),
+    );
   });
 
   it("reports Compiling then Writing Pack", async () => {
@@ -287,9 +360,9 @@ describe("collectAndExportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
-    expect(result.value.manifest.assets.some((entry) => entry.guid === "plug-class")).toBe(
-      false,
-    );
+    expect(
+      result.value.manifest.assets.some((entry) => entry.guid === "plug-class"),
+    ).toBe(false);
   });
 
   it("compiles AnimationGraph lifecycle and transition rules into packed scripts", async () => {
@@ -360,7 +433,9 @@ describe("collectAndExportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
-    const scripts = new TextDecoder().decode(result.value.files.get("scripts.js"));
+    const scripts = new TextDecoder().decode(
+      result.value.files.get("scripts.js"),
+    );
     const registry = parseScriptRegistry(scripts);
     expect(registry.map((entry) => entry.classId)).toEqual(
       expect.arrayContaining([
@@ -429,7 +504,8 @@ describe("collectAndExportGame", () => {
       sceneByGuid: () => scene,
       graphByGuid: () => null,
       bytesByGuid: (guid) => {
-        if (guid === "scene-1") return new TextEncoder().encode(JSON.stringify(scene));
+        if (guid === "scene-1")
+          return new TextEncoder().encode(JSON.stringify(scene));
         if (guid === "tex-1") return ktx2;
         return null;
       },
@@ -506,7 +582,8 @@ describe("collectAndExportGame", () => {
       sceneByGuid: () => scene,
       graphByGuid: () => null,
       bytesByGuid: (guid) => {
-        if (guid === "scene-1") return new TextEncoder().encode(JSON.stringify(scene));
+        if (guid === "scene-1")
+          return new TextEncoder().encode(JSON.stringify(scene));
         if (guid === "font-1") return source;
         return null;
       },
@@ -526,7 +603,8 @@ describe("collectAndExportGame", () => {
     expect(
       result.value.manifest.assets.some(
         (entry) =>
-          entry.type === "FontFacetype" && entry.guid === "font-facetype:font-1",
+          entry.type === "FontFacetype" &&
+          entry.guid === "font-facetype:font-1",
       ),
     ).toBe(true);
   });
@@ -560,12 +638,15 @@ describe("collectAndExportGame", () => {
       sceneByGuid: () => scene,
       graphByGuid: () => null,
       bytesByGuid: (guid) => {
-        if (guid === "scene-1") return new TextEncoder().encode(JSON.stringify(scene));
+        if (guid === "scene-1")
+          return new TextEncoder().encode(JSON.stringify(scene));
         if (guid === "font-1") return new Uint8Array([1, 2]);
         return null;
       },
-      fontMsdfJsonByGuid: (guid) => (guid === "font-1" ? new Uint8Array([9]) : null),
-      fontMsdfPngByGuid: (guid) => (guid === "font-1" ? new Uint8Array([8]) : null),
+      fontMsdfJsonByGuid: (guid) =>
+        guid === "font-1" ? new Uint8Array([9]) : null,
+      fontMsdfPngByGuid: (guid) =>
+        guid === "font-1" ? new Uint8Array([8]) : null,
       customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
@@ -575,13 +656,15 @@ describe("collectAndExportGame", () => {
     if (!isOk(result)) return;
     expect(
       result.value.manifest.assets.some(
-        (entry) => entry.type === "FontMsdf" && entry.guid === "font-msdf:font-1",
+        (entry) =>
+          entry.type === "FontMsdf" && entry.guid === "font-msdf:font-1",
       ),
     ).toBe(true);
     expect(
       result.value.manifest.assets.some(
         (entry) =>
-          entry.type === "FontMsdfAtlas" && entry.guid === "font-msdf-png:font-1",
+          entry.type === "FontMsdfAtlas" &&
+          entry.guid === "font-msdf-png:font-1",
       ),
     ).toBe(true);
   });
@@ -675,7 +758,8 @@ describe("collectAndExportGame", () => {
       parentOf: () => null,
       sceneByGuid: () => scene,
       graphByGuid: () => null,
-      payloadByGuid: (guid) => (guid === "font-1" ? { family: "Display" } : null),
+      payloadByGuid: (guid) =>
+        guid === "font-1" ? { family: "Display" } : null,
       bytesByGuid: (guid) =>
         guid === "scene-1"
           ? new TextEncoder().encode(JSON.stringify(scene))
@@ -692,7 +776,8 @@ describe("collectAndExportGame", () => {
     expect(result.value.manifest.pixelsPerUnit).toBe(64);
     expect(result.value.manifest.pixelPerfect).toBe(true);
     expect(
-      result.value.manifest.assets.find((entry) => entry.guid === "font-1")?.name,
+      result.value.manifest.assets.find((entry) => entry.guid === "font-1")
+        ?.name,
     ).toBe("Display");
   });
 });
