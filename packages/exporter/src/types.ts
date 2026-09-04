@@ -1,4 +1,8 @@
-import type { RenderProjectSettings, SerializedGraph, SerializedScene } from "@babylonslate/core";
+import type {
+  RenderProjectSettings,
+  SerializedGraph,
+  SerializedScene,
+} from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 
 export type ExportMode = "packed" | "loose";
@@ -26,6 +30,12 @@ export type ExportClosureInput = {
   sceneByGuid: (guid: string) => SerializedScene | null;
   graphByGuid: (guid: string) => SerializedGraph | null;
   payloadByGuid?: (guid: string) => unknown | null;
+};
+
+/** The complete export closure and the assets attributable to each Scene root. */
+export type ExportReachability = {
+  guids: string[];
+  bySceneGuid: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
 export type ExportAssetBytes = {

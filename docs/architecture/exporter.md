@@ -8,16 +8,16 @@ Overlay Play (shared Engine, `registerView`) stays the default. Packaged **itch 
 
 No React, Babylon, or Capacitor. Callers compile graphs and load payloads; the package tree-shakes, packs, and emits files.
 
-| Export | Role |
-| --- | --- |
-| `collectExportClosure` | BFS from `startupSceneGuid` plus GameInstance class; walks scene/graph JSON (including `settings.sceneLayers` and Create Scene Layer pin defaults) and Sprite/Tilemap/SceneLayer payloads; strips `isEditorOnlyAsset`; skips disabled plugin roots |
-| `exportGame` | Default `mode: "packed"`; writes `game.json`, `scripts.js`, packs, player files |
-| `selectPlayerRuntimeFiles` | Havok **or** Rapier wasm/JS matching `physicsWorld`; drops `README.md` / `.keep` |
-| `zipExport` | `fflate` zip with `index.html` at the root (itch). Fixed **local noon 1980-01-01** `mtime` (DOS dates use local getters; UTC midnight fails west of UTC with `date not in range 1980-2099`) |
-| `encodeBabpack` / `decodeBabpack` / `decodeBabpackIndex` | Concatenated asset bytes + JSON index `{ guid, offset, length, hash }` (`BPK1`) |
-| `createHttpPackSource` / `createMemoryPackSource` | Range-first HTTP loader with whole-body fallback; in-memory Preview Build source |
-| `concatenateScripts` / `serializeScriptRegistry` | One `scripts.js` (unminified). Concatenation adds `//# sourceURL` prefixes; ScriptHost evals **per-class** `script.source`, so the registry keeps original `CompileAnchor.line`. |
-| Preview protocol | `previewPackFromFiles` / `filesFromPreviewPack` — transfer a `Map` of files into the iframe; never write a pack into the project tree |
+| Export                                                   | Role                                                                                                                                                                                                                   |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `collectExportClosure` / `collectExportReachability`     | Typed traversal from `startupSceneGuid` plus GameInstance class; the latter also reports each Scene root's reachable assets for deterministic pack assignment; strips `isEditorOnlyAsset`; skips disabled plugin roots |
+| `exportGame`                                             | Default `mode: "packed"`; writes `game.json`, `scripts.js`, packs, player files                                                                                                                                        |
+| `selectPlayerRuntimeFiles`                               | Havok **or** Rapier wasm/JS matching `physicsWorld`; drops `README.md` / `.keep`                                                                                                                                       |
+| `zipExport`                                              | `fflate` zip with `index.html` at the root (itch). Fixed **local noon 1980-01-01** `mtime` (DOS dates use local getters; UTC midnight fails west of UTC with `date not in range 1980-2099`)                            |
+| `encodeBabpack` / `decodeBabpack` / `decodeBabpackIndex` | Concatenated asset bytes + JSON index `{ guid, offset, length, hash }` (`BPK1`)                                                                                                                                        |
+| `createHttpPackSource` / `createMemoryPackSource`        | Range-first HTTP loader with whole-body fallback; in-memory Preview Build source                                                                                                                                       |
+| `concatenateScripts` / `serializeScriptRegistry`         | One `scripts.js` (unminified). Concatenation adds `//# sourceURL` prefixes; ScriptHost evals **per-class** `script.source`, so the registry keeps original `CompileAnchor.line`.                                       |
+| Preview protocol                                         | `previewPackFromFiles` / `filesFromPreviewPack` — transfer a `Map` of files into the iframe; never write a pack into the project tree                                                                                  |
 
 Missing or stale startup scene: `MISSING_STARTUP_SCENE_MESSAGE` (`Set Startup Scene in Project Settings.`).
 
@@ -27,10 +27,11 @@ Not `header.dependencies` alone — scene saves often leave those empty.
 
 1. Apply export-preset `pluginOverrides` (layer 3) **before** the walk so disabled plugin roots are absent.
 2. Seed with `startupSceneGuid` (must be a Scene asset) **and** Project Settings `audioMixerGuid` the same way `gameInstanceClass` is seeded. Pack `occlusionEnabled` and reverb wet/decay/damping scales from Project Settings Audio.
-3. Walk `SerializedScene` actors/components (guids in properties, Mesh/Model `assetGuid`, textures, Font, Class ids) plus scene `gameInstanceClass` **and** the project `gameInstanceClass` when the scene field is empty.
+3. Walk only typed reference fields in `SerializedScene` actors/components (guid fields, Mesh/Model `assetGuid`, textures, Font, Class ids) plus scene `gameInstanceClass` **and** the project `gameInstanceClass` when the scene field is empty. Ordinary authored strings are never searched for GUID text.
 4. Load Class/Graph/Sprite/Tilemap/**SceneLayer** documents; pull asset-typed pin values, `header.dependencies`, payload fields such as sprite `textureGuid` and overlay `2DTexture` / `2DMaterial` / `2DPanel` / `2DText` / `2DRichText` guids (including `[img]` texture guids parsed from markup), and **Scene display names** on Change Scene nodes so leftover `changeScene("Level 2")` graphs still pack that Scene (new graphs store a Scene guid and pack via `enqueueRefs`). SceneLayer overlay actors pack the same closure as a 2D scene. Player `activeScene` still swaps **world** only.
 5. Recurse to a fixed point. Drop EditorUtilityObject / leftover EditorUtilityInterface / PluginSettings / SkyboxCreator (`isEditorOnlyAsset`). Generated skybox face Textures stay in the pack when a scene `SkyboxComponent` references them.
 6. Scene library keys are **asset guids** in both the pack and overlay Play; display names remain aliases for `changescene`.
+7. Reachability is recorded separately for every reachable Scene. Startup-scene dependencies go in `boot.babpack`; a dependency shared only by non-startup scenes is assigned to the lexicographically first reachable Scene guid. This policy is independent of asset registry order.
 
 Release zip compiles Class/Graph with `compileGraphDocumentsForExport` (skips Inspector **Development Only**), then merges `compileAnimGraphScripts` (`AnimGraph:{guid}` / `AnimRule:{guid}:{id}`). Preview Build and a preset with `bundleDebugger: true` keep Development Only nodes.
 
@@ -63,10 +64,10 @@ File-count report: warn 800 / fail 1000 (preset-overridable). Export smoke asser
 
 ## Export Game vs Export Project
 
-| Action | Output |
-| --- | --- |
+| Action                             | Output                                                                                                                                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Export Game** (Project Settings) | Itch zip of the packaged player. Failures surface as **Could not build the zip. Try again.** when the cause is a zip/DOS-date error; other messages stay readable. |
-| **Export Project** | `.zip` backup of the project directory tree |
+| **Export Project**                 | `.zip` backup of the project directory tree                                                                                                                        |
 
 Preview packs are in-memory only. Capacitor and Electron host the **editor**, not shipped games.
 

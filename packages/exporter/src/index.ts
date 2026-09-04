@@ -26,12 +26,16 @@ export {
   fontGuidFromFontMsdfExport,
   fontGuidFromFontMsdfAtlasExport,
 } from "./constants";
-export { collectExportClosure } from "./closure";
+export { collectExportClosure, collectExportReachability } from "./closure";
 export { selectPlayerRuntimeFiles } from "./player-files";
 export { encodeBabpack, decodeBabpack, decodeBabpackIndex } from "./babpack";
 export { createHttpPackSource, createMemoryPackSource } from "./pack-source";
 export type { PackSource } from "./pack-source";
-export { concatenateScripts, serializeScriptRegistry, parseScriptRegistry } from "./scripts";
+export {
+  concatenateScripts,
+  serializeScriptRegistry,
+  parseScriptRegistry,
+} from "./scripts";
 export {
   PREVIEW_PACK_MESSAGE,
   PREVIEW_REQUEST_PACK_MESSAGE,
@@ -67,6 +71,7 @@ export type {
   ExportMode,
   ExportIndexedAsset,
   ExportClosureInput,
+  ExportReachability,
   ExportAssetBytes,
   ExportGameOptions,
   ExportArtifact,

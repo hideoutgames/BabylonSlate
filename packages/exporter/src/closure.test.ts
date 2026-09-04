@@ -7,12 +7,13 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { collectExportClosure } from "./closure";
+import { collectExportClosure, collectExportReachability } from "./closure";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type { ExportIndexedAsset } from "./types";
 
 function asset(
-  partial: Partial<ExportIndexedAsset> & Pick<ExportIndexedAsset, "guid" | "type" | "name">,
+  partial: Partial<ExportIndexedAsset> &
+    Pick<ExportIndexedAsset, "guid" | "type" | "name">,
 ): ExportIndexedAsset {
   return {
     dependencies: [],
@@ -23,6 +24,95 @@ function asset(
 }
 
 describe("collectExportClosure", () => {
+  it("reports per-scene reachability with deterministic shared dependency ownership inputs", () => {
+    const assets = [
+      asset({ guid: "scene-start", type: "Scene", name: "Start" }),
+      asset({ guid: "scene-z", type: "Scene", name: "Zed" }),
+      asset({ guid: "scene-a", type: "Scene", name: "Alpha" }),
+      asset({ guid: "boot-only", type: "Texture", name: "Boot" }),
+      asset({ guid: "shared", type: "Texture", name: "Shared" }),
+    ];
+    const scenes: Record<string, SerializedScene> = {
+      "scene-start": {
+        ...createDefaultScene(),
+        settings: {
+          ...createDefaultScene().settings,
+          environmentTextureGuid: "boot-only",
+          sceneLayers: [
+            { assetGuid: "scene-z", zOrder: 0, enabled: true },
+            { assetGuid: "scene-a", zOrder: 1, enabled: true },
+          ],
+        },
+      },
+      "scene-z": {
+        ...createDefaultScene(),
+        settings: {
+          ...createDefaultScene().settings,
+          environmentTextureGuid: "shared",
+        },
+      },
+      "scene-a": {
+        ...createDefaultScene(),
+        settings: {
+          ...createDefaultScene().settings,
+          environmentTextureGuid: "shared",
+        },
+      },
+    };
+    const run = (registry: ExportIndexedAsset[]) =>
+      collectExportReachability({
+        startupSceneGuid: "scene-start",
+        assets: registry,
+        pluginEnabledGuids: new Set(),
+        parentOf: () => null,
+        sceneByGuid: (guid) => scenes[guid] ?? null,
+        graphByGuid: () => null,
+      });
+    const first = run(assets);
+    const reversed = run([...assets].reverse());
+    expect(first.ok).toBe(true);
+    expect(reversed.ok).toBe(true);
+    if (!first.ok || !reversed.ok) return;
+    const stable = (result: typeof first.value) =>
+      [...result.bySceneGuid].map(([guid, refs]) => [guid, [...refs].sort()]);
+    expect(stable(first.value)).toEqual(stable(reversed.value));
+    expect(first.value.bySceneGuid.get("scene-start")).toEqual(
+      new Set(["scene-start", "boot-only"]),
+    );
+    expect(first.value.bySceneGuid.get("scene-a")).toEqual(
+      new Set(["scene-a", "shared"]),
+    );
+    expect(first.value.bySceneGuid.get("scene-z")).toEqual(
+      new Set(["scene-z", "shared"]),
+    );
+  });
+
+  it("does not infer dependencies from GUID text in ordinary strings", () => {
+    const scene = createDefaultScene();
+    scene.actors = [
+      createActor("actor", "Narrator", {
+        components: [
+          {
+            id: "text",
+            classId: "2DTextComponent",
+            properties: { text: "The secret id is unused-guid." },
+          },
+        ],
+      }),
+    ];
+    const result = collectExportClosure({
+      startupSceneGuid: "scene",
+      assets: [
+        asset({ guid: "scene", type: "Scene", name: "Main" }),
+        asset({ guid: "unused-guid", type: "Texture", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+    });
+    expect(result).toEqual({ ok: true, value: ["scene"] });
+  });
   it("fails when startupSceneGuid is missing", () => {
     const result = collectExportClosure({
       startupSceneGuid: null,
@@ -61,7 +151,10 @@ describe("collectExportClosure", () => {
         createActor("hero", "Hero", {
           classId: "Hero",
           components: [
-            { ...createMeshComponent("mesh-1", "box"), properties: { meshKind: "box", assetGuid: "model-1" } },
+            {
+              ...createMeshComponent("mesh-1", "box"),
+              properties: { meshKind: "box", assetGuid: "model-1" },
+            },
             {
               id: "sprite-1",
               classId: "SpriteComponent",
@@ -75,8 +168,18 @@ describe("collectExportClosure", () => {
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({ guid: "class-game", type: "Class", name: "MyGame", parentClass: "GameInstance" }),
-        asset({ guid: "class-hero", type: "Class", name: "Hero", parentClass: "Actor" }),
+        asset({
+          guid: "class-game",
+          type: "Class",
+          name: "MyGame",
+          parentClass: "GameInstance",
+        }),
+        asset({
+          guid: "class-hero",
+          type: "Class",
+          name: "Hero",
+          parentClass: "Actor",
+        }),
         asset({ guid: "ibl-1", type: "Texture", name: "IBL" }),
         asset({ guid: "model-1", type: "Model", name: "HeroMesh" }),
         asset({ guid: "sprite-1", type: "Sprite", name: "HeroSprite" }),
@@ -102,7 +205,14 @@ describe("collectExportClosure", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.sort()).toEqual(
-      ["class-game", "class-hero", "ibl-1", "model-1", "scene-1", "sprite-1"].sort(),
+      [
+        "class-game",
+        "class-hero",
+        "ibl-1",
+        "model-1",
+        "scene-1",
+        "sprite-1",
+      ].sort(),
     );
     expect(result.value).not.toContain("unused");
     expect(result.value).not.toContain("euo-1");
@@ -127,7 +237,12 @@ describe("collectExportClosure", () => {
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({ guid: "sprite-1", type: "Sprite", name: "Hero", dependencies: [] }),
+        asset({
+          guid: "sprite-1",
+          type: "Sprite",
+          name: "Hero",
+          dependencies: [],
+        }),
         asset({ guid: "tex-atlas", type: "Texture", name: "Atlas" }),
         asset({ guid: "unused-tex", type: "Texture", name: "Unused" }),
       ],
@@ -309,9 +424,7 @@ describe("collectExportClosure", () => {
 
   it("omits disabled plugin roots", () => {
     const scene = createDefaultScene();
-    scene.actors = [
-      createActor("a", "Starter", { classId: "StarterActor" }),
-    ];
+    scene.actors = [createActor("a", "Starter", { classId: "StarterActor" })];
     const result = collectExportClosure({
       startupSceneGuid: "scene-1",
       assets: [
@@ -336,9 +449,7 @@ describe("collectExportClosure", () => {
 
   it("keeps enabled plugin assets in the closure", () => {
     const scene = createDefaultScene();
-    scene.actors = [
-      createActor("a", "Starter", { classId: "StarterActor" }),
-    ];
+    scene.actors = [createActor("a", "Starter", { classId: "StarterActor" })];
     const result = collectExportClosure({
       startupSceneGuid: "scene-1",
       assets: [
@@ -358,7 +469,9 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(expect.arrayContaining(["scene-1", "plug-class"]));
+    expect(result.value).toEqual(
+      expect.arrayContaining(["scene-1", "plug-class"]),
+    );
   });
 
   it("strips PluginSettings and EditorUtilityInterface types", () => {
@@ -366,7 +479,12 @@ describe("collectExportClosure", () => {
     const result = collectExportClosure({
       startupSceneGuid: "scene-1",
       assets: [
-        asset({ guid: "scene-1", type: "Scene", name: "Main", dependencies: ["plug-settings", "eui-1"] }),
+        asset({
+          guid: "scene-1",
+          type: "Scene",
+          name: "Main",
+          dependencies: ["plug-settings", "eui-1"],
+        }),
         asset({ guid: "plug-settings", type: "PluginSettings", name: "Tools" }),
         asset({ guid: "eui-1", type: "EditorUtilityInterface", name: "Dock" }),
       ],
@@ -629,7 +747,9 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(expect.arrayContaining(["scene-1", "class-game"]));
+    expect(result.value).toEqual(
+      expect.arrayContaining(["scene-1", "class-game"]),
+    );
   });
 
   it("includes mesh materials, post-process stack materials, and header dependencies", () => {
@@ -845,7 +965,10 @@ describe("collectExportClosure", () => {
                   },
                   {
                     classId: "2DPanelComponent",
-                    properties: { textureGuid: "tex-panel", materialGuid: "mat-panel" },
+                    properties: {
+                      textureGuid: "tex-panel",
+                      materialGuid: "mat-panel",
+                    },
                   },
                   {
                     classId: "2DRichTextComponent",

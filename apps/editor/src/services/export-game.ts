@@ -1,5 +1,5 @@
 import {
-  collectExportClosure,
+  collectExportReachability,
   exportGame,
   zipExport,
   MISSING_STARTUP_SCENE_MESSAGE,
@@ -124,22 +124,20 @@ function enabledPluginGuids(
   return enabled;
 }
 
-function sceneGuidForAsset(
+function packSceneGuidForAsset(
   guid: string,
   startupSceneGuid: string,
-  assets: readonly ExportIndexedAsset[],
-  sceneByGuid: (guid: string) => SerializedScene | null,
+  reachabilityByScene: ReadonlyMap<string, ReadonlySet<string>>,
 ): string {
-  const asset = assets.find((entry) => entry.guid === guid);
-  if (asset?.type === "Scene") return guid;
-  for (const candidate of assets) {
-    if (candidate.type !== "Scene") continue;
-    const scene = sceneByGuid(candidate.guid);
-    if (!scene) continue;
-    const blob = JSON.stringify(scene);
-    if (blob.includes(guid)) return candidate.guid;
-  }
-  return startupSceneGuid;
+  if (reachabilityByScene.get(startupSceneGuid)?.has(guid))
+    return startupSceneGuid;
+  // Shared non-boot dependencies live with the lexicographically first scene.
+  return (
+    [...reachabilityByScene]
+      .filter(([, guids]) => guids.has(guid))
+      .map(([sceneGuid]) => sceneGuid)
+      .sort()[0] ?? startupSceneGuid
+  );
 }
 
 function decodeJsonPayload(bytes: Uint8Array): unknown {
@@ -214,14 +212,15 @@ export async function collectAndExportGame(
   params: CollectExportGameParams,
 ): Promise<Result<ExportArtifact, string>> {
   const preset = params.preset ?? defaultExportPreset();
-  const bundleDebugger = params.previewBuild === true ? true : preset.bundleDebugger;
+  const bundleDebugger =
+    params.previewBuild === true ? true : preset.bundleDebugger;
   const mode = preset.packed === false ? "loose" : "packed";
   const pluginEnabledGuids = enabledPluginGuids(
     params.plugins,
     params.projectPluginOverrides,
     preset,
   );
-  const closure = collectExportClosure({
+  const closure = collectExportReachability({
     startupSceneGuid: params.startupSceneGuid,
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
@@ -244,7 +243,7 @@ export async function collectAndExportGame(
   }> = [];
   const animDocs: Array<{ guid: string; path: string; document: unknown }> = [];
   const exportAssets: ExportAssetBytes[] = [];
-  for (const guid of closure.value) {
+  for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset) continue;
     if (asset.type === "Class" || asset.type === "Graph") {
@@ -274,17 +273,22 @@ export async function collectAndExportGame(
       exportAssets.push({
         guid,
         type: asset.type,
-        sceneGuid: sceneGuidForAsset(guid, startup, params.assets, params.sceneByGuid),
+        sceneGuid: packSceneGuidForAsset(
+          guid,
+          startup,
+          closure.value.bySceneGuid,
+        ),
         bytes,
         name:
           asset.type === "Font"
-            ? normalizeFontPayload(params.payloadByGuid?.(guid), asset.name).family
+            ? normalizeFontPayload(params.payloadByGuid?.(guid), asset.name)
+                .family
             : asset.name,
         ...(asset.type === "Texture" && textureSize ? textureSize : {}),
       });
     }
   }
-  for (const guid of closure.value) {
+  for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset || asset.type !== "Scene") continue;
     const nav = params.navmeshByGuid?.(guid);
@@ -298,7 +302,7 @@ export async function collectAndExportGame(
       name: `${asset.name} NavMesh`,
     });
   }
-  for (const guid of closure.value) {
+  for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset || asset.type !== "Scene") continue;
     const field = params.audioReverbByGuid?.(guid);
@@ -312,7 +316,7 @@ export async function collectAndExportGame(
       name: `${asset.name} AudioReverb`,
     });
   }
-  for (const guid of closure.value) {
+  for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset || asset.type !== "Font") continue;
     const facetype = params.fontFacetypeBytesByGuid?.(guid);
@@ -320,23 +324,27 @@ export async function collectAndExportGame(
     exportAssets.push({
       guid: fontFacetypeExportGuid(guid),
       type: FONT_FACETYPE_EXPORT_TYPE,
-      sceneGuid: sceneGuidForAsset(guid, startup, params.assets, params.sceneByGuid),
+      sceneGuid: packSceneGuidForAsset(
+        guid,
+        startup,
+        closure.value.bySceneGuid,
+      ),
       bytes: facetype,
       encoding: "bytes",
       name: `${asset.name} Facetype`,
     });
   }
-  for (const guid of closure.value) {
+  for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset || asset.type !== "Font") continue;
     const json = params.fontMsdfJsonByGuid?.(guid);
     const png = params.fontMsdfPngByGuid?.(guid);
-    if (!json || json.byteLength === 0 || !png || png.byteLength === 0) continue;
-    const sceneGuid = sceneGuidForAsset(
+    if (!json || json.byteLength === 0 || !png || png.byteLength === 0)
+      continue;
+    const sceneGuid = packSceneGuidForAsset(
       guid,
       startup,
-      params.assets,
-      params.sceneByGuid,
+      closure.value.bySceneGuid,
     );
     exportAssets.push({
       guid: fontMsdfExportGuid(guid),
@@ -395,7 +403,7 @@ export async function collectAndExportGame(
     packed.value.warnings.push(
       ...packedMaterialTextureWarnings(
         params.assets,
-        new Set(closure.value),
+        new Set(closure.value.guids),
         exportAssets,
         params.payloadByGuid,
       ),
