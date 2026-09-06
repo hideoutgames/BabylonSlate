@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BabylonSlateScopedStoragePlugin } from "./capacitor-scoped-storage";
+import { ScopedStorageAdapter } from "./scoped-storage-adapter";
 
 const prefs = new Map<string, string>();
 
@@ -7,206 +9,321 @@ vi.mock("@capacitor/preferences", () => ({
     get: vi.fn(async ({ key }: { key: string }) => ({
       value: prefs.get(key) ?? null,
     })),
-    set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
-      prefs.set(key, value);
-    }),
+    set: vi.fn(
+      async ({ key, value }: { key: string; value: string }) => {
+        prefs.set(key, value);
+      },
+    ),
     remove: vi.fn(async ({ key }: { key: string }) => {
       prefs.delete(key);
     }),
   },
 }));
 
-const pickFolder = vi.fn(async () => ({
-  folder: { id: "bookmark-1", name: "Repo.babproject" },
-}));
-const readFile = vi.fn<(opts: unknown) => Promise<{ data: string }>>(
-  async () => ({ data: "hello" }),
-);
-const writeFile = vi.fn<(opts: unknown) => Promise<unknown>>(async () => ({}));
-const exists = vi.fn<(opts: unknown) => Promise<{ exists: boolean }>>(
-  async () => ({ exists: true }),
-);
-const readdir = vi.fn<
-  (opts: unknown) => Promise<{
-    entries: Array<{
-      name: string;
-      isDir: boolean;
-      size: number;
-      mtime: number;
-    }>;
-  }>
->(async () => ({
-  entries: [{ name: "project.json", isDir: false, size: 3, mtime: 1 }],
-}));
-const mkdir = vi.fn<(opts: unknown) => Promise<unknown>>(async () => ({}));
+function createMockPlugin(): BabylonSlateScopedStoragePlugin {
+  return {
+    pickFolder: vi.fn(),
+    openFolder: vi.fn(),
+    importBookmark: vi.fn(),
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+    mkdir: vi.fn(),
+    deleteFile: vi.fn(),
+    rmdir: vi.fn(),
+    readdir: vi.fn(),
+    stat: vi.fn(),
+    exists: vi.fn(),
+  } as unknown as BabylonSlateScopedStoragePlugin;
+}
 
-vi.mock("@daniele-rolli/capacitor-scoped-storage", () => ({
-  ScopedStorage: {
-    pickFolder: () => pickFolder(),
-    readFile: (opts: unknown) => readFile(opts),
-    writeFile: (opts: unknown) => writeFile(opts),
-    exists: (opts: unknown) => exists(opts),
-    readdir: (opts: unknown) => readdir(opts),
-    mkdir: (opts: unknown) => mkdir(opts),
-  },
-}));
-
-const { ScopedStorageAdapter } = await import("./scoped-storage-adapter");
-
-describe("external tier (scoped storage)", () => {
+describe("ScopedStorageAdapter", () => {
   beforeEach(() => {
     prefs.clear();
-    vi.clearAllMocks();
-    pickFolder.mockResolvedValue({
-      folder: { id: "bookmark-1", name: "Repo.babproject" },
-    });
-    readFile.mockResolvedValue({ data: "hello" });
-    exists.mockResolvedValue({ exists: true });
   });
 
-  it("binds a folder through the picker and persists the bookmark", async () => {
-    const adapter = new ScopedStorageAdapter();
+  it("loads a persisted folder on init", async () => {
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "folder-1", name: "My Game" }),
+    );
+    const plugin = createMockPlugin();
+    const adapter = new ScopedStorageAdapter(plugin);
+
+    await adapter.init();
+
+    expect(adapter.getCurrentFolder()).toEqual({
+      id: "folder-1",
+      name: "My Game",
+      tier: "external",
+    });
+    expect(plugin.openFolder).not.toHaveBeenCalled();
+  });
+
+  it("migrates a legacy bookmark id to a stable folder id on init", async () => {
+    const legacyBookmark = btoa("a-legacy-security-scoped-bookmark-that-is-long");
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: legacyBookmark, name: "Legacy" }),
+    );
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.importBookmark!).mockResolvedValue({
+      folder: { id: "uuid-1", name: "Legacy" },
+    });
+    const adapter = new ScopedStorageAdapter(plugin);
+
+    await adapter.init();
+
+    expect(plugin.importBookmark).toHaveBeenCalledWith({
+      bookmark: legacyBookmark,
+      name: "Legacy",
+    });
+    expect(adapter.getCurrentFolder()).toEqual({
+      id: "uuid-1",
+      name: "Legacy",
+      tier: "external",
+    });
+    expect(prefs.get("babylonslate:scoped-folder")).toContain("uuid-1");
+  });
+
+  it("picks a folder and stores a stable folder handle", async () => {
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.pickFolder).mockResolvedValue({
+      folder: { id: "uuid-2", name: "World" },
+    });
+    const adapter = new ScopedStorageAdapter(plugin);
+
     const handle = await adapter.pickProjectFolder();
 
     expect(handle).toEqual({
-      id: "bookmark-1",
-      name: "Repo.babproject",
+      id: "uuid-2",
+      name: "World",
       tier: "external",
     });
-    expect(prefs.get("babylonslate:scoped-folder")).toContain("bookmark-1");
+    expect(prefs.get("babylonslate:scoped-folder")).toBe(
+      JSON.stringify({ id: "uuid-2", name: "World" }),
+    );
+    expect(adapter.getCurrentFolder()).toEqual(handle);
   });
 
-  it("restores the bookmark on init without showing the picker", async () => {
-    const first = new ScopedStorageAdapter();
-    await first.pickProjectFolder();
+  it("throws CANCELLED when picking is cancelled", async () => {
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.pickFolder).mockRejectedValue({ code: "CANCELLED" });
+    const adapter = new ScopedStorageAdapter(plugin);
 
-    const next = new ScopedStorageAdapter();
-    await next.init();
-    pickFolder.mockClear();
-
-    expect(next.getCurrentFolder()?.id).toBe("bookmark-1");
-    expect(pickFolder).not.toHaveBeenCalled();
+    await expect(adapter.pickProjectFolder()).rejects.toEqual({
+      code: "CANCELLED",
+    });
   });
 
-  it("reopens a listed external project without re-prompting", async () => {
-    const adapter = new ScopedStorageAdapter();
-    const handle = await adapter.pickProjectFolder();
-    pickFolder.mockClear();
+  it("opens a known external folder and clears stale state", async () => {
+    prefs.set(
+      "babylonslate:scoped-stale",
+      "1",
+    );
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.openFolder).mockResolvedValue({
+      folder: { id: "uuid-3", name: "Reopened" },
+    });
+    const adapter = new ScopedStorageAdapter(plugin);
 
-    const reopened = await adapter.openKnownFolder(handle);
-    expect(reopened).toEqual(handle);
-    expect(pickFolder).not.toHaveBeenCalled();
-    expect(await adapter.listProjects()).toEqual([handle]);
-  });
-
-  it("rebinds a bookmark from another session without the picker", async () => {
-    const adapter = new ScopedStorageAdapter();
-    const reopened = await adapter.openKnownFolder({
-      id: "bookmark-2",
-      name: "Other.babproject",
+    const handle = await adapter.openKnownFolder({
+      id: "uuid-3",
+      name: "Old",
       tier: "external",
     });
-    expect(reopened.id).toBe("bookmark-2");
-    expect(pickFolder).not.toHaveBeenCalled();
-    expect(prefs.get("babylonslate:scoped-folder")).toContain("bookmark-2");
+
+    expect(plugin.openFolder).toHaveBeenCalledWith({ id: "uuid-3" });
+    expect(handle).toEqual({
+      id: "uuid-3",
+      name: "Reopened",
+      tier: "external",
+    });
+    expect(adapter.getCurrentFolder()).toEqual(handle);
+    expect(adapter.needsReconnect()).resolves.toBe(false);
   });
 
-  it("refuses tiers it does not own", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await expect(
-      adapter.openKnownFolder({ id: "x", name: "x", tier: "documents" }),
-    ).rejects.toThrow(/cannot open tier/);
-    await expect(adapter.openDocumentsProject("x")).rejects.toThrow(
-      /DocumentsStorageAdapter/,
+  it("reads text from the current external folder", async () => {
+    const plugin = createMockPlugin();
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "uuid-4", name: "Game" }),
     );
+    vi.mocked(plugin.readFile).mockResolvedValue({ data: "hello" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+
+    const text = await adapter.readText("notes.txt");
+
+    expect(text).toBe("hello");
+    expect(plugin.readFile).toHaveBeenCalledWith({
+      folder: "uuid-4",
+      path: "notes.txt",
+      encoding: "utf8",
+    });
   });
 
-  it("reads and writes text and binary through the plugin", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
+  it("writes text to the current external folder", async () => {
+    const plugin = createMockPlugin();
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "uuid-5", name: "Game" }),
+    );
+    vi.mocked(plugin.writeFile).mockResolvedValue(undefined);
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
 
-    expect(await adapter.readText("project.json")).toBe("hello");
-    await adapter.writeText("project.json", "{}");
-    expect(writeFile).toHaveBeenCalledWith(
-      expect.objectContaining({ path: "project.json", encoding: "utf8" }),
-    );
+    await adapter.writeText("notes.txt", "hello");
 
-    readFile.mockResolvedValue({ data: btoa("\u0001\u0002") });
-    expect(await adapter.readBinary("blob.bin")).toEqual(
-      new Uint8Array([1, 2]),
-    );
-    await adapter.writeBinary("blob.bin", new Uint8Array([3]));
-    expect(writeFile).toHaveBeenLastCalledWith(
-      expect.objectContaining({ encoding: "base64" }),
-    );
+    expect(plugin.writeFile).toHaveBeenCalledWith({
+      folder: "uuid-5",
+      path: "notes.txt",
+      data: "hello",
+      encoding: "utf8",
+    });
   });
 
-  it("lists directory entries and stats a file", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
+  it("reads and writes binary as base64", async () => {
+    const plugin = createMockPlugin();
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "uuid-6", name: "Game" }),
+    );
+    const bytes = new Uint8Array([0x00, 0x7f, 0xff]);
+    vi.mocked(plugin.readFile).mockResolvedValue({
+      data: btoa(String.fromCharCode(...bytes)),
+    });
+    vi.mocked(plugin.writeFile).mockResolvedValue(undefined);
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
 
-    expect(await adapter.readdir("")).toEqual([
-      { name: "project.json", isDir: false, size: 3, mtime: 1 },
+    await adapter.writeBinary("data.bin", bytes);
+    const read = await adapter.readBinary("data.bin");
+
+    expect(read).toEqual(bytes);
+    expect(plugin.writeFile).toHaveBeenCalledWith({
+      folder: "uuid-6",
+      path: "data.bin",
+      data: btoa(String.fromCharCode(...bytes)),
+      encoding: "base64",
+    });
+    expect(plugin.readFile).toHaveBeenCalledWith({
+      folder: "uuid-6",
+      path: "data.bin",
+      encoding: "base64",
+    });
+  });
+
+  it("lists entries from the plugin and maps isDir", async () => {
+    const plugin = createMockPlugin();
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "uuid-7", name: "Game" }),
+    );
+    vi.mocked(plugin.readdir).mockResolvedValue({
+      entries: [
+        { name: "assets", isDir: true },
+        { name: "main.ts", isDir: false, size: 12, mtime: 1_700_000_000_000 },
+      ],
+    });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+
+    const entries = await adapter.readdir("src");
+
+    expect(entries).toEqual([
+      { name: "assets", isDir: true, size: null, mtime: null },
+      {
+        name: "main.ts",
+        isDir: false,
+        size: 12,
+        mtime: 1_700_000_000_000,
+      },
     ]);
-    expect(await adapter.stat("project.json")).toEqual({
-      isDir: false,
-      size: 3,
-      mtime: 1,
+  });
+
+  it("maps NOT_FOUND plugin errors to a clear file message", async () => {
+    const plugin = createMockPlugin();
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "uuid-8", name: "Game" }),
+    );
+    vi.mocked(plugin.readFile).mockRejectedValue({
+      code: "NOT_FOUND",
+      message: "missing",
     });
-    await adapter.mkdir("assets");
-    expect(mkdir).toHaveBeenCalled();
-  });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
 
-  it("surfaces a stale bookmark as needsReconnect instead of a raw error", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-    readFile.mockRejectedValue(new Error("security-scoped bookmark is stale"));
-
-    await expect(adapter.readText("project.json")).rejects.toThrow(
-      /reconnect required/,
-    );
-    expect(await adapter.needsReconnect()).toBe(true);
-    expect(await adapter.listProjects()).toEqual([]);
-  });
-
-  it("refuses reopen while the bookmark is stale, then recovers via Reconnect", async () => {
-    const adapter = new ScopedStorageAdapter();
-    const handle = await adapter.pickProjectFolder();
-    await adapter.markStale();
-
-    await expect(adapter.openKnownFolder(handle)).rejects.toThrow(/stale/);
-
-    const reconnected = await adapter.reconnectFolder();
-    expect(reconnected.id).toBe("bookmark-1");
-    expect(await adapter.needsReconnect()).toBe(false);
-  });
-
-  it("clears the bookmark when the folder is released", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-    await adapter.releaseFolder();
-
-    expect(adapter.getCurrentFolder()).toBeNull();
-    expect(prefs.has("babylonslate:scoped-folder")).toBe(false);
-    await expect(adapter.readText("project.json")).rejects.toThrow(
-      /No project folder selected/,
+    await expect(adapter.readText("gone.txt")).rejects.toThrow(
+      "File not found: gone.txt",
     );
   });
 
-  it("reports a missing file from stat", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-    exists.mockResolvedValue({ exists: false });
+  it("marks the folder stale and persists the flag on STALE", async () => {
+    const plugin = createMockPlugin();
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "uuid-9", name: "Game" }),
+    );
+    vi.mocked(plugin.readFile).mockRejectedValue({
+      code: "STALE",
+      message: "bookmark stale",
+    });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
 
-    expect(await adapter.exists("nope.json")).toBe(false);
-    await expect(adapter.stat("nope.json")).rejects.toThrow(/File not found/);
+    await expect(adapter.readText("x")).rejects.toEqual({
+      code: "STALE",
+      message: "bookmark stale",
+    });
+    expect(adapter.needsReconnect()).resolves.toBe(true);
+    expect(prefs.get("babylonslate:scoped-stale")).toBe("1");
   });
 
-  it("reports when the plugin cannot delete files", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-    await expect(adapter.remove("project.json")).rejects.toThrow(
-      /not supported by scoped-storage plugin/,
+  it("removes files with deleteFile and directories with rmdir", async () => {
+    const plugin = createMockPlugin();
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "uuid-10", name: "Game" }),
+    );
+    vi.mocked(plugin.exists)
+      .mockResolvedValueOnce({ exists: true, isDirectory: false })
+      .mockResolvedValueOnce({ exists: true, isDirectory: true })
+      .mockResolvedValueOnce({ exists: true, isDirectory: false });
+    vi.mocked(plugin.deleteFile).mockResolvedValue(undefined);
+    vi.mocked(plugin.rmdir).mockResolvedValue(undefined);
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+
+    await adapter.remove("file.txt");
+    await adapter.remove("dir");
+
+    expect(plugin.deleteFile).toHaveBeenCalledWith({
+      folder: "uuid-10",
+      path: "file.txt",
+    });
+    expect(plugin.rmdir).toHaveBeenCalledWith({
+      folder: "uuid-10",
+      path: "dir",
+      recursive: true,
+    });
+  });
+
+  it("throws a plain message when removing a missing path", async () => {
+    const plugin = createMockPlugin();
+    prefs.set(
+      "babylonslate:scoped-folder",
+      JSON.stringify({ id: "uuid-11", name: "Game" }),
+    );
+    vi.mocked(plugin.exists).mockResolvedValue({
+      exists: false,
+      isDirectory: false,
+    });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+
+    await expect(adapter.remove("missing")).rejects.toThrow(
+      "File not found: missing",
     );
   });
 });

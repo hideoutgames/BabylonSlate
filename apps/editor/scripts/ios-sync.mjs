@@ -24,41 +24,24 @@ const sync = spawnSync("pnpm", ["exec", "cap", "sync", "ios"], {
   encoding: "utf8",
   stdio: ["inherit", "pipe", "pipe"],
 });
-const syncOutput = `${sync.stdout ?? ""}${sync.stderr ?? ""}`;
-const knownScopedStoragePodMismatch =
-  /No podspec found for [`]DanieleRolliCapacitorScopedStorage[`]/.test(
-    syncOutput,
-  );
-if (sync.status !== 0 && !knownScopedStoragePodMismatch) {
+if (sync.status !== 0) {
+  const syncOutput = `${sync.stdout ?? ""}${sync.stderr ?? ""}`;
   process.stderr.write(syncOutput);
   throw (
     sync.error ?? new Error(`cap sync ios failed with status ${sync.status}`)
   );
 }
-if (syncOutput) {
-  process.stdout.write(sync.stdout ?? "");
-  process.stderr.write(sync.stderr ?? "");
-}
+if (sync.stdout) process.stdout.write(sync.stdout);
+if (sync.stderr) process.stderr.write(sync.stderr);
 
 const config = JSON.parse(await readFile(configPath, "utf8"));
 const packageClassList = new Set(config.packageClassList ?? []);
 packageClassList.add("BabylonSlateSecretsPlugin");
+packageClassList.add("BabylonSlateScopedStoragePlugin");
 config.packageClassList = [...packageClassList];
 await writeFile(configPath, `${JSON.stringify(config, null, "\t")}\n`);
 
 const podfile = await readFile(podfilePath, "utf8");
-// Capacitor derives the pod name from the scoped package name while the
-// plugin's podspec declares CapacitorScopedStorage.
-const repairedPodfile = podfile.replaceAll(
-  "DanieleRolliCapacitorScopedStorage",
-  "CapacitorScopedStorage",
-);
-if (repairedPodfile !== podfile) {
-  await writeFile(podfilePath, repairedPodfile);
-}
-if (knownScopedStoragePodMismatch || repairedPodfile !== podfile) {
-  execFileSync("pod", ["install"], {
-    cwd: fileURLToPath(new URL("../ios/App/", import.meta.url)),
-    stdio: "inherit",
-  });
+if (!podfile.includes("end")) {
+  throw new Error("Podfile appears truncated");
 }

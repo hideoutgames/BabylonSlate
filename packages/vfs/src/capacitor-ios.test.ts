@@ -85,17 +85,15 @@ function podNameForDependency(dependency: string): string {
     "@capacitor/filesystem": "CapacitorFilesystem",
     "@capacitor/preferences": "CapacitorPreferences",
     "@capacitor/status-bar": "CapacitorStatusBar",
-    "@daniele-rolli/capacitor-scoped-storage": "CapacitorScopedStorage",
   };
   return names[dependency] ?? dependency;
 }
 
 describe("Capacitor 8 iOS host", () => {
-  it("keeps the iOS dependencies on Capacitor 8 and scoped-storage 0.1.0", () => {
+  it("keeps the iOS dependencies on Capacitor 8 and drops the community scoped-storage plugin", () => {
     expect(pkg.dependencies["@capacitor/core"]).toMatch(/^\^8/);
-    expect(pkg.dependencies["@daniele-rolli/capacitor-scoped-storage"]).toBe(
-      "^0.1.0",
-    );
+    expect(pkg.dependencies["@daniele-rolli/capacitor-scoped-storage"]).toBeUndefined();
+    expect(editorPkg.dependencies["@daniele-rolli/capacitor-scoped-storage"]).toBeUndefined();
   });
 
   it("matches the resolved Capacitor version and includes every native plugin pod", () => {
@@ -136,12 +134,12 @@ describe("Capacitor 8 iOS host", () => {
     );
     const nativeDependencies = Object.keys(editorPkg.dependencies).filter(
       (name) =>
-        (name.startsWith("@capacitor/") &&
-          name !== "@capacitor/cli" &&
-          name !== "@capacitor/ios") ||
-        name === "@daniele-rolli/capacitor-scoped-storage",
+        name.startsWith("@capacitor/") &&
+        name !== "@capacitor/cli" &&
+        name !== "@capacitor/ios",
     );
-    expect(editorPkg.dependencies.CapacitorScopedStorage).toBeUndefined();
+    expect(podfile).not.toContain("CapacitorScopedStorage");
+    expect(podfileLock).not.toContain("CapacitorScopedStorage");
     for (const dependency of nativeDependencies) {
       expect(editorPkg.dependencies[dependency]).toBeDefined();
       expect(podNames).toContain(podNameForDependency(dependency));
@@ -195,6 +193,9 @@ describe("Capacitor 8 iOS host", () => {
     expect(iosSyncScript).toMatch(
       /packageClassList\.add\("BabylonSlateSecretsPlugin"\)/,
     );
+    expect(iosSyncScript).toMatch(
+      /packageClassList\.add\("BabylonSlateScopedStoragePlugin"\)/,
+    );
     expect(editorPkg.scripts["ios:sync"]).toBe("node scripts/ios-sync.mjs");
     expect(iosSyncScript).toMatch(/"cap",\s*"sync",\s*"ios"/s);
     expect(editorPkg.scripts["ios:build"]).toContain(
@@ -203,6 +204,10 @@ describe("Capacitor 8 iOS host", () => {
     expect(pbxproj).toMatch(/BabylonSlateSecretsPlugin\.swift in Sources/);
     expect(pbxproj).toMatch(
       /BabylonSlateSecretsPlugin\.swift \*\/ = \{isa = PBXFileReference/,
+    );
+    expect(pbxproj).toMatch(/BabylonSlateScopedStoragePlugin\.swift in Sources/);
+    expect(pbxproj).toMatch(
+      /BabylonSlateScopedStoragePlugin\.swift \*\/ = \{isa = PBXFileReference/,
     );
     expect(pbxproj).not.toContain("CODE_SIGN_IDENTITY");
 
