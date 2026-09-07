@@ -43,7 +43,7 @@ describe("Attach to Bone scripting", () => {
     try {
       await runtime.loadScripts([{
         assetGuid: "held-item", classId: "HeldItem", anchors: [],
-        entryPoints: [{ exportName: "onBeginPlay", event: "beginPlay", nodeId: "begin" }],
+        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
         source: `export function onBeginPlay(ctx) {
           const parent = ctx.getActorOfClass("Character");
           const dead = ctx.spawnActor("Dead");
