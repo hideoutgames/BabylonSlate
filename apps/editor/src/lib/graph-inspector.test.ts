@@ -131,6 +131,16 @@ describe("pinsFromNodeData", () => {
 });
 
 describe("inspectorLiteralPinDefaults", () => {
+  it("H25: editing a Title Case pin updates its existing canonical default", () => {
+    const pins = [pin("in", "In", "in", FLOAT)];
+    let data: Record<string, unknown> = { __pins: pins, "default:in": 0 };
+    const rows = pinDefaultPropertyRows(inspectorLiteralPinDefaults({ id: "literal", data }, []), (patch) => { data = { ...data, ...patch }; });
+    const row = rows[0]!;
+    if (row.kind !== "number") throw new Error("Expected Float input");
+    row.onChange(42);
+    expect(inspectorLiteralPinDefaults({ id: "literal", data }, [])[0]!.value).toBe(42);
+    expect(data["default:in"]).toBe(42);
+  });
   it("hides defaults for connected applicable inputs", () => {
     const pins = [
       pin("a", "a", "in", FLOAT),

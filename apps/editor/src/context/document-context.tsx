@@ -80,6 +80,7 @@ import {
   DocumentService,
   type OpenDocument,
 } from "../services/document-service";
+import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
 import { ProjectService, type PluginImportResult } from "../services/project-service";
 import type { GitConfigPrefill } from "@babylonslate/source-control";
 import {
@@ -766,6 +767,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setDockWindowTick((v) => v + 1);
   }, []);
   const documentService = documentServiceRef.current;
+  useEffect(() => attachEditGestureBoundaries(() => {
+    const id = documentService.getState().activeDocumentId;
+    if (id) editSessionRef.current.getStack(id).endGesture();
+  }), [documentService]);
   const collectGraphTypeSchemas = useCallback(() => {
     return typeSchemasFromGraphAssets(
       collectGraphTypeAssets({
