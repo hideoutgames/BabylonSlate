@@ -58,7 +58,10 @@ export const docsSidebar: SidebarItem[] = [
   {
     text: "Contributing",
     collapsed: false,
-    items: [{ text: "Issue tracker", link: "/agents/issue-tracker" }],
+    items: [
+      { text: "Issue tracker", link: "/agents/issue-tracker" },
+      { text: "Agent instructions", link: "/agents/instructions" },
+    ],
   },
 ];
 

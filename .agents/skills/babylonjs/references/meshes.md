@@ -221,7 +221,7 @@ const merged = Mesh.MergeMeshes(
 );
 ```
 
-For composing many primitives into a reusable **parametric template** (a shuttle, a chassis, a lipped post — anything that varies by size and repeats hundreds to millions of times), see **[parametric-factories.md](parametric-factories.md)**. It covers PROPORTIONS tables, `Dims`, shared material factories, `ExtrudePolygon` for non-box cross-sections, template caching, and thin-instance templates.
+For procedural geometry techniques, see [procedural-parametric-modeling.md](procedural-parametric-modeling.md). Apply the repository artwork policy: these techniques are available for engine runtime primitives and product features, not decorative art assets.
 
 ## Picking & Raycasting
 

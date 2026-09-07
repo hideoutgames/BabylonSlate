@@ -175,13 +175,7 @@ Operating model (engineplan §16.1):
 
 ## Subagent model allowlist
 
-When a parent agent launches Task / subagents, the model is a **hard allowlist**, not a preference:
-
-- **Allowed:** omit `model` (inherit parent); **Composer 2.5** (`composer-2.5`); **Grok 4.5** or **Grok 4.6** at **low, medium, high, or extra-high** (e.g. `cursor-grok-4.5-high`). These are equal options.
-- **Forbidden:** Fast variants (`composer-2.5-fast`, `cursor-grok-4.5-high-fast`, `cursor-grok-4.6-high-fast`, or any other `*-fast` slug); Claude (Sonnet, Opus, Fable, Haiku); GPT; Gemini; and any other family. Do not pass those slugs even if the Task tool lists them.
-- Omitting `model` is allowed. Do not require an explicit slug on every Task call.
-- Honor a different model only if the human user explicitly names it in this conversation. A parent agent must not pick Sonnet or any other forbidden family because a task “would benefit.”
-- See [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (Subagent models).
+Follow the hard [subagent model allowlist](../../.agents/rules/agent-workflow.md#subagent-models). Inherit the parent model by default. The canonical rule preserves the permitted families, effort levels, forbidden explicit selections, and user override; do not maintain a second allowlist here.
 
 ## No AI-generated artwork
 
@@ -190,18 +184,18 @@ Agents must never create visual or spatial media with AI (images, video, icons, 
 - **Forbidden:** `GenerateImage` (and equivalents); invented PNG/SVG/WebP/MP4/GLB (and similar) as product or placeholder art.
 - **Allowed:** Lucide / project `iconLibrary`; existing `engine-logos/` and `public/branding/` copies; engine primitives (`CreateBox`, debug overlays) as product features; solid-color test fixtures; captures of the real running app.
 - If artwork is missing, stop and ask a human. Do not generate a stand-in.
-- Rule: [.cursor/rules/no-ai-artwork.mdc](../../.cursor/rules/no-ai-artwork.mdc).
+- Rule: [.agents/rules/no-ai-artwork.md](../../.agents/rules/no-ai-artwork.md).
 
 ## Investigate skill
 
-Read-only deep investigation of the repo from the user's prompt: [`.cursor/skills/investigate/SKILL.md`](../../.cursor/skills/investigate/SKILL.md). No code changes. The parent agent keeps investigation context and dispatches more `explore` sub-agents as the scope grows. Distinct from [ask](../../.cursor/skills/ask/SKILL.md) (short Q&A).
+Read-only deep investigation of the repo from the user's prompt: [`.agents/skills/investigate/SKILL.md`](../../.agents/skills/investigate/SKILL.md). No code changes. The parent keeps investigation context and delegates read-only slices when available and authorized, or performs sequential passes. Distinct from [ask](../../.agents/skills/ask/SKILL.md) (short Q&A). Explicit planning requests may produce a read-only plan.
 
 ## BabylonJS skill
 
-Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work. The game HUD / UserInterface system is **removed from the engine**. Do **not** re-add `@babylonslate/ui-runtime`, UserInterface assets, WidgetComponent, `ui.*` nodes, Interface-domain materials, or Play/player Babylon GUI apply.
+Agents must read [`.agents/skills/babylonjs/SKILL.md`](../../.agents/skills/babylonjs/SKILL.md) before engine or scene work. The game HUD / UserInterface system is **removed from the engine**. Do **not** re-add `@babylonslate/ui-runtime`, UserInterface assets, WidgetComponent, `ui.*` nodes, Interface-domain materials, or Play/player Babylon GUI apply.
 
 - React editor chrome (Dockview, shadcn, editor-kit) still uses the editor-ui-components and shadcn skills.
-- Rule: [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (BabylonJS).
+- Rule: [.agents/rules/agent-workflow.md](../../.agents/rules/agent-workflow.md) (BabylonJS).
 
 ## P1 slice ownership
 

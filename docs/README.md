@@ -4,12 +4,13 @@ Live site: **[https://hideoutgames.github.io/BabylonSlate/docs/](https://hideout
 
 Local preview: `pnpm docs:dev`.
 
-When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/sidebar.ts`](../apps/docs/src/sidebar.ts) in the same change (see [`.cursor/rules/docs-site.mdc`](../.cursor/rules/docs-site.mdc)). `docs/README.md` and `docs/index.md` are exempt.
+When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/sidebar.ts`](../apps/docs/src/sidebar.ts) in the same change (see [`.agents/rules/docs-site.md`](../.agents/rules/docs-site.md)). `docs/README.md` and `docs/index.md` are exempt.
 
 | Document | Purpose |
 | --- | --- |
 | [engineplan.md](engineplan.md) | Authoritative architecture, feature spec, roadmap, and delivery checklist |
 | [CODING_STANDARDS.md](CODING_STANDARDS.md) | Coding conventions |
+| [agents/instructions.md](agents/instructions.md) | Portable agent rules, skills, compatibility, and maintenance |
 | [design/perf-budget.md](design/perf-budget.md) | A16 iPad performance budget and render rules |
 | [design/gestures.md](design/gestures.md) | Touch and gesture design |
 | [architecture/](architecture/) | Package and subsystem notes |

@@ -21,7 +21,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 
 ## Babylon.js
 
-- Engine and scene work follows the BabylonJS skill. Agent rule: [`.cursor/rules/agent-workflow.mdc`](../.cursor/rules/agent-workflow.mdc).
+- Engine and scene work follows the BabylonJS skill. Agent rule: [`.agents/rules/agent-workflow.md`](../.agents/rules/agent-workflow.md).
 - React editor chrome (Dockview, shadcn, `@babylonslate/ui`, editor-kit) is not Babylon GUI; use the editor-ui-components and shadcn skills for that.
 
 ## React / editor
@@ -30,7 +30,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 - Use `@babylonslate/ui` and semantic tokens (`bg-background`, `text-muted-foreground`, `text-primary`, `bg-node-event`) — no raw hex colors in app code.
 - Compose forms from `Field` + shadcn inputs (`Input`, `Select`, `Switch`, `Checkbox`) — no raw `<input>`, `<select>`, or `<textarea>` with hand-rolled Tailwind in `apps/editor/src`. Inventory: [architecture/components.md](architecture/components.md).
 - Use `@babylonslate/editor-kit` panel composites (`PanelFrame`, `ToolbarStrip`) for docked panel chrome.
-- New asset editor tabs are DockView documents (`DockviewShell` + `window-catalog.ts`) so panels resize, dock together, and appear in the toolbar **Windows** menu. Do not use shadcn `Tabs` or a new `AssetDocumentWorkspace` page as the document shell. Agent rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../.cursor/rules/dockview-editor-tabs.mdc).
+- New asset editor tabs are DockView documents (`DockviewShell` + `window-catalog.ts`) so panels resize, dock together, and appear in the toolbar **Windows** menu. Do not use shadcn `Tabs` or a new `AssetDocumentWorkspace` page as the document shell. Agent rule: [`.agents/rules/dockview-editor-tabs.md`](../.agents/rules/dockview-editor-tabs.md).
 - Palette and token roles: [architecture/theming.md](architecture/theming.md). Edit tokens only in `packages/ui/src/styles/globals.css`. `--primary` is ink; saturated pin/node/axis/success tokens are the chromatic cues.
 - Use `flex` + `gap-*` for spacing, not `space-y-*`.
 - Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`. Form `input` / `textarea` / `contenteditable` restore selection in `globals.css`.
@@ -42,7 +42,7 @@ User-facing Event names, Details labels, node titles, pin labels, and enum optio
 
 - Format with `humanizePropertyLabel`, `formatEventMemberName`, and `formatEventTitle` in `@babylonslate/editor-kit`.
 - Code identifiers stay unchanged (`flow.event.beginPlay`, `meshKind`, `onBeginPlay`, pin `id`s).
-- Agent rule: [`.cursor/rules/display-names.mdc`](../.cursor/rules/display-names.mdc).
+- Agent rule: [`.agents/rules/display-names.md`](../.agents/rules/display-names.md).
 
 ## Performance (iPad baseline)
 
@@ -56,13 +56,13 @@ See [design/perf-budget.md](design/perf-budget.md). In particular:
 
 - Behaviour changes need tests in the owning package.
 - Golden files for byte-exact surfaces (containers, compiler output).
-- TDD for new pure logic; see `.cursor/skills/test-driven-development/SKILL.md`.
+- TDD for new pure logic; see `.agents/skills/test-driven-development/SKILL.md`.
 - Per-package coverage is gated at 60%. Add tests or split out the untestable part with a documented exclusion — never lower a threshold to go green.
 - Read [architecture/testing.md](architecture/testing.md) before writing DOM or gesture tests: jsdom lacks `PointerEvent` and `ResizeObserver`, which has already caused tests that passed without asserting anything.
 
 ## Artwork and media
 
-Never AI-generate artwork, videos, icons, 3D models, or similar media. Reuse Lucide / the project `iconLibrary` and existing `engine-logos/` branding. Capture the real running app when a screenshot or recording is required. Agent rule: [`.cursor/rules/no-ai-artwork.mdc`](../.cursor/rules/no-ai-artwork.mdc).
+Never AI-generate artwork, videos, icons, 3D models, or similar media. Reuse Lucide / the project `iconLibrary` and existing `engine-logos/` branding. Capture the real running app when a screenshot or recording is required. Agent rule: [`.agents/rules/no-ai-artwork.md`](../.agents/rules/no-ai-artwork.md).
 
 ## Git / PRs
 
