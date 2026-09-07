@@ -362,6 +362,7 @@ class InProcessRuntime implements RuntimeDriver {
   private running = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
+  private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
   private nextUnusedSlot = 0;
   private _snapshotGeneration = 0;
@@ -3082,8 +3083,13 @@ class InProcessRuntime implements RuntimeDriver {
     multipart: boolean,
   ): void {
     for (const component of renderables) {
-      const guid = component.getVariable("materialGuid");
-      if (typeof guid !== "string" || guid === "") continue;
+      const value = component.getVariable("materialGuid");
+      const guid = typeof value === "string" && value.trim() ? value : null;
+      if (guid) this.componentsWithMaterialAssignment.add(component);
+      else if (!this.componentsWithMaterialAssignment.delete(component)) {
+        // Untouched model components retain their authored material slots.
+        continue;
+      }
       this.emit({
         type: "assignMaterial",
         slotId,
