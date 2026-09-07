@@ -12,6 +12,7 @@ import {
   World,
   createActorsFromSerializedScene,
   createActorsFromSerializedSceneLayer,
+  attachSerializedComponents,
   createWorldSnapshot,
   createDebugInspectSnapshot,
   stringifyWorldSnapshot,
@@ -1381,6 +1382,9 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
     this.scriptHost.bindInterfaceHandlers(actor);
+    const components = this.scriptHost.scriptsFor(options.classId)
+      .find((script) => script.components !== undefined)?.components;
+    if (components) attachSerializedComponents(this.world, actor, components, { freshIds: true });
     try {
       this.realizeActor(actor);
     } catch (error) {

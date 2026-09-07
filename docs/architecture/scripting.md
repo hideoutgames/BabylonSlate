@@ -308,6 +308,8 @@ Compiled class graphs bind to object-model lifecycle without changing dispatch s
 
 Play path: compile project graphs → worker `loadScripts` control message → `loadCompiledModule` → `registerAnchors` → spawn scripted actors → tick.
 
+Compiled Class bundles include the merged prefab component templates, including inherited components and component-only classes without event nodes. Spawn Actor attaches independent copies before realization and Begin Play, preserving local transforms, asset references and component parenting with fresh instance IDs. Component edits invalidate the Class compile cache, including affected child classes. Spawning from Tick creates one actor per executed Spawn Actor node; it does not throttle repeated calls.
+
 `shouldSpawnScriptedActor` skips `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, `Scene`, and `Scene:{guid}` so those graphs never auto-spawn as Actors. `spawnActor` also returns null for `SceneLayerActor` and subclasses — overlay actors come from SceneLayer documents / Create Scene Layer, not the world Spawn Actor node.
 
 ### Actor component graph APIs

@@ -288,3 +288,9 @@ Implementation entries will record failing and passing tests, exact subcases cla
 
 - A fresh real-pointer H20 valid-target drag preserves its existing exec edge; one Undo and Redo restore the expected complete edge sets. This is N for that specific valid-target/Undo configuration, not an invalid-drop or touch-cancel claim.
 - A fresh M26/L32 Console check passes the first open click, native mid-line insertion, Backspace, selection replacement and history navigation. Toast-overlap and original-session variants remain unclosed.
+
+### H2: runtime prefab spawning
+
+- Compiled Class bundles omitted prefab components. Spawn Actor now attaches the effective inherited/local component templates before realization and Begin Play, with independent property values, remapped parent IDs and fresh component identities. A further failing compiler test reproduced omission of component-only classes with empty event graphs; those classes and their inheriting children now retain spawn templates too.
+- All 105 tests across the compiler, script host and scene instantiation suites pass. They cover inherited-template cache refresh, components visible during Begin Play, three Tick invocations producing exactly three instances, requested transforms and isolated component data. Browser Play/Preview and full delivery verification remain pending.
+- H2.1 is a confirmed and locally fixed defect. The bounded Tick and transform controls pass; no spawn throttle, actor cap or kill-Z was added. These results do not establish equivalence with the unavailable original runaway project.
