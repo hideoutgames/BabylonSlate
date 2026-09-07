@@ -245,6 +245,13 @@ export type CommandMessage =
     }
   | { type: "despawn"; slotId: number; actorGuid: string }
   | {
+      /** Render the actor's local TRS relative to a target bone; null clears it. */
+      type: "attachToBone";
+      slotId: number;
+      targetSlotId: number | null;
+      boneName: string;
+    }
+  | {
       type: "assignMesh";
       slotId: number;
       meshAssetGuid: string | null;

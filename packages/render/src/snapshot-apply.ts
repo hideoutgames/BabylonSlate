@@ -70,6 +70,8 @@ import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
 import { createText2DMesh } from "./text2d-mesh";
+import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
+export { applyAttachToBone } from "./bone-attachment";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -83,6 +85,7 @@ export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
 
 export interface SnapshotSceneBinding extends MeshAssetContext {
   meshes: Map<number, Mesh>;
+  boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
   cameras: Map<number, Camera>;
   lightProps: Map<number, AuthoredLightProperties>;
@@ -148,6 +151,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   return {
     meshes: new Map(),
+    boneAttachments: new Map(),
     lights: new Map(),
     cameras: new Map(),
     lightProps: new Map(),
@@ -699,6 +703,7 @@ export function retirePlaySlot(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
   binding.meshKinds.delete(slotId);
@@ -1096,6 +1101,7 @@ export function applySnapshotToScene(
         retirePlaySlot(binding, slotId);
       }
     }
+    updateBoneAttachments(binding);
     refreshPlayActiveCamera(scene, binding);
   } finally {
     scene.blockMaterialDirtyMechanism = false;
@@ -1118,6 +1124,7 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  binding.boneAttachments.clear();
   for (const mesh of binding.meshes.values()) {
     mesh.dispose();
   }

@@ -100,6 +100,7 @@ import { SnapshotInterpolator, writeSampledAudioPoses, type SampledAudioPose } f
 import {
   applySnapshotToScene,
   applyAssignMaterial,
+  applyAttachToBone,
   applyAssignMesh,
   applyPossessCamera,
   applyShadowQuality,
@@ -1679,6 +1680,10 @@ export function createEngine(
       if (command.type === "assignMaterial") {
         applyAssignMaterial(scene, binding, command);
         scheduler.invalidate("asset");
+      }
+      if (command.type === "attachToBone") {
+        applyAttachToBone(binding, command);
+        scheduler.invalidate("snapshot");
       }
       if (command.type === "possessCamera") {
         const previousCamera = scene.activeCamera;
