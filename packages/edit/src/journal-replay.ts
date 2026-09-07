@@ -7,7 +7,7 @@ import {
 } from "./journal";
 
 /** Any document kind the command layer can replay onto. */
-export type ReplayableDocument = SerializedGraph | SerializedScene;
+export type ReplayableDocument = SerializedGraph | SerializedScene | Record<string, unknown>;
 
 export interface JournalReplayResult<TDoc = ReplayableDocument> {
   /** Updated documents keyed by doc id. */
@@ -18,7 +18,7 @@ export interface JournalReplayResult<TDoc = ReplayableDocument> {
 
 /**
  * Replay journal lines onto open documents using the same apply path as live
- * editing (revive → command.apply). Graph and scene documents share one stream,
+ * editing (revive → command.apply). All asset documents share one stream,
  * keyed by doc id, so recovery is not a second serialisation path.
  */
 export function replayJournalLines<TDoc extends ReplayableDocument>(
