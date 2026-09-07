@@ -228,6 +228,7 @@ export async function exportGame(
   inlineCssIntoIndex(files);
 
   const manifest: GameManifest = {
+    ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.gameInstanceClass?.trim()
       ? { gameInstanceClass: options.gameInstanceClass.trim() }

@@ -39,7 +39,7 @@ interface ResolvedInputTick {
 }
 ```
 
-- **`resolve(events)`** — apply one tick's events; derive `pressed` / `released` from edge detection vs previous held actions.
+- **`resolve(events)`** — apply one tick's events and retain action transitions along the event sequence. A complete tap between ticks reports both `pressed` and `released` while final `held` is false; the next empty tick reports neither edge. Multiple bindings still combine into one action, so releasing one binding while another remains held does not release the action.
 - **`kind: "2d"`** axes fold x/y bindings into `axes2D[name]`; magnitude also exposed on `axes[name]` for 1D callers.
 - **Cursor.** Primary `kind: "pointer"` (mouse or first `pointerId`; extra fingers ignored) keeps `{ x, y, pressed }` in canvas CSS pixels. XY sticks after up/cancel. `kind: "mouse"` updates the cursor when no pointer is primary. Touch uses the same cursor sample as mouse.
 
@@ -67,7 +67,9 @@ Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolv
 
 Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchDPad shares the analog-stick path with defaults `dpad-x` / `dpad-y`.
 
-Runtime receives mappings via `RuntimeDriverOptions.inputMappings` / `setInputMappings`.
+Runtime receives mappings via `RuntimeDriverOptions.inputMappings` / `setInputMappings`. Normal Play forwards the project's authored mappings in its load message; exports store them in the manifest for the player. Missing mappings in older projects/builds use defaults. Explicit empty action/axis arrays remain empty through save, reload and runtime normalization.
+
+Keyboard gameplay capture belongs to the focused Play/player canvas. Starting a session or pressing the canvas focuses it; text fields and toolbar buttons retain their native keyboard behavior while focused. Canvas/window blur and free-camera takeover release held gameplay keys so movement cannot remain latched after focus changes.
 
 ## Testing
 

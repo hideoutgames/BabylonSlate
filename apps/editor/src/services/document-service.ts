@@ -416,10 +416,12 @@ export class DocumentService {
     this.state.panelPlacements[documentId] = { ...placements };
   }
 
-  markAllClean(): void {
-    for (const doc of this.state.openDocuments.values()) {
-      if (doc.ref.kind !== "content-browser") {
-        doc.dirty = false;
+  /** Clear only revisions whose content was actually written by this save. */
+  markAllClean(saved: readonly OpenDocument[]): void {
+    for (const snapshot of saved) {
+      const doc = this.state.openDocuments.get(snapshot.id);
+      if (doc && doc.ref.kind !== "content-browser" && doc.ref.path === snapshot.ref.path) {
+        doc.dirty = doc.content !== snapshot.content;
       }
     }
   }

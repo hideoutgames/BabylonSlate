@@ -90,6 +90,7 @@ import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
   ASSETS_ROOT,
+  assetReferencesIncludingOpenDocuments,
   addSelectedAssetGuid,
   addSelectedFolderPath,
   applyContentBrowserTreeSelect,
@@ -379,6 +380,14 @@ export function ContentBrowserWorkspace({
       return assetRegistry.list({ rootId: root.id });
     });
   }, [assetRegistry, browserRoots, registryVersion]);
+
+  const referenceAssets = useMemo(
+    () => {
+      void registryVersion;
+      return assetRegistry?.list() ?? [];
+    },
+    [assetRegistry, registryVersion],
+  );
 
   const handleRetargetSkeleton = useCallback(
     async (skeletonGuid: string | null) => {
@@ -987,7 +996,7 @@ export function ContentBrowserWorkspace({
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
-          const refs = assetRegistry.showReferences(guid);
+          const refs = assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments);
           const inbound = refs.inbound
             .map((id) => assetRegistry.getByGuid(id)?.header.name ?? id)
             .join(", ");
@@ -1015,6 +1024,8 @@ export function ContentBrowserWorkspace({
       assetRegistry,
       openMoveForSnapshot,
       openOrFocusDocument,
+      referenceAssets,
+      openDocuments,
       refreshAssetRegistry,
       requestDeleteSnapshot,
       selectedFolderPath,
@@ -1037,7 +1048,7 @@ export function ContentBrowserWorkspace({
     if (!deleteTarget || !assetRegistry) return [];
     const refs = new Set<string>();
     for (const guid of deleteTarget.guids) {
-      for (const inbound of assetRegistry.showReferences(guid).inbound) {
+      for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments).inbound) {
         if (!deleteTarget.guids.includes(inbound)) {
           refs.add(inbound);
         }
@@ -1047,7 +1058,7 @@ export function ContentBrowserWorkspace({
       guid,
       name: resolveAssetName(guid),
     }));
-  }, [assetRegistry, deleteTarget, resolveAssetName]);
+  }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName]);
 
   const deleteListNames = useMemo(() => {
     if (!deleteTarget) return [];
@@ -2164,7 +2175,7 @@ export function ContentBrowserWorkspace({
             ))}
             {deleteInboundRefs.length > 0 ? (
               <>
-                <p>These references will be set to None:</p>
+                <p>Referenced By:</p>
                 <ul className="list-disc pl-5">
                   {deleteInboundRefs.map((ref) => (
                     <li key={ref.guid}>

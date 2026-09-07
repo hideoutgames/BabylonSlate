@@ -20,6 +20,8 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 
 Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`, scene panels call `applySceneChange`, asset tabs call `applyAssetDocumentChange`; chrome **Undo** / **Redo** (and desktop Mod+Z / Mod+Shift+Z / Mod+Y) act on the active document only. `GraphEditor` reconciles that restored graph onto the canvas. `SetNodeDataCommand` and subtree-capturing scene commands (e.g. `RemoveActorCommand`) record `byteSize` so snapshot-style edits count toward the budget. Tilemap paint strokes pass `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`) so one undo restores the whole gesture. Material node drags use `material-node-move:<transactionId>` so two sequential drags are two undos. Identical asset payloads are not applied, so a graph remount cannot re-dirty after Save All.
 
+The active document ends its merge group at a new pointer gesture, input Enter, focus exit or discrete non-text key action. Multiple fingers within a continuous gesture and typing within one field remain grouped. Undo/Redo also close the merge group; Redo preserves the inverse from the start of the original gesture, so a subsequent Undo restores the same starting state.
+
 **First-edit auto-lock (P15):** after the plugin read-only check and a successful apply, `afterMutatingApply` calls `SourceControlService.autoLock(path)` once per document path this session. Source Control off, `autoLockOnEdit` false, or a plugin-read-only document skips it. HTTP 409 / offline never blocks the edit — see [source-control.md](source-control.md). Advisory theirs-locks use the same early-return shape as `isPluginDocumentReadOnly` (`isMutatingApplyBlocked`).
 
 ## Ownership
@@ -73,7 +75,7 @@ Each line is one JSON object:
 ```
 
 - Append after a successful `apply` on an open document (`appendJournalLine` in derived data).
-- Clean **Close Project** and a successful **Save** truncate the journal (recovery is for _unsaved_ edits).
+- Clean **Close Project** and a successful **Save** truncate the journal (recovery is for _unsaved_ edits). Save captures the document revisions it writes; completion clears only matching revisions and retains later edits as dirty. A late older save marks a newer revision dirty again. Journal appends and clears are serialized per storage/project; Save checks that no newer dirty document or project settings exist before clearing recovery.
 - Recovery banner in the editor shell (`data-testid="recovery-prompt"`) offers **Recover edits** / **Discard journal**. Replay opens any missing journal target documents (graphs and scenes), then `replayJournalLines` → `reviveCommand` → `apply`, then truncates. One stream keyed by `docId` — not a parallel recovery path per document kind.
 - Schema version `v` allows journal migration without inventing a parallel recovery path.
 
@@ -102,7 +104,7 @@ Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan 
 
 ## Scene apply path
 
-`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → `notifyDocumentEdited` (bump + scheduled save, then journal). Undo/redo on scene tabs uses the same per-document stack as graphs.
+`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → `EditSession.applyBatch` → `updateScene` → `notifyDocumentEdited` (bump + scheduled save, then journal). Each document change is one history entry, including node deletion with incident edges and actor subtree deletion. Undo applies the inverse deltas in reverse order; indexed removals restore the original array order. A batch counts its combined byte cost against the history budget and keeps the existing individual deltas in the crash journal. Empty batches leave history unchanged. Single-command edits retain their gesture merge keys. Undo/redo on scene tabs uses the same per-document stack as graphs.
 
 Outliner folder edits use the same path: `scene.addFolder` / `scene.removeFolder` / `scene.renameFolder` / `scene.reparentFolder` group rows, and `scene.setActorFolder` moves an actor between folders without touching `parentId`. `journal.test.ts` asserts every `SCENE_COMMAND_TYPES` entry has a reviver, so a new scene command cannot ship unreplayable.
 

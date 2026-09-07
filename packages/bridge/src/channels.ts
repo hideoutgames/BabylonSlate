@@ -1,6 +1,6 @@
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ProjectInputSettings, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
@@ -69,6 +69,8 @@ export type ControlMessage =
   | {
       type: "load";
       sceneAssetGuid: string;
+      /** Authored project mappings; omitted legacy loads use defaults. */
+      inputMappings?: ProjectInputSettings;
       /** Authored scene document. When present, Play instantiates these actors. */
       scene?: SerializedScene;
       seed?: number;

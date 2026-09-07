@@ -2,6 +2,7 @@ import type { ControlMessage } from "@babylonslate/bridge";
 import {
   normalizeScene,
   type PhysicsWorldKind,
+  type ProjectInputSettings,
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@babylonslate/core";
@@ -161,6 +162,7 @@ export function resolvePreviewStartupGuid(options: {
 }
 
 export function playLoadControl(options: {
+  inputMappings?: ProjectInputSettings;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
   seed?: number;
@@ -188,6 +190,7 @@ export function playLoadControl(options: {
   });
   return {
     type: "load",
+    inputMappings: options.inputMappings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,
     seed: options.seed,

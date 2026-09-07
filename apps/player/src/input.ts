@@ -30,6 +30,9 @@ export function attachInputCapture(
   const ring = options.ring ?? new InputRingBuffer(512);
   let tick = 0;
   canvas.style.touchAction = "none";
+  canvas.tabIndex = 0;
+  canvas.focus({ preventScroll: true });
+  const heldKeys = new Set<string>();
 
   const push = (raw: RawInputEvent) => {
     ring.push(raw);
@@ -39,6 +42,7 @@ export function attachInputCapture(
     (event: PointerEvent) => {
       event.preventDefault();
       if (phase === "down") {
+        canvas.focus({ preventScroll: true });
         canvas.setPointerCapture(event.pointerId);
       }
       const raw: RawInputEvent = {
@@ -59,8 +63,23 @@ export function attachInputCapture(
   const up = onPointer("up");
   const cancel = onPointer("cancel");
 
+  const releaseKeys = () => {
+    for (const code of heldKeys) push({ kind: "key", tick, code, phase: "up" });
+    heldKeys.clear();
+  };
   const onKey = (phase: "down" | "up") => (event: KeyboardEvent) => {
-    if (options.skipPointerAndKeyboard?.()) return;
+    if (phase === "up") {
+      if (heldKeys.delete(event.code)) push({ kind: "key", tick, code: event.code, phase });
+      return;
+    }
+    if (options.skipPointerAndKeyboard?.()) {
+      releaseKeys();
+      return;
+    }
+    if (canvas.ownerDocument.activeElement !== canvas) return;
+    if (event.code === "Space" && !event.ctrlKey && !event.altKey && !event.metaKey) event.preventDefault();
+    if (heldKeys.has(event.code)) return;
+    heldKeys.add(event.code);
     push({ kind: "key", tick, code: event.code, phase });
   };
   const keyDown = onKey("down");
@@ -72,6 +91,8 @@ export function attachInputCapture(
   canvas.addEventListener("pointercancel", cancel);
   window.addEventListener("keydown", keyDown);
   window.addEventListener("keyup", keyUp);
+  canvas.addEventListener("blur", releaseKeys);
+  window.addEventListener("blur", releaseKeys);
 
   return {
     ring,
@@ -79,6 +100,7 @@ export function attachInputCapture(
       tick = value;
     },
     pollGamepads: () => {
+      if (options.skipPointerAndKeyboard?.()) releaseKeys();
       if (typeof navigator === "undefined" || !navigator.getGamepads) return;
       const pads = navigator.getGamepads();
       for (let i = 0; i < pads.length; i++) {
@@ -97,6 +119,9 @@ export function attachInputCapture(
       push({ kind: "touchAxis", tick, controlId, value });
     },
     dispose: () => {
+      releaseKeys();
+      canvas.removeEventListener("blur", releaseKeys);
+      window.removeEventListener("blur", releaseKeys);
       canvas.removeEventListener("pointerdown", down);
       canvas.removeEventListener("pointermove", move);
       canvas.removeEventListener("pointerup", up);

@@ -1713,6 +1713,8 @@ export function materialAssetDependencies(
 export function assetHeaderDependencies(
   assetType: string,
   payload: Record<string, unknown>,
+  classes: readonly ClassAssetRef[] = [],
+  parentClass?: string | null,
 ): string[] {
   const unique = new Set<string>([
     ...materialAssetDependencies(assetType, payload),
@@ -1726,7 +1728,68 @@ export function assetHeaderDependencies(
     ...(assetType === "Skeleton" ? skeletonAssetGuids(payload) : []),
     ...(assetType === "Animation" ? animationAssetGuids(payload) : []),
   ]);
+  if (["Scene", "SceneLayer", "Class", "Graph"].includes(assetType)) {
+    const addClass = (classId: unknown) => {
+      if (typeof classId !== "string" || !classId) return;
+      const asset = classes.find((entry) =>
+        (entry.header.type === "Class" || entry.header.type === "Graph") &&
+        classIdFromClassAsset(entry) === classId,
+      );
+      if (asset?.header.guid) unique.add(asset.header.guid);
+    };
+    const addComponents = (components: unknown) => {
+      if (!Array.isArray(components)) return;
+      for (const component of components) {
+        if (!component || typeof component !== "object") continue;
+        addClass(component.classId);
+        if (component.classId !== "MeshComponent") continue;
+        for (const key of ["materialGuid", "assetGuid"]) {
+          const guid = component.properties?.[key];
+          if (typeof guid === "string" && guid.length > 0) unique.add(guid);
+        }
+      }
+    };
+    if (assetType === "Scene" || assetType === "SceneLayer") {
+      if (Array.isArray(payload.actors)) {
+        for (const actor of payload.actors) {
+          if (!actor || typeof actor !== "object") continue;
+          addClass(actor.classId);
+          addComponents(actor.components);
+        }
+      }
+    } else {
+      addClass(parentClass);
+      addComponents(payload.components);
+    }
+  }
   return [...unique].sort();
+}
+
+/** Include already-loaded edits without reading any closed document payloads. */
+export function assetReferencesIncludingOpenDocuments(
+  guid: string,
+  assets: readonly IndexedAsset[],
+  openDocuments: ReadonlyArray<{ ref: { path: string }; content: unknown }>,
+): { inbound: string[]; outbound: string[] } {
+  const inbound = new Set<string>();
+  const outbound = new Set<string>();
+  for (const asset of assets) {
+    const dependencies = new Set(asset.header.dependencies);
+    const open = openDocuments.find((doc) => doc.ref.path === asset.path);
+    if (open?.content && typeof open.content === "object") {
+      for (const dependency of assetHeaderDependencies(
+        asset.header.type,
+        open.content as Record<string, unknown>,
+        assets,
+        asset.header.parentClass,
+      )) dependencies.add(dependency);
+    }
+    if (dependencies.has(guid)) inbound.add(asset.header.guid);
+    if (asset.header.guid === guid) {
+      for (const dependency of dependencies) outbound.add(dependency);
+    }
+  }
+  return { inbound: [...inbound].sort(), outbound: [...outbound].sort() };
 }
 
 /** Header payload fields Content Browser / pickers can read without loading the document. */

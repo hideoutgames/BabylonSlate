@@ -292,7 +292,7 @@ export function diffSceneCommands(
     diffComponents(id, previous, actor, commands);
   }
 
-  for (const [id, actor] of beforeActors) {
+  for (const [id, actor] of [...beforeActors].reverse()) {
     if (!afterActors.has(id)) {
       commands.push(
         new RemoveActorCommand(

@@ -1287,6 +1287,8 @@ export class ProjectService {
           dependencies: assetHeaderDependencies(
             type,
             content as unknown as Record<string, unknown>,
+            this.assetRegistry?.list(),
+            parentClass,
           ),
         },
       );
@@ -1341,9 +1343,11 @@ export class ProjectService {
         blobs: this.blobsForPath(path),
         extraChunks: extra,
         parentClass: existing?.parentClass ?? null,
+        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list()),
       },
     );
     await storage.writeBinary(path, encoded);
+    await this.assetRegistry?.reindexPath(path);
   }
 
   /** Persist baked `audioReverb` bytes as the Scene extra chunk. */
@@ -1371,9 +1375,11 @@ export class ProjectService {
         blobs: this.blobsForPath(path),
         extraChunks: extra,
         parentClass: existing?.parentClass ?? null,
+        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list()),
       },
     );
     await storage.writeBinary(path, encoded);
+    await this.assetRegistry?.reindexPath(path);
   }
 
   /** Add or replace an imported Audio clip chunk (`source` / `source:N`). */
@@ -1431,7 +1437,7 @@ export class ProjectService {
         parentClass: existing?.parentClass ?? null,
         headerPayload: storeInHeader ? payload : undefined,
         headerMeta: headerMetaForSave(type, payload),
-        dependencies: assetHeaderDependencies(type, payload),
+        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list(), existing?.parentClass),
       },
     );
     await storage.writeBinary(path, encoded);

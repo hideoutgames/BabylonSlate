@@ -3,6 +3,9 @@ import { InputRingBuffer } from "@babylonslate/input";
 import { attachInputCapture, playInputStampTick } from "./input";
 
 class FakeCanvas {
+  tabIndex = 0;
+  readonly ownerDocument: { activeElement: FakeCanvas } = { activeElement: this };
+  focus(): void {}
   style: { touchAction: string } = { touchAction: "" };
   readonly listeners = new Map<string, Set<EventListener>>();
 

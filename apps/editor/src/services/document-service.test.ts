@@ -28,6 +28,32 @@ function createMockProjectService(
 }
 
 describe("DocumentService", () => {
+  it("H6: only clears the saved document revision, retaining edits made during a save", async () => {
+    const service = new DocumentService();
+    const project = createMockProjectService();
+    for (const name of ["Main", "Other", "Control"]) {
+      await service.openDocument(project, { kind: "graph", path: `assets/${name}.class.babasset`, label: name });
+    }
+    const main = "graph:assets/Main.class.babasset";
+    const other = "graph:assets/Other.class.babasset";
+    const control = "graph:assets/Control.class.babasset";
+    service.updateGraph(main, { nodes: [], edges: [], members: [{ id: "saved", kind: "event", name: "Saved revision" }] });
+    service.updateGraph(control, { nodes: [], edges: [] });
+    const saved = service.getDirtyDocuments().map((doc) => ({ ...doc }));
+    service.updateGraph(main, { nodes: [], edges: [], members: [{ id: "new", kind: "event", name: "New revision" }] });
+    service.updateGraph(other, { nodes: [], edges: [] });
+    service.markAllClean(saved);
+    expect(service.getDocument(main)?.dirty).toBe(true);
+    expect(service.getDocument(other)?.dirty).toBe(true);
+    expect(service.getDocument(control)?.dirty).toBe(false);
+    expect(saved.find((doc) => doc.id === main)?.content).toMatchObject({ members: [{ name: "Saved revision" }] });
+    const newerSave = service.getDirtyDocuments().map((doc) => ({ ...doc }));
+    service.markAllClean(newerSave);
+    expect(service.getDocument(main)?.dirty).toBe(false);
+    // A slower write of the old revision can finish after the newer save.
+    service.markAllClean(saved);
+    expect(service.getDocument(main)?.dirty).toBe(true);
+  });
   it("always pins content browser as the first tab", async () => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();

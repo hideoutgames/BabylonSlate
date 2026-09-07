@@ -2,6 +2,7 @@ import type { LogicGraph, GraphNode, GraphPin } from "./ir";
 import { findNode, findPin } from "./ir";
 import type { NodeRegistry, CodegenContext, HoistBodyAnchor } from "./node-registry";
 import { defaultValueLiteral } from "./types";
+import { pinTypeKey, resolveWildcardPinTypes } from "./wildcard-resolve";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { instrumentJsLoops } from "@babylonslate/debugger";
@@ -272,6 +273,17 @@ export function compileGraph(
   graph: LogicGraph,
   options: CompileOptions,
 ): CompileResult {
+  const resolved = resolveWildcardPinTypes(graph).resolved;
+  graph = {
+    ...graph,
+    nodes: graph.nodes.map((node) => ({
+      ...node,
+      pins: node.pins.map((pin) => ({
+        ...pin,
+        type: resolved.get(pinTypeKey(node.id, pin.id)) ?? pin.type,
+      })),
+    })),
+  };
   const exportName = options.exportName ?? "run";
   const preamble = [`//# sourceURL=babylonslate:///${options.assetGuid}.js`];
   type HoistChunk = {
