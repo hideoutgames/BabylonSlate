@@ -272,3 +272,9 @@ Implementation entries will record failing and passing tests, exact subcases cla
 
 - Both Export Project and Export Game preserve an unsaved Class edit, enabled Save, and Undo/Redo in fresh browser checks. Manual NavMesh Bake writes a nonempty chunk while retaining independently dirty Class and Scene histories. Subsequent Save/reload retains the edited Scene.
 - The Class picker correction also passes browser Save/reload with the canonical `default:classId` value. These checks are N for the tested export/bake state-loss reports and persistence evidence for the picker fix; no claim is made about unavailable original projects or uninspected export contents.
+
+### H8: imported-model marquee selection
+
+- A desktop Chromium marquee over the fresh Mannequin failed to select it; a real GLB unit fixture reproduced the missing actor identity. Marquee returned imported part names while tap picking already resolved their named actor ancestor. Both now share that resolution.
+- Four browser custom-event controls also pass after Save/reload: new declarations and older node-only declarations execute Ping in Normal Play and Preview Build. This supplies the H12/M28 browser evidence pending above.
+- The browser regression now passes three drag selections with no added actors or dirty state, correct one-shot toolbar state, and selection retained across Focus layout. Rendering controls also pass, including locked imported actors remaining unselectable. This fixes the newly reproduced identity failure; the historical duplicate-placement report is N in this configuration.

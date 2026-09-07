@@ -199,7 +199,9 @@ describe("editor tap picking", () => {
     const component = createMeshComponent("mesh", "box");
     component.properties.assetGuid = "hero";
     sync.setMeshAssets({
-      modelBytes: new Map([["hero", encodeTranslatedTetrahedronGlb(translation)]]),
+      modelBytes: new Map([
+        ["hero", encodeTranslatedTetrahedronGlb(translation)],
+      ]),
     });
     sync.apply(
       sceneWith([
@@ -224,7 +226,7 @@ describe("editor tap picking", () => {
     expect(sync.actorForMesh(hit!.meshName)).toBe("hero");
   });
 
-  it("picks a Kenney Mannequin body part back to the actor", async () => {
+  it("resolves Kenney Mannequin body parts to their actor for tap and marquee", async () => {
     prepareView(new Vector3(0, 0.8, 0));
     const sync = new EditorSceneSync(scene);
     const component = createMeshComponent("mesh", "box");
@@ -249,6 +251,15 @@ describe("editor tap picking", () => {
     expect(torso).toBeDefined();
     torso!.computeWorldMatrix(true);
     expect(pickWorld(sync, torso!.getAbsolutePosition())).toBe("hero");
+    const names = meshNamesInCanvasRect(
+      scene,
+      { x: 0, y: 0, width: WIDTH, height: HEIGHT },
+      WIDTH,
+      HEIGHT,
+    );
+    expect([
+      ...new Set(names.map((name) => sync.actorForMesh(name)).filter(Boolean)),
+    ]).toEqual(["hero"]);
   });
 
   it("does not pick a locked Mannequin after instantiate", async () => {
@@ -274,5 +285,13 @@ describe("editor tap picking", () => {
     const torso = visualMeshes(root!).find((part) => part.name === "torso");
     expect(torso?.isPickable).toBe(false);
     expect(pickWorld(sync, torso!.getAbsolutePosition())).toBeNull();
+    expect(
+      meshNamesInCanvasRect(
+        scene,
+        { x: 0, y: 0, width: WIDTH, height: HEIGHT },
+        WIDTH,
+        HEIGHT,
+      ),
+    ).toEqual([]);
   });
 });
