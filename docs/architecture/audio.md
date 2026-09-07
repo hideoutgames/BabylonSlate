@@ -81,6 +81,8 @@ Main → worker when a **non-looping** voice ends: `{ type: "audioVoiceEnded"; v
 
 ## Unlock and cache
 
+Preview Build forwards native app, interruption, and route events into its same-origin player window and replays current state when the player reports Ready. Editor and packaged player share visibility/native pause handling. The player pauses its worker or in-process runtime, frame pump, rendering, and audio together; resume resets frame timing, and Stop removes the lifecycle listeners.
+
 Play and asset previews share `attachAudioLifecycle`: user pause, hidden pages, native app inactivity, and audio interruptions remain independent pause sources. An interruption that forbids automatic resume waits for another gesture. Suspended or WebKit-interrupted contexts recover on foreground/route events only when no pause source remains; Babylon's automatic resume timer is disabled so it cannot override these decisions. Native listeners are removed even when registration finishes after cleanup.
 
 Preview warms its engine alongside clip prefetch, reports initialization failures, and ignores completed work after disposal. Stop cancels voices still decoding; pitch applies after voice creation. Backend buffers use asset-and-clip identities so switching clips cannot replay a different cached source. Failed clip writes/removals remain visible errors and preserve the current clip list.

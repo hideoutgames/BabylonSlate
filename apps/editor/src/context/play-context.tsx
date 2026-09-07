@@ -51,6 +51,7 @@ import {
   isPreviewRequestPackMessage,
   previewPackFromFiles,
   PREVIEW_STOP_MESSAGE,
+  PREVIEW_READY_MESSAGE,
 } from "@babylonslate/exporter";
 import type {
   MaterialDocument,
@@ -64,6 +65,7 @@ import {
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { playerPreviewSrc } from "../lib/player-host-url";
 import { canSendPreviewPack, isExpectedPreviewMessage, previewTargetFromSrc } from "../lib/preview-build-handoff";
+import { attachPreviewLifecycle } from "../lib/preview-lifecycle";
 import {
   sessionEntriesFromPreviewDiagnostics,
   shouldClosePreviewOnDiagnostics,
@@ -656,6 +658,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         previewIframeRef.current?.contentWindow,
         previewOriginRef.current,
       )) return;
+      if (event.data?.type === PREVIEW_READY_MESSAGE) {
+        lifecycle.sync();
+        return;
+      }
       // The player asks once its listener exists, which removes the race
       // between iframe `load` and the player module evaluating.
       if (isPreviewRequestPackMessage(event.data)) {
@@ -676,8 +682,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         closePreview();
       }
     };
+    const lifecycle = attachPreviewLifecycle(() => {
+      if (previewClosingRef.current || previewOriginRef.current !== window.location.origin) return null;
+      const frame = previewIframeRef.current?.contentWindow;
+      try {
+        return frame && frame.location.origin === window.location.origin ? frame : null;
+      } catch {
+        return null;
+      }
+    });
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      lifecycle.dispose();
+      window.removeEventListener("message", onMessage);
+    };
   }, [appendLog, closePreview, sendPreviewPack]);
 
   const requestPreviewBuild = useCallback(async () => {
