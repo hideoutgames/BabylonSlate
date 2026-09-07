@@ -531,6 +531,28 @@ describe("attachViewportGestures", () => {
     expect(taps).toHaveLength(0);
   });
 
+  it("does not select when iPadOS cancels a captured tap", () => {
+    const tap = vi.fn();
+    attach("3d", { onTap: tap });
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointercancel", pointer(1, 100, 100));
+    expect(tap).not.toHaveBeenCalled();
+    canvas.emit("pointerdown", pointer(2, 110, 110));
+    canvas.emit("pointerup", pointer(2, 110, 110));
+    expect(tap).toHaveBeenCalledOnce();
+  });
+
+  it("clears a cancelled marquee without committing the selection", () => {
+    const selected = vi.fn();
+    const overlay = vi.fn();
+    attach("3d", { dragSelectActive: () => true, onMarquee: selected, onMarqueeMove: overlay });
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 140));
+    canvas.emit("pointercancel", pointer(1, 160, 140));
+    expect(selected).not.toHaveBeenCalled();
+    expect(overlay).toHaveBeenLastCalledWith(null);
+  });
+
   it("marquees immediately in 3D when drag select is armed and does not look", () => {
     const marquees: Array<{
       x: number;

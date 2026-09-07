@@ -17,7 +17,9 @@ export function createReadOnlyProjectStorage(
       ? { needsReconnect: () => inner.needsReconnect!() }
       : {}),
     ...(inner.reconnectFolder
-      ? { reconnectFolder: () => inner.reconnectFolder!() }
+      ? { reconnectFolder: (validate?: (candidate: ProjectStorage) => Promise<void>) => inner.reconnectFolder!(
+          validate ? (candidate) => validate(createReadOnlyProjectStorage(candidate)) : undefined,
+        ) }
       : {}),
     ...(inner.deleteProject
       ? {

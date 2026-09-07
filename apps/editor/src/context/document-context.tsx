@@ -1249,9 +1249,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const openProject = useCallback(async () => {
     await attachEnginePlugins();
-    const { document, layouts, migrationPending: pending } =
-      await projectService.openProject();
-    await enterEditor(document, layouts, pending);
+    try {
+      const { document, layouts, migrationPending: pending } =
+        await projectService.openProject();
+      await enterEditor(document, layouts, pending);
+    } finally {
+      setNeedsReconnect(await projectService.needsReconnect());
+    }
   }, [attachEnginePlugins, enterEditor, projectService]);
 
   const createEmptyProject = useCallback(
@@ -1289,9 +1293,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const openListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
       await attachEnginePlugins();
-      const { document, layouts, migrationPending: pending } =
-        await projectService.openListedProject(handle);
-      await enterEditor(document, layouts, pending);
+      try {
+        const { document, layouts, migrationPending: pending } =
+          await projectService.openListedProject(handle);
+        await enterEditor(document, layouts, pending);
+      } finally {
+        setNeedsReconnect(await projectService.needsReconnect());
+      }
     },
     [attachEnginePlugins, enterEditor, projectService],
   );
@@ -1332,9 +1340,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const reconnectProject = useCallback(async () => {
     await attachEnginePlugins();
-    const { document, layouts, migrationPending: pending } =
-      await projectService.reconnect();
-    await enterEditor(document, layouts, pending);
+    try {
+      const { document, layouts, migrationPending: pending } =
+        await projectService.reconnect();
+      await enterEditor(document, layouts, pending);
+    } finally {
+      setNeedsReconnect(await projectService.needsReconnect());
+    }
   }, [attachEnginePlugins, enterEditor, projectService]);
 
   const saveProject = useCallback(async (): Promise<boolean> => {

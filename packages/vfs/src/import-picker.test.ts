@@ -85,4 +85,20 @@ describe("pickImportFiles", () => {
     const picked = await pickImportFiles();
     expect(picked).toEqual([{ name: "native.png", bytes: new Uint8Array([9]) }]);
   });
+
+  it("rejects a provider audio read failure and removes the input so importing can be retried", async () => {
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (this: HTMLInputElement) {
+      Object.defineProperty(this, "files", { value: [{
+        name: "cloud.wav",
+        arrayBuffer: async () => { throw new Error("Audio is offline"); },
+      }] });
+      this.dispatchEvent(new Event("change"));
+    });
+    try {
+      await expect(pickImportFiles()).rejects.toThrow("Audio is offline");
+      expect(document.querySelector('[data-testid="vfs-import-picker-input"]')).toBeNull();
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
 });

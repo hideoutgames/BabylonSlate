@@ -5,8 +5,20 @@ import type {
   ProjectStorage,
 } from "@babylonslate/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
+import { projectFolderName, projectRelativePath } from "./project-path";
 
 const PROJECTS_ROOT = "BabylonSlate/projects";
+
+function hasFilesystemCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function rethrowFilesystemError(error: unknown, path: string): never {
+  if (hasFilesystemCode(error, "OS-PLUG-FILE-0008")) {
+    throw new Error(`File not found: ${path}`, { cause: error });
+  }
+  throw error;
+}
 
 export interface DocumentsFilesystemApi {
   mkdir(options: {
@@ -86,12 +98,9 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async openDocumentsProject(name: string): Promise<ProjectFolderHandle> {
+    name = projectFolderName(name);
     const root = `${PROJECTS_ROOT}/${name}`;
-    await this.fs.mkdir({
-      path: root,
-      directory: this.directory,
-      recursive: true,
-    });
+    await this.ensureDirectory(root);
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
   }
@@ -102,16 +111,16 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     if (handle.tier !== "documents") {
       throw new Error(`Documents adapter cannot open tier ${handle.tier}`);
     }
-    return this.openDocumentsProject(handle.name);
+    if (!handle.id.startsWith("documents:")) throw new Error("Invalid Documents project id");
+    const name = projectFolderName(handle.id.slice("documents:".length));
+    const info = await this.fs.stat({ path: `${PROJECTS_ROOT}/${name}`, directory: this.directory });
+    if (info.type !== "directory") throw new Error("Project folder is not a directory.");
+    this.folder = { id: `documents:${name}`, name, tier: "documents" };
+    return this.folder;
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
-    try {
-      await this.fs.mkdir({
-        path: PROJECTS_ROOT,
-        directory: this.directory,
-        recursive: true,
-      });
+      await this.ensureDirectory(PROJECTS_ROOT);
       const { files } = await this.fs.readdir({
         path: PROJECTS_ROOT,
         directory: this.directory,
@@ -123,8 +132,15 @@ export class DocumentsStorageAdapter implements ProjectStorage {
           name: f.name,
           tier: "documents" as const,
         }));
-    } catch {
-      return [];
+  }
+
+  private async ensureDirectory(path: string, recursive = true): Promise<void> {
+    try {
+      await this.fs.mkdir({ path, directory: this.directory, recursive });
+    } catch (error) {
+      if (!hasFilesystemCode(error, "OS-PLUG-FILE-0010")) throw error;
+      const info = await this.fs.stat({ path, directory: this.directory });
+      if (info.type !== "directory") throw error;
     }
   }
 
@@ -143,23 +159,24 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     return this.folder;
   }
 
-  private abs(path: string): string {
+  private abs(path: string, allowRoot = false): string {
     const folder = this.assertFolder();
-    const cleaned = path.replace(/^\.\/+/, "").replace(/^\/+/, "");
+    const cleaned = projectRelativePath(path, allowRoot);
     const base = `${PROJECTS_ROOT}/${folder.name}`;
     return cleaned ? `${base}/${cleaned}` : base;
   }
 
   async readText(path: string): Promise<string> {
+    const full = this.abs(path);
     try {
       const { data } = await this.fs.readFile({
-        path: this.abs(path),
+        path: full,
         directory: this.directory,
         encoding: "utf8",
       });
       return data;
-    } catch {
-      throw new Error(`File not found: ${path}`);
+    } catch (error) {
+      rethrowFilesystemError(error, path);
     }
   }
 
@@ -174,15 +191,16 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
+    const full = this.abs(path);
     try {
       const { data } = await this.fs.readFile({
-        path: this.abs(path),
+        path: full,
         directory: this.directory,
         encoding: "base64",
       });
       return decodeBinary(data);
-    } catch {
-      throw new Error(`File not found: ${path}`);
+    } catch (error) {
+      rethrowFilesystemError(error, path);
     }
   }
 
@@ -197,18 +215,21 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async exists(path: string): Promise<boolean> {
+    const full = this.abs(path, true);
     try {
-      await this.fs.stat({ path: this.abs(path), directory: this.directory });
+      await this.fs.stat({ path: full, directory: this.directory });
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if (hasFilesystemCode(error, "OS-PLUG-FILE-0008")) return false;
+      throw error;
     }
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
+    const full = this.abs(path === "." ? "" : path, true);
     try {
       const { files } = await this.fs.readdir({
-        path: this.abs(path === "." ? "" : path),
+        path: full,
         directory: this.directory,
       });
       return files.map((f) => ({
@@ -217,17 +238,13 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         size: f.type === "file" ? f.size : null,
         mtime: f.mtime,
       }));
-    } catch {
-      throw new Error(`File not found: ${path}`);
+    } catch (error) {
+      rethrowFilesystemError(error, path);
     }
   }
 
   async mkdir(path: string, recursive = true): Promise<void> {
-    await this.fs.mkdir({
-      path: this.abs(path),
-      directory: this.directory,
-      recursive,
-    });
+    await this.ensureDirectory(this.abs(path), recursive);
   }
 
   async remove(path: string): Promise<void> {
@@ -246,15 +263,16 @@ export class DocumentsStorageAdapter implements ProjectStorage {
       } else {
         await this.fs.deleteFile({ path: full, directory: this.directory });
       }
-    } catch {
-      throw new Error(`File not found: ${path}`);
+    } catch (error) {
+      rethrowFilesystemError(error, path);
     }
   }
 
   async stat(path: string): Promise<FileStat> {
+    const full = this.abs(path, true);
     try {
       const info = await this.fs.stat({
-        path: this.abs(path),
+        path: full,
         directory: this.directory,
       });
       return {
@@ -262,8 +280,8 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         size: info.type === "file" ? info.size : null,
         mtime: info.mtime,
       };
-    } catch {
-      throw new Error(`File not found: ${path}`);
+    } catch (error) {
+      rethrowFilesystemError(error, path);
     }
   }
 }

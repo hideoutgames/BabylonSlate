@@ -105,6 +105,73 @@ describe("ScopedStorageAdapter", () => {
     expect(adapter.getCurrentFolder()).toEqual(handle);
   });
 
+  it("retains an unreachable legacy bookmark without rejecting mobile initialization", async () => {
+    const id = btoa("a-legacy-security-scoped-bookmark-that-is-long");
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id, name: "Offline" }));
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.importBookmark!).mockRejectedValue({ code: "UNREACHABLE" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    expect(adapter.getCurrentFolder()?.id).toBe(id);
+    expect(await adapter.needsReconnect()).toBe(true);
+  });
+
+  it("migrates a legacy recent handle when opening it", async () => {
+    const plugin = createMockPlugin();
+    const bookmark = btoa("another-legacy-security-scoped-bookmark-that-is-long");
+    vi.mocked(plugin.importBookmark!).mockResolvedValue({ folder: { id: "migrated", name: "Legacy" } });
+    vi.mocked(plugin.readFile).mockResolvedValue({ data: "saved audio metadata" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.openKnownFolder({ id: bookmark, name: "Legacy", tier: "external" });
+    expect(await adapter.readText("project.json")).toBe("saved audio metadata");
+    expect(plugin.readFile).toHaveBeenCalledWith({ folder: "migrated", path: "project.json", encoding: "utf8" });
+  });
+
+  it("retains the failed recent folder as the reconnect target", async () => {
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "previous", name: "Previous" }));
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.openFolder).mockRejectedValue({ code: "NOT_FOUND" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    await expect(adapter.openKnownFolder({ id: "missing", name: "Cloud", tier: "external" })).rejects.toThrow(/reconnect/i);
+    expect(adapter.getCurrentFolder()?.id).toBe("missing");
+    expect(await adapter.needsReconnect()).toBe(true);
+    await expect(adapter.writeText("project.json", "unsafe")).rejects.toThrow(/reconnect/i);
+  });
+
+  it("keeps the expired folder and reconnect action when a picked replacement fails validation", async () => {
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "original", name: "Cloud" }));
+    prefs.set("babylonslate:scoped-stale", "1");
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "empty", name: "Empty" } });
+    vi.mocked(plugin.exists).mockResolvedValue({ exists: false, isDirectory: false });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    await expect(adapter.reconnectFolder(async (candidate) => {
+      if (!(await candidate.exists("project.json"))) throw new Error("No project in selected folder");
+    })).rejects.toThrow("No project");
+    expect(adapter.getCurrentFolder()?.id).toBe("original");
+    expect(await adapter.needsReconnect()).toBe(true);
+    expect(JSON.parse(prefs.get("babylonslate:scoped-folder")!).id).toBe("original");
+    expect(plugin.exists).toHaveBeenCalledWith({ folder: "empty", path: "project.json" });
+  });
+
+  it("keeps a stale legacy bookmark recoverable without failing startup", async () => {
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: btoa("legacy-security-scoped-bookmark-that-is-long"), name: "Legacy" }));
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.importBookmark!).mockRejectedValue({ code: "STALE" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    expect(await adapter.needsReconnect()).toBe(true);
+  });
+
+  it.each(["{broken", "null", '{"id":42}', '{"name":"Game"}'])("ignores malformed persisted folder data: %s", async (value) => {
+    prefs.set("babylonslate:scoped-folder", value);
+    const adapter = new ScopedStorageAdapter(createMockPlugin());
+    await adapter.init();
+    expect(adapter.getCurrentFolder()).toBeNull();
+  });
+
   it("throws CANCELLED when picking is cancelled", async () => {
     const plugin = createMockPlugin();
     vi.mocked(plugin.pickFolder).mockRejectedValue({ code: "CANCELLED" });

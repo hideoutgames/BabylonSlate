@@ -26,7 +26,7 @@ describe("copyEngineDefaultSkyboxFaces", () => {
         const source = readFileSync(
           join(REPO_ROOT, "engine-content/skybox", `${key}.png`),
         );
-        expect(copied).toEqual(source);
+        expect(copied.equals(source)).toBe(true);
       }
     } finally {
       rmSync(dest, { recursive: true, force: true });

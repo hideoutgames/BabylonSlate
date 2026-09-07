@@ -1,4 +1,4 @@
-import { defineConfig, devices } from "@playwright/test";
+﻿import { defineConfig, devices } from "@playwright/test";
 import { IPAD_TEST_GREP } from "./e2e/ipad-tag";
 
 const IPAD_TOUCH = {
@@ -6,9 +6,8 @@ const IPAD_TOUCH = {
   deviceScaleFactor: 2,
 };
 
-// Let parallel worktrees verify their own build without reusing another checkout.
-const port = process.env.PLAYWRIGHT_PORT ?? "4173";
-const baseURL = `http://127.0.0.1:${port}`;
+const testPort = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
+const testBaseURL = `http://127.0.0.1:${testPort}`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -21,7 +20,7 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   use: {
-    baseURL,
+    baseURL: testBaseURL,
     trace: "on-first-retry",
   },
   projects: [
@@ -42,10 +41,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm --filter editor build && pnpm --filter editor preview --host 127.0.0.1 --port ${port} --strictPort`,
+    command:
+      `pnpm --filter editor build && pnpm --filter editor preview --host 127.0.0.1 --port ${testPort} --strictPort`,
     env: { VITE_TEST_MODE: "true" },
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    url: testBaseURL,
+    reuseExistingServer: !process.env.CI && !process.env.PLAYWRIGHT_PORT,
     timeout: 180_000,
   },
 });

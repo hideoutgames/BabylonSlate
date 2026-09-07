@@ -31,6 +31,7 @@ import {
 } from "@babylonslate/assets";
 import { PlayIcon, RepeatIcon, SquareIcon } from "lucide-react";
 import { BabylonAudioPlaybackBackend } from "@babylonslate/render";
+import { pickImportFiles } from "@babylonslate/vfs";
 import { IconActionButton } from "./icon-action-button";
 import { AudioPreviewWaveform } from "./audio-preview-waveform";
 import { useDocuments } from "../context/document-context";
@@ -171,7 +172,11 @@ export function AudioPreview({
         setWaveformPeaks([]);
         setWaveformDuration(null);
       }
-    })();
+    })().catch((error: unknown) => {
+      if (cancelled) return;
+      setPreviewError(error instanceof Error ? error.message : "Audio preview could not load.");
+      setPlaying(false);
+    });
     return () => {
       cancelled = true;
       session.dispose();
@@ -438,13 +443,30 @@ export function AudioClips({
 }) {
   const { writeAudioClipChunk, removeAudioClipChunk } = useDocuments();
   const audio = fillEmptySourceClipName(payload, assetName);
-  const clipInputRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pendingRef = useRef(false);
+  const [clipError, setClipError] = useState<string | null>(null);
+  const run = async (operation: () => Promise<void>) => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    setBusy(true);
+    setClipError(null);
+    try {
+      await operation();
+    } catch (error) {
+      setClipError(error instanceof Error ? error.message : "Audio clip could not be saved.");
+    } finally {
+      pendingRef.current = false;
+      setBusy(false);
+    }
+  };
   useEffect(() => {
     persistFilledClipName(payload, assetName, onChange);
   }, [assetName, onChange, payload]);
 
   return (
     <FieldGroup className="gap-2 p-3" data-testid="audio-clips">
+      {clipError ? <Alert variant="destructive"><AlertTitle>Audio Clip Failed</AlertTitle><AlertDescription>{clipError}</AlertDescription></Alert> : null}
       {audio.clips.map((clip, index) => (
         <Field
           key={clip.chunkId}
@@ -460,6 +482,7 @@ export function AudioClips({
           <FieldLabel htmlFor={`audio-clip-${index}-weight`}>Weight</FieldLabel>
           <NumericDragField
             id={`audio-clip-${index}-weight`}
+            disabled={busy}
             value={clip.weight}
             min={0}
             data-testid={`audio-clip-${index}-weight`}
@@ -476,64 +499,38 @@ export function AudioClips({
               variant="ghost"
               className="min-h-[var(--touch-target,44px)] w-fit"
               data-testid={`audio-clip-${index}-remove`}
-              onClick={() => {
+              disabled={busy}
+              onClick={() => void run(async () => {
                 const clips = audio.clips.filter(
                   (entry) => entry.chunkId !== clip.chunkId,
                 );
-                void removeAudioClipChunk?.(path, clip.chunkId, {
+                await removeAudioClipChunk(path, clip.chunkId, {
                   ...audio,
                   clips,
                 });
                 onChange?.({ ...audio, clips });
-              }}
+              })}
             >
               Remove
             </Button>
           )}
         </Field>
       ))}
-      <input
-        ref={clipInputRef}
-        type="file"
-        accept=".wav,.mp3,.ogg"
-        className="hidden"
-        data-testid="audio-add-clip-input"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (!file) return;
-          const chunkId = allocateAudioClipChunkId(
-            audio.clips.map((clip) => clip.chunkId),
-          );
-          if (!chunkId) return;
-          void file.arrayBuffer().then((buffer) => {
-            const bytes = new Uint8Array(buffer);
-            const clips = [
-              ...audio.clips,
-              {
-                chunkId,
-                name: file.name.replace(/\.[^.]+$/, ""),
-                weight: 1,
-              },
-            ];
-            void writeAudioClipChunk?.(
-              path,
-              chunkId,
-              bytes,
-              mimeForAudioBytes(bytes),
-              { ...audio, clips },
-            );
-            onChange?.({ ...audio, clips });
-          });
-        }}
-      />
       <Button
         type="button"
         variant="outline"
         className="min-h-[var(--touch-target,44px)] w-fit"
         data-testid="audio-add-clip"
-        disabled={audio.clips.length >= AUDIO_MAX_CLIPS}
-        onClick={() => clipInputRef.current?.click()}
+        disabled={busy || audio.clips.length >= AUDIO_MAX_CLIPS}
+        onClick={() => void run(async () => {
+          const [file] = await pickImportFiles({ multiple: false, accept: ".wav,.mp3,.ogg" });
+          if (!file) return;
+          const chunkId = allocateAudioClipChunkId(audio.clips.map((clip) => clip.chunkId));
+          if (!chunkId) return;
+          const clips = [...audio.clips, { chunkId, name: file.name.replace(/\.[^.]+$/, ""), weight: 1 }];
+          await writeAudioClipChunk(path, chunkId, file.bytes, mimeForAudioBytes(file.bytes), { ...audio, clips });
+          onChange?.({ ...audio, clips });
+        })}
       >
         Add Clip
       </Button>
