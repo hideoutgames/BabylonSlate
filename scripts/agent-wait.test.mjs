@@ -21,11 +21,15 @@ async function fixture(t, action = "success") {
   await writeFile(
     join(cwd, "fixture.mjs"),
     `
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, writeSync } from 'node:fs';
 console.log(JSON.stringify({args:process.argv.slice(2), inherited:process.env.WAIT_FIXTURE_VALUE}));
 const action = process.env.WAIT_FIXTURE_ACTION;
 if (action === 'large') { for (let i=0;i<5000;i++) console.log(i + ' héllo 🌍 '.repeat(20)); process.exitCode=7; }
 if (action === 'fail') { console.error('fixture failure'); process.exitCode=9; }
+if (action === 'log-markers') {
+  writeSync(1, 'fixture stdout marker\\n');
+  writeSync(2, 'fixture stderr marker\\n');
+}
 if (action === 'change') writeFileSync('source.txt', 'changed');
 if (action === 'untracked') writeFileSync('new-source.txt', 'new');
 if (action === 'commit') {
@@ -114,6 +118,21 @@ test("unfiltered verification certifies a clean unchanged commit", async (t) => 
   const result = await run(local, f.context);
   assert.equal(result.status, "success");
   assert.equal(result.deliveryEligible, true);
+});
+
+test("local stdout and stderr survive the final working-tree snapshot", async (t) => {
+  const f = await fixture(t, "log-markers");
+  const result = await run(local, f.context);
+  assert.equal(result.status, "success");
+  assert.equal(result.deliveryEligible, true);
+  const log = await readFile(result.logPath, "utf8");
+  assert.match(log, /fixture stdout marker\n/);
+  assert.match(log, /fixture stderr marker\n/);
+  assert.ok(
+    log.lastIndexOf('["git","rev-parse","HEAD"]') >
+      log.indexOf("fixture stderr marker"),
+    "final snapshot metadata follows the complete child output",
+  );
 });
 
 for (const [action, code] of [
