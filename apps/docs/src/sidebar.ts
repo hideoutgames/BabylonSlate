@@ -61,6 +61,7 @@ export const docsSidebar: SidebarItem[] = [
     items: [
       { text: "Issue tracker", link: "/agents/issue-tracker" },
       { text: "Agent instructions", link: "/agents/instructions" },
+      { text: "September QA register", link: "/agents/qa-2026-09-register" },
     ],
   },
 ];
