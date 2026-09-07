@@ -51,6 +51,7 @@ import {
   skyboxFaceGuidsFromScene,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
+import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
@@ -407,13 +408,18 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing, preparing]);
 
-  // Key on the scene payload, not `openDocuments` array identity. Save All
-  // calls bump() after markAllClean; a new array would reload the viewport
-  // and can race the write or re-dirty the scene.
+  // Loading scene structure stays separate from refreshing saved assets.
+  // Save All must not reload or re-dirty the scene through array identity.
+  useEffect(() => {
+    if (scene) engineRef.current?.loadScene(scene);
+  }, [scene, engineEpoch]);
+
+  const materialLibraryKey = savedMaterialLibraryKey(assetRegistry?.list() ?? []);
+  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+
   useEffect(() => {
     const handle = engineRef.current;
     if (!scene || !handle) return;
-    handle.loadScene(scene);
     let cancelled = false;
     const generation = engineGenerationRef.current;
     const blocking = isSceneViewportRemountLoad(
@@ -456,6 +462,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(materials.documents, materials.functions);
         await handle.registerFonts(fontFaceEntries);
+        if (cancelled || engineRef.current !== handle) return;
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -514,6 +521,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [
     scene,
+    materialLibraryKey,
+    textureLodKey,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
@@ -529,90 +538,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     projectDocument?.settings.fonts.defaultFontGuid,
     projectDocument?.settings.fonts.globalFallback,
     engineEpoch,
-  ]);
-
-  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
-  const textureLodKeyRef = useRef(textureLodKey);
-  useEffect(() => {
-    const lodChanged = textureLodKeyRef.current !== textureLodKey;
-    textureLodKeyRef.current = textureLodKey;
-    if (!lodChanged || !scene) return;
-    const handle = engineRef.current;
-    if (!handle) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const sprites = await collectPlaySpritePayloads(scene);
-        const tileContent = await collectPlayTilemapContent(scene);
-        const modelBytes = await collectPlayModelBytes(scene);
-        const modelPayloads = await collectPlayModelPayloads(scene);
-        const materials = await collectPlayMaterialLibrary(
-          scene,
-          [],
-          modelSlotMaterialGuidsFromPayloads(modelPayloads),
-        );
-        const extraTextureGuids = [
-            ...materials.textureGuids,
-            ...skyboxFaceGuidsFromScene(scene),
-            ...overlayTextureGuidsFromScene(scene),
-          ];
-        const textureBytes = await collectPlayTextureBytes(
-          sprites,
-          tileContent.tilesets,
-          extraTextureGuids,
-        );
-        const texturePixelSizes = collectPlayTexturePixelSizes(
-          sprites,
-          tileContent.tilesets,
-          extraTextureGuids,
-        );
-        const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
-        const fontFaceEntries = await collectPlayFontFaceEntries();
-        const fontCss = collectPlayFontCssStacks();
-        if (cancelled || engineRef.current !== handle) return;
-        handle.setMaterialDocuments(materials.documents, materials.functions);
-        await handle.registerFonts(fontFaceEntries);
-        handle.setMeshAssets({
-          resourceCache: handle.resourceCache,
-          spritePayloads: sprites,
-          tilemaps: tileContent.tilemaps,
-          tilesets: tileContent.tilesets,
-          textureBytes,
-          texturePixelSizes,
-          fontFacetypeBytes,
-          fontMsdfJson: msdf.json,
-          fontMsdfPng: msdf.png,
-          fontCssStack: fontCss.fontCssStack,
-          fontCssStackByGuid: fontCss.fontCssStackByGuid,
-          modelBytes,
-          modelPayloads,
-          pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
-        });
-      } catch (error) {
-        console.error("[viewport] failed to refresh mesh assets", error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    textureLodKey,
-    scene,
-    collectPlaySpritePayloads,
-    collectPlayTilemapContent,
-    collectPlayTextureBytes,
-    collectPlayTexturePixelSizes,
-    collectPlayFontFacetypeBytes,
-    collectPlayFontMsdfPair,
-    collectPlayFontFaceEntries,
-    collectPlayFontCssStacks,
-    collectPlayModelBytes,
-    collectPlayModelPayloads,
-    collectPlayMaterialLibrary,
-    projectDocument?.settings.twoD.pixelsPerUnit,
-    projectDocument?.settings.fonts.defaultFontGuid,
-    projectDocument?.settings.fonts.globalFallback,
   ]);
 
   useEffect(() => {
