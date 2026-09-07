@@ -150,6 +150,7 @@ const PROJECT_GROUPS: CatalogCategoryGroup[] = [
 const ENGINE_CATEGORIES: Array<
   CatalogCategory & { keywords: string; id: EngineSettingsCategoryId }
 > = [
+  { id: "about", label: "About", keywords: "version channel build commit source release test" },
   {
     id: "appearance",
     label: "Appearance",
@@ -200,7 +201,7 @@ const GENERIC_FONT_FALLBACKS = [
 ] as const;
 
 const ENGINE_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "assets", "thumbnails", "focus"] },
+  { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "assets", "thumbnails", "focus", "about"] },
   { label: "Projects", ids: ["templates"] },
 ];
 

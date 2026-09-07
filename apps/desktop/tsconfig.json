@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "electron.d.ts"]
+  "include": ["src"]
 }

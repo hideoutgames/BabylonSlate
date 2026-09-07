@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createIdentity, assertAppleBuildAvailable, validateSource, validateChecks, releaseDisposition, validateArtifacts } from "./contract.mjs";
+import { createIdentity, existingAppleIdentity, assertAppleBuildAvailable, validateSource, validateChecks, releaseDisposition, validateArtifacts } from "./contract.mjs";
 
 const request = { version: "1.2.3", declaredVersion: "1.2.3", channel: "test", platforms: "both", sourceSha: "a".repeat(40), runNumber: 417, runAttempt: 1, appleSequenceOffset: 0 };
 
 test("test and release identities cannot be promoted by flipping a release flag", () => {
   const candidate = createIdentity(request);
-  assert.equal(candidate.windowsVersion, "1.2.3-test.417.1");
+  assert.equal(candidate.windowsVersion, "1.2.3-indev.417.1");
   assert.equal(candidate.appleBuildNumber, "417.0.1");
-  assert.equal(candidate.tag, "v1.2.3-test.417.1");
+  assert.equal(candidate.tag, "v1.2.3-indev.417.1");
   assert.equal(candidate.prerelease, true);
   assert.equal(candidate.makeLatest, "false");
   const release = createIdentity({ ...request, channel: "release", runNumber: 418 });
-  assert.equal(release.windowsVersion, "1.2.3");
+  assert.equal(release.windowsVersion, "1.2.3-release");
   assert.equal(release.appleBuildNumber, "418.1.1");
   assert.equal(release.prerelease, false);
   assert.equal(release.makeLatest, "legacy");
@@ -37,6 +37,14 @@ test("duplicate or superseded Apple builds require a fresh dispatch", () => {
   for (const existing of [["418.0.1"], ["419.0.1"], ["418.1.1"]]) {
     assert.throws(() => assertAppleBuildAvailable("418.0.1", existing), /fresh dispatch/i);
   }
+});
+
+test("independent finalization preserves the original version, sequence, channel and build attempt", () => {
+  const result = existingAppleIdentity({ version: "1.2.3", appleSequenceOffset: 10 }, { ...request, platforms: "ipados", existingBuildNumber: "427.0.2" });
+  assert.equal(result.runNumber, 417);
+  assert.equal(result.runAttempt, 2);
+  assert.equal(result.appleBuildNumber, "427.0.2");
+  assert.throws(() => existingAppleIdentity({ version: "1.2.3", appleSequenceOffset: 10 }, { ...request, platforms: "ipados", existingBuildNumber: "427.1.2" }), /channel/i);
 });
 
 test("only protected main workflow and reachable exact source commits are trusted", () => {

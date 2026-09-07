@@ -1,0 +1,281 @@
+name: Distribute
+run-name: Distribute ${{ inputs.channel }} / ${{ inputs.platforms }} / ${{ inputs.version }}${{ inputs.dry_run && ' (dry run)' || '' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Test (Indev) or Release build action
+        type: choice
+        options: [test, release]
+        default: test
+        required: true
+      platforms:
+        description: Platforms to distribute
+        type: choice
+        options: [ipados, windows, both]
+        default: both
+        required: true
+      source_sha:
+        description: Exact source commit on protected main (blank uses the dispatch commit)
+        type: string
+        required: false
+      version:
+        description: Numeric version assertion matching release/version.json (for example 0.0.1)
+        type: string
+        required: true
+      dry_run:
+        description: Validate only; no native build, signing, upload or publication
+        type: boolean
+        default: true
+        required: true
+      operation:
+        description: Build and distribute, or finalize an existing iPadOS upload without rebuilding
+        type: choice
+        options: [distribute, finalize-testflight]
+        default: distribute
+        required: true
+      existing_build_number:
+        description: Finalization only; original exact Apple build number (also select ipados and original source SHA)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  statuses: read
+
+concurrency:
+  group: babylonslate-distribution
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      source_sha: ${{ steps.request.outputs.source_sha }}
+      identity: ${{ steps.request.outputs.identity }}
+      dry_run: ${{ steps.request.outputs.dry_run }}
+      windows: ${{ steps.request.outputs.windows }}
+      ipados: ${{ steps.request.outputs.ipados }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - name: Validate source, checks, versions and destinations
+        id: request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_OPERATION: ${{ inputs.operation }}
+          INPUT_EXISTING_BUILD_NUMBER: ${{ inputs.existing_build_number }}
+        run: node scripts/distribution/validate-request.mjs
+
+  windows:
+    name: Windows package and installed-app checks
+    needs: [validate]
+    if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.windows == 'true' && inputs.operation == 'distribute'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    outputs:
+      identity: ${{ steps.metadata.outputs.identity }}
+      artifact_name: windows-${{ github.run_id }}-${{ github.run_attempt }}
+    env:
+      BABYLONSLATE_DISTRIBUTION: 'true'
+      VITE_TEST_MODE: 'false'
+      VITE_BASE_PATH: /
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - run: pnpm install --frozen-lockfile
+      - name: Generate actual Windows build identity
+        id: metadata
+        env:
+          DISTRIBUTION_IDENTITY: ${{ needs.validate.outputs.identity }}
+        run: node scripts/distribution/generate-metadata.mjs windows
+      - run: pnpm --filter editor build
+      - run: pnpm --filter desktop build:host
+      - name: Package unsigned NSIS installer without publication
+        run: pnpm --filter desktop package:windows
+      - name: Install and exercise packaged app with clean user data
+        run: pnpm --filter desktop smoke:windows
+      - name: Preserve only the public Windows deliverables
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/desktop/dist/public/BabylonSlate-${{ fromJSON(steps.metadata.outputs.identity).windowsVersion }}-x64.exe
+            apps/desktop/dist/public/SHA256SUMS.txt
+            apps/desktop/dist/public/build-manifest.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  ipados:
+    name: iPadOS archive, sign and direct upload
+    needs: [validate]
+    if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.ipados == 'true' && inputs.operation == 'distribute'
+    runs-on: macos-26
+    timeout-minutes: 75
+    environment: testflight
+    outputs:
+      identity: ${{ steps.metadata.outputs.identity }}
+      uploaded: ${{ steps.archive.outputs.uploaded }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      BABYLONSLATE_DISTRIBUTION: 'true'
+      VITE_TEST_MODE: 'false'
+      VITE_BASE_PATH: /
+      APPLE_TOOLCHAIN_FILE: ${{ runner.temp }}/apple-toolchains.json
+      FASTLANE_SKIP_UPDATE_CHECK: 'true'
+      FASTLANE_OPT_OUT_USAGE: 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: .ruby-version
+          bundler: 2.5.22
+          bundler-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Install locked CocoaPods and Fastlane before importing credentials
+        run: |
+          bundle config set --local deployment true
+          bundle config set --local path vendor/bundle
+          bundle install --jobs 4 --retry 3
+      - name: Validate selected Xcode and locked tools
+        run: node scripts/distribution/apple-toolchain.mjs
+      - name: Generate actual iPadOS build identity
+        id: metadata
+        env:
+          DISTRIBUTION_IDENTITY: ${{ needs.validate.outputs.identity }}
+        run: node scripts/distribution/generate-metadata.mjs ipados
+      - name: Build editor/player and preserve custom Capacitor plugin registrations
+        run: bundle exec pnpm --filter editor ios:sync
+      - name: Confirm CocoaPods lockfile was preserved
+        run: git diff --exit-code -- apps/editor/ios/App/Podfile.lock
+      - name: Validate, archive, sign, export and upload directly
+        id: archive
+        env:
+          APPLE_DISTRIBUTION_P12_BASE64: ${{ secrets.APPLE_DISTRIBUTION_P12_BASE64 }}
+          APPLE_DISTRIBUTION_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          ASC_PRIVATE_KEY_P8_BASE64: ${{ secrets.ASC_PRIVATE_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          ASC_APP_ID: ${{ vars.ASC_APP_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+          APPLE_TEST_GROUP_ID: ${{ vars.APPLE_TEST_GROUP_ID }}
+          APPLE_RELEASE_GROUP_ID: ${{ vars.APPLE_RELEASE_GROUP_ID }}
+          APPLE_PRIVACY_REVIEWED_VERSION: ${{ vars.APPLE_PRIVACY_REVIEWED_VERSION }}
+          APPLE_USES_NON_EXEMPT_ENCRYPTION: ${{ vars.APPLE_USES_NON_EXEMPT_ENCRYPTION }}
+        run: pnpm --filter editor ios:archive
+      - name: Always remove Apple credentials and private outputs
+        if: always()
+        run: node scripts/distribution/apple-cleanup.mjs
+
+  testflight:
+    name: TestFlight processing and private group assignment
+    needs: [validate, ipados]
+    if: always() && needs.validate.result == 'success' && needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.ipados == 'true' && (needs.ipados.outputs.uploaded == 'true' || inputs.operation == 'finalize-testflight')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: testflight
+    outputs:
+      state: ${{ steps.finalize.outputs.state }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - name: Finalize exact existing upload; never rebuild or reupload
+        id: finalize
+        env:
+          APPLE_IDENTITY: ${{ needs.ipados.outputs.identity || needs.validate.outputs.identity }}
+          ASC_PRIVATE_KEY_P8_BASE64: ${{ secrets.ASC_PRIVATE_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          ASC_APP_ID: ${{ vars.ASC_APP_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+          APPLE_TEST_GROUP_ID: ${{ vars.APPLE_TEST_GROUP_ID }}
+          APPLE_RELEASE_GROUP_ID: ${{ vars.APPLE_RELEASE_GROUP_ID }}
+        run: node scripts/distribution/finalize-testflight.mjs
+
+  publish-windows:
+    name: Validate draft assets and publish Windows release
+    needs: [validate, windows, ipados, testflight]
+    if: always() && needs.validate.result == 'success' && needs.validate.outputs.dry_run != 'true' && needs.windows.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: github-release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.windows.outputs.artifact_name }}
+          path: windows-public
+      - name: Publish only verified immutable deliverables
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WINDOWS_IDENTITY: ${{ needs.windows.outputs.identity }}
+          APPLE_STATE: ${{ needs.testflight.outputs.state || 'failed' }}
+        run: node scripts/distribution/publish-windows.mjs windows-public
+
+  summary:
+    name: Sanitized platform outcomes
+    needs: [validate, windows, ipados, testflight, publish-windows]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Report results without private artifacts or logs
+        env:
+          DISTRIBUTION_RESULTS: ${{ toJSON(needs) }}
+        run: node scripts/distribution/summary.mjs

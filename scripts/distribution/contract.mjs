@@ -1,6 +1,16 @@
 const numericVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const exactSha = /^[a-f0-9]{40}$/;
 
+export function existingAppleIdentity(declared, request) {
+  requireValue(request.platforms === "ipados", "Finalization-only requests require ipados");
+  requireValue(numericVersion.test(request.existingBuildNumber), "An exact existing Apple build number is required");
+  const [sequence, channelCode, attempt] = request.existingBuildNumber.split(".").map(Number);
+  requireValue(channelCode === (request.channel === "test" ? 0 : 1), "Existing Apple build channel differs from request");
+  const identity = createIdentity({ ...request, declaredVersion: declared.version, appleSequenceOffset: declared.appleSequenceOffset, runNumber: sequence - declared.appleSequenceOffset, runAttempt: attempt });
+  requireValue(identity.appleBuildNumber === request.existingBuildNumber, "Existing Apple identity is not canonical");
+  return identity;
+}
+
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -20,7 +30,7 @@ export function createIdentity(request) {
   integer(appleSequenceOffset, 0, 9998, "Apple sequence offset");
   const sequence = runNumber + appleSequenceOffset;
   integer(sequence, 1, 9999, "Apple sequence; migrate the sequence explicitly before exhaustion");
-  const windowsVersion = channel === "test" ? `${version}-test.${runNumber}.${runAttempt}` : version;
+  const windowsVersion = channel === "test" ? `${version}-indev.${runNumber}.${runAttempt}` : `${version}-release`;
   return {
     schemaVersion: 1,
     applicationVersion: version,
