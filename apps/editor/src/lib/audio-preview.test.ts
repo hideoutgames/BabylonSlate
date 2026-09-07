@@ -47,8 +47,10 @@ describe("createAudioPreviewSession", () => {
     expect(backend.plays[0]?.clipChunkId).toBe("source");
     expect(backend.plays[0]?.gain).toBe(0.5);
     expect(backend.plays[0]?.loop).toBe(false);
-    expect(backend.playbackRates.get("preview")).toBe(2);
+    await Promise.resolve();
+    expect(backend.playbackRates.get(result.voiceId!)).toBe(2);
     expect(result).toMatchObject({ ok: true, clipChunkId: "source", pitch: 2 });
+    session.dispose();
   });
 
   it("diagnoses a cache miss instead of awaiting storage on Play", () => {
@@ -61,6 +63,7 @@ describe("createAudioPreviewSession", () => {
     expect(result.ok).toBe(false);
     expect(result.code).toBe("audio.preview_missing_source");
     expect(backend.plays).toHaveLength(0);
+    session.dispose();
   });
 
   it("warms the audio engine before the first preview gesture", async () => {
@@ -140,11 +143,11 @@ describe("createAudioPreviewSession", () => {
       },
     });
     await session.prefetch(createDefaultAudioPayload());
-    session.play(createDefaultAudioPayload());
+    const playing = session.play(createDefaultAudioPayload());
     expect(ended).toBe(0);
-    backend.finish("preview");
+    backend.finish(playing.voiceId!);
     expect(ended).toBe(1);
-    backend.finish("preview");
+    backend.finish(playing.voiceId!);
     expect(ended).toBe(1);
     session.dispose();
   });
