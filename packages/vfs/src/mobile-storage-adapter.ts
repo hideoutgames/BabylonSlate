@@ -15,19 +15,16 @@ export class MobileStorageAdapter implements ProjectStorage {
   private readonly documents: DocumentsStorageAdapter;
   private readonly external = new ScopedStorageAdapter();
   private active: "documents" | "external" = "documents";
+  private initialized: Promise<void> | undefined;
 
   constructor(documents?: DocumentsStorageAdapter) {
     this.documents = documents ?? new DocumentsStorageAdapter();
   }
 
-  async init(): Promise<void> {
-    await this.external.init();
-    if (
-      this.external.getCurrentFolder() &&
-      !(await this.external.needsReconnect?.())
-    ) {
-      this.active = "external";
-    }
+  init(): Promise<void> {
+    return this.initialized ??= this.external.init().then(() => {
+      if (this.external.getCurrentFolder()) this.active = "external";
+    });
   }
 
   private port(): ProjectStorage {
@@ -35,12 +32,14 @@ export class MobileStorageAdapter implements ProjectStorage {
   }
 
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
+    await this.init();
     const handle = await this.external.pickProjectFolder();
     this.active = "external";
     return handle;
   }
 
   async openDocumentsProject(name: string): Promise<ProjectFolderHandle> {
+    await this.init();
     const handle = await this.documents.openDocumentsProject(name);
     this.active = "documents";
     return handle;
@@ -49,10 +48,16 @@ export class MobileStorageAdapter implements ProjectStorage {
   async openKnownFolder(
     handle: ProjectFolderHandle,
   ): Promise<ProjectFolderHandle> {
+    await this.init();
     if (handle.tier === "external") {
-      const opened = await this.external.openKnownFolder(handle);
-      this.active = "external";
-      return opened;
+      try {
+        const opened = await this.external.openKnownFolder(handle);
+        this.active = "external";
+        return opened;
+      } catch (error) {
+        if (await this.external.needsReconnect()) this.active = "external";
+        throw error;
+      }
     }
     const opened = await this.documents.openKnownFolder(handle);
     this.active = "documents";
@@ -60,6 +65,7 @@ export class MobileStorageAdapter implements ProjectStorage {
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
+    await this.init();
     const docs = await this.documents.listProjects();
     const ext = await this.external.listProjects();
     return [...docs, ...ext];
@@ -70,53 +76,65 @@ export class MobileStorageAdapter implements ProjectStorage {
   }
 
   async releaseFolder(): Promise<void> {
+    await this.init();
     await this.port().releaseFolder();
   }
 
   async needsReconnect(): Promise<boolean> {
+    await this.init();
     if (this.active !== "external") return false;
     return (await this.external.needsReconnect?.()) ?? false;
   }
 
   async reconnectFolder(): Promise<ProjectFolderHandle> {
+    await this.init();
     const handle = await this.external.reconnectFolder!();
     this.active = "external";
     return handle;
   }
 
-  readText(path: string): Promise<string> {
+  async readText(path: string): Promise<string> {
+    await this.init();
     return this.port().readText(path);
   }
 
-  writeText(path: string, data: string): Promise<void> {
+  async writeText(path: string, data: string): Promise<void> {
+    await this.init();
     return this.port().writeText(path, data);
   }
 
-  readBinary(path: string): Promise<Uint8Array> {
+  async readBinary(path: string): Promise<Uint8Array> {
+    await this.init();
     return this.port().readBinary(path);
   }
 
-  writeBinary(path: string, data: Uint8Array): Promise<void> {
+  async writeBinary(path: string, data: Uint8Array): Promise<void> {
+    await this.init();
     return this.port().writeBinary(path, data);
   }
 
-  exists(path: string): Promise<boolean> {
+  async exists(path: string): Promise<boolean> {
+    await this.init();
     return this.port().exists(path);
   }
 
-  readdir(path: string): Promise<DirEntry[]> {
+  async readdir(path: string): Promise<DirEntry[]> {
+    await this.init();
     return this.port().readdir(path);
   }
 
-  mkdir(path: string, recursive?: boolean): Promise<void> {
+  async mkdir(path: string, recursive?: boolean): Promise<void> {
+    await this.init();
     return this.port().mkdir(path, recursive);
   }
 
-  remove(path: string): Promise<void> {
+  async remove(path: string): Promise<void> {
+    await this.init();
     return this.port().remove(path);
   }
 
-  stat(path: string): Promise<FileStat> {
+  async stat(path: string): Promise<FileStat> {
+    await this.init();
     return this.port().stat(path);
   }
 }

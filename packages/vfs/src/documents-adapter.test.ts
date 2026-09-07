@@ -48,4 +48,36 @@ describe("DocumentsStorageAdapter", () => {
   it("rejects pickProjectFolder", async () => {
     await expect(storage.pickProjectFolder()).rejects.toThrow(/no picker/i);
   });
+
+  it.each(["../Other", "", ".", "..", "/Other", "Game/Other", "Game\\Other"])("rejects unsafe project folder names: %s", async (name) => {
+    await expect(storage.openDocumentsProject(name)).rejects.toThrow(/project/i);
+    expect(fs.tree.size).toBe(1);
+  });
+
+  it.each(["../Other/song.wav", "/song.wav", "audio/../../song.wav", "audio\\song.wav", "audio//song.wav"])("confines file operations to the selected project: %s", async (path) => {
+    await storage.openDocumentsProject("Game");
+    const before = new Map(fs.tree);
+    await expect(storage.writeBinary(path, new Uint8Array([1]))).rejects.toThrow(/path/i);
+    await expect(storage.remove(path)).rejects.toThrow(/path/i);
+    expect(fs.tree).toEqual(before);
+  });
+
+  it("allows root inspection but rejects removing or overwriting the project root", async () => {
+    await storage.openDocumentsProject("Game");
+    await storage.writeText("project.json", "saved");
+    expect(await storage.exists("")).toBe(true);
+    expect((await storage.stat("")).isDir).toBe(true);
+    expect((await storage.readdir("")).map((entry) => entry.name)).toEqual(["project.json"]);
+    await expect(storage.remove("")).rejects.toThrow(/root/i);
+    await expect(storage.writeText("", "overwrite")).rejects.toThrow(/root/i);
+    expect(await storage.readText("project.json")).toBe("saved");
+  });
+
+  it("reopens by stable id after a recent project is given a display name", async () => {
+    const original = await storage.openDocumentsProject("Game");
+    await storage.writeText("project.json", "original");
+    await storage.releaseFolder();
+    await storage.openKnownFolder({ ...original, name: "Pretty Name" });
+    expect(await storage.readText("project.json")).toBe("original");
+  });
 });

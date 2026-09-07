@@ -34,10 +34,9 @@ describe("createStorage", () => {
     expect(init).not.toHaveBeenCalled();
   });
 
-  it("uses the mobile adapter on mobile hosts and initializes it", () => {
+  it("uses the mobile adapter on mobile hosts", () => {
     isMobile.mockReturnValue(true);
     expect(createStorage()).toBeInstanceOf(MobileStorageAdapter);
-    expect(init).toHaveBeenCalledOnce();
   });
 
   it("uses the Electron adapter on desktop hosts", () => {

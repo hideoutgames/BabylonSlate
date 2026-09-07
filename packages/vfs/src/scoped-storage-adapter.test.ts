@@ -105,6 +105,45 @@ describe("ScopedStorageAdapter", () => {
     expect(adapter.getCurrentFolder()).toEqual(handle);
   });
 
+  it("migrates a legacy recent handle when opening it", async () => {
+    const plugin = createMockPlugin();
+    const bookmark = btoa("another-legacy-security-scoped-bookmark-that-is-long");
+    vi.mocked(plugin.importBookmark!).mockResolvedValue({ folder: { id: "migrated", name: "Legacy" } });
+    vi.mocked(plugin.readFile).mockResolvedValue({ data: "saved audio metadata" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.openKnownFolder({ id: bookmark, name: "Legacy", tier: "external" });
+    expect(await adapter.readText("project.json")).toBe("saved audio metadata");
+    expect(plugin.readFile).toHaveBeenCalledWith({ folder: "migrated", path: "project.json", encoding: "utf8" });
+  });
+
+  it("retains the failed recent folder as the reconnect target", async () => {
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "previous", name: "Previous" }));
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.openFolder).mockRejectedValue({ code: "NOT_FOUND" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    await expect(adapter.openKnownFolder({ id: "missing", name: "Cloud", tier: "external" })).rejects.toThrow(/reconnect/i);
+    expect(adapter.getCurrentFolder()?.id).toBe("missing");
+    expect(await adapter.needsReconnect()).toBe(true);
+    await expect(adapter.writeText("project.json", "unsafe")).rejects.toThrow(/reconnect/i);
+  });
+
+  it("keeps a stale legacy bookmark recoverable without failing startup", async () => {
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: btoa("legacy-security-scoped-bookmark-that-is-long"), name: "Legacy" }));
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.importBookmark!).mockRejectedValue({ code: "STALE" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    expect(await adapter.needsReconnect()).toBe(true);
+  });
+
+  it.each(["{broken", "null", '{"id":42}', '{"name":"Game"}'])("ignores malformed persisted folder data: %s", async (value) => {
+    prefs.set("babylonslate:scoped-folder", value);
+    const adapter = new ScopedStorageAdapter(createMockPlugin());
+    await adapter.init();
+    expect(adapter.getCurrentFolder()).toBeNull();
+  });
+
   it("throws CANCELLED when picking is cancelled", async () => {
     const plugin = createMockPlugin();
     vi.mocked(plugin.pickFolder).mockRejectedValue({ code: "CANCELLED" });
