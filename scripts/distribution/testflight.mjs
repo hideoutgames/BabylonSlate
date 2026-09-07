@@ -1,5 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { appleAvailability } from "./apple-contract.mjs";
+import { APPLE_BUNDLE_ID, appleAvailability } from "./apple-contract.mjs";
 import { identityNotes } from "./publish.mjs";
 
 export function validatePrivateGroups(groups, ids) {
@@ -27,6 +27,8 @@ export async function allApplePages(api, path) {
 
 export async function finalizeTestFlight({ identity, appId, group, timeoutMs = 20 * 60 * 1000 }, { api, now = Date.now, sleep = delay }) {
   if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 30 * 60 * 1000) throw new Error("Invalid TestFlight processing deadline");
+  const app = await api(`/v1/apps/${appId}`);
+  if (app?.data?.attributes?.bundleId !== APPLE_BUNDLE_ID) throw new Error("App Store Connect app record differs");
   const deadline = now() + timeoutMs;
   let state = "uploaded";
   do {

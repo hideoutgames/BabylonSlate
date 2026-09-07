@@ -18,6 +18,7 @@ function fixture(states = ["VALID"]) {
   const writes = [];
   const build = () => ({ id: "build1", type: "builds", attributes: { version: "417.0.1", processingState: states.length > 1 ? states.shift() : states[0] }, relationships: { preReleaseVersion: { data: { id: "version1" } }, buildBetaDetail: { data: { id: "detail1" } } } });
   const api = async (path, options = {}) => {
+    if (path === "/v1/apps/123") return { data: { attributes: { bundleId: "no.hideout.babylonslate" } } };
     if (options.method) { writes.push({ path, ...options }); if (path.endsWith("/relationships/builds")) assigned = true; return {}; }
     if (path.startsWith("/v1/builds?")) return { data: [build()], included: [{ id: "version1", type: "preReleaseVersions", attributes: { version: "0.0.1", platform: "IOS" } }, { id: "detail1", type: "buildBetaDetails", attributes: { externalBuildState: "IN_BETA_TESTING" } }] };
     if (path === "/v1/builds/build1/betaGroups?limit=200") return { data: assigned ? [group] : [] };
@@ -40,5 +41,14 @@ test("finalization assigns only the selected private group and writes exact iden
 test("bounded processing wait returns processing rather than successful availability", async () => {
   const f = fixture(["PROCESSING"]);
   assert.equal((await finalizeTestFlight({ identity, appId: "123", group, timeoutMs: 100 }, f)).state, "processing");
+  assert.equal(f.writes.length, 0);
+});
+
+test("finalization rejects another app record before changing metadata or group membership", async () => {
+  const f = fixture();
+  const api = async (path, options) => path === "/v1/apps/123"
+    ? { data: { attributes: { bundleId: "no.hideout.other" } } }
+    : f.api(path, options);
+  await assert.rejects(finalizeTestFlight({ identity, appId: "123", group, timeoutMs: 100 }, { ...f, api }), /app record/i);
   assert.equal(f.writes.length, 0);
 });
