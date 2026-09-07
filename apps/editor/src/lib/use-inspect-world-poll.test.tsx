@@ -48,9 +48,8 @@ describe("useInspectWorldPoll", () => {
     );
     expect(tickAfterOpen).toBeGreaterThan(0);
 
-    await vi.advanceTimersByTimeAsync(200);
     await act(async () => {
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(200);
     });
     expect(inspectWorld.mock.calls.length).toBeGreaterThan(callsAfterOpen);
     expect(
@@ -59,7 +58,9 @@ describe("useInspectWorldPoll", () => {
 
     rerender(<Probe open={false} inspectWorld={inspectWorld} />);
     const callsAfterClose = inspectWorld.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(400);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
     expect(inspectWorld.mock.calls.length).toBe(callsAfterClose);
   });
 
@@ -76,7 +77,9 @@ describe("useInspectWorldPoll", () => {
     render(<Probe open inspectWorld={inspectWorld} />);
     expect(inspectWorld).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(800);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
     expect(inspectWorld).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -87,9 +90,8 @@ describe("useInspectWorldPoll", () => {
       1,
     );
 
-    await vi.advanceTimersByTimeAsync(200);
     await act(async () => {
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(200);
     });
     expect(inspectWorld).toHaveBeenCalledTimes(2);
   });

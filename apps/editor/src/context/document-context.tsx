@@ -21,7 +21,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -61,6 +61,7 @@ import {
   replayJournalLines,
   serializeJournalLine,
   SetAssetDocumentCommand,
+  type EditCommand,
 } from "@babylonslate/edit";
 import {
   createAppSettingsStore,
@@ -79,6 +80,7 @@ import { sceneAssetClassId } from "@babylonslate/object-model";
 import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
+  type DocumentContent,
   type OpenDocument,
 } from "../services/document-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
@@ -1140,14 +1142,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       try {
         const line = JSON.parse(raw) as { docId?: string };
         const docId = line.docId;
-        const kind = docId?.startsWith("graph:")
-          ? "graph"
-          : docId?.startsWith("scene:")
-            ? "scene"
-            : null;
-        if (!docId || !kind) continue;
+        const ref = typeof docId === "string" ? parseDocumentId(docId) : null;
+        if (!docId || !ref || !isAssetDocumentKind(ref.kind)) continue;
         if (documentService.getState().openDocuments.has(docId)) continue;
-        const path = docId.slice(`${kind}:`.length);
+        const { kind, path } = ref;
         await documentService.openDocument(
           projectService,
           { kind, path, label: path.split("/").pop() ?? path },
@@ -1159,22 +1157,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const openDocs = new Map<string, SerializedGraph | SerializedScene>();
+    const openDocs = new Map<string, DocumentContent>();
     for (const doc of documentService.getOpenDocumentsOrdered()) {
-      if ((doc.ref.kind === "graph" || doc.ref.kind === "scene") && doc.content) {
-        openDocs.set(doc.id, doc.content as SerializedGraph | SerializedScene);
+      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+        openDocs.set(doc.id, doc.content);
       }
     }
 
     const { documents } = replayJournalLines(lines, openDocs);
     for (const [id, content] of documents) {
-      if (id.startsWith("scene:")) {
+      const doc = documentService.getDocument(id);
+      if (!doc || doc.content === content) continue;
+      if (isSceneWorkspaceKind(doc.ref.kind)) {
         documentService.updateScene(id, content as SerializedScene);
-      } else {
+      } else if (doc.ref.kind === "graph") {
         documentService.updateGraph(id, content as SerializedGraph);
+      } else {
+        documentService.updateAssetDocument(id, content as Record<string, unknown>);
       }
     }
-    await truncateJournal(derived, guid);
+    // Recovered edits remain unsaved. Keep the journal until Save/clean Close.
     setRecoveryAvailable(false);
     bump();
   }, [bump, documentService, ensureDerived, projectService]);
@@ -2014,6 +2016,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [classGraphsForPrefabSync],
   );
 
+  const notifyAppliedCommand = useCallback(
+    (id: string, command: EditCommand<unknown>) => {
+      const guid = projectService.guid;
+      const line = serializeJournalLine({
+        v: 1,
+        docId: id,
+        at: new Date().toISOString(),
+        command: commandToJournalPayload(command),
+      });
+      return notifyDocumentEdited({
+        scheduleDebouncedSave,
+        bump,
+        journal: async () => {
+          if (guid) await appendJournalLine(await ensureDerived(), guid, line);
+        },
+      });
+    },
+    [bump, ensureDerived, projectService, scheduleDebouncedSave],
+  );
+
   const applyGraphChange = useCallback(
     async (id: string, next: SerializedGraph): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
@@ -2032,29 +2054,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (commands.length === 0) {
         return false;
       }
-      const current = editSessionRef.current.applyBatch(id, previous, commands)!.doc;
-      documentService.updateGraph(id, current);
-      await notifyDocumentEdited({
-        scheduleDebouncedSave,
-        bump,
-        journal: async () => {
-          const guid = projectService.guid;
-          if (!guid) return;
-          const derived = await ensureDerived();
-          for (const command of commands) {
-            await appendJournalLine(
-              derived,
-              guid,
-              serializeJournalLine({
-                v: 1,
-                docId: id,
-                at: new Date().toISOString(),
-                command: commandToJournalPayload(command),
-              }),
-            );
-          }
-        },
-      });
+      const result = editSessionRef.current.applyBatch(id, previous, commands)!;
+      documentService.updateGraph(id, result.doc);
+      await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       if (commands.some((command) => command.type === "graph.setComponents")) {
         await enqueuePrefabSyncForClassPath(doc.ref.path);
@@ -2062,12 +2064,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return true;
     },
     [
-      bump,
       documentService,
       enqueuePrefabSyncForClassPath,
-      ensureDerived,
+      notifyAppliedCommand,
       projectService,
-      scheduleDebouncedSave,
     ],
   );
 
@@ -2150,30 +2150,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         void afterMutatingApply(sourceControlRef.current, doc.ref.path);
         return true;
       }
-      let current = editSessionRef.current.applyBatch(id, previous, commands)!.doc;
-      current = copyInstanceLinkage(intended, current);
+      const result = editSessionRef.current.applyBatch(id, previous, commands)!;
+      const current = copyInstanceLinkage(intended, result.doc);
       documentService.updateScene(id, current);
-      await notifyDocumentEdited({
-        scheduleDebouncedSave,
-        bump,
-        journal: async () => {
-          const guid = projectService.guid;
-          if (!guid) return;
-          const derived = await ensureDerived();
-          for (const command of commands) {
-            await appendJournalLine(
-              derived,
-              guid,
-              serializeJournalLine({
-                v: 1,
-                docId: id,
-                at: new Date().toISOString(),
-                command: commandToJournalPayload(command),
-              }),
-            );
-          }
-        },
-      });
+      await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
@@ -2181,7 +2161,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump,
       classGraphsForPrefabSync,
       documentService,
-      ensureDerived,
+      notifyAppliedCommand,
       projectService,
       scheduleDebouncedSave,
     ],
@@ -2247,29 +2227,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const command = new SetAssetDocumentCommand(previous, next, mergeKey);
       const current = editSessionRef.current.apply(id, previous, command).doc;
       documentService.updateAssetDocument(id, current);
-      await notifyDocumentEdited({
-        scheduleDebouncedSave,
-        bump,
-        journal: async () => {
-          const guid = projectService.guid;
-          if (!guid) return;
-          const derived = await ensureDerived();
-          await appendJournalLine(
-            derived,
-            guid,
-            serializeJournalLine({
-              v: 1,
-              docId: id,
-              at: new Date().toISOString(),
-              command: commandToJournalPayload(command),
-            }),
-          );
-        },
-      });
+      await notifyAppliedCommand(id, command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
-    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
+    [documentService, notifyAppliedCommand, projectService],
   );
 
   const readAssetChunk = useCallback(
@@ -3602,7 +3564,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
         documentService.updateGraph(activeDocumentId, result.doc);
-        bump();
+        void notifyAppliedCommand(activeDocumentId, result.command);
         if (
           JSON.stringify(content.components) !==
           JSON.stringify(result.doc.components)
@@ -3619,7 +3581,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
         documentService.updateScene(activeDocumentId, result.doc);
-        bump();
+        void notifyAppliedCommand(activeDocumentId, result.command);
         return;
       }
       if (isAssetDocumentKind(doc.ref.kind)) {
@@ -3631,10 +3593,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
         documentService.updateAssetDocument(activeDocumentId, result.doc);
-        bump();
+        void notifyAppliedCommand(activeDocumentId, result.command);
       }
     },
-    [bump, documentService, enqueuePrefabSyncForClassPath],
+    [documentService, enqueuePrefabSyncForClassPath, notifyAppliedCommand],
   );
 
   const undoActiveDocument = useCallback(() => {

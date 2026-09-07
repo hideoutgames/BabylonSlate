@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import type { SerializedGraph } from "@babylonslate/core";
 import { MyClassPanel } from "./my-class-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 
@@ -29,7 +30,7 @@ function dispatchPointerEvent(
   target.dispatchEvent(event);
 }
 
-const applyGraphChange = vi.hoisted(() => vi.fn(async () => true));
+const applyGraphChange = vi.hoisted(() => vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(async () => true));
 const device = vi.hoisted(() => ({ phone: false }));
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => device.phone,
@@ -143,6 +144,12 @@ describe("MyClassPanel name prompt", () => {
       target: { value: "On Hit" },
     });
     fireEvent.click(screen.getByTestId("add-event-confirm"));
+    expect(applyGraphChange).toHaveBeenCalledTimes(1);
+    const committed = applyGraphChange.mock.calls.at(-1)![1];
+    const eventNode = committed.nodes.find((node) => node.type === "flow.event.custom")!;
+    expect(committed.members).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: eventNode.id, kind: "event", name: "On Hit" }),
+    ]));
     expect(applyGraphChange).toHaveBeenCalledWith(
       "graph:assets/Hero.class.babasset",
       expect.objectContaining({

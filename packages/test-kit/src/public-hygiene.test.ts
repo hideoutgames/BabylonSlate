@@ -25,10 +25,11 @@ const fakeSlackToken = `xoxb-${"1".repeat(12)}`;
 const sessionLink = `https://app.${"devin"}.ai/sessions/0123456789abcdef`;
 
 describe("public repository hygiene", () => {
+  // Allow the full tracked-tree I/O scan to finish under coverage and concurrent builds.
   it("has no violations in tracked content", () => {
     const violations = scanTrackedFiles(repoRoot) as { path: string }[];
     expect(violations).toEqual([]);
-  });
+  }, 20_000);
 
   it("flags agent session links and attribution footers", () => {
     expect(scanText("docs/x.md", sessionLink)).toMatchObject([

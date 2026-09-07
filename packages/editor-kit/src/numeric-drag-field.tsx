@@ -11,6 +11,8 @@ export interface NumericDragFieldProps {
   label?: string;
   id?: string;
   value: number;
+  /** Different selected values; `value` remains the scrub/expression baseline. */
+  mixed?: boolean;
   /** World units (or degrees) per pixel of horizontal drag. */
   sensitivity?: number;
   step?: number;
@@ -42,6 +44,7 @@ export function NumericDragField({
   label,
   id,
   value,
+  mixed = false,
   sensitivity = 0.01,
   min,
   max,
@@ -133,7 +136,8 @@ export function NumericDragField({
         aria-label={label || undefined}
         data-testid={testId}
         disabled={disabled}
-        value={draft ?? formatNumericDisplay(value)}
+        value={draft ?? (mixed ? "" : formatNumericDisplay(value))}
+        placeholder={mixed ? "Mixed" : undefined}
         onChange={(event) => {
           const raw = event.target.value;
           if (draft === null) baselineRef.current = value;

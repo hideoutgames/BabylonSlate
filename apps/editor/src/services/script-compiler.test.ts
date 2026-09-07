@@ -41,6 +41,177 @@ const tickToLog: SerializedGraph = {
 };
 
 describe("script compiler service", () => {
+  it("ships component-only classes and their empty child classes for runtime spawning", async () => {
+    const { createInProcessRuntime } = await import("@babylonslate/runtime");
+    const scripts = compileGraphDocuments([
+      {
+        path: "assets/Parent.class.babasset",
+        classId: "Parent",
+        content: {
+          nodes: [],
+          edges: [],
+          components: [
+            {
+              id: "mesh",
+              classId: "MeshComponent",
+              properties: { meshKind: "box" },
+            },
+          ],
+        },
+      },
+      {
+        path: "assets/Child.class.babasset",
+        classId: "Child",
+        parentClassId: "Parent",
+        content: { nodes: [], edges: [], components: [] },
+      },
+    ]);
+    expect(scripts.map((script) => script.classId)).toEqual([
+      "Parent",
+      "Child",
+    ]);
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    try {
+      await runtime.loadScripts(scripts);
+      const actor = runtime.spawnScriptedActor({ classId: "Child" });
+      expect(actor?.components.map((component) => component.classId)).toEqual([
+        "MeshComponent",
+      ]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("ships authored prefab components with the compiled class", () => {
+    const components = [
+      { id: "mesh", classId: "MeshComponent", properties: { meshKind: "box" } },
+    ];
+    const script = compileGraphDocument(
+      { ...tickToLog, components },
+      { path: "assets/Hero.class.babasset" },
+    );
+    expect(script).toHaveProperty("components", components);
+  });
+
+  it("ships inherited prefab components alongside the child class's local components", () => {
+    const scripts = compileGraphDocuments([
+      {
+        path: "assets/Parent.class.babasset",
+        classId: "Parent",
+        content: {
+          ...tickToLog,
+          components: [
+            {
+              id: "mesh",
+              classId: "MeshComponent",
+              properties: { meshKind: "box" },
+            },
+          ],
+        },
+      },
+      {
+        path: "assets/Child.class.babasset",
+        classId: "Child",
+        parentClassId: "Parent",
+        content: {
+          ...tickToLog,
+          components: [
+            {
+              id: "collider",
+              classId: "ColliderComponent",
+              parentId: "mesh",
+              properties: {},
+            },
+          ],
+        },
+      },
+    ]);
+    expect(
+      scripts
+        .find((script) => script.classId === "Child")
+        ?.components?.map((component) => component.id),
+    ).toEqual(["mesh", "collider"]);
+  });
+
+  it("refreshes cached spawn templates after a component property edit", () => {
+    const cache = new GraphScriptCompileCache();
+    const document = {
+      path: "assets/Hero.class.babasset",
+      content: {
+        ...tickToLog,
+        components: [
+          {
+            id: "mesh",
+            classId: "MeshComponent",
+            properties: { meshKind: "box" },
+          },
+        ],
+      },
+    };
+    const first = compileGraphDocuments([document], { cache });
+    const changed = {
+      ...document,
+      content: {
+        ...document.content,
+        components: [
+          {
+            id: "mesh",
+            classId: "MeshComponent",
+            properties: { meshKind: "sphere" },
+          },
+        ],
+      },
+    };
+    const second = compileGraphDocuments([changed], { cache });
+    expect(first[0]?.components?.[0]?.properties.meshKind).toBe("box");
+    expect(second[0]?.components?.[0]?.properties.meshKind).toBe("sphere");
+    expect(graphCompileSignature([changed])).not.toBe(
+      graphCompileSignature([document]),
+    );
+  });
+
+  it("refreshes a cached child's inherited spawn template after the parent changes", () => {
+    const cache = new GraphScriptCompileCache();
+    const parent = {
+      path: "assets/Parent.class.babasset",
+      classId: "Parent",
+      content: {
+        ...tickToLog,
+        components: [
+          {
+            id: "mesh",
+            classId: "MeshComponent",
+            properties: { meshKind: "box" },
+          },
+        ],
+      },
+    };
+    const child = {
+      path: "assets/Child.class.babasset",
+      classId: "Child",
+      parentClassId: "Parent",
+      content: { ...tickToLog, components: [] },
+    };
+    compileGraphDocuments([parent, child], { cache });
+    const changed = {
+      ...parent,
+      content: {
+        ...parent.content,
+        components: [
+          {
+            id: "mesh",
+            classId: "MeshComponent",
+            properties: { meshKind: "sphere" },
+          },
+        ],
+      },
+    };
+    const scripts = compileGraphDocuments([changed, child], { cache });
+    expect(
+      scripts.find((script) => script.classId === "Child")?.components?.[0]
+        ?.properties.meshKind,
+    ).toBe("sphere");
+  });
   it("derives a stable class id from the graph path", () => {
     expect(classIdForGraphPath("assets/main.graph.babasset")).toBe("main");
     expect(classIdForGraphPath("assets/main.class.babasset")).toBe("main");

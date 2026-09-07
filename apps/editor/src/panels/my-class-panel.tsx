@@ -380,6 +380,7 @@ export function ClassMembersView({
   onGraphChange,
   selectedId,
   onSelectMember,
+  onFocusEventNode,
   interfaceAssets,
   membersOptions,
   activeFunctionId,
@@ -391,6 +392,8 @@ export function ClassMembersView({
   onGraphChange: (next: SerializedGraph) => void;
   selectedId?: string | null;
   onSelectMember?: (id: string, member: MyClassMember | undefined) => void;
+  /** Focus a node in the graph just committed by the creation dialog. */
+  onFocusEventNode?: (nodeId: string, name: string) => void;
   interfaceAssets?: Array<{ guid: string; name: string; type: string }>;
   membersOptions?: MembersForGraphOptions;
   activeFunctionId?: string | null;
@@ -766,12 +769,7 @@ export function ClassMembersView({
           if (memberPromptKind === "event") {
             const node = next.nodes[next.nodes.length - 1];
             if (node) {
-              onSelectMember?.(node.id, {
-                kind: "event",
-                name: node.data.name as string,
-                detail: node.id,
-                eventType: "flow.event.custom",
-              });
+              onFocusEventNode?.(node.id, node.data.name as string);
             }
             return;
           }
@@ -822,12 +820,7 @@ export function ClassMembersView({
           onGraphChange(next);
           const node = next.nodes[next.nodes.length - 1];
           if (node) {
-            onSelectMember?.(node.id, {
-              kind: "event",
-              name: node.data.name as string,
-              detail: node.id,
-              eventType: "flow.event.custom",
-            });
+            onFocusEventNode?.(node.id, node.data.name as string);
           }
         }}
         onPick={(id) => {
@@ -861,12 +854,7 @@ export function ClassMembersView({
             return entry.data.name === row.name;
           });
           if (node) {
-            onSelectMember?.(node.id, {
-              kind: "event",
-              name: row.name,
-              detail: node.id,
-              eventType: row.eventType,
-            });
+            onFocusEventNode?.(node.id, row.name);
           }
         }}
       />
@@ -1005,6 +993,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
         interfaceAssets={interfaceAssets}
         membersOptions={membersOptions}
         onGraphChange={persistGraph}
+        onFocusEventNode={focusEvent}
         onOpenInherited={(member) => {
           const from = member.inheritedFrom;
           if (!from || isLockedEngineClassId(from)) return;
