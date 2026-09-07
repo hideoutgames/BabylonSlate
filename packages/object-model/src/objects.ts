@@ -141,6 +141,8 @@ export class Actor extends BObject {
 }
 
 export class ActorComponent extends BObject {
+  private materialObject: MaterialObject | null = null;
+  private materialRevision = 0;
   owner: Actor | null = null;
   /** Optional asset reference stub for engine components. */
   assetGuid: Guid | null = null;
@@ -180,6 +182,61 @@ export class ActorComponent extends BObject {
           scale: { ...options.transform.scale },
         }
       : identityTransform();
+  }
+
+  override getVariable(name: string): unknown {
+    if (this.classId !== "MeshComponent" || name !== "materialObject") {
+      return super.getVariable(name);
+    }
+    const guid = super.getVariable("materialGuid");
+    if (
+      this.destroyed ||
+      !this.owner ||
+      this.owner.destroyed ||
+      typeof guid !== "string" ||
+      !guid.trim()
+    ) {
+      if (this.materialObject) this.materialObject.destroyed = true;
+      this.materialObject = null;
+      return null;
+    }
+    if (
+      !this.materialObject ||
+      this.materialObject.materialAssetGuid !== guid
+    ) {
+      if (this.materialObject) this.materialObject.destroyed = true;
+      this.materialObject = new MaterialObject(
+        this,
+        guid,
+        ++this.materialRevision,
+      );
+    }
+    return this.materialObject;
+  }
+
+  override setVariable(name: string, value: unknown): void {
+    if (this.classId === "MeshComponent") {
+      if (name === "materialObject") return;
+      if (name === "materialGuid" && value !== super.getVariable(name)) {
+        if (this.materialObject) this.materialObject.destroyed = true;
+        this.materialObject = null;
+      }
+    }
+    super.setVariable(name, value);
+  }
+}
+
+/** Engine-neutral reference to one mesh component's current material instance. */
+export class MaterialObject extends BObject {
+  constructor(
+    readonly component: ActorComponent,
+    readonly materialAssetGuid: string,
+    revision: number,
+  ) {
+    super({
+      classId: "MaterialObject",
+      guid: `${component.guid}:material:${revision}`,
+    });
   }
 }
 

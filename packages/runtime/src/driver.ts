@@ -858,6 +858,30 @@ class InProcessRuntime implements RuntimeDriver {
           height: nextHeight,
         });
       },
+      setMaterialParameter: (material, parameterName, parameter) => {
+        const component = material.component;
+        const owner = component.owner;
+        if (!owner || owner.destroyed || component.destroyed) return;
+        const slotId = this.slotByGuid.get(owner.guid);
+        if (slotId === undefined) return;
+        const skipButtonMesh =
+          overlayButtonHasSiblingVisual(owner) ||
+          overlayButtonHasParentVisual(owner, this.world);
+        const renderables = owner.components.filter((entry) =>
+          isPlayRenderable(entry, skipButtonMesh),
+        );
+        if (!renderables.includes(component)) return;
+        this.emit({
+          type: "setMaterialParameter",
+          slotId,
+          ...(playPartsNeeded(renderables)
+            ? { componentId: component.guid }
+            : {}),
+          materialAssetGuid: material.materialAssetGuid,
+          parameterName,
+          parameter,
+        });
+      },
       possessCamera: (target) => {
         this.possessCamera(target);
       },

@@ -2,6 +2,12 @@
 
 import type { ProjectInputSettings, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
+/** Serializable runtime override of one named Material Graph parameter. */
+export type MaterialParameterValue =
+  | { kind: "float"; value: number }
+  | { kind: "color"; value: [number, number, number, number] }
+  | { kind: "texture"; textureAssetGuid: string | null };
+
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
   line: number;
@@ -381,6 +387,15 @@ export type CommandMessage =
       slotId: number;
       materialAssetGuid: string | null;
       componentId?: string | null;
+    }
+  | {
+      type: "setMaterialParameter";
+      slotId: number;
+      componentId?: string | null;
+      /** Captured assignment prevents stale writes reaching a replacement. */
+      materialAssetGuid: string;
+      parameterName: string;
+      parameter: MaterialParameterValue;
     }
   | {
       type: "log";
