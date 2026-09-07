@@ -26,3 +26,10 @@ The Babylon skill includes a legacy `babylonjs.skill` archive. It contains an ol
 - Exercise routing for engine work, editor UI, docs creation, pure-logic tests, investigation, and review. Confirm read-only requests do not trigger writes and planning can return a plan.
 - In each intended client, start a fresh session and ask it to identify the applicable rules and skill paths for those scenarios. Record actual client results; static link checks do not prove automatic discovery.
 - Run `pnpm verify` before marking the implementation PR ready. If verification or client access is unavailable, disclose that limitation and retain the compatibility entry points.
+
+## Migration validation record
+
+- The active T3 Code/Codex runtime discovered all eight canonical skills from `.agents/skills/` during the migration. This confirms discovery in that runtime; fresh-session Cursor behavior and other clients have not been exercised.
+- Static checks confirmed all ten Cursor rule activation headers were preserved, their original path patterns appear in root routing, and all eight forwarding descriptions match their canonical skills.
+- All 171 checked local instruction/migration links resolved with exact filename case. The 44 supporting files that were moved without edits retained their Git blob hashes; the meshes reference received a broken-link correction.
+- Skill frontmatter was checked with Node and a YAML parser because Python was unavailable for the skill-creator validator. This check covers names, required descriptions, supported keys, and length limits.
