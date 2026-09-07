@@ -112,7 +112,7 @@ upperArm.parent = shoulderPivot;
 upperArm.position.y = 0.6;                          // geometry sticks out from joint
 // Animation later: shoulderPivot.rotation.y = ...  // rotates whole arm cleanly
 ```
-For booleans (drilled holes, carved slots), use **CSG2** (Babylon 8). For rotationally symmetric parts (bottles, hubs, columns) use `CreateLathe`. For path-swept parts (cables, rails) use `CreateTube` or `ExtrudeShape`. See [procedural-parametric-modeling.md](references/procedural-parametric-modeling
+For booleans (drilled holes, carved slots), use **CSG2** (Babylon 8). For rotationally symmetric parts (bottles, hubs, columns) use `CreateLathe`. For path-swept parts (cables, rails) use `CreateTube` or `ExtrudeShape`. See [procedural-parametric-modeling.md](references/procedural-parametric-modeling.md).
 
 ## Reference Files
 
