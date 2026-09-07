@@ -874,9 +874,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emit({
           type: "setMaterialParameter",
           slotId,
-          ...(playPartsNeeded(renderables)
-            ? { componentId: component.guid }
-            : {}),
+          componentId: component.guid,
           materialAssetGuid: material.materialAssetGuid,
           parameterName,
           parameter,
@@ -2745,6 +2743,9 @@ class InProcessRuntime implements RuntimeDriver {
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
         actorGuid: actor.guid,
+        ...(!parts && primary.classId === "MeshComponent"
+          ? { primaryComponentId: primary.guid }
+          : {}),
         ...(meshKind === "sprite" || meshKind === "tilemap"
           ? playSortingOf(primary)
           : {}),
@@ -3087,7 +3088,9 @@ class InProcessRuntime implements RuntimeDriver {
         type: "assignMaterial",
         slotId,
         materialAssetGuid: guid,
-        ...(multipart ? { componentId: component.guid } : {}),
+        ...(multipart || component.classId === "MeshComponent"
+          ? { componentId: component.guid }
+          : {}),
       });
     }
   }

@@ -256,6 +256,8 @@ export type CommandMessage =
       sceneLayerId?: string | null;
       /** Overlay actor guid for HitTest / pointer events. */
       actorGuid?: string | null;
+      /** Stable component identity when one visual uses the optimized actor mesh. */
+      primaryComponentId?: string;
       /** Overlay HitTest for the actor visual (`ignore` is not pickable). */
       hitTest?: "ignore" | "block" | "passThrough";
       /** Overlay actor has a `2DButtonComponent`. */

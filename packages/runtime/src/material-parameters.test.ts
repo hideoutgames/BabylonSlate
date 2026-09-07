@@ -55,6 +55,46 @@ async function execute(source: string, twoMeshes = true) {
 }
 
 describe("runtime material parameters", () => {
+  it("keeps actual component identity while its actor switches between single and multiple visuals", async () => {
+    const commands = await execute(
+      `export function onBeginPlay(ctx) {
+      const mesh = ctx.getComponentById(ctx.self, "mesh-1");
+      const material = ctx.getVariableFrom(mesh, "materialObject");
+      ctx.setMaterialFloatParameter(material, "Roughness", 0.2);
+      const extra = ctx.addComponent(ctx.self, "MeshComponent");
+      ctx.setVariableOn(extra, "meshKind", "box");
+      ctx.setMaterialFloatParameter(material, "Roughness", 0.3);
+      extra.destroyed = true;
+      ctx.setVariableOn(mesh, "meshKind", "sphere");
+      ctx.setMaterialFloatParameter(material, "Roughness", 0.4);
+    }`,
+      false,
+    );
+    expect(commands.filter((command) => command.type === "diagnostic")).toEqual(
+      [],
+    );
+    const assignments = commands.filter(
+      (command): command is Extract<CommandMessage, { type: "assignMesh" }> =>
+        command.type === "assignMesh" && command.actorGuid === "prop",
+    );
+    expect(assignments[0]).toMatchObject({ primaryComponentId: "mesh-1" });
+    expect(assignments.some((command) => command.parts?.length === 2)).toBe(
+      true,
+    );
+    expect(assignments.at(-1)).toMatchObject({ primaryComponentId: "mesh-1" });
+    expect(assignments.at(-1)?.parts).toBeUndefined();
+    expect(
+      commands
+        .filter((command) => command.type === "setMaterialParameter")
+        .map((command) => command.componentId),
+    ).toEqual(["mesh-1", "mesh-1", "mesh-1"]);
+    expect(
+      commands
+        .filter((command) => command.type === "assignMaterial")
+        .every((command) => command.componentId === "mesh-1"),
+    ).toBe(true);
+  });
+
   it("compiles typed setters with literal names and executes their Then chain on the selected mesh", async () => {
     const registry = createDefaultNodeRegistry();
     const node = (
@@ -203,6 +243,7 @@ describe("runtime material parameters", () => {
       {
         type: "setMaterialParameter",
         slotId: 0,
+        componentId: "mesh-1",
         materialAssetGuid: "mat-rock",
         parameterName: "Diffuse",
         parameter: { kind: "texture", textureAssetGuid: null },
