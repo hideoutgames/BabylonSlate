@@ -329,6 +329,7 @@ export async function runAgentWait(options, context = {}) {
       result.initialState = await state("initial");
       result.commitSha = result.initialState.commit;
       const response = await command(manager, [
+        "--reporter=append-only",
         "run",
         options.script,
         ...(options.args ?? []),
