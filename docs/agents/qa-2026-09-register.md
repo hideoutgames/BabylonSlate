@@ -235,3 +235,9 @@ Implementation entries will record failing and passing tests, exact subcases cla
 
 - A component regression reproduced three separate Add Node activations placing three nodes at the same coordinates. Repeated toolbar insertions now stagger without moving existing nodes; pin-drag additions keep the selected drop point.
 - The GraphEditor suite passes, including one-node-per-activation and preserved pin-drag placement. This fixes the tested coincident-position case, not general graph auto-layout or a historical double-activation claim. Full delivery verification remains pending.
+
+### H6/M3/M4/M17: fresh lifecycle controls
+
+- Six desktop Chromium checks pass on an isolated build: graph Undo recovery across two reloads; Enum recovery; Class Undo preserving a separately edited Scene and its own Undo/Redo; Normal Play and Preview Build saving content while retaining history after Stop; and clean editor Save/rescan versus a real conflicting disk change dismissed by the first Keep Open click.
+- The cross-tab and Play/Preview checks inspect content and dirty state together. Save/reload preserves the selected revisions. These fresh configurations are N for the historical cross-tab, Stop/history-loss, and false-reload claims; they do not establish original-project equivalence or close Bake/Export variants.
+- Local browser verification now rejects a server already running on its selected port. `PLAYWRIGHT_PORT` isolates checkouts; Windows preview arguments reach Vite without an extra argument terminator. An earlier interrupted run that could reuse another checkout is not delivery evidence.
