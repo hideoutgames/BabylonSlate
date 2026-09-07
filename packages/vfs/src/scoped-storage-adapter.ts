@@ -133,8 +133,11 @@ export class ScopedStorageAdapter implements ProjectStorage {
     if (this.folder && isLegacyBookmark(this.folder.id)) {
       try {
         await this.openKnownFolder(toHandle(this.folder));
-      } catch (error) {
-        if (!this.stale) throw error;
+      } catch {
+        // An offline legacy provider must not block the Documents tier.
+        // Keep its identity for a later explicit reconnect instead.
+        this.stale = true;
+        await Preferences.set({ key: STALE_PREF_KEY, value: "1" });
       }
     }
   }

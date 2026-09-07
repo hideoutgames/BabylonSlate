@@ -154,6 +154,17 @@ describe("project round-trip", () => {
     expect(await storage.readdir("")).toEqual([]);
   });
 
+  it("rejects an array manifest during reconnect", async () => {
+    const storage = new MemoryStorageAdapter("external");
+    await storage.pickProjectFolder();
+    await storage.writeText(PROJECT_FILE, "[]");
+    const service = new ProjectService(Object.assign(storage, {
+      reconnectFolder: async () => storage.getCurrentFolder()!,
+    }));
+    await expect(service.reconnect()).rejects.toThrow("Invalid project manifest");
+    expect(await storage.readText(PROJECT_FILE)).toBe("[]");
+  });
+
   it("rewrites metadata.name without renaming the folder", async () => {
     localStorage.clear();
     const storage = new WebStorageAdapter();

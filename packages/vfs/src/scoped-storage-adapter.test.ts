@@ -105,6 +105,17 @@ describe("ScopedStorageAdapter", () => {
     expect(adapter.getCurrentFolder()).toEqual(handle);
   });
 
+  it("retains an unreachable legacy bookmark without rejecting mobile initialization", async () => {
+    const id = btoa("a-legacy-security-scoped-bookmark-that-is-long");
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id, name: "Offline" }));
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.importBookmark!).mockRejectedValue({ code: "UNREACHABLE" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    expect(adapter.getCurrentFolder()?.id).toBe(id);
+    expect(await adapter.needsReconnect()).toBe(true);
+  });
+
   it("migrates a legacy recent handle when opening it", async () => {
     const plugin = createMockPlugin();
     const bookmark = btoa("another-legacy-security-scoped-bookmark-that-is-long");

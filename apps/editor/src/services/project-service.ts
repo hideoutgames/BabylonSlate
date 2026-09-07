@@ -593,7 +593,9 @@ export class ProjectService {
         throw new Error("Select a project folder containing project.json.");
       }
       const manifest: unknown = JSON.parse(await candidate.readText(PROJECT_FILE));
-      if (!manifest || typeof manifest !== "object") throw new Error("Invalid project manifest.");
+      if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+        throw new Error("Invalid project manifest.");
+      }
       if (this.projectGuid && (!("guid" in manifest) || manifest.guid !== this.projectGuid)) {
         throw new Error("Select the folder for the currently open project.");
       }

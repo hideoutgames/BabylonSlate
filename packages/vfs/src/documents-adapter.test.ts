@@ -14,6 +14,13 @@ describe("DocumentsStorageAdapter", () => {
     storage = new DocumentsStorageAdapter(fs);
   });
 
+  it("does not recreate a deleted project when opening a recent handle", async () => {
+    const missing = { id: "documents:Deleted", name: "Deleted", tier: "documents" as const };
+    await expect(storage.openKnownFolder(missing)).rejects.toBeDefined();
+    expect(fs.tree.has("BabylonSlate/projects/Deleted")).toBe(false);
+    expect(storage.getCurrentFolder()).toBeNull();
+  });
+
   it("creates and lists documents projects without a picker", async () => {
     await storage.openDocumentsProject("Demo.babproject");
     await storage.writeText("project.json", '{"ok":true}');

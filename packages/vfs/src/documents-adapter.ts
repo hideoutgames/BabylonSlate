@@ -112,7 +112,11 @@ export class DocumentsStorageAdapter implements ProjectStorage {
       throw new Error(`Documents adapter cannot open tier ${handle.tier}`);
     }
     if (!handle.id.startsWith("documents:")) throw new Error("Invalid Documents project id");
-    return this.openDocumentsProject(handle.id.slice("documents:".length));
+    const name = projectFolderName(handle.id.slice("documents:".length));
+    const info = await this.fs.stat({ path: `${PROJECTS_ROOT}/${name}`, directory: this.directory });
+    if (info.type !== "directory") throw new Error("Project folder is not a directory.");
+    this.folder = { id: `documents:${name}`, name, tier: "documents" };
+    return this.folder;
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
