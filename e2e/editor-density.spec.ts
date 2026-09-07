@@ -1,10 +1,10 @@
+import { openMinimalTestProject as openTestProject } from "./minimal-project";
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import {
   createContentBrowserAsset,
   openContentBrowser,
-  openTestProject,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
@@ -33,24 +33,30 @@ async function paintSelectContentTiles(
 }
 
 test.describe("Editor density and IA", () => {
-  test("chrome is compact, has no Add tab, and Focus is disabled on Content Browser", {
-    tag: IPAD_TEST_TAG,
-  }, async ({
-    page,
-  }) => {
-    await openTestProject(page);
+  test(
+    "chrome is compact, has no Add tab, and Focus is disabled on Content Browser",
+    {
+      tag: IPAD_TEST_TAG,
+    },
+    async ({ page }) => {
+      await openTestProject(page);
 
-    await expect(page.getByTestId("document-tab-add")).toHaveCount(0);
-    await expect(page.getByTestId("project-name")).toContainText("TestProject");
-    await expect(page.getByTestId("project-name")).not.toContainText(".babproject");
-    await expect(page.getByTestId("focus-layout")).toBeDisabled();
+      await expect(page.getByTestId("document-tab-add")).toHaveCount(0);
+      await expect(page.getByTestId("project-name")).toContainText(
+        "TestProject",
+      );
+      await expect(page.getByTestId("project-name")).not.toContainText(
+        ".babproject",
+      );
+      await expect(page.getByTestId("focus-layout")).toBeDisabled();
 
-    const undo = page.getByTestId("undo-document");
-    await expect(undo).toBeVisible();
-    const undoBox = await undo.boundingBox();
-    expect(undoBox).not.toBeNull();
-    expect(undoBox!.height).toBeGreaterThanOrEqual(28);
-  });
+      const undo = page.getByTestId("undo-document");
+      await expect(undo).toBeVisible();
+      const undoBox = await undo.boundingBox();
+      expect(undoBox).not.toBeNull();
+      expect(undoBox!.height).toBeGreaterThanOrEqual(28);
+    },
+  );
 
   test("Content Browser click selects and double-click opens a scene", async ({
     page,
@@ -76,7 +82,7 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("content-browser-filter-menu")).toBeVisible();
     await page.getByTestId("content-browser-filter-Scene").click();
     await expect(
-      page.locator('[data-asset-path="assets/Mannequin.class.babasset"]'),
+      page.locator('[data-asset-path="assets/main.class.babasset"]'),
     ).toHaveCount(0);
     await expect(
       page.locator('[data-asset-path="assets/main.scene.babasset"]'),
@@ -86,15 +92,21 @@ test.describe("Editor density and IA", () => {
   test("Content Browser Sort menu orders asset tiles", async ({ page }) => {
     await openTestProject(page);
     const grid = page.getByTestId("content-browser-asset-grid");
-    const classPath = "assets/Mannequin.class.babasset";
+    const classPath = "assets/main.class.babasset";
     const scenePath = "assets/main.scene.babasset";
-    await expect(grid.locator(`[data-asset-path="${classPath}"]`)).toBeVisible();
-    await expect(grid.locator(`[data-asset-path="${scenePath}"]`)).toBeVisible();
+    await expect(
+      grid.locator(`[data-asset-path="${classPath}"]`),
+    ).toBeVisible();
+    await expect(
+      grid.locator(`[data-asset-path="${scenePath}"]`),
+    ).toBeVisible();
 
     async function assetPaths(): Promise<string[]> {
-      return grid.locator("[data-asset-path]").evaluateAll((tiles) =>
-        tiles.map((tile) => tile.getAttribute("data-asset-path") ?? ""),
-      );
+      return grid
+        .locator("[data-asset-path]")
+        .evaluateAll((tiles) =>
+          tiles.map((tile) => tile.getAttribute("data-asset-path") ?? ""),
+        );
     }
 
     async function folderTilesStayFirst(): Promise<void> {
@@ -140,50 +152,56 @@ test.describe("Editor density and IA", () => {
     await folderTilesStayFirst();
   });
 
-  test("Focus hides the Outliner; Place Actors catalog does not focus search", {
-    tag: IPAD_TEST_TAG,
-  }, async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
-      .dblclick();
-    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
-      timeout: 15_000,
-    });
+  test(
+    "Focus hides the Outliner; Place Actors catalog does not focus search",
+    {
+      tag: IPAD_TEST_TAG,
+    },
+    async ({ page }) => {
+      await openTestProject(page);
+      await page
+        .locator('[data-asset-path="assets/main.scene.babasset"]')
+        .dblclick();
+      await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
+        timeout: 15_000,
+      });
 
-    const dockTab = page.locator(".dockview-theme-babylonslate .dv-tab").first();
-    await expect(dockTab).toBeVisible();
-    const dockBox = await dockTab.boundingBox();
-    expect(dockBox).not.toBeNull();
-    const coarse = await page.evaluate(() =>
-      window.matchMedia("(pointer: coarse)").matches,
-    );
-    expect(dockBox!.height).toBeGreaterThanOrEqual(coarse ? 26 : 18);
+      const dockTab = page
+        .locator(".dockview-theme-babylonslate .dv-tab")
+        .first();
+      await expect(dockTab).toBeVisible();
+      const dockBox = await dockTab.boundingBox();
+      expect(dockBox).not.toBeNull();
+      const coarse = await page.evaluate(
+        () => window.matchMedia("(pointer: coarse)").matches,
+      );
+      expect(dockBox!.height).toBeGreaterThanOrEqual(coarse ? 26 : 18);
 
-    const focus = page.getByTestId("focus-layout");
-    await expect(focus).toBeEnabled();
-    await focus.click();
-    await expect(focus).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("scene-outliner-panel")).not.toBeVisible();
+      const focus = page.getByTestId("focus-layout");
+      await expect(focus).toBeEnabled();
+      await focus.click();
+      await expect(focus).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("scene-outliner-panel")).not.toBeVisible();
 
-    await focus.click();
-    await expect(focus).toHaveAttribute("aria-pressed", "false");
-    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
+      await focus.click();
+      await expect(focus).toHaveAttribute("aria-pressed", "false");
+      await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
 
-    await page.getByTestId("outliner-add-actor").click();
-    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
-    await expect(page.getByTestId("place-actors-catalog-search")).not.toBeFocused();
-    await expect(page.getByTestId("place-actors-catalog-body")).toBeVisible();
-  });
+      await page.getByTestId("outliner-add-actor").click();
+      await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+      await expect(
+        page.getByTestId("place-actors-catalog-search"),
+      ).not.toBeFocused();
+      await expect(page.getByTestId("place-actors-catalog-body")).toBeVisible();
+    },
+  );
 
   test("Class Focus hides Inspector and Class, keeping Graph", async ({
     page,
   }) => {
     await openTestProject(page);
     await page
-      .locator('[data-asset-path="assets/Mannequin.class.babasset"]')
+      .locator('[data-asset-path="assets/main.class.babasset"]')
       .dblclick();
     await expect(page.getByTestId("graph-panel")).toBeVisible({
       timeout: 15_000,
@@ -208,7 +226,7 @@ test.describe("Editor density and IA", () => {
   test("Add Node catalog does not focus search", async ({ page }) => {
     await openTestProject(page);
     await page
-      .locator('[data-asset-path="assets/Mannequin.class.babasset"]')
+      .locator('[data-asset-path="assets/main.class.babasset"]')
       .dblclick();
     await expect(page.getByTestId("graph-panel")).toBeVisible({
       timeout: 15_000,
@@ -294,35 +312,37 @@ test.describe("Editor density and IA", () => {
     );
   });
 
-  test("gizmo tools look pressed and the joystick toggle is in viewport settings", {
-    tag: IPAD_TEST_TAG,
-  }, async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
-      .dblclick();
-    await expect(page.getByTestId("viewport-panel")).toBeVisible({
-      timeout: 15_000,
-    });
+  test(
+    "gizmo tools look pressed and the joystick toggle is in viewport settings",
+    {
+      tag: IPAD_TEST_TAG,
+    },
+    async ({ page }) => {
+      await openTestProject(page);
+      await page
+        .locator('[data-asset-path="assets/main.scene.babasset"]')
+        .dblclick();
+      await expect(page.getByTestId("viewport-panel")).toBeVisible({
+        timeout: 15_000,
+      });
 
-    const translate = page.getByTestId("gizmo-tool-translate");
-    await expect(translate).toHaveAttribute("aria-pressed", "true");
-    await expect(translate).toHaveClass(/aria-pressed:bg-accent/);
+      const translate = page.getByTestId("gizmo-tool-translate");
+      await expect(translate).toHaveAttribute("aria-pressed", "true");
+      await expect(translate).toHaveClass(/aria-pressed:bg-accent/);
 
-    const focus = page.getByTestId("focus-layout");
-    await expect(focus).toBeEnabled();
-    await expect(focus).toHaveAttribute("aria-pressed", "false");
-    await expect(focus).toHaveClass(/aria-pressed:bg-accent/);
+      const focus = page.getByTestId("focus-layout");
+      await expect(focus).toBeEnabled();
+      await expect(focus).toHaveAttribute("aria-pressed", "false");
+      await expect(focus).toHaveClass(/aria-pressed:bg-accent/);
 
-    await page.getByTestId("viewport-settings").click();
-    const joystick = page.getByTestId("gizmo-joystick-toggle");
-    await expect(joystick).toBeVisible();
-    await expect(joystick).toHaveAttribute("aria-checked", "true");
-    await joystick.click();
-    await expect(joystick).toHaveAttribute("aria-checked", "false");
-  });
+      await page.getByTestId("viewport-settings").click();
+      const joystick = page.getByTestId("gizmo-joystick-toggle");
+      await expect(joystick).toBeVisible();
+      await expect(joystick).toHaveAttribute("aria-checked", "true");
+      await joystick.click();
+      await expect(joystick).toHaveAttribute("aria-checked", "false");
+    },
+  );
 
   test("tapping empty Content Browser grid clears the tile selection", async ({
     page,
@@ -333,7 +353,9 @@ test.describe("Editor density and IA", () => {
     );
     await sceneTile.click();
     await expect(sceneTile).toHaveAttribute("data-selected", "true");
-    await expect(page.getByTestId("content-browser-delete-selected")).toBeVisible();
+    await expect(
+      page.getByTestId("content-browser-delete-selected"),
+    ).toBeVisible();
 
     const grid = page.getByTestId("content-browser-asset-grid");
     const box = await grid.boundingBox();
@@ -341,9 +363,9 @@ test.describe("Editor density and IA", () => {
     await page.mouse.click(box!.x + 4, box!.y + 4);
 
     await expect(sceneTile).toHaveAttribute("data-selected", "false");
-    await expect(page.getByTestId("content-browser-delete-selected")).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByTestId("content-browser-delete-selected"),
+    ).toHaveCount(0);
   });
 
   test("Content Browser click replaces the selection and Deselect All clears it", async ({
@@ -354,98 +376,124 @@ test.describe("Editor density and IA", () => {
       '[data-asset-path="assets/main.scene.babasset"]',
     );
     const classTile = page.locator(
-      '[data-asset-path="assets/Mannequin.class.babasset"]',
+      '[data-asset-path="assets/main.class.babasset"]',
     );
     await sceneTile.click();
     await classTile.click();
     await expect(sceneTile).toHaveAttribute("data-selected", "false");
     await expect(classTile).toHaveAttribute("data-selected", "true");
-    await expect(page.getByTestId("content-browser-delete-selected")).toHaveText(
-      /Delete \(1\)/,
-    );
-    await expect(page.getByTestId("content-browser-deselect-all")).toBeVisible();
-    await expect(page.getByTestId("content-browser-delete-selected")).not.toHaveClass(
-      /bg-destructive/,
-    );
+    await expect(
+      page.getByTestId("content-browser-delete-selected"),
+    ).toHaveText(/Delete \(1\)/);
+    await expect(
+      page.getByTestId("content-browser-deselect-all"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("content-browser-delete-selected"),
+    ).not.toHaveClass(/bg-destructive/);
 
     await page.getByTestId("content-browser-deselect-all").click();
     await expect(sceneTile).toHaveAttribute("data-selected", "false");
     await expect(classTile).toHaveAttribute("data-selected", "false");
-    await expect(page.getByTestId("content-browser-delete-selected")).toHaveCount(
+    await expect(
+      page.getByTestId("content-browser-delete-selected"),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("content-browser-deselect-all")).toHaveCount(
       0,
     );
-    await expect(page.getByTestId("content-browser-deselect-all")).toHaveCount(0);
   });
 
-  test("Content Browser toolbar Delete stays outline until the confirm dialog", {
-    tag: IPAD_TEST_TAG,
-  }, async ({ page }) => {
-    await openTestProject(page);
-    const sceneTile = page.locator(
-      '[data-asset-path="assets/main.scene.babasset"]',
-    );
-    const classTile = page.locator(
-      '[data-asset-path="assets/Mannequin.class.babasset"]',
-    );
-    await paintSelectContentTiles(page, sceneTile, classTile);
+  test(
+    "Content Browser toolbar Delete stays outline until the confirm dialog",
+    {
+      tag: IPAD_TEST_TAG,
+    },
+    async ({ page }) => {
+      await openTestProject(page);
+      const sceneTile = page.locator(
+        '[data-asset-path="assets/main.scene.babasset"]',
+      );
+      const classTile = page.locator(
+        '[data-asset-path="assets/main.class.babasset"]',
+      );
+      await paintSelectContentTiles(page, sceneTile, classTile);
 
-    const deleteSelected = page.getByTestId("content-browser-delete-selected");
-    await expect(deleteSelected).toHaveText(/Delete \(2\)/);
-    await expect(page.getByTestId("content-browser-deselect-all")).toBeVisible();
-    await expect(deleteSelected).not.toHaveClass(/bg-destructive/);
+      const deleteSelected = page.getByTestId(
+        "content-browser-delete-selected",
+      );
+      await expect(deleteSelected).toHaveText(/Delete \(2\)/);
+      await expect(
+        page.getByTestId("content-browser-deselect-all"),
+      ).toBeVisible();
+      await expect(deleteSelected).not.toHaveClass(/bg-destructive/);
 
-    await deleteSelected.click();
-    await expect(page.getByTestId("content-browser-delete-dialog")).toBeVisible();
-    await expect(sceneTile).toBeVisible();
-    await expect(classTile).toBeVisible();
+      await deleteSelected.click();
+      await expect(
+        page.getByTestId("content-browser-delete-dialog"),
+      ).toBeVisible();
+      await expect(sceneTile).toBeVisible();
+      await expect(classTile).toBeVisible();
 
-    const dialog = page.getByTestId("content-browser-delete-dialog");
-    const confirm = page.getByTestId("content-browser-delete-confirm");
-    const cancel = page.getByTestId("content-browser-delete-cancel");
-    await expect(dialog).toHaveAttribute("data-variant", "destructive");
-    await expect(page.getByTestId("content-browser-delete-media")).toBeVisible();
-    await expect(confirm).toHaveClass(/bg-destructive/);
-    await expect(confirm).not.toHaveClass(/bg-destructive\/10/);
-    await expect(confirm).toHaveClass(/text-destructive-foreground/);
-    await expect(confirm).toHaveCSS("min-height", "44px");
-    await expect(cancel).toHaveCSS("min-height", "44px");
-    await expect(confirm).toHaveCSS("height", "44px");
-    await expect(cancel).toHaveCSS("height", "44px");
+      const dialog = page.getByTestId("content-browser-delete-dialog");
+      const confirm = page.getByTestId("content-browser-delete-confirm");
+      const cancel = page.getByTestId("content-browser-delete-cancel");
+      await expect(dialog).toHaveAttribute("data-variant", "destructive");
+      await expect(
+        page.getByTestId("content-browser-delete-media"),
+      ).toBeVisible();
+      await expect(confirm).toHaveClass(/bg-destructive/);
+      await expect(confirm).not.toHaveClass(/bg-destructive\/10/);
+      await expect(confirm).toHaveClass(/text-destructive-foreground/);
+      await expect(confirm).toHaveCSS("min-height", "44px");
+      await expect(cancel).toHaveCSS("min-height", "44px");
+      await expect(confirm).toHaveCSS("height", "44px");
+      await expect(cancel).toHaveCSS("height", "44px");
 
-    await cancel.click();
-    await expect(page.getByTestId("content-browser-delete-dialog")).toHaveCount(0);
-    await expect(sceneTile).toHaveAttribute("data-selected", "true");
-    await expect(classTile).toHaveAttribute("data-selected", "true");
-  });
+      await cancel.click();
+      await expect(
+        page.getByTestId("content-browser-delete-dialog"),
+      ).toHaveCount(0);
+      await expect(sceneTile).toHaveAttribute("data-selected", "true");
+      await expect(classTile).toHaveAttribute("data-selected", "true");
+    },
+  );
 
-  test("Delete confirm lists selected folder path and asset name", {
-    tag: IPAD_TEST_TAG,
-  }, async ({ page }) => {
-    await openTestProject(page);
-    await page.getByTestId("content-browser-new-folder").click();
-    await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
-    await page.getByTestId("content-browser-name-input").fill("qa-folder");
-    await page.getByTestId("content-browser-name-confirm").click();
-    await page.getByTestId("tree-row-assets").click();
-    const folderTile = page.getByTestId("content-folder-assets/qa-folder");
-    const sceneTile = page.locator(
-      '[data-asset-path="assets/main.scene.babasset"]',
-    );
-    await expect(folderTile).toBeVisible({ timeout: 15_000 });
-    await folderTile.click();
-    await sceneTile.click({ button: "right" });
-    await expect(page.getByTestId("context-menu-panel")).toBeVisible();
-    await page.getByTestId("context-menu-backdrop").dispatchEvent("click");
-    await expect(page.getByTestId("context-menu-panel")).toHaveCount(0);
-    const deleteSelected = page.getByTestId("content-browser-delete-selected");
-    await expect(deleteSelected).toHaveText(/Delete \(2\)/);
-    await deleteSelected.click();
-    const list = page.getByTestId("content-browser-delete-list");
-    await expect(list).toBeVisible();
-    await expect(list).toContainText("assets/qa-folder");
-    await expect(list.locator("li")).toHaveCount(2);
-    await page.getByTestId("content-browser-delete-cancel").click();
-  });
+  test(
+    "Delete confirm lists selected folder path and asset name",
+    {
+      tag: IPAD_TEST_TAG,
+    },
+    async ({ page }) => {
+      await openTestProject(page);
+      await page.getByTestId("content-browser-new-folder").click();
+      await expect(
+        page.getByTestId("content-browser-name-dialog"),
+      ).toBeVisible();
+      await page.getByTestId("content-browser-name-input").fill("qa-folder");
+      await page.getByTestId("content-browser-name-confirm").click();
+      await page.getByTestId("tree-row-assets").click();
+      const folderTile = page.getByTestId("content-folder-assets/qa-folder");
+      const sceneTile = page.locator(
+        '[data-asset-path="assets/main.scene.babasset"]',
+      );
+      await expect(folderTile).toBeVisible({ timeout: 15_000 });
+      await folderTile.click();
+      await sceneTile.click({ button: "right" });
+      await expect(page.getByTestId("context-menu-panel")).toBeVisible();
+      await page.getByTestId("context-menu-backdrop").dispatchEvent("click");
+      await expect(page.getByTestId("context-menu-panel")).toHaveCount(0);
+      const deleteSelected = page.getByTestId(
+        "content-browser-delete-selected",
+      );
+      await expect(deleteSelected).toHaveText(/Delete \(2\)/);
+      await deleteSelected.click();
+      const list = page.getByTestId("content-browser-delete-list");
+      await expect(list).toBeVisible();
+      await expect(list).toContainText("assets/qa-folder");
+      await expect(list.locator("li")).toHaveCount(2);
+      await page.getByTestId("content-browser-delete-cancel").click();
+    },
+  );
 
   test("Content Browser folder tree and asset grid scroll vertically", async ({
     page,
@@ -462,12 +510,16 @@ test.describe("Editor density and IA", () => {
     for (let index = 0; index < 8; index += 1) {
       await page.getByTestId("tree-row-assets").click();
       await page.getByTestId("content-browser-new-folder").click();
-      await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
+      await expect(
+        page.getByTestId("content-browser-name-dialog"),
+      ).toBeVisible();
       await page
         .getByTestId("content-browser-name-input")
         .fill(`ScrollFolder${index}`);
       await page.getByTestId("content-browser-name-confirm").click();
-      await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
+      await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(
+        0,
+      );
     }
 
     const before = await tree.evaluate((el) => ({
@@ -481,69 +533,86 @@ test.describe("Editor density and IA", () => {
 
     const box = await tree.boundingBox();
     expect(box).not.toBeNull();
-    await page.mouse.move(box!.x + box!.width / 2, box!.y + Math.min(40, box!.height / 2));
+    await page.mouse.move(
+      box!.x + box!.width / 2,
+      box!.y + Math.min(40, box!.height / 2),
+    );
     await page.mouse.wheel(0, 120);
     await expect
       .poll(async () => tree.evaluate((el) => el.scrollTop))
       .toBeGreaterThan(0);
   });
 
-  test("Content Browser folder tree pans vertically on touch before reparent hold", {
-    tag: IPAD_TEST_TAG,
-  }, async ({ page }) => {
-    await openTestProject(page);
-    await page.setViewportSize({ width: 1194, height: 400 });
-    for (let index = 0; index < 8; index += 1) {
-      await page.getByTestId("tree-row-assets").click();
-      await page.getByTestId("content-browser-new-folder").click();
-      await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
-      await page
-        .getByTestId("content-browser-name-input")
-        .fill(`TouchFolder${index}`);
-      await page.getByTestId("content-browser-name-confirm").click();
-      await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
-    }
+  test(
+    "Content Browser folder tree pans vertically on touch before reparent hold",
+    {
+      tag: IPAD_TEST_TAG,
+    },
+    async ({ page }) => {
+      await openTestProject(page);
+      await page.setViewportSize({ width: 1194, height: 400 });
+      for (let index = 0; index < 8; index += 1) {
+        await page.getByTestId("tree-row-assets").click();
+        await page.getByTestId("content-browser-new-folder").click();
+        await expect(
+          page.getByTestId("content-browser-name-dialog"),
+        ).toBeVisible();
+        await page
+          .getByTestId("content-browser-name-input")
+          .fill(`TouchFolder${index}`);
+        await page.getByTestId("content-browser-name-confirm").click();
+        await expect(
+          page.getByTestId("content-browser-name-dialog"),
+        ).toHaveCount(0);
+      }
 
-    const tree = page.getByTestId("content-browser-folder-tree");
-    await expect(tree).toBeVisible();
-    const box = await tree.boundingBox();
-    expect(box).not.toBeNull();
-    expect(
-      await tree.evaluate((el) => el.scrollHeight > el.clientHeight),
-    ).toBe(true);
+      const tree = page.getByTestId("content-browser-folder-tree");
+      await expect(tree).toBeVisible();
+      const box = await tree.boundingBox();
+      expect(box).not.toBeNull();
+      expect(
+        await tree.evaluate((el) => el.scrollHeight > el.clientHeight),
+      ).toBe(true);
 
-    const session = await page.context().newCDPSession(page);
-    const startX = box!.x + box!.width / 2;
-    const startY = box!.y + Math.min(80, box!.height - 8);
-    const endY = box!.y + 16;
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [{ x: startX, y: startY }],
-    });
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: [{ x: startX, y: endY }],
-    });
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchEnd",
-      touchPoints: [],
-    });
-    expect(await tree.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  });
+      const session = await page.context().newCDPSession(page);
+      const startX = box!.x + box!.width / 2;
+      const startY = box!.y + Math.min(80, box!.height - 8);
+      const endY = box!.y + 16;
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x: startX, y: startY }],
+      });
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: startX, y: endY }],
+      });
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+      expect(await tree.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    },
+  );
 
   test("New Asset refuses a name that already exists; Duplicate uses stem_N", async ({
     page,
   }) => {
     await openTestProject(page);
     await page.getByTestId("content-browser-new-asset").click();
-    await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+    await expect(
+      page.getByTestId("content-browser-new-asset-dialog"),
+    ).toBeVisible();
     await expect(page.getByTestId("new-asset-name")).toHaveValue("");
-    await expect(page.getByTestId("content-browser-new-asset-create")).toBeDisabled();
+    await expect(
+      page.getByTestId("content-browser-new-asset-create"),
+    ).toBeDisabled();
     await page.getByTestId("new-asset-type").click();
     await page.getByTestId("new-asset-type-Scene").click();
     await page.getByTestId("new-asset-name").fill("main");
     await expect(page.getByTestId("new-asset-name-taken")).toBeVisible();
-    await expect(page.getByTestId("content-browser-new-asset-create")).toBeDisabled();
+    await expect(
+      page.getByTestId("content-browser-new-asset-create"),
+    ).toBeDisabled();
     await page.getByRole("button", { name: "Cancel" }).click();
 
     const sceneTile = page.locator(
@@ -576,11 +645,18 @@ test.describe("Editor density and IA", () => {
       '[data-asset-path="assets/main.scene.babasset"]',
     );
     await expect(sceneTile).toBeVisible();
-    const folderFollowedByScene = await folderTile.evaluate((folder, sceneSelector) => {
-      const scene = document.querySelector(sceneSelector);
-      if (!scene) return false;
-      return (folder.compareDocumentPosition(scene) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-    }, '[data-asset-path="assets/main.scene.babasset"]');
+    const folderFollowedByScene = await folderTile.evaluate(
+      (folder, sceneSelector) => {
+        const scene = document.querySelector(sceneSelector);
+        if (!scene) return false;
+        return (
+          (folder.compareDocumentPosition(scene) &
+            Node.DOCUMENT_POSITION_FOLLOWING) !==
+          0
+        );
+      },
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
     expect(folderFollowedByScene).toBe(true);
   });
 
@@ -590,7 +666,9 @@ test.describe("Editor density and IA", () => {
     await openTestProject(page);
     const grid = page.getByTestId("content-browser-asset-grid");
     await grid.click({ button: "right", position: { x: 4, y: 4 } });
-    await expect(page.getByTestId("context-menu-item-new-folder")).toBeVisible();
+    await expect(
+      page.getByTestId("context-menu-item-new-folder"),
+    ).toBeVisible();
     await expect(page.getByTestId("context-menu-item-new-asset")).toBeVisible();
     await expect(page.getByTestId("context-menu-item-import")).toBeVisible();
     await page.getByTestId("context-menu-backdrop").click();
@@ -601,10 +679,12 @@ test.describe("Editor density and IA", () => {
     );
     await sceneTile.click({ button: "right" });
     await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
-    await expect(page.getByTestId("context-menu-item-copy-asset-reference")).toBeVisible();
-    await expect(page.getByTestId("context-menu-item-retry-encoding")).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByTestId("context-menu-item-copy-asset-reference"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("context-menu-item-retry-encoding"),
+    ).toHaveCount(0);
   });
 
   test("Content Browser Copy Asset Reference copies the asset guid", async ({
@@ -621,26 +701,30 @@ test.describe("Editor density and IA", () => {
     expect(guid).toBeTruthy();
     await sceneTile.click({ button: "right" });
     await page.getByTestId("context-menu-item-copy-asset-reference").click();
-    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toBe(
-      guid,
-    );
+    await expect
+      .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(guid);
   });
 
-  test("Content Browser empty-grid double-click opens New Asset", {
-    tag: IPAD_TEST_TAG,
-  }, async ({ page }) => {
-    await openTestProject(page);
-    const grid = page.getByTestId("content-browser-asset-grid");
-    await grid.dblclick({ position: { x: 4, y: 4 } });
-    await expect(
-      page.getByTestId("content-browser-new-asset-dialog"),
-    ).toBeVisible();
-    await expect(page.getByTestId("new-asset-type-Scene")).toHaveAttribute(
-      "data-selected",
-      "true",
-    );
-    await expect(page.getByTestId("new-asset-name")).toHaveValue("");
-  });
+  test(
+    "Content Browser empty-grid double-click opens New Asset",
+    {
+      tag: IPAD_TEST_TAG,
+    },
+    async ({ page }) => {
+      await openTestProject(page);
+      const grid = page.getByTestId("content-browser-asset-grid");
+      await grid.dblclick({ position: { x: 4, y: 4 } });
+      await expect(
+        page.getByTestId("content-browser-new-asset-dialog"),
+      ).toBeVisible();
+      await expect(page.getByTestId("new-asset-type-Scene")).toHaveAttribute(
+        "data-selected",
+        "true",
+      );
+      await expect(page.getByTestId("new-asset-name")).toHaveValue("");
+    },
+  );
 
   test("multi-select Duplicate copies every asset; mixed menu hides Show References", async ({
     page,
@@ -665,9 +749,9 @@ test.describe("Editor density and IA", () => {
     await page
       .locator('[data-asset-path="assets/Beta.babasset"]')
       .click({ button: "right" });
-    await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByTestId("context-menu-item-show-references"),
+    ).toHaveCount(0);
     await expect(
       page.getByTestId("context-menu-item-copy-asset-reference"),
     ).toHaveCount(0);
@@ -692,11 +776,13 @@ test.describe("Editor density and IA", () => {
       page.getByTestId("content-folder-assets/fx"),
       page.locator('[data-asset-path="assets/Alpha.babasset"]'),
     );
-    await page.getByTestId("content-folder-assets/fx").click({ button: "right" });
+    await page
+      .getByTestId("content-folder-assets/fx")
+      .click({ button: "right" });
     await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
-    await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByTestId("context-menu-item-show-references"),
+    ).toHaveCount(0);
     await expect(
       page.getByTestId("context-menu-item-copy-asset-reference"),
     ).toHaveCount(0);
@@ -753,10 +839,14 @@ test.describe("Editor density and IA", () => {
   test("Animation Graph Focus hides Details", async ({ page }) => {
     await openTestProject(page);
     await createContentBrowserAsset(page, "AnimationGraph", "Loco");
-    await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible({
-      timeout: 15_000,
-    });
+    await page
+      .locator('[data-asset-path="assets/Loco.anim.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible(
+      {
+        timeout: 15_000,
+      },
+    );
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
     await expect(page.getByTestId("anim-graph-details-empty")).toBeVisible();
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
@@ -766,7 +856,9 @@ test.describe("Editor density and IA", () => {
     await focus.click();
     await expect(focus).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
-    await expect(page.getByTestId("anim-graph-details-empty")).not.toBeVisible();
+    await expect(
+      page.getByTestId("anim-graph-details-empty"),
+    ).not.toBeVisible();
 
     await focus.click();
     await expect(focus).toHaveAttribute("aria-pressed", "false");
@@ -776,7 +868,9 @@ test.describe("Editor density and IA", () => {
   test("Behaviour Tree Focus hides Details", async ({ page }) => {
     await openTestProject(page);
     await createContentBrowserAsset(page, "BehaviourTree", "Patrol");
-    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
+    await page
+      .locator('[data-asset-path="assets/Patrol.bt.babasset"]')
+      .dblclick();
     await expect(
       page.getByTestId("document-workspace-behaviour-tree"),
     ).toBeVisible({ timeout: 15_000 });

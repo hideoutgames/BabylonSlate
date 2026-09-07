@@ -10,6 +10,7 @@ apps/player/public
 !.env.example
 coverage
 test-results
+.cache
 .turbo
 android
 .capacitor

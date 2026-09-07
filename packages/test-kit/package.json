@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/test-kit"
+    "test": "node ../../scripts/test-runner.mjs unit packages/test-kit"
   },
   "dependencies": {
     "@babylonslate/bridge": "workspace:*",

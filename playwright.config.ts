@@ -15,9 +15,10 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   // Shared origin OPFS (`TestProject`) cannot run two browser workers at once.
   workers: 1,
-  reporter: "list",
+  reporter: [["list"], ["json", { outputFile: "test-results/timings.json" }]],
+  globalSetup: "./e2e/verify-test-server.ts",
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: process.env.BL_TEST_BASE_URL,
     trace: "on-first-retry",
   },
   projects: [
@@ -37,12 +38,4 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command:
-      "pnpm --filter editor build && pnpm --filter editor preview -- --host 127.0.0.1 --port 4173",
-    env: { VITE_TEST_MODE: "true" },
-    url: "http://127.0.0.1:4173",
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-  },
 });

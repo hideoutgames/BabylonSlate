@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openTestProject } from "./open-test-project";
+import { openMinimalTestProject as openTestProject } from "./minimal-project";
 
 const E2E_TIMEOUT_MS = 90_000;
 

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.workspace.ts --project node"
+    "test": "node ../../scripts/test-runner.mjs unit packages/physics"
   },
   "dependencies": {
     "@babylonslate/core": "workspace:*",

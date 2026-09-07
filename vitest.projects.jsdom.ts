@@ -7,6 +7,6 @@ export default defineConfig({
     // Needed so `?raw` stylesheet imports resolve; Vitest stubs CSS by default.
     css: true,
     fileParallelism: true,
-    maxWorkers: 4,
+    maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 1),
   },
 });

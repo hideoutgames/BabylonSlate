@@ -1,6 +1,6 @@
 # Testing architecture
 
-`pnpm verify` runs dependency-free Node tests for the agent-wait helper, typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
+`pnpm verify:local` selects checks against the merge base with main, including dirty files during development. Only clean unchanged committed runs qualify for PR delivery. Unknown files and verification infrastructure select the full gate. `pnpm verify` remains the complete local gate; full retained coverage and browser tests remain mandatory in CI.
 
 ## Quiet agent waits
 
@@ -152,3 +152,13 @@ P4 adds multi-transport comparison: the same scenario must agree **in-process**,
 ## Test cost policy
 
 Delete duplicated lower-layer assertions instead of repeating them in Chromium. Preserve real layout, GPU, worker, storage recovery, and input integration proofs. Scheduler/cache contracts live in the canonical render tests; synthetic memory-store timing loops are not device performance measurements. Documents writes retain a small bridge-call contract. Havok behavior cases share the initialized WASM module and create independent worlds.
+
+## Local test execution
+
+- Test scripts use a per-user queue shared across worktrees: two reserved workers, one browser, 6 GiB reserved test memory. New work waits when free memory is below 4 GiB. Reservations and the admission threshold are scheduling guidance, not OS memory quotas. Coverage and builds reserve more capacity; nested commands reuse a validated lease.
+- Isolated forks remain enabled. Pure editor/VFS/graph logic uses Node; `vitest.environments.ts` names DOM-dependent logic tests. Raw CSS stays enabled for Node stylesheet audits. A discovery regression excludes dependencies and checks every authored test appears exactly once.
+- Package coverage and uncovered editor tests stay separate. Editor logic runs once; editor DOM tests restart in batches of at most 50 files. Package scripts route through the shared runner.
+- `pnpm test:e2e` builds or reuses an exact-source artifact, owns an ephemeral loopback Vite preview server, and verifies its build identity and run nonce. Direct Playwright CLI execution is for discovery; use the package command to run tests. Cache identity includes the source digest, commit, platform, Node version and build configuration. Artifacts live under ignored `.cache/test-build`.
+- Generic touch/menu tests use an explicitly minimal OPFS project. Authentic New Project/Mannequin and GPU integration tests retain their real fixtures. Touch-shell assertions share four focused scenarios per device.
+- Small renderer consumers may import `@babylonslate/render/render-scheduler` and `@babylonslate/render/audio-playback-backend` without loading the full render barrel.
+- The agent-wait process-contract suite uses a small package-manager fixture and retains a real-pnpm argument-boundary integration case. Failure output is captured before final Git snapshots so diagnostics show the failed command.

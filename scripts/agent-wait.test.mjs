@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
-async function fixture(t, action = "success") {
+async function fixture(t, action = "success", realManager = false) {
   const cwd = await mkdtemp(join(tmpdir(), "agent wait fixture "));
   await writeFile(join(cwd, ".gitignore"), "gh-state.json\n");
   await writeFile(
@@ -14,6 +14,7 @@ async function fixture(t, action = "success") {
     JSON.stringify({
       scripts: {
         verify: "node fixture.mjs",
+        "verify:local": "node fixture.mjs",
         test: "node fixture.mjs",
       },
     }),
@@ -43,6 +44,16 @@ if (action === 'slow') { console.log('ready'); setInterval(() => console.log('qu
 `,
   );
   await writeFile(join(cwd, "source.txt"), "original");
+  // Most cases exercise the helper's process/state contract. One case below retains real pnpm integration.
+  await writeFile(
+    join(cwd, "package-manager.mjs"),
+    `
+import { spawn } from 'node:child_process';
+if (process.argv[2] !== 'run') throw new Error('Expected package-manager run');
+const child = spawn(process.execPath, ['fixture.mjs', ...process.argv.slice(4)], { stdio: 'inherit' });
+child.on('close', code => { process.exitCode = code ?? 1; });
+`,
+  );
   const git = (...args) =>
     execFileSync("git", args, { cwd, stdio: "pipe" }).toString().trim();
   git("init", "-q");
@@ -59,6 +70,7 @@ if (action === 'slow') { console.log('ready'); setInterval(() => console.log('qu
   let output = "";
   const env = {
     ...process.env,
+    ...(realManager ? {} : { npm_execpath: join(cwd, "package-manager.mjs") }),
     WAIT_FIXTURE_ACTION: action,
     WAIT_FIXTURE_VALUE: "preserved 🌍",
   };
@@ -80,8 +92,23 @@ async function run(options, context) {
 }
 const local = { mode: "local", script: "verify", args: [], timeoutMs: 10000 };
 
-test("local preserves argument boundaries, environment, commit, and bounded output in a path with spaces", async (t) => {
+test("targeted local verification certifies only a clean unchanged unfiltered revision", async (t) => {
   const f = await fixture(t);
+  const clean = await run({ ...local, script: "verify:local" }, f.context);
+  assert.equal(clean.deliveryEligible, true);
+  const filtered = await run(
+    { ...local, script: "verify:local", args: ["--filter", "core"] },
+    f.context,
+  );
+  assert.equal(filtered.deliveryEligible, false);
+  await writeFile(join(f.cwd, "source.txt"), "dirty");
+  const dirty = await run({ ...local, script: "verify:local" }, f.context);
+  assert.equal(dirty.status, "stale");
+  assert.equal(dirty.deliveryEligible, false);
+});
+
+test("local preserves argument boundaries, environment, commit, and bounded output in a path with spaces", async (t) => {
+  const f = await fixture(t, "success", true);
   const result = await run(
     { ...local, args: ["test filter with spaces", "🌍", "--reporter=dot"] },
     f.context,

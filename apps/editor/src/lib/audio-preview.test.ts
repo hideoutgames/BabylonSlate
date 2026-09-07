@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultAudioPayload } from "@babylonslate/assets";
-import { FakeAudioPlaybackBackend } from "@babylonslate/render";
+import { FakeAudioPlaybackBackend } from "@babylonslate/render/audio-playback-backend";
 import {
   createAudioPreviewSession,
   stopAudioPreviewElement,

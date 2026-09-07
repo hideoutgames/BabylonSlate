@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/object-model"
+    "test": "node ../../scripts/test-runner.mjs unit packages/object-model"
   },
   "dependencies": {
     "@babylonslate/core": "workspace:*"

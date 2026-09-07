@@ -8,6 +8,6 @@ export default defineConfig({
   test: {
     environment: "node",
     fileParallelism: true,
-    maxWorkers: 4,
+    maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 1),
   },
 });

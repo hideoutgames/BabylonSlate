@@ -11,12 +11,15 @@
     "build:pages": "VITE_BASE_PATH=/BabylonSlate/ VITE_TEST_MODE=true pnpm --filter editor build && VITEPRESS_BASE=/BabylonSlate/docs/ pnpm --filter docs-site build && mkdir -p apps/editor/dist/docs && cp -a apps/docs/.vitepress/dist/. apps/editor/dist/docs/",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
-    "test": "vitest run --config vitest.workspace.ts",
-    "test:editor-unit": "vitest run --config vitest.workspace.ts --project jsdom apps/editor --shard=1/4 && vitest run --config vitest.workspace.ts --project jsdom apps/editor --shard=2/4 && vitest run --config vitest.workspace.ts --project jsdom apps/editor --shard=3/4 && vitest run --config vitest.workspace.ts --project jsdom apps/editor --shard=4/4",
-    "test:coverage": "VITEST_COVERAGE=1 VITEST_MAX_WORKERS=4 vitest run --config vitest.workspace.ts --coverage && pnpm test:editor-unit",
+    "test": "node scripts/test-runner.mjs unit",
+    "test:editor-unit": "node scripts/test-runner.mjs editor",
+    "test:coverage": "node scripts/test-runner.mjs coverage",
     "test:watch": "vitest --config vitest.workspace.ts",
-    "test:e2e": "playwright test",
-    "verify": "pnpm test:agent-wait && pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm test:e2e && pnpm --filter docs-site build"
+    "test:e2e": "node scripts/test-runner.mjs e2e",
+    "verify": "node scripts/test-runner.mjs verify",
+    "test:tooling": "node --test scripts/*.test.mjs",
+    "verify:local": "node scripts/verify-local.mjs",
+    "test:build": "node scripts/test-runner.mjs build"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",

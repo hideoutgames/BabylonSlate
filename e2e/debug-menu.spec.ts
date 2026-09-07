@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openMainScene, openTestProject } from "./open-test-project";
+import { openMainScene } from "./open-test-project";
+import { openMinimalTestProject as openTestProject } from "./minimal-project";
 
 async function openSceneWithViewport(page: Page) {
   await openTestProject(page);
