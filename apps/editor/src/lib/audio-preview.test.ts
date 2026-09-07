@@ -29,7 +29,6 @@ describe("createAudioPreviewSession", () => {
       backend,
       readChunk: async () => {
         reads += 1;
-        await new Promise((resolve) => setTimeout(resolve, 20));
         return new Uint8Array([1, 2, 3]);
       },
       random: () => 0,

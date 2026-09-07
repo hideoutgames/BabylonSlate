@@ -4,8 +4,11 @@ import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal
 import { clickListedTestProject } from "./open-test-project";
 
 /** Fresh per-test OPFS fixture for generic chrome, history, and graph tests. */
-export async function openMinimalTestProject(page: Page): Promise<void> {
-  const files = [...(await minimalProjectFiles())].map(
+export async function openMinimalTestProject(
+  page: Page,
+  projectFiles?: ReadonlyMap<string, Uint8Array>,
+): Promise<void> {
+  const files = [...(projectFiles ?? (await minimalProjectFiles()))].map(
     ([path, bytes]) => [path, [...bytes]] as const,
   );
   // Seed the owned origin without booting the editor twice.

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { GameInstance } from "@babylonslate/object-model";
 import { interfaceHandlerKey } from "@babylonslate/object-model";
@@ -83,7 +83,9 @@ function toScript(
   registry: NodeRegistry,
   classId: string,
   assetGuid: string,
-  extra: { isLatentFunction?: (classId: string, functionName: string) => boolean } = {},
+  extra: {
+    isLatentFunction?: (classId: string, functionName: string) => boolean;
+  } = {},
 ): CompiledScript {
   const compiled = compileGraph(graph, { assetGuid, registry, ...extra });
   return {
@@ -627,7 +629,9 @@ describe("script host runs compiled graphs", () => {
       seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
-    await runtime.loadScripts([toScript(graph, registry, "Hero", "hero-asset")]);
+    await runtime.loadScripts([
+      toScript(graph, registry, "Hero", "hero-asset"),
+    ]);
     runtime.invokeScriptEvent("Hero", "On_Hit");
     const logs = commands.filter((c) => c.type === "log");
     expect(logs).toHaveLength(1);
@@ -652,7 +656,9 @@ describe("script host runs compiled graphs", () => {
       seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
-    await runtime.loadScripts([toScript(graph, registry, "Hero", "hero-asset")]);
+    await runtime.loadScripts([
+      toScript(graph, registry, "Hero", "hero-asset"),
+    ]);
     const actor = runtime.spawnScriptedActor({ classId: "Hero" });
     expect(actor).not.toBeNull();
     runtime.getWorld().destroyActor(actor!.guid);
@@ -686,7 +692,9 @@ describe("script host runs compiled graphs", () => {
       seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
-    await runtime.loadScripts([toScript(graph, registry, "Hero", "hero-asset")]);
+    await runtime.loadScripts([
+      toScript(graph, registry, "Hero", "hero-asset"),
+    ]);
     runtime.invokeScriptEvent("Hero", "On_Hit", undefined, { amount: 9 });
     const logs = commands.filter((c) => c.type === "log");
     expect(logs).toHaveLength(1);
@@ -726,7 +734,9 @@ describe("script host runs compiled graphs", () => {
       seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
-    await runtime.loadScripts([toScript(graph, registry, "Hero", "hero-asset")]);
+    await runtime.loadScripts([
+      toScript(graph, registry, "Hero", "hero-asset"),
+    ]);
     runtime.spawnScriptedActor({ classId: "Hero" });
     const logs = commands.filter((c) => c.type === "log");
     expect(logs).toHaveLength(1);
@@ -1022,9 +1032,7 @@ describe("script host runs compiled graphs", () => {
     const actor = runtime.spawnScriptedActor({ classId: "Player" });
     expect(actor).not.toBeNull();
     runtime.start();
-    runtime.pushInput([
-      { kind: "key", tick: 0, code: "KeyD", phase: "down" },
-    ]);
+    runtime.pushInput([{ kind: "key", tick: 0, code: "KeyD", phase: "down" }]);
     runtime.tick();
     expect(actor!.transform.position.x).toBeGreaterThan(0.5);
     runtime.stop();
@@ -1067,9 +1075,7 @@ describe("script host runs compiled graphs", () => {
     ]);
     const actor = runtime.spawnScriptedActor({ classId: "JumperHeld" });
     runtime.start();
-    runtime.pushInput([
-      { kind: "key", tick: 0, code: "Space", phase: "down" },
-    ]);
+    runtime.pushInput([{ kind: "key", tick: 0, code: "Space", phase: "down" }]);
     runtime.tick();
     expect(actor!.transform.position.y).toBe(1);
     runtime.stop();
@@ -1104,9 +1110,7 @@ describe("script host runs compiled graphs", () => {
     await runtime.loadScripts([script]);
     runtime.spawnScriptedActor({ classId: "Jumper" });
     runtime.start();
-    runtime.pushInput([
-      { kind: "key", tick: 0, code: "Space", phase: "down" },
-    ]);
+    runtime.pushInput([{ kind: "key", tick: 0, code: "Space", phase: "down" }]);
     runtime.tick();
     const prints = commands.filter((c) => c.type === "print");
     expect(prints).toHaveLength(1);
@@ -1114,7 +1118,13 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("Delay completes after tick time, not wall-clock, and does not advance while paused", async () => {
+  it("Delay completes after tick time, not wall-clock, and does not advance while paused", async ({
+    onTestFinished,
+  }) => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
@@ -1147,7 +1157,7 @@ describe("script host runs compiled graphs", () => {
     expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
 
     runtime.pause();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.advanceTimersByTimeAsync(1000);
     await Promise.resolve();
     expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
     runtime.resume();
@@ -1215,9 +1225,11 @@ describe("script host runs compiled graphs", () => {
       registry,
       "Wait",
     );
-    expect(script.entryPoints.some((entry) => entry.event === "onBeginPlay" && entry.isAsync)).toBe(
-      true,
-    );
+    expect(
+      script.entryPoints.some(
+        (entry) => entry.event === "onBeginPlay" && entry.isAsync,
+      ),
+    ).toBe(true);
     await runtime.loadScripts([script]);
     runtime.spawnScriptedActor({ classId: "Hero" });
     runtime.start();
@@ -1407,7 +1419,10 @@ describe("script host runs compiled graphs", () => {
     runtime.start();
     runtime.tick();
     expect(
-      runtime.getWorld().getActors().some((actor) => actor.classId === "Child"),
+      runtime
+        .getWorld()
+        .getActors()
+        .some((actor) => actor.classId === "Child"),
     ).toBe(true);
     expect(commands.filter((c) => c.type === "print")).toEqual(
       expect.arrayContaining([expect.objectContaining({ key: "child" })]),
@@ -1851,9 +1866,7 @@ describe("script host runs compiled graphs", () => {
       }),
     );
     world.spawnActorNow(ground);
-    await runtime.loadScripts([
-      toScript(graph, registry, "Aim", "aim-asset"),
-    ]);
+    await runtime.loadScripts([toScript(graph, registry, "Aim", "aim-asset")]);
     runtime.spawnScriptedActor({ classId: "Aim" });
     runtime.applySceneLayerResize(16, 9, 800, 600);
     runtime.start();
@@ -1876,7 +1889,8 @@ describe("script host runs compiled graphs", () => {
     ).toBe(true);
     expect(
       commands.some(
-        (c) => c.type === "debugDraw" && (c as { kind?: string }).kind === "line",
+        (c) =>
+          c.type === "debugDraw" && (c as { kind?: string }).kind === "line",
       ),
     ).toBe(true);
     runtime.stop();
@@ -1956,7 +1970,10 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "play", "audio.play", { asset: "jump.wav", volume: 0.5 }),
+        node(registry, "play", "audio.play", {
+          asset: "jump.wav",
+          volume: 0.5,
+        }),
       ],
       edges: [edge("e1", "begin", "execOut", "play", "execIn")],
     };
@@ -2059,12 +2076,14 @@ describe("script host runs compiled graphs", () => {
     runtime.spawnScriptedActor({ classId: "Mixer" });
     runtime.start();
     runtime.tick();
-    expect(commands.filter((command) => command.type === "setChannelVolume")).toEqual([
+    expect(
+      commands.filter((command) => command.type === "setChannelVolume"),
+    ).toEqual([
       { type: "setChannelVolume", channelGuid: "ch-1", volume: 0.25 },
     ]);
-    expect(commands.filter((command) => command.type === "setGlobalVolume")).toEqual([
-      { type: "setGlobalVolume", volume: 0.8 },
-    ]);
+    expect(
+      commands.filter((command) => command.type === "setGlobalVolume"),
+    ).toEqual([{ type: "setGlobalVolume", volume: 0.8 }]);
     runtime.stop();
   });
 
@@ -2075,7 +2094,10 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "res", "render.setResolution", { width: 800, height: 600 }),
+        node(registry, "res", "render.setResolution", {
+          width: 800,
+          height: 600,
+        }),
       ],
       edges: [edge("e1", "begin", "execOut", "res", "execIn")],
     };
@@ -2247,7 +2269,9 @@ describe("script host runs compiled graphs", () => {
         source:
           "//# sourceURL=babylonslate:///guard-asset.js\nexport function onBeginPlay(ctx) {}\n",
         anchors: [],
-        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+        entryPoints: [
+          { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+        ],
         variables: [{ name: "Health", type: "float", defaultValue: 0 }],
       },
       toScript(caller, registry, "Caller", "caller-asset"),

@@ -20,6 +20,27 @@ export function ownedProcesses(rows, roots) {
   return rows.filter((row) => owned.has(row.pid));
 }
 
+/** A slow OS query skips sampling ticks instead of building a post-run backlog. */
+export function startSampling(sample, intervalMs = 2000) {
+  let pending, failure;
+  const timer = setInterval(() => {
+    if (pending) return;
+    pending = Promise.resolve()
+      .then(sample)
+      .catch((error) => {
+        failure = error;
+      })
+      .finally(() => {
+        pending = undefined;
+      });
+  }, intervalMs);
+  return async () => {
+    clearInterval(timer);
+    await pending;
+    if (failure) throw failure;
+  };
+}
+
 async function processSnapshot(signal) {
   if (process.platform === "win32") {
     const script =
@@ -92,9 +113,7 @@ export async function benchmarkTests(args, options = {}) {
   const roots = new Set();
   const observed = new Set();
   const cpu = new Map();
-  let peakRssBytes = 0,
-    samplingError,
-    sampling = Promise.resolve();
+  let peakRssBytes = 0;
   const sample = async () => {
     const rows = ownedProcesses(
       await processSnapshot(options.signal),
@@ -110,11 +129,7 @@ export async function benchmarkTests(args, options = {}) {
     }
     return rows;
   };
-  const timer = setInterval(() => {
-    sampling = sampling.then(sample).catch((error) => {
-      samplingError = error;
-    });
-  }, 2000);
+  const stopSampling = startSampling(sample);
   const started = Date.now();
   const [command, commandArgs] = pnpmCommand(["run", script, ...forwarded]);
   let runs;
@@ -149,10 +164,8 @@ export async function benchmarkTests(args, options = {}) {
       }),
     );
   } finally {
-    clearInterval(timer);
-    await sampling;
+    await stopSampling();
   }
-  if (samplingError) throw samplingError;
   const survivors = (await sample()).map((row) => row.pid);
   const report = {
     agents: count,

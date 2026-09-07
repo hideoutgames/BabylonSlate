@@ -10,6 +10,7 @@ import {
 } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
+import { openMinimalTestProject } from "./minimal-project";
 
 const ALBEDO_PNG = path.join(process.cwd(), "e2e/fixtures/albedo.png");
 
@@ -64,8 +65,6 @@ async function particleStats(page: Page): Promise<{
   });
 }
 
-test.describe.configure({ mode: "serial" });
-
 test.describe("P17 particles", () => {
   test("authors Emitter/System, plays billboard quads, and tears down", async ({
     page,
@@ -94,7 +93,9 @@ test.describe("P17 particles", () => {
     await expect(
       page.getByTestId("document-workspace-particle-emitter"),
     ).toBeVisible();
-    await expect(page.getByTestId("particle-emitter-details-panel")).toBeVisible();
+    await expect(
+      page.getByTestId("particle-emitter-details-panel"),
+    ).toBeVisible();
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
     await openWindowsMenu(page);
     await expect(
@@ -111,7 +112,9 @@ test.describe("P17 particles", () => {
     expect(albedoGuid.length).toBeGreaterThan(0);
     await page.getByTestId("property-texture").click();
     await pickAsset(page, "particle-emitter-texture-picker", albedoGuid);
-    await expect(page.getByTestId("particle-emitter-preview-canvas")).toBeVisible();
+    await expect(
+      page.getByTestId("particle-emitter-preview-canvas"),
+    ).toBeVisible();
 
     const materialGuid = await guidForPath(
       page,
@@ -126,15 +129,22 @@ test.describe("P17 particles", () => {
     await expect(
       page.getByTestId("document-workspace-particle-system"),
     ).toBeVisible();
-    await expect(page.getByTestId("particle-system-details-panel")).toBeVisible();
-    const emitterGuid = await guidForPath(page, "assets/Sparks.emitter.babasset");
+    await expect(
+      page.getByTestId("particle-system-details-panel"),
+    ).toBeVisible();
+    const emitterGuid = await guidForPath(
+      page,
+      "assets/Sparks.emitter.babasset",
+    );
     expect(emitterGuid.length).toBeGreaterThan(0);
     await page.getByTestId("property-emitter-0").click();
     await pickAsset(page, "particle-system-emitter-picker", emitterGuid);
     await expect(page.getByText("Preview Skybox")).toBeVisible();
     await saveAllIfEnabled(page);
     await page
-      .locator('[data-testid="document-tab"][data-document-kind="particle-emitter"]')
+      .locator(
+        '[data-testid="document-tab"][data-document-kind="particle-emitter"]',
+      )
       .getByTestId("document-tab-close")
       .click();
     await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
@@ -147,14 +157,19 @@ test.describe("P17 particles", () => {
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
     await page.getByTestId("place-actors-item-particle").click();
-    const particleCard = page.locator("[data-testid^='component-card-']").filter({
-      hasText: "ParticleComponent",
-    });
+    const particleCard = page
+      .locator("[data-testid^='component-card-']")
+      .filter({
+        hasText: "ParticleComponent",
+      });
     await expect(particleCard).toBeVisible();
     await particleCard
       .locator('button[data-testid$="-particleSystemGuid"]')
       .click();
-    const systemGuid = await guidForPath(page, "assets/Fire.particles.babasset");
+    const systemGuid = await guidForPath(
+      page,
+      "assets/Fire.particles.babasset",
+    );
     expect(systemGuid.length).toBeGreaterThan(0);
     await expect(page.getByTestId("details-asset-picker")).toBeVisible();
     await page.getByTestId(`search-item-${systemGuid}`).click();
@@ -178,16 +193,22 @@ test.describe("P17 particles", () => {
     page,
   }) => {
     test.setTimeout(240_000);
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await openMinimalTestProject(page);
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
-    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+    await graph
+      .locator(".react-flow__pane")
+      .dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Play Particles");
-    await expect(page.getByTestId("node-palette-item-particles.play")).toBeVisible();
+    await expect(
+      page.getByTestId("node-palette-item-particles.play"),
+    ).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Stop Particles");
-    await expect(page.getByTestId("node-palette-item-particles.stop")).toBeVisible();
+    await expect(
+      page.getByTestId("node-palette-item-particles.stop"),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
 
     await openContentBrowser(page);
@@ -203,9 +224,11 @@ test.describe("P17 particles", () => {
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
     await page.getByTestId("place-actors-item-particle").click();
-    const particleCard = page.locator("[data-testid^='component-card-']").filter({
-      hasText: "ParticleComponent",
-    });
+    const particleCard = page
+      .locator("[data-testid^='component-card-']")
+      .filter({
+        hasText: "ParticleComponent",
+      });
     await expect(particleCard).toBeVisible();
     await particleCard
       .locator('button[data-testid$="-particleSystemGuid"]')
@@ -256,9 +279,7 @@ test.describe("P17 particles", () => {
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
-    await page
-      .getByTestId("open-listed-project-TestProject")
-      .click();
+    await page.getByTestId("open-listed-project-TestProject").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openContentBrowser(page);
     await expect(

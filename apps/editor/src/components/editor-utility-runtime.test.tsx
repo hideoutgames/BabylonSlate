@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { EditorUtilityRuntime } from "./editor-utility-runtime";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -94,9 +94,8 @@ describe("EditorUtilityRuntime", () => {
     docs.projectDocument = {
       settings: { editorUtilityObjects: ["Tools"] },
     };
-    view.rerender(<EditorUtilityRuntime />);
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
+    await act(async () => {
+      view.rerender(<EditorUtilityRuntime />);
     });
     expect(docs.collectEditorUtilityScripts).toHaveBeenCalledTimes(loads);
     expect(invokeEvent).not.toHaveBeenCalled();
@@ -165,9 +164,8 @@ describe("EditorUtilityRuntime", () => {
         },
       },
     ];
-    view.rerender(<EditorUtilityRuntime />);
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
+    await act(async () => {
+      view.rerender(<EditorUtilityRuntime />);
     });
     expect(docs.collectEditorUtilityScripts).toHaveBeenCalledTimes(loads);
     expect(invokeEvent).not.toHaveBeenCalled();

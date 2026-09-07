@@ -21,6 +21,7 @@ import {
   previewPlacementScene,
 } from "./preview-scene-fixture";
 import { createMeshComponent } from "../packages/core/src/index.ts";
+import { openMinimalTestProject } from "./minimal-project";
 
 async function showContentBrowser(
   page: Page,
@@ -403,6 +404,10 @@ test.describe("P9 content systems", () => {
       .locator('[data-asset-path="assets/Rock.material.babasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await openWindowsMenu(page);
+    await expect(page.getByTestId("windows-menu-material-preview")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-material-compiler-results")).toBeVisible();
+    await closeWindowsMenu(page);
 
     // A cheap surface graph compiles on its own and reports a ready preview.
     const canvas = page.getByTestId("material-preview-canvas");
@@ -528,26 +533,10 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("play-preview")).toBeEnabled();
   });
 
-  test("Material Windows menu lists the material docks", async ({ page }) => {
-    await openTestProject(page);
-    await createAsset(page, "Material", "Docked");
-    await page
-      .locator('[data-asset-path="assets/Docked.material.babasset"]')
-      .dblclick();
-    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
-    await page.getByTestId("windows-menu").click();
-    await expect(
-      page.getByTestId("windows-menu-material-preview"),
-    ).toBeVisible();
-    await expect(
-      page.getByTestId("windows-menu-material-compiler-results"),
-    ).toBeVisible();
-  });
-
   test("Custom GLSL node compiles an expression in the Material editor", async ({
     page,
   }) => {
-    await openTestProject(page);
+    await openMinimalTestProject(page);
     await createAsset(page, "Material", "Glsl");
     await page
       .locator('[data-asset-path="assets/Glsl.material.babasset"]')
@@ -595,7 +584,7 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     test.setTimeout(90_000);
-    await openTestProject(page);
+    await openMinimalTestProject(page);
     const albedoGuid = await importAlbedoTexture(page);
     await createAsset(page, "Material", "Sampled");
     await openAssetFromBrowser(page, "assets/Sampled.material.babasset");
@@ -620,7 +609,7 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     test.setTimeout(90_000);
-    await openTestProject(page);
+    await openMinimalTestProject(page);
     const albedoGuid = await importAlbedoTexture(page);
     await createAsset(page, "Material", "ParamSample");
     await openAssetFromBrowser(page, "assets/ParamSample.material.babasset");
