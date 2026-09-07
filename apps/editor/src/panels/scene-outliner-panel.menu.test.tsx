@@ -19,11 +19,16 @@ const applySceneChange = vi.hoisted(() =>
 );
 const openDocument = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
+  phone: false,
   scene: null as SerializedScene | null,
   assets: [] as Array<{
     path: string;
     header: { type: string; name: string; guid?: string };
   }>,
+}));
+
+vi.mock("../shell/use-platform-layout", () => ({
+  usePhoneLayout: () => harness.phone,
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
@@ -63,9 +68,26 @@ afterEach(() => {
   applySceneChange.mockClear();
   openDocument.mockClear();
   harness.assets = [];
+  harness.phone = false;
 });
 
 describe("SceneOutlinerPanel menus", () => {
+  it("keeps phone row targets separate and restores compact row placement on iPad", () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("actor-1", "Cube"), createActor("actor-2", "Sphere")];
+    harness.scene = scene;
+    harness.phone = true;
+    const { rerender } = render(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
+    let rows = screen.getAllByRole("treeitem");
+    expect(rows[0]!.style.height).toBe("44px");
+    expect(rows[1]!.style.top).toBe("44px");
+    harness.phone = false;
+    rerender(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
+    rows = screen.getAllByRole("treeitem");
+    expect(rows[0]!.style.height).toBe("28px");
+    expect(rows[1]!.style.top).toBe("28px");
+  });
+
   it("opens Duplicate/Delete from the row menu button", () => {
     const scene = createDefaultScene();
     scene.actors = [createActor("actor-1", "Cube")];

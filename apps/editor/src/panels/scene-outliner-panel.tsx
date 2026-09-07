@@ -25,6 +25,7 @@ import {
 } from "@babylonslate/core";
 import { isSceneWorkspaceKind } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
+import { cn } from "@babylonslate/ui/lib/utils";
 import {
   EyeIcon,
   EyeOffIcon,
@@ -44,6 +45,7 @@ import {
   selectionAfterLockChange,
 } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
+import { usePhoneLayout } from "../shell/use-platform-layout";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
   duplicateSceneActor,
@@ -240,6 +242,8 @@ export function flattenOutliner(
 
 export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
+  const phone = usePhoneLayout();
+  const actionSize = phone ? "touch-icon" : "icon-sm";
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange, assetRegistry, loadGraphDocument, openDocument } =
     useDocuments();
@@ -672,7 +676,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-1 px-1 py-1">
           <SearchInput
-            className="min-h-[var(--chrome-row,28px)]"
+            className={cn("min-h-[var(--chrome-row,28px)]", phone && "min-h-11")}
             placeholder="Search actors"
             aria-label="Search actors"
             value={search}
@@ -681,6 +685,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           />
           <IconActionButton
             label="New Folder"
+            size={actionSize}
             onClick={addFolder}
             disabled={!scene}
             data-testid="outliner-add-folder"
@@ -689,6 +694,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           </IconActionButton>
           <IconActionButton
             label="Add actor"
+            size={actionSize}
             onClick={() => setPlaceOpen(true)}
             disabled={!scene}
             data-testid="outliner-add-actor"
@@ -698,6 +704,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         </div>
         <div className="min-h-0 flex-1">
           <TreeView
+            rowHeight={phone ? 44 : undefined}
             nodes={nodes.map((node) => {
               const target = outlinerRowTarget(node.id);
               if (target?.kind === "folder") {
@@ -710,7 +717,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon-sm"
+                          size={actionSize}
                           aria-label={`Folder menu for ${node.label}`}
                           data-testid={`outliner-menu-${node.id}`}
                         >
@@ -728,6 +735,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                   <>
                     <IconActionButton
                       label={`Toggle visibility of ${node.label}`}
+                      size={actionSize}
                       variant="ghost"
                       onClick={() => toggleFlag(actorId, "visible")}
                       data-testid={`outliner-visibility-${actorId}`}
@@ -736,6 +744,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                     </IconActionButton>
                     <IconActionButton
                       label={`Toggle lock of ${node.label}`}
+                      size={actionSize}
                       variant="ghost"
                       onClick={() => toggleFlag(actorId, "locked")}
                       data-testid={`outliner-lock-${actorId}`}
@@ -750,7 +759,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon-sm"
+                          size={actionSize}
                           aria-label={`Actor menu for ${node.label}`}
                           data-testid={`outliner-menu-${actorId}`}
                         >

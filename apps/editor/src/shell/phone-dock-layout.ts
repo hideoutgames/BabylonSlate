@@ -9,7 +9,9 @@ export function inlineDetachedDockviewLayout(
   if (
     layout?.grid?.root?.type !== "branch" ||
     !Array.isArray(layout.grid.root.data)
-  ) return layout;
+  ) {
+    return layout;
+  }
   const detached = [
     ...(layout.floatingGroups ?? []),
     ...(layout.popoutGroups ?? []),
