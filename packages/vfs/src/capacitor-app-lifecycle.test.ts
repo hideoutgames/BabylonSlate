@@ -103,4 +103,25 @@ describe("Capacitor app lifecycle bridge", () => {
 
     expect(removeListener).toHaveBeenCalled();
   });
+
+  it("does not forward events after immediate cleanup, even when registration finishes later", async () => {
+    const listener = vi.fn();
+    window.addEventListener("babylonslate:appstate", listener);
+    const cleanup = initializeCapacitorLifecycle();
+    cleanup();
+    await flushAsync();
+    addListener.mock.calls[0]?.[1]({ isActive: false });
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener("babylonslate:appstate", listener);
+  });
+
+  it("handles an unavailable native App plugin without an unhandled rejection", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    addListener.mockRejectedValueOnce(new Error("Plugin unavailable"));
+    const cleanup = initializeCapacitorLifecycle();
+    await flushAsync();
+    cleanup();
+    expect(warning).toHaveBeenCalled();
+    warning.mockRestore();
+  });
 });

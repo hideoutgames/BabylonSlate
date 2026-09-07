@@ -40,8 +40,8 @@ export interface ProjectStorage {
   releaseFolder(): Promise<void>;
   /** True when an external bookmark can no longer be resolved. */
   needsReconnect?(): Promise<boolean>;
-  /** Re-pick and re-bind a stale external folder. */
-  reconnectFolder?(): Promise<ProjectFolderHandle>;
+  /** Validate a picked candidate before replacing a stale external binding. */
+  reconnectFolder?(validate?: (candidate: ProjectStorage) => Promise<void>): Promise<ProjectFolderHandle>;
   /**
    * Permanently remove a project folder (web OPFS). Native Documents /
    * chosen-folder adapters omit this — Homepage only drops recents there.

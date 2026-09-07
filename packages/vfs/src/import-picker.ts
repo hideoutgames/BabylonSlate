@@ -59,7 +59,7 @@ function pickImportFilesViaDom(
   if (typeof document === "undefined") {
     return Promise.resolve([]);
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = options.multiple !== false;
@@ -94,7 +94,12 @@ function pickImportFilesViaDom(
           });
         }
         finish(picked);
-      })();
+      })().catch((error: unknown) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      });
     });
 
     input.addEventListener("cancel", () => {
@@ -102,7 +107,12 @@ function pickImportFilesViaDom(
     });
 
     document.body.appendChild(input);
-    input.click();
+    try {
+      input.click();
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 }
 
