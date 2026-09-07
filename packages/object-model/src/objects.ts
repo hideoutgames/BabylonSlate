@@ -228,15 +228,20 @@ export class ActorComponent extends BObject {
 
 /** Engine-neutral reference to one mesh component's current material instance. */
 export class MaterialObject extends BObject {
+  readonly component: ActorComponent;
+  readonly materialAssetGuid: string;
+
   constructor(
-    readonly component: ActorComponent,
-    readonly materialAssetGuid: string,
+    component: ActorComponent,
+    materialAssetGuid: string,
     revision: number,
   ) {
     super({
       classId: "MaterialObject",
       guid: `${component.guid}:material:${revision}`,
     });
+    this.component = component;
+    this.materialAssetGuid = materialAssetGuid;
   }
 }
 
