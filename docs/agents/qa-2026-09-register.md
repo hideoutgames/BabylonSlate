@@ -251,3 +251,8 @@ Implementation entries will record failing and passing tests, exact subcases cla
 
 - Six desktop Chromium checks pass: three multiword Make Float insertions at distinct positions retained after reload; first Create of Script Interface with saved method and stable asset identity; plain click replacing multi-selection with an exact Delete list; title/thumbnail double-click opening one editor; camera clip rejection, Undo/Redo and FOV endpoints retained after reload; and particle capacity/prewarm/lifetime normalization retained after reload.
 - These provide N evidence for the tested H9/H18/M20/M34/L15/L27 configurations and browser validation for the M19 and M29 fixes above. They do not close the separate long-References, original-project, or general auto-layout variants. Full delivery verification remains pending.
+
+### H9.2: long References dialog
+
+- A fresh browser fixture with 24 saved Scene referrers reproduced Close extending below pixel 1158 in a 720-pixel viewport. References now limits its height and scrolls the reference body, retaining a visible heading and footer.
+- The regression passes at 1280×720 and 390×844, including clicking Close. Both class and material reference-warning controls also pass. This closes the reproduced overflow defect; full delivery verification remains pending.
