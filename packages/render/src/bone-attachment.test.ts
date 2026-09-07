@@ -1,6 +1,7 @@
 import { Bone, Matrix, Mesh, Quaternion, Skeleton, TransformNode, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@babylonslate/bridge";
+import { isPlayEngineCommandType, readActorSlot, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@babylonslate/bridge";
+import { createInProcessRuntime } from "../../runtime/src/driver";
 import { createTestEngine } from "./create-null-engine";
 import * as snapshot from "./snapshot-apply";
 
@@ -27,6 +28,42 @@ function fixture() {
 }
 
 describe("render bone attachment", () => {
+  it("routes a runtime attachment and composes its published world snapshot exactly once", async () => {
+    const { scene, binding, target, child } = fixture();
+    binding.meshes.clear();
+    binding.meshes.set(0, target);
+    binding.meshes.set(1, child);
+    const hand = new TransformNode("Hand", scene);
+    hand.parent = target;
+    hand.position.y = 2;
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (command) => {
+      if (isPlayEngineCommandType(command.type) && command.type === "attachToBone") snapshot.applyAttachToBone(binding, command);
+    } });
+    try {
+      await runtime.loadScripts([
+        { assetGuid: "hero", classId: "Hero", parentClassId: "Actor", source: "", anchors: [], entryPoints: [] },
+        { assetGuid: "item", classId: "Item", parentClassId: "Actor", source: 'export function onBeginPlay(ctx) { ctx.attachToBone(null, ctx.getActorOfClass("Hero"), "Hand"); }', anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] },
+      ]);
+      const actor = runtime.spawnScriptedActor({ classId: "Hero", transform: { position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }, scale: { x: 2, y: 2, z: 2 } } })!;
+      runtime.spawnScriptedActor({ classId: "Item" });
+      runtime.start();
+      const renderTick = () => {
+        runtime.tick();
+        const buffer = new Float32Array(snapshotFloatCount(runtime.snapshotCapacity));
+        expect(runtime.copySnapshot(buffer)).toBe(true);
+        const header = readSnapshotHeader(buffer);
+        const actors = Array.from({ length: header.actorCount }, (_, index) => readActorSlot(buffer, index));
+        snapshot.applySnapshotToScene(scene, binding, { actors, actorCount: actors.length, frameId: header.frameId, tickIndex: header.tickIndex, alpha: 1 });
+      };
+      renderTick();
+      expect(child.getAbsolutePosition().x).toBeCloseTo(6);
+      actor.transform.position.x = 20;
+      hand.position.y = 3;
+      renderTick();
+      expect(child.getAbsolutePosition().x).toBeCloseTo(14);
+    } finally { runtime.stop(); }
+  });
+
   it("follows a hidden skin on a later model component through bone animation and target transforms", () => {
     const { scene, target, child, childSlot, targetSlot, attach, apply } = fixture();
     const unrelated = new Mesh("body", scene);

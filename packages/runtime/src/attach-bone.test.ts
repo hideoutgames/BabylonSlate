@@ -52,7 +52,7 @@ describe("Attach to Bone scripting", () => {
         source: `export function onBeginPlay(ctx) {
           const parent = ctx.getActorOfClass("Character");
           const dead = ctx.spawnActor("Dead");
-          ctx.destroyActor(dead);
+          dead.destroyed = true;
           ctx.attachToBone(null, null, "Hand");
           ctx.attachToBone(null, dead, "Hand");
           ctx.attachToBone(null, ctx.self, "Hand");
