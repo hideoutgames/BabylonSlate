@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
 import { AssetOpenProvider } from "@babylonslate/editor-kit";
-import { assetRef, pin } from "@babylonslate/scripting";
+import { assetRef, classRef, pin } from "@babylonslate/scripting";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
@@ -25,6 +25,7 @@ const applyGraphChange = vi.hoisted(() =>
     async () => true,
   ),
 );
+const fixture = vi.hoisted(() => ({ kind: "asset" as "asset" | "class" }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
@@ -46,15 +47,20 @@ vi.mock("../context/document-context", () => ({
           nodes: [
             {
               id: "play-1",
-              type: "audio.play",
+              type: fixture.kind === "asset" ? "audio.play" : "actor.getAllOfClass",
               position: { x: 80, y: 80 },
-              data: {
+              data: fixture.kind === "asset" ? {
                 title: "Play Sound",
                 __nodeType: "audio.play",
                 __pins: [
-                  pin("asset", "asset", "in", assetRef("Audio")),
+                  pin("asset", "Asset", "in", assetRef("Audio")),
                 ],
                 "default:asset": "audio-1",
+              } : {
+                title: "Get All Actors Of Class",
+                __nodeType: "actor.getAllOfClass",
+                __pins: [pin("classId", "Class", "in", classRef("Actor"))],
+                "default:classId": "Pawn",
               },
             },
           ],
@@ -102,6 +108,7 @@ function renderPlaySoundInspector() {
 afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
+  fixture.kind = "asset";
 });
 
 describe("Inspector node pin Defaults", () => {
@@ -110,5 +117,26 @@ describe("Inspector node pin Defaults", () => {
     expect(screen.getByTestId("inspector-pin-defaults")).toBeTruthy();
     expect(screen.getByTestId("property-asset")).toBeTruthy();
     expect(screen.getByTestId("property-asset-open")).toBeTruthy();
+  });
+
+  it("clears an existing asset default through the picker using the pin ID", async () => {
+    renderPlaySoundInspector();
+    fireEvent.click(screen.getByTestId("property-asset"));
+    fireEvent.click(await screen.findByTestId("search-item-__none__"));
+    await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+    const next = applyGraphChange.mock.calls.at(-1)![1];
+    expect(next.nodes[0]!.data["default:asset"]).toBe("");
+    expect(next.nodes[0]!.data).not.toHaveProperty("default:Asset");
+  });
+
+  it("replaces an existing class default through the picker using the pin ID", async () => {
+    fixture.kind = "class";
+    renderPlaySoundInspector();
+    fireEvent.click(screen.getByTestId("property-classId"));
+    fireEvent.click(await screen.findByTestId("search-item-Actor"));
+    await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+    const next = applyGraphChange.mock.calls.at(-1)![1];
+    expect(next.nodes[0]!.data["default:classId"]).toBe("Actor");
+    expect(next.nodes[0]!.data).not.toHaveProperty("default:Class");
   });
 });

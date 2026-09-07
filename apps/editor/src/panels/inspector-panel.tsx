@@ -98,7 +98,6 @@ import {
   patchFlowSwitchCases,
   pinDefaultPropertyRows,
   pinListFromParameterRows,
-  pinsFromNodeData,
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
@@ -950,12 +949,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const [parentClassError, setParentClassError] = useState<string | null>(null);
   const [classPinPick, setClassPinPick] = useState<{
     pinId: string;
-    name: string;
     constraintClassId: string;
   } | null>(null);
   const [assetPinPick, setAssetPinPick] = useState<{
     pinId: string;
-    name: string;
     assetType: string;
     allowedTypes: string[];
   } | null>(null);
@@ -1370,10 +1367,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         { editorGraph },
       ),
       onPickClass: (pinId, constraintClassId) => {
-        const name =
-          pinsFromNodeData(selectedNode.data).find((pin) => pin.id === pinId)
-            ?.name ?? pinId;
-        setClassPinPick({ pinId, name, constraintClassId });
+        setClassPinPick({ pinId, constraintClassId });
       },
       assetEntries: pickerAssets.map((asset) => ({
         id: asset.guid,
@@ -1381,12 +1375,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         type: asset.type,
       })),
       onPickAsset: (pinId, assetType) => {
-        const name =
-          pinsFromNodeData(selectedNode.data).find((pin) => pin.id === pinId)
-            ?.name ?? pinId;
         setAssetPinPick({
           pinId,
-          name,
           assetType,
           allowedTypes: assetPickerAllowedTypes(
             assetType,
@@ -1645,7 +1635,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         onPick={(classId) => {
           if (classPinPick && classId) {
             updateNodeData({
-              [pinDefaultPropertyKey(classPinPick.name)]: classId,
+              [pinDefaultPropertyKey(classPinPick.pinId)]: classId,
             });
           }
           setClassPinPick(null);
@@ -1669,7 +1659,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         onPick={(guid) => {
           if (assetPinPick) {
             updateNodeData({
-              [pinDefaultPropertyKey(assetPinPick.name)]: guid ?? "",
+              [pinDefaultPropertyKey(assetPinPick.pinId)]: guid ?? "",
             });
           }
           setAssetPinPick(null);

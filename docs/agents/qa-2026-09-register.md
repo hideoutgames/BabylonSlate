@@ -256,3 +256,8 @@ Implementation entries will record failing and passing tests, exact subcases cla
 
 - A fresh browser fixture with 24 saved Scene referrers reproduced Close extending below pixel 1158 in a 720-pixel viewport. References now limits its height and scrolls the reference body, retaining a visible heading and footer.
 - The regression passes at 1280×720 and 390×844, including clicking Close. Both class and material reference-warning controls also pass. This closes the reproduced overflow defect; full delivery verification remains pending.
+
+### H25 continuation: asset and class picker defaults
+
+- Two real Inspector/picker regressions reproduced unchanged canonical defaults after clearing an Audio reference and choosing Actor over Pawn. The callbacks wrote display-name keys while existing pin-ID keys retained precedence.
+- Both pickers now write the canonical pin ID, matching ordinary default fields. All three Inspector picker tests pass. Browser persistence and full delivery verification remain pending; this is a separate picker path from the earlier numeric default correction.
