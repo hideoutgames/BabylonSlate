@@ -47,6 +47,7 @@ Preserve BabylonSlate's compact desktop controls, including small Primary button
 | Feature, bugfix, or behavior implementation | [test-driven-development](.agents/skills/test-driven-development/SKILL.md) |
 | Diff review against standards and originating requirements | [code-review](.agents/skills/code-review/SKILL.md) |
 | Unit tests, mocking, coverage, or Vitest configuration | [vitest](.agents/skills/vitest/SKILL.md) |
+| Waiting for local tests/verification, PR Verify CI, or a free CI slot | [wait-efficiently](.agents/skills/wait-efficiently/SKILL.md) |
 
 Delegate only when available and authorized. Inherit the parent model by default; explicit selections must follow the workflow's hard allowlist. Use sequential passes when delegation is unavailable.
 

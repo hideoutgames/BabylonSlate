@@ -1,6 +1,20 @@
 # Testing architecture
 
-`pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
+`pnpm verify` runs dependency-free Node tests for the agent-wait helper, typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
+
+## Quiet agent waits
+
+Use `pnpm --silent agent:wait local --script verify` to run full verification once with complete stdout/stderr in a unique OS temporary directory. Use `local --script test -- --project node packages/core` to forward filters unchanged to other scripts. Arguments after `--` belong to the package script. `--timeout-seconds <seconds>` overrides the two-hour operation deadline. The helper launches the current `npm_execpath` entry through Node for JavaScript package managers, or directly for executable pnpm; it never executes a Windows `.cmd` shim or changes script-shell configuration.
+
+`pnpm --silent agent:wait ci --pr <number>` captures the head and discovers its latest pull-request `verify.yml` run (up to ten minutes), then runs `gh run watch --exit-status --interval 60`. Final head/run/attempt checks reject superseded results; success requires `static`, `unit`, all seven e2e shards, and no skipped/unsuccessful jobs. Other required checks and final merge gates remain the agent's responsibility. `slot --pr <number>` checks every 60 seconds for fewer than two other non-draft PRs to `main`, excluding itself and #271. Recheck capacity immediately before marking ready.
+
+The foreground helper prints a start record and a terminal result; successful helper output is below 1 KiB. Failures add at most 40 trailing log lines capped below 4 KiB. `output.log` retains full process output; `result.json` records status, elapsed milliseconds, exit code, commit, and CI URL when applicable. Full verification also saves initial/final working-tree snapshots. A clean unchanged commit and unfiltered `verify` are required for `deliveryEligible`; source edits, initially dirty trees, or changed commits invalidate delivery. An interrupted run never certifies verification. Recheck the current commit and tree before using any saved result.
+
+After interrupted child cleanup, a read-only final snapshot has a separate five-second limit. If it cannot be collected, the result explicitly records an unavailable final state; the operation remains unsuccessful.
+
+Statuses are `success`, `failure`, `cancellation`, `timeout`, and `stale`. Package failures retain their exit code; helper timeouts use 124, interruptions use 130 (SIGINT) or 143 (SIGTERM), and stale results use 3. Missing prerequisites fail without changing global setup. Cancellation stops only owned child processes; the helper never retries tests/workflows or opens, readies, or merges PRs. Follow [wait-efficiently](../../.agents/skills/wait-efficiently/SKILL.md) to retain the host session and avoid model involvement in individual polls. Hosts may still require periodic wakeups and user updates.
+
+`pnpm test:agent-wait` runs real process fixtures and a fake `gh` with Node's built-in test runner; no extra dependency is required. The same command is part of the existing CI static job, preserving nine Verify jobs.
 
 On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim. Playwright passes `VITE_TEST_MODE` through its web-server environment so server startup also works with Windows' command shell.
 
