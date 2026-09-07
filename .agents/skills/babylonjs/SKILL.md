@@ -9,8 +9,6 @@ description: Babylon.js engine and scene development using curated references fo
 
 Read [AGENTS.md](../../../AGENTS.md) and [the artwork policy](../../rules/no-ai-artwork.md) before applying examples. This imported reference describes Babylon.js 8; check the repository's installed package versions before relying on version-specific APIs. Engine runtime primitives and debug geometry are allowed product features; procedural references do not authorize creating decorative art assets. Do not re-add the removed game HUD / UserInterface system or Babylon GUI application in Play/player. React editor chrome uses the editor-ui-components and shadcn skills.
 
-The unpacked files in this directory are authoritative. `babylonjs.skill` is a retained legacy archive with an older, incomplete reference set; do not load or install it over these files.
-
 ## Quick Reference
 
 Babylon.js is a powerful open-source 3D engine for the web. Version 8 supports WebGL2 and WebGPU.
@@ -19,7 +17,6 @@ Babylon.js is a powerful open-source 3D engine for the web. Version 8 supports W
 
 **NPM packages:**
 - `@babylonjs/core` - Engine, scene, meshes, materials, cameras, lights
-- `@babylonjs/gui` - 2D/3D GUI controls
 - `@babylonjs/loaders` - glTF, OBJ, STL loaders
 - `@babylonjs/materials` - Extra material types
 - `@babylonjs/inspector` - Debug inspector
@@ -115,7 +112,7 @@ upperArm.parent = shoulderPivot;
 upperArm.position.y = 0.6;                          // geometry sticks out from joint
 // Animation later: shoulderPivot.rotation.y = ...  // rotates whole arm cleanly
 ```
-For booleans (drilled holes, carved slots), use **CSG2** (Babylon 8). For rotationally symmetric parts (bottles, hubs, columns) use `CreateLathe`. For path-swept parts (cables, rails) use `CreateTube` or `ExtrudeShape`. See [procedural-parametric-modeling.md](references/procedural-parametric-modeling
+For booleans (drilled holes, carved slots), use **CSG2** (Babylon 8). For rotationally symmetric parts (bottles, hubs, columns) use `CreateLathe`. For path-swept parts (cables, rails) use `CreateTube` or `ExtrudeShape`. See [procedural-parametric-modeling.md](references/procedural-parametric-modeling.md).
 
 ## Reference Files
 
@@ -125,7 +122,6 @@ Read these files for detailed API patterns on specific topics:
 - **[meshes.md](references/meshes.md)** - Mesh builders, transforms, TransformNode, instances, thin instances, clones, merging, picking
 - **[procedural-parametric-modeling.md](references/procedural-parametric-modeling.md)** - Building high-quality 3D models in code from primitives. Full primitive catalog (lathe, tube, extrude, polyhedra, geodesics, CSG2 booleans, custom VertexData), quality techniques (tessellation, bevels, edges, material palettes), and a complete animation-ready parent/pivot hierarchy pattern with a worked robot-arm example. **Read this when asked to build any non-trivial model in code or when a model will need to animate.**
 - **[materials.md](references/materials.md)** - PBR, Standard, textures, environment/HDR, Node Material, Shader Material
-- **[gui.md](references/gui.md)** - AdvancedDynamicTexture, all control types, containers, layout, events
 - **[animation-loading.md](references/animation-loading.md)** - Animation API, groups, easing, skeletal animation, asset loading, AssetContainer
 - **[performance.md](references/performance.md)** - Scene/mesh/material optimization, instancing strategy comparison, monitoring, memory management
 

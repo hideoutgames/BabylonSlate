@@ -16,7 +16,7 @@
 
 `skills-lock.json` records upstream sources and hashes for code-review, shadcn, test-driven-development, and vitest. Preserve those upstream records during local adaptation; they are not checksums of this repository's modified skill bodies. Review an upstream update in a separate diff, merge its relevant changes into the canonical package, and retain repository overrides and compatibility entry points. Do not blindly reinstall over local changes.
 
-The Babylon skill includes a legacy `babylonjs.skill` archive. It contains an older entry point and seven references, omitting the procedural-modeling reference. Retain it for provenance only; the unpacked package is authoritative.
+The Babylon skill keeps the maintained source files only. Git history preserves the legacy archive; the GUI tutorial is omitted because the game HUD / UserInterface system was removed and editor chrome uses React components.
 
 ## Validation
 
@@ -25,7 +25,11 @@ The Babylon skill includes a legacy `babylonjs.skill` archive. It contains an ol
 - Compare Cursor adapter metadata with the root applicability table when changing scopes.
 - Exercise routing for engine work, editor UI, docs creation, pure-logic tests, investigation, and review. Confirm read-only requests do not trigger writes and planning can return a plan.
 - In each intended client, start a fresh session and ask it to identify the applicable rules and skill paths for those scenarios. Record actual client results; static link checks do not prove automatic discovery.
-- Run `pnpm verify` before marking the implementation PR ready. If verification or client access is unavailable, disclose that limitation and retain the compatibility entry points.
+- Pass `pnpm verify` before opening any PR, including drafts. If verification or client access is unavailable, disclose that limitation and retain the compatibility entry points.
+
+## PR delivery
+
+Agents own delivery through merge: local tests and full `pnpm verify` first, then open a draft, wait for a free Verify slot, mark ready, and monitor CI. On failure, inspect logs, fix the cause, pass local verification, push, and wait for the new run. Merge only the verified current head once all required checks and branch protections pass, and confirm the merged state. Missing tooling should be repaired where possible; an unresolved blocker must be reported, never treated as a successful test. See [the workflow](../../.agents/rules/agent-workflow.md) and [PR cadence](../../.agents/rules/github-actions-pr-cadence.md) for the authoritative gates.
 
 ## Migration validation record
 
