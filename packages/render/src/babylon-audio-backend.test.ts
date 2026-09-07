@@ -15,7 +15,7 @@ const audio = vi.hoisted(() => {
   return { Context, context, engine, sound,
     createEngine: vi.fn(async () => engine),
     createBus: vi.fn(async () => ({ dispose: vi.fn() })),
-    createBuffer: vi.fn(async (..._args: unknown[]) => ({ length: 1, channelCount: 1 })),
+    createBuffer: vi.fn(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1 })),
     createSound: vi.fn(async () => sound()),
   };
 });
