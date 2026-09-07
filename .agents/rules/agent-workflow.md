@@ -87,6 +87,8 @@ The same rules apply to commit messages.
 
 ## Git: merge to main
 
+Distribution is a separate operation governed by [distribution.md](distribution.md). Implementation, verification, CI success, merging, and tags do not authorize packaging, signing, TestFlight upload, or GitHub Release publication. A release-build request never authorizes App Store submission.
+
 **Default:** merge to `main` automatically when all merge gates pass. Do not ask "should I merge?" when gates pass — merge. Leaving completed work stranded on a feature branch counts as incomplete work.
 
 ### Merge gates (all required)

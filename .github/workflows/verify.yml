@@ -27,6 +27,7 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: pnpm test:agent-wait
+      - run: pnpm test:distribution
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm --filter docs-site build
