@@ -30,6 +30,8 @@ interface PropertyRowBase {
   id: string;
   label: string;
   disabled?: boolean;
+  /** Selection values differ; reset remains available even if the primary is at default. */
+  mixed?: boolean;
   /** Shown under the control (Title Case labels stay on `label`). */
   description?: string;
   /** Overrides the Field `data-testid` (`property-row-${id}` by default). */
@@ -53,8 +55,11 @@ export type PropertyRow =
       defaultValue?: Vector3Value;
       /** Axis labels; 2D mode hides the Z axis by passing two entries. */
       axes?: string[];
+      mixedAxes?: boolean[];
       sensitivity?: number;
       onChange: (value: Vector3Value) => void;
+      /** Optional per-axis edit; `onChange` still handles whole-row reset. */
+      onAxisChange?: (axis: number, value: number) => void;
       onCommit?: (value: Vector3Value) => void;
     })
   | (PropertyRowBase & {
@@ -134,6 +139,7 @@ function hasDefault(row: PropertyRow): boolean {
 }
 
 function isAtDefault(row: PropertyRow): boolean {
+  if (row.mixed) return false;
   if (!hasDefault(row)) return true;
   return (
     JSON.stringify(row.value) ===
@@ -185,6 +191,7 @@ function RowControl({ row }: { row: PropertyRow }) {
         <NumericDragField
           id={`property-${row.id}`}
           value={row.value}
+          mixed={row.mixed}
           min={row.min}
           max={row.max}
           sensitivity={row.sensitivity}
@@ -206,10 +213,15 @@ function RowControl({ row }: { row: PropertyRow }) {
               <NumericDragField
                 label={axis}
                 value={row.value[index] ?? 0}
+                mixed={row.mixedAxes?.[index] ?? row.mixed}
                 accent={axis.toLowerCase() as "x" | "y" | "z"}
                 sensitivity={row.sensitivity}
                 disabled={row.disabled}
                 onChange={(next) => {
+                  if (row.onAxisChange) {
+                    row.onAxisChange(index, next);
+                    return;
+                  }
                   const value = [...row.value];
                   value[index] = next;
                   row.onChange(value as typeof row.value);
@@ -227,7 +239,8 @@ function RowControl({ row }: { row: PropertyRow }) {
         <Checkbox
           id={`property-${row.id}`}
           className="size-4"
-          checked={row.value}
+          checked={row.mixed ? false : row.value}
+          indeterminate={row.mixed}
           disabled={row.disabled}
           onCheckedChange={(checked) => row.onChange(checked === true)}
           data-testid={`property-${row.id}`}

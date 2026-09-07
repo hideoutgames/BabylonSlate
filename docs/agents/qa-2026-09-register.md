@@ -278,3 +278,13 @@ Implementation entries will record failing and passing tests, exact subcases cla
 - A desktop Chromium marquee over the fresh Mannequin failed to select it; a real GLB unit fixture reproduced the missing actor identity. Marquee returned imported part names while tap picking already resolved their named actor ancestor. Both now share that resolution.
 - Four browser custom-event controls also pass after Save/reload: new declarations and older node-only declarations execute Ping in Normal Play and Preview Build. This supplies the H12/M28 browser evidence pending above.
 - The browser regression now passes three drag selections with no added actors or dirty state, correct one-shot toolbar state, and selection retained across Focus layout. Rendering controls also pass, including locked imported actors remaining unselectable. This fixes the newly reproduced identity failure; the historical duplicate-placement report is N in this configuration.
+
+### M5.3: shared Details edits
+
+- The confirmed product choice is shared transform and visibility editing, with components restricted to the primary actor. New PropertyGrid/Scene Details tests reproduced updates affecting only the first actor for position, rotation, scale, visibility and 2D Z-Order.
+- Shared edits now preserve each actor's untouched axes, show mixed values, and reset the selection's visible property axes together. Primary actor fields and components are explicitly identified. Focused unit tests and desktop Chromium checks pass, including both actors restored by one Undo/Redo, preserved other axes, Save/reload, unchanged unselected control, and primary-only component removal.
+
+### Additional graph and Console controls
+
+- A fresh real-pointer H20 valid-target drag preserves its existing exec edge; one Undo and Redo restore the expected complete edge sets. This is N for that specific valid-target/Undo configuration, not an invalid-drop or touch-cancel claim.
+- A fresh M26/L32 Console check passes the first open click, native mid-line insertion, Backspace, selection replacement and history navigation. Toast-overlap and original-session variants remain unclosed.
