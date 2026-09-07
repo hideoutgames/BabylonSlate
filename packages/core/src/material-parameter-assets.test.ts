@@ -16,11 +16,46 @@ describe("materialParameterTextureGuidsFromGraph", () => {
       nodes: [],
       edges: [],
       members: [
-        { id: "albedo", kind: "variable", name: "Albedo", typeId: "asset", typeClassId: "Texture", defaultValue: " texture-class " },
-        { id: "local", kind: "variable", name: "Local Texture", typeId: "asset", typeClassId: "Texture", functionId: "tint", defaultValue: "texture-local" },
-        { id: "string", kind: "variable", name: "Name", typeId: "string", defaultValue: "texture-ignore" },
-        { id: "audio", kind: "variable", name: "Audio", typeId: "asset", typeClassId: "Audio", defaultValue: "audio-ignore" },
-        { id: "empty", kind: "variable", name: "Empty", typeId: "asset", typeClassId: "Texture", defaultValue: null },
+        {
+          id: "albedo",
+          kind: "variable",
+          name: "Albedo",
+          typeId: "asset",
+          typeClassId: "Texture",
+          defaultValue: " texture-class ",
+        },
+        {
+          id: "local",
+          kind: "variable",
+          name: "Local Texture",
+          typeId: "asset",
+          typeClassId: "Texture",
+          functionId: "tint",
+          defaultValue: "texture-local",
+        },
+        {
+          id: "string",
+          kind: "variable",
+          name: "Name",
+          typeId: "string",
+          defaultValue: "texture-ignore",
+        },
+        {
+          id: "audio",
+          kind: "variable",
+          name: "Audio",
+          typeId: "asset",
+          typeClassId: "Audio",
+          defaultValue: "audio-ignore",
+        },
+        {
+          id: "empty",
+          kind: "variable",
+          name: "Empty",
+          typeId: "asset",
+          typeClassId: "Texture",
+          defaultValue: null,
+        },
       ],
       functionGraphs: { tint: { nodes: [], edges: [] } },
     };
@@ -35,10 +70,44 @@ describe("materialParameterTextureGuidsFromGraph", () => {
       nodes: [],
       edges: [],
       members: [
-        { id: "array", kind: "variable", name: "Textures", typeId: "asset", typeClassId: "Texture", container: "array", defaultValue: ["texture-array", "texture-array", null] },
-        { id: "values", kind: "variable", name: "Texture Values", typeId: "asset", typeClassId: "Texture", container: "map", keyTypeId: "string", defaultValue: [{ key: "string-key-ignore", value: "texture-value" }] },
-        { id: "keys", kind: "variable", name: "Texture Keys", typeId: "string", container: "map", keyTypeId: "asset", keyTypeClassId: "Texture", defaultValue: [{ key: "texture-key", value: "string-value-ignore" }] },
-        { id: "invalid", kind: "variable", name: "Invalid Array", typeId: "asset", typeClassId: "Texture", container: "array", defaultValue: "invalid-ignore" },
+        {
+          id: "array",
+          kind: "variable",
+          name: "Textures",
+          typeId: "asset",
+          typeClassId: "Texture",
+          container: "array",
+          defaultValue: ["texture-array", "texture-array", null],
+        },
+        {
+          id: "values",
+          kind: "variable",
+          name: "Texture Values",
+          typeId: "asset",
+          typeClassId: "Texture",
+          container: "map",
+          keyTypeId: "string",
+          defaultValue: [{ key: "string-key-ignore", value: "texture-value" }],
+        },
+        {
+          id: "keys",
+          kind: "variable",
+          name: "Texture Keys",
+          typeId: "string",
+          container: "map",
+          keyTypeId: "asset",
+          keyTypeClassId: "Texture",
+          defaultValue: [{ key: "texture-key", value: "string-value-ignore" }],
+        },
+        {
+          id: "invalid",
+          kind: "variable",
+          name: "Invalid Array",
+          typeId: "asset",
+          typeClassId: "Texture",
+          container: "array",
+          defaultValue: "invalid-ignore",
+        },
       ],
     };
     expect(materialParameterTextureGuidsFromGraph(graph)).toEqual([
@@ -82,6 +151,10 @@ describe("materialParameterTextureGuidsFromGraph", () => {
         },
       },
     };
-    expect(materialParameterTextureGuidsFromGraph(graph)).toEqual(["texture-a", "texture-b", "texture-c"]);
+    expect(materialParameterTextureGuidsFromGraph(graph)).toEqual([
+      "texture-a",
+      "texture-b",
+      "texture-c",
+    ]);
   });
 });

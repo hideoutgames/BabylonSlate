@@ -2,7 +2,7 @@ import { parseMapDefaultEntries } from "./map-default";
 import type { GraphClassMember, SerializedGraph } from "./project";
 
 /** Texture references in typed variable defaults, including function locals. */
-export function textureVariableGuidsFromMembers(
+function textureVariableGuidsFromMembers(
   members: readonly GraphClassMember[],
 ): string[] {
   const guids = new Set<string>();
@@ -11,10 +11,12 @@ export function textureVariableGuidsFromMembers(
   };
   for (const member of members) {
     if (member.kind !== "variable") continue;
-    const valueIsTexture = member.typeId === "asset" && member.typeClassId === "Texture";
+    const valueIsTexture =
+      member.typeId === "asset" && member.typeClassId === "Texture";
     const value = member.defaultValue;
     if (member.container === "map") {
-      const keyIsTexture = member.keyTypeId === "asset" && member.keyTypeClassId === "Texture";
+      const keyIsTexture =
+        member.keyTypeId === "asset" && member.keyTypeClassId === "Texture";
       for (const entry of parseMapDefaultEntries(value)) {
         if (keyIsTexture) add(entry.key);
         if (valueIsTexture) add(entry.value);
