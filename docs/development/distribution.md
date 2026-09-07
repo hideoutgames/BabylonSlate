@@ -23,7 +23,7 @@ Published Windows releases are immutable. A conflicting tag or a draft targeting
 
 ## Rollout status
 
-Implementation and local validation are in progress. Native acceptance has not been performed. Repository inspection found `main` unprotected and the distribution environments absent; these must be configured before dispatch can pass the trust gate. The native AppIcon is still Capacitor's placeholder. Distribution rejects it; supply an opaque 1024×1024 BabylonSlate PNG before the first Apple upload.
+The implementation provides the manual distribution paths below. On September 7, 2026, `testflight` and `github-release` were configured with exact-`main` branch restrictions, and `main` was protected with all nine Verify checks, including enforcement for administrators. Native acceptance has not been performed; Apple credentials and compliance configuration still require maintainer provisioning. The native AppIcon is still Capacitor's placeholder. Distribution rejects it; supply an opaque 1024×1024 BabylonSlate PNG before the first Apple upload.
 
 ## Implemented paths
 
