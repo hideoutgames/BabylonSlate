@@ -35,7 +35,7 @@ File-provider I/O uses `NSFileCoordinator` and acquires/releases security scope 
 - Mobile operations await one initialization pass before selecting a storage tier. Restoring an old bookmark cannot redirect a new project's writes. Expired access remains visible as **Reconnect Project Folder** after startup or a failed recent-project open.
 - Legacy bookmarks migrate when opened from recents. Missing bookmarks and denied permissions require reconnect; missing files remain ordinary missing-file results. Provider failures never imply an empty destination.
 - Documents and external paths reject traversal, absolute paths, and project-root mutations. Documents recents reopen by stable id, independently of their display name; already-existing native directories remain usable.
-- Creating from a template refuses an existing project. Reconnect requires a folder containing `project.json`; it never creates a replacement project in an accidentally selected empty folder.
+- Creating from a template refuses an existing project. Reconnect validates `project.json` and the open project's GUID before rebinding; selecting an empty or different project keeps the previous recovery target and retry action. A missing bookmarked root requires reconnect and is never recreated by a child write.
 - Imported audio is copied into project asset chunks and read through the same selected storage adapter for preview and Play. A failed Files-provider import rejects and cleans up the picker so it can be retried.
 
 ## Two storage tiers (Homepage)
