@@ -9,10 +9,11 @@ export function rendererFile(rawUrl: string, root: string): string {
   const decoded = decodeURIComponent(rawUrl);
   requireValue(!/[\\%]/.test(decoded) && !decoded.includes("\0"));
   requireValue(!decoded.split(/[/?#]/).some(part => part === ".." || part === "."));
-  const url = new URL(decoded);
+  const url = new URL(rawUrl);
   requireValue(url.protocol === "app:" && url.host === "babylonslate" && !url.username && !url.password);
-  requireValue(!url.pathname.includes(":"));
-  const file = resolve(root, url.pathname === "/" ? "index.html" : url.pathname.slice(1));
+  const pathname = decodeURIComponent(url.pathname);
+  requireValue(!pathname.includes(":"));
+  const file = resolve(root, pathname === "/" ? "index.html" : pathname.slice(1));
   const within = relative(resolve(root), file);
   requireValue(within !== ".." && !within.startsWith("..") && !isAbsolute(within));
   return file;

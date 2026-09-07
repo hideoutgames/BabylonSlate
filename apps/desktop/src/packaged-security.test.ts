@@ -3,6 +3,10 @@ import { resolve } from "node:path";
 import { rendererFile, isEditorSender, validateIpcArguments } from "./packaged-security";
 
 describe("packaged renderer boundary", () => {
+  it("resolves encoded asset filenames without treating filename characters as URL delimiters", () => {
+    expect(rendererFile("app://babylonslate/textures/My%20Texture.png", "renderer")).toBe(resolve("renderer/textures/My Texture.png"));
+    expect(rendererFile("app://babylonslate/fonts/%C3%A9%23font.woff2", "renderer")).toBe(resolve("renderer/fonts/é#font.woff2"));
+  });
   it("resolves player and wasm resources only inside the renderer root", () => {
     expect(rendererFile("app://babylonslate/player/index.html", "renderer")).toBe(resolve("renderer/player/index.html"));
     expect(rendererFile("app://babylonslate/assets/physics.wasm", "renderer")).toBe(resolve("renderer/assets/physics.wasm"));
