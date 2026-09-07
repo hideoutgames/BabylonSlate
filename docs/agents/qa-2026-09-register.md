@@ -174,3 +174,10 @@ Baseline controls on the audited revision:
 - These runs are lower-level tests. They do not establish original-project, live Pages, native audio, GPU appearance or full focus-matrix outcomes.
 
 Implementation entries will record failing and passing tests, exact subcases claimed, changed files and residual checks. Gate B requires current-revision evidence and relevant passing controls, accurate persistence/reference behavior, full local verification and repository delivery gates. E, F and N must never be relabeled fixed to finish the register.
+
+### H10.1–.2 and M5.4: coherent deletion history
+
+- New desktop Chromium reproductions failed before the change: one Undo restored an edge without its deleted node (H10), and failed to restore the complete deleted actor subtree (M5.4).
+- `EditSession.applyBatch` now keeps the graph/scene diff from one edit in one history entry. Graph removals record original positions; removals run in descending order so inverse insertion restores ordering. Individual journal deltas remain serializable, including optional graph positions; old entries without positions retain append behavior.
+- After the change, both browser reproductions pass Delete → Undo → Redo, with graph compilation, repeated Undo and an untouched actor control. All 89 edit-package tests pass, including structural equality, separate document history, byte-budget eviction and empty-batch redo preservation.
+- These subcases are confirmed defects with a locally passing fix, pending full verification. M5.1–.3, H20 drag variants, separate-edit coalescing (M4), crash recovery after Undo and historical project-specific variants remain unclosed.

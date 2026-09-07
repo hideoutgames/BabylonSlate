@@ -102,7 +102,7 @@ Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan 
 
 ## Scene apply path
 
-`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → `notifyDocumentEdited` (bump + scheduled save, then journal). Undo/redo on scene tabs uses the same per-document stack as graphs.
+`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → `EditSession.applyBatch` → `updateScene` → `notifyDocumentEdited` (bump + scheduled save, then journal). Each document change is one history entry, including node deletion with incident edges and actor subtree deletion. Undo applies the inverse deltas in reverse order; indexed removals restore the original array order. A batch counts its combined byte cost against the history budget and keeps the existing individual deltas in the crash journal. Empty batches leave history unchanged. Single-command edits retain their gesture merge keys. Undo/redo on scene tabs uses the same per-document stack as graphs.
 
 Outliner folder edits use the same path: `scene.addFolder` / `scene.removeFolder` / `scene.renameFolder` / `scene.reparentFolder` group rows, and `scene.setActorFolder` moves an actor between folders without touching `parentId`. `journal.test.ts` asserts every `SCENE_COMMAND_TYPES` entry has a reviver, so a new scene command cannot ship unreplayable.
 

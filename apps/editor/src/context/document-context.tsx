@@ -2011,10 +2011,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (commands.length === 0) {
         return false;
       }
-      let current = previous;
-      for (const command of commands) {
-        current = editSessionRef.current.apply(id, current, command).doc;
-      }
+      const current = editSessionRef.current.applyBatch(id, previous, commands)!.doc;
       documentService.updateGraph(id, current);
       await notifyDocumentEdited({
         scheduleDebouncedSave,
@@ -2132,10 +2129,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         void afterMutatingApply(sourceControlRef.current, doc.ref.path);
         return true;
       }
-      let current = previous;
-      for (const command of commands) {
-        current = editSessionRef.current.apply(id, current, command).doc;
-      }
+      let current = editSessionRef.current.applyBatch(id, previous, commands)!.doc;
       current = copyInstanceLinkage(intended, current);
       documentService.updateScene(id, current);
       await notifyDocumentEdited({

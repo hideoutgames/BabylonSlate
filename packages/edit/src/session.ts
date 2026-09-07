@@ -7,6 +7,34 @@ import {
 
 export const DEFAULT_EDIT_BYTE_BUDGET = 2_000_000;
 
+/** One editor operation may contain several journalled deltas. */
+class CommandBatch<TDoc> implements EditCommand<TDoc> {
+  readonly type = "edit.batch";
+  readonly byteSize: number;
+  private readonly commands: readonly EditCommand<TDoc>[];
+
+  constructor(commands: readonly EditCommand<TDoc>[]) {
+    this.commands = [...commands];
+    this.byteSize = commands.reduce(
+      (sum, command) => sum + (command.byteSize ?? 0),
+      0,
+    );
+  }
+
+  apply(doc: TDoc): TDoc {
+    return this.commands.reduce(
+      (current, command) => command.apply(current),
+      doc,
+    );
+  }
+
+  invert(): EditCommand<TDoc> {
+    return new CommandBatch(
+      [...this.commands].reverse().map((command) => command.invert()),
+    );
+  }
+}
+
 /**
  * Owns per-document stacks. Document payloads live in the editor; this only
  * tracks undo/redo history keyed by open document id.
@@ -50,6 +78,20 @@ export class EditSession {
 
   undo<TDoc>(documentId: string, doc: TDoc): ApplyResult<TDoc> | null {
     return this.getStack<TDoc>(documentId).undo(doc);
+  }
+
+  /** Keep a complete document change together; callers journal its raw deltas. */
+  applyBatch<TDoc>(
+    documentId: string,
+    doc: TDoc,
+    commands: readonly EditCommand<TDoc>[],
+  ): ApplyResult<TDoc> | null {
+    if (commands.length === 0) return null;
+    return this.apply(
+      documentId,
+      doc,
+      commands.length === 1 ? commands[0]! : new CommandBatch(commands),
+    );
   }
 
   redo<TDoc>(documentId: string, doc: TDoc): ApplyResult<TDoc> | null {
