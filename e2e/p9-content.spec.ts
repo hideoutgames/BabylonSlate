@@ -181,10 +181,11 @@ test.describe("P9 content systems", () => {
     await openAssetFromBrowser(page, "assets/PinSafeZone.material.babasset");
     const graph = page.getByTestId("material-graph-editor");
     const edge = graph.locator('.react-flow__edge[data-id="e-color-output"]');
-    await expect(edge).toBeVisible();
+    await expect(edge).toHaveCount(1);
     const handle = graph.locator(
       '[data-nodeid="baseColor"][data-handleid="out"][data-handlepos="right"]',
     );
+    await expect(handle).toBeVisible();
     const box = await handle.boundingBox();
     expect(box).not.toBeNull();
     const x = box!.x + box!.width / 2;
@@ -236,6 +237,7 @@ test.describe("P9 content systems", () => {
     await expect(
       page.getByTestId("material-parameter-name-prompt"),
     ).toHaveCount(0);
+    await dragMaterialNode(page, "param.float-", 0, -160);
     await saveAllIfEnabled(page);
     await openAssetFromBrowser(
       page,
