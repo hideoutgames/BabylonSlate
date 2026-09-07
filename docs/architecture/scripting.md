@@ -88,6 +88,10 @@ Single module `packages/scripting/src/types.ts` (exhaustively tested, prefer fas
 
 **Resolution** (`packages/scripting/src/wildcard-resolve.ts`): `resolveWildcardPinTypes` is a view over declared pins + edges. It does not rewrite stored `__pins`.
 
+Compilation applies that resolved view to a temporary graph before code generation. Generic container outputs therefore use their concrete type defaults (for example, a missing String Map value is `""`, not the unresolved wildcard's `null`). The authored graph and stored generic pin declarations remain unchanged.
+
+Inspector property rows write literal defaults using the stable pin ID (`default:in`), independently of the Title Case display name (`In`). Legacy display-name defaults remain readable, but a new edit updates the canonical key so an older ID-keyed value cannot mask the edit.
+
 - All `resolvingWildcard` slots on a node share one variable `T` unless the type sets `group` (default `"T"`). Nested `array<T>` / `map<K,V>` walk into those slots.
 - Incoming (input) connections are hard constraints. Two incompatible concretes in one group unbind `T` and emit `type.wildcard_group`. First compatible binding wins; `int` may still flow into an already-bound `float`.
 - Outgoing connections infer `T` only when it is still unbound (so Array Get `out` → a float pin can resolve the node; Array Get `out` → a string pin after `T` is float is a `type.mismatch`, not a reset).

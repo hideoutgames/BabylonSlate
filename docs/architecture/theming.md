@@ -19,6 +19,7 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 `globals.css` owns the four safe-area tokens: `--safe-top`, `--safe-right`, `--safe-bottom`, and `--safe-left`. They resolve the corresponding `env(safe-area-inset-*, 0px)` values, keeping web, Electron, and jsdom at zero. Surfaces consume these tokens and never call `env()` directly.
 
 - The editor and Homepage roots use `.safe-frame` for left, right, and bottom insets.
+- Full-height Homepage chrome also uses `.safe-frame-top`; editor chrome consumes the top inset in its title bar.
 - The editor chrome shell owns the top inset while preserving the interactive row height.
 - Fixed context menus and Play/Preview Build overlay chrome consume the tokens themselves; their canvases and iframe remain edge-to-edge.
 - The visible native iPad status bar follows the resolved editor theme through the VFS status-bar-style port.

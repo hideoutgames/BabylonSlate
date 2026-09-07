@@ -12,7 +12,7 @@ Read these rules in full at the start of each task:
 - [PR cadence](.agents/rules/github-actions-pr-cadence.md)
 - [DockView asset editor tabs](.agents/rules/dockview-editor-tabs.md)
 
-Never generate artwork or use larger GitHub runners. Keep PRs draft until local `pnpm verify` passes; mark ready once only when fewer than two counted non-draft PRs target `main` (#271 is excluded). If both slots are occupied, leave the draft and stop. Public PR descriptions contain only a short change summary, without attribution, session links, secrets, or logs.
+Never generate artwork or use larger GitHub runners. Pass local `pnpm verify` before opening any PR, including drafts. Mark ready once when fewer than two counted non-draft PRs target `main` (#271 is excluded); if both slots are occupied, keep the draft and wait for a slot. Monitor CI, fix failures with local verification before each repair push, and merge automatically once the current head passes all gates. Public PR descriptions contain only a short change summary, without attribution, session links, secrets, or logs.
 
 The authoritative architecture and delivery plan is [docs/engineplan.md](docs/engineplan.md). Do not re-add the removed game HUD / UserInterface system.
 
@@ -32,6 +32,12 @@ Before working on matching files or tasks, read the corresponding rule in full. 
 
 Read the matching `SKILL.md` before task work, then load its supporting references as needed. If the host does not discover `.agents/skills/`, use this table directly. Explicit skill requests select the named skill. Planning requests remain read-only and may produce implementation plans; they do not activate the ask skill's prohibition on planning.
 
+At the start of development, check this table against both the requested behavior and the files involved, read every applicable skill, and briefly identify the skills being used. Recheck when scope changes. Discovery alone does not count as reading or applying a skill. Load supporting references only for the current task.
+
+BabylonJS is required for rendering, scene lifecycle, viewport engine integration, meshes, materials, cameras, animation, asset loading, and Babylon physics work, including engine integration inside editor files. Work spanning engine and React UI uses both BabylonJS and the editor UI skills. Apply repository architecture and installed API versions when using imported examples.
+
+Preserve BabylonSlate's compact desktop controls, including small Primary buttons, and its tight margins and spacing. Imported design guidance must not enlarge these defaults; follow the input-specific guidance in the touch editor rule.
+
 | Task | Skill |
 | --- | --- |
 | Short read-only question or explanation | [ask](.agents/skills/ask/SKILL.md) |
@@ -41,6 +47,7 @@ Read the matching `SKILL.md` before task work, then load its supporting referenc
 | Feature, bugfix, or behavior implementation | [test-driven-development](.agents/skills/test-driven-development/SKILL.md) |
 | Diff review against standards and originating requirements | [code-review](.agents/skills/code-review/SKILL.md) |
 | Unit tests, mocking, coverage, or Vitest configuration | [vitest](.agents/skills/vitest/SKILL.md) |
+| Waiting for local tests/verification, PR Verify CI, or a free CI slot | [wait-efficiently](.agents/skills/wait-efficiently/SKILL.md) |
 
 Delegate only when available and authorized. Inherit the parent model by default; explicit selections must follow the workflow's hard allowlist. Use sequential passes when delegation is unavailable.
 

@@ -19,6 +19,7 @@ export class DocumentEditStack<TDoc> {
   private readonly maxBytes: number;
   private undoStack: StackEntry<TDoc>[] = [];
   private redoStack: StackEntry<TDoc>[] = [];
+  private mergeOpen = false;
 
   constructor(options: DocumentEditStackOptions) {
     this.maxEntries = Math.max(1, options.maxEntries);
@@ -49,7 +50,7 @@ export class DocumentEditStack<TDoc> {
     const inverse = command.invert();
     const top = this.undoStack[this.undoStack.length - 1];
     if (
-      command.mergeKey !== undefined &&
+      this.mergeOpen && command.mergeKey !== undefined &&
       top &&
       top.command.mergeKey === command.mergeKey
     ) {
@@ -59,37 +60,39 @@ export class DocumentEditStack<TDoc> {
       this.undoStack.push({ command, inverse });
     }
     this.redoStack = [];
+    this.mergeOpen = true;
     this.trim();
     return { doc: next, command };
   }
 
   undo(doc: TDoc): ApplyResult<TDoc> | null {
+    this.endGesture();
     const entry = this.undoStack.pop();
     if (!entry) return null;
     const next = entry.inverse.apply(doc);
-    // Redo should re-apply the forward command; its invert restores again.
-    this.redoStack.push({
-      command: entry.command,
-      inverse: entry.command.invert(),
-    });
+    this.redoStack.push(entry);
     return { doc: next, command: entry.inverse };
   }
 
   redo(doc: TDoc): ApplyResult<TDoc> | null {
+    this.endGesture();
     const entry = this.redoStack.pop();
     if (!entry) return null;
     const next = entry.command.apply(doc);
-    this.undoStack.push({
-      command: entry.command,
-      inverse: entry.command.invert(),
-    });
+    this.undoStack.push(entry);
     this.trim();
     return { doc: next, command: entry.command };
   }
 
   clear(): void {
+    this.endGesture();
     this.undoStack = [];
     this.redoStack = [];
+  }
+
+  /** Prevent the next edit from coalescing with a completed gesture. */
+  endGesture(): void {
+    this.mergeOpen = false;
   }
 
   private trim(): void {

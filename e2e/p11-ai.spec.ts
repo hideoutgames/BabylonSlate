@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openMainScene, openTestProject, submitCreateOrOpenListed } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
-import { saveAllIfEnabled } from "./save-all";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -166,7 +165,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await expect(page.getByTestId("nav-bake-dialog")).toHaveCount(0, {
       timeout: 30_000,
     });
-    await saveAllIfEnabled(page);
+    await expect(save).toBeDisabled();
     const bake = await page.evaluate(() => {
       const host = globalThis as {
         __babylonslateTest?: {
@@ -190,20 +189,12 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
           ) => Promise<Uint8Array | null>;
         };
       };
-      const paths = [
+      if (!bakePath) throw new Error("Bake did not report its scene path.");
+      const bytes = await host.__babylonslateTest?.readAssetChunk?.(
         bakePath,
-        "assets/main.scene.babasset",
-        "assets/Main.scene.babasset",
-      ].filter((path): path is string => Boolean(path));
-      const unique = [...new Set(paths)];
-      for (const path of unique) {
-        const bytes = await host.__babylonslateTest?.readAssetChunk?.(
-          path,
-          "navmesh",
-        );
-        if (bytes && bytes.byteLength > 0) return bytes.byteLength;
-      }
-      return 0;
+        "navmesh",
+      );
+      return bytes?.byteLength ?? 0;
     }, bake?.path ?? null);
     expect(byteLength).toBeGreaterThan(0);
   });

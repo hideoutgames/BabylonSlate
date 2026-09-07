@@ -122,6 +122,7 @@ export function commandToJournalPayload(
       return {
         type: add.type,
         edge: add.edge,
+        index: add.index,
       };
     }
     case "graph.removeEdge": {
@@ -129,6 +130,7 @@ export function commandToJournalPayload(
       return {
         type: remove.type,
         edge: remove.edge,
+        index: remove.index,
       };
     }
     case "graph.setNodeData": {
@@ -146,6 +148,7 @@ export function commandToJournalPayload(
       return {
         type: add.type,
         node: add.node,
+        index: add.index,
       };
     }
     case "graph.removeNode": {
@@ -153,6 +156,7 @@ export function commandToJournalPayload(
       return {
         type: remove.type,
         node: remove.node,
+        index: remove.index,
       };
     }
     case "graph.setMembers": {

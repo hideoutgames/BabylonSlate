@@ -33,7 +33,7 @@ import {
 } from "./clamp-overlay-menu";
 
 export type NestedMenuItem =
-  | {
+    | {
       type?: "item";
       id: string;
       label: string;
@@ -52,7 +52,7 @@ export type NestedMenuItem =
       testId?: string;
       contentTestId?: string;
     }
-    | {
+  | {
       type: "checkbox";
       id: string;
       label: string;
@@ -338,22 +338,24 @@ function OverlayMenu({
   const openSubmenu = items.find(
     (item) => item.type === "submenu" && item.id === openSubmenuId,
   );
-  const [insets, setInsets] = useState<OverlaySafeAreaInsets>(
-    readSafeAreaInsets,
-  );
+  const [viewport, setViewport] = useState(readOverlayViewport);
 
   useEffect(() => {
-    const refreshInsets = () => {
-      const nextInsets = readSafeAreaInsets();
-      setInsets((currentInsets) =>
-        sameInsets(currentInsets, nextInsets) ? currentInsets : nextInsets,
+    const refreshViewport = () => {
+      const nextViewport = readOverlayViewport();
+      setViewport((currentViewport) =>
+        sameViewport(currentViewport, nextViewport)
+          ? currentViewport
+          : nextViewport,
       );
     };
-    window.addEventListener("resize", refreshInsets);
-    window.addEventListener("orientationchange", refreshInsets);
+    window.addEventListener("resize", refreshViewport);
+    window.addEventListener("orientationchange", refreshViewport);
+    window.visualViewport?.addEventListener("resize", refreshViewport);
     return () => {
-      window.removeEventListener("resize", refreshInsets);
-      window.removeEventListener("orientationchange", refreshInsets);
+      window.removeEventListener("resize", refreshViewport);
+      window.removeEventListener("orientationchange", refreshViewport);
+      window.visualViewport?.removeEventListener("resize", refreshViewport);
     };
   }, []);
 
@@ -368,23 +370,24 @@ function OverlayMenu({
         y,
         width,
         height,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
+        viewportWidth: viewport.width,
+        viewportHeight: viewport.height,
         margin: 8,
-        insets,
+        insets: viewport.insets,
       }),
     );
-  }, [x, y, items, insets]);
+  }, [x, y, items, viewport]);
 
   const submenuOrigin = openSubmenu
     ? overlaySubmenuOrigin({
         parentX: position.x,
         parentY: position.y,
-        parentWidth: parentWidth ?? panelRef.current?.getBoundingClientRect().width ?? 192,
+        parentWidth:
+          parentWidth ?? panelRef.current?.getBoundingClientRect().width ?? 192,
         submenuWidth: 192,
-        viewportWidth: window.innerWidth,
+        viewportWidth: viewport.width,
         margin: 8,
-        insets,
+        insets: viewport.insets,
       })
     : null;
 
@@ -439,6 +442,20 @@ function readSafeAreaInsets(): OverlaySafeAreaInsets {
   };
 }
 
+type OverlayViewport = {
+  width: number;
+  height: number;
+  insets: OverlaySafeAreaInsets;
+};
+
+function readOverlayViewport(): OverlayViewport {
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    insets: readSafeAreaInsets(),
+  };
+}
+
 function sameInsets(
   first: OverlaySafeAreaInsets,
   second: OverlaySafeAreaInsets,
@@ -448,6 +465,17 @@ function sameInsets(
     first.right === second.right &&
     first.bottom === second.bottom &&
     first.left === second.left
+  );
+}
+
+function sameViewport(
+  first: OverlayViewport,
+  second: OverlayViewport,
+): boolean {
+  return (
+    first.width === second.width &&
+    first.height === second.height &&
+    sameInsets(first.insets, second.insets)
   );
 }
 

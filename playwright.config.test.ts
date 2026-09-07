@@ -1,9 +1,11 @@
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
+const playwrightCli = createRequire(import.meta.url).resolve("@playwright/test/cli");
 
 type ListedTest = {
   project: string;
@@ -13,8 +15,8 @@ type ListedTest = {
 
 function listProject(project: string): ListedTest[] {
   const output = execFileSync(
-    "pnpm",
-    ["exec", "playwright", "test", "--list", `--project=${project}`],
+    process.execPath,
+    [playwrightCli, "test", "--list", `--project=${project}`],
     { encoding: "utf8", cwd: repoRoot },
   );
   const prefix = `[${project}] › `;
@@ -39,8 +41,8 @@ function filesOf(tests: ListedTest[]): string[] {
 describe("Playwright iPad project filter", () => {
   it("runs touch and landscape tests on iPad and keeps the rest on desktop", () => {
     const listed = execFileSync(
-      "pnpm",
-      ["exec", "playwright", "test", "--list"],
+      process.execPath,
+      [playwrightCli, "test", "--list"],
       { encoding: "utf8", cwd: repoRoot },
     );
     expect(listed).not.toMatch(/\[ipad-portrait\]/);

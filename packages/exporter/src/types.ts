@@ -1,5 +1,6 @@
 import type {
   RenderProjectSettings,
+  ProjectInputSettings,
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
@@ -65,6 +66,7 @@ export type GameAssetIndexEntry = {
 };
 
 export type GameManifest = {
+  inputMappings?: ProjectInputSettings;
   startupSceneGuid: string;
   gameInstanceClass?: string;
   audioMixerGuid?: string;
@@ -91,6 +93,7 @@ export type GameManifest = {
 };
 
 export type ExportGameOptions = {
+  inputMappings?: ProjectInputSettings;
   mode?: ExportMode;
   bundleDebugger: boolean;
   startupSceneGuid: string;

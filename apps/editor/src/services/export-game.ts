@@ -97,6 +97,7 @@ export type CollectExportGameParams = {
   physicsWorld: "2d" | "3d";
   infiniteLoopDetection?: boolean;
   loopCount?: number;
+  inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   playerFiles: Map<string, Uint8Array>;
   extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
@@ -392,6 +393,7 @@ export async function collectAndExportGame(
     physicsWorld: params.physicsWorld,
     infiniteLoopDetection: params.infiniteLoopDetection,
     loopCount: params.loopCount,
+    inputMappings: params.inputMappings,
     scripts,
     assets: exportAssets,
     playerFiles: params.playerFiles,

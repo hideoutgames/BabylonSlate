@@ -1,6 +1,24 @@
 # Testing architecture
 
-`pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
+`pnpm verify` runs dependency-free Node tests for the agent-wait helper, typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
+
+## Quiet agent waits
+
+Use `pnpm --silent agent:wait local --script verify` to run full verification once with complete stdout/stderr in a unique OS temporary directory. Use `local --script test -- --project node packages/core` to forward filters unchanged to other scripts. Arguments after `--` belong to the package script. `--timeout-seconds <seconds>` overrides the two-hour operation deadline. The helper launches the current `npm_execpath` entry through Node for JavaScript package managers, or directly for executable pnpm; it never executes a Windows `.cmd` shim or changes script-shell configuration.
+
+`pnpm --silent agent:wait ci --pr <number>` captures the head and discovers its latest pull-request `verify.yml` run (up to ten minutes), then runs `gh run watch --exit-status --interval 60`. Final head/run/attempt checks reject superseded results; success requires `static`, `unit`, all seven e2e shards, and no skipped/unsuccessful jobs. Other required checks and final merge gates remain the agent's responsibility. `slot --pr <number>` checks every 60 seconds for fewer than two other non-draft PRs to `main`, excluding itself and #271. Recheck capacity immediately before marking ready.
+
+The foreground helper prints a start record and a terminal result; successful helper output is below 1 KiB. Failures add at most 40 trailing log lines capped below 4 KiB. `output.log` retains full process output; `result.json` records status, elapsed milliseconds, exit code, commit, and CI URL when applicable. Full verification also saves initial/final working-tree snapshots. A clean unchanged commit and unfiltered `verify` are required for `deliveryEligible`; source edits, initially dirty trees, or changed commits invalidate delivery. An interrupted run never certifies verification. Recheck the current commit and tree before using any saved result.
+
+After interrupted child cleanup, a read-only final snapshot has a separate five-second limit. If it cannot be collected, the result explicitly records an unavailable final state; the operation remains unsuccessful.
+
+Statuses are `success`, `failure`, `cancellation`, `timeout`, and `stale`. Package failures retain their exit code; helper timeouts use 124, interruptions use 130 (SIGINT) or 143 (SIGTERM), and stale results use 3. Missing prerequisites fail without changing global setup. Cancellation stops only owned child processes; the helper never retries tests/workflows or opens, readies, or merges PRs. Follow [wait-efficiently](../../.agents/skills/wait-efficiently/SKILL.md) to retain the host session and avoid model involvement in individual polls. Hosts may still require periodic wakeups and user updates.
+
+`pnpm test:agent-wait` runs real process fixtures and a fake `gh` with Node's built-in test runner; no extra dependency is required. The same command is part of the existing CI static job, preserving nine Verify jobs.
+
+On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim. Playwright passes `VITE_TEST_MODE` through its web-server environment so server startup also works with Windows' command shell.
+
+The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 
 ## GitHub Actions
 
@@ -12,7 +30,7 @@ GitHub Free public repos cap concurrent jobs at 20. Each ready PR uses 9 Verify 
 - **Timeouts.** `static` is 15 minutes (typecheck, lint, docs-site build). `unit` is 45 minutes (`pnpm test:coverage`, unsharded). Each `e2e` shard is 25 minutes. Playwright Chromium download times out at 5 minutes so a hung browser fetch cannot occupy a runner for six hours.
 - **Playwright cache.** Each `e2e` shard restores `~/.cache/ms-playwright` keyed on `pnpm-lock.yaml`, then runs `playwright install chromium` (not `--with-deps`, not `install-deps`). `ubuntu-latest` already has Chromium's shared libraries. Playwright's extra CJK/cyrillic font packages (~21MB) time out when seven shards hit the Ubuntu archive together; this suite has no screenshot baselines that need those fonts.
 - **Shards.** CI runs `playwright test --shard=N/7` with `fail-fast: false`. Local `pnpm test:e2e` / `pnpm verify` stay unsharded. Playwright always uses `workers: 1` because tests share origin OPFS (`TestProject`). Shards isolate storage across CI jobs instead of extra workers on one VM.
-- **Drafts.** Draft pull requests skip `static`, `unit`, and `e2e`. Marking a PR ready (`ready_for_review`) or a later non-draft `synchronize` starts Verify. Local `pnpm verify` stays the draft-time gate. Agents stay draft until that local gate passes, mark ready **once** if fewer than **2** counted non-draft PRs target `main` (**[#271](https://github.com/hideoutgames/BabylonSlate/pull/271) is excluded**; two counted Verifies = 18 jobs; post-merge remaining PR + `main` Verify + Preview = 19). If both slots are taken, leave the draft and stop — a human marks ready. Rule: [`.agents/rules/github-actions-pr-cadence.md`](../../.agents/rules/github-actions-pr-cadence.md).
+- **Drafts.** Draft PRs skip Verify jobs. Agents pass local `pnpm verify` before opening a PR, then open it as a draft. Mark ready once a slot is free: fewer than two other counted non-draft PRs target `main` (#271 excluded). If both slots are occupied, wait and recheck. `ready_for_review` or a later non-draft `synchronize` starts Verify. Agents monitor the current head, fix CI failures, pass local verification before pushing repairs, and merge after all gates pass. Rules: [PR cadence](../../.agents/rules/github-actions-pr-cadence.md) and [delivery workflow](../../.agents/rules/agent-workflow.md#workflow).
 - **Skipped check ghosts.** Opening or pushing a draft still triggers Verify; the job `if` skips the runners, but GitHub records skipped checks. A skipped matrix does **not** expand, so the draft run shows bare `static` / `unit` / `e2e` (the unsharded `e2e` name looks like a leftover full E2E job). `ready_for_review` on the same SHA then adds the real nine jobs. The Checks tab keeps both runs (often **12** rows: three skipped + nine live). Those skipped rows do not count toward the 20-job cap. Do not add a second “full unit/e2e” workflow or drop the draft `if` to hide them.
 
 ## Vitest projects

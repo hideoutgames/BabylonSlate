@@ -646,8 +646,8 @@ function normalizeEditorUtilityObjects(value: unknown): string[] {
 
 function normalizeProjectInput(value: unknown): ProjectInputSettings {
   const source = (value ?? {}) as Record<string, unknown>;
-  const hasActions = Array.isArray(source.actions) && source.actions.length > 0;
-  const hasAxes = Array.isArray(source.axes) && source.axes.length > 0;
+  const hasActions = Array.isArray(source.actions);
+  const hasAxes = Array.isArray(source.axes);
   if (!hasActions && !hasAxes) {
     return structuredClone(DEFAULT_PROJECT_INPUT_SETTINGS);
   }

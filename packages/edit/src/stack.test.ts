@@ -49,6 +49,25 @@ class MergeableCommand implements EditCommand<TestDoc> {
 }
 
 describe("DocumentEditStack", () => {
+  it("keeps the first inverse of a merged gesture across Undo, Redo and another Undo", () => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 1000 });
+    let doc = stack.apply({ value: 0 }, new MergeableCommand(0, 1)).doc;
+    doc = stack.apply(doc, new MergeableCommand(1, 2)).doc;
+    doc = stack.undo(doc)!.doc;
+    expect(doc.value).toBe(0);
+    doc = stack.redo(doc)!.doc;
+    expect(doc.value).toBe(2);
+    expect(stack.undo(doc)!.doc.value).toBe(0);
+  });
+
+  it("starts a new gesture after Undo even when the exposed older command shares a merge key", () => {
+    const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 1000 });
+    let doc = stack.apply({ value: 0 }, new MergeableCommand(0, 1)).doc;
+    doc = stack.apply(doc, new MergeableCommand(1, 2, "other")).doc;
+    doc = stack.undo(doc)!.doc;
+    doc = stack.apply(doc, new MergeableCommand(1, 3)).doc;
+    expect(stack.undo(doc)!.doc.value).toBe(1);
+  });
   it("applies commands and supports undo/redo", () => {
     const stack = new DocumentEditStack<TestDoc>({
       maxEntries: 10,

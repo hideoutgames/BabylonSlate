@@ -240,6 +240,7 @@ export function startPlayer(options: {
     sceneAssetGuid: startup,
     scene,
     physicsWorld: manifest.physicsWorld,
+    inputMappings: manifest.inputMappings,
     gravity: scene.settings.gravity,
     havokWasmUrl: havokWasmUrl(),
     gameInstanceClass:

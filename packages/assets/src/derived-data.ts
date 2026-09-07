@@ -1,5 +1,32 @@
 import type { ProjectStorage } from "@babylonslate/core";
 
+const journalOperations = new WeakMap<
+  ProjectStorage,
+  Map<string, Promise<unknown>>
+>();
+
+function journalOperation<T>(
+  storage: ProjectStorage,
+  guid: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  let projects = journalOperations.get(storage);
+  if (!projects) {
+    projects = new Map();
+    journalOperations.set(storage, projects);
+  }
+  const queue = projects;
+  const next = (queue.get(guid) ?? Promise.resolve())
+    .catch(() => {})
+    .then(operation);
+  queue.set(guid, next);
+  const cleanup = () => {
+    if (queue.get(guid) === next) queue.delete(guid);
+  };
+  void next.then(cleanup, cleanup);
+  return next;
+}
+
 /**
  * Derived data lives outside the project folder, keyed by project guid
  * (compiled scripts, thumbnails, import cache, recovery journal, Play traces).
@@ -22,11 +49,15 @@ export async function hasJournal(
 export async function truncateJournal(
   derivedStorage: ProjectStorage,
   projectGuid: string,
-): Promise<void> {
-  const path = journalPath(projectGuid);
-  if (await derivedStorage.exists(path)) {
-    await derivedStorage.remove(path);
-  }
+  canClear: () => boolean = () => true,
+): Promise<boolean> {
+  return journalOperation(derivedStorage, projectGuid, async () => {
+    const path = journalPath(projectGuid);
+    const exists = await derivedStorage.exists(path);
+    if (!canClear()) return false;
+    if (exists) await derivedStorage.remove(path);
+    return true;
+  });
 }
 
 export async function writeJournalStub(
@@ -34,12 +65,14 @@ export async function writeJournalStub(
   projectGuid: string,
   lines: string[] = [],
 ): Promise<void> {
-  const root = derivedDataRoot(projectGuid);
-  await derivedStorage.mkdir(root, true);
-  await derivedStorage.writeText(
-    journalPath(projectGuid),
-    lines.length ? `${lines.join("\n")}\n` : "",
-  );
+  return journalOperation(derivedStorage, projectGuid, async () => {
+    const root = derivedDataRoot(projectGuid);
+    await derivedStorage.mkdir(root, true);
+    await derivedStorage.writeText(
+      journalPath(projectGuid),
+      lines.length ? `${lines.join("\n")}\n` : "",
+    );
+  });
 }
 
 /** Append one JSONL line to the recovery journal (creates the file if missing). */
@@ -48,14 +81,16 @@ export async function appendJournalLine(
   projectGuid: string,
   line: string,
 ): Promise<void> {
-  const path = journalPath(projectGuid);
-  const root = derivedDataRoot(projectGuid);
-  await derivedStorage.mkdir(root, true);
-  const existing = (await derivedStorage.exists(path))
-    ? await derivedStorage.readText(path)
-    : "";
-  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-  await derivedStorage.writeText(path, `${existing}${prefix}${line}\n`);
+  return journalOperation(derivedStorage, projectGuid, async () => {
+    const path = journalPath(projectGuid);
+    const root = derivedDataRoot(projectGuid);
+    await derivedStorage.mkdir(root, true);
+    const existing = (await derivedStorage.exists(path))
+      ? await derivedStorage.readText(path)
+      : "";
+    const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+    await derivedStorage.writeText(path, `${existing}${prefix}${line}\n`);
+  });
 }
 
 /** Read non-empty journal lines in file order. */

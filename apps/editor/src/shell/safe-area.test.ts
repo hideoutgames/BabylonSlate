@@ -71,6 +71,12 @@ describe("safe-area tokens", () => {
     );
   });
 
+  it("provides an opt-in top inset utility for full-height surfaces", () => {
+    expect(cssBlock(globalsCss, ".safe-frame-top")).toContain(
+      "padding-top: var(--safe-top)",
+    );
+  });
+
   it("uses one safe-area utility for fixed overlay chrome", () => {
     const overlayChrome = cssBlock(chromeCss, ".safe-overlay-chrome");
     expect(overlayChrome).toContain("--safe-overlay-pad: 0.75rem");

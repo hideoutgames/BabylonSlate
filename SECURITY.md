@@ -40,12 +40,13 @@ Three layers, all of which run on Linux and need no macOS or Xcode:
 1. `.gitignore` (root and `apps/editor/ios/`) keeps the common offenders
    untrackable in the first place.
 2. `.github/workflows/security.yml` runs [gitleaks](https://github.com/gitleaks/gitleaks)
-   against the working tree and the pull request's commits, configured by
+   against the working tree and newly introduced pull-request or pushed commits,
    `.gitleaks.toml`. Findings are redacted in the log — a public CI log must not
-   become the leak.
+   become the leak. Text lockfiles and `.gltf` JSON remain in scan scope because
+   both can contain authenticated URLs or arbitrary metadata.
 3. `scripts/check-public-hygiene.mjs` (also run as a unit test, so `pnpm verify`
    covers it) rejects agent session links and credential markers in tracked
-   content and in a pull request's added lines.
+   content, pull-request metadata/comments, commit messages, and added lines.
 
 None of these can catch a secret that has been renamed and obfuscated. They are a
 safety net under the actual rule, which is human: don't put secrets in a public

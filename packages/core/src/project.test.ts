@@ -19,6 +19,10 @@ import {
 } from "./project";
 
 describe("project schema", () => {
+  it("H13: keeps deliberately empty input mappings instead of restoring defaults", () => {
+    expect(normalizeProjectSettings({ input: { actions: [], axes: [] } }).input).toEqual({ actions: [], axes: [] });
+    expect(normalizeProjectSettings(undefined).input.actions.some((action) => action.name === "Jump")).toBe(true);
+  });
   it("creates an empty project with expected paths", () => {
     const project = createEmptyProject("Demo");
     expect(project.metadata.name).toBe("Demo");

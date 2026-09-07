@@ -12,6 +12,7 @@
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		B15A00011FED79650016851F /* BabylonSlateSecretsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15A00021FED79650016851F /* BabylonSlateSecretsPlugin.swift */; };
 		B15A00031FED79650016851F /* BabylonSlateScopedStoragePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15A00041FED79650016851F /* BabylonSlateScopedStoragePlugin.swift */; };
+		B15A00051FED79650016851F /* BabylonSlateAudioLifecyclePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15A00061FED79650016851F /* BabylonSlateAudioLifecyclePlugin.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -26,6 +27,7 @@
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		B15A00021FED79650016851F /* BabylonSlateSecretsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BabylonSlateSecretsPlugin.swift; sourceTree = "<group>"; };
 		B15A00041FED79650016851F /* BabylonSlateScopedStoragePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BabylonSlateScopedStoragePlugin.swift; sourceTree = "<group>"; };
+		B15A00061FED79650016851F /* BabylonSlateAudioLifecyclePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BabylonSlateAudioLifecyclePlugin.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -81,6 +83,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				B15A00021FED79650016851F /* BabylonSlateSecretsPlugin.swift */,
 				B15A00041FED79650016851F /* BabylonSlateScopedStoragePlugin.swift */,
+				B15A00061FED79650016851F /* BabylonSlateAudioLifecyclePlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -218,6 +221,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				B15A00011FED79650016851F /* BabylonSlateSecretsPlugin.swift in Sources */,
 				B15A00031FED79650016851F /* BabylonSlateScopedStoragePlugin.swift in Sources */,
+				B15A00051FED79650016851F /* BabylonSlateAudioLifecyclePlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

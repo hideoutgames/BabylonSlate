@@ -81,6 +81,21 @@ describe("ProjectService lifecycle", () => {
 });
 
 describe("project round-trip", () => {
+  it("H13: saves and reloads replacement bindings and explicitly empty mappings", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("InputRoundTrip");
+    const service = new ProjectService(storage);
+    const { document, layouts } = await service.loadCurrentProject();
+    for (const input of [
+      { actions: [{ name: "Fire", bindings: [{ device: "key", code: "KeyF" }] }, { name: "Jump", bindings: [{ device: "key", code: "KeyH" }] }], axes: [] },
+      { actions: [], axes: [] },
+    ]) {
+      document.settings.input = input;
+      await service.saveProject(document, layouts);
+      const reloaded = await new ProjectService(storage).loadCurrentProject();
+      expect(reloaded.document.settings.input).toEqual(input);
+    }
+  });
   it("creates and saves a new project", async () => {
     localStorage.clear();
     const storage = new WebStorageAdapter();

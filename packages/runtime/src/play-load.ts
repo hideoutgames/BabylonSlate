@@ -1,4 +1,5 @@
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
+import { normalizeInputMappings } from "@babylonslate/input";
 import { type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
 import { isSceneAssetClassId } from "@babylonslate/object-model";
 import {
@@ -18,6 +19,7 @@ export function runtimeOptionsFromLoadControl(
 ): Pick<
   RuntimeDriverOptions,
   | "seed"
+  | "inputMappings"
   | "physicsWorld"
   | "gravity"
   | "havokWasmUrl"
@@ -54,6 +56,7 @@ export function runtimeOptionsFromLoadControl(
   }
   return {
     seed: msg.seed ?? 1,
+    ...(msg.inputMappings !== undefined ? { inputMappings: normalizeInputMappings(msg.inputMappings) } : {}),
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",
     gravity: msg.gravity ?? [0, -9.81, 0],
     havokWasmUrl: msg.havokWasmUrl,

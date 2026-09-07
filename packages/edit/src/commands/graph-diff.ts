@@ -102,9 +102,14 @@ export function diffGraphCommands(
     }
   }
 
-  for (const [nodeId, beforeNode] of beforeNodes) {
+  for (const [nodeId, beforeNode] of [...beforeNodes].reverse()) {
     if (!afterNodes.has(nodeId)) {
-      commands.push(new RemoveNodeCommand(beforeNode));
+      commands.push(
+        new RemoveNodeCommand(
+          beforeNode,
+          before.nodes.findIndex((node) => node.id === nodeId),
+        ),
+      );
     }
   }
 
@@ -117,9 +122,14 @@ export function diffGraphCommands(
     }
   }
 
-  for (const [edgeId, edge] of beforeEdges) {
+  for (const [edgeId, edge] of [...beforeEdges].reverse()) {
     if (!afterEdges.has(edgeId)) {
-      commands.push(new RemoveEdgeCommand(edge));
+      commands.push(
+        new RemoveEdgeCommand(
+          edge,
+          before.edges.findIndex((entry) => entry.id === edgeId),
+        ),
+      );
     }
   }
 

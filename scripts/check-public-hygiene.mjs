@@ -29,7 +29,6 @@ const binaryExtensions = new Set([
   ".bin",
   ".dds",
   ".glb",
-  ".gltf",
   ".hdr",
   ".ico",
   ".jpeg",
@@ -70,6 +69,11 @@ export const contentRules = [
     regex:
       /\[(?:written|generated|created) by (?:devin|cursor|copilot)[^\]]*\]|🤖\s*generated with/i,
     hint: "Remove the agent attribution footer.",
+  },
+  {
+    id: "agent-request-attribution",
+    regex: /co-authored-by:\s*(?:devin|cursor|copilot)|requested by:\s*@/i,
+    hint: "Remove the agent/requester attribution footer.",
   },
   {
     id: "private-key-block",
@@ -179,7 +183,7 @@ export function trackedFiles(cwd) {
   return git(["ls-files", "-z"], cwd).split("\0").filter(Boolean);
 }
 
-function isProbablyBinary(path, text) {
+export function isProbablyBinary(path, text) {
   return (
     binaryExtensions.has(extname(path).toLowerCase()) || text.includes("\0")
   );
@@ -226,9 +230,39 @@ export function scanAddedLines(range, cwd) {
   return violations;
 }
 
+export function scanEventMetadata(event) {
+  const violations = [];
+  if (event.pull_request) {
+    violations.push(
+      ...scanText("pull-request:title", event.pull_request.title ?? ""),
+      ...scanText("pull-request:body", event.pull_request.body ?? ""),
+    );
+  }
+  if (event.comment && event.issue?.pull_request) {
+    violations.push(
+      ...scanText("pull-request:comment", event.comment.body ?? ""),
+    );
+  }
+  return violations;
+}
+
+export function scanCommitMessages(range, cwd) {
+  const output = git(["log", "--format=%H%x00%B%x00", range], cwd);
+  const fields = output.split("\0");
+  const violations = [];
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    const commit = fields[index]?.trim();
+    const message = fields[index + 1] ?? "";
+    if (commit) violations.push(...scanText(`commit:${commit}`, message));
+  }
+  return violations;
+}
+
 function main() {
   const cwd = git(["rev-parse", "--show-toplevel"], process.cwd()).trim();
   const rangeIndex = process.argv.indexOf("--range");
+  const eventIndex = process.argv.indexOf("--event");
+  const commitsIndex = process.argv.indexOf("--commits");
   const violations = scanTrackedFiles(cwd);
   if (rangeIndex !== -1) {
     const range = process.argv[rangeIndex + 1];
@@ -236,6 +270,18 @@ function main() {
       throw new Error("--range needs a git range, e.g. origin/main...HEAD");
     }
     violations.push(...scanAddedLines(range, cwd));
+  }
+  if (eventIndex !== -1) {
+    const eventPath = process.argv[eventIndex + 1];
+    if (!eventPath) throw new Error("--event needs a GitHub event JSON path");
+    violations.push(
+      ...scanEventMetadata(JSON.parse(readFileSync(eventPath, "utf8"))),
+    );
+  }
+  if (commitsIndex !== -1) {
+    const range = process.argv[commitsIndex + 1];
+    if (!range) throw new Error("--commits needs a git range");
+    violations.push(...scanCommitMessages(range, cwd));
   }
 
   if (violations.length === 0) {

@@ -282,4 +282,39 @@ describe("NestedMenu context overlay", () => {
       });
     }
   });
+
+  it("repositions an open root menu and submenu when only the viewport shrinks", async () => {
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1200 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+    try {
+      render(
+        <ContextMenuOverlay
+          menu={{
+            open: true,
+            x: 900,
+            y: 600,
+            items: [{ id: "more", type: "submenu", label: "More", items: [leaf()] }],
+          }}
+          onClose={() => undefined}
+        />,
+      );
+      const panel = document.querySelector('[data-testid="context-menu-panel"]') as HTMLElement;
+      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({ width: 192, height: 120 } as DOMRect);
+      fireEvent.click(document.querySelector('[data-testid="context-menu-item-more"]')!);
+
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 700 });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 500 });
+      fireEvent(window, new Event("resize"));
+
+      await waitFor(() => expect(panel.style.left).toBe("500px"));
+      await waitFor(() => expect(panel.style.top).toBe("372px"));
+      const submenu = document.querySelector('[data-testid="context-menu-sub-more"]') as HTMLElement;
+      await waitFor(() => expect(Number.parseFloat(submenu.style.left)).toBeLessThan(500));
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
+    }
+  });
 });
