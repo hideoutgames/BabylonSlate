@@ -43,11 +43,16 @@ describe("render bone attachment", () => {
     targetSlot.position.x = 10;
     targetSlot.rotation = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
     targetSlot.scale = { x: 2, y: 2, z: 2 };
-    childSlot.scale = { x: 3, y: 3, z: 3 };
+    // Runtime snapshots already compose the actor's ordinary parent transform.
+    childSlot.position = { ...targetSlot.position };
+    childSlot.rotation = { ...targetSlot.rotation };
+    childSlot.scale = { x: 6, y: 6, z: 6 };
     attach("Hand.R");
     apply();
     expect(child.getAbsolutePosition().asArray()).toEqual([6, 2, 0]);
-    expect(child.getWorldMatrix().getScaleVector().asArray()).toEqual([6, 6, 6]);
+    const scale = new Vector3();
+    child.getWorldMatrix().decompose(scale);
+    expect(scale.asArray()).toEqual([6, 6, 6]);
     hand.setPosition(new Vector3(0, 4, 0));
     apply();
     expect(child.getAbsolutePosition().x).toBeCloseTo(2);
@@ -61,6 +66,7 @@ describe("render bone attachment", () => {
     hand.position.set(1, 2, 0);
     hand.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.PI / 2);
     targetSlot.position.x = 10;
+    childSlot.position.x = 10;
     childSlot.position.z = 2;
     attach("Hand");
     apply();

@@ -3,6 +3,11 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { compileGraph, type GraphNode } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
+import type { CompiledScript } from "./script-host";
+
+const characterScripts: CompiledScript[] = ["Character", "Dead"].map((classId) => ({
+  assetGuid: classId, classId, parentClassId: "Actor", source: "", anchors: [], entryPoints: [],
+}));
 
 describe("Attach to Bone scripting", () => {
   it("compiles actor references and a bone name into a renderer command, defaulting Actor to Self", async () => {
@@ -27,7 +32,7 @@ describe("Attach to Bone scripting", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
     try {
-      await runtime.loadScripts([{ assetGuid: "held-item", classId: "HeldItem", source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
+      await runtime.loadScripts([...characterScripts, { assetGuid: "held-item", classId: "HeldItem", source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
       const parent = runtime.spawnScriptedActor({ classId: "Character" });
       const child = runtime.spawnScriptedActor({ classId: "HeldItem" });
       expect(commands.filter((c) => c.type === "attachToBone")).toEqual([
@@ -41,7 +46,7 @@ describe("Attach to Bone scripting", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
     try {
-      await runtime.loadScripts([{
+      await runtime.loadScripts([...characterScripts, {
         assetGuid: "held-item", classId: "HeldItem", anchors: [],
         entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
         source: `export function onBeginPlay(ctx) {
