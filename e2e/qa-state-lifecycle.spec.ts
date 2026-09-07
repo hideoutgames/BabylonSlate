@@ -138,3 +138,80 @@ test("M17: an editor save does not prompt Reload, while Keep Open preserves a re
   await openAssetFromBrowser(page, CLASS_PATH);
   expect(await graphPosition(page)).toEqual(edited);
 });
+
+for (const action of ["export-project", "export-game"]) {
+  test(`H6/M12: ${action} preserves unsaved content and its Undo history`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await openTestProject(page);
+    await openAssetFromBrowser(page, CLASS_PATH);
+    await saveAllIfEnabled(page);
+    const original = await graphPosition(page);
+    await moveGraph(page);
+    const edited = { x: original.x + 42, y: original.y + 17 };
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-export").click();
+    const download = page.waitForEvent("download");
+    await page.getByTestId(action).click();
+    expect(await (await download).failure()).toBeNull();
+    await page.getByTestId("settings-modal").getByRole("button", { name: "Close", exact: true }).click();
+    expect(await graphPosition(page)).toEqual(edited);
+    expect(await dirtyKinds(page)).toEqual(["graph"]);
+    await expect(page.getByTestId("save-all-project")).toBeEnabled();
+    await page.getByTestId("undo-document").click();
+    expect(await graphPosition(page)).toEqual(original);
+    await page.getByTestId("redo-document").click();
+    expect(await graphPosition(page)).toEqual(edited);
+    await saveAllIfEnabled(page);
+    await page.reload();
+    await openTestProject(page);
+    await openAssetFromBrowser(page, CLASS_PATH);
+    expect(await graphPosition(page)).toEqual(edited);
+  });
+}
+
+test("H6/M12: manual NavMesh Bake preserves a separately dirty Class and Scene history", async ({ page }) => {
+  test.setTimeout(120_000);
+  await openTestProject(page);
+  await openMainScene(page);
+  for (const item of ["shape-ground", "navmesh"]) {
+    await page.getByTestId("outliner-add-actor").click();
+    await page.getByTestId("place-actors-catalog-search").fill(item.replace("shape-", ""));
+    await page.getByTestId(`place-actors-item-${item}`).click();
+  }
+  await openAssetFromBrowser(page, CLASS_PATH);
+  await saveAllIfEnabled(page);
+  const originalGraph = await graphPosition(page);
+  const originalScene = await scenePosition(page);
+  await moveGraph(page);
+  expect(await page.evaluate(async () => {
+    const api = (globalThis as unknown as TestHost).__babylonslateTest;
+    const changed = await api.nudgeActiveSceneActor();
+    api.cancelDebouncedSave();
+    return changed;
+  })).toBe(true);
+  await openMainScene(page);
+  await page.getByTestId("outliner-tree").getByText("NavMesh", { exact: true }).click();
+  await page.getByRole("button", { name: "Bake NavMesh", exact: true }).click();
+  await expect(page.getByTestId("nav-bake-dialog")).toBeVisible();
+  await expect(page.getByTestId("nav-bake-dialog")).toHaveCount(0, { timeout: 30_000 });
+  const bake = await page.evaluate(() => (globalThis as unknown as {
+    __babylonslateTest: { lastNavBake: () => { ok: boolean; byteLength: number } };
+  }).__babylonslateTest.lastNavBake());
+  expect(bake.ok).toBe(true);
+  expect(bake.byteLength).toBeGreaterThan(0);
+  expect(await dirtyKinds(page)).toEqual(["graph", "scene"]);
+  await page.getByTestId("undo-document").click();
+  expect(await scenePosition(page)).toEqual(originalScene);
+  await page.getByTestId("redo-document").click();
+  expect(await scenePosition(page)).toEqual([originalScene[0] + 1.5, originalScene[1], originalScene[2]]);
+  await openAssetFromBrowser(page, CLASS_PATH);
+  expect(await graphPosition(page)).toEqual({ x: originalGraph.x + 42, y: originalGraph.y + 17 });
+  await page.getByTestId("undo-document").click();
+  expect(await graphPosition(page)).toEqual(originalGraph);
+  await saveAllIfEnabled(page);
+  await page.reload();
+  await openTestProject(page);
+  await openMainScene(page);
+  expect(await scenePosition(page)).toEqual([originalScene[0] + 1.5, originalScene[1], originalScene[2]]);
+});

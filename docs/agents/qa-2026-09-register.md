@@ -261,3 +261,14 @@ Implementation entries will record failing and passing tests, exact subcases cla
 
 - Two real Inspector/picker regressions reproduced unchanged canonical defaults after clearing an Audio reference and choosing Actor over Pawn. The callbacks wrote display-name keys while existing pin-ID keys retained precedence.
 - Both pickers now write the canonical pin ID, matching ordinary default fields. All three Inspector picker tests pass. Browser persistence and full delivery verification remain pending; this is a separate picker path from the earlier numeric default correction.
+
+### H12/M28: event creation and older node-declared events
+
+- A fresh UI Create Ping → Save test reproduced an event node without its declaration. The selection callback issued a second graph edit from its stale pre-creation graph. Event creation now commits once and focuses the created node directly. The component regression failed with two commits and now passes with one complete node/declaration edit.
+- A separate validation regression reproduced `member.missing_event` on older node-declared Ping graphs even though their palette offered Call Ping. Validation now uses the same custom-event discovery as the palette when metadata is absent; explicitly missing names remain errors and declared events are not duplicated.
+- All 174 tests across the Class member and graph validation suites pass. Browser execution of new and older saved forms in both launch modes and full delivery verification remain pending.
+
+### H6/M12 and H25: additional saved-state controls
+
+- Both Export Project and Export Game preserve an unsaved Class edit, enabled Save, and Undo/Redo in fresh browser checks. Manual NavMesh Bake writes a nonempty chunk while retaining independently dirty Class and Scene histories. Subsequent Save/reload retains the edited Scene.
+- The Class picker correction also passes browser Save/reload with the canonical `default:classId` value. These checks are N for the tested export/bake state-loss reports and persistence evidence for the picker fix; no claim is made about unavailable original projects or uninspected export contents.

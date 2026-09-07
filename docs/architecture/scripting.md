@@ -90,6 +90,8 @@ Single module `packages/scripting/src/types.ts` (exhaustively tested, prefer fas
 
 Compilation applies that resolved view to a temporary graph before code generation. Generic container outputs therefore use their concrete type defaults (for example, a missing String Map value is `""`, not the unresolved wildcard's `null`). The authored graph and stored generic pin declarations remain unchanged.
 
+Creating an event commits its node and declaration once, then focuses that node without a second graph edit. Validation recognizes node-declared custom events in older graphs, matching the Add Node palette; calls to absent event names still fail.
+
 Inspector property rows write literal defaults using the stable pin ID (`default:in`), independently of the Title Case display name (`In`). Legacy display-name defaults remain readable, but a new edit updates the canonical key so an older ID-keyed value cannot mask the edit.
 
 - All `resolvingWildcard` slots on a node share one variable `T` unless the type sets `group` (default `"T"`). Nested `array<T>` / `map<K,V>` walk into those slots.
