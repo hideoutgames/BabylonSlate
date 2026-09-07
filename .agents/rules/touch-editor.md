@@ -1,9 +1,10 @@
-# Touch-First Editor Rules
+# Editor Density and Touch Support
 
 ## Touch targets
 
-- Minimum 44pt touch targets on buttons, tabs, graph ports, and Dockview tab headers.
-- Use shadcn `Button` with appropriate `size`; avoid dense desktop-only layouts.
+- Preserve compact desktop buttons (including Primary buttons), small margins, and tight panel spacing. The editor's complexity makes this density intentional; do not globally enlarge controls or padding to follow imported design guidance.
+- Use existing `@babylonslate/ui` Button variants and sizes. Keep keyboard focus, accessible names, and contrast usable at compact sizes.
+- For coarse-pointer/touch interaction, provide appropriately sized hit areas (44pt where applicable) or a touch-specific layout without increasing desktop visual defaults. Expanded hit areas must not overlap adjacent controls; use a touch-specific layout when dense controls leave insufficient room.
 
 ## Gestures
 

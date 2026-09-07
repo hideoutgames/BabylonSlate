@@ -32,6 +32,12 @@ Before working on matching files or tasks, read the corresponding rule in full. 
 
 Read the matching `SKILL.md` before task work, then load its supporting references as needed. If the host does not discover `.agents/skills/`, use this table directly. Explicit skill requests select the named skill. Planning requests remain read-only and may produce implementation plans; they do not activate the ask skill's prohibition on planning.
 
+At the start of development, check this table against both the requested behavior and the files involved, read every applicable skill, and briefly identify the skills being used. Recheck when scope changes. Discovery alone does not count as reading or applying a skill. Load supporting references only for the current task.
+
+BabylonJS is required for rendering, scene lifecycle, viewport engine integration, meshes, materials, cameras, animation, asset loading, and Babylon physics work, including engine integration inside editor files. Work spanning engine and React UI uses both BabylonJS and the editor UI skills. Apply repository architecture and installed API versions when using imported examples.
+
+Preserve BabylonSlate's compact desktop controls, including small Primary buttons, and its tight margins and spacing. Imported design guidance must not enlarge these defaults; follow the input-specific guidance in the touch editor rule.
+
 | Task | Skill |
 | --- | --- |
 | Short read-only question or explanation | [ask](.agents/skills/ask/SKILL.md) |

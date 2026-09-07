@@ -20,6 +20,10 @@ The Babylon skill keeps the maintained source files only. Git history preserves 
 
 ## Validation
 
+- Before development, match the task and affected files to the skill table, read all applicable skills, and identify their use. Recheck when scope changes; automatically discovering a skill is not evidence that it was applied.
+- Engine integration within editor files requires BabylonJS as well as the relevant React UI skills. Load only task-relevant supporting references and verify version-specific examples against installed dependencies.
+- Preserve compact desktop Primary buttons, other small controls, margins, and panel spacing. Touch support uses input-specific hit areas or layouts; imported HIG guidance must not enlarge desktop defaults. The broad Apple HIG skill is not installed as a default design authority for this cross-platform editor.
+
 - Check that all root rule/skill links, forwarding targets, and supporting relative Markdown links resolve with exact filename case.
 - Check that all eight skill names match their lowercase directory names, descriptions remain useful, and supporting assets survive the move.
 - Compare Cursor adapter metadata with the root applicability table when changing scopes.
