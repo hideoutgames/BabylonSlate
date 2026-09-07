@@ -44,6 +44,8 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 
 Place Actors copies the **ancestor-merged** Class prefab onto the spawned actor (same merge as the Prefab tab) and stamps each row’s `sourceId` to the prefab component id. Actor placement fields (`name`, actor `transform`, `visible`, `locked`, `parentId`, `folderId`) stay instance-owned.
 
+Duplicate assigns fresh actor and component IDs and remaps component `parentId` links within the copy. Prefab `sourceId`, overrides, properties and transforms stay intact. Distinct collider identities keep copies independent in physics, including the software fallback. This affects newly created copies; existing saved duplicate IDs are not migrated automatically.
+
 When the Class Prefab list changes (`graph.setComponents`), the **open** scene re-merges every actor of that class (and descendants, using the same ancestor merge as the Prefab tab) through the scene command layer (dirty + undo). Undo/redo of that Class document re-runs the merge when `components` change. Opening a scene runs the same merge **in memory** so the viewport is current without auto-locking the file; Save All after a Prefab edit while the scene is open persists the instance rows. Closed scene files are not rewritten in the background.
 
 | Prefab change | Scene instance |

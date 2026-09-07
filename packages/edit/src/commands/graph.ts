@@ -23,9 +23,7 @@ export class MoveNodeCommand implements EditCommand<SerializedGraph> {
     return {
       ...doc,
       nodes: doc.nodes.map((node) =>
-        node.id === this.nodeId
-          ? { ...node, position: { ...this.to } }
-          : node,
+        node.id === this.nodeId ? { ...node, position: { ...this.to } } : node,
       ),
     };
   }
@@ -38,9 +36,14 @@ export class MoveNodeCommand implements EditCommand<SerializedGraph> {
 export class AddEdgeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.addEdge";
   readonly edge: SerializedGraph["edges"][number];
+  readonly index?: number;
 
-  constructor(edge: SerializedGraph["edges"][number]) {
+  constructor(
+    edge: SerializedGraph["edges"][number],
+    index?: number,
+  ) {
     this.edge = edge;
+    this.index = index;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -49,21 +52,30 @@ export class AddEdgeCommand implements EditCommand<SerializedGraph> {
     }
     return {
       ...doc,
-      edges: [...doc.edges, this.edge],
+      edges: [
+        ...doc.edges.slice(0, this.index ?? doc.edges.length),
+        this.edge,
+        ...doc.edges.slice(this.index ?? doc.edges.length),
+      ],
     };
   }
 
   invert(): RemoveEdgeCommand {
-    return new RemoveEdgeCommand(this.edge);
+    return new RemoveEdgeCommand(this.edge, this.index);
   }
 }
 
 export class RemoveEdgeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.removeEdge";
   readonly edge: SerializedGraph["edges"][number];
+  readonly index?: number;
 
-  constructor(edge: SerializedGraph["edges"][number]) {
+  constructor(
+    edge: SerializedGraph["edges"][number],
+    index?: number,
+  ) {
     this.edge = edge;
+    this.index = index;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -74,7 +86,7 @@ export class RemoveEdgeCommand implements EditCommand<SerializedGraph> {
   }
 
   invert(): AddEdgeCommand {
-    return new AddEdgeCommand(this.edge);
+    return new AddEdgeCommand(this.edge, this.index);
   }
 }
 
@@ -97,8 +109,9 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
     this.from = from;
     this.to = to;
     this.mergeKey = mergeKey ?? `data:${nodeId}`;
-    this.byteSize =
-      new TextEncoder().encode(JSON.stringify({ from, to })).byteLength;
+    this.byteSize = new TextEncoder().encode(
+      JSON.stringify({ from, to }),
+    ).byteLength;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -123,9 +136,14 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
 export class AddNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.addNode";
   readonly node: SerializedGraph["nodes"][number];
+  readonly index?: number;
 
-  constructor(node: SerializedGraph["nodes"][number]) {
+  constructor(
+    node: SerializedGraph["nodes"][number],
+    index?: number,
+  ) {
     this.node = node;
+    this.index = index;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -134,21 +152,30 @@ export class AddNodeCommand implements EditCommand<SerializedGraph> {
     }
     return {
       ...doc,
-      nodes: [...doc.nodes, this.node],
+      nodes: [
+        ...doc.nodes.slice(0, this.index ?? doc.nodes.length),
+        this.node,
+        ...doc.nodes.slice(this.index ?? doc.nodes.length),
+      ],
     };
   }
 
   invert(): RemoveNodeCommand {
-    return new RemoveNodeCommand(this.node);
+    return new RemoveNodeCommand(this.node, this.index);
   }
 }
 
 export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.removeNode";
   readonly node: SerializedGraph["nodes"][number];
+  readonly index?: number;
 
-  constructor(node: SerializedGraph["nodes"][number]) {
+  constructor(
+    node: SerializedGraph["nodes"][number],
+    index?: number,
+  ) {
     this.node = node;
+    this.index = index;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -162,7 +189,7 @@ export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
   }
 
   invert(): AddNodeCommand {
-    return new AddNodeCommand(this.node);
+    return new AddNodeCommand(this.node, this.index);
   }
 }
 
@@ -281,13 +308,19 @@ export function createMoveNodeCommandFromJson(
 export function createAddEdgeCommandFromJson(
   payload: Record<string, unknown>,
 ): AddEdgeCommand {
-  return new AddEdgeCommand(payload.edge as SerializedGraph["edges"][number]);
+  return new AddEdgeCommand(
+    payload.edge as SerializedGraph["edges"][number],
+    typeof payload.index === "number" ? payload.index : undefined,
+  );
 }
 
 export function createRemoveEdgeCommandFromJson(
   payload: Record<string, unknown>,
 ): RemoveEdgeCommand {
-  return new RemoveEdgeCommand(payload.edge as SerializedGraph["edges"][number]);
+  return new RemoveEdgeCommand(
+    payload.edge as SerializedGraph["edges"][number],
+    typeof payload.index === "number" ? payload.index : undefined,
+  );
 }
 
 export function createSetNodeDataCommandFromJson(
@@ -304,7 +337,10 @@ export function createSetNodeDataCommandFromJson(
 export function createAddNodeCommandFromJson(
   payload: Record<string, unknown>,
 ): AddNodeCommand {
-  return new AddNodeCommand(payload.node as SerializedGraph["nodes"][number]);
+  return new AddNodeCommand(
+    payload.node as SerializedGraph["nodes"][number],
+    typeof payload.index === "number" ? payload.index : undefined,
+  );
 }
 
 export function createRemoveNodeCommandFromJson(
@@ -312,6 +348,7 @@ export function createRemoveNodeCommandFromJson(
 ): RemoveNodeCommand {
   return new RemoveNodeCommand(
     payload.node as SerializedGraph["nodes"][number],
+    typeof payload.index === "number" ? payload.index : undefined,
   );
 }
 

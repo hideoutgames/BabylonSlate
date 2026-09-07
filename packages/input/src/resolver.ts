@@ -142,7 +142,11 @@ function axisBindingValue(
   }
 }
 
-function updateModifiers(code: string, down: boolean, state: ResolverInternals): void {
+function updateModifiers(
+  code: string,
+  down: boolean,
+  state: ResolverInternals,
+): void {
   switch (code) {
     case "ShiftLeft":
     case "ShiftRight":
@@ -198,6 +202,24 @@ export class InputResolver {
   /** Apply one tick's events and return the resolved action / axis snapshot. */
   resolve(events: readonly RawInputEvent[]): ResolvedInputTick {
     const connections: GamepadConnectionEvent[] = [];
+    const actions: Record<string, ActionState> = {};
+    const heldNow = new Set(this.state.previousHeldActions);
+    const sampleActions = () => {
+      for (const mapping of this.mappings.actions) {
+        const held = mapping.bindings.some((binding) =>
+          actionBindingHeld(binding, this.state),
+        );
+        const wasHeld = heldNow.has(mapping.name);
+        const prior = actions[mapping.name];
+        actions[mapping.name] = {
+          held,
+          pressed: (prior?.pressed ?? false) || (held && !wasHeld),
+          released: (prior?.released ?? false) || (!held && wasHeld),
+        };
+        if (held) heldNow.add(mapping.name);
+        else heldNow.delete(mapping.name);
+      }
+    };
 
     for (const event of events) {
       switch (event.kind) {
@@ -297,23 +319,15 @@ export class InputResolver {
         default:
           break;
       }
+      sampleActions();
     }
 
-    const actions: Record<string, ActionState> = {};
-    const heldNow = new Set<string>();
-    for (const mapping of this.mappings.actions) {
-      const held = mapping.bindings.some((binding) =>
-        actionBindingHeld(binding, this.state),
-      );
-      const wasHeld = this.state.previousHeldActions.has(mapping.name);
-      actions[mapping.name] = {
-        held,
-        pressed: held && !wasHeld,
-        released: !held && wasHeld,
-      };
-      if (held) heldNow.add(mapping.name);
-    }
-    this.state.previousHeldActions = heldNow;
+    sampleActions();
+    this.state.previousHeldActions = new Set(
+      this.mappings.actions
+        .filter((mapping) => heldNow.has(mapping.name))
+        .map((mapping) => mapping.name),
+    );
 
     const axes: Record<string, number> = {};
     const axes2D: Record<string, Axis2DValue> = {};
@@ -331,7 +345,10 @@ export class InputResolver {
           y: Math.max(-1, Math.min(1, y)),
         };
         // A 2D axis is also readable as its magnitude for getAxis callers.
-        axes[mapping.name] = Math.hypot(axes2D[mapping.name]!.x, axes2D[mapping.name]!.y);
+        axes[mapping.name] = Math.hypot(
+          axes2D[mapping.name]!.x,
+          axes2D[mapping.name]!.y,
+        );
       } else {
         let total = 0;
         for (const binding of mapping.bindings) {
@@ -365,6 +382,11 @@ export class InputResolver {
     this.state.previousHeldActions.clear();
     this.state.cursor = { x: 0, y: 0, pressed: false };
     this.state.primaryPointerId = null;
-    this.state.modifiers = { shift: false, ctrl: false, alt: false, meta: false };
+    this.state.modifiers = {
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+    };
   }
 }

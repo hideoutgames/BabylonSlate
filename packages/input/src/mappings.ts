@@ -239,7 +239,7 @@ export function normalizeInputMappings(
       });
     }
   }
-  if (actions.length === 0 && axes.length === 0) {
+  if (!Array.isArray(source.actions) && !Array.isArray(source.axes)) {
     return createDefaultInputMappings();
   }
   return { actions, axes };

@@ -80,6 +80,7 @@ import {
   DocumentService,
   type OpenDocument,
 } from "../services/document-service";
+import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
 import { ProjectService, type PluginImportResult } from "../services/project-service";
 import type { GitConfigPrefill } from "@babylonslate/source-control";
 import {
@@ -766,6 +767,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setDockWindowTick((v) => v + 1);
   }, []);
   const documentService = documentServiceRef.current;
+  useEffect(() => attachEditGestureBoundaries(() => {
+    const id = documentService.getState().activeDocumentId;
+    if (id) editSessionRef.current.getStack(id).endGesture();
+  }), [documentService]);
   const collectGraphTypeSchemas = useCallback(() => {
     return typeSchemasFromGraphAssets(
       collectGraphTypeAssets({
@@ -1362,7 +1367,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await flushAudioReverbForSave();
       await flushNavBakeForSave();
       captureAllLayouts();
-      const dirtyDocs = documentService.getDirtyDocuments();
+      const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
       const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model");
       for (const doc of dirtyDocs) {
@@ -1407,14 +1412,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const layouts = documentService.buildLayouts();
       await projectService.saveProject(document, layouts);
-      documentService.markAllClean();
+      documentService.markAllClean(dirtyDocs);
       setMigrationPending([]);
       await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
-        await truncateJournal(derived, guid);
-        setRecoveryAvailable(false);
+        const cleared = await truncateJournal(derived, guid, () =>
+          documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+        );
+        if (cleared) setRecoveryAvailable(false);
       }
       if (savedScene) {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
@@ -1495,7 +1502,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (!projectDocument) return;
     projectService.approveMigrateOnSave();
     captureAllLayouts();
-    const dirtyDocs = documentService.getDirtyDocuments();
+    const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
     for (const doc of dirtyDocs) {
       if (
         isAssetDocumentKind(doc.ref.kind) &&
@@ -1515,7 +1522,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     const layouts = documentService.buildLayouts();
     await projectService.saveProject(projectDocument, layouts);
-    documentService.markAllClean();
+    documentService.markAllClean(dirtyDocs);
     setMigrationPending([]);
     await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
     bump();
@@ -1657,6 +1664,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         infiniteLoopDetection:
           projectDocument?.settings.infiniteLoopDetection,
         loopCount: projectDocument?.settings.loopCount,
+        inputMappings: projectDocument?.settings.input,
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
@@ -2011,10 +2019,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (commands.length === 0) {
         return false;
       }
-      let current = previous;
-      for (const command of commands) {
-        current = editSessionRef.current.apply(id, current, command).doc;
-      }
+      const current = editSessionRef.current.applyBatch(id, previous, commands)!.doc;
       documentService.updateGraph(id, current);
       await notifyDocumentEdited({
         scheduleDebouncedSave,
@@ -2132,10 +2137,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         void afterMutatingApply(sourceControlRef.current, doc.ref.path);
         return true;
       }
-      let current = previous;
-      for (const command of commands) {
-        current = editSessionRef.current.apply(id, current, command).doc;
-      }
+      let current = editSessionRef.current.applyBatch(id, previous, commands)!.doc;
       current = copyInstanceLinkage(intended, current);
       documentService.updateScene(id, current);
       await notifyDocumentEdited({

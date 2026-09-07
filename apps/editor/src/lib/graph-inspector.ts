@@ -156,18 +156,19 @@ function flattenStructFieldRows(
         continue;
       }
     }
+    const fieldPinId = `${labelPrefix}:${field.name}`;
     rows.push(
       ...pinDefaultPropertyRows(
         [
           {
-            pinId: `${labelPrefix}:${field.name}`,
+            pinId: fieldPinId,
             name: label,
             type,
             value: fieldValue,
           },
         ],
         (patch) => {
-          const key = pinDefaultPropertyKey(label);
+          const key = pinDefaultPropertyKey(fieldPinId);
           if (key in patch) {
             onChange({ ...instance, [field.name]: patch[key] });
           }
@@ -217,7 +218,7 @@ export function pinDefaultPropertyRows(
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
   for (const entry of entries) {
-    const key = pinDefaultPropertyKey(entry.name);
+    const key = pinDefaultPropertyKey(entry.pinId);
     const typeDefault = defaultJsValue(entry.type);
     switch (entry.type.kind) {
       case "bool":
@@ -423,7 +424,7 @@ export function pinDefaultPropertyRows(
           ? mappingNames?.schemas?.structs[entry.type.guid]
           : undefined;
         if (!schema) break;
-        const key = pinDefaultPropertyKey(entry.name);
+        const key = pinDefaultPropertyKey(entry.pinId);
         rows.push(
           ...flattenStructFieldRows(
             schema.fields,
@@ -494,7 +495,7 @@ export function variableDefaultPropertyRows(
   return pinDefaultPropertyRows(
     [{ pinId, name: label, type, value: resolved }],
     (patch) => {
-      const key = pinDefaultPropertyKey(label);
+      const key = pinDefaultPropertyKey(pinId);
       if (key in patch) onChange(patch[key]);
     },
     mapping,

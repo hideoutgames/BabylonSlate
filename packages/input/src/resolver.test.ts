@@ -11,7 +11,72 @@ function key(tick: number, code: string, phase: "down" | "up"): RawInputEvent {
   return { kind: "key", tick, code, phase };
 }
 
+describe("InputResolver event transitions", () => {
+  it("keeps a complete key tap received between two simulation ticks", () => {
+    const resolver = new InputResolver(createDefaultInputMappings());
+    const tapped = resolver.resolve([
+      key(0, "Enter", "down"),
+      key(0, "Enter", "up"),
+    ]);
+    expect(tapped.actions.Confirm).toEqual({
+      held: false,
+      pressed: true,
+      released: true,
+    });
+    expect(resolver.resolve([]).actions.Confirm).toEqual({
+      held: false,
+      pressed: false,
+      released: false,
+    });
+  });
+  it("does not release an action while another binding is held or retrigger on key repeat", () => {
+    const resolver = new InputResolver({
+      actions: [
+        {
+          name: "Jump",
+          bindings: [
+            { device: "key", code: "KeyH" },
+            { device: "key", code: "KeyG" },
+          ],
+        },
+      ],
+      axes: [],
+    });
+    resolver.resolve([key(0, "KeyH", "down")]);
+    const overlap = resolver.resolve([
+      key(1, "KeyH", "down"),
+      key(1, "KeyG", "down"),
+      key(1, "KeyH", "up"),
+    ]);
+    expect(overlap.actions.Jump).toEqual({
+      held: true,
+      pressed: false,
+      released: false,
+    });
+    const retrigger = resolver.resolve([
+      key(2, "KeyG", "up"),
+      key(2, "KeyG", "down"),
+    ]);
+    expect(retrigger.actions.Jump).toEqual({
+      held: true,
+      pressed: true,
+      released: true,
+    });
+  });
+});
+
 describe("normalizeInputMappings", () => {
+  it("H13: preserves explicit empty action and axis lists", () => {
+    const resolver = new InputResolver(
+      normalizeInputMappings({ actions: [], axes: [] }),
+    );
+    const resolved = resolver.resolve([
+      key(0, "Space", "down"),
+      key(0, "KeyW", "down"),
+    ]);
+    expect(resolved.actions).toEqual({});
+    expect(resolved.axes2D).toEqual({});
+  });
   it("falls back to defaults for an empty payload", () => {
     const mappings = normalizeInputMappings({});
     expect(mappings.actions.length).toBeGreaterThan(0);
@@ -59,9 +124,7 @@ describe("normalizeInputMappings", () => {
     expect(mappings.actions).toEqual([
       { name: "Jump", bindings: [{ device: "key", code: "Space" }] },
     ]);
-    expect(mappings.axes).toEqual([
-      { name: "Look", kind: "1d", bindings: [] },
-    ]);
+    expect(mappings.axes).toEqual([{ name: "Look", kind: "1d", bindings: [] }]);
   });
 
   it("keeps empty-code drafts when allowIncomplete is set", () => {
