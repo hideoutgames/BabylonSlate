@@ -190,9 +190,28 @@ test.describe("P9 content systems", () => {
     expect(box).not.toBeNull();
     const x = box!.x + box!.width / 2;
     const y = box!.y + box!.height / 2;
-    await page.mouse.move(x, y);
+    const release = await graph.evaluate((root, source) => {
+      const graphBox = root.getBoundingClientRect();
+      const nodeBoxes = Array.from(root.querySelectorAll(".react-flow__node"))
+        .map((node) => node.getBoundingClientRect());
+      const pinBoxes = Array.from(root.querySelectorAll(".react-flow__handle"))
+        .map((pin) => pin.getBoundingClientRect());
+      // Stay within the 96px safe zone, on empty canvas beyond snap distance.
+      for (let step = 0; step < 16; step++) {
+        const angle = step * Math.PI / 8;
+        const point = { x: source.x + Math.cos(angle) * 80, y: source.y + Math.sin(angle) * 80 };
+        if (point.x < graphBox.left + 8 || point.x > graphBox.right - 8 || point.y < graphBox.top + 8 || point.y > graphBox.bottom - 8) continue;
+        if (nodeBoxes.some((rect) => point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom)) continue;
+        if (pinBoxes.some((rect) => Math.hypot(point.x - (rect.left + rect.width / 2), point.y - (rect.top + rect.height / 2)) < 30)) continue;
+        return point;
+      }
+      return null;
+    }, { x, y });
+    expect(release).not.toBeNull();
+    await handle.hover();
     await page.mouse.down();
-    await page.mouse.move(x + 20, y + 16, { steps: 3 });
+    await page.mouse.move(release!.x, release!.y, { steps: 5 });
+    await expect(graph.locator(".react-flow__connection-path")).toHaveCount(1);
     await expect(graph.getByTestId("add-node-hint")).toHaveCount(0);
     await page.mouse.up();
     await expect(page.getByTestId("node-palette")).toHaveCount(0);
