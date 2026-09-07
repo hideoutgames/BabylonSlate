@@ -1,10 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import {
-  DEFAULT_RENDER_PROJECT_SETTINGS,
-} from "../packages/core/src/index.ts";
+import { DEFAULT_RENDER_PROJECT_SETTINGS } from "../packages/core/src/index.ts";
 import {
   BOOT_PACK_FILE,
   exportGame,
@@ -58,9 +53,11 @@ async function packTinyGame() {
   expect(packed.value.files.has(BOOT_PACK_FILE)).toBe(true);
   expect(packed.value.manifest.startupSceneGuid).toBe("scene-guid-export");
   expect(packed.value.fileCount).toBeLessThan(800);
-  expect([...packed.value.files.keys()].some((path) => path.includes("main.scene.babasset"))).toBe(
-    false,
-  );
+  expect(
+    [...packed.value.files.keys()].some((path) =>
+      path.includes("main.scene.babasset"),
+    ),
+  ).toBe(false);
   return packed.value;
 }
 
@@ -84,10 +81,6 @@ test.describe("P14 export smoke", () => {
     }
     expect(files.size).toBe(artifact.fileCount);
 
-    const dir = join(tmpdir(), `p14-export-${Date.now()}`);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "game.zip"), zip);
-
     for (const honorRange of [true, false]) {
       const server = await serveExportFiles(files, { honorRange });
       try {
@@ -98,9 +91,13 @@ test.describe("P14 export smoke", () => {
           "scene-guid-export",
         );
         await expect
-          .poll(async () => page.getByTestId("player-root").getAttribute("data-ticks"), {
-            timeout: 20_000,
-          })
+          .poll(
+            async () =>
+              page.getByTestId("player-root").getAttribute("data-ticks"),
+            {
+              timeout: 20_000,
+            },
+          )
           .not.toBe("0");
         await expect(page.getByTestId("player-root")).toHaveAttribute(
           "data-booted",

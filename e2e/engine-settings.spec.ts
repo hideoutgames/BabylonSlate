@@ -2,7 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
-async function viewportPostProcessPassCount(page: Page): Promise<number | null> {
+async function viewportPostProcessPassCount(
+  page: Page,
+): Promise<number | null> {
   return page.evaluate(
     () =>
       (
@@ -15,7 +17,9 @@ async function viewportPostProcessPassCount(page: Page): Promise<number | null> 
   );
 }
 
-async function viewportHardwareScalingLevel(page: Page): Promise<number | null> {
+async function viewportHardwareScalingLevel(
+  page: Page,
+): Promise<number | null> {
   return page.evaluate(
     () =>
       (
@@ -27,17 +31,6 @@ async function viewportHardwareScalingLevel(page: Page): Promise<number | null> 
       ).__babylonslateViewportTest?.hardwareScalingLevel() ?? null,
   );
 }
-
-test("viewport post-processing defaults on", async ({ page }) => {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("engine-settings").click();
-  await page.getByTestId("engine-settings-modal-category-viewport").click();
-  await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-});
 
 test("viewport frame cap can be emptied then retyped", async ({ page }) => {
   await page.goto("/?test=1");
@@ -64,42 +57,9 @@ test("viewport frame cap can be emptied then retyped", async ({ page }) => {
   await expect(field).toHaveValue("45");
 });
 
-test("graph default zoom shows 0.5", async ({ page }) => {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("engine-settings").click();
-  await page.getByTestId("engine-settings-modal-category-graph").click();
-
-  const field = page.getByTestId("setting-graph-default-zoom");
-  await expect(field).toHaveValue("0.5");
-});
-
-test("Focus keep-list can add a Material tab", async ({ page }) => {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("engine-settings").click();
-  await page.getByTestId("engine-settings-modal-category-focus").click();
-
-  await expect(page.getByTestId("focus-keep-material-material-graph")).toBeVisible();
-  await page.getByTestId("focus-keep-material-add").click();
-  await page.getByTestId("focus-keep-material-add-material-preview").click();
-  await expect(page.getByTestId("focus-keep-material-material-preview")).toBeVisible();
-});
-
-test("Focus keep-list can add a Class tab", async ({ page }) => {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("engine-settings").click();
-  await page.getByTestId("engine-settings-modal-category-focus").click();
-
-  await expect(page.getByTestId("focus-keep-graph-graph")).toBeVisible();
-  await expect(page.getByTestId("focus-keep-scene-viewport")).toBeVisible();
-  await page.getByTestId("focus-keep-graph-add").click();
-  await page.getByTestId("focus-keep-graph-add-inspector").click();
-  await expect(page.getByTestId("focus-keep-graph-inspector")).toBeVisible();
-});
-
-test("create project dialog defaults to 1920×1080 stretch", async ({ page }) => {
+test("create project dialog defaults to 1920×1080 stretch", async ({
+  page,
+}) => {
   await page.goto("/?test=1");
   await expect(page.getByTestId("homepage")).toBeVisible();
   await page.getByTestId("create-project").click();
@@ -114,17 +74,23 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
   test.setTimeout(180_000);
   await openTestProject(page);
   await page
-    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+    .locator(
+      '[data-testid="document-tab"][data-document-kind="content-browser"]',
+    )
     .click();
-  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+  await expect(
+    page.getByTestId("document-workspace-content-browser"),
+  ).toBeVisible();
   await page.getByTestId("content-browser-new-asset").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+  await expect(
+    page.getByTestId("content-browser-new-asset-dialog"),
+  ).toBeVisible();
   await page.getByTestId("new-asset-type-Material").click();
   await page.getByTestId("new-asset-name").fill("Bloom");
   await page.getByTestId("content-browser-new-asset-create").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByTestId("content-browser-new-asset-dialog"),
+  ).toHaveCount(0);
   await page
     .locator('[data-asset-path="assets/Bloom.material.babasset"]')
     .dblclick();
@@ -140,7 +106,10 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
     const host = globalThis as {
       __babylonslateTest?: { guidForPath: (path: string) => string | null };
     };
-    return host.__babylonslateTest?.guidForPath("assets/Bloom.material.babasset") ?? "";
+    return (
+      host.__babylonslateTest?.guidForPath("assets/Bloom.material.babasset") ??
+      ""
+    );
   });
   expect(bloomGuid.length).toBeGreaterThan(0);
   await page.getByTestId(`search-item-${bloomGuid}`).click();

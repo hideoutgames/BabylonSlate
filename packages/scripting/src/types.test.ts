@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import * as fc from "fast-check";
 import {
   BOOL,
   FLOAT,
@@ -58,7 +57,8 @@ describe("pin assignability", () => {
       isSubclassOf(child: string, parent: string) {
         return (
           child === parent ||
-          (child === "Player" && (parent === "Actor" || parent === "BObject")) ||
+          (child === "Player" &&
+            (parent === "Actor" || parent === "BObject")) ||
           (child === "Actor" && parent === "BObject")
         );
       },
@@ -114,13 +114,11 @@ describe("pin assignability", () => {
     expect(pinTypeTag(assetRef("Audio"))).toBe("assetRef:Audio");
   });
 
-  it("property: equal types are assignable", () => {
-    const arb = fc.constantFrom(BOOL, INT, FLOAT, STRING, VEC3, objectRef("BObject"));
-    fc.assert(
-      fc.property(arb, (t) => {
-        expect(isAssignable(t, t)).toBe(true);
-        expect(pinTypeEquals(t, t)).toBe(true);
-      }),
-    );
-  });
+  it.each([BOOL, INT, FLOAT, STRING, VEC3, objectRef("BObject")])(
+    "equal $kind types are assignable",
+    (type) => {
+      expect(isAssignable(type, type)).toBe(true);
+      expect(pinTypeEquals(type, type)).toBe(true);
+    },
+  );
 });

@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  accountedTextureBytes,
-  BYTES_PER_TEXEL,
-} from "./texture-bytes";
+import { accountedTextureBytes, BYTES_PER_TEXEL } from "./texture-bytes";
 import { ResourceCache } from "./resource-cache";
 import { RenderScheduler } from "./render-scheduler";
 import { SnapshotInterpolator, writeSampledAudioPoses } from "./snapshot-sync";
@@ -31,7 +28,11 @@ describe("resource cache", () => {
     const a = cache.blobUrlFor("guid-1", bytes);
     const b = cache.blobUrlFor("guid-1", bytes);
     expect(a).toBe(b);
+    cache.account("guid-1", accountedTextureBytes(64, 64, "rgba8", true));
     cache.release("guid-1");
+    cache.release("guid-1");
+    cache.flushUnreferenced();
+    expect(cache.accountedBytes()).toBe(0);
     cache.dispose();
   });
 
@@ -109,6 +110,7 @@ describe("render scheduler", () => {
   it("skips renders when clean and renders when dirty", () => {
     const scheduler = new RenderScheduler();
     expect(scheduler.shouldRender()).toBe(false);
+    expect(scheduler.stats().renderedFrames).toBe(0);
     scheduler.invalidate("snapshot");
     expect(scheduler.shouldRender()).toBe(true);
     scheduler.noteRendered();
@@ -197,12 +199,26 @@ describe("snapshot interpolator", () => {
   it("replaces capacity state and ignores stale layout generations", () => {
     const interp = new SnapshotInterpolator(1);
     const stale = new Float32Array(snapshotFloatCount(1));
-    writeSnapshotHeader(stale, { frameId: 1, tickIndex: 1, actorCount: 0, scriptMs: 0, physicsMs: 0, layoutGeneration: 0 });
+    writeSnapshotHeader(stale, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 0,
+      scriptMs: 0,
+      physicsMs: 0,
+      layoutGeneration: 0,
+    });
     expect(interp.installLayout(4, 1)).toBe(true);
     interp.push(stale);
     expect(interp.sample(1)).toBeNull();
     const current = new Float32Array(snapshotFloatCount(4));
-    writeSnapshotHeader(current, { frameId: 2, tickIndex: 2, actorCount: 0, scriptMs: 0, physicsMs: 0, layoutGeneration: 1 });
+    writeSnapshotHeader(current, {
+      frameId: 2,
+      tickIndex: 2,
+      actorCount: 0,
+      scriptMs: 0,
+      physicsMs: 0,
+      layoutGeneration: 1,
+    });
     interp.push(current);
     expect(interp.sample(1)?.frameId).toBe(2);
   });

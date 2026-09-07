@@ -56,7 +56,9 @@ test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
       timeout: 10_000,
     });
-    const outlinerBox = await page.getByTestId("scene-outliner-panel").boundingBox();
+    const outlinerBox = await page
+      .getByTestId("scene-outliner-panel")
+      .boundingBox();
     const viewportBox = await page.getByTestId("viewport-panel").boundingBox();
     expect(outlinerBox).not.toBeNull();
     expect(viewportBox).not.toBeNull();
@@ -74,7 +76,9 @@ test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
       timeout: 10_000,
     });
     const outputBox = await page.getByTestId("output-log-panel").boundingBox();
-    const viewportAfter = await page.getByTestId("viewport-panel").boundingBox();
+    const viewportAfter = await page
+      .getByTestId("viewport-panel")
+      .boundingBox();
     expect(outputBox).not.toBeNull();
     expect(viewportAfter).not.toBeNull();
     expect(outputBox!.y).toBeGreaterThanOrEqual(
@@ -82,18 +86,8 @@ test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
     );
 
     await expect(page.getByTestId("windows-editor-utilities")).toHaveCount(0);
-  });
-
-  test("does not list Editor Utilities", async ({ page }) => {
-    await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
-      .dblclick();
-    await expect(page.getByTestId("windows-menu")).toBeEnabled({
-      timeout: 15_000,
-    });
-    await openWindowsMenu(page);
-    await expect(page.getByTestId("windows-editor-utilities")).toHaveCount(0);
-    await expect(page.locator('[data-testid^="windows-menu-eui-"]')).toHaveCount(0);
+    await expect(
+      page.locator('[data-testid^="windows-menu-eui-"]'),
+    ).toHaveCount(0);
   });
 });

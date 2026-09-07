@@ -148,3 +148,7 @@ P4 adds multi-transport comparison: the same scenario must agree **in-process**,
 ## Property tests
 
 `fast-check` is available for pure logic. Current uses: golden text normalization idempotence, and graph serialization round-tripping.
+
+## Test cost policy
+
+Delete duplicated lower-layer assertions instead of repeating them in Chromium. Preserve real layout, GPU, worker, storage recovery, and input integration proofs. Scheduler/cache contracts live in the canonical render tests; synthetic memory-store timing loops are not device performance measurements. Documents writes retain a small bridge-call contract. Havok behavior cases share the initialized WASM module and create independent worlds.

@@ -8,7 +8,9 @@ import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
 async function injectGamepad(
-  page: { evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown> },
+  page: {
+    evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown>;
+  },
   pad: { axes: number[]; buttons?: number[] } | null,
 ): Promise<void> {
   await page.evaluate((next) => {
@@ -71,7 +73,6 @@ const SCRIPTED_GRAPH = {
   ],
 };
 
-
 async function classGraphNodeCount(page: import("@playwright/test").Page) {
   return page.getByTestId("graph-panel").locator(".react-flow__node").count();
 }
@@ -91,12 +92,16 @@ async function setMainGraphContent(
   expect(installed).toBe(true);
 }
 
-async function openMannequinClass(page: import("@playwright/test").Page): Promise<void> {
+async function openMannequinClass(
+  page: import("@playwright/test").Page,
+): Promise<void> {
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await expect(page.getByTestId("graph-panel")).toBeVisible();
 }
 
-async function closeGraphTab(page: import("@playwright/test").Page): Promise<void> {
+async function closeGraphTab(
+  page: import("@playwright/test").Page,
+): Promise<void> {
   await page
     .locator('[data-testid="document-tab"][data-document-kind="graph"]')
     .getByTestId("document-tab-close")
@@ -192,66 +197,64 @@ test.describe("P5 visual scripting acceptance", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
-  test("Play without a scene tab still launches from startup", async ({ page }) => {
-    await openTestProject(page);
-    await expect(page.getByTestId("play-preview")).toBeEnabled();
-  });
-
   test("GetAxis2D Move from a compiled graph prints the stick in Play", async ({
     page,
   }) => {
     await openTestProject(page);
 
-    const installed = await page.evaluate(async (graph) => {
-      const host = globalThis as unknown as {
-        __babylonslateTest?: {
-          setMainGraphContent: (g: unknown) => Promise<boolean>;
+    const installed = await page.evaluate(
+      async (graph) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setMainGraphContent: (g: unknown) => Promise<boolean>;
+          };
         };
-      };
-      if (!host.__babylonslateTest) return false;
-      return host.__babylonslateTest.setMainGraphContent(graph);
-    }, {
-      nodes: [
-        {
-          id: "tick",
-          type: "flow.event.tick",
-          position: { x: 40, y: 80 },
-          data: {},
-        },
-        {
-          id: "axis",
-          type: "input.getAxis2D",
-          position: { x: 40, y: 200 },
-          data: { axis: "Move" },
-        },
-        {
-          id: "print",
-          type: "debug.print",
-          position: { x: 320, y: 80 },
-          data: {
-            key: "axis",
-            duration: 30,
-            color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+        if (!host.__babylonslateTest) return false;
+        return host.__babylonslateTest.setMainGraphContent(graph);
+      },
+      {
+        nodes: [
+          {
+            id: "tick",
+            type: "flow.event.tick",
+            position: { x: 40, y: 80 },
+            data: {},
           },
-        },
-      ],
-      edges: [
-        {
-          id: "e1",
-          source: "tick",
-          target: "print",
-          sourceHandle: "execOut",
-          targetHandle: "execIn",
-        },
-        {
-          id: "e2",
-          source: "axis",
-          target: "print",
-          sourceHandle: "out",
-          targetHandle: "value",
-        },
-      ],
-    });
+          {
+            id: "axis",
+            type: "input.getAxis2D",
+            position: { x: 40, y: 200 },
+            data: { axis: "Move" },
+          },
+          {
+            id: "print",
+            type: "debug.print",
+            position: { x: 320, y: 80 },
+            data: {
+              key: "axis",
+              duration: 30,
+              color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+            },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "tick",
+            target: "print",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+          {
+            id: "e2",
+            source: "axis",
+            target: "print",
+            sourceHandle: "out",
+            targetHandle: "value",
+          },
+        ],
+      },
+    );
     expect(installed).toBe(true);
 
     await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
@@ -275,84 +278,86 @@ test.describe("P5 visual scripting acceptance", () => {
           setMainGraphContent: (g: unknown) => Promise<boolean>;
         };
       };
-      return host.__babylonslateTest?.setMainGraphContent({
-        nodes: [
-          {
-            id: "tick",
-            type: "flow.event.tick",
-            position: { x: 40, y: 80 },
-            data: {},
-          },
-          {
-            id: "value",
-            type: "literal.makeInt",
-            position: { x: 40, y: 240 },
-            data: { "default:in": 42 },
-          },
-          {
-            id: "select",
-            type: "enum.select",
-            position: { x: 280, y: 220 },
-            data: {
-              enumGuid: "engine:CollisionChannel",
-              members: [
-                { name: "All", value: 0 },
-                { name: "WorldStatic", value: 1 },
-                { name: "WorldDynamic", value: 2 },
-                { name: "Pawn", value: 3 },
-                { name: "Visibility", value: 4 },
-              ],
-              "default:index": "Pawn",
+      return (
+        host.__babylonslateTest?.setMainGraphContent({
+          nodes: [
+            {
+              id: "tick",
+              type: "flow.event.tick",
+              position: { x: 40, y: 80 },
+              data: {},
             },
-          },
-          {
-            id: "format",
-            type: "string.format",
-            position: { x: 520, y: 180 },
-            data: { "default:format": "Selected {input pin}" },
-          },
-          {
-            id: "print",
-            type: "debug.print",
-            position: { x: 780, y: 80 },
-            data: {
-              key: "format-select",
-              duration: 30,
-              color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+            {
+              id: "value",
+              type: "literal.makeInt",
+              position: { x: 40, y: 240 },
+              data: { "default:in": 42 },
             },
-          },
-        ],
-        edges: [
-          {
-            id: "exec",
-            source: "tick",
-            target: "print",
-            sourceHandle: "execOut",
-            targetHandle: "execIn",
-          },
-          {
-            id: "option",
-            source: "value",
-            target: "select",
-            sourceHandle: "out",
-            targetHandle: "option:Pawn",
-          },
-          {
-            id: "selected",
-            source: "select",
-            target: "format",
-            sourceHandle: "out",
-            targetHandle: `arg:${encodeURIComponent("input pin")}`,
-          },
-          {
-            id: "formatted",
-            source: "format",
-            target: "print",
-            sourceHandle: "out",
-            targetHandle: "value",
-          },
-        ],
-      }) ?? false;
+            {
+              id: "select",
+              type: "enum.select",
+              position: { x: 280, y: 220 },
+              data: {
+                enumGuid: "engine:CollisionChannel",
+                members: [
+                  { name: "All", value: 0 },
+                  { name: "WorldStatic", value: 1 },
+                  { name: "WorldDynamic", value: 2 },
+                  { name: "Pawn", value: 3 },
+                  { name: "Visibility", value: 4 },
+                ],
+                "default:index": "Pawn",
+              },
+            },
+            {
+              id: "format",
+              type: "string.format",
+              position: { x: 520, y: 180 },
+              data: { "default:format": "Selected {input pin}" },
+            },
+            {
+              id: "print",
+              type: "debug.print",
+              position: { x: 780, y: 80 },
+              data: {
+                key: "format-select",
+                duration: 30,
+                color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+              },
+            },
+          ],
+          edges: [
+            {
+              id: "exec",
+              source: "tick",
+              target: "print",
+              sourceHandle: "execOut",
+              targetHandle: "execIn",
+            },
+            {
+              id: "option",
+              source: "value",
+              target: "select",
+              sourceHandle: "out",
+              targetHandle: "option:Pawn",
+            },
+            {
+              id: "selected",
+              source: "select",
+              target: "format",
+              sourceHandle: "out",
+              targetHandle: `arg:${encodeURIComponent("input pin")}`,
+            },
+            {
+              id: "formatted",
+              source: "format",
+              target: "print",
+              sourceHandle: "out",
+              targetHandle: "value",
+            },
+          ],
+        }) ?? false
+      );
     });
     expect(installed).toBe(true);
 
@@ -389,58 +394,60 @@ test.describe("P5 visual scripting acceptance", () => {
           setMainGraphContent: (g: unknown) => Promise<boolean>;
         };
       };
-      return host.__babylonslateTest?.setMainGraphContent({
-        nodes: [
-          {
-            id: "tick",
-            type: "flow.event.tick",
-            position: { x: 40, y: 80 },
-            data: {},
-          },
-          {
-            id: "loop",
-            type: "flow.forLoop",
-            position: { x: 300, y: 80 },
-            data: {
-              "default:firstIndex": 0,
-              "default:lastIndex": 2,
+      return (
+        host.__babylonslateTest?.setMainGraphContent({
+          nodes: [
+            {
+              id: "tick",
+              type: "flow.event.tick",
+              position: { x: 40, y: 80 },
+              data: {},
             },
-          },
-          {
-            id: "print",
-            type: "debug.print",
-            position: { x: 580, y: 80 },
-            data: {
-              key: "for-loop",
-              duration: 30,
-              color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+            {
+              id: "loop",
+              type: "flow.forLoop",
+              position: { x: 300, y: 80 },
+              data: {
+                "default:firstIndex": 0,
+                "default:lastIndex": 2,
+              },
             },
-          },
-        ],
-        edges: [
-          {
-            id: "start",
-            source: "tick",
-            target: "loop",
-            sourceHandle: "execOut",
-            targetHandle: "execIn",
-          },
-          {
-            id: "body",
-            source: "loop",
-            target: "print",
-            sourceHandle: "loopBody",
-            targetHandle: "execIn",
-          },
-          {
-            id: "index",
-            source: "loop",
-            target: "print",
-            sourceHandle: "index",
-            targetHandle: "value",
-          },
-        ],
-      }) ?? false;
+            {
+              id: "print",
+              type: "debug.print",
+              position: { x: 580, y: 80 },
+              data: {
+                key: "for-loop",
+                duration: 30,
+                color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+              },
+            },
+          ],
+          edges: [
+            {
+              id: "start",
+              source: "tick",
+              target: "loop",
+              sourceHandle: "execOut",
+              targetHandle: "execIn",
+            },
+            {
+              id: "body",
+              source: "loop",
+              target: "print",
+              sourceHandle: "loopBody",
+              targetHandle: "execIn",
+            },
+            {
+              id: "index",
+              source: "loop",
+              target: "print",
+              sourceHandle: "index",
+              targetHandle: "value",
+            },
+          ],
+        }) ?? false
+      );
     });
     expect(installed).toBe(true);
 
@@ -799,7 +806,9 @@ test.describe("P5 visual scripting acceptance", () => {
     const baseline = await classGraphNodeCount(page);
     expect(baseline).toBeGreaterThan(0);
 
-    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+    await graph
+      .locator(".react-flow__pane")
+      .dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Get Axis 2D");
     await page.getByTestId("node-palette-item-input.getAxis2D").click();
@@ -909,12 +918,14 @@ test.describe("P5 visual scripting acceptance", () => {
     const baseline = await classGraphNodeCount(page);
     expect(baseline).toBeGreaterThan(0);
 
-    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+    await graph
+      .locator(".react-flow__pane")
+      .dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Cast to Actor");
-    await expect(page.getByTestId("node-palette-item-casting.castActor")).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByTestId("node-palette-item-casting.castActor"),
+    ).toHaveCount(0);
     await page.getByTestId("node-palette-item-casting.cast:Actor").click();
     await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Cast to Actor")).toBeVisible();
