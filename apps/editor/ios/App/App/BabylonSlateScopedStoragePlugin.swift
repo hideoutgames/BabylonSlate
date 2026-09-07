@@ -39,11 +39,24 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Folder handles
 
     @objc func pickFolder(_ call: CAPPluginCall) {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.folder], asCopy: false)
-        picker.allowsMultipleSelection = false
-        picker.delegate = self
-        pendingPickCall = call
-        bridge?.viewController?.present(picker, animated: true, completion: nil)
+        // Capacitor invokes plugin methods on its bridge queue, not UIKit's queue.
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  let presenter = self.bridge?.viewController,
+                  presenter.viewIfLoaded?.window != nil else {
+                call.reject("Folder picker is unavailable", "UNREACHABLE")
+                return
+            }
+            guard self.pendingPickCall == nil, presenter.presentedViewController == nil else {
+                call.reject("A native picker is already open", "UNREACHABLE")
+                return
+            }
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.folder], asCopy: false)
+            picker.allowsMultipleSelection = false
+            picker.delegate = self
+            self.pendingPickCall = call
+            presenter.present(picker, animated: true, completion: nil)
+        }
     }
 
     @objc func openFolder(_ call: CAPPluginCall) {
@@ -225,41 +238,31 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func stat(_ call: CAPPluginCall) {
         guard let (folderUrl, path) = folderAndPath(call: call) else { return }
-        do {
-            let url = try childURL(folderUrl: folderUrl, path: path, allowRoot: true)
-            guard folderUrl.startAccessingSecurityScopedResource() else {
-                throw ScopedStoragePluginError.accessRevoked
+        withCoordinatedRead(folderUrl: folderUrl, path: path, allowRoot: true, materialize: false, execute: { target in
+            try self.itemMetadata(at: target)
+        }) { result in
+            switch result {
+            case .success(let metadata): call.resolve(metadata)
+            case .failure(let error): self.reject(call, error: error)
             }
-            defer { folderUrl.stopAccessingSecurityScopedResource() }
-
-            let (exists, isDirectory) = fileExists(at: url)
-            guard exists else {
-                call.reject("File not found", "NOT_FOUND")
-                return
-            }
-
-            let stat = fileStat(url: url)
-            call.resolve(["isDir": isDirectory,
-                          "size": stat.size as Any,
-                          "mtime": stat.mtime as Any])
-        } catch {
-            reject(call, error: error)
         }
     }
 
     @objc func exists(_ call: CAPPluginCall) {
         guard let (folderUrl, path) = folderAndPath(call: call) else { return }
-        do {
-            let url = try childURL(folderUrl: folderUrl, path: path, allowRoot: true)
-            guard folderUrl.startAccessingSecurityScopedResource() else {
-                throw ScopedStoragePluginError.accessRevoked
+        withCoordinatedRead(folderUrl: folderUrl, path: path, allowRoot: true, materialize: false, execute: { target in
+            try self.itemMetadata(at: target)
+        }) { result in
+            switch result {
+            case .success(let metadata):
+                call.resolve(["exists": true, "isDirectory": metadata["isDir"] ?? false])
+            case .failure(let error):
+                if self.isNotFound(error), !path.isEmpty {
+                    call.resolve(["exists": false, "isDirectory": false])
+                } else {
+                    self.reject(call, error: error)
+                }
             }
-            defer { folderUrl.stopAccessingSecurityScopedResource() }
-
-            let (exists, isDirectory) = fileExists(at: url)
-            call.resolve(["exists": exists, "isDirectory": isDirectory])
-        } catch {
-            reject(call, error: error)
         }
     }
 
@@ -277,7 +280,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func resolveFolder(id: String, call: CAPPluginCall) -> (URL, Bool)? {
         guard let data = UserDefaults.standard.data(forKey: bookmarkKey(id)) else {
-            call.reject("Folder bookmark not found", "NOT_FOUND")
+            call.reject("Folder bookmark not found; reconnect required", "STALE")
             return nil
         }
         do {
@@ -310,9 +313,12 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func storeFolder(url: URL, name: String?, renewing: Bool) -> (id: String, name: String)? {
         let accessing = url.startAccessingSecurityScopedResource()
+        guard accessing else { return nil }
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
         do {
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else { return nil }
             if renewing {
                 _ = try url.bookmarkData(options: [],
                                          includingResourceValuesForKeys: nil,
@@ -348,17 +354,22 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
         guard !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }),
-              !path.contains("\\") else {
+              !path.contains("\\"), !path.contains("\0") else {
             throw ScopedStoragePluginError.invalidPath(path)
         }
 
         let root = folderUrl.resolvingSymlinksInPath().standardizedFileURL
-        let target = root.appendingPathComponent(path).resolvingSymlinksInPath().standardizedFileURL
+        return try confinedURL(root.appendingPathComponent(path), folderUrl: folderUrl, allowRoot: allowRoot)
+    }
+
+    private func confinedURL(_ url: URL, folderUrl: URL, allowRoot: Bool = false) throws -> URL {
+        let root = folderUrl.resolvingSymlinksInPath().standardizedFileURL
+        let target = url.resolvingSymlinksInPath().standardizedFileURL
         let rootComponents = root.pathComponents
         let targetComponents = target.pathComponents
-        guard targetComponents.count > rootComponents.count,
+        guard (allowRoot ? targetComponents.count >= rootComponents.count : targetComponents.count > rootComponents.count),
               Array(targetComponents.prefix(rootComponents.count)) == rootComponents else {
-            throw ScopedStoragePluginError.invalidPath(path)
+            throw ScopedStoragePluginError.invalidPath(url.lastPathComponent)
         }
         return target
     }
@@ -367,10 +378,16 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
                                         path: String,
                                         options: NSFileCoordinator.ReadingOptions = [],
                                         allowRoot: Bool = false,
+                                        materialize: Bool = true,
                                         execute: @escaping (URL) throws -> T,
                                         completion: @escaping (Result<T, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+            guard folderUrl.startAccessingSecurityScopedResource() else {
+                completion(.failure(ScopedStoragePluginError.accessRevoked))
+                return
+            }
+            defer { folderUrl.stopAccessingSecurityScopedResource() }
             let url: URL
             do {
                 url = try self.childURL(folderUrl: folderUrl, path: path, allowRoot: allowRoot)
@@ -380,19 +397,13 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             }
             let coordinator = NSFileCoordinator(filePresenter: nil)
             var coordinatorError: NSError?
-            guard folderUrl.startAccessingSecurityScopedResource() else {
-                completion(.failure(ScopedStoragePluginError.accessRevoked))
-                return
-            }
-            defer { folderUrl.stopAccessingSecurityScopedResource() }
-
-            self.materializeIfUbiquitous(url)
+            if materialize { self.materializeIfUbiquitous(url) }
 
             var value: T?
             var caughtError: Error?
             coordinator.coordinate(readingItemAt: url, options: options, error: &coordinatorError) { target in
                 do {
-                    value = try execute(target)
+                    value = try execute(self.confinedURL(target, folderUrl: folderUrl, allowRoot: allowRoot))
                 } catch {
                     caughtError = error
                 }
@@ -414,6 +425,11 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
                                          completion: @escaping (Result<T, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+            guard folderUrl.startAccessingSecurityScopedResource() else {
+                completion(.failure(ScopedStoragePluginError.accessRevoked))
+                return
+            }
+            defer { folderUrl.stopAccessingSecurityScopedResource() }
             let url: URL
             do {
                 url = try self.childURL(folderUrl: folderUrl, path: path)
@@ -423,19 +439,13 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             }
             let coordinator = NSFileCoordinator(filePresenter: nil)
             var coordinatorError: NSError?
-            guard folderUrl.startAccessingSecurityScopedResource() else {
-                completion(.failure(ScopedStoragePluginError.accessRevoked))
-                return
-            }
-            defer { folderUrl.stopAccessingSecurityScopedResource() }
-
             self.materializeIfUbiquitous(url)
 
             var value: T?
             var caughtError: Error?
             coordinator.coordinate(writingItemAt: url, options: options, error: &coordinatorError) { target in
                 do {
-                    value = try execute(target)
+                    value = try execute(self.confinedURL(target, folderUrl: folderUrl))
                 } catch {
                     caughtError = error
                 }
@@ -471,6 +481,23 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         var isDir: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
         return (exists, isDir.boolValue)
+    }
+
+    private func itemMetadata(at url: URL) throws -> [String: Any] {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let isDirectory = attributes[.type] as? FileAttributeType == .typeDirectory
+        var metadata: [String: Any] = ["isDir": isDirectory]
+        if !isDirectory, let size = attributes[.size] as? NSNumber { metadata["size"] = size.int64Value }
+        if let date = attributes[.modificationDate] as? Date {
+            metadata["mtime"] = Int64(date.timeIntervalSince1970 * 1000)
+        }
+        return metadata
+    }
+
+    private func isNotFound(_ error: Error) -> Bool {
+        let error = error as NSError
+        return (error.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code)) ||
+            (error.domain == NSPOSIXErrorDomain && error.code == 2)
     }
 
     private func dirEntry(url: URL, name: String) -> [String: Any] {
@@ -516,9 +543,11 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let nsError = error as NSError
-        let notFoundCodes: [Int] = [260, 4, 2, 43]
-        if nsError.domain == NSCocoaErrorDomain && notFoundCodes.contains(nsError.code) {
+        if isNotFound(error) {
             call.reject("File not found", "NOT_FOUND", error)
+        } else if (nsError.domain == NSCocoaErrorDomain && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(nsError.code)) ||
+                    (nsError.domain == NSPOSIXErrorDomain && [1, 13].contains(nsError.code)) {
+            call.reject("Folder access has been revoked", "ACCESS_REVOKED", error)
         } else {
             call.reject(error.localizedDescription, "UNREACHABLE", error)
         }
@@ -527,8 +556,12 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
 
 extension BabylonSlateScopedStoragePlugin: UIDocumentPickerDelegate {
     public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let url = urls.first, let call = pendingPickCall else { return }
+        guard let call = pendingPickCall else { return }
         pendingPickCall = nil
+        guard let url = urls.first else {
+            call.reject("Cancelled", "CANCELLED")
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             guard let folder = self.storeFolder(url: url, name: nil, renewing: false) else {

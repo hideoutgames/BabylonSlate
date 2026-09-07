@@ -10,6 +10,7 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
   tree.set("BabylonSlate/projects", { kind: "dir" });
 
   const normalize = (path: string) => path.replace(/\/+$/, "") || "";
+  const missing = () => Object.assign(new Error("missing"), { code: "OS-PLUG-FILE-0008" });
 
   const ensureParents = (path: string) => {
     const parts = normalize(path).split("/");
@@ -43,13 +44,13 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
           mtime: 1,
         }));
       if (!tree.has(p) && p !== "") {
-        throw new Error("missing");
+        throw missing();
       }
       return { files };
     },
     async readFile({ path }) {
       const node = tree.get(normalize(path));
-      if (!node || node.kind !== "file") throw new Error("missing");
+      if (!node || node.kind !== "file") throw missing();
       return { data: node.data ?? "" };
     },
     async writeFile({ path, data }) {
@@ -59,7 +60,7 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
       return {};
     },
     async deleteFile({ path }) {
-      if (!tree.delete(normalize(path))) throw new Error("missing");
+      if (!tree.delete(normalize(path))) throw missing();
     },
     async rmdir({ path }) {
       const p = normalize(path);
@@ -69,7 +70,7 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
     },
     async stat({ path }) {
       const node = tree.get(normalize(path));
-      if (!node) throw new Error("missing");
+      if (!node) throw missing();
       return {
         type: node.kind === "dir" ? "directory" : "file",
         size: node.data?.length ?? 0,
