@@ -27,6 +27,7 @@ import { ProjectService } from "./project-service";
 import { DocumentService } from "./document-service";
 import { createDefaultLogicGraphSerialized } from "./graph-validation";
 import { MANNEQUIN_CLASS_FILE } from "../lib/scaffold-empty-3d";
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
 const DEFAULT_3D_CLASS_FILE = `assets/${MANNEQUIN_CLASS_FILE}`;
 
@@ -39,6 +40,20 @@ async function scaffolded() {
 }
 
 describe("project documents as .babasset", () => {
+  it("refuses to save unnamed or duplicate material parameters and keeps the saved asset intact", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Named.material.babasset";
+    const doc = createDefaultMaterialDocument();
+    await service.saveDocument("material", path, doc as unknown as Record<string, unknown>);
+    const saved = await storage.readBinary(path);
+    doc.nodes.push({ id: "parameter", type: "param.float", position: { x: 0, y: 0 }, properties: { name: " " } });
+    await expect(service.saveDocument("material", path, doc as unknown as Record<string, unknown>)).rejects.toThrow(/name/i);
+    expect(await storage.readBinary(path)).toEqual(saved);
+    doc.nodes.at(-1)!.properties.name = "Tint";
+    doc.nodes.push({ id: "copy", type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint" } });
+    await expect(service.saveDocument("material", path, doc as unknown as Record<string, unknown>)).rejects.toThrow(/unique|already/i);
+    expect(await storage.readBinary(path)).toEqual(saved);
+  });
   it("H17: indexes saved scene and class assignments by asset identity, including after reload and bake", async () => {
     const { storage, service } = await scaffolded();
     const classPath = "assets/My Hero.class.babasset";

@@ -1,4 +1,5 @@
 import type { DockviewApi } from "dockview-react";
+import { normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
 import type {
   DocumentKind,
   ProjectLayouts,
@@ -1223,6 +1224,11 @@ export class ProjectService {
   ): Promise<void> {
     if (kind === "trace" || isTracePath(path)) {
       throw new Error("Trace documents are read-only");
+    }
+    if (kind === "material" || kind === "material-function") {
+      const graph = kind === "material" ? normalizeMaterialDocument(content) : normalizeMaterialFunctionDocument(content);
+      const diagnostic = validateMaterialParameterNames(graph)[0];
+      if (diagnostic) throw new Error(diagnostic.message);
     }
     if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
       throw new Error(

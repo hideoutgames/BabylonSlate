@@ -4,6 +4,7 @@ import {
   AssetPicker,
   AssetPickerControl,
   MultilineTextField,
+  NamePromptDialog,
   PanelFrame,
   PinListEditor,
   PropertyGrid,
@@ -33,6 +34,8 @@ import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import {
   MATERIAL_PREVIEW_MESHES,
   classifyMaterialCost,
+  isMaterialParameterNode,
+  materialParameterName,
   hydrateMaterialGraphForEditor,
   listUnconnectedMaterialPinDefaults,
   lowerMaterialDocument,
@@ -48,6 +51,7 @@ import {
   parseMaterialDomain,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
+  validateMaterialParameterNames,
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialFunctionPin,
@@ -291,6 +295,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           }
         />
       </div>
+      <MaterialParameterNamePrompt document={document} commit={commit} />
     </PanelFrame>
   );
 }
@@ -348,7 +353,68 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           }
         />
       </div>
+      <MaterialParameterNamePrompt document={document} commit={commit} />
     </PanelFrame>
+  );
+}
+
+/** New and pasted parameter nodes stay unnamed until the author chooses a key. */
+function MaterialParameterNamePrompt<T extends MaterialGraphDocument>({
+  document,
+  commit,
+}: {
+  document: T;
+  commit: (next: T) => void;
+}) {
+  const diagnostic = validateMaterialParameterNames(document)[0];
+  const node = document.nodes.find((entry) => entry.id === diagnostic?.nodeId);
+  const submitted = useRef(false);
+  useEffect(() => {
+    submitted.current = false;
+  }, [node?.id]);
+  if (!node) return null;
+  return (
+    <NamePromptDialog
+      key={node.id}
+      open
+      title="Name Material Parameter"
+      label="Parameter Name"
+      description={"domain" in document
+        ? "Choose a unique name to set this parameter from a Node Graph."
+        : "Choose a unique name for this function's internal parameter. Expose function inputs to control its values."
+      }
+      confirmLabel="Set Name"
+      data-testid="material-parameter-name-prompt"
+      validate={(name) =>
+        document.nodes.some((entry) =>
+          entry.id !== node.id &&
+          isMaterialParameterNode(entry.type) &&
+          materialParameterName(entry) === name,
+        )
+          ? "Parameter name is already used; choose a unique name"
+          : null
+      }
+      onSubmit={(name) => {
+        submitted.current = true;
+        commit({
+          ...document,
+          nodes: document.nodes.map((entry) => entry.id === node.id
+            ? { ...entry, properties: { ...entry.properties, name } }
+            : entry,
+          ),
+        });
+      }}
+      onOpenChange={(open) => {
+        if (open || submitted.current) return;
+        commit({
+          ...document,
+          nodes: document.nodes.filter((entry) => entry.id !== node.id),
+          edges: document.edges.filter((edge) =>
+            edge.sourceNodeId !== node.id && edge.targetNodeId !== node.id,
+          ),
+        });
+      }}
+    />
   );
 }
 
@@ -664,6 +730,15 @@ function MaterialNodeDetails({
     editing.functions,
     setProperties,
   );
+  if (isMaterialParameterNode(node.type)) {
+    rows.unshift({
+      id: "name",
+      kind: "text",
+      label: "Parameter Name",
+      value: materialParameterName(node),
+      onChange: (name) => setProperties({ name }),
+    });
+  }
   if (node.type === "const.float" || node.type === "param.float") {
     const value = Array.isArray(node.properties.value)
       ? Number(node.properties.value[0] ?? 0)
@@ -687,6 +762,19 @@ function MaterialNodeDetails({
       value: [value[0] ?? 1, value[1] ?? 1, value[2] ?? 1],
       onChange: (next) =>
         setProperties({ value: [next[0], next[1], next[2], value[3] ?? 1] }),
+    });
+  }
+  if (node.type === "param.color") {
+    const value = Array.isArray(node.properties.value)
+      ? node.properties.value as number[]
+      : [];
+    rows.push({
+      id: "value",
+      kind: "vector3",
+      label: "Default Value",
+      axes: ["X", "Y", "Z", "W"],
+      value: [value[0] ?? 1, value[1] ?? 1, value[2] ?? 1, value[3] ?? 1],
+      onChange: (next) => setProperties({ value: [...next] }),
     });
   }
   if (node.type === "const.vec2" || node.type === "const.vec3" || node.type === "const.vec4") {

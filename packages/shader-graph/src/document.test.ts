@@ -13,6 +13,36 @@ import {
 } from "./document";
 
 describe("material document", () => {
+  it("retains Color Parameter links while migrating a legacy Shader asset", () => {
+    const doc = migrateLegacyShaderPayload({
+      nodes: [
+        { id: "tint", type: "param.color", properties: { name: "Tint", value: [0.2, 0.3, 0.4] } },
+        { id: "output", type: "output.fragment", properties: {} },
+      ],
+      edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }],
+    });
+    expect(doc.edges).toEqual([{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" }]);
+  });
+  it("preserves legacy Color Parameter RGB links while upgrading its default to RGBA", () => {
+    const doc = normalizeMaterialDocument({
+      schemaVersion: 2,
+      nodes: [{ id: "tint", type: "param.color", properties: { name: "Tint", value: [0.2, 0.3, 0.4] } }],
+      edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" }],
+    });
+    expect(doc.nodes.find((node) => node.id === "tint")?.properties.value).toEqual([0.2, 0.3, 0.4, 1]);
+    expect(doc.edges[0]?.sourcePinId).toBe("rgb");
+    expect(normalizeMaterialDocument(doc)).toEqual(doc);
+  });
+
+  it("keeps new Color Parameter Vector 4 connections intact", () => {
+    const doc = normalizeMaterialDocument({
+      schemaVersion: 3,
+      nodes: [{ id: "tint", type: "param.color", properties: { name: "Tint" } }],
+      edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }],
+    });
+    expect(doc.nodes.find((node) => node.id === "tint")?.properties.value).toEqual([1, 1, 1, 1]);
+    expect(doc.edges[0]?.sourcePinId).toBe("out");
+  });
   it("creates a surface material whose default graph reaches the output", () => {
     const doc = createDefaultMaterialDocument("Rock");
     expect(doc.schemaVersion).toBe(MATERIAL_SCHEMA_VERSION);
