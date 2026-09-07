@@ -21,6 +21,17 @@ Common accountability and context, inherited by **every subcase** unless overrid
 
 Priority: W1A state integrity; W1B observation/input ownership; W1C duplication physics; W2 core graph/runtime; W3 remaining rendering/simulation; W4 usability/validation and product decisions. The next-test column also states acceptance: the identified supported behavior must hold, and listed controls must remain intact. Unresolved historical configurations remain E rather than being silently dropped.
 
+## Implementation status at this handoff
+
+All 100 numbered IDs have dispositions below. The implementation entries record evidence at the time of each change; their pending-delivery notes are historical. Delivery requires the latest revision to pass the local and PR gates.
+
+| Evidence | Covered subcases |
+| --- | --- |
+| Fixes delivered in PR #533 | Duplicate component identity (H1.4); concurrent Save/recovery writes (H6); atomic graph/scene deletion history (H10/M5.4); authored input and keyboard ownership (H13/H21/M33); Class/Material reference warnings (H17); canonical literals and edit-gesture history (H25/M4). |
+| Further fixes with passing focused tests in this batch | Spawn Actor prefab components (H2.1); recovery after Undo and asset edits (H6/M4); References dialog overflow (H9.2); custom-event declarations and legacy validation (H12/M28); asset/Class picker defaults (H25); shared actor transforms/visibility (M5.3); camera clip ordering (M19.2); repeated node placement (M29/L2). Imported-model marquee selection also has a reproduced and corrected identity defect; the historical H8 duplication outcome was not reproduced. |
+| Fresh supported configurations pass without reproducing the historical report | BeginPlay Print, Delay and Map Has (H4/H5/H14); cross-tab and Play/Preview/bake/export state controls (H6/M3/M4/M12); Script Interface creation (H18/L15); valid-target graph rewiring (H20); several Content Browser actions and Console editing paths. See the result entries for exact boundaries. |
+| Remaining high-priority evidence gaps | H1 implicit Simple collision and host parity; H3 material rendering; H7 tilemaps on a 3D host; H15 overlap dispatch; H16 animation state switching; and original-project/configuration variants throughout the register. H14 remains historically open on 450; 690 remains blocked. |
+
 ## High / Major families
 
 | ID; historical severity/confidence; anchor | Reviewed observations and provisional subcase dispositions | Current expectation / new source evidence | Next test, dependency and priority |

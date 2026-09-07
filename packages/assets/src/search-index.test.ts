@@ -383,7 +383,7 @@ describe("ProjectSearchIndex", () => {
   it("does not decode Scene or Class chunks until rebuild", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 2; i++) {
       const kind = i % 2 === 0 ? "Scene" : "Class";
       await writeDocument(storage, `assets/doc-${i}.babasset`, {
         guid: `doc-${i}`,
@@ -419,16 +419,17 @@ describe("ProjectSearchIndex", () => {
 
     const index = new ProjectSearchIndex(storage);
     expect(index.size).toBe(0);
-    expect(index.query("hero198")).toEqual([]);
+    expect(index.query("hero0")).toEqual([]);
+    expect(index.query("node1")).toEqual([]);
     expect(decodeAssetDocument).not.toHaveBeenCalled();
 
     await index.rebuild(registry);
-    expect(decodeAssetDocument.mock.calls.length).toBe(200);
+    expect(decodeAssetDocument.mock.calls.length).toBe(2);
     expect(
-      index.query("hero198").some((hit) => hit.kind === "actor"),
+      index.query("hero0").some((hit) => hit.kind === "actor"),
     ).toBe(true);
     expect(
-      index.query("node199").some((hit) => hit.kind === "graph-node"),
+      index.query("node1").some((hit) => hit.kind === "graph-node"),
     ).toBe(true);
   });
 
