@@ -1362,7 +1362,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await flushAudioReverbForSave();
       await flushNavBakeForSave();
       captureAllLayouts();
-      const dirtyDocs = documentService.getDirtyDocuments();
+      const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
       const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model");
       for (const doc of dirtyDocs) {
@@ -1407,14 +1407,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const layouts = documentService.buildLayouts();
       await projectService.saveProject(document, layouts);
-      documentService.markAllClean();
+      documentService.markAllClean(dirtyDocs);
       setMigrationPending([]);
       await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
-        await truncateJournal(derived, guid);
-        setRecoveryAvailable(false);
+        const cleared = await truncateJournal(derived, guid, () =>
+          documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+        );
+        if (cleared) setRecoveryAvailable(false);
       }
       if (savedScene) {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
@@ -1495,7 +1497,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (!projectDocument) return;
     projectService.approveMigrateOnSave();
     captureAllLayouts();
-    const dirtyDocs = documentService.getDirtyDocuments();
+    const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
     for (const doc of dirtyDocs) {
       if (
         isAssetDocumentKind(doc.ref.kind) &&
@@ -1515,7 +1517,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     const layouts = documentService.buildLayouts();
     await projectService.saveProject(projectDocument, layouts);
-    documentService.markAllClean();
+    documentService.markAllClean(dirtyDocs);
     setMigrationPending([]);
     await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
     bump();

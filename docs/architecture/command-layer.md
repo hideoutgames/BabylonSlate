@@ -73,7 +73,7 @@ Each line is one JSON object:
 ```
 
 - Append after a successful `apply` on an open document (`appendJournalLine` in derived data).
-- Clean **Close Project** and a successful **Save** truncate the journal (recovery is for _unsaved_ edits).
+- Clean **Close Project** and a successful **Save** truncate the journal (recovery is for _unsaved_ edits). Save captures the document revisions it writes; completion clears only matching revisions and retains later edits as dirty. A late older save marks a newer revision dirty again. Journal appends and clears are serialized per storage/project; Save checks that no newer dirty document or project settings exist before clearing recovery.
 - Recovery banner in the editor shell (`data-testid="recovery-prompt"`) offers **Recover edits** / **Discard journal**. Replay opens any missing journal target documents (graphs and scenes), then `replayJournalLines` → `reviveCommand` → `apply`, then truncates. One stream keyed by `docId` — not a parallel recovery path per document kind.
 - Schema version `v` allows journal migration without inventing a parallel recovery path.
 
