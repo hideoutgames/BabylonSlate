@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultScene,
+  createActor,
+  createMeshComponent,
   documentId,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
@@ -37,6 +39,53 @@ async function scaffolded() {
 }
 
 describe("project documents as .babasset", () => {
+  it("H17: indexes saved scene and class assignments by asset identity, including after reload and bake", async () => {
+    const { storage, service } = await scaffolded();
+    const classPath = "assets/My Hero.class.babasset";
+    const matPath = "assets/Assigned.material.babasset";
+    const replacementPath = "assets/Replacement.material.babasset";
+    await service.saveDocument("material", matPath, {});
+    await service.saveDocument("material", replacementPath, {});
+    const materialGuid = service.guidForPath(matPath)!;
+    const replacementGuid = service.guidForPath(replacementPath)!;
+    const mesh = createMeshComponent("mesh", "sphere");
+    mesh.properties.materialGuid = materialGuid;
+    await service.saveDocument("graph", classPath, { nodes: [], edges: [], components: [mesh] });
+    const classGuid = service.guidForPath(classPath)!;
+    const scene = {
+      ...createDefaultScene(),
+      actors: [createActor("instance", "Different Display Name", { classId: "My_Hero", components: [mesh] })],
+    };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    const sceneGuid = service.guidForPath(MAIN_SCENE_FILE)!;
+    expect(readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE)).dependencies).toEqual([classGuid, materialGuid].sort());
+    expect(service.registry!.showReferences(classGuid).inbound).toContain(sceneGuid);
+    expect(service.registry!.showReferences(materialGuid).inbound.sort()).toEqual([sceneGuid, classGuid].sort());
+
+    const reloaded = new ProjectService(storage);
+    await reloaded.loadCurrentProject();
+    expect(reloaded.registry!.showReferences(classGuid).inbound).toContain(sceneGuid);
+    expect(reloaded.registry!.showReferences(materialGuid).inbound.sort()).toEqual([sceneGuid, classGuid].sort());
+    const replacement = { ...scene, actors: scene.actors.map((actor) => ({ ...actor, components: [{ ...mesh, properties: { ...mesh.properties, materialGuid: replacementGuid } }] })) };
+    await reloaded.saveDocument("scene", MAIN_SCENE_FILE, replacement);
+    expect(reloaded.registry!.showReferences(materialGuid).inbound).toEqual([classGuid]);
+    expect(reloaded.registry!.showReferences(replacementGuid).inbound).toEqual([sceneGuid]);
+    await reloaded.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([1]), replacement as unknown as Record<string, unknown>);
+    await reloaded.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([2]), replacement as unknown as Record<string, unknown>);
+    expect(readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE)).dependencies).toEqual([classGuid, replacementGuid].sort());
+    expect(reloaded.registry!.showReferences(replacementGuid).inbound).toEqual([sceneGuid]);
+  });
+
+  it("H17: ignores identity and text fields that happen to equal an asset guid", async () => {
+    const { storage, service } = await scaffolded();
+    await service.saveDocument("material", "assets/Unassigned.material.babasset", {});
+    const guid = service.guidForPath("assets/Unassigned.material.babasset")!;
+    const scene = { ...createDefaultScene(), actors: [createActor(guid, guid, { parentId: guid, components: [{ id: guid, classId: "MeshComponent", parentId: null, sourceId: guid, properties: { label: guid, materialGuid: null, assetGuid: "" } }] })] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    expect(readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE)).dependencies).toEqual([]);
+    expect(service.registry!.showReferences(guid).inbound).toEqual([]);
+  });
+
   it("scaffolds scene and graph assets under assets/", async () => {
     const { storage, loaded } = await scaffolded();
     expect(loaded.document.scenes).toEqual([MAIN_SCENE_FILE]);
