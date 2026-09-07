@@ -82,6 +82,7 @@ describe("applyAlbedoTexture", () => {
     const overlay = mesh.material as StandardMaterial;
     expect(overlay.diffuseTexture).not.toBe(albedo);
     expect((overlay.diffuseTexture as Texture | null)?.invertY).toBe(true);
+    expect((overlay.diffuseTexture as Texture | null)?.hasAlpha).toBe(true);
     expect(overlay.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
     cache.dispose();
     scene.dispose();
