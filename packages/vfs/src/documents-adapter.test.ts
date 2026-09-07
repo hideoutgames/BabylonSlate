@@ -80,4 +80,29 @@ describe("DocumentsStorageAdapter", () => {
     await storage.openKnownFolder({ ...original, name: "Pretty Name" });
     expect(await storage.readText("project.json")).toBe("original");
   });
+
+  it("lists and reopens existing native directories even when mkdir reports already exists", async () => {
+    const mkdir = fs.mkdir.bind(fs);
+    fs.mkdir = async (options) => {
+      if (fs.tree.has(options.path)) throw { code: "OS-PLUG-FILE-0010" };
+      await mkdir(options);
+    };
+    await storage.openDocumentsProject("Game");
+    await storage.writeText("project.json", "saved");
+    await storage.releaseFolder();
+    const [handle] = await storage.listProjects();
+    expect(handle?.id).toBe("documents:Game");
+    await storage.openKnownFolder(handle!);
+    expect(await storage.readText("project.json")).toBe("saved");
+  });
+
+  it("propagates unavailable storage instead of reporting an empty destination", async () => {
+    await storage.openDocumentsProject("Game");
+    const denied = new Error("Device storage unavailable");
+    fs.stat = async () => { throw denied; };
+    fs.readdir = async () => { throw denied; };
+    await expect(storage.exists("project.json")).rejects.toBe(denied);
+    await expect(storage.stat("project.json")).rejects.toBe(denied);
+    await expect(storage.listProjects()).rejects.toBe(denied);
+  });
 });
