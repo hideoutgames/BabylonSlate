@@ -1,17 +1,19 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getPlatform = vi.fn(() => "web");
 const removeInterruption = vi.fn(() => Promise.resolve());
 const removeRouteChange = vi.fn(() => Promise.resolve());
-const addListener = vi.fn((eventName: string) =>
+const addListener = vi.fn<
+  (
+    eventName: string,
+    listener: (event: unknown) => void,
+  ) => Promise<{ remove: () => Promise<void> }>
+>((eventName) =>
   Promise.resolve({
     remove:
       eventName === "audioInterruption" ? removeInterruption : removeRouteChange,
   }),
-) as unknown as Mock<
-  [eventName: string, listener: (event: unknown) => void],
-  Promise<{ remove: () => Promise<void> }>
->;
+);
 
 vi.mock("@capacitor/core", () => ({
   Capacitor: { getPlatform: () => getPlatform() },

@@ -1,13 +1,13 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getPlatform = vi.fn(() => "web");
 const removeListener = vi.fn(() => Promise.resolve());
-const addListener = vi.fn(() =>
-  Promise.resolve({ remove: removeListener }),
-) as unknown as Mock<
-  [eventName: string, listener: (state: { isActive: boolean }) => void],
-  Promise<{ remove: () => Promise<void> }>
->;
+const addListener = vi.fn<
+  (
+    eventName: string,
+    listener: (state: { isActive: boolean }) => void,
+  ) => Promise<{ remove: () => Promise<void> }>
+>(() => Promise.resolve({ remove: removeListener }));
 
 vi.mock("@capacitor/core", () => ({
   Capacitor: { getPlatform: () => getPlatform() },
