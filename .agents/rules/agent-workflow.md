@@ -3,7 +3,7 @@
 ## Verification
 
 - Run the relevant local tests during development, then pass the full `pnpm verify` gate before opening any PR, including a draft. An attempted, failed, or unavailable run does not satisfy this gate.
-- Add or update tests for new behavior in `packages/*`.
+- Add or update meaningful tests for new behavior in `packages/*`; reuse existing coverage when it already verifies the requirement.
 - Fix local failures before opening a PR. If verification cannot run, repair the local setup where possible; otherwise report the concrete blocker and do not open a PR.
 - For local tests, Verify CI, and slot waits, read and apply [wait-efficiently](../skills/wait-efficiently/SKILL.md). Launch one foreground `pnpm --silent agent:wait` helper, retain its session, and keep polling/full logs out of the conversation. Default to start/end reporting except for host-required updates. A timeout, cancellation, stale result, or changed source is not a pass.
 
@@ -34,6 +34,14 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 
 ## Testing
 
+- Apply these rules whenever implementing or changing tests. They govern test selection alongside the test-driven-development and Vitest skills.
+- Every test must protect an observable behavior, public contract, important invariant, or plausible regression. Identify what could break and ensure the assertion would detect it.
+- For bug fixes, prefer a focused regression test that fails because of the bug and passes with the fix. For new behavior, cover the expected outcome and relevant boundary or failure cases.
+- Inspect existing coverage first. Extend an existing test when appropriate; add a separate test only when it protects a distinct requirement or failure mode.
+- Avoid unnecessary tests: duplicate scenarios, assertions that only mirror implementation details, tests of trivial constants or framework behavior, and tests that merely confirm mock setup. Do not add tests just to increase test counts or coverage percentages.
+- Test through the smallest appropriate public surface. Prefer observable results over private state, exact internal call sequences, or broad snapshots; mock external boundaries only when needed for isolation.
+- Do not add tests for documentation-only, formatting-only, or other reversible, low-impact changes without a meaningful behavioral risk. Explain why existing coverage or a focused check is sufficient when no new test is needed.
+- Keep tests deterministic and proportionate to the risk. Preserve required coverage gates, but satisfy them with meaningful cases rather than filler assertions or weakened thresholds.
 - See [docs/architecture/testing.md](../../docs/architecture/testing.md) for the Vitest projects, per-package coverage gates, and known environment limits.
 - `pnpm verify` runs the dependency-free agent-wait tests, typecheck, lint, unit tests with coverage, Playwright, and the docs build.
 
