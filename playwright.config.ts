@@ -1,4 +1,4 @@
-﻿import { defineConfig, devices } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 import { IPAD_TEST_GREP } from "./e2e/ipad-tag";
 
 const IPAD_TOUCH = {
