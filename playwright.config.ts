@@ -49,7 +49,7 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      `pnpm --filter editor build && pnpm --filter editor preview -- --host 127.0.0.1 --port ${port} --strictPort`,
+      `pnpm --filter editor build && pnpm --filter editor preview --host 127.0.0.1 --port ${port} --strictPort`,
     env: { VITE_TEST_MODE: "true" },
     url: baseURL,
     reuseExistingServer: explicitPort === undefined && !process.env.CI,

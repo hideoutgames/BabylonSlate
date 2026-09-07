@@ -6,9 +6,7 @@ import { OpfsStorageAdapter } from "./web-adapter";
 
 export function createStorage(): ProjectStorage {
   if (isMobilePlatform()) {
-    const adapter = new MobileStorageAdapter();
-    void adapter.init();
-    return adapter;
+    return new MobileStorageAdapter();
   }
   if (isElectronHost()) {
     return new ElectronStorageAdapter();

@@ -4,6 +4,8 @@
 
 ## Quiet agent waits
 
+For simultaneous worktrees, set `PLAYWRIGHT_PORT` to an unused local port before full verification. Playwright builds and starts that checkout on the selected port with server reuse disabled; the default remains 4173. Separate ports also isolate the test project's OPFS origin.
+
 Use `pnpm --silent agent:wait local --script verify` to run full verification once with complete stdout/stderr in a unique OS temporary directory. Use `local --script test -- --project node packages/core` to forward filters unchanged to other scripts. Arguments after `--` belong to the package script. `--timeout-seconds <seconds>` overrides the two-hour operation deadline. The helper launches the current `npm_execpath` entry through Node for JavaScript package managers, or directly for executable pnpm; it never executes a Windows `.cmd` shim or changes script-shell configuration.
 
 `pnpm --silent agent:wait ci --pr <number>` captures the head and discovers its latest pull-request `verify.yml` run (up to ten minutes), then runs `gh run watch --exit-status --interval 60`. Final head/run/attempt checks reject superseded results; success requires `static`, `unit`, all seven e2e shards, and no skipped/unsuccessful jobs. Other required checks and final merge gates remain the agent's responsibility. `slot --pr <number>` checks every 60 seconds for fewer than two other non-draft PRs to `main`, excluding itself and #271. Recheck capacity immediately before marking ready.

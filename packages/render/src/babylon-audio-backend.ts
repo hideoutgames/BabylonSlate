@@ -62,6 +62,8 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private muffleFilter: BiquadFilterNode | null = null;
   private unlocked = false;
   private paused = false;
+  private disposed = false;
+  private readonly pendingVoices = new Map<string, symbol>();
   onVoiceEnded: ((voiceId: string) => void) | null = null;
 
   isUnlocked(): boolean {
@@ -86,6 +88,10 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   ): Promise<{ pcmBytes: number }> {
     const engine = await this.ensureEngine();
     const buffer = await CreateSoundBufferAsync(sourceBuffer(bytes), {}, engine);
+    if (this.disposed) {
+      (buffer as { dispose?: () => void }).dispose?.();
+      throw new Error("Audio backend disposed");
+    }
     this.buffers.set(assetGuid, buffer);
     return {
       pcmBytes: Math.max(1, buffer.length * buffer.channelCount * 4),
@@ -93,24 +99,27 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   async play(request: AudioPlayRequest): Promise<void> {
-    const engine = await this.ensureEngine();
     this.stop(request.voiceId);
-    let buffer = this.buffers.get(
-      request.clipChunkId
-        ? `${request.assetGuid}:${request.clipChunkId}`
-        : request.assetGuid,
-    );
-    if (!buffer) {
-      buffer = this.buffers.get(request.assetGuid);
-    }
+    const pending = Symbol();
+    this.pendingVoices.set(request.voiceId, pending);
+    const isCurrent = () => !this.disposed && this.pendingVoices.get(request.voiceId) === pending;
+    const engine = await this.ensureEngine();
+    if (!isCurrent()) return;
+    const cacheKey = request.clipChunkId ? `${request.assetGuid}:${request.clipChunkId}` : request.assetGuid;
+    let buffer = this.buffers.get(cacheKey);
     if (!buffer) {
       buffer = await CreateSoundBufferAsync(
         sourceBuffer(request.source),
         {},
         engine,
       );
-      this.buffers.set(request.assetGuid, buffer);
+      if (this.disposed) {
+        (buffer as { dispose?: () => void }).dispose?.();
+        return;
+      }
+      this.buffers.set(cacheKey, buffer);
     }
+    if (!isCurrent()) return;
     const spatial = request.spatial;
     const sound = await CreateSoundAsync(
       request.voiceId,
@@ -137,6 +146,11 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       },
       engine,
     );
+    if (!isCurrent()) {
+      sound.dispose();
+      return;
+    }
+    this.pendingVoices.delete(request.voiceId);
     this.voices.set(request.voiceId, sound);
     sound.onEndedObservable.addOnce(() => {
       this.onVoiceEnded?.(request.voiceId);
@@ -146,12 +160,13 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   stop(voiceId: string): void {
+    this.pendingVoices.delete(voiceId);
     this.disposeMuffleSend(voiceId);
     const sound = this.voices.get(voiceId);
     if (!sound) return;
+    this.voices.delete(voiceId);
     sound.stop();
     sound.dispose();
-    this.voices.delete(voiceId);
   }
 
   setVoiceGain(voiceId: string, gain: number): void {
@@ -227,6 +242,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   setPaused(paused: boolean): void {
+    if (!paused) this.resumeAudioContext();
     if (this.paused === paused) return;
     this.paused = paused;
     let usedSoundPause = false;
@@ -237,7 +253,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     if (usedSoundPause) return;
     const ctx = this.audioContext;
     if (!ctx) return;
-    if (paused) void ctx.suspend();
+    if (paused) void ctx.suspend().catch(() => { /* The next lifecycle event can retry. */ });
     else this.resumeAudioContext();
   }
 
@@ -254,6 +270,9 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.pendingVoices.clear();
     for (const voiceId of [...this.voices.keys()]) {
       try {
         this.stop(voiceId);
@@ -297,9 +316,10 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
 
   resumeContext(): void {
     const ctx = this.audioContext;
-    if (!ctx) return;
-    if (ctx.state === "suspended") {
-      void ctx.resume();
+    if (!ctx || this.disposed) return;
+    // WebKit also exposes "interrupted", outside older DOM typings.
+    if (ctx.state !== "running" && ctx.state !== "closed") {
+      void ctx.resume().catch(() => { /* A later user gesture may be required. */ });
     }
   }
 
@@ -328,11 +348,17 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   private async ensureEngine(): Promise<AudioEngineV2> {
+    if (this.disposed) throw new Error("Audio backend disposed");
     if (this.engine) return this.engine;
     if (this.creating) return this.creating;
     this.creating = this.createEngine();
     try {
-      this.engine = await this.creating;
+      const engine = await this.creating;
+      if (this.disposed) {
+        engine.dispose();
+        throw new Error("Audio backend disposed");
+      }
+      this.engine = engine;
       return this.engine;
     } finally {
       this.creating = null;
@@ -343,11 +369,16 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     const engine = await CreateAudioEngineAsync({
       disableDefaultUI: true,
       resumeOnInteraction: false,
+      resumeOnPause: false,
       listenerEnabled: true,
     });
+    if (this.disposed) {
+      engine.dispose();
+      throw new Error("Audio backend disposed");
+    }
     this.audioContext = engineAudioContext(engine);
     for (let i = 0; i < AUDIO_SHARED_REVERB_BUSES; i += 1) {
-      this.reverbBus = await CreateAudioBusAsync(
+      const bus = await CreateAudioBusAsync(
         i === 0 ? "environmentReverb" : `environmentReverb-${i}`,
         {
           volume: 1,
@@ -355,6 +386,12 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
         },
         engine,
       );
+      if (this.disposed) {
+        bus.dispose();
+        engine.dispose();
+        throw new Error("Audio backend disposed");
+      }
+      this.reverbBus = bus;
     }
     this.attachParametricReverb(engine);
     return engine;

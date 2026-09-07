@@ -8,11 +8,14 @@ export function initializeCapacitorLifecycle(): () => void {
   }
 
   let removeListener: (() => void) | undefined;
+  let disposed = false;
 
-  void import("@capacitor/app").then(({ App }) => {
-    const handlePromise = App.addListener(
+  void import("@capacitor/app").then(async ({ App }) => {
+    if (disposed) return;
+    const handle = await App.addListener(
       "appStateChange",
       (state: AppState) => {
+        if (disposed) return;
         window.dispatchEvent(
           new CustomEvent<{ isActive: boolean }>("babylonslate:appstate", {
             detail: { isActive: state.isActive },
@@ -20,12 +23,18 @@ export function initializeCapacitorLifecycle(): () => void {
         );
       },
     );
+    if (disposed) {
+      await handle.remove();
+      return;
+    }
     removeListener = () => {
-      void handlePromise.then((handle) => handle.remove());
+      void handle.remove().catch((error: unknown) => console.warn("App lifecycle cleanup failed", error));
     };
-  });
+  }).catch((error: unknown) => console.warn("Native app lifecycle unavailable", error));
 
   return () => {
+    if (disposed) return;
+    disposed = true;
     removeListener?.();
   };
 }
