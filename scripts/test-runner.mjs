@@ -1,11 +1,9 @@
-import { pathToFileURL } from "node:url";
 import {
   acquireResources,
   inheritedLease,
   workloads,
 } from "./resource-admission.mjs";
 import {
-  commandSignal,
   pnpmCommand,
   repoRoot,
   runCommand,
@@ -51,6 +49,15 @@ export async function runStage(profile, command, args, options = {}) {
       env,
       onSpawn: (pid) => lease?.child(pid),
     });
+    process.stdout.write(
+      JSON.stringify({
+        event: "stage-result",
+        profile,
+        exitCode: result.code,
+        executionMs: result.elapsedMs,
+        queueMs: lease?.queueMs ?? 0,
+      }) + "\n",
+    );
     if (result.code !== 0)
       throw Object.assign(
         new Error(`${profile} command failed (${result.code})`),
@@ -138,6 +145,42 @@ export async function fullVerification(options = {}) {
 
 export async function runTests(mode, args, options = {}) {
   if (mode === "unit") return vitest(args, options);
+  if (mode === "tooling")
+    return runStage(
+      "unit",
+      process.execPath,
+      [
+        "--test",
+        "--test-concurrency=1",
+        ...(args.length ? args : ["scripts/*.test.mjs"]),
+      ],
+      options,
+    );
+  if (mode === "watch")
+    return runStage(
+      "dom",
+      process.execPath,
+      [
+        toolCli("vitest"),
+        "--config",
+        "vitest.workspace.ts",
+        ...args,
+        "--maxWorkers=1",
+      ],
+      options,
+    );
+  if (["typecheck", "build-all", "lint"].includes(mode)) {
+    const command =
+      mode === "lint"
+        ? ["exec", "eslint", ".", ...args]
+        : [
+            "--workspace-concurrency=1",
+            "-r",
+            mode === "build-all" ? "build" : "typecheck",
+            ...args,
+          ];
+    return runPnpm(mode === "lint" ? "unit" : "build", command, options);
+  }
   if (args.length && ["coverage", "editor", "verify"].includes(mode))
     throw new Error(
       `${mode} does not accept filters; use pnpm test for focused checks`,
@@ -160,22 +203,4 @@ export async function runTests(mode, args, options = {}) {
       : runBrowserTests(args, options);
   }
   throw new Error(`Unknown test mode: ${mode}`);
-}
-
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
-  process.chdir(repoRoot);
-  const lifetime = commandSignal();
-  try {
-    await runTests(process.argv[2], process.argv.slice(3), {
-      signal: lifetime.signal,
-    });
-  } catch (error) {
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = lifetime.signal.aborted ? 130 : (error.exitCode ?? 1);
-  } finally {
-    lifetime.dispose();
-  }
 }

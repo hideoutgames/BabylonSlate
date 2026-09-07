@@ -33,11 +33,13 @@ export function runCommand(command, args, options = {}) {
       return;
     }
     const started = Date.now();
+    const ownsGroup =
+      process.platform !== "win32" && !process.env.BL_TEST_PROCESS_GROUP;
     const child = spawn(command, args, {
       cwd: options.cwd ?? repoRoot,
-      env: options.env ?? process.env,
+      env: { ...(options.env ?? process.env), BL_TEST_PROCESS_GROUP: "1" },
       windowsHide: true,
-      detached: process.platform !== "win32",
+      detached: ownsGroup,
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
     });
     let output = "",
@@ -60,6 +62,8 @@ export function runCommand(command, args, options = {}) {
           });
           killer.once("close", done);
         });
+      } else if (!ownsGroup) {
+        child.kill("SIGTERM");
       } else {
         try {
           process.kill(-child.pid, "SIGTERM");
@@ -98,6 +102,14 @@ export function runCommand(command, args, options = {}) {
     });
     child.once("close", async (code) => {
       if (cleanup) await cleanup;
+      if (killTimer) {
+        // The leader may exit first; still reap descendants that ignored SIGTERM.
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          /* already stopped */
+        }
+      }
       clearTimeout(killTimer);
       options.signal?.removeEventListener("abort", terminate);
       resolve({

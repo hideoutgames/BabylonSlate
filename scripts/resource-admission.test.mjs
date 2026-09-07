@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { acquireResources } from "./resource-admission.mjs";
+import { acquireResources, inheritedLease } from "./resource-admission.mjs";
+import { runCommand } from "./process-runner.mjs";
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), "test admission "));
@@ -86,4 +87,57 @@ test("abandoned tickets do not block work; an impossible request fails immediate
     acquireResources({ ...small, workers: 3 }, options),
     /capacity/,
   );
+});
+
+test("separate processes share one browser budget and release all tickets", async (t) => {
+  const options = await fixture(t);
+  const eventsPath = join(options.directory, "events.jsonl");
+  const moduleUrl = new URL("./resource-admission.mjs", import.meta.url).href;
+  const script = `import {acquireResources} from ${JSON.stringify(moduleUrl)};
+    import {appendFile} from 'node:fs/promises';
+    import {setTimeout as delay} from 'node:timers/promises';
+    const lease = await acquireResources({workers:1,browsers:1,memoryGiB:1}, {directory:process.argv[1],pollMs:5,freeMemory:()=>16*1024**3});
+    await appendFile(process.argv[2], JSON.stringify({event:'start',pid:process.pid})+'\\n');
+    await delay(30);
+    await appendFile(process.argv[2], JSON.stringify({event:'end',pid:process.pid})+'\\n');
+    await lease.release();`;
+  const results = await Promise.all(
+    Array.from({ length: 4 }, () =>
+      runCommand(
+        process.execPath,
+        ["--input-type=module", "-e", script, options.directory, eventsPath],
+        { capture: true },
+      ),
+    ),
+  );
+  for (const result of results) assert.equal(result.code, 0, result.output);
+  let active = 0;
+  const rows = (await readFile(eventsPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  for (const row of rows) {
+    active += row.event === "start" ? 1 : -1;
+    assert.ok(active >= 0 && active <= 1);
+  }
+  assert.equal(rows.length, 8);
+  assert.equal(active, 0);
+  assert.deepEqual(await readdir(join(options.directory, "queue")), []);
+});
+
+test("nested commands reuse only a live lease with a matching token and sufficient capacity", async (t) => {
+  const options = await fixture(t);
+  const lease = await acquireResources(small, options);
+  const value = JSON.stringify({ ticket: lease.ticket, token: lease.token });
+  assert.equal(await inheritedLease(value, small), true);
+  assert.equal(
+    await inheritedLease(
+      JSON.stringify({ ticket: lease.ticket, token: "wrong" }),
+      small,
+    ),
+    false,
+  );
+  assert.equal(await inheritedLease(value, { ...small, browsers: 1 }), false);
+  await lease.release();
+  assert.equal(await inheritedLease(value, small), false);
 });

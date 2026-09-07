@@ -2,14 +2,13 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, writeFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { repoRoot } from "./process-runner.mjs";
-import { sourceState } from "./source-state.mjs";
+import { buildInputState } from "./source-state.mjs";
 import { runPnpm, runStage } from "./test-runner.mjs";
 
 export function artifactIdentity(source, configuration = {}) {
   const inputs = {
-    version: 1,
+    version: 2,
     source: source.digest,
-    commit: source.commit,
     node: process.version,
     platform: process.platform,
     arch: process.arch,
@@ -19,6 +18,7 @@ export function artifactIdentity(source, configuration = {}) {
   };
   return {
     ...inputs,
+    commit: source.commit,
     key: createHash("sha256").update(JSON.stringify(inputs)).digest("hex"),
   };
 }
@@ -27,7 +27,6 @@ export function verifyArtifactIdentity(actual, expected) {
     actual?.key &&
     actual.key === expected.key &&
     actual.source === expected.source &&
-    actual.commit === expected.commit &&
     actual.testMode === true &&
     actual.base === expected.base,
   );
@@ -46,7 +45,7 @@ async function validArtifact(directory, expected) {
 }
 
 export async function buildTestArtifact(options = {}) {
-  const initial = await sourceState(repoRoot);
+  const initial = await buildInputState(repoRoot);
   const identity = artifactIdentity(initial);
   const directory = join(repoRoot, ".cache", "test-build", identity.key);
   if (await validArtifact(directory, identity))
@@ -55,6 +54,10 @@ export async function buildTestArtifact(options = {}) {
   const env = {
     VITE_TEST_MODE: "true",
     VITE_BASE_PATH: "/",
+    // Git Bash must not rewrite the URL base to its Windows installation path.
+    MSYS2_ENV_CONV_EXCL: [process.env.MSYS2_ENV_CONV_EXCL, "VITE_BASE_PATH"]
+      .filter(Boolean)
+      .join(";"),
     BL_TEST_BUILD_DESTINATION: directory,
     BL_TEST_BUILD_IDENTITY: JSON.stringify(identity),
   };
@@ -86,7 +89,7 @@ export async function buildOwnedArtifact() {
   )
     throw new Error("Invalid build destination");
   if (await validArtifact(directory, expected)) return;
-  const initial = artifactIdentity(await sourceState(repoRoot));
+  const initial = artifactIdentity(await buildInputState(repoRoot));
   if (!verifyArtifactIdentity(initial, expected))
     throw new Error("Source changed while the build was queued");
   // CI static already typechecked both apps; local standalone builds include typechecks.
@@ -94,7 +97,7 @@ export async function buildOwnedArtifact() {
     await runPnpm("build", ["--filter", "player", "exec", "vite", "build"]);
     await runPnpm("build", ["--filter", "editor", "exec", "vite", "build"]);
   } else await runPnpm("build", ["--filter", "editor", "build"]);
-  const final = artifactIdentity(await sourceState(repoRoot));
+  const final = artifactIdentity(await buildInputState(repoRoot));
   if (!verifyArtifactIdentity(final, expected))
     throw new Error("Source changed during the build; artifact rejected");
   await mkdir(directory, { recursive: true });
@@ -117,7 +120,7 @@ export async function runBrowserTests(args, options = {}) {
   let artifact;
   if (process.env.BL_TEST_ARTIFACT) {
     const directory = resolve(repoRoot, process.env.BL_TEST_ARTIFACT);
-    const identity = artifactIdentity(await sourceState(repoRoot));
+    const identity = artifactIdentity(await buildInputState(repoRoot));
     if (!(await validArtifact(directory, identity)))
       throw new Error(
         "Downloaded test artifact does not match this source and toolchain",

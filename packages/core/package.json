@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node ../../scripts/test-runner.mjs unit packages/core"
+    "test": "node ../../scripts/run-tests.mjs unit packages/core"
   },
   "devDependencies": {
     "typescript": "~5.8.2"

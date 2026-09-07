@@ -39,7 +39,10 @@ function edge(
 }
 
 function loadModule(source: string): Record<string, unknown> {
-  const body = source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+  const body = source.replace(
+    /export\s+(async\s+)?function\s+/g,
+    "$1function ",
+  );
   return new Function(`${body}\nreturn { run };`)() as Record<string, unknown>;
 }
 
@@ -124,7 +127,9 @@ describe("structured flow catalog", () => {
     expect(registry.get("flow.break")?.structuredFlow?.kind).toBe("break");
     expect(registry.get("flow.doOnce")?.structuredFlow?.kind).toBe("doOnce");
     expect(registry.get("flow.doN")?.structuredFlow?.kind).toBe("doN");
-    expect(registry.get("flow.flipFlop")?.structuredFlow?.kind).toBe("flipFlop");
+    expect(registry.get("flow.flipFlop")?.structuredFlow?.kind).toBe(
+      "flipFlop",
+    );
     expect(registry.get("flow.gate")?.structuredFlow?.kind).toBe("gate");
   });
 
@@ -147,39 +152,66 @@ describe("structured flow catalog", () => {
 });
 
 describe("structured flow compile + runtime", () => {
-  it("compiles For Loop with index slots in the body and Completed after", () => {
+  it.each([
+    { firstIndex: 0, lastIndex: 2 },
+    { "default:firstIndex": 0, "default:lastIndex": 2 },
+  ])(
+    "compiles For Loop properties %j with index slots and completion",
+    (properties) => {
+      const registry = createDefaultNodeRegistry();
+      const graph: LogicGraph = {
+        id: "g",
+        kind: "event",
+        nodes: [
+          node(registry, "entry", "flow.entry"),
+          node(registry, "loop", "flow.forLoop", properties),
+          node(registry, "log", "debug.log"),
+          node(registry, "done", "debug.log", { message: "done" }),
+        ],
+        edges: [
+          edge("e1", "entry", "execOut", "loop", "execIn"),
+          edge("e2", "loop", "loopBody", "log", "execIn"),
+          edge("e3", "loop", "index", "log", "message"),
+          edge("e4", "loop", "completed", "done", "execIn"),
+        ],
+      };
+
+      const compiled = compileGraph(graph, { assetGuid: "a", registry });
+      expect(compiled.source).toMatch(/for\s*\(/);
+      const ids = compiledNodeIds(graph);
+      expect(ids.has("loop")).toBe(true);
+      expect(ids.has("log")).toBe(true);
+      expect(ids.has("done")).toBe(true);
+
+      const mod = loadModule(compiled.source);
+      const logs: string[] = [];
+      (mod.run as (ctx: unknown) => void)(stubCtx({ logs }));
+      expect(logs).toEqual(["0", "1", "2", "done"]);
+    },
+  );
+
+  it("runs every For Each element through the final integer", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "entry", "flow.entry"),
-        node(registry, "loop", "flow.forLoop", {
-          firstIndex: 0,
-          lastIndex: 2,
-        }),
+        node(registry, "loop", "flow.forEach", { array: [3, 8, 11] }),
         node(registry, "log", "debug.log"),
-        node(registry, "done", "debug.log", { message: "done" }),
       ],
       edges: [
-        edge("e1", "entry", "execOut", "loop", "execIn"),
-        edge("e2", "loop", "loopBody", "log", "execIn"),
-        edge("e3", "loop", "index", "log", "message"),
-        edge("e4", "loop", "completed", "done", "execIn"),
+        edge("start", "entry", "execOut", "loop", "execIn"),
+        edge("body", "loop", "loopBody", "log", "execIn"),
+        edge("element", "loop", "element", "log", "message"),
       ],
     };
-
-    const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toMatch(/for\s*\(/);
-    const ids = compiledNodeIds(graph);
-    expect(ids.has("loop")).toBe(true);
-    expect(ids.has("log")).toBe(true);
-    expect(ids.has("done")).toBe(true);
-
-    const mod = loadModule(compiled.source);
     const logs: string[] = [];
+    const mod = loadModule(
+      compileGraph(graph, { assetGuid: "a", registry }).source,
+    );
     (mod.run as (ctx: unknown) => void)(stubCtx({ logs }));
-    expect(logs).toEqual(["0", "1", "2", "done"]);
+    expect(logs).toEqual(["3", "8", "11"]);
   });
 
   it("snapshots For Each array iteration and runs Completed after break", () => {
@@ -229,11 +261,12 @@ describe("structured flow compile + runtime", () => {
         node(registry, "entry", "flow.entry"),
         node(registry, "loop", "flow.forEachMap", {
           map: [
-            ["k1", 1],
+            ["k1", 9],
             ["k2", 2],
           ],
         }),
         node(registry, "log", "debug.log"),
+        node(registry, "value", "debug.log"),
         node(registry, "done", "debug.log", { message: "done" }),
       ],
       edges: [
@@ -241,6 +274,8 @@ describe("structured flow compile + runtime", () => {
         edge("e2", "loop", "loopBody", "log", "execIn"),
         edge("e3", "loop", "key", "log", "message"),
         edge("e4", "loop", "completed", "done", "execIn"),
+        edge("e5", "log", "execOut", "value", "execIn"),
+        edge("e6", "loop", "value", "value", "message"),
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
@@ -249,7 +284,7 @@ describe("structured flow compile + runtime", () => {
     const mod = loadModule(compiled.source);
     const logs: string[] = [];
     (mod.run as (ctx: unknown) => void)(stubCtx({ logs }));
-    expect(logs).toEqual(["k1", "k2", "done"]);
+    expect(logs).toEqual(["k1", "9", "k2", "2", "done"]);
   });
 
   it("instruments each For Loop iteration only when instrumentInfiniteLoops is set", () => {
@@ -320,7 +355,9 @@ describe("structured flow compile + runtime", () => {
       ],
     };
     const seqSrc = compileGraph(seqGraph, { assetGuid: "a", registry }).source;
-    expect(seqSrc.indexOf("ctx.log")).toBeLessThan(seqSrc.lastIndexOf("ctx.log"));
+    expect(seqSrc.indexOf("ctx.log")).toBeLessThan(
+      seqSrc.lastIndexOf("ctx.log"),
+    );
   });
 
   it("anchors For Loop body lines to the loop node id", () => {

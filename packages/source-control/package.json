@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node ../../scripts/test-runner.mjs unit packages/source-control"
+    "test": "node ../../scripts/run-tests.mjs unit packages/source-control"
   },
   "dependencies": {
     "@babylonslate/core": "workspace:*"

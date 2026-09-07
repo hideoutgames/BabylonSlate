@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node ../../scripts/test-runner.mjs unit packages/render"
+    "test": "node ../../scripts/run-tests.mjs unit packages/render"
   },
   "dependencies": {
     "@babylonjs/core": "^9.20.0",

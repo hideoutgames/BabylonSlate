@@ -13,7 +13,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // Shared origin OPFS (`TestProject`) cannot run two browser workers at once.
+  // One browser worker per admitted run keeps local memory and CPU use bounded.
   workers: 1,
   reporter: [["list"], ["json", { outputFile: "test-results/timings.json" }]],
   globalSetup: "./e2e/verify-test-server.ts",

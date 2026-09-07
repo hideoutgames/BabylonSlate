@@ -34,3 +34,16 @@ test("build identity changes with source, toolchain and build configuration", ()
     false,
   );
 });
+
+test("unchanged build inputs reuse the artifact across test-only commits", () => {
+  const first = artifactIdentity({
+    commit: "one",
+    digest: "same-build-inputs",
+  });
+  const second = artifactIdentity({
+    commit: "two",
+    digest: "same-build-inputs",
+  });
+  assert.equal(first.key, second.key);
+  assert.equal(verifyArtifactIdentity(first, second), true);
+});

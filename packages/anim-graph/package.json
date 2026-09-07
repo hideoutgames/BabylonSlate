@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node ../../scripts/test-runner.mjs unit packages/anim-graph"
+    "test": "node ../../scripts/run-tests.mjs unit packages/anim-graph"
   },
   "dependencies": {
     "@babylonslate/core": "workspace:*"

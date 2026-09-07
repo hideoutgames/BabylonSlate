@@ -134,7 +134,7 @@ export async function runAgentWait(options, context = {}) {
       let termination;
       const child = spawn(prefix[0], [...prefix.slice(1), ...args], {
         cwd,
-        env,
+        env: { ...env, BL_TEST_PROCESS_GROUP: "1" },
         windowsHide: true,
         detached: process.platform !== "win32",
         stdio: ["ignore", capture ? "pipe" : fd, fd],

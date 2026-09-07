@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node ../../scripts/test-runner.mjs unit packages/test-kit"
+    "test": "node ../../scripts/run-tests.mjs unit packages/test-kit"
   },
   "dependencies": {
     "@babylonslate/bridge": "workspace:*",
