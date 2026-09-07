@@ -13,6 +13,27 @@ import {
 } from "./document";
 
 describe("material document", () => {
+  it("gives legacy parameters stable unique names without taking existing authored names", () => {
+    const doc = normalizeMaterialDocument({
+      schemaVersion: 2,
+      nodes: [
+        { id: "unnamed", type: "param.color", properties: {} },
+        { id: "authored", type: "param.color", properties: { name: "Color Parameter" } },
+        { id: "scale", type: "param.float", properties: { name: "Scale" } },
+        { id: "duplicate", type: "param.texture", properties: { name: "Scale" } },
+      ],
+    });
+    expect(doc.nodes.filter((node) => node.type.startsWith("param.")).map((node) => node.properties.name)).toEqual(["Color Parameter 2", "Color Parameter", "Scale", "Scale 2"]);
+    expect(normalizeMaterialDocument(doc)).toEqual(doc);
+  });
+
+  it("migrates missing function parameter names without naming new current-schema nodes", () => {
+    const legacy = normalizeMaterialFunctionDocument({ schemaVersion: 1, nodes: [{ id: "value", type: "param.float", properties: {} }] });
+    expect(legacy.nodes.find((node) => node.id === "value")?.properties.name).toBe("Float Parameter");
+    expect(normalizeMaterialFunctionDocument(legacy)).toEqual(legacy);
+    const current = normalizeMaterialDocument({ schemaVersion: 3, nodes: [{ id: "value", type: "param.float", properties: {} }] });
+    expect(current.nodes.find((node) => node.id === "value")?.properties.name).toBeUndefined();
+  });
   it("retains Color Parameter links while migrating a legacy Shader asset", () => {
     const doc = migrateLegacyShaderPayload({
       nodes: [

@@ -5,6 +5,7 @@ import {
   terminalNodeTypeFor,
 } from "./catalog";
 import type { MaterialValueType } from "./types";
+import { isMaterialParameterNode, materialParameterName } from "./parameters";
 
 export const MATERIAL_SCHEMA_VERSION = 3;
 export const MATERIAL_FUNCTION_SCHEMA_VERSION = 2;
@@ -367,7 +368,10 @@ export function normalizeMaterialDocument(
 ): MaterialDocument {
   const record = asRecord(value);
   const domain = parseMaterialDomain(record.domain);
-  const nodes = withTerminal(normalizeNodes(record.nodes), domain);
+  const nodes = withTerminal(
+    normalizeLegacyParameterNames(record, normalizeNodes(record.nodes), MATERIAL_SCHEMA_VERSION),
+    domain,
+  );
   return {
     schemaVersion: Math.max(asNumber(record.schemaVersion, MATERIAL_SCHEMA_VERSION), MATERIAL_SCHEMA_VERSION),
     name: asString(record.name, fallbackName),
@@ -397,6 +401,30 @@ function normalizeColorParameterEdges(
   if (asNumber(record.schemaVersion, 0) >= currentVersion) return edges;
   const colorIds = new Set(nodes.filter((node) => node.type === "param.color").map((node) => node.id));
   return edges.map((edge) => colorIds.has(edge.sourceNodeId) && edge.sourcePinId === "out" ? { ...edge, sourcePinId: "rgb" } : edge);
+}
+
+/** Upgrade old authoring, which allowed unnamed and duplicate parameters. */
+function normalizeLegacyParameterNames(
+  record: Record<string, unknown>,
+  nodes: MaterialGraphNode[],
+  currentVersion: number,
+): MaterialGraphNode[] {
+  if (asNumber(record.schemaVersion, 0) >= currentVersion) return nodes;
+  const reserved = new Set(nodes.filter((node) => isMaterialParameterNode(node.type)).map(materialParameterName));
+  const used = new Set<string>();
+  return nodes.map((node) => {
+    if (!isMaterialParameterNode(node.type)) return node;
+    let name = materialParameterName(node);
+    if (!name || used.has(name)) {
+      const base = name || materialNodeDefinition(node.type)!.title;
+      name = base;
+      let suffix = 2;
+      while (reserved.has(name) || used.has(name)) name = `${base} ${suffix++}`;
+      reserved.add(name);
+    }
+    used.add(name);
+    return { ...node, properties: { ...node.properties, name } };
+  });
 }
 
 function normalizeFunctionPins(
@@ -461,7 +489,7 @@ export function normalizeMaterialFunctionDocument(
   fallbackName = "Material Function",
 ): MaterialFunctionDocument {
   const record = asRecord(value);
-  const nodes = normalizeNodes(record.nodes);
+  const nodes = normalizeLegacyParameterNames(record, normalizeNodes(record.nodes), MATERIAL_FUNCTION_SCHEMA_VERSION);
   const withPlumbing = [...nodes];
   if (!withPlumbing.some((node) => node.type === "function.input")) {
     withPlumbing.unshift({
@@ -516,7 +544,7 @@ export function migrateLegacyShaderPayload(
   context: LegacyShaderMigrationContext = {},
 ): MaterialDocument {
   const record = asRecord(value);
-  const legacyNodes = normalizeNodes(record.nodes);
+  const legacyNodes = normalizeLegacyParameterNames(record, normalizeNodes(record.nodes), MATERIAL_SCHEMA_VERSION);
   const hasPostTerminal = legacyNodes.some(
     (node) => node.type === "output.postProcess",
   );

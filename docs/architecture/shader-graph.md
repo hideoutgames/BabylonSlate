@@ -72,6 +72,8 @@ name errors before writing the asset.
 The naming dialog tracks newly added or pasted nodes only. Invalid names in an
 existing or loaded graph remain editable in Details; cancelling a naming dialog
 cannot remove those nodes or their links.
+Schema upgrades give legacy unnamed or duplicate parameters deterministic unique
+names while preserving existing authored names, so older materials keep rendering.
 
 Runtime parameter setters expose parameters on the root Material graph. Material
 Function parameters remain internal defaults; expose function inputs to pass
