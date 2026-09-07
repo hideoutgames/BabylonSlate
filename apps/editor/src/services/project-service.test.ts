@@ -130,6 +130,41 @@ describe("project round-trip", () => {
     );
   });
 
+  it("refuses template creation over an existing chosen project and preserves its audio", async () => {
+    const storage = new MemoryStorageAdapter("external");
+    await storage.pickProjectFolder();
+    await storage.writeText(PROJECT_FILE, '{"guid":"original"}');
+    await storage.writeBinary("assets/song.wav", new Uint8Array([1, 2, 3]));
+    const service = new ProjectService(storage);
+    await expect(service.createFromTemplate({
+      name: "Replacement",
+      pickFolder: true,
+      templateFiles: [{ path: PROJECT_FILE, data: new TextEncoder().encode('{"guid":"template"}') }],
+    })).rejects.toThrow(/already exists/i);
+    expect(await storage.readText(PROJECT_FILE)).toBe('{"guid":"original"}');
+    expect(await storage.readBinary("assets/song.wav")).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("does not scaffold a new project when reconnect selects an empty folder", async () => {
+    const storage = new MemoryStorageAdapter("external");
+    const service = new ProjectService(Object.assign(storage, {
+      reconnectFolder: () => storage.pickProjectFolder(),
+    }));
+    await expect(service.reconnect()).rejects.toThrow(/project/i);
+    expect(await storage.readdir("")).toEqual([]);
+  });
+
+  it("rejects an array manifest during reconnect", async () => {
+    const storage = new MemoryStorageAdapter("external");
+    await storage.pickProjectFolder();
+    await storage.writeText(PROJECT_FILE, "[]");
+    const service = new ProjectService(Object.assign(storage, {
+      reconnectFolder: async () => storage.getCurrentFolder()!,
+    }));
+    await expect(service.reconnect()).rejects.toThrow("Invalid project manifest");
+    expect(await storage.readText(PROJECT_FILE)).toBe("[]");
+  });
+
   it("rewrites metadata.name without renaming the folder", async () => {
     localStorage.clear();
     const storage = new WebStorageAdapter();

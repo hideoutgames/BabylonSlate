@@ -106,4 +106,27 @@ describe("Capacitor audio lifecycle bridge", () => {
     expect(removeInterruption).toHaveBeenCalled();
     expect(removeRouteChange).toHaveBeenCalled();
   });
+
+  it("removes pending registrations after early cleanup and suppresses their events", async () => {
+    const listener = vi.fn();
+    window.addEventListener("babylonslate:audiointerruption", listener);
+    const cleanup = initializeCapacitorAudioLifecycle();
+    cleanup();
+    await flushAsync();
+    expect(removeInterruption).toHaveBeenCalledOnce();
+    expect(removeRouteChange).toHaveBeenCalledOnce();
+    addListener.mock.calls[0]?.[1]({ type: "began" });
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener("babylonslate:audiointerruption", listener);
+  });
+
+  it("handles rejected native audio registration without an unhandled rejection", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    addListener.mockRejectedValueOnce(new Error("Plugin unavailable"));
+    const cleanup = initializeCapacitorAudioLifecycle();
+    await flushAsync();
+    cleanup();
+    expect(warning).toHaveBeenCalled();
+    warning.mockRestore();
+  });
 });

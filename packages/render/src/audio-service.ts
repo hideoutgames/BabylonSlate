@@ -24,6 +24,7 @@ import {
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { AudioDebugVoiceSnapshot } from "./audio-debug";
 import { AudioBufferCache } from "./audio-buffer-cache";
+import { attachAudioLifecycle } from "./audio-lifecycle";
 import type {
   AudioPlaybackBackend,
   AudioPlayRequest,
@@ -155,10 +156,7 @@ export class AudioService {
   private unlocking: Promise<void> | null = null;
   private work: Promise<void> = Promise.resolve();
   private sessionGlobalVolume: number | null = null;
-  private userPaused = false;
-  private lifecyclePaused = false;
-  private readonly lifecycleTarget?: EventTarget;
-  private removeLifecycleListeners?: () => void;
+  private readonly lifecycle: ReturnType<typeof attachAudioLifecycle>;
   private lastGain: number | null = null;
   private lastDistance: number | null = null;
   private wet = 0;
@@ -197,16 +195,13 @@ export class AudioService {
     this.loadSourceBytes = options.loadSourceBytes;
     this.now = options.now ?? (() => performance.now());
     this.random = options.random ?? Math.random;
-    this.lifecycleTarget =
-      options.lifecycleTarget ??
-      (typeof window !== "undefined" ? window : undefined);
+    this.lifecycle = attachAudioLifecycle(this.backend, options.lifecycleTarget);
     this.backend.onVoiceEnded = (voiceId) => {
       const voice = this.voices.get(voiceId);
       if (!voice || voice.loop) return;
       this.stopVoice(voiceId);
       this.onVoiceEnded?.(voiceId);
     };
-    this.attachLifecycleListeners();
     this.publishStats();
     void this.backend.warmAsync().catch(() => undefined);
   }
@@ -294,8 +289,7 @@ export class AudioService {
   }
 
   setPaused(paused: boolean): void {
-    this.userPaused = paused;
-    this.applyPaused();
+    this.lifecycle.setPaused(paused);
   }
 
   setAudioBudget(bytes: number, enabled: boolean): void {
@@ -307,42 +301,6 @@ export class AudioService {
     if (!Number.isFinite(maxVoices)) return;
     this.maxVoices = Math.max(1, Math.round(maxVoices));
     this.stealToCap();
-  }
-
-  private applyPaused(): void {
-    this.backend.setPaused(this.userPaused || this.lifecyclePaused);
-  }
-
-  private attachLifecycleListeners(): void {
-    const target = this.lifecycleTarget;
-    if (!target) return;
-
-    const onInterruption = (event: Event) => {
-      const detail = (event as CustomEvent<{ type: string; shouldResume?: boolean }>).detail;
-      if (!detail) return;
-      if (detail.type === "began") {
-        this.lifecyclePaused = true;
-        this.applyPaused();
-      } else if (detail.type === "ended") {
-        this.lifecyclePaused = false;
-        if (detail.shouldResume !== false) {
-          this.applyPaused();
-        }
-      }
-    };
-
-    const onRouteChange = () => {
-      if (this.userPaused || this.lifecyclePaused) return;
-      this.backend.resumeContext();
-    };
-
-    target.addEventListener("babylonslate:audiointerruption", onInterruption);
-    target.addEventListener("babylonslate:audioroutechange", onRouteChange);
-
-    this.removeLifecycleListeners = () => {
-      target.removeEventListener("babylonslate:audiointerruption", onInterruption);
-      target.removeEventListener("babylonslate:audioroutechange", onRouteChange);
-    };
   }
 
   private releaseEvictedClip(cacheKey: string): void {
@@ -364,6 +322,7 @@ export class AudioService {
   }
 
   async unlockAsync(): Promise<void> {
+    this.lifecycle.resumeFromGesture();
     if (this.unlocked) return;
     if (this.unlocking) return this.unlocking;
     this.unlocking = this.backend.unlockAsync().then(async () => {
@@ -426,7 +385,7 @@ export class AudioService {
   }
 
   dispose(): void {
-    this.removeLifecycleListeners?.();
+    this.lifecycle.dispose();
     for (const voiceId of [...this.voices.keys()]) {
       this.stopVoice(voiceId);
     }

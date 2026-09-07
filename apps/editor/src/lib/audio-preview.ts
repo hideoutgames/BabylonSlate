@@ -4,7 +4,7 @@ import {
   resolveAudioPitch,
   type AudioPayload,
 } from "@babylonslate/assets";
-import type { AudioPlaybackBackend } from "@babylonslate/render";
+import { attachAudioLifecycle, type AudioPlaybackBackend } from "@babylonslate/render";
 
 export function stopAudioPreviewElement(element: {
   pause(): void;
@@ -31,8 +31,6 @@ export type AudioPreviewSession = {
   dispose(): void;
 };
 
-const PREVIEW_VOICE_ID = "preview";
-
 export function createAudioPreviewSession(options: {
   backend: AudioPlaybackBackend;
   readChunk: (chunkId: string) => Promise<Uint8Array | null | undefined>;
@@ -43,6 +41,13 @@ export function createAudioPreviewSession(options: {
   const cache = new Map<string, Uint8Array>();
   const random = options.random ?? Math.random;
   let voiceId: string | null = null;
+  let sequence = 0;
+  let disposed = false;
+  const lifecycle = attachAudioLifecycle(options.backend);
+  const warm = options.backend.warmAsync();
+  void warm.catch(() => {
+    if (!disposed) options.onError?.({ code: "audio.engine_unavailable", message: "Audio preview is unavailable." });
+  });
 
   const stop = () => {
     if (!voiceId) return;
@@ -60,9 +65,11 @@ export function createAudioPreviewSession(options: {
 
   return {
     async prefetch(payload: AudioPayload | Record<string, unknown>) {
+      await warm;
       const audio = normalizeAudioPayload(payload);
       for (const clip of audio.clips) {
         const bytes = await options.readChunk(clip.chunkId);
+        if (disposed) return;
         if (bytes && bytes.byteLength > 0) cache.set(clip.chunkId, bytes);
       }
     },
@@ -70,7 +77,8 @@ export function createAudioPreviewSession(options: {
       return cache.get(chunkId);
     },
     play(payload: AudioPayload | Record<string, unknown>): AudioPreviewPlayResult {
-      void options.backend.unlockAsync();
+      if (disposed) return { ok: false, code: "audio.preview_disposed", message: "Audio preview is closed." };
+      lifecycle.resumeFromGesture();
       const audio = normalizeAudioPayload(payload);
       const clip = pickWeightedAudioClip(audio.clips, random);
       const bytes = cache.get(clip.chunkId);
@@ -83,9 +91,16 @@ export function createAudioPreviewSession(options: {
       }
       const pitch = resolveAudioPitch(audio, random);
       stop();
-      voiceId = PREVIEW_VOICE_ID;
+      const id = `preview-${++sequence}`;
+      voiceId = id;
+      const failed = () => {
+        if (voiceId !== id || disposed) return;
+        stop();
+        options.onError?.({ code: "audio.play_failed", message: "Audio playback failed; preview stopped." });
+      };
+      void options.backend.unlockAsync().catch(failed);
       const playWork = options.backend.play({
-        voiceId: PREVIEW_VOICE_ID,
+        voiceId: id,
         assetGuid: "preview",
         source: bytes,
         gain: audio.volume,
@@ -94,24 +109,27 @@ export function createAudioPreviewSession(options: {
         reverbSend: false,
         clipChunkId: clip.chunkId,
       });
-      options.backend.setVoicePlaybackRate(PREVIEW_VOICE_ID, pitch);
-      void playWork.catch(() => {
-        stop();
-        options.onError?.({
-          code: "audio.play_failed",
-          message: "Audio playback failed; preview stopped.",
-        });
-      });
+      void playWork.then(() => {
+        if (voiceId !== id || disposed) {
+          options.backend.stop(id);
+          return;
+        }
+        options.backend.setVoicePlaybackRate(id, pitch);
+      }).catch(failed);
       return {
         ok: true,
-        voiceId: PREVIEW_VOICE_ID,
+        voiceId: id,
         clipChunkId: clip.chunkId,
         pitch,
       };
     },
     stop,
     dispose() {
+      if (disposed) return;
+      disposed = true;
       stop();
+      lifecycle.dispose();
+      options.backend.onVoiceEnded = null;
       cache.clear();
       options.backend.dispose();
     },

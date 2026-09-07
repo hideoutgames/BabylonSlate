@@ -1638,6 +1638,26 @@ describe("AudioService lifecycle events", () => {
     );
     expect(backend.paused).toBe(true);
 
+    const resumeContext = vi.spyOn(backend, "resumeContext");
+    target.dispatchEvent(new Event("babylonslate:audioroutechange"));
+    service.setPaused(false);
+    expect(backend.paused).toBe(true);
+    expect(resumeContext).not.toHaveBeenCalled();
+    await service.unlockAsync();
+    expect(backend.paused).toBe(false);
+
+    service.dispose();
+  });
+
+  it("keeps audio paused while the native app is inactive after an interruption ends", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const target = new EventTarget();
+    const service = new AudioService({ backend, lifecycleTarget: target });
+    target.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
+    target.dispatchEvent(new CustomEvent("babylonslate:audiointerruption", { detail: { type: "ended", shouldResume: true } }));
+    expect(backend.paused).toBe(true);
+    target.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+    expect(backend.paused).toBe(false);
     service.dispose();
   });
 

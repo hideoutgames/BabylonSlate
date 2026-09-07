@@ -5,6 +5,7 @@ import type {
   ProjectStorage,
 } from "@babylonslate/core";
 import { Preferences } from "@capacitor/preferences";
+import { projectRelativePath as scopedStoragePath } from "./project-path";
 import type {
   BabylonSlateScopedStoragePlugin,
   NativeDirEntry,
@@ -71,24 +72,6 @@ function toFileStat(stat: NativeFileStat): FileStat {
   };
 }
 
-function scopedStoragePath(path: string, allowRoot: boolean): string {
-  if (path === "") {
-    if (allowRoot) return path;
-    throw new Error("Cannot mutate or read the project root as a file");
-  }
-  if (
-    path.startsWith("/") ||
-    path.startsWith("\\") ||
-    path.includes("\\") ||
-    path
-      .split("/")
-      .some((part) => part === "" || part === "." || part === "..")
-  ) {
-    throw new Error(`Path escapes project root: ${path}`);
-  }
-  return path;
-}
-
 /**
  * Opt-in external-folder tier via our own Capacitor scoped-storage plugin.
  * Bookmarks are kept in native storage keyed by a stable folder id.
@@ -133,26 +116,29 @@ export class ScopedStorageAdapter implements ProjectStorage {
   async init(): Promise<void> {
     const { value } = await Preferences.get({ key: FOLDER_PREF_KEY });
     if (value) {
-      this.folder = JSON.parse(value) as FolderRef;
+      try {
+        const folder: unknown = JSON.parse(value);
+        if (folder && typeof folder === "object" && "id" in folder &&
+            typeof folder.id === "string" && folder.id &&
+            (!("name" in folder) || typeof folder.name === "string")) {
+          this.folder = folder as FolderRef;
+        }
+      } catch {
+        // Invalid old preferences must not prevent opening local projects.
+      }
     }
     const stale = await Preferences.get({ key: STALE_PREF_KEY });
-    this.stale = stale.value === "1";
+    this.stale = !!this.folder && stale.value === "1";
 
     if (this.folder && isLegacyBookmark(this.folder.id)) {
-      await this.withScope(async () => {
-        if (!this.folder || !this.plugin.importBookmark) {
-          return;
-        }
-        const { folder } = await this.plugin.importBookmark({
-          bookmark: this.folder.id,
-          name: this.folder.name,
-        });
-        this.folder = folder;
-        await Preferences.set({
-          key: FOLDER_PREF_KEY,
-          value: JSON.stringify(this.folder),
-        });
-      });
+      try {
+        await this.openKnownFolder(toHandle(this.folder));
+      } catch {
+        // An offline legacy provider must not block the Documents tier.
+        // Keep its identity for a later explicit reconnect instead.
+        this.stale = true;
+        await Preferences.set({ key: STALE_PREF_KEY, value: "1" });
+      }
     }
   }
 
@@ -178,9 +164,29 @@ export class ScopedStorageAdapter implements ProjectStorage {
   async openKnownFolder(
     handle: ProjectFolderHandle,
   ): Promise<ProjectFolderHandle> {
-    const { folder } = await this.withScope(() =>
-      this.plugin.openFolder({ id: handle.id }),
-    );
+    if (handle.tier !== "external") throw new Error("Expected an external project folder");
+    let folder: FolderRef;
+    try {
+      if (isLegacyBookmark(handle.id)) {
+        if (!this.plugin.importBookmark) throw { code: ScopedStorageErrorCode.Stale };
+        ({ folder } = await this.plugin.importBookmark({ bookmark: handle.id, name: handle.name }));
+      } else {
+        ({ folder } = await this.plugin.openFolder({ id: handle.id }));
+      }
+    } catch (error) {
+      if (isScopedStorageError(error, ScopedStorageErrorCode.Stale) ||
+          isScopedStorageError(error, ScopedStorageErrorCode.AccessRevoked) ||
+          isScopedStorageError(error, ScopedStorageErrorCode.NotFound)) {
+        this.folder = { id: handle.id, name: handle.name };
+        this.stale = true;
+        await Preferences.set({ key: FOLDER_PREF_KEY, value: JSON.stringify(this.folder) });
+        await Preferences.set({ key: STALE_PREF_KEY, value: "1" });
+        if (isScopedStorageError(error, ScopedStorageErrorCode.NotFound)) {
+          throw new Error("Project folder access is missing; reconnect required", { cause: error });
+        }
+      }
+      throw error;
+    }
     this.folder = folder;
     this.stale = false;
     await Preferences.set({
@@ -210,8 +216,16 @@ export class ScopedStorageAdapter implements ProjectStorage {
     return this.stale;
   }
 
-  async reconnectFolder(): Promise<ProjectFolderHandle> {
-    return this.pickProjectFolder();
+  async reconnectFolder(validate?: (candidate: ProjectStorage) => Promise<void>): Promise<ProjectFolderHandle> {
+    const { folder } = await this.plugin.pickFolder();
+    const candidate = new ScopedStorageAdapter(this.plugin);
+    candidate.folder = folder;
+    await validate?.(candidate);
+    this.folder = folder;
+    this.stale = false;
+    await Preferences.set({ key: FOLDER_PREF_KEY, value: JSON.stringify(folder) });
+    await Preferences.set({ key: STALE_PREF_KEY, value: "0" });
+    return toHandle(folder);
   }
 
   async readText(path: string): Promise<string> {
