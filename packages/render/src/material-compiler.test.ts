@@ -569,7 +569,7 @@ describe("material compiler", () => {
         id: "tex",
         type: "param.texture",
         position: { x: 0, y: 0 },
-        properties: { textureGuid: "tex-1" },
+        properties: { name: "Albedo", textureGuid: "tex-1" },
       },
       {
         id: "texUv",
@@ -848,7 +848,7 @@ describe("material compiler", () => {
       id: "sample",
       type: "texture.sample",
       position: { x: 0, y: 0 },
-      properties: { textureGuid: "tex-1" },
+      properties: { name: "Albedo", textureGuid: "tex-1" },
     });
     doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
     doc.edges.push({
@@ -882,7 +882,7 @@ describe("material compiler", () => {
         id: "tex",
         type: "param.texture",
         position: { x: 0, y: 0 },
-        properties: { textureGuid: "tex-1" },
+        properties: { name: "Albedo", textureGuid: "tex-1" },
       },
       {
         id: "sample",
@@ -1133,7 +1133,7 @@ describe("material compiler", () => {
         id: "tex",
         type: "param.texture",
         position: { x: 0, y: 0 },
-        properties: { textureGuid: "tex-1" },
+        properties: { name: "Albedo", textureGuid: "tex-1" },
       },
       {
         id: "sample",
@@ -1194,7 +1194,7 @@ describe("material compiler", () => {
         id: "tex",
         type: "param.texture",
         position: { x: 0, y: 0 },
-        properties: { textureGuid: "tex-1" },
+        properties: { name: "Albedo", textureGuid: "tex-1" },
       },
       {
         id: "sample",

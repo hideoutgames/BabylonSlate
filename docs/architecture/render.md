@@ -8,7 +8,7 @@ Overlay Play also collects Texture literals from **Set Material Texture Paramete
 
 - `setMaterialParameter` carries a captured Material asset, actor slot, optional component, parameter name, and typed Float / RGBA Color / Texture value. Stale assignments are ignored.
 - A MeshComponent shares the compiled default until its first parameter update. `MaterialLibrary` then compiles a private instance for that component; sibling meshes and the asset defaults are unchanged. Values survive mesh rebuilds and imported model loading. Reassignment, despawn, and Scene disposal release private instances.
-- Parameter names bind to `InputBlock` uniforms or every Texture Sample connected to a Texture Parameter. Color Parameters expose RGBA plus an RGB output. Updates reset the Scene's cached material so frozen Play materials upload changed values; texture changes dirty sampler definitions and watch pending loads. Shared ResourceCache textures remain engine-owned.
+- Parameter names bind to `InputBlock` uniforms or every Texture Sample connected to a Texture Parameter. Color Parameters expose RGBA plus an RGB output. Updates reset the Scene's cached material so frozen Play materials upload changed values; texture changes dirty sampler definitions and watch pending loads. None binds a neutral white sampler rather than leaving an earlier WebGL texture bound. Shared ResourceCache textures remain engine-owned. Invalid names, types, values, or missing textures preserve the last accepted override.
 
 ## Project-lifetime Engine
 
