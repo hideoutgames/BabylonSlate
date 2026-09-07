@@ -1,19 +1,47 @@
 # Agent instructions
 
-Agent workflow, git automation, and architecture rules live in `.cursor/rules/agent-workflow.mdc` (always applied).
+This is the entry point for every agent working in BabylonSlate. Paths below are relative to the repository root. `.agents/rules/` is a repository convention: read the files explicitly; do not assume your host loads them. Repository policies take precedence over imported skill examples, subject to higher-priority host and user instructions.
 
-The engine architecture and delivery plan is in [docs/engineplan.md](docs/engineplan.md).
+## Required reading
 
-Subagent model allowlist (hard): Task / subagents may inherit, or use Composer 2.5 / Grok 4.5 / Grok 4.6 at low, medium, high, or extra-high — never Fast. Claude/Sonnet and other families are forbidden. Details in [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
+Read these rules in full at the start of each task:
 
-Never AI-generate artwork, videos, icons, 3D models, or similar media. Details in [.cursor/rules/no-ai-artwork.mdc](.cursor/rules/no-ai-artwork.mdc).
+- [Workflow, architecture, verification, git, and model policy](.agents/rules/agent-workflow.md)
+- [No AI-generated artwork](.agents/rules/no-ai-artwork.md)
+- [Standard GitHub runners only](.agents/rules/github-actions-standard-runners.md)
+- [PR cadence](.agents/rules/github-actions-pr-cadence.md)
+- [DockView asset editor tabs](.agents/rules/dockview-editor-tabs.md)
 
-Never use or enable GitHub Actions larger runners — standard hosted runners only. Details in [.cursor/rules/github-actions-standard-runners.mdc](.cursor/rules/github-actions-standard-runners.mdc).
+Never generate artwork or use larger GitHub runners. Keep PRs draft until local `pnpm verify` passes; mark ready once only when fewer than two counted non-draft PRs target `main` (#271 is excluded). If both slots are occupied, leave the draft and stop. Public PR descriptions contain only a short change summary, without attribution, session links, secrets, or logs.
 
-PRs stay draft until local `pnpm verify` passes; mark ready once **only if fewer than 2 counted non-draft PRs target `main`**. **[#271](https://github.com/hideoutgames/BabylonSlate/pull/271) is excluded** from that cap. Verify is 9 jobs (`static` + unsharded `unit` + 7 e2e shards). If both slots are taken, leave the draft and stop — a human marks ready. Details in [.cursor/rules/github-actions-pr-cadence.mdc](.cursor/rules/github-actions-pr-cadence.mdc).
+The authoritative architecture and delivery plan is [docs/engineplan.md](docs/engineplan.md). Do not re-add the removed game HUD / UserInterface system.
 
-This repo is public. PR descriptions are a short summary of the changes and nothing else — never agent session links, attribution footers, secrets, or log dumps. Details in [.cursor/rules/agent-workflow.mdc](.cursor/rules/agent-workflow.mdc).
+## Scoped rules
 
-Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work. React editor chrome stays on the shadcn / editor-ui-components skills. Do not re-add the game HUD / UserInterface system.
+Before working on matching files or tasks, read the corresponding rule in full. Patterns are relative to the repository root; `**` includes descendants. Apply every matching row, including task triggers when no path matches yet.
 
-Read-only deep codebase investigation uses `.cursor/skills/investigate/SKILL.md` (parent keeps context; more `explore` sub-agents as scope grows). Short Q&A stays on the ask skill.
+| Paths or task | Required rule |
+| --- | --- |
+| Any behavioral, architectural, public API, data-format, or integration change, even outside `docs/` | [Documentation](.agents/rules/docs.md) |
+| `docs/**/*.md`, `apps/docs/src/sidebar.ts`; creating documentation pages | [Docs site](.agents/rules/docs-site.md) |
+| `apps/editor/**`, `packages/editor-kit/**`, `packages/graph-ui/**`, `packages/scripting-nodes/**` | [Display names](.agents/rules/display-names.md) |
+| `packages/ui/src/components/**`, `packages/editor-kit/src/**`, `packages/graph-ui/src/**`, `apps/editor/src/components/**`, `docs/architecture/components.md`; reusable editor component changes | [Component catalog](.agents/rules/editor-ui-components.md) |
+| `apps/editor/**`, `packages/ui/**` | [Touch editor](.agents/rules/touch-editor.md) |
+
+## Skills
+
+Read the matching `SKILL.md` before task work, then load its supporting references as needed. If the host does not discover `.agents/skills/`, use this table directly. Explicit skill requests select the named skill. Planning requests remain read-only and may produce implementation plans; they do not activate the ask skill's prohibition on planning.
+
+| Task | Skill |
+| --- | --- |
+| Short read-only question or explanation | [ask](.agents/skills/ask/SKILL.md) |
+| Deep read-only investigation, tracing, mapping, or audit | [investigate](.agents/skills/investigate/SKILL.md) |
+| Engine or scene work | [babylonjs](.agents/skills/babylonjs/SKILL.md) |
+| React editor chrome, panels, dialogs, forms, trees, or graph UI | [editor-ui-components](.agents/skills/editor-ui-components/SKILL.md) and [shadcn](.agents/skills/shadcn/SKILL.md) |
+| Feature, bugfix, or behavior implementation | [test-driven-development](.agents/skills/test-driven-development/SKILL.md) |
+| Diff review against standards and originating requirements | [code-review](.agents/skills/code-review/SKILL.md) |
+| Unit tests, mocking, coverage, or Vitest configuration | [vitest](.agents/skills/vitest/SKILL.md) |
+
+Delegate only when available and authorized. Inherit the parent model by default; explicit selections must follow the workflow's hard allowlist. Use sequential passes when delegation is unavailable.
+
+See [agent instruction maintenance](docs/agents/instructions.md) for compatibility, provenance, and validation.

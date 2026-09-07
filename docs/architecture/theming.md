@@ -199,7 +199,7 @@ Dev-only **Component Gallery**: `/?test=1&gallery=1` renders every installed pri
 
 ## Brand assets
 
-Source artwork lives in [`engine-logos/`](../../engine-logos/). It is human-authored. Agents must never AI-generate replacements, icons, videos, 3D models, or similar media ([no-ai-artwork.mdc](../../.cursor/rules/no-ai-artwork.mdc)).
+Source artwork lives in [`engine-logos/`](../../engine-logos/). It is human-authored. Agents must never AI-generate replacements, icons, videos, 3D models, or similar media ([no-ai-artwork.md](../../.agents/rules/no-ai-artwork.md)).
 
 | File | Ink | Use |
 | --- | --- | --- |
