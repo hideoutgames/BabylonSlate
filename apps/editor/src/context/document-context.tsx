@@ -1657,6 +1657,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         infiniteLoopDetection:
           projectDocument?.settings.infiniteLoopDetection,
         loopCount: projectDocument?.settings.loopCount,
+        inputMappings: projectDocument?.settings.input,
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,

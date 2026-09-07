@@ -4,6 +4,7 @@ import {
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   type PlayPreviewProjectSettings,
+  type ProjectInputSettings,
   type RenderProjectSettings,
   type AudioProjectSettings,
   type SerializedScene,
@@ -81,6 +82,7 @@ export interface PlayOverlayProps {
   frameCap?: number;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
+  inputMappings?: ProjectInputSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
   /** Project render size; snapshotted when the session starts. */
@@ -156,6 +158,7 @@ export function PlayOverlay({
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   infiniteLoopDetection,
   loopCount,
+  inputMappings,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   animGraphs,
@@ -333,6 +336,7 @@ export function PlayOverlay({
   const initialPauseOnPlayRef = useRef(pauseOnPlay);
   const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
   const initialLoopCountRef = useRef(loopCount);
+  const initialInputMappingsRef = useRef(inputMappings);
   const initialPlayPreviewRef = useRef(playPreview);
   const initialRenderRef = useRef(render);
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
@@ -410,6 +414,7 @@ export function PlayOverlay({
       frameCap: initialFrameCapRef.current,
       infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
       loopCount: initialLoopCountRef.current,
+      inputMappings: initialInputMappingsRef.current,
       animGraphs: animGraphsRef.current,
       behaviourTrees: behaviourTreesRef.current,
       blackboards: blackboardsRef.current,

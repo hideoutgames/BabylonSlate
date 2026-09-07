@@ -177,6 +177,47 @@ describe("runtimeOptionsFromLoadControl", () => {
 });
 
 describe("createRuntimeFromLoad", () => {
+  it.each([
+    ["KeyF", "Fire"],
+    ["KeyH", "Jump"],
+    ["KeyG", "Jump"],
+    ["Space", null],
+  ])("H13: a load uses the authored %s binding", (code, action) => {
+    const message = {
+      type: "load" as const,
+      sceneAssetGuid: "empty",
+      inputMappings: {
+        actions: [
+          { name: "Fire", bindings: [{ device: "key", code: "KeyF" }] },
+          { name: "Jump", bindings: [{ device: "key", code: "KeyH" }, { device: "key", code: "KeyG" }] },
+        ],
+        axes: [],
+      },
+    };
+    const runtime = createRuntimeFromLoad(message, () => {});
+    try {
+      runtime.start();
+      runtime.pushInput([{ kind: "key", tick: 0, code, phase: "down" }]);
+      runtime.tick();
+      const pressed = Object.entries(runtime.getResolvedInput().actions).filter(([, state]) => state.pressed).map(([name]) => name);
+      expect(pressed).toEqual(action ? [action] : []);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("H13: explicitly deleted mappings stay empty at runtime", () => {
+    const message = { type: "load" as const, sceneAssetGuid: "empty", inputMappings: { actions: [], axes: [] } };
+    const runtime = createRuntimeFromLoad(message, () => {});
+    try {
+      runtime.start();
+      runtime.pushInput([{ kind: "key", tick: 0, code: "Space", phase: "down" }]);
+      runtime.tick();
+      expect(runtime.getResolvedInput().actions).toEqual({});
+      expect(runtime.getResolvedInput().axes2D).toEqual({});
+    } finally { runtime.stop(); }
+  });
+
   afterEach(() => {
     resetLoadedBackendModules();
   });

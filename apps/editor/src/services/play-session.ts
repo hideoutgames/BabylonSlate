@@ -493,6 +493,7 @@ export function startPlaySession(options: {
   navmeshBytes?: Uint8Array | null;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
+  inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
@@ -746,6 +747,7 @@ export function startPlaySession(options: {
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
+    inputMappings: options.inputMappings,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
     animClipCatalog: options.animClipCatalog ? [...options.animClipCatalog] : undefined,
   });
