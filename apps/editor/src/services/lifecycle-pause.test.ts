@@ -61,4 +61,28 @@ describe("attachLifecyclePause", () => {
     detach();
     vi.doUnmock("@babylonslate/vfs");
   });
+
+  it("keeps rendering paused until both native activity and visibility allow resume", () => {
+    const handler = vi.fn();
+    const detach = attachLifecyclePause(handler);
+    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(handler).toHaveBeenLastCalledWith(true);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+    expect(handler).toHaveBeenLastCalledWith(true);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(handler).toHaveBeenLastCalledWith(false);
+    detach();
+  });
+
+  it("starts paused when mounted in a hidden document", () => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    const handler = vi.fn();
+    const detach = attachLifecyclePause(handler);
+    expect(handler).toHaveBeenCalledWith(true);
+    detach();
+  });
 });
