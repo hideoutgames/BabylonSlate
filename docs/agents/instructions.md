@@ -16,7 +16,7 @@
 
 `skills-lock.json` records upstream sources and hashes for code-review, shadcn, test-driven-development, and vitest. Preserve those upstream records during local adaptation; they are not checksums of this repository's modified skill bodies. Review an upstream update in a separate diff, merge its relevant changes into the canonical package, and retain repository overrides and compatibility entry points. Do not blindly reinstall over local changes.
 
-The Babylon skill includes a legacy `babylonjs.skill` archive. It contains an older entry point and seven references, omitting the procedural-modeling reference. Retain it for provenance only; the unpacked package is authoritative.
+The Babylon skill keeps the maintained source files only. Git history preserves the legacy archive; the GUI tutorial is omitted because the game HUD / UserInterface system was removed and editor chrome uses React components.
 
 ## Validation
 
