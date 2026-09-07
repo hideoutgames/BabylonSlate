@@ -22,4 +22,3 @@ Skip the sidebar for `docs/README.md` and `docs/index.md` (home). A section `ind
 Prefer updating an existing doc over adding a file. Do not copy markdown into `apps/docs/`.
 
 `apps/docs/src/sidebar.test.ts` fails `pnpm verify` if a required page is missing from the sidebar.
-

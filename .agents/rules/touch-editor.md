@@ -21,4 +21,3 @@
 
 - Use semantic tokens (`bg-background`, `text-muted-foreground`) — no raw color values.
 - Use `flex` + `gap-*` for spacing, not `space-y-*`.
-

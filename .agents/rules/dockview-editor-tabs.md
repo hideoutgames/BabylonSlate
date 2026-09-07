@@ -53,4 +53,3 @@ Animation Graph documents host a chrome **State Machine | Animation Object** `To
 - Do not hand-roll split panes or a new `asset-settings` kind for a full editor.
 - Nested shadcn `Tabs` belong only inside **one** panel (mutually exclusive modes), never as the document layout.
 - Content Browser stays a pinned chrome tab (not DockView). Existing compact Texture / Material / Model / Audio / Animation `asset-settings` stay until converted — do not add new types there.
-

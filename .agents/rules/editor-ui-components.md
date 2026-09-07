@@ -22,4 +22,3 @@ Do **not** catalog one-off screens (Homepage, Play overlay, Settings modals, doc
 - Hooks and helpers (`useContextMenu`, `humanizePropertyLabel`) stay in the short “Related hooks” line, not the component table.
 
 Keep rows short. Style: [docs.md](docs.md).
-

@@ -30,4 +30,3 @@ Buttons, menus, and catalog titles follow the same Title Case (`Reload Scene`, `
 | Event Begin Play | Event begin play, eventBeginPlay |
 | 2D Camera Width | 2D camera width, 2 d camera width |
 | Mesh Kind | Mesh kind, meshKind |
-

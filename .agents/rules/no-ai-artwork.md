@@ -30,4 +30,3 @@ GenerateImage({ description: "BabylonSlate app icon, flat vector" })
 ## If a visual asset is missing
 
 Stop. Use an existing catalog icon, existing branding, or a geometric engine primitive. Ask a human to supply artwork. Do not generate a stand-in.
-

@@ -31,4 +31,3 @@ Before marking ready, count open non-draft PRs targeting `main`, **excluding #27
 A human owns the queue. Only an explicit “mark ready now” overrides the cap.
 
 Do not use larger GitHub runners to raise the cap. See [github-actions-standard-runners.md](github-actions-standard-runners.md).
-
