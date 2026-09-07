@@ -369,6 +369,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     const engine = await CreateAudioEngineAsync({
       disableDefaultUI: true,
       resumeOnInteraction: false,
+      resumeOnPause: false,
       listenerEnabled: true,
     });
     if (this.disposed) {
