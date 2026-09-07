@@ -72,4 +72,10 @@ test("build cache ignores test edits but rejects dirty source and newly added as
   assert.notEqual(dirty.digest, before.digest);
   await writeFile(join(cwd, "apps/editor/src/new.asset"), "asset");
   assert.notEqual((await buildInputState(cwd)).digest, dirty.digest);
+  await mkdir(join(cwd, "scripts"));
+  for (const file of ["process-runner.mjs", "test-runner.mjs", "resource-admission.mjs"]) {
+    const previous = await buildInputState(cwd);
+    await writeFile(join(cwd, "scripts", file), "build pipeline");
+    assert.notEqual((await buildInputState(cwd)).digest, previous.digest, file);
+  }
 });
