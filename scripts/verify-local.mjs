@@ -45,6 +45,25 @@ export async function workspacePackages() {
   return packages;
 }
 
+export async function runSelectedUnitTests(
+  selected,
+  commands,
+  options,
+  execute = runTests,
+) {
+  const paths = selected
+    .filter((pkg) => pkg.path !== "apps/editor")
+    .map((pkg) => pkg.path);
+  if (paths.length) {
+    commands.push(["test", ...paths]);
+    await execute("unit", [...paths, "--passWithNoTests"], options);
+  }
+  if (selected.some((pkg) => pkg.path === "apps/editor")) {
+    commands.push(["test:editor-unit"]);
+    await execute("editor", [], options);
+  }
+}
+
 export async function verifyLocal(options = {}) {
   const directory = await mkdtemp(join(tmpdir(), "babylonslate-verify-local-"));
   const initial = await sourceState(repoRoot);
@@ -115,11 +134,7 @@ export async function verifyLocal(options = {}) {
         await runPnpm("unit", ["exec", "eslint", ...lint], options);
       }
       // Discovery covers split environments and packages without authored tests.
-      const paths = selected.map((pkg) => pkg.path);
-      if (paths.length) {
-        report.commands.push(["test", ...paths]);
-        await runTests("unit", [...paths, "--passWithNoTests"], options);
-      }
+      await runSelectedUnitTests(selected, report.commands, options);
       const browser = [];
       for (const file of selection.e2e) {
         try {

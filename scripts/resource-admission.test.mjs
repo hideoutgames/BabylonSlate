@@ -1,10 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { acquireResources, inheritedLease } from "./resource-admission.mjs";
+import {
+  acquireResources,
+  inheritedLease,
+  publish,
+} from "./resource-admission.mjs";
 import { runCommand } from "./process-runner.mjs";
 
 async function fixture(t) {
@@ -13,6 +24,35 @@ async function fixture(t) {
   return { directory, pollMs: 5, freeMemory: () => 16 * 1024 ** 3 };
 }
 const small = { workers: 1, memoryGiB: 1, browsers: 0 };
+
+test("a transient Windows replacement lock retains the old reservation until atomic publication", async (t) => {
+  const options = await fixture(t);
+  const path = join(options.directory, "ticket.json");
+  const previous = { active: true, childPid: null };
+  const next = { active: true, childPid: 42 };
+  await writeFile(path, JSON.stringify(previous));
+  let attempts = 0;
+  await publish(path, next, async (from, to) => {
+    assert.deepEqual(JSON.parse(await readFile(to, "utf8")), previous);
+    if (++attempts < 3)
+      throw Object.assign(new Error("file is open"), { code: "EPERM" });
+    await rename(from, to);
+  });
+  assert.equal(attempts, 3);
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), next);
+  assert.deepEqual(await readdir(options.directory), ["ticket.json"]);
+  let failures = 0;
+  await assert.rejects(
+    publish(path, previous, async () => {
+      failures++;
+      throw Object.assign(new Error("I/O failed"), { code: "EIO" });
+    }),
+    { code: "EIO" },
+  );
+  assert.equal(failures, 1);
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), next);
+  assert.deepEqual(await readdir(options.directory), ["ticket.json"]);
+});
 
 test("four independent callers respect capacity and progress in FIFO order", async (t) => {
   const options = await fixture(t);

@@ -51,11 +51,26 @@ async function readJson(path) {
 }
 
 /** Atomic publication prevents readers observing a partially written owner. */
-async function publish(path, value) {
+export async function publish(path, value, replace = rename) {
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {
     await writeFile(temporary, JSON.stringify(value), { flag: "wx" });
-    await rename(temporary, path);
+    const deadline = Date.now() + 1000;
+    for (;;) {
+      try {
+        await replace(temporary, path);
+        break;
+      } catch (error) {
+        if (
+          !["EPERM", "EACCES", "EBUSY"].includes(error.code) ||
+          Date.now() >= deadline
+        )
+          throw error;
+        // Windows readers/antivirus can briefly deny replacement. Keep the last
+        // published reservation intact until the atomic rename succeeds.
+        await delay(25);
+      }
+    }
   } finally {
     await rm(temporary, { force: true });
   }

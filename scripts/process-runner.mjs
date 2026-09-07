@@ -45,7 +45,9 @@ export function runCommand(command, args, options = {}) {
     let output = "",
       stopped = false,
       killTimer,
-      cleanup;
+      cleanup,
+      commandError;
+    let registration = Promise.resolve();
     const terminate = () => {
       if (stopped || !child.pid) return;
       stopped = true;
@@ -80,20 +82,23 @@ export function runCommand(command, args, options = {}) {
       }
     };
     const collect = (chunk) => {
+      if (commandError) return;
       output += chunk.toString();
       if (Buffer.byteLength(output) > 32 * 1024 * 1024) {
+        commandError = new Error("Command output exceeded the capture limit");
         terminate();
-        reject(new Error("Command output exceeded the capture limit"));
       }
     };
     child.stdout?.on("data", collect);
     child.stderr?.on("data", collect);
     options.signal?.addEventListener("abort", terminate, { once: true });
     child.once("spawn", () => {
-      Promise.resolve(options.onSpawn?.(child.pid)).catch((error) => {
-        terminate();
-        reject(error);
-      });
+      registration = Promise.resolve()
+        .then(() => options.onSpawn?.(child.pid))
+        .catch((error) => {
+          commandError = error;
+          terminate();
+        });
       if (options.signal?.aborted) terminate();
     });
     child.once("error", (error) => {
@@ -101,6 +106,7 @@ export function runCommand(command, args, options = {}) {
       reject(error);
     });
     child.once("close", async (code) => {
+      await registration;
       if (cleanup) await cleanup;
       if (killTimer) {
         // The leader may exit first; still reap descendants that ignored SIGTERM.
@@ -112,6 +118,10 @@ export function runCommand(command, args, options = {}) {
       }
       clearTimeout(killTimer);
       options.signal?.removeEventListener("abort", terminate);
+      if (commandError) {
+        reject(commandError);
+        return;
+      }
       resolve({
         code: stopped ? 130 : (code ?? 1),
         output,
