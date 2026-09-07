@@ -40,6 +40,7 @@ describe("Babylon audio backend lifecycle", () => {
   it("resumes WebKit's interrupted audio context", async () => {
     const backend = new BabylonAudioPlaybackBackend();
     await backend.warmAsync();
+    expect(audio.createEngine).toHaveBeenCalledWith(expect.objectContaining({ resumeOnPause: false }));
     audio.context.state = "interrupted";
     backend.resumeContext();
     expect(audio.context.state).toBe("running");
