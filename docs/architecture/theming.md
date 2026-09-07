@@ -26,7 +26,7 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 ## Adaptive editor layout
 
-- iPad and desktop retain the compact 28px global bars, small Primary actions, pinned Content Browser/Scene tabs, and resizable dock layout. Panel headers follow the same compact rhythm; semantic borders and surfaces separate tools from content.
+- iPad and desktop retain the compact 28px global bars, small Primary actions, pinned Content Browser/Scene tabs, and resizable dock layout. Dock tabs retain their 18px fine-pointer / 26px coarse-pointer strips; semantic borders and surfaces separate tools from content.
 - Phone layout activates below 768px wide, or at 500px tall or less with a coarse pointer. The global bars use 44px targets; Content Browser and Open Documents provide navigation, with secondary commands under More Tools.
 - Phone Dockview shows one window with a bottom **Window** picker. Window switching uses Dockview visibility and keeps the tablet layout separate; returning to a larger window restores its splits. Focus is unnecessary in this mode.
 - Phone Outliner and My Class trees use 44px rows and actions; tablet and desktop retain their compact 28px rows.
@@ -155,7 +155,7 @@ Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace
 
 Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
 
-Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
+Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `--border` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
 
 The chrome document tab strip keeps pinned Content Browser and the open Scene tab (when present) outside the scroller (`.editor-chrome-tabs-pinned` inside `.editor-chrome-tabs`, `overflow: hidden`). Other document tabs pan in `.editor-chrome-tabs-scroll` (`overflow-x: auto`) when they overflow and hide native and iOS overlay scrollbars (`scrollbar-width: none` plus `::-webkit-scrollbar { display: none }`). The Scene pin is closable and is not drag-reorderable.
 
