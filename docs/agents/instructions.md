@@ -25,7 +25,11 @@ The Babylon skill keeps the maintained source files only. Git history preserves 
 - Compare Cursor adapter metadata with the root applicability table when changing scopes.
 - Exercise routing for engine work, editor UI, docs creation, pure-logic tests, investigation, and review. Confirm read-only requests do not trigger writes and planning can return a plan.
 - In each intended client, start a fresh session and ask it to identify the applicable rules and skill paths for those scenarios. Record actual client results; static link checks do not prove automatic discovery.
-- Run `pnpm verify` before marking the implementation PR ready. If verification or client access is unavailable, disclose that limitation and retain the compatibility entry points.
+- Pass `pnpm verify` before opening any PR, including drafts. If verification or client access is unavailable, disclose that limitation and retain the compatibility entry points.
+
+## PR delivery
+
+Agents own delivery through merge: local tests and full `pnpm verify` first, then open a draft, wait for a free Verify slot, mark ready, and monitor CI. On failure, inspect logs, fix the cause, pass local verification, push, and wait for the new run. Merge only the verified current head once all required checks and branch protections pass, and confirm the merged state. Missing tooling should be repaired where possible; an unresolved blocker must be reported, never treated as a successful test. See [the workflow](../../.agents/rules/agent-workflow.md) and [PR cadence](../../.agents/rules/github-actions-pr-cadence.md) for the authoritative gates.
 
 ## Migration validation record
 
