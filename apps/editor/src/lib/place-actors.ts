@@ -598,6 +598,14 @@ export function duplicateSceneActor(
   const copy = structuredClone(source);
   copy.id = nextActorId(scene);
   copy.name = `${source.name} Copy`;
+  const componentIds = new Map(copy.components.map((component, index) => [
+    component.id, `${copy.id}-${component.classId}-${index + 1}`,
+  ]));
+  copy.components = copy.components.map((component) => ({
+    ...component,
+    id: componentIds.get(component.id)!,
+    ...(component.parentId ? { parentId: componentIds.get(component.parentId) ?? component.parentId } : {}),
+  }));
   if (options && "parentId" in options) {
     copy.parentId = options.parentId ?? null;
   }

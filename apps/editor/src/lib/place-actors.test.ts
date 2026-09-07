@@ -376,7 +376,8 @@ describe("duplicateSceneActor", () => {
     expect(copy.name).toBe("Cube Copy");
     expect(copy.parentId).toBe("actor-root");
     expect(copy.folderId).toBe("props");
-    expect(copy.components).toEqual(source.components);
+    expect(copy.components[0]!.id).not.toBe(source.components[0]!.id);
+    expect(copy.components[0]).toEqual({ ...source.components[0], id: copy.components[0]!.id });
     expect(copy.transform).toEqual(source.transform);
     expect(copy).not.toBe(source);
   });
@@ -396,6 +397,22 @@ describe("duplicateSceneActor", () => {
     const copy = duplicateSceneActor(scene, source);
     expect(copy.components[0]?.sourceId).toBe("prefab-mesh");
     expect(copy.components[0]?.overrideKeys).toEqual(["meshKind"]);
+  });
+
+  it("remaps the copied component hierarchy without changing prefab identity or the source", () => {
+    const scene = createDefaultScene();
+    const source = createActor("actor-1", "Nested", { components: [
+      { ...createMeshComponent("root", "box"), sourceId: "prefab-root" },
+      { ...createMeshComponent("child", "sphere"), parentId: "root", sourceId: "prefab-child", overrideKeys: ["meshKind"] },
+    ] });
+    scene.actors = [source];
+    const before = structuredClone(source);
+    const copy = duplicateSceneActor(scene, source);
+    expect(new Set([...source.components, ...copy.components].map((component) => component.id)).size).toBe(4);
+    expect(copy.components[1]!.parentId).toBe(copy.components[0]!.id);
+    expect(copy.components[1]!.sourceId).toBe("prefab-child");
+    expect(copy.components[1]!.overrideKeys).toEqual(["meshKind"]);
+    expect(source).toEqual(before);
   });
 
   it("can drop the copy at a world position as a root actor", () => {
