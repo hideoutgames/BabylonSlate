@@ -1,10 +1,7 @@
 import type { Engine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ContextMenuOverlay,
-  useContextMenu,
-} from "@babylonslate/editor-kit";
+import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
 import {
   applyGizmoMultiSelectDrag,
   applyViewportJoystickSteer,
@@ -20,11 +17,12 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import {
-  type SerializedScene,
-  isSceneWorkspaceKind,
-} from "@babylonslate/core";
+import { type SerializedScene, isSceneWorkspaceKind } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
+import {
+  materialViewportTestSnapshot,
+  type MaterialViewportTestSnapshot,
+} from "../lib/material-viewport-test-snapshot";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   FALLBACK_PLACE_POSITION,
@@ -43,7 +41,11 @@ import {
   applyLiveGizmoToActor,
   takeGizmoDragScene,
 } from "../lib/gizmo-drag-commit";
-import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "../lib/public-engine-assets";
+import {
+  editorDracoPublicBase,
+  editorKtx2PublicBase,
+  editorMeshoptPublicBase,
+} from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import {
   modelSlotMaterialGuidsFromPayloads,
@@ -316,8 +318,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         handle.setPostProcessingEnabled(enabled),
       setTextureBudget: (bytes, enabled) =>
         handle.setTextureBudget(bytes, enabled),
-      setAudioBudget: (bytes, enabled) =>
-        handle.setAudioBudget(bytes, enabled),
+      setAudioBudget: (bytes, enabled) => handle.setAudioBudget(bytes, enabled),
       setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
     });
 
@@ -368,7 +369,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     // Mode, selection and tool changes are pushed by effects below.
     // Remount when overlay vs world manipulator kind is known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registerSharedEngine, registerScheduler, sharedEngine, overlayTransformBox]);
+  }, [
+    registerSharedEngine,
+    registerScheduler,
+    sharedEngine,
+    overlayTransformBox,
+  ]);
 
   useEffect(() => {
     setFrameActorHandler((actorId) => {
@@ -414,7 +420,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     if (scene) engineRef.current?.loadScene(scene);
   }, [scene, engineEpoch]);
 
-  const materialLibraryKey = savedMaterialLibraryKey(assetRegistry?.list() ?? []);
+  const materialLibraryKey = savedMaterialLibraryKey(
+    assetRegistry?.list() ?? [],
+  );
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
 
   useEffect(() => {
@@ -441,10 +449,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           modelSlotMaterialGuidsFromPayloads(modelPayloads),
         );
         const extraTextureGuids = [
-            ...materials.textureGuids,
-            ...skyboxFaceGuidsFromScene(scene),
-            ...overlayTextureGuidsFromScene(scene),
-          ];
+          ...materials.textureGuids,
+          ...skyboxFaceGuidsFromScene(scene),
+          ...overlayTextureGuidsFromScene(scene),
+        ];
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
@@ -456,7 +464,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
+        const msdf = fontMsdfMapsFromPairs(
+          await collectPlayFontMsdfPair(scene),
+        );
         const fontFaceEntries = await collectPlayFontFaceEntries();
         const fontCss = collectPlayFontCssStacks();
         if (cancelled || engineRef.current !== handle) return;
@@ -645,11 +655,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
-        sceneVisuals: () => Array<{
-          actorId: string;
-          position: [number, number, number];
-          materialName: string | null;
-        }>;
+        sceneVisuals: () => Array<
+          MaterialViewportTestSnapshot & {
+            actorId: string;
+            position: [number, number, number];
+            materialName: string | null;
+          }
+        >;
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
       };
@@ -666,11 +678,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           if (!visual) return [];
           visual.computeWorldMatrix(true);
           const position = visual.getAbsolutePosition();
-          return [{
-            actorId: actor.id,
-            position: [position.x, position.y, position.z],
-            materialName: visual.material?.name ?? null,
-          }];
+          return [
+            {
+              ...materialViewportTestSnapshot(visual),
+              actorId: actor.id,
+              position: [position.x, position.y, position.z],
+              materialName: visual.material?.name ?? null,
+            },
+          ];
         });
       },
       activeSceneMeshPosition: () => {
@@ -680,8 +695,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (!mesh) return null;
         return [mesh.position.x, mesh.position.y, mesh.position.z];
       },
-      hardwareScalingLevel: () =>
-        engineRef.current?.scaling.getLevel() ?? null,
+      hardwareScalingLevel: () => engineRef.current?.scaling.getLevel() ?? null,
       postProcessPassCount: () =>
         engineRef.current?.postProcessPassCount() ?? null,
       /**
@@ -790,9 +804,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
                 const scheduler = engineRef.current?.scheduler;
                 if (!scheduler) return;
                 if (active) {
-                  joystickLeaseRef.current ??= scheduler.acquireContinuous(
-                    "viewport-joystick",
-                  );
+                  joystickLeaseRef.current ??=
+                    scheduler.acquireContinuous("viewport-joystick");
                 } else {
                   joystickLeaseRef.current?.();
                   joystickLeaseRef.current = null;
