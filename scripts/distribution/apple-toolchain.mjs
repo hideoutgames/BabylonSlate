@@ -1,0 +1,11 @@
+import { execFileSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+if (process.platform !== "darwin" || process.env.DEVELOPER_DIR !== "/Applications/Xcode_26.6.app/Contents/Developer") throw new Error("Distribution requires the pinned macOS Xcode installation");
+const xcode = execFileSync("xcodebuild", ["-version"], { encoding: "utf8" }).match(/^Xcode (\S+)/m)?.[1];
+const iosSdk = execFileSync("xcrun", ["--sdk", "iphoneos", "--show-sdk-version"], { encoding: "utf8" }).trim();
+if (xcode !== "26.6" || !/^26\./.test(iosSdk)) throw new Error("Distribution requires Xcode 26.6 and the version-26 iOS SDK");
+const ruby = execFileSync("ruby", ["-e", "print RUBY_VERSION"], { encoding: "utf8" }).trim();
+const bundler = execFileSync("bundle", ["--version"], { encoding: "utf8" }).trim().split(" ").at(-1);
+const fastlane = execFileSync("bundle", ["exec", "ruby", "-e", 'print Gem.loaded_specs.fetch("fastlane").version'], { encoding: "utf8" }).trim();
+const cocoapods = execFileSync("bundle", ["exec", "ruby", "-e", 'print Gem.loaded_specs.fetch("cocoapods").version'], { encoding: "utf8" }).trim();
+await writeFile(process.env.APPLE_TOOLCHAIN_FILE, JSON.stringify({ xcode, iosSdk, ruby, bundler, fastlane, cocoapods }));

@@ -1,0 +1,26 @@
+appId: no.hideout.babylonslate
+productName: BabylonSlate
+electronVersion: 44.2.0
+directories:
+  app: dist/app
+  output: dist/installers
+files:
+  - package.json
+  - host/*.cjs
+  - renderer/**/*
+asar: true
+npmRebuild: false
+publish: null
+artifactName: BabylonSlate-${version}-${arch}.${ext}
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  runAfterFinish: false
+  deleteAppDataOnUninstall: false

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
@@ -11,8 +12,16 @@ import { playerHostVitePlugin } from "./vite-player-host.ts";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
+const manifestPath = path.join(rootDir, "public/build-manifest.json");
+const distributionBuild = process.env.BABYLONSLATE_DISTRIBUTION === "true";
+if (distributionBuild && (!existsSync(manifestPath) || process.env.VITE_TEST_MODE === "true")) {
+  throw new Error("Distribution requires build metadata and production storage");
+}
 
 export default defineConfig({
+  define: {
+    __BABYLONSLATE_BUILD__: distributionBuild ? readFileSync(manifestPath, "utf8") : "null",
+  },
   base: process.env.VITE_BASE_PATH ?? "/",
   plugins: [
     react(),
