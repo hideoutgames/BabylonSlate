@@ -41,6 +41,10 @@ const scopedStoragePlugin = readFileSync(
   join(repoRoot, "apps/editor/ios/App/App/BabylonSlateScopedStoragePlugin.swift"),
   "utf8",
 );
+const audioLifecyclePlugin = readFileSync(
+  join(repoRoot, "apps/editor/ios/App/App/BabylonSlateAudioLifecyclePlugin.swift"),
+  "utf8",
+);
 
 const skippedDirectories = new Set([
   "public",
@@ -85,6 +89,7 @@ function isTextFile(path: string): boolean {
 
 function podNameForDependency(dependency: string): string {
   const names: Record<string, string> = {
+    "@capacitor/app": "CapacitorApp",
     "@capacitor/core": "Capacitor",
     "@capacitor/filesystem": "CapacitorFilesystem",
     "@capacitor/preferences": "CapacitorPreferences",
@@ -200,6 +205,12 @@ describe("Capacitor 8 iOS host", () => {
     expect(iosSyncScript).toMatch(
       /packageClassList\.add\("BabylonSlateScopedStoragePlugin"\)/,
     );
+    expect(iosSyncScript).toMatch(
+      /packageClassList\.add\("BabylonSlateAudioLifecyclePlugin"\)/,
+    );
+    expect(audioLifecyclePlugin).toContain("AVAudioSession");
+    expect(audioLifecyclePlugin).toContain("interruptionNotification");
+    expect(audioLifecyclePlugin).toContain("routeChangeNotification");
     expect(editorPkg.scripts["ios:sync"]).toBe("node scripts/ios-sync.mjs");
     expect(iosSyncScript).toMatch(/"cap",\s*"sync",\s*"ios"/s);
     expect(editorPkg.scripts["ios:build"]).toContain(
@@ -212,6 +223,10 @@ describe("Capacitor 8 iOS host", () => {
     expect(pbxproj).toMatch(/BabylonSlateScopedStoragePlugin\.swift in Sources/);
     expect(pbxproj).toMatch(
       /BabylonSlateScopedStoragePlugin\.swift \*\/ = \{isa = PBXFileReference/,
+    );
+    expect(pbxproj).toMatch(/BabylonSlateAudioLifecyclePlugin\.swift in Sources/);
+    expect(pbxproj).toMatch(
+      /BabylonSlateAudioLifecyclePlugin\.swift \*\/ = \{isa = PBXFileReference/,
     );
     expect(pbxproj).not.toContain("CODE_SIGN_IDENTITY");
 

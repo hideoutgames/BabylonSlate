@@ -51,6 +51,8 @@ export interface AudioPlaybackBackend {
   setVoiceMuffle(voiceId: string, factor: number): void;
   /** Pause or resume live voices without stopping them. */
   setPaused(paused: boolean): void;
+  /** Resume the audio context even when not explicitly paused (e.g. after an audio route change). */
+  resumeContext(): void;
   /** Drop a decoded clip when the PCM LRU evicts it. */
   disposeBuffer(cacheKey: string): void;
   dispose(): void;
@@ -136,6 +138,10 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   setPaused(paused: boolean): void {
     this.paused = paused;
+  }
+
+  resumeContext(): void {
+    // No Web Audio context in the fake backend.
   }
 
   disposeBuffer(cacheKey: string): void {

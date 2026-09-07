@@ -38,6 +38,7 @@ const config = JSON.parse(await readFile(configPath, "utf8"));
 const packageClassList = new Set(config.packageClassList ?? []);
 packageClassList.add("BabylonSlateSecretsPlugin");
 packageClassList.add("BabylonSlateScopedStoragePlugin");
+packageClassList.add("BabylonSlateAudioLifecyclePlugin");
 config.packageClassList = [...packageClassList];
 await writeFile(configPath, `${JSON.stringify(config, null, "\t")}\n`);
 
