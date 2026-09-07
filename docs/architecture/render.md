@@ -2,7 +2,7 @@
 
 Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.4, §2.5).
 
-Overlay Play also collects Texture literals from **Set Material Texture Parameter** nodes in gameplay event and function graphs. It uses the same project Class/Graph set as Play compilation, including classes spawned later, so parameter swaps can select a texture that no Material samples at startup. These textures use the existing GPU texture resolver and editor LOD settings; editor viewport loads stay scoped to their authored content.
+Overlay Play collects Texture literals from **Set Material Texture Parameter** nodes and typed Texture defaults from class/local variables, including Array/Map entries. It uses the same project Class/Graph set as Play compilation, including classes spawned later, so parameter swaps can select a texture that no Material samples at startup. These textures use the existing GPU texture resolver and editor LOD settings; editor viewport loads stay scoped to their authored content.
 
 ## Runtime Material Parameters
 

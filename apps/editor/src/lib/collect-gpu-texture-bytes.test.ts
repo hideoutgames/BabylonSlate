@@ -20,12 +20,16 @@ function textureHeader(
 }
 
 describe("collectGpuTextureBytes", () => {
-  it("loads texture parameter literals from gameplay event and function graphs", async () => {
+  it("loads texture parameter literals and typed variable defaults from gameplay graphs", async () => {
     const eventBytes = new Uint8Array([1, 2, 3]);
     const functionBytes = new Uint8Array([4, 5, 6]);
+    const classBytes = new Uint8Array([7, 8, 9]);
+    const localBytes = new Uint8Array([10, 11, 12]);
     const sources = new Map([
       ["assets/tex-event.texture.babasset", eventBytes],
       ["assets/tex-function.texture.babasset", functionBytes],
+      ["assets/tex-class.texture.babasset", classBytes],
+      ["assets/tex-local.texture.babasset", localBytes],
     ]);
     const readChunk = async (path: string, chunkId: string) =>
       chunkId === "pixels" ? sources.get(path) ?? null : null;
@@ -36,7 +40,7 @@ describe("collectGpuTextureBytes", () => {
       data: { properties: { "default:name": "Albedo", "default:value": guid } },
     });
     const bytes = await collectGpuTextureBytes({
-      assets: ["tex-event", "tex-function"].map((guid) => ({
+      assets: ["tex-event", "tex-function", "tex-class", "tex-local", "tex-unused"].map((guid) => ({
         path: `assets/${guid}.texture.babasset`,
         header: {
           ...textureHeader([{
@@ -55,6 +59,11 @@ describe("collectGpuTextureBytes", () => {
         {
           nodes: [parameterNode("reused", "tex-event")],
           edges: [],
+          members: [
+            { id: "class-texture", kind: "variable", name: "Surface", typeId: "asset", typeClassId: "Texture", defaultValue: "tex-class" },
+            { id: "local-textures", kind: "variable", name: "Choices", typeId: "asset", typeClassId: "Texture", container: "array", functionId: "applyAppearance", defaultValue: ["tex-local"] },
+            { id: "ordinary-name", kind: "variable", name: "Name", typeId: "string", defaultValue: "tex-unused" },
+          ],
           functionGraphs: {
             applyAppearance: {
               nodes: [parameterNode("function", "tex-function")],
@@ -69,6 +78,8 @@ describe("collectGpuTextureBytes", () => {
     expect(bytes).toEqual(new Map([
       ["tex-event", eventBytes],
       ["tex-function", functionBytes],
+      ["tex-class", classBytes],
+      ["tex-local", localBytes],
     ]));
   });
 

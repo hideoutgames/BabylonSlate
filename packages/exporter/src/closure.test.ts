@@ -24,8 +24,13 @@ function asset(
 }
 
 describe("collectExportClosure", () => {
-  it("packs Texture setter literals in reachable class function graphs without scanning ordinary strings", () => {
+  it("packs Texture setter literals and typed variable defaults without scanning ordinary strings", () => {
     const graph: SerializedGraph = {
+      members: [
+        { id: "class-texture", kind: "variable", name: "Surface", typeId: "asset", typeClassId: "Texture", defaultValue: "tex-class" },
+        { id: "local-textures", kind: "variable", name: "Choices", typeId: "asset", typeClassId: "Texture", functionId: "tint", container: "map", keyTypeId: "string", defaultValue: [{ key: "tex-unused", value: "tex-local" }] },
+        { id: "ordinary-name", kind: "variable", name: "Name", typeId: "string", defaultValue: "tex-unused" },
+      ],
       nodes: [], edges: [], functionGraphs: { tint: {
         nodes: [{ id: "texture", type: "material.setTextureParameter", position: { x: 0, y: 0 }, data: { properties: { "default:value": "tex-runtime", "default:name": "tex-unused" } } }], edges: [],
       } },
@@ -36,13 +41,15 @@ describe("collectExportClosure", () => {
         asset({ guid: "scene-main", type: "Scene", name: "Main" }),
         asset({ guid: "class-hero", type: "Class", name: "Hero", parentClass: "Actor" }),
         asset({ guid: "tex-runtime", type: "Texture", name: "Tint" }),
+        asset({ guid: "tex-class", type: "Texture", name: "Class Default" }),
+        asset({ guid: "tex-local", type: "Texture", name: "Local Default" }),
         asset({ guid: "tex-unused", type: "Texture", name: "Unused" }),
       ],
       pluginEnabledGuids: new Set(), parentOf: () => "Actor",
       sceneByGuid: () => ({ ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] }),
       graphByGuid: (guid) => guid === "class-hero" ? graph : null,
     });
-    expect(result).toEqual({ ok: true, value: ["class-hero", "scene-main", "tex-runtime"] });
+    expect(result).toEqual({ ok: true, value: ["class-hero", "scene-main", "tex-class", "tex-local", "tex-runtime"] });
   });
   it("reports per-scene reachability with deterministic shared dependency ownership inputs", () => {
     const assets = [
