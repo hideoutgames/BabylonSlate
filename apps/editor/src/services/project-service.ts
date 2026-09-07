@@ -523,6 +523,9 @@ export class ProjectService {
     } else {
       await this.storage.openDocumentsProject(projectName);
     }
+    if (await this.storage.exists(PROJECT_FILE)) {
+      throw new Error("A project already exists in this folder.");
+    }
     const guid = newGuid();
     await createProjectFromTemplate({
       templateFiles: options.templateFiles,
@@ -586,6 +589,9 @@ export class ProjectService {
 
   async reconnect(): Promise<ProjectLoadResult> {
     await this.storage.reconnectFolder!();
+    if (!(await this.storage.exists(PROJECT_FILE))) {
+      throw new Error("Select the original project folder containing project.json.");
+    }
     return this.loadCurrentProject();
   }
 

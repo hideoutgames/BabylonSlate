@@ -30,7 +30,13 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 ### External tier / Working Copy spike
 
-Sustained I/O into a file provider uses `NSFileCoordinator`, process-lifetime security scope, and surfaces bookmark staleness or denied scope access as **Reconnect project folder** on the Homepage. The custom Swift plugin rejects absolute paths, traversal components, and root mutations before coordinated I/O. Device harness notes live with the adapter tests / docs when Mac/iPad is available.
+File-provider I/O uses `NSFileCoordinator` and acquires/releases security scope for each operation, including metadata checks. The native folder picker presents on the main thread. The Swift plugin validates paths while scope is held and rechecks the coordinated target before access.
+
+- Mobile operations await one initialization pass before selecting a storage tier. Restoring an old bookmark cannot redirect a new project's writes. Expired access remains visible as **Reconnect Project Folder** after startup or a failed recent-project open.
+- Legacy bookmarks migrate when opened from recents. Missing bookmarks and denied permissions require reconnect; missing files remain ordinary missing-file results. Provider failures never imply an empty destination.
+- Documents and external paths reject traversal, absolute paths, and project-root mutations. Documents recents reopen by stable id, independently of their display name; already-existing native directories remain usable.
+- Creating from a template refuses an existing project. Reconnect requires a folder containing `project.json`; it never creates a replacement project in an accidentally selected empty folder.
+- Imported audio is copied into project asset chunks and read through the same selected storage adapter for preview and Play. A failed Files-provider import rejects and cleans up the picker so it can be retried.
 
 ## Two storage tiers (Homepage)
 
