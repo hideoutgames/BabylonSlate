@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
@@ -21,15 +21,11 @@ async function fixture(t, action = "success") {
   await writeFile(
     join(cwd, "fixture.mjs"),
     `
-import { writeFileSync, writeSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 console.log(JSON.stringify({args:process.argv.slice(2), inherited:process.env.WAIT_FIXTURE_VALUE}));
 const action = process.env.WAIT_FIXTURE_ACTION;
 if (action === 'large') { for (let i=0;i<5000;i++) console.log(i + ' héllo 🌍 '.repeat(20)); process.exitCode=7; }
 if (action === 'fail') { console.error('fixture failure'); process.exitCode=9; }
-if (action === 'log-markers') {
-  writeSync(1, 'fixture stdout marker\\n');
-  writeSync(2, 'fixture stderr marker\\n');
-}
 if (action === 'change') writeFileSync('source.txt', 'changed');
 if (action === 'untracked') writeFileSync('new-source.txt', 'new');
 if (action === 'commit') {
@@ -120,17 +116,35 @@ test("unfiltered verification certifies a clean unchanged commit", async (t) => 
   assert.equal(result.deliveryEligible, true);
 });
 
-test("local stdout and stderr survive the final working-tree snapshot", async (t) => {
-  const f = await fixture(t, "log-markers");
+test("local retains recursive package diagnostics with a silent parent reporter", async (t) => {
+  const f = await fixture(t, "fail");
+  await writeFile(
+    join(f.cwd, "package.json"),
+    JSON.stringify({ scripts: { verify: "pnpm -r typecheck" } }),
+  );
+  await writeFile(
+    join(f.cwd, "pnpm-workspace.yaml"),
+    "packages:\n  - fixture-package\n",
+  );
+  await mkdir(join(f.cwd, "fixture-package"));
+  await writeFile(
+    join(f.cwd, "fixture-package", "package.json"),
+    JSON.stringify({
+      name: "fixture-package",
+      scripts: { typecheck: "node ../fixture.mjs" },
+    }),
+  );
+  f.env.npm_config_loglevel = "silent";
   const result = await run(local, f.context);
-  assert.equal(result.status, "success");
-  assert.equal(result.deliveryEligible, true);
+  assert.equal(result.status, "failure");
+  assert.notEqual(result.exitCode, 0);
+  assert.equal(result.deliveryEligible, false);
   const log = await readFile(result.logPath, "utf8");
-  assert.match(log, /fixture stdout marker\n/);
-  assert.match(log, /fixture stderr marker\n/);
+  assert.match(log, /"inherited":"preserved 🌍"/);
+  assert.match(log, /fixture failure/);
   assert.ok(
     log.lastIndexOf('["git","rev-parse","HEAD"]') >
-      log.indexOf("fixture stderr marker"),
+      log.indexOf("fixture failure"),
     "final snapshot metadata follows the complete child output",
   );
 });
