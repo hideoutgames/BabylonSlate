@@ -24,6 +24,26 @@ function asset(
 }
 
 describe("collectExportClosure", () => {
+  it("packs Texture setter literals in reachable class function graphs without scanning ordinary strings", () => {
+    const graph: SerializedGraph = {
+      nodes: [], edges: [], functionGraphs: { tint: {
+        nodes: [{ id: "texture", type: "material.setTextureParameter", position: { x: 0, y: 0 }, data: { properties: { "default:value": "tex-runtime", "default:name": "tex-unused" } } }], edges: [],
+      } },
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-main",
+      assets: [
+        asset({ guid: "scene-main", type: "Scene", name: "Main" }),
+        asset({ guid: "class-hero", type: "Class", name: "Hero", parentClass: "Actor" }),
+        asset({ guid: "tex-runtime", type: "Texture", name: "Tint" }),
+        asset({ guid: "tex-unused", type: "Texture", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(), parentOf: () => "Actor",
+      sceneByGuid: () => ({ ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] }),
+      graphByGuid: (guid) => guid === "class-hero" ? graph : null,
+    });
+    expect(result).toEqual({ ok: true, value: ["class-hero", "scene-main", "tex-runtime"] });
+  });
   it("reports per-scene reachability with deterministic shared dependency ownership inputs", () => {
     const assets = [
       asset({ guid: "scene-start", type: "Scene", name: "Start" }),
