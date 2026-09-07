@@ -230,3 +230,8 @@ Implementation entries will record failing and passing tests, exact subcases cla
 - A fresh browser regression reproduced an undone node move returning after recovery. Undo/Redo now append their applied commands and schedule autosave through the same path as ordinary edits. Multi-command actions serialize as one replayable batch; an unknown child skips the entire batch. Legacy individual command lines remain supported.
 - A second reload after recovery reproduced a missing journal. Recovery now retains unsaved commands until Save or clean Close. A separate Enum fixture reproduced a lost member because recovery ignored non-graph/scene documents; target opening and replay now cover authored asset document kinds and leave untouched documents clean.
 - Both browser regressions and the batch replay/session unit tests pass; typechecking passes. These results close the tested recovery gaps. They do not close the remaining historical cross-tab, Bake/Export/Stop, or unavailable-project variants.
+
+### M29.2/L2.1: coincident toolbar node insertion
+
+- A component regression reproduced three separate Add Node activations placing three nodes at the same coordinates. Repeated toolbar insertions now stagger without moving existing nodes; pin-drag additions keep the selected drop point.
+- The GraphEditor suite passes, including one-node-per-activation and preserved pin-drag placement. This fixes the tested coincident-position case, not general graph auto-layout or a historical double-activation claim. Full delivery verification remains pending.
