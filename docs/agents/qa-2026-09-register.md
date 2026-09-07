@@ -241,3 +241,8 @@ Implementation entries will record failing and passing tests, exact subcases cla
 - Six desktop Chromium checks pass on an isolated build: graph Undo recovery across two reloads; Enum recovery; Class Undo preserving a separately edited Scene and its own Undo/Redo; Normal Play and Preview Build saving content while retaining history after Stop; and clean editor Save/rescan versus a real conflicting disk change dismissed by the first Keep Open click.
 - The cross-tab and Play/Preview checks inspect content and dirty state together. Save/reload preserves the selected revisions. These fresh configurations are N for the historical cross-tab, Stop/history-loss, and false-reload claims; they do not establish original-project equivalence or close Bake/Export variants.
 - Local browser verification now rejects a server already running on its selected port. `PLAYWRIGHT_PORT` isolates checkouts; Windows preview arguments reach Vite without an extra argument terminator. An earlier interrupted run that could reuse another checkout is not delivery evidence.
+
+### M19.2: camera clipping-plane order
+
+- Two tests through the real PropertyGrid reproduced Near Clip 1001 with Far Clip 1000, and Far Clip 0.01 with Near Clip 0.1. Camera Details now retain the previous value for a crossing edit and explain the required order; blur restores the displayed value.
+- The camera editing and component-property suites pass, including valid clipping edits and FOV -90 clamping to 1 while 1/179 remain accepted. This establishes the authored clip-order defect; browser persistence/Undo and full delivery verification remain pending.
