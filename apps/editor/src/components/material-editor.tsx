@@ -51,7 +51,6 @@ import {
   parseMaterialDomain,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
-  validateMaterialParameterNames,
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialFunctionPin,
@@ -238,9 +237,27 @@ function useTextureExists(): (guid: string) => boolean {
   );
 }
 
+function useNewMaterialParameterNaming(document: MaterialGraphDocument) {
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
+  const rememberAddedParameters = (next: MaterialGraphDocument) => {
+    const added = next.nodes.filter((node) =>
+      isMaterialParameterNode(node.type) &&
+      !document.nodes.some((previous) => previous.id === node.id),
+    ).map((node) => node.id);
+    if (added.length > 0) {
+      setPendingIds((current) => [...new Set([...current, ...added])]);
+    }
+  };
+  const finishNaming = (nodeId: string) => {
+    setPendingIds((current) => current.filter((id) => id !== nodeId));
+  };
+  return { pendingIds, rememberAddedParameters, finishNaming };
+}
+
 export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, documentId, commit } = useMaterialDocument();
+  const naming = useNewMaterialParameterNaming(document);
   const editing = useMaterialEditing();
   const functions = editing.functions;
   const { sessionViewport, onSessionViewportChange } =
@@ -285,17 +302,19 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
           focusedNodeId={editing.focusedNodeId ?? undefined}
           commitPositionsOnDragEnd
-          onChange={(next, meta) =>
+          onChange={(next, meta) => {
+            const nextDocument = serializedToMaterialGraph(next, document);
+            naming.rememberAddedParameters(nextDocument);
             commit(
-              serializedToMaterialGraph(next, document),
+              nextDocument,
               meta?.kind === "position" && meta.transactionId
                 ? `material-node-move:${meta.transactionId}`
                 : undefined,
-            )
-          }
+            );
+          }}
         />
       </div>
-      <MaterialParameterNamePrompt document={document} commit={commit} />
+      <MaterialParameterNamePrompt document={document} commit={commit} pendingIds={naming.pendingIds} onFinished={naming.finishNaming} />
     </PanelFrame>
   );
 }
@@ -303,6 +322,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
 export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, documentId, commit } = useMaterialFunctionDocument();
+  const naming = useNewMaterialParameterNaming(document);
   const editing = useMaterialEditing();
   const { sessionViewport, onSessionViewportChange } =
     useGraphSessionViewport(documentId);
@@ -343,17 +363,19 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           onSessionViewportChange={onSessionViewportChange}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
           commitPositionsOnDragEnd
-          onChange={(next, meta) =>
+          onChange={(next, meta) => {
+            const nextDocument = serializedToMaterialFunctionGraph(next, document);
+            naming.rememberAddedParameters(nextDocument);
             commit(
-              serializedToMaterialFunctionGraph(next, document),
+              nextDocument,
               meta?.kind === "position" && meta.transactionId
                 ? `material-node-move:${meta.transactionId}`
                 : undefined,
-            )
-          }
+            );
+          }}
         />
       </div>
-      <MaterialParameterNamePrompt document={document} commit={commit} />
+      <MaterialParameterNamePrompt document={document} commit={commit} pendingIds={naming.pendingIds} onFinished={naming.finishNaming} />
     </PanelFrame>
   );
 }
@@ -362,12 +384,15 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
 function MaterialParameterNamePrompt<T extends MaterialGraphDocument>({
   document,
   commit,
+  pendingIds,
+  onFinished,
 }: {
   document: T;
   commit: (next: T) => void;
+  pendingIds: readonly string[];
+  onFinished: (nodeId: string) => void;
 }) {
-  const diagnostic = validateMaterialParameterNames(document)[0];
-  const node = document.nodes.find((entry) => entry.id === diagnostic?.nodeId);
+  const node = document.nodes.find((entry) => pendingIds.includes(entry.id));
   const submitted = useRef(false);
   useEffect(() => {
     submitted.current = false;
@@ -403,6 +428,7 @@ function MaterialParameterNamePrompt<T extends MaterialGraphDocument>({
             : entry,
           ),
         });
+        onFinished(node.id);
       }}
       onOpenChange={(open) => {
         if (open || submitted.current) return;
@@ -413,6 +439,7 @@ function MaterialParameterNamePrompt<T extends MaterialGraphDocument>({
             edge.sourceNodeId !== node.id && edge.targetNodeId !== node.id,
           ),
         });
+        onFinished(node.id);
       }}
     />
   );

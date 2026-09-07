@@ -69,6 +69,10 @@ and Texture defaults use `properties.textureGuid`. Validation reports every
 unnamed or duplicate parameter, including unconnected nodes. Save rejects these
 name errors before writing the asset.
 
+The naming dialog tracks newly added or pasted nodes only. Invalid names in an
+existing or loaded graph remain editable in Details; cancelling a naming dialog
+cannot remove those nodes or their links.
+
 Runtime parameter setters expose parameters on the root Material graph. Material
 Function parameters remain internal defaults; expose function inputs to pass
 values from the calling material.

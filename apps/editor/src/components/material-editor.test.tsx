@@ -369,14 +369,51 @@ describe("Material function interface", () => {
 });
 
 describe("Material graph panel", () => {
+  it.each(["", "Tint"])("preserves existing parameter nodes and links when a loaded name is invalid: %s", (invalidName) => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "old", type: "param.float", position: { x: 0, y: 100 }, properties: { name: "Tint", value: [1] } },
+      { id: "existing", type: "param.color", position: { x: 0, y: 200 }, properties: { name: invalidName } },
+    );
+    doc.edges.push({ id: "existing-edge", sourceNodeId: "existing", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" });
+    harness.content = doc as unknown as Record<string, unknown>;
+    render(<MaterialGraphPanel {...panelProps} />);
+    expect(screen.queryByTestId("material-parameter-name-prompt")).toBeNull();
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
+    expect((harness.content as unknown as MaterialDocument).nodes.some((node) => node.id === "existing")).toBe(true);
+    expect((harness.content as unknown as MaterialDocument).edges.some((edge) => edge.id === "existing-edge")).toBe(true);
+  });
+
+  it("does not open a deletion prompt when an existing parameter is renamed to a duplicate", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "first", type: "param.float", position: { x: 0, y: 100 }, properties: { name: "Tint", value: [1] } },
+      { id: "renamed", type: "param.color", position: { x: 0, y: 200 }, properties: { name: "Other" } },
+    );
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "renamed";
+    const view = render(<><MaterialGraphPanel {...panelProps} /><MaterialDetailsPanel {...panelProps} /></>);
+    fireEvent.change(screen.getByTestId("property-name"), { target: { value: "Tint" } });
+    harness.content = lastCommit() as unknown as Record<string, unknown>;
+    view.rerender(<><MaterialGraphPanel {...panelProps} /><MaterialDetailsPanel {...panelProps} /></>);
+    expect(screen.queryByTestId("material-parameter-name-prompt")).toBeNull();
+    expect(screen.getByTestId("property-name").getAttribute("value")).toBe("Tint");
+    expect(lastCommit().nodes.map((node) => node.id)).toEqual(["baseColor", "output", "first", "renamed"]);
+  });
   it("requires an explicit unique parameter name before keeping a new parameter", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(
       { id: "old", type: "param.float", position: { x: 0, y: 100 }, properties: { name: "Tint", value: [1] } },
-      { id: "new", type: "param.color", position: { x: 0, y: 200 }, properties: {} },
     );
     harness.content = doc as unknown as Record<string, unknown>;
-    render(<MaterialGraphPanel {...panelProps} />);
+    const view = render(<MaterialGraphPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.click(screen.getByTestId("node-palette-item-param.color"));
+    const added = lastCommit();
+    const newId = added.nodes.find((node) => node.type === "param.color")!.id;
+    harness.content = added as unknown as Record<string, unknown>;
+    view.rerender(<MaterialGraphPanel {...panelProps} />);
+    harness.applyAssetDocumentChange.mockClear();
     const input = screen.getByTestId("name-prompt-input");
     fireEvent.change(input, { target: { value: "Tint" } });
     fireEvent.click(screen.getByTestId("name-prompt-confirm"));
@@ -384,17 +421,22 @@ describe("Material graph panel", () => {
     expect(screen.getByTestId("material-parameter-name-prompt")).toBeTruthy();
     fireEvent.change(input, { target: { value: " Surface Tint " } });
     fireEvent.click(screen.getByTestId("name-prompt-confirm"));
-    expect(lastCommit().nodes.find((node) => node.id === "new")?.properties.name).toBe("Surface Tint");
+    expect(lastCommit().nodes.find((node) => node.id === newId)?.properties.name).toBe("Surface Tint");
   });
 
   it("removes an unnamed parameter and its links when naming is cancelled", () => {
     const doc = createDefaultMaterialDocument();
-    doc.nodes.push({ id: "new", type: "param.float", position: { x: 0, y: 100 }, properties: {} });
-    doc.edges.push({ id: "new-edge", sourceNodeId: "new", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
     harness.content = doc as unknown as Record<string, unknown>;
-    render(<MaterialGraphPanel {...panelProps} />);
+    const view = render(<MaterialGraphPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.click(screen.getByTestId("node-palette-item-param.float"));
+    const added = lastCommit();
+    const newId = added.nodes.find((node) => node.type === "param.float")!.id;
+    added.edges.push({ id: "new-edge", sourceNodeId: newId, sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
+    harness.content = added as unknown as Record<string, unknown>;
+    view.rerender(<MaterialGraphPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("name-prompt-cancel"));
-    expect(lastCommit().nodes.some((node) => node.id === "new")).toBe(false);
+    expect(lastCommit().nodes.some((node) => node.id === newId)).toBe(false);
     expect(lastCommit().edges.some((edge) => edge.id === "new-edge")).toBe(false);
   });
   it("renders the graph canvas with catalog pins", async () => {
