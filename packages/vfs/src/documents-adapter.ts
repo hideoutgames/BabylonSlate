@@ -5,6 +5,7 @@ import type {
   ProjectStorage,
 } from "@babylonslate/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
+import { projectFolderName, projectRelativePath } from "./project-path";
 
 const PROJECTS_ROOT = "BabylonSlate/projects";
 
@@ -86,6 +87,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async openDocumentsProject(name: string): Promise<ProjectFolderHandle> {
+    name = projectFolderName(name);
     const root = `${PROJECTS_ROOT}/${name}`;
     await this.fs.mkdir({
       path: root,
@@ -102,7 +104,8 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     if (handle.tier !== "documents") {
       throw new Error(`Documents adapter cannot open tier ${handle.tier}`);
     }
-    return this.openDocumentsProject(handle.name);
+    if (!handle.id.startsWith("documents:")) throw new Error("Invalid Documents project id");
+    return this.openDocumentsProject(handle.id.slice("documents:".length));
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
@@ -143,9 +146,9 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     return this.folder;
   }
 
-  private abs(path: string): string {
+  private abs(path: string, allowRoot = false): string {
     const folder = this.assertFolder();
-    const cleaned = path.replace(/^\.\/+/, "").replace(/^\/+/, "");
+    const cleaned = projectRelativePath(path, allowRoot);
     const base = `${PROJECTS_ROOT}/${folder.name}`;
     return cleaned ? `${base}/${cleaned}` : base;
   }
@@ -197,8 +200,9 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async exists(path: string): Promise<boolean> {
+    const full = this.abs(path, true);
     try {
-      await this.fs.stat({ path: this.abs(path), directory: this.directory });
+      await this.fs.stat({ path: full, directory: this.directory });
       return true;
     } catch {
       return false;
@@ -206,9 +210,10 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
+    const full = this.abs(path === "." ? "" : path, true);
     try {
       const { files } = await this.fs.readdir({
-        path: this.abs(path === "." ? "" : path),
+        path: full,
         directory: this.directory,
       });
       return files.map((f) => ({
@@ -252,9 +257,10 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async stat(path: string): Promise<FileStat> {
+    const full = this.abs(path, true);
     try {
       const info = await this.fs.stat({
-        path: this.abs(path),
+        path: full,
         directory: this.directory,
       });
       return {
