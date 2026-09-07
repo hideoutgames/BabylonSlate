@@ -18,6 +18,8 @@ Statuses are `success`, `failure`, `cancellation`, `timeout`, and `stale`. Packa
 
 On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim. Playwright passes `VITE_TEST_MODE` through its web-server environment so server startup also works with Windows' command shell.
 
+Playwright builds and starts its own preview server; an occupied port fails instead of silently reusing a different worktree's build. Set `PLAYWRIGHT_PORT` to a free integer port (default `4173`) when running multiple checkouts. The browser base URL, readiness probe, and strict-port preview server use that same port.
+
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 
 ## GitHub Actions

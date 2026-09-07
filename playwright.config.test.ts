@@ -1,11 +1,55 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 const playwrightCli = createRequire(import.meta.url).resolve("@playwright/test/cli");
+
+it("rejects an occupied configured port instead of testing another worktree's server", async () => {
+  const server = createServer((_request, response) => response.end("Other worktree"));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("No fixture port");
+  const fixture = await mkdtemp(path.join(tmpdir(), "playwright-occupied-"));
+  try {
+    const configPath = path.join(fixture, "playwright.config.ts");
+    await writeFile(configPath, `
+      import base from ${JSON.stringify(path.join(repoRoot, "playwright.config.ts"))};
+      export default {
+        ...base,
+        testDir: ${JSON.stringify(fixture)},
+        testMatch: "probe.spec.ts",
+        projects: [{ name: "probe" }],
+        reporter: "list",
+        webServer: { ...base.webServer, command: 'node -e "process.exit(73)"' },
+      };
+    `);
+    const testModule = createRequire(import.meta.url).resolve("@playwright/test");
+    await writeFile(path.join(fixture, "probe.spec.ts"), `
+      import { test } from ${JSON.stringify(testModule)};
+      test("must not reach tests on the other server", () => {});
+    `);
+    const result = await promisify(execFile)(process.execPath, [playwrightCli, "test", "--config", configPath], {
+      cwd: repoRoot,
+      env: { ...process.env, CI: "", PLAYWRIGHT_PORT: String(address.port) },
+      timeout: 20_000,
+    }).then(
+      (output) => ({ code: 0, output: output.stdout + output.stderr }),
+      (error: { code: number; stdout: string; stderr: string }) => ({ code: error.code, output: error.stdout + error.stderr }),
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain(`http://127.0.0.1:${address.port} is already used`);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await rm(fixture, { recursive: true, force: true });
+  }
+}, 30_000);
 
 type ListedTest = {
   project: string;
