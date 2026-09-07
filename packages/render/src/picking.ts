@@ -5,6 +5,21 @@ import { EDITOR_ACTOR_MESH_PREFIX } from "./scene-loader";
 const scratchOrigin = new Vector3();
 const scratchDir = new Vector3();
 
+/** Resolve an imported part through its named actor ancestor. */
+export function actorMeshName(mesh: { name: string; parent: unknown }): string {
+  let node: { name: string; parent: unknown } | null = mesh;
+  while (node) {
+    if (
+      /^actor-\d+$/.test(node.name) ||
+      node.name.startsWith(EDITOR_ACTOR_MESH_PREFIX)
+    ) {
+      return node.name;
+    }
+    node = (node.parent as { name: string; parent: unknown } | null) ?? null;
+  }
+  return mesh.name;
+}
+
 /**
  * Explicit tap pick — used because skipPointerMovePicking is true (no hover).
  * Returns the mesh name / actor slot id when the pick hits an actor-* mesh.
@@ -27,28 +42,11 @@ export function pickAtCanvas(
   if (!pick?.hit || !pick.pickedMesh) {
     return null;
   }
-  let mesh: { name: string; parent: unknown } | null = pick.pickedMesh;
-  while (mesh) {
-    const match = /^actor-(\d+)$/.exec(mesh.name);
-    if (match) {
-      return {
-        meshName: mesh.name,
-        slotId: Number(match[1]),
-        hit: pick,
-      };
-    }
-    if (mesh.name.startsWith(EDITOR_ACTOR_MESH_PREFIX)) {
-      return {
-        meshName: mesh.name,
-        slotId: null,
-        hit: pick,
-      };
-    }
-    mesh = (mesh.parent as { name: string; parent: unknown } | null) ?? null;
-  }
+  const meshName = actorMeshName(pick.pickedMesh);
+  const match = /^actor-(\d+)$/.exec(meshName);
   return {
-    meshName: pick.pickedMesh.name,
-    slotId: null,
+    meshName,
+    slotId: match ? Number(match[1]) : null,
     hit: pick,
   };
 }

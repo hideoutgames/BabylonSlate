@@ -8,10 +8,10 @@ import {
 export const DEFAULT_EDIT_BYTE_BUDGET = 2_000_000;
 
 /** One editor operation may contain several journalled deltas. */
-class CommandBatch<TDoc> implements EditCommand<TDoc> {
+export class CommandBatch<TDoc> implements EditCommand<TDoc> {
   readonly type = "edit.batch";
   readonly byteSize: number;
-  private readonly commands: readonly EditCommand<TDoc>[];
+  readonly commands: readonly EditCommand<TDoc>[];
 
   constructor(commands: readonly EditCommand<TDoc>[]) {
     this.commands = [...commands];

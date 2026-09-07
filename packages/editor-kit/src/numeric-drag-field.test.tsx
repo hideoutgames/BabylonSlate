@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { NumericDragField } from "./numeric-drag-field";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
@@ -28,6 +34,23 @@ function StatefulField({
 describe("NumericDragField", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("shows Mixed until a shared value is entered", () => {
+    const onChange = vi.fn();
+    render(
+      <NumericDragField
+        value={2}
+        mixed
+        onChange={onChange}
+        data-testid="field"
+      />,
+    );
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(input.placeholder).toBe("Mixed");
+    fireEvent.change(input, { target: { value: "7" } });
+    expect(onChange).toHaveBeenCalledWith(7);
   });
 
   it("scrubs the value by horizontal drag distance", () => {
@@ -100,7 +123,12 @@ describe("NumericDragField", () => {
   it("ignores pointer moves from an unrelated pointer", () => {
     const onChange = vi.fn();
     render(
-      <NumericDragField label="X" value={0} onChange={onChange} data-testid="field" />,
+      <NumericDragField
+        label="X"
+        value={0}
+        onChange={onChange}
+        data-testid="field"
+      />,
     );
     const scrub = screen.getByTestId("field-scrub");
     dispatchPointerEvent(scrub, "pointerdown", { pointerId: 1, clientX: 0 });
@@ -162,7 +190,9 @@ describe("NumericDragField", () => {
         data-testid="field"
       />,
     );
-    expect((screen.getByTestId("field") as HTMLInputElement).value).toBe("1.22");
+    expect((screen.getByTestId("field") as HTMLInputElement).value).toBe(
+      "1.22",
+    );
   });
 
   it("commits a complete arithmetic expression and shows two decimals after blur", () => {

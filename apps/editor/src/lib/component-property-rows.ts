@@ -1328,7 +1328,10 @@ export function componentPropertyRows(
           label: "Near Clip",
           value: asNumber(component.properties.nearClip, 0.1),
           min: 0.001,
-          onChange: (next) => update("nearClip", next),
+          description: "Near Clip must be less than Far Clip.",
+          onChange: (next) => {
+            if (next < asNumber(component.properties.farClip, 1000)) update("nearClip", next);
+          },
         },
         {
           kind: "number",
@@ -1336,7 +1339,10 @@ export function componentPropertyRows(
           label: "Far Clip",
           value: asNumber(component.properties.farClip, 1000),
           min: 0.01,
-          onChange: (next) => update("farClip", next),
+          description: "Far Clip must be greater than Near Clip.",
+          onChange: (next) => {
+            if (next > asNumber(component.properties.nearClip, 0.1)) update("farClip", next);
+          },
         },
         {
           kind: "boolean",

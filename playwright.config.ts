@@ -1,13 +1,16 @@
 import { defineConfig, devices } from "@playwright/test";
 import { IPAD_TEST_GREP } from "./e2e/ipad-tag";
 
+const port = Number(process.env.PLAYWRIGHT_PORT ?? "4173");
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error("PLAYWRIGHT_PORT must be an integer from 1 to 65535.");
+}
+const baseURL = `http://127.0.0.1:${port}`;
+
 const IPAD_TOUCH = {
   hasTouch: true,
   deviceScaleFactor: 2,
 };
-
-const testPort = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
-const testBaseURL = `http://127.0.0.1:${testPort}`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -20,7 +23,7 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   use: {
-    baseURL: testBaseURL,
+    baseURL,
     trace: "on-first-retry",
   },
   projects: [
@@ -42,10 +45,10 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      `pnpm --filter editor build && pnpm --filter editor preview --host 127.0.0.1 --port ${testPort} --strictPort`,
+      `pnpm --filter editor build && pnpm --filter editor preview --host 127.0.0.1 --port ${port} --strictPort`,
     env: { VITE_TEST_MODE: "true" },
-    url: testBaseURL,
-    reuseExistingServer: !process.env.CI && !process.env.PLAYWRIGHT_PORT,
+    url: baseURL,
+    reuseExistingServer: false,
     timeout: 180_000,
   },
 });

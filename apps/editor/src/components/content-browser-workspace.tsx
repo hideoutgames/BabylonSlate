@@ -2325,14 +2325,17 @@ export function ContentBrowserWorkspace({
           if (!open) setRefsSummary(null);
         }}
       >
-        <AlertDialogContent data-testid="content-browser-refs-dialog">
-          <AlertDialogHeader>
+        <AlertDialogContent
+          className="flex max-h-[calc(100dvh-2rem)] flex-col"
+          data-testid="content-browser-refs-dialog"
+        >
+          <AlertDialogHeader className="shrink-0">
             <AlertDialogTitle>References</AlertDialogTitle>
             <AlertDialogDescription>
               Dependencies for {refsSummary?.name}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex flex-col gap-2 text-sm">
+          <div className="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain break-words text-sm">
             <p>
               <span className="font-medium">Inbound:</span>{" "}
               <SelectableText>{refsSummary?.inbound}</SelectableText>
@@ -2342,7 +2345,7 @@ export function ContentBrowserWorkspace({
               <SelectableText>{refsSummary?.outbound}</SelectableText>
             </p>
           </div>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="shrink-0">
             <AlertDialogAction onClick={() => setRefsSummary(null)}>
               Close
             </AlertDialogAction>

@@ -1139,11 +1139,19 @@ function GraphEditorCanvas({
 
   const handleAddPaletteNode = useCallback(
     (paletteNode: PaletteNode) => {
-      const position = pendingConnect?.position ??
+      let position = pendingConnect?.position ??
         screenToFlowPosition({
           x: window.innerWidth / 2,
           y: window.innerHeight / 2,
         });
+      if (!pendingConnect) {
+        while (graphStateRef.current.nodes.some((node) =>
+          Math.abs(node.position.x - position.x) < PASTE_OFFSET &&
+          Math.abs(node.position.y - position.y) < PASTE_OFFSET,
+        )) {
+          position = { x: position.x + PASTE_OFFSET, y: position.y + PASTE_OFFSET };
+        }
+      }
       const id = `${paletteNode.id}-${Date.now()}`;
       const data: Record<string, unknown> = {
         ...(paletteNode.defaultData ?? {}),
