@@ -2,6 +2,8 @@
 
 `pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
 
+On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim.
+
 ## GitHub Actions
 
 [`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into three standard `ubuntu-latest` job templates (`static`, unsharded `unit` coverage, and a 7-way `e2e` shard matrix). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.agents/rules/github-actions-standard-runners.md`](../../.agents/rules/github-actions-standard-runners.md).
