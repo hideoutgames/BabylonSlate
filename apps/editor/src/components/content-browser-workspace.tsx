@@ -1,12 +1,7 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDownIcon,
+  ArrowUpRightIcon,
   FolderIcon,
   FolderPlusIcon,
   ListFilterIcon,
@@ -25,7 +20,10 @@ import {
   embedGltfImportBatch,
   groupMsdfImportBatch,
 } from "@babylonslate/assets";
-import { convertObjImportBatch, animationRetargetHasMatches } from "@babylonslate/render";
+import {
+  convertObjImportBatch,
+  animationRetargetHasMatches,
+} from "@babylonslate/render";
 import {
   ContextMenuOverlay,
   SearchInput,
@@ -40,9 +38,25 @@ import {
 } from "@babylonslate/editor-kit";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
-import { documentKindForAssetType, CONTENT_BROWSER_ID } from "@babylonslate/core";
-import { createAppSettingsStore, isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
+import {
+  documentKindForAssetType,
+  CONTENT_BROWSER_ID,
+} from "@babylonslate/core";
+import {
+  createAppSettingsStore,
+  isMobilePlatform,
+  pickImportFiles,
+} from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
+import { cn } from "@babylonslate/ui/lib/utils";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@babylonslate/ui/components/sheet";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -156,6 +170,7 @@ import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
+import { usePhoneLayout } from "../shell/use-platform-layout";
 
 const PROJECT_ROOT_ID = PROJECT_CONTENT_ROOT_ID;
 
@@ -187,6 +202,11 @@ export function ContentBrowserWorkspace({
 }: {
   hidden?: boolean;
 } = {}) {
+  const phone = usePhoneLayout();
+  const [foldersOpen, setFoldersOpen] = useState(false);
+  useEffect(() => {
+    if (hidden || !phone) setFoldersOpen(false);
+  }, [hidden, phone]);
   const {
     projectDocument,
     assetRegistry,
@@ -1769,26 +1789,127 @@ export function ContentBrowserWorkspace({
     );
   }
 
+  const selectedFolderToOpen =
+    selectionCount === 1 ? [...selectedFolderPaths][0] : undefined;
+  const selectedAssetToOpen =
+    selectionCount === 1 && selectedGuids.size === 1
+      ? assetRegistry.getByGuid([...selectedGuids][0]!)
+      : undefined;
+  const canOpenSelection =
+    Boolean(selectedFolderToOpen) ||
+    Boolean(
+      selectedAssetToOpen &&
+        documentKindForAssetType(selectedAssetToOpen.header.type),
+    );
+
+  const folderNavigation = (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size={phone ? "touch" : "sm"}
+        className="w-full justify-start"
+        data-testid="content-browser-new-folder"
+        disabled={busy || !selectedRootWritable}
+        onClick={() => {
+          setFoldersOpen(false);
+          setNameDialog({ kind: "folder", value: "NewFolder" });
+        }}
+      >
+        <FolderPlusIcon data-icon="inline-start" />
+        New Folder
+      </Button>
+      <div className="min-h-0 flex-1">
+        <TreeView
+          nodes={treeNodes}
+          selectedId={treeSelectedId}
+          selectedIds={treeSelectedIds}
+          rowHeight={phone ? 44 : undefined}
+          onSelect={(id, options) => {
+            handleTreeSelect(id, options);
+            if (phone) setFoldersOpen(false);
+          }}
+          onToggleExpanded={(id) => {
+            const row = browserRows.find((item) => item.id === id);
+            if (!row || row.kind !== "folder" || !row.hasChildren) return;
+            userToggledFoldersRef.current.add(id);
+            setCollapsedFolders((current) => {
+              const next = new Set(current);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            });
+          }}
+          onReparent={handleTreeReparent}
+          onActivate={handleTreeActivate}
+          emptyLabel="No Folders"
+          data-testid="content-browser-folder-tree"
+        />
+      </div>
+    </>
+  );
+
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card"
       data-testid="content-browser-workspace"
     >
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+      <div
+        className={cn(
+          "flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2",
+          phone && "px-2",
+        )}
+      >
+        {phone ? (
+          <Sheet open={foldersOpen && !hidden} onOpenChange={setFoldersOpen}>
+            <SheetTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="touch"
+                  className="min-w-0 flex-1 justify-start"
+                  aria-label="Browse Folders"
+                  data-testid="content-browser-browse-folders"
+                />
+              }
+            >
+              <FolderIcon data-icon="inline-start" />
+              <span className="truncate">
+                {browserRows.find((row) => row.id === selectedFolderPath)?.label ??
+                  selectedFolderPath.split("/").at(-1) ??
+                  "Content"}
+              </span>
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              className="gap-0"
+              data-testid="content-browser-folders-sheet"
+            >
+              <SheetHeader>
+                <SheetTitle>Folders</SheetTitle>
+                <SheetDescription>Choose a folder to browse.</SheetDescription>
+              </SheetHeader>
+              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
+                {folderNavigation}
+              </div>
+            </SheetContent>
+          </Sheet>
+        ) : null}
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size={phone ? "touch-icon" : "sm"}
+          aria-label="Import"
           data-testid="content-browser-import"
           disabled={busy || !selectedRootWritable}
           onClick={() => void handleImport()}
         >
           <UploadIcon data-icon="inline-start" />
-          Import
+          {!phone ? "Import" : null}
         </Button>
         <Button
           type="button"
-          size="sm"
+          size={phone ? "touch" : "sm"}
           data-testid="content-browser-new-asset"
           disabled={busy || !selectedRootWritable}
           onClick={openNewAssetDialog}
@@ -1796,114 +1917,132 @@ export function ContentBrowserWorkspace({
           <PlusIcon data-icon="inline-start" />
           New Asset
         </Button>
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search assets…"
-          className="min-h-[var(--chrome-row,28px)] min-w-40"
-          data-testid="content-browser-search"
-        />
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                data-testid="content-browser-filter"
-                aria-label="Filter"
-              />
-            }
-          >
-            <ListFilterIcon data-icon="inline-start" />
-            Filter
-            {typeFilters.length > 0 ? ` (${typeFilters.length})` : ""}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="min-w-44"
-            data-testid="content-browser-filter-menu"
-          >
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Asset types</DropdownMenuLabel>
-              {typeChips.map((type) => (
-                <DropdownMenuCheckboxItem
-                  key={type}
-                  checked={typeFilters.includes(type)}
-                  data-testid={`content-browser-filter-${type}`}
-                  onCheckedChange={(checked) => {
-                    setTypeFilters((current) =>
-                      checked === true
-                        ? current.includes(type)
-                          ? current
-                          : [...current, type]
-                        : current.filter((entry) => entry !== type),
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2",
+            phone && "basis-full",
+          )}
+        >
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search assets…"
+            aria-label="Search Assets"
+            className={cn(
+              "min-h-[var(--chrome-row,28px)]",
+              phone ? "h-11 min-w-0" : "min-w-40",
+            )}
+            data-testid="content-browser-search"
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant={typeFilters.length > 0 ? "secondary" : "outline"}
+                  size={phone ? "touch-icon" : "sm"}
+                  data-testid="content-browser-filter"
+                  aria-label={
+                    typeFilters.length > 0
+                      ? `Filter (${typeFilters.length})`
+                      : "Filter"
+                  }
+                />
+              }
+            >
+              <ListFilterIcon data-icon="inline-start" />
+              {!phone
+                ? `Filter${typeFilters.length > 0 ? ` (${typeFilters.length})` : ""}`
+                : null}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="min-w-44"
+              data-testid="content-browser-filter-menu"
+            >
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Asset Types</DropdownMenuLabel>
+                {typeChips.map((type) => (
+                  <DropdownMenuCheckboxItem
+                    key={type}
+                    checked={typeFilters.includes(type)}
+                    data-testid={`content-browser-filter-${type}`}
+                    onCheckedChange={(checked) => {
+                      setTypeFilters((current) =>
+                        checked === true
+                          ? current.includes(type)
+                            ? current
+                            : [...current, type]
+                          : current.filter((entry) => entry !== type),
+                      );
+                    }}
+                  >
+                    <TypeVisualIcon
+                      visual={resolveTypeVisual({ assetType: type })}
+                      className="size-4"
+                    />
+                    {type}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size={phone ? "touch-icon" : "sm"}
+                  data-testid="content-browser-sort"
+                  aria-label="Sort"
+                />
+              }
+            >
+              <ArrowUpDownIcon data-icon="inline-start" />
+              {!phone ? "Sort" : null}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="min-w-44"
+              data-testid="content-browser-sort-menu"
+            >
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={sortMode}
+                  onValueChange={(value) => {
+                    const next = CONTENT_BROWSER_SORT_OPTIONS.find(
+                      (option) => option.mode === value,
                     );
+                    if (next) setSortMode(next.mode);
                   }}
                 >
-                  <TypeVisualIcon
-                    visual={resolveTypeVisual({ assetType: type })}
-                    className="size-4"
-                  />
-                  {type}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                data-testid="content-browser-sort"
-                aria-label="Sort"
-              />
-            }
-          >
-            <ArrowUpDownIcon data-icon="inline-start" />
-            Sort
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="min-w-44"
-            data-testid="content-browser-sort-menu"
-          >
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Sort By</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={sortMode}
-                onValueChange={(value) => {
-                  const next = CONTENT_BROWSER_SORT_OPTIONS.find(
-                    (option) => option.mode === value,
-                  );
-                  if (next) setSortMode(next.mode);
-                }}
-              >
-                {CONTENT_BROWSER_SORT_OPTIONS.map((option) => (
-                  <DropdownMenuRadioItem
-                    key={option.mode}
-                    value={option.mode}
-                    data-testid={`content-browser-sort-${option.mode}`}
-                  >
-                    {option.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <ContentBrowserSelectionActions
-          selectionCount={selectionCount}
-          busy={busy}
-          onDeselectAll={() => {
-            setSelectedGuids(new Set());
-            setSelectedFolderPaths(new Set());
-          }}
-          onRequestDelete={() => requestDeleteSelection()}
-        />
+                  {CONTENT_BROWSER_SORT_OPTIONS.map((option) => (
+                    <DropdownMenuRadioItem
+                      key={option.mode}
+                      value={option.mode}
+                      data-testid={`content-browser-sort-${option.mode}`}
+                    >
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        {!phone ? (
+          <ContentBrowserSelectionActions
+            selectionCount={selectionCount}
+            busy={busy}
+            onDeselectAll={() => {
+              setSelectedGuids(new Set());
+              setSelectedFolderPaths(new Set());
+            }}
+            onRequestDelete={() => requestDeleteSelection()}
+          />
+        ) : null}
         <input
           ref={importInputRef}
           type="file"
@@ -1919,47 +2058,11 @@ export function ContentBrowserWorkspace({
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside
-          className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-hidden border-r border-border p-2"
-        >
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full justify-start"
-            data-testid="content-browser-new-folder"
-            disabled={busy || !selectedRootWritable}
-            onClick={() =>
-              setNameDialog({ kind: "folder", value: "NewFolder" })
-            }
-          >
-            <FolderPlusIcon data-icon="inline-start" />
-            New Folder
-          </Button>
-          <div className="min-h-0 flex-1">
-            <TreeView
-              nodes={treeNodes}
-              selectedId={treeSelectedId}
-              selectedIds={treeSelectedIds}
-              onSelect={handleTreeSelect}
-              onToggleExpanded={(id) => {
-                const row = browserRows.find((item) => item.id === id);
-                if (!row || row.kind !== "folder" || !row.hasChildren) return;
-                userToggledFoldersRef.current.add(id);
-                setCollapsedFolders((current) => {
-                  const next = new Set(current);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                });
-              }}
-              onReparent={handleTreeReparent}
-              onActivate={handleTreeActivate}
-              emptyLabel="No folders"
-              data-testid="content-browser-folder-tree"
-            />
-          </div>
-        </aside>
+        {!phone ? (
+          <aside className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-hidden border-r border-border p-2">
+            {folderNavigation}
+          </aside>
+        ) : null}
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
@@ -1994,9 +2097,7 @@ export function ContentBrowserWorkspace({
               void openOrFocusDocument(asset);
             }}
             onDoubleClick={(event) => {
-              if (
-                !isContentBrowserEmptyGridDoubleClickTarget(event.target)
-              ) {
+              if (!isContentBrowserEmptyGridDoubleClickTarget(event.target)) {
                 return;
               }
               openNewAssetDialog();
@@ -2081,9 +2182,7 @@ export function ContentBrowserWorkspace({
                           consumeSelectClick={consumeSelectClick}
                           onOpen={() => void openOrFocusDocument(asset)}
                           sourceControlEnabled={sourceControl.enabled}
-                          lockState={sourceControl.lockStateForPath(
-                            asset.path,
-                          )}
+                          lockState={sourceControl.lockStateForPath(asset.path)}
                           lockOwnerName={
                             sourceControl.lockForPath(asset.path)?.ownerName
                           }
@@ -2100,6 +2199,46 @@ export function ContentBrowserWorkspace({
           </div>
         </div>
       </div>
+
+      {phone && selectionCount > 0 ? (
+        <div
+          className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border p-2"
+          data-testid="content-browser-phone-selection"
+        >
+          {canOpenSelection ? (
+            <Button
+              variant="outline"
+              size="touch"
+              aria-label="Open Selected Item"
+              disabled={busy}
+              onClick={() => {
+                if (selectedFolderToOpen) {
+                  setSelectedFolderPath(selectedFolderToOpen);
+                  setSelectedGuids(new Set());
+                  setSelectedFolderPaths(new Set());
+                  return;
+                }
+                if (selectedAssetToOpen) {
+                  void openOrFocusDocument(selectedAssetToOpen);
+                }
+              }}
+            >
+              <ArrowUpRightIcon data-icon="inline-start" />
+              Open
+            </Button>
+          ) : null}
+          <ContentBrowserSelectionActions
+            compact
+            selectionCount={selectionCount}
+            busy={busy}
+            onDeselectAll={() => {
+              setSelectedGuids(new Set());
+              setSelectedFolderPaths(new Set());
+            }}
+            onRequestDelete={() => requestDeleteSelection()}
+          />
+        </div>
+      ) : null}
 
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <ContextMenuOverlay menu={emptyGridMenu} onClose={closeEmptyGridMenu} />

@@ -9,6 +9,15 @@ import {
 } from "@babylonslate/ui/components/dialog";
 import { SearchInput } from "./search-input";
 import { Separator } from "@babylonslate/ui/components/separator";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
 import { cn } from "@babylonslate/ui/lib/utils";
 
 export interface CatalogCategory {
@@ -69,7 +78,7 @@ function categorySections(
   return sections;
 }
 
-/** Large centered dialog with category nav, search, and a scrollable body. */
+/** Category sidebar on tablets and desktop; category picker on phones. */
 export function CatalogDialog({
   open,
   onOpenChange,
@@ -101,7 +110,7 @@ export function CatalogDialog({
         data-testid={testId}
         initialFocus={autoFocusSearch ? searchRef : bodyRef}
         className={cn(
-          "flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none z-50",
+          "catalog-dialog flex h-[min(90dvh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
           className,
         )}
       >
@@ -111,6 +120,41 @@ export function CatalogDialog({
             <DialogDescription>{description}</DialogDescription>
           ) : null}
         </DialogHeader>
+        <div className="catalog-category-picker shrink-0 border-b px-4 py-2">
+          <Select
+            items={categories.map((category) => ({
+              value: category.id,
+              label: category.label,
+            }))}
+            value={activeCategoryId}
+            onValueChange={(id) => {
+              if (id !== null) onCategoryChange(id);
+            }}
+          >
+            <SelectTrigger
+              aria-label="Category"
+              className="min-h-[var(--touch-target,44px)] w-full"
+              data-testid={testId ? `${testId}-category-picker` : undefined}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              {sections.map((section, index) => (
+                <SelectGroup key={section.label ?? `ungrouped-${index}`}>
+                  {section.label ? <SelectLabel>{section.label}</SelectLabel> : null}
+                  {section.items.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      <span className="min-w-0 flex-1 truncate">{category.label}</span>
+                      {typeof category.count === "number" ? (
+                        <span className="text-muted-foreground">{category.count}</span>
+                      ) : null}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div
           className="shrink-0 border-b px-4 py-3"
           onKeyDown={(event) => {
@@ -137,7 +181,8 @@ export function CatalogDialog({
         </div>
         <div className="flex min-h-0 flex-1">
           <nav
-            className="flex w-44 shrink-0 flex-col gap-2 overflow-y-auto border-r p-2 sm:w-52"
+            aria-label="Categories"
+            className="catalog-sidebar flex w-44 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain border-r bg-sidebar p-2 sm:w-52"
             data-testid={testId ? `${testId}-categories` : undefined}
           >
             {sections.map((section, index) => (
@@ -163,6 +208,7 @@ export function CatalogDialog({
                         active ? "border-l-primary" : "border-l-transparent",
                       )}
                       onClick={() => onCategoryChange(category.id)}
+                      aria-current={active ? "true" : undefined}
                       data-testid={
                         testId ? `${testId}-category-${category.id}` : undefined
                       }
@@ -182,7 +228,7 @@ export function CatalogDialog({
           <div
             ref={bodyRef}
             tabIndex={-1}
-            className="min-h-0 flex-1 overflow-y-auto outline-none"
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain outline-none"
             data-testid={testId ? `${testId}-body` : undefined}
           >
             <div className="p-4">{children}</div>

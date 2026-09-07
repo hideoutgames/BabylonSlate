@@ -3,6 +3,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
 import type { CreatableAssetType } from "../lib/content-browser-helpers";
 
+const layout = vi.hoisted(() => ({ phone: false }));
+vi.mock("../shell/use-platform-layout", () => ({
+  usePhoneLayout: () => layout.phone,
+}));
+
 function renderDialog(
   overrides: Partial<Parameters<typeof ContentBrowserNewAssetDialog>[0]> = {},
 ) {
@@ -39,6 +44,33 @@ function renderDialog(
 describe("ContentBrowserNewAssetDialog", () => {
   afterEach(() => {
     cleanup();
+    layout.phone = false;
+  });
+
+  it("shows type selection and asset details one at a time on phones", () => {
+    layout.phone = true;
+    const { onCreate } = renderDialog({ type: "Class", name: "Hero" });
+    expect(screen.getByRole("radiogroup", { name: "Asset Type" })).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Create" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.queryByRole("radiogroup", { name: "Asset Type" })).toBeNull();
+    expect(
+      (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
+    ).toBe("Hero");
+    expect(
+      screen.getByRole("radiogroup", { name: "Parent Class" }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back To Types" }));
+    expect(screen.getByRole("radiogroup", { name: "Asset Type" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
+    ).toBe("Hero");
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(onCreate).toHaveBeenCalledOnce();
   });
 
   it("selects one type card at a time", () => {
@@ -52,8 +84,14 @@ describe("ContentBrowserNewAssetDialog", () => {
   });
 
   it("shows the parent class picker only for Class", () => {
-    const { rerender, onOpenChange, onTypeChange, onNameChange, onParentClassChange, onCreate } =
-      renderDialog();
+    const {
+      rerender,
+      onOpenChange,
+      onTypeChange,
+      onNameChange,
+      onParentClassChange,
+      onCreate,
+    } = renderDialog();
     expect(screen.queryByTestId("new-asset-parent")).toBeNull();
     rerender(
       <ContentBrowserNewAssetDialog
@@ -72,7 +110,9 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(screen.getByTestId("new-asset-parent")).toBeTruthy();
     expect(screen.getByTestId("new-asset-parent-search")).toBeTruthy();
     expect(
-      screen.getByTestId("new-asset-parent-BObject").getAttribute("data-selected"),
+      screen
+        .getByTestId("new-asset-parent-BObject")
+        .getAttribute("data-selected"),
     ).toBe("true");
     fireEvent.click(screen.getByTestId("new-asset-parent-Actor"));
     expect(onParentClassChange).toHaveBeenCalledWith("Actor");
@@ -132,9 +172,9 @@ describe("ContentBrowserNewAssetDialog", () => {
       ],
     });
     expect(screen.getByTestId("new-asset-parent-Hero")).toBeTruthy();
-    expect(screen.getByTestId("new-asset-parent-Hero").getAttribute("data-depth")).toBe(
-      "2",
-    );
+    expect(
+      screen.getByTestId("new-asset-parent-Hero").getAttribute("data-depth"),
+    ).toBe("2");
     fireEvent.change(screen.getByTestId("new-asset-parent-search"), {
       target: { value: "Hero" },
     });
@@ -143,10 +183,18 @@ describe("ContentBrowserNewAssetDialog", () => {
   });
 
   it("disables Create when the name is empty or taken", () => {
-    const { rerender, onOpenChange, onTypeChange, onNameChange, onParentClassChange, onCreate } =
-      renderDialog();
+    const {
+      rerender,
+      onOpenChange,
+      onTypeChange,
+      onNameChange,
+      onParentClassChange,
+      onCreate,
+    } = renderDialog();
     expect(
-      screen.getByTestId("content-browser-new-asset-create").hasAttribute("disabled"),
+      screen
+        .getByTestId("content-browser-new-asset-create")
+        .hasAttribute("disabled"),
     ).toBe(true);
     rerender(
       <ContentBrowserNewAssetDialog
@@ -164,7 +212,9 @@ describe("ContentBrowserNewAssetDialog", () => {
     );
     expect(screen.getByTestId("new-asset-name-taken")).toBeTruthy();
     expect(
-      screen.getByTestId("content-browser-new-asset-create").hasAttribute("disabled"),
+      screen
+        .getByTestId("content-browser-new-asset-create")
+        .hasAttribute("disabled"),
     ).toBe(true);
   });
 

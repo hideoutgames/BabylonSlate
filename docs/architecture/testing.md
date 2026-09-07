@@ -2,6 +2,13 @@
 
 `pnpm verify` runs dependency-free Node tests for the agent-wait helper, typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
 
+## Responsive editor checks
+
+- `e2e/phone-editor.spec.ts` covers 390x844 phone navigation/tools and 844x390 phone landscape, one visible Dockview window, and restoration to the 1194x834 tablet layout.
+- `e2e/phone-content-browser.spec.ts` covers touch folder navigation, explicit Open, and the two-step New Asset flow. These run under desktop-chrome with phone viewport/touch overrides; existing iPad tests remain unchanged.
+- Shared CatalogDialog tests cover category selection; real Dockview tests cover panel visibility, preservation, and layout restoration. Phone browser emulation does not certify native iOS/Android packaging or physical-device behavior.
+- Set `PLAYWRIGHT_PORT` when another checkout uses the default 4173 port, so verification builds and tests the current worktree. The default CI port is unchanged.
+
 ## Quiet agent waits
 
 Use `pnpm --silent agent:wait local --script verify` to run full verification once with complete stdout/stderr in a unique OS temporary directory. Use `local --script test -- --project node packages/core` to forward filters unchanged to other scripts. Arguments after `--` belong to the package script. `--timeout-seconds <seconds>` overrides the two-hour operation deadline. The helper launches the current `npm_execpath` entry through Node for JavaScript package managers, or directly for executable pnpm; it never executes a Windows `.cmd` shim or changes script-shell configuration.

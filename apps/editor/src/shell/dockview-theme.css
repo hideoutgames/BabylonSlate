@@ -10,42 +10,45 @@
   --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
   --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
-  --dv-tab-margin: 0 2px;
+  --dv-tab-margin: 0;
   --dv-tab-divider-color: var(--border);
-  --dv-separator-border: 1px solid
-    color-mix(in oklch, var(--foreground) 18%, transparent);
+  --dv-separator-border: 1px solid var(--border);
   --dv-paneview-header-border-color: var(--border);
-  --dv-drag-over-background-color: color-mix(in oklch, var(--chrome-tab-accent) 20%, transparent);
+  --dv-drag-over-background-color: color-mix(
+    in oklch,
+    var(--chrome-tab-accent) 20%,
+    transparent
+  );
   --dv-drag-over-border-color: var(--chrome-tab-accent);
 }
 
-/* Compact tab strip on fine pointers (mouse / trackpad). */
+/* Panel headers share the compact chrome rhythm on iPad and desktop. */
 .dockview-theme-babylonslate .dv-tab {
-  min-height: 18px;
+  min-height: var(--chrome-row, 28px);
   min-width: 56px;
   padding-inline: 6px;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   color: var(--muted-foreground);
 }
 
 .dockview-theme-babylonslate .dv-tabs-and-actions-container {
-  min-height: 18px;
+  min-height: var(--chrome-row, 28px);
 }
 
-/* Coarse pointers: half of the previous 52px strip. */
+/* Space labels horizontally without making every panel header taller. */
 @media (pointer: coarse) {
   .dockview-theme-babylonslate {
     --dv-tabs-and-actions-container-font-size: 11px;
   }
 
   .dockview-theme-babylonslate .dv-tab {
-    min-height: 26px;
+    min-height: var(--chrome-row, 28px);
     min-width: 64px;
     padding-inline: 8px;
   }
 
   .dockview-theme-babylonslate .dv-tabs-and-actions-container {
-    min-height: 26px;
+    min-height: var(--chrome-row, 28px);
   }
 }
 
@@ -79,7 +82,7 @@
 
 .dockview-theme-babylonslate .dv-content-container {
   background: var(--background);
-  outline: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
+  outline: 1px solid var(--border);
   outline-offset: -1px;
 }
 

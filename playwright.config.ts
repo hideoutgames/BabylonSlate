@@ -6,6 +6,10 @@ const IPAD_TOUCH = {
   deviceScaleFactor: 2,
 };
 
+// Let parallel worktrees verify their own build without reusing another checkout.
+const port = process.env.PLAYWRIGHT_PORT ?? "4173";
+const baseURL = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: "./e2e",
   // Dirty Play saves/compiles and collects materials before the overlay mounts.
@@ -17,7 +21,7 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL,
     trace: "on-first-retry",
   },
   projects: [
@@ -38,10 +42,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command:
-      "pnpm --filter editor build && pnpm --filter editor preview -- --host 127.0.0.1 --port 4173",
+    command: `pnpm --filter editor build && pnpm --filter editor preview -- --host 127.0.0.1 --port ${port} --strictPort`,
     env: { VITE_TEST_MODE: "true" },
-    url: "http://127.0.0.1:4173",
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
   },

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { projectContentRoot } from "@babylonslate/assets";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
@@ -10,7 +16,7 @@ import {
   CONTENT_BROWSER_TILE_WIDTH_PX,
 } from "../lib/content-browser-grid";
 
-const { docs, loadAssetThumbnail } = vi.hoisted(() => {
+const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
   const loadAssetThumbnail = vi.fn(async () => new Uint8Array([1, 2, 3]));
   const docs = {
     projectDocument: { settings: { pluginOverrides: {} } },
@@ -35,8 +41,12 @@ const { docs, loadAssetThumbnail } = vi.hoisted(() => {
     },
     activeDocumentId: "content-browser",
   };
-  return { docs, loadAssetThumbnail };
+  return { docs, loadAssetThumbnail, layout: { phone: false } };
 });
+
+vi.mock("../shell/use-platform-layout", () => ({
+  usePhoneLayout: () => layout.phone,
+}));
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => docs,
@@ -72,7 +82,7 @@ function texture(index: number): IndexedAsset {
   };
 }
 
-function installRegistry(assets: IndexedAsset[]) {
+function installRegistry(assets: IndexedAsset[], folders: string[] = []) {
   const root = projectContentRoot();
   docs.assetRegistry = {
     getRoot: (id: string) => (id === "project" ? root : undefined),
@@ -80,8 +90,20 @@ function installRegistry(assets: IndexedAsset[]) {
     folderTree: () => ({
       name: "assets",
       path: "assets",
-      children: [],
-      assets: assets.map((asset) => asset.header.guid),
+      children: folders.map((name) => ({
+        name,
+        path: `assets/${name}`,
+        children: [],
+        assets: assets
+          .filter((asset) => asset.path.startsWith(`assets/${name}/`))
+          .map((asset) => asset.header.guid),
+      })),
+      assets: assets
+        .filter(
+          (asset) =>
+            !folders.some((name) => asset.path.startsWith(`assets/${name}/`)),
+        )
+        .map((asset) => asset.header.guid),
     }),
     getByGuid: (guid: string) =>
       assets.find((asset) => asset.header.guid === guid),
@@ -130,8 +152,14 @@ afterEach(async () => {
   await Promise.resolve();
   loadAssetThumbnail.mockClear();
   docs.thumbnailsEnabled = true;
+  layout.phone = false;
+  docs.openDocument.mockClear();
   if (clientWidthDescriptor) {
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidthDescriptor);
+    Object.defineProperty(
+      HTMLElement.prototype,
+      "clientWidth",
+      clientWidthDescriptor,
+    );
   }
   if (clientHeightDescriptor) {
     Object.defineProperty(
@@ -163,7 +191,9 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(tiles.length).toBeGreaterThan(0);
     expect(tiles.length).toBeLessThan(80);
     expect(
-      document.querySelector('[data-testid="content-item-assets/tex-0.babasset"]'),
+      document.querySelector(
+        '[data-testid="content-item-assets/tex-0.babasset"]',
+      ),
     ).toBeTruthy();
     expect(
       document.querySelector(
@@ -178,5 +208,98 @@ describe("ContentBrowserWorkspace grid window", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(loadAssetThumbnail).not.toHaveBeenCalled();
+  });
+
+  it("uses an on-demand folder drawer on phones and returns to the chosen folder", async () => {
+    layout.phone = true;
+    docs.thumbnailsEnabled = false;
+    const nested = { ...texture(1), path: "assets/Textures/tex-1.babasset" };
+    installRegistry([texture(0), nested], ["Textures"]);
+    render(<ContentBrowserWorkspace />);
+
+    expect(screen.queryByTestId("content-browser-folder-tree")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Browse Folders" }));
+    expect(screen.getByRole("dialog", { name: "Folders" })).toBeTruthy();
+    const folder = screen.getByTestId("tree-row-assets/Textures");
+    fireEvent.pointerDown(folder, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+    });
+    fireEvent.pointerUp(folder, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Folders" })).toBeNull();
+    });
+    expect(
+      screen.getByRole("button", { name: "Browse Folders" }).textContent,
+    ).toContain("Textures");
+    expect(
+      screen.getByTestId("content-item-assets/Textures/tex-1.babasset"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("content-item-assets/tex-0.babasset"),
+    ).toBeNull();
+  });
+
+  it("keeps folder navigation alongside assets on larger screens", () => {
+    docs.thumbnailsEnabled = false;
+    render(<ContentBrowserWorkspace />);
+    expect(screen.getByTestId("content-browser-folder-tree")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Browse Folders" })).toBeNull();
+  });
+
+  it("dismisses folder navigation when the Content Browser becomes hidden", async () => {
+    layout.phone = true;
+    docs.thumbnailsEnabled = false;
+    const { rerender } = render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "Browse Folders" }));
+    expect(screen.getByRole("dialog", { name: "Folders" })).toBeTruthy();
+    rerender(<ContentBrowserWorkspace hidden />);
+    rerender(<ContentBrowserWorkspace />);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Folders" })).toBeNull();
+    });
+  });
+
+  it("does not offer Open for an asset without a document editor", () => {
+    layout.phone = true;
+    docs.thumbnailsEnabled = false;
+    const mesh = texture(0);
+    mesh.header.type = "Mesh";
+    installRegistry([mesh]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    expect(screen.queryByRole("button", { name: "Open Selected Item" })).toBeNull();
+    expect(screen.getByTestId("content-browser-delete-selected")).toBeTruthy();
+  });
+
+  it("offers a direct Open action for the selected asset on phones", async () => {
+    layout.phone = true;
+    docs.thumbnailsEnabled = false;
+    installRegistry([texture(0)]);
+    render(<ContentBrowserWorkspace />);
+
+    expect(
+      screen.queryByRole("button", { name: "Open Selected Item" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByRole("button", { name: "Open Selected Item" }));
+
+    await waitFor(() =>
+      expect(docs.openDocument).toHaveBeenCalledWith({
+        kind: "asset-settings",
+        path: "assets/tex-0.babasset",
+        label: "Tex 0",
+      }),
+    );
+    fireEvent.click(screen.getByTestId("content-browser-deselect-all"));
+    expect(
+      screen.queryByRole("button", { name: "Open Selected Item" }),
+    ).toBeNull();
   });
 });

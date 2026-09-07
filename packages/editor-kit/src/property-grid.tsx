@@ -389,7 +389,7 @@ export function PropertyGrid({
 }: PropertyGridProps) {
   const compact = density === "compact";
   return (
-    <div className="flex flex-col gap-0" data-testid={testId}>
+    <div className="flex flex-col gap-0" data-slot="property-grid" data-testid={testId}>
       {title ? (
         <h3 className="bg-secondary px-3 py-2 text-sm font-semibold text-foreground">
           {title}

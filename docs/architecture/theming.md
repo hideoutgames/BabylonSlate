@@ -24,6 +24,15 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 - Fixed context menus and Play/Preview Build overlay chrome consume the tokens themselves; their canvases and iframe remain edge-to-edge.
 - The visible native iPad status bar follows the resolved editor theme through the VFS status-bar-style port.
 
+## Adaptive editor layout
+
+- iPad and desktop retain the compact 28px global bars, small Primary actions, pinned Content Browser/Scene tabs, and resizable dock layout. Panel headers follow the same compact rhythm; semantic borders and surfaces separate tools from content.
+- Phone layout activates below 768px wide, or at 500px tall or less with a coarse pointer. The global bars use 44px targets; Content Browser and Open Documents provide navigation, with secondary commands under More Tools.
+- Phone Dockview shows one window with a bottom **Window** picker. Window switching uses Dockview visibility and keeps the tablet layout separate; returning to a larger window restores its splits. Focus is unnecessary in this mode.
+- Content Browser keeps its tile appearance. Folders open in a Sheet, selected items have an explicit **Open** action, and **New Asset** separates type selection from details. Catalog dialogs replace their category sidebar with a picker.
+- Dialogs and sheets fit the dynamic viewport and safe areas. Menu rows expand for coarse pointers. Feedback uses color and restrained fades, without button movement; reduced-motion preferences are respected.
+- These adaptations apply [Apple HIG layout](https://developer.apple.com/design/human-interface-guidelines/layout), [button](https://developer.apple.com/design/human-interface-guidelines/buttons), and [toolbar](https://developer.apple.com/design/human-interface-guidelines/toolbars) guidance while retaining professional editor density. Device input and safe areas determine presentation; the UI does not depend on an Apple-only host.
+
 ## Design philosophy
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
