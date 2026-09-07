@@ -5,6 +5,7 @@
   "scripts": {
     "agent:wait": "node scripts/agent-wait.mjs",
     "test:agent-wait": "node --test scripts/agent-wait.test.mjs",
+    "test:distribution": "node --test scripts/distribution/*.test.mjs",
     "dev": "pnpm --filter editor dev",
     "docs:dev": "pnpm --filter docs-site dev",
     "build": "pnpm -r build",
@@ -16,7 +17,7 @@
     "test:coverage": "VITEST_COVERAGE=1 VITEST_MAX_WORKERS=4 vitest run --config vitest.workspace.ts --coverage && pnpm test:editor-unit",
     "test:watch": "vitest --config vitest.workspace.ts",
     "test:e2e": "playwright test",
-    "verify": "pnpm test:agent-wait && pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm test:e2e && pnpm --filter docs-site build"
+    "verify": "pnpm test:agent-wait && pnpm test:distribution && pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm test:e2e && pnpm --filter docs-site build"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
@@ -35,6 +36,7 @@
     "typescript": "~5.8.2",
     "typescript-eslint": "^8.26.1",
     "vitest": "^4.0.0",
+    "yaml": "2.9.0",
     "zod": "^4.0.0"
   },
   "packageManager": "pnpm@10.33.3"
