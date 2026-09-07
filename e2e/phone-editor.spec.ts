@@ -21,7 +21,10 @@ test.describe("Phone Editor", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page.screenshot({ path: "test-results/phone-content-browser.png" });
+    await page.screenshot({
+      path: "test-results/phone-content-browser.png",
+      animations: "disabled",
+    });
     await expect(page.getByTestId("document-switcher")).toBeVisible();
     await expectWithinViewport(page, "document-switcher");
     await expectWithinViewport(page, "editor-global-toolbar");
@@ -36,7 +39,10 @@ test.describe("Phone Editor", () => {
     await expect(
       page.getByRole("combobox", { name: "Category" }),
     ).toBeVisible();
-    await page.screenshot({ path: "test-results/phone-project-settings.png" });
+    await page.screenshot({
+      path: "test-results/phone-project-settings.png",
+      animations: "disabled",
+    });
   });
 
   test("shows one scene window, switches windows, and restores the tablet arrangement", async ({
@@ -49,7 +55,10 @@ test.describe("Phone Editor", () => {
       .dblclick();
     await waitForSceneViewportReady(page);
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
-    await page.screenshot({ path: "test-results/ipad-editor.png" });
+    await page.screenshot({
+      path: "test-results/ipad-editor.png",
+      animations: "disabled",
+    });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByTestId("phone-window-switcher")).toBeVisible();
     await expect(page.getByTestId("viewport-panel")).toBeVisible();
@@ -58,7 +67,10 @@ test.describe("Phone Editor", () => {
     await page.getByRole("option", { name: "Outliner", exact: true }).tap();
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
     await expect(page.getByTestId("viewport-panel")).toBeHidden();
-    await page.screenshot({ path: "test-results/phone-outliner.png" });
+    await page.screenshot({
+      path: "test-results/phone-outliner.png",
+      animations: "disabled",
+    });
     await page.setViewportSize({ width: 844, height: 390 });
     await expect(page.getByTestId("phone-window-switcher")).toBeVisible();
     await expectWithinViewport(page, "phone-window-switcher");
