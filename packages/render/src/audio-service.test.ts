@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AUDIO_MAX_CONCURRENT_VOICES,
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
@@ -1573,6 +1573,96 @@ describe("AudioService", () => {
     backend.finish("one-shot");
     backend.finish("looping");
     expect(ended).toEqual(["one-shot"]);
+    service.dispose();
+  });
+});
+
+describe("AudioService lifecycle events", () => {
+  it("pauses on audio interruption begin and resumes on interruption end", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const target = new EventTarget();
+    const service = new AudioService({ backend, lifecycleTarget: target });
+
+    target.dispatchEvent(
+      new CustomEvent("babylonslate:audiointerruption", {
+        detail: { type: "began" },
+      }),
+    );
+    expect(backend.paused).toBe(true);
+
+    target.dispatchEvent(
+      new CustomEvent("babylonslate:audiointerruption", {
+        detail: { type: "ended", shouldResume: true },
+      }),
+    );
+    expect(backend.paused).toBe(false);
+
+    service.dispose();
+  });
+
+  it("keeps audio paused after interruption end when the user already paused", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const target = new EventTarget();
+    const service = new AudioService({ backend, lifecycleTarget: target });
+
+    service.setPaused(true);
+    target.dispatchEvent(
+      new CustomEvent("babylonslate:audiointerruption", {
+        detail: { type: "began" },
+      }),
+    );
+    target.dispatchEvent(
+      new CustomEvent("babylonslate:audiointerruption", {
+        detail: { type: "ended", shouldResume: true },
+      }),
+    );
+    expect(backend.paused).toBe(true);
+
+    service.dispose();
+  });
+
+  it("does not resume when the interruption end signals should not resume", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const target = new EventTarget();
+    const service = new AudioService({ backend, lifecycleTarget: target });
+
+    target.dispatchEvent(
+      new CustomEvent("babylonslate:audiointerruption", {
+        detail: { type: "began" },
+      }),
+    );
+    target.dispatchEvent(
+      new CustomEvent("babylonslate:audiointerruption", {
+        detail: { type: "ended", shouldResume: false },
+      }),
+    );
+    expect(backend.paused).toBe(true);
+
+    service.dispose();
+  });
+
+  it("recovers the audio context on route change when not paused", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const resumeContext = vi.spyOn(backend, "resumeContext");
+    const target = new EventTarget();
+    const service = new AudioService({ backend, lifecycleTarget: target });
+
+    target.dispatchEvent(new Event("babylonslate:audioroutechange"));
+    expect(resumeContext).toHaveBeenCalled();
+
+    service.dispose();
+  });
+
+  it("does not recover the audio context on route change when paused by the user", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const resumeContext = vi.spyOn(backend, "resumeContext");
+    const target = new EventTarget();
+    const service = new AudioService({ backend, lifecycleTarget: target });
+
+    service.setPaused(true);
+    target.dispatchEvent(new Event("babylonslate:audioroutechange"));
+    expect(resumeContext).not.toHaveBeenCalled();
+
     service.dispose();
   });
 });

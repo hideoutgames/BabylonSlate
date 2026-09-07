@@ -171,6 +171,9 @@ importers:
       '@babylonslate/vfs':
         specifier: workspace:*
         version: link:../../packages/vfs
+      '@capacitor/app':
+        specifier: ^8.0.0
+        version: 8.1.1(@capacitor/core@8.5.0)
       '@capacitor/cli':
         specifier: ^8.0.0
         version: 8.5.0
@@ -730,6 +733,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
+      '@capacitor/app':
+        specifier: ^8.0.0
+        version: 8.1.1(@capacitor/core@8.5.0)
       '@capacitor/core':
         specifier: ^8.0.0
         version: 8.5.0
@@ -1026,6 +1032,11 @@ packages:
 
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
+
+  '@capacitor/app@8.1.1':
+    resolution: {integrity: sha512-xM2ZTX5jK60tFtmjsmJv+Cdj1Qsb6NcavkqmdEnCPQBeya9oKhamZJxYOnQNj1ZvcJM7sWfG6BEtSLx42pisbA==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/cli@8.5.0':
     resolution: {integrity: sha512-rLdzMUM5QV4WITcqoWv04p32i14BXgUH2diqEH6MWQlWaJfiyNrvOyt/+d5vHAfOxOm1klBu637VDEobctlwBA==}
@@ -5379,6 +5390,10 @@ snapshots:
     optional: true
 
   '@braintree/sanitize-url@7.1.2': {}
+
+  '@capacitor/app@8.1.1(@capacitor/core@8.5.0)':
+    dependencies:
+      '@capacitor/core': 8.5.0
 
   '@capacitor/cli@8.5.0':
     dependencies:
