@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   commandSignal,
   pnpmCommand,
@@ -10,14 +11,32 @@ import {
 } from "./process-runner.mjs";
 import { sourceState } from "./source-state.mjs";
 
-export function ownedProcesses(rows, roots) {
-  const owned = new Set(roots);
+export function ownedProcesses(rows, roots, observed = new Map()) {
+  const rootIds = new Set(roots);
+  const owned = new Set(
+    rows
+      .filter((row) =>
+        observed.has(row.pid)
+          ? observed.get(row.pid) === row.started
+          : rootIds.has(row.pid),
+      )
+      .map((row) => row.pid),
+  );
   let previous;
   do {
     previous = owned.size;
     for (const row of rows) if (owned.has(row.parent)) owned.add(row.pid);
   } while (previous !== owned.size);
   return rows.filter((row) => owned.has(row.pid));
+}
+
+export async function waitForExit(sample, pause = () => delay(1000)) {
+  let remaining = await sample();
+  for (let attempt = 0; remaining.length && attempt < 3; attempt++) {
+    await pause();
+    remaining = await sample();
+  }
+  return remaining;
 }
 
 /** A slow OS query skips sampling ticks instead of building a post-run backlog. */
@@ -44,7 +63,7 @@ export function startSampling(sample, intervalMs = 2000) {
 async function processSnapshot(signal) {
   if (process.platform === "win32") {
     const script =
-      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize,KernelModeTime,UserModeTime | ConvertTo-Json -Compress";
+      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate,WorkingSetSize,KernelModeTime,UserModeTime | ConvertTo-Json -Compress";
     const result = await runCommand(
       "powershell.exe",
       ["-NoProfile", "-NonInteractive", "-Command", script],
@@ -54,20 +73,25 @@ async function processSnapshot(signal) {
     return JSON.parse(result.output).map((row) => ({
       pid: row.ProcessId,
       parent: row.ParentProcessId,
+      started: row.CreationDate,
       rss: Number(row.WorkingSetSize),
       cpuMs: (Number(row.KernelModeTime) + Number(row.UserModeTime)) / 10_000,
     }));
   }
-  const result = await runCommand("ps", ["-axo", "pid=,ppid=,rss=,time="], {
-    capture: true,
-    signal,
-  });
+  const result = await runCommand(
+    "ps",
+    ["-axo", "pid=,ppid=,rss=,time=,lstart="],
+    {
+      capture: true,
+      signal,
+    },
+  );
   if (result.code) throw new Error("Cannot sample process resources");
   return result.output
     .trim()
     .split("\n")
     .map((line) => {
-      const [pid, parent, rss, time] = line.trim().split(/\s+/);
+      const [pid, parent, rss, time, ...started] = line.trim().split(/\s+/);
       const [days, clock] = time.includes("-") ? time.split("-") : ["0", time];
       const seconds = clock
         .split(":")
@@ -75,6 +99,7 @@ async function processSnapshot(signal) {
       return {
         pid: +pid,
         parent: +parent,
+        started: started.join(" "),
         rss: +rss * 1024,
         cpuMs: (+days * 86400 + seconds) * 1000,
       };
@@ -111,21 +136,23 @@ export async function benchmarkTests(args, options = {}) {
   await mkdir(directory, { recursive: true });
   const initial = await sourceState(repoRoot);
   const roots = new Set();
-  const observed = new Set();
+  const observed = new Map();
   const cpu = new Map();
   let peakRssBytes = 0;
   const sample = async () => {
     const rows = ownedProcesses(
       await processSnapshot(options.signal),
-      new Set([...roots, ...observed]),
+      roots,
+      observed,
     );
     peakRssBytes = Math.max(
       peakRssBytes,
       rows.reduce((sum, row) => sum + row.rss, 0),
     );
     for (const row of rows) {
-      observed.add(row.pid);
-      cpu.set(row.pid, Math.max(cpu.get(row.pid) ?? 0, row.cpuMs));
+      observed.set(row.pid, row.started);
+      const key = `${row.pid}:${row.started}`;
+      cpu.set(key, Math.max(cpu.get(key) ?? 0, row.cpuMs));
     }
     return rows;
   };
@@ -166,7 +193,7 @@ export async function benchmarkTests(args, options = {}) {
   } finally {
     await stopSampling();
   }
-  const survivors = (await sample()).map((row) => row.pid);
+  const survivors = (await waitForExit(sample)).map((row) => row.pid);
   const report = {
     agents: count,
     worktrees: worktrees.length ? worktrees : [repoRoot],
