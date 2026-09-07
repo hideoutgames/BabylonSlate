@@ -62,6 +62,7 @@ export interface BabylonSlateScopedStoragePlugin {
 
 export const ScopedStorageErrorCode = {
   Stale: "STALE",
+  AccessRevoked: "ACCESS_REVOKED",
   NotFound: "NOT_FOUND",
   Cancelled: "CANCELLED",
   Unreachable: "UNREACHABLE",

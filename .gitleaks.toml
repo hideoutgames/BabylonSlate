@@ -27,16 +27,13 @@ regex = '''(?i)machine\s+\S+\s+login\s+\S+\s+password\s+\S+'''
 tags = ["credentials"]
 
 [allowlist]
-description = "Generated lockfiles and binary test fixtures"
-# Integrity hashes and base64 blobs in lockfiles trip entropy rules. Lockfiles are
-# machine-generated from public registries and cannot carry a secret we authored.
+description = "Binary test fixtures"
+# Text lockfiles and `.gltf` JSON stay scanned because they can contain
+# authenticated URLs and arbitrary metadata.
 paths = [
-  '''pnpm-lock\.yaml$''',
-  '''apps/editor/ios/App/Podfile\.lock$''',
-  '''skills-lock\.json$''',
   # Binary fixtures (glb, wav, woff2, png, ktx2, basis) are scanned as text and
   # produce entropy noise. They are committed art/audio assets, not config.
   # Deliberately excludes `.env` — an environment map extension collision with
   # dotenv files is not worth the hole. Use `.hdr` for those instead.
-  '''(?i)\.(glb|gltf|bin|wav|mp3|ogg|woff2?|ttf|png|jpe?g|webp|ktx2|basis|dds|hdr)$''',
+  '''(?i)\.(glb|bin|wav|mp3|ogg|woff2?|ttf|png|jpe?g|webp|ktx2|basis|dds|hdr)$''',
 ]

@@ -37,6 +37,10 @@ const capacitorConfig = readFileSync(
 );
 const iosSyncScriptPath = join(repoRoot, "apps/editor/scripts/ios-sync.mjs");
 const iosSyncScript = readFileSync(iosSyncScriptPath, "utf8");
+const scopedStoragePlugin = readFileSync(
+  join(repoRoot, "apps/editor/ios/App/App/BabylonSlateScopedStoragePlugin.swift"),
+  "utf8",
+);
 
 const skippedDirectories = new Set([
   "public",
@@ -233,6 +237,17 @@ describe("Capacitor 8 iOS host", () => {
       expect(text).not.toContain("DEVELOPMENT_TEAM");
       expect(text).not.toContain("PROVISIONING_PROFILE");
     }
+  });
+
+  it("confines scoped-storage operations to the selected folder and surfaces revoked access", () => {
+    expect(scopedStoragePlugin).toContain("case accessRevoked");
+    expect(scopedStoragePlugin).toContain('"ACCESS_REVOKED"');
+    expect(scopedStoragePlugin).toContain("startAccessingSecurityScopedResource()");
+    expect(scopedStoragePlugin).toContain("allowRoot: Bool = false");
+    expect(scopedStoragePlugin).toContain("resolvingSymlinksInPath()");
+    expect(scopedStoragePlugin).toContain(
+      "Array(targetComponents.prefix(rootComponents.count)) == rootComponents",
+    );
   });
 
   it("keeps the iOS web host assets available", () => {

@@ -1,8 +1,13 @@
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  isProbablyBinary,
   scanAddedLines,
+  scanCommitMessages,
+  scanEventMetadata,
   scanPath,
   scanText,
   scanTrackedFiles,
@@ -35,6 +40,64 @@ describe("public repository hygiene", () => {
     expect(
       scanText("docs/x.md", "See the Devin docs at docs.devin.ai"),
     ).toEqual([]);
+  });
+
+  it("scans pull request metadata without printing its contents", () => {
+    expect(
+      scanEventMetadata({
+        pull_request: { title: "A change", body: sessionLink },
+      }),
+    ).toMatchObject([
+      { path: "pull-request:body", rule: "agent-session-link" },
+    ]);
+    expect(
+      scanEventMetadata({
+        issue: { pull_request: {} },
+        comment: { body: "Requested by: @example" },
+      }),
+    ).toMatchObject([
+      { path: "pull-request:comment", rule: "agent-request-attribution" },
+    ]);
+  });
+
+  it("scans commit messages in only the requested range", () => {
+    const directory = mkdtempSync(join(tmpdir(), "babylonslate-hygiene-"));
+    try {
+      execFileSync("git", ["init", "--quiet"], { cwd: directory });
+      execFileSync("git", ["config", "user.email", "test@example.com"], {
+        cwd: directory,
+      });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: directory });
+      writeFileSync(join(directory, "file.txt"), "one");
+      execFileSync("git", ["add", "file.txt"], { cwd: directory });
+      execFileSync("git", ["commit", "--quiet", "-m", "Clean change"], {
+        cwd: directory,
+      });
+      writeFileSync(join(directory, "file.txt"), "two");
+      execFileSync("git", ["add", "file.txt"], { cwd: directory });
+      execFileSync(
+        "git",
+        ["commit", "--quiet", "-m", "Change", "-m", "Co-authored-by: Devin AI"],
+        { cwd: directory },
+      );
+
+      expect(scanCommitMessages("HEAD^..HEAD", directory)).toMatchObject([
+        { rule: "agent-request-attribution" },
+      ]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("treats glTF JSON and lockfiles as scannable text", () => {
+    expect(isProbablyBinary("model.gltf", '{"asset":{"version":"2.0"}}')).toBe(
+      false,
+    );
+    const config = readFileSync(join(repoRoot, ".gitleaks.toml"), "utf8");
+    expect(config).not.toContain("pnpm-lock.yaml");
+    expect(config).not.toContain("Podfile.lock");
+    expect(config).not.toContain("skills-lock.json");
+    expect(config).not.toMatch(/glb\|gltf|gltf\|/);
   });
 
   it("flags credential markers", () => {

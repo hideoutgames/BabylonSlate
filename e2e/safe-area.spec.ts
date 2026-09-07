@@ -6,6 +6,13 @@ test.describe("safe-area layout", { tag: IPAD_TEST_TAG }, () => {
   test("keeps chrome and overlays inside the injected safe box", async ({
     page,
   }) => {
+    await page.goto("/?test=1");
+    await page.addStyleTag({ content: ":root { --safe-top: 44px; }" });
+    await expect(page.getByTestId("homepage")).toBeVisible();
+    await expect
+      .poll(async () => (await page.getByTestId("engine-settings").boundingBox())?.y ?? -1)
+      .toBeGreaterThanOrEqual(44);
+
     await openTestProject(page);
     await page
       .locator('[data-asset-path="assets/main.scene.babasset"]')

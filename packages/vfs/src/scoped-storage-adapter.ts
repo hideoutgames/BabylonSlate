@@ -71,6 +71,24 @@ function toFileStat(stat: NativeFileStat): FileStat {
   };
 }
 
+function scopedStoragePath(path: string, allowRoot: boolean): string {
+  if (path === "") {
+    if (allowRoot) return path;
+    throw new Error("Cannot mutate or read the project root as a file");
+  }
+  if (
+    path.startsWith("/") ||
+    path.startsWith("\\") ||
+    path.includes("\\") ||
+    path
+      .split("/")
+      .some((part) => part === "" || part === "." || part === "..")
+  ) {
+    throw new Error(`Path escapes project root: ${path}`);
+  }
+  return path;
+}
+
 /**
  * Opt-in external-folder tier via our own Capacitor scoped-storage plugin.
  * Bookmarks are kept in native storage keyed by a stable folder id.
@@ -94,7 +112,10 @@ export class ScopedStorageAdapter implements ProjectStorage {
     try {
       return await fn();
     } catch (err) {
-      if (isScopedStorageError(err, ScopedStorageErrorCode.Stale)) {
+      if (
+        isScopedStorageError(err, ScopedStorageErrorCode.Stale) ||
+        isScopedStorageError(err, ScopedStorageErrorCode.AccessRevoked)
+      ) {
         this.stale = true;
         await Preferences.set({ key: STALE_PREF_KEY, value: "1" });
         throw err;
@@ -194,6 +215,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async readText(path: string): Promise<string> {
+    path = scopedStoragePath(path, false);
     const folder = this.getFolder();
     const { data } = await this.withScope(
       () =>
@@ -208,6 +230,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async writeText(path: string, data: string): Promise<void> {
+    path = scopedStoragePath(path, false);
     const folder = this.getFolder();
     await this.withScope(() =>
       this.plugin.writeFile({
@@ -220,6 +243,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
+    path = scopedStoragePath(path, false);
     const folder = this.getFolder();
     const { data } = await this.withScope(
       () =>
@@ -234,6 +258,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
+    path = scopedStoragePath(path, false);
     const folder = this.getFolder();
     await this.withScope(() =>
       this.plugin.writeFile({
@@ -246,6 +271,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async exists(path: string): Promise<boolean> {
+    path = scopedStoragePath(path, true);
     const folder = this.getFolder();
     const { exists } = await this.withScope(() =>
       this.plugin.exists({ folder: folder.id, path }),
@@ -254,6 +280,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
+    path = scopedStoragePath(path, true);
     const folder = this.getFolder();
     const { entries } = await this.withScope(() =>
       this.plugin.readdir({ folder: folder.id, path }),
@@ -262,6 +289,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async mkdir(path: string, recursive?: boolean): Promise<void> {
+    path = scopedStoragePath(path, false);
     const folder = this.getFolder();
     await this.withScope(() =>
       this.plugin.mkdir({ folder: folder.id, path, recursive }),
@@ -269,6 +297,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async remove(path: string): Promise<void> {
+    path = scopedStoragePath(path, false);
     const folder = this.getFolder();
     await this.withScope(async () => {
       const { exists, isDirectory } = await this.plugin.exists({
@@ -287,6 +316,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async stat(path: string): Promise<FileStat> {
+    path = scopedStoragePath(path, true);
     const folder = this.getFolder();
     const stat = await this.withScope(
       () => this.plugin.stat({ folder: folder.id, path }),
@@ -310,5 +340,4 @@ export class ScopedStorageAdapter implements ProjectStorage {
     }
     return this.folder;
   }
-
 }
