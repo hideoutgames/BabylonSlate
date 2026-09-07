@@ -4,6 +4,8 @@
 
 On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim. Playwright passes `VITE_TEST_MODE` through its web-server environment so server startup also works with Windows' command shell.
 
+The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
+
 ## GitHub Actions
 
 [`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into three standard `ubuntu-latest` job templates (`static`, unsharded `unit` coverage, and a 7-way `e2e` shard matrix). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.agents/rules/github-actions-standard-runners.md`](../../.agents/rules/github-actions-standard-runners.md).
