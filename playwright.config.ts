@@ -39,7 +39,8 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      "VITE_TEST_MODE=true pnpm --filter editor build && pnpm --filter editor preview -- --host 127.0.0.1 --port 4173",
+      "pnpm --filter editor build && pnpm --filter editor preview -- --host 127.0.0.1 --port 4173",
+    env: { VITE_TEST_MODE: "true" },
     url: "http://127.0.0.1:4173",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

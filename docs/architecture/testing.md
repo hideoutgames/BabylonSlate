@@ -2,7 +2,7 @@
 
 `pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
 
-On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim.
+On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim. Playwright passes `VITE_TEST_MODE` through its web-server environment so server startup also works with Windows' command shell.
 
 ## GitHub Actions
 
