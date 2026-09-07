@@ -13,10 +13,15 @@ import {
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 
-async function execute(source: string, twoMeshes = true) {
+async function execute(
+  source: string,
+  twoMeshes = true,
+  initial: { materialGuid?: string | null; meshKind?: "box" | "model" } = {},
+) {
   const commands: CommandMessage[] = [];
-  const mesh = createMeshComponent("mesh-1", "box");
-  mesh.properties.materialGuid = "mat-rock";
+  const mesh = createMeshComponent("mesh-1", initial.meshKind ?? "box");
+  mesh.properties.materialGuid =
+    initial.materialGuid === undefined ? "mat-rock" : initial.materialGuid;
   const sibling = createMeshComponent("mesh-2", "sphere");
   sibling.properties.materialGuid = "mat-rock";
   const runtime = createInProcessRuntime({
@@ -55,6 +60,61 @@ async function execute(source: string, twoMeshes = true) {
 }
 
 describe("runtime material parameters", () => {
+  it("emits a clear between assignments so returning to the same material resets private parameters", async () => {
+    const commands = await execute(
+      `export function onBeginPlay(ctx) {
+      const mesh = ctx.getComponentById(ctx.self, "mesh-1");
+      const material = ctx.getVariableFrom(mesh, "materialObject");
+      ctx.setMaterialFloatParameter(material, "Roughness", 0.2);
+      ctx.setVariableOn(mesh, "materialGuid", null);
+      ctx.setVariableOn(mesh, "materialGuid", "mat-rock");
+      ctx.setMaterialFloatParameter(material, "Roughness", 0.9);
+      const replacement = ctx.getVariableFrom(mesh, "materialObject");
+      ctx.setMaterialFloatParameter(replacement, "Roughness", 0.4);
+    }`,
+      false,
+    );
+    expect(commands.filter((command) => command.type === "diagnostic")).toEqual(
+      [],
+    );
+    expect(
+      commands
+        .filter(
+          (command) =>
+            command.type === "assignMaterial" ||
+            command.type === "setMaterialParameter",
+        )
+        .map((command) =>
+          command.type === "assignMaterial"
+            ? [command.type, command.componentId, command.materialAssetGuid]
+            : [command.type, command.componentId, command.parameter],
+        ),
+    ).toEqual([
+      ["assignMaterial", "mesh-1", "mat-rock"],
+      ["setMaterialParameter", "mesh-1", { kind: "float", value: 0.2 }],
+      ["assignMaterial", "mesh-1", null],
+      ["assignMaterial", "mesh-1", "mat-rock"],
+      ["setMaterialParameter", "mesh-1", { kind: "float", value: 0.4 }],
+    ]);
+  });
+
+  it("leaves authored model slots untouched when the component never had a material override", async () => {
+    const commands = await execute(
+      `export function onBeginPlay(ctx) {
+      const mesh = ctx.getComponentById(ctx.self, "mesh-1");
+      ctx.setVariableOn(mesh, "materialGuid", null);
+    }`,
+      false,
+      { materialGuid: null, meshKind: "model" },
+    );
+    expect(commands.filter((command) => command.type === "diagnostic")).toEqual(
+      [],
+    );
+    expect(commands.filter((command) => command.type === "assignMaterial")).toEqual(
+      [],
+    );
+  });
+
   it("keeps actual component identity while its actor switches between single and multiple visuals", async () => {
     const commands = await execute(
       `export function onBeginPlay(ctx) {
