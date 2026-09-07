@@ -63,6 +63,60 @@ describe("createAudioPreviewSession", () => {
     expect(backend.plays).toHaveLength(0);
   });
 
+  it("warms the audio engine before the first preview gesture", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const session = createAudioPreviewSession({ backend, readChunk: async () => new Uint8Array([1]) });
+    await session.prefetch(createDefaultAudioPayload());
+    expect(backend.engineCreateCount).toBe(1);
+    session.dispose();
+  });
+
+  it("pauses preview through native interruptions and app backgrounding", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const session = createAudioPreviewSession({ backend, readChunk: async () => new Uint8Array([1]) });
+    window.dispatchEvent(new CustomEvent("babylonslate:audiointerruption", { detail: { type: "began" } }));
+    expect(backend.paused).toBe(true);
+    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: false } }));
+    window.dispatchEvent(new CustomEvent("babylonslate:audiointerruption", { detail: { type: "ended", shouldResume: true } }));
+    expect(backend.paused).toBe(true);
+    window.dispatchEvent(new CustomEvent("babylonslate:appstate", { detail: { isActive: true } }));
+    expect(backend.paused).toBe(false);
+    session.dispose();
+    window.dispatchEvent(new CustomEvent("babylonslate:audiointerruption", { detail: { type: "began" } }));
+    expect(backend.paused).toBe(false);
+  });
+
+  it("stops a voice that finishes preparing after Stop", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    let finish!: () => void;
+    backend.play = (request) => new Promise<void>((resolve) => {
+      finish = () => { backend.plays.push(request); resolve(); };
+    });
+    const session = createAudioPreviewSession({ backend, readChunk: async () => new Uint8Array([1]) });
+    await session.prefetch(createDefaultAudioPayload());
+    const result = session.play(createDefaultAudioPayload());
+    session.stop();
+    backend.stopped = [];
+    finish();
+    await Promise.resolve();
+    expect(backend.stopped).toContain(result.voiceId);
+    session.dispose();
+  });
+
+  it("sets pitch after asynchronous voice creation", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    let finish!: () => void;
+    backend.play = () => new Promise<void>((resolve) => { finish = resolve; });
+    const session = createAudioPreviewSession({ backend, readChunk: async () => new Uint8Array([1]) });
+    await session.prefetch(createDefaultAudioPayload());
+    const result = session.play({ ...createDefaultAudioPayload(), pitch: 2 });
+    backend.playbackRates.clear();
+    finish();
+    await Promise.resolve();
+    expect(backend.playbackRates.get(result.voiceId!)).toBe(2);
+    session.dispose();
+  });
+
   it("passes asset loop into backend.play", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const session = createAudioPreviewSession({

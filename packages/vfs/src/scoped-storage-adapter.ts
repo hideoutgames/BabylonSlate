@@ -213,8 +213,16 @@ export class ScopedStorageAdapter implements ProjectStorage {
     return this.stale;
   }
 
-  async reconnectFolder(): Promise<ProjectFolderHandle> {
-    return this.pickProjectFolder();
+  async reconnectFolder(validate?: (candidate: ProjectStorage) => Promise<void>): Promise<ProjectFolderHandle> {
+    const { folder } = await this.plugin.pickFolder();
+    const candidate = new ScopedStorageAdapter(this.plugin);
+    candidate.folder = folder;
+    await validate?.(candidate);
+    this.folder = folder;
+    this.stale = false;
+    await Preferences.set({ key: FOLDER_PREF_KEY, value: JSON.stringify(folder) });
+    await Preferences.set({ key: STALE_PREF_KEY, value: "0" });
+    return toHandle(folder);
   }
 
   async readText(path: string): Promise<string> {

@@ -86,9 +86,9 @@ export class MobileStorageAdapter implements ProjectStorage {
     return (await this.external.needsReconnect?.()) ?? false;
   }
 
-  async reconnectFolder(): Promise<ProjectFolderHandle> {
+  async reconnectFolder(validate?: (candidate: ProjectStorage) => Promise<void>): Promise<ProjectFolderHandle> {
     await this.init();
-    const handle = await this.external.reconnectFolder!();
+    const handle = await this.external.reconnectFolder(validate);
     this.active = "external";
     return handle;
   }

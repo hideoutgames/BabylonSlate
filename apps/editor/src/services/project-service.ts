@@ -588,10 +588,18 @@ export class ProjectService {
   }
 
   async reconnect(): Promise<ProjectLoadResult> {
-    await this.storage.reconnectFolder!();
-    if (!(await this.storage.exists(PROJECT_FILE))) {
-      throw new Error("Select the original project folder containing project.json.");
-    }
+    const validate = async (candidate: ProjectStorage) => {
+      if (!(await candidate.exists(PROJECT_FILE))) {
+        throw new Error("Select a project folder containing project.json.");
+      }
+      const manifest: unknown = JSON.parse(await candidate.readText(PROJECT_FILE));
+      if (!manifest || typeof manifest !== "object") throw new Error("Invalid project manifest.");
+      if (this.projectGuid && (!("guid" in manifest) || manifest.guid !== this.projectGuid)) {
+        throw new Error("Select the folder for the currently open project.");
+      }
+    };
+    await this.storage.reconnectFolder!(validate);
+    await validate(this.storage);
     return this.loadCurrentProject();
   }
 

@@ -4,12 +4,15 @@ import UniformTypeIdentifiers
 
 private enum ScopedStoragePluginError: LocalizedError {
     case accessRevoked
+    case stale
     case invalidPath(String)
 
     var errorDescription: String? {
         switch self {
         case .accessRevoked:
             return "Folder access has been revoked"
+        case .stale:
+            return "Project folder is no longer available; reconnect required"
         case .invalidPath(let path):
             return "Path escapes project root: \(path)"
         }
@@ -65,16 +68,14 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         guard let (folderUrl, _) = resolveFolder(id: id, call: call) else { return }
-        guard folderUrl.startAccessingSecurityScopedResource() else {
-            call.reject("Folder access has been revoked", "ACCESS_REVOKED")
-            return
+        withCoordinatedRead(folderUrl: folderUrl, path: "", allowRoot: true, materialize: false, execute: { _ in
+            self.folderName(id: id) ?? folderUrl.lastPathComponent
+        }) { result in
+            switch result {
+            case .success(let name): call.resolve(["folder": ["id": id, "name": name]])
+            case .failure(let error): self.reject(call, error: error)
+            }
         }
-        defer { folderUrl.stopAccessingSecurityScopedResource() }
-        guard let name = folderName(id: id) ?? folderUrl.lastPathComponent.nilIfEmpty else {
-            call.reject("Could not read folder name", "UNREACHABLE")
-            return
-        }
-        call.resolve(["folder": ["id": id, "name": name]])
     }
 
     @objc func importBookmark(_ call: CAPPluginCall) {
@@ -390,6 +391,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             defer { folderUrl.stopAccessingSecurityScopedResource() }
             let url: URL
             do {
+                try self.validateRoot(folderUrl)
                 url = try self.childURL(folderUrl: folderUrl, path: path, allowRoot: allowRoot)
             } catch {
                 completion(.failure(error))
@@ -403,13 +405,14 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             var caughtError: Error?
             coordinator.coordinate(readingItemAt: url, options: options, error: &coordinatorError) { target in
                 do {
+                    try self.validateRoot(folderUrl)
                     value = try execute(self.confinedURL(target, folderUrl: folderUrl, allowRoot: allowRoot))
                 } catch {
                     caughtError = error
                 }
             }
             if let error = coordinatorError ?? caughtError {
-                completion(.failure(error))
+                completion(.failure(self.classifyRootFailure(error, folderUrl: folderUrl)))
             } else if let value = value {
                 completion(.success(value))
             } else {
@@ -432,6 +435,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             defer { folderUrl.stopAccessingSecurityScopedResource() }
             let url: URL
             do {
+                try self.validateRoot(folderUrl)
                 url = try self.childURL(folderUrl: folderUrl, path: path)
             } catch {
                 completion(.failure(error))
@@ -445,13 +449,14 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             var caughtError: Error?
             coordinator.coordinate(writingItemAt: url, options: options, error: &coordinatorError) { target in
                 do {
+                    try self.validateRoot(folderUrl)
                     value = try execute(self.confinedURL(target, folderUrl: folderUrl))
                 } catch {
                     caughtError = error
                 }
             }
             if let error = coordinatorError ?? caughtError {
-                completion(.failure(error))
+                completion(.failure(self.classifyRootFailure(error, folderUrl: folderUrl)))
             } else if let value = value {
                 completion(.success(value))
             } else {
@@ -492,6 +497,25 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             metadata["mtime"] = Int64(date.timeIntervalSince1970 * 1000)
         }
         return metadata
+    }
+
+    // A missing project root is lost access, never an empty project. In particular,
+    // writeFile must not recreate a removed root through recursive parent creation.
+    private func validateRoot(_ url: URL) throws {
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            guard attributes[.type] as? FileAttributeType == .typeDirectory else {
+                throw ScopedStoragePluginError.stale
+            }
+        } catch {
+            if isNotFound(error) { throw ScopedStoragePluginError.stale }
+            throw error
+        }
+    }
+
+    private func classifyRootFailure(_ error: Error, folderUrl: URL) -> Error {
+        do { try validateRoot(folderUrl) } catch { return error }
+        return error
     }
 
     private func isNotFound(_ error: Error) -> Bool {
@@ -537,6 +561,8 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             switch storageError {
             case .accessRevoked:
                 call.reject(storageError.localizedDescription, "ACCESS_REVOKED", error)
+            case .stale:
+                call.reject(storageError.localizedDescription, "STALE", error)
             case .invalidPath:
                 call.reject(storageError.localizedDescription, "UNREACHABLE", error)
             }
