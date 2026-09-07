@@ -246,3 +246,8 @@ Implementation entries will record failing and passing tests, exact subcases cla
 
 - Two tests through the real PropertyGrid reproduced Near Clip 1001 with Far Clip 1000, and Far Clip 0.01 with Near Clip 0.1. Camera Details now retain the previous value for a crossing edit and explain the required order; blur restores the displayed value.
 - The camera editing and component-property suites pass, including valid clipping edits and FOV -90 clamping to 1 while 1/179 remain accepted. This establishes the authored clip-order defect; browser persistence/Undo and full delivery verification remain pending.
+
+### Fresh Content Browser and numeric Details controls
+
+- Six desktop Chromium checks pass: three multiword Make Float insertions at distinct positions retained after reload; first Create of Script Interface with saved method and stable asset identity; plain click replacing multi-selection with an exact Delete list; title/thumbnail double-click opening one editor; camera clip rejection, Undo/Redo and FOV endpoints retained after reload; and particle capacity/prewarm/lifetime normalization retained after reload.
+- These provide N evidence for the tested H9/H18/M20/M34/L15/L27 configurations and browser validation for the M19 and M29 fixes above. They do not close the separate long-References, original-project, or general auto-layout variants. Full delivery verification remains pending.
