@@ -124,17 +124,16 @@ test("local retains recursive package diagnostics with a silent parent reporter"
   );
   await writeFile(
     join(f.cwd, "pnpm-workspace.yaml"),
-    "packages:\n  - fixture-package\n",
+    "packages:\n  - fixture-*\n",
   );
-  await mkdir(join(f.cwd, "fixture-package"));
-  await writeFile(
-    join(f.cwd, "fixture-package", "package.json"),
-    JSON.stringify({
-      name: "fixture-package",
-      scripts: { typecheck: "node ../fixture.mjs" },
-    }),
-  );
-  f.env.npm_config_loglevel = "silent";
+  for (const name of ["fixture-package", "fixture-other"]) {
+    await mkdir(join(f.cwd, name));
+    await writeFile(
+      join(f.cwd, name, "package.json"),
+      JSON.stringify({ name, scripts: { typecheck: "node ../fixture.mjs" } }),
+    );
+  }
+  f.env.npm_config_reporter = "silent";
   const result = await run(local, f.context);
   assert.equal(result.status, "failure");
   assert.notEqual(result.exitCode, 0);
