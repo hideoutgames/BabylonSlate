@@ -7,34 +7,25 @@ export type LifecyclePauseHandler = (paused: boolean) => void;
 export function attachLifecyclePause(
   handler: LifecyclePauseHandler,
 ): () => void {
+  let inactive = false;
+  const publish = () => handler(inactive || document.visibilityState === "hidden");
   const onVisibility = () => {
-    handler(document.visibilityState === "hidden");
+    publish();
   };
   document.addEventListener("visibilitychange", onVisibility);
-
-  let removeCapacitor: (() => void) | undefined;
-  void import("@babylonslate/vfs")
-    .then(({ getHostPlatform }) => {
-      const platform = getHostPlatform();
-      if (platform !== "ios" && platform !== "android") return;
-      // Dynamic Capacitor App listener — only vfs may import plugins; here we
-      // only react to a custom event the vfs layer can forward later.
-      const onAppState = (event: Event) => {
-        const detail = (event as CustomEvent<{ isActive?: boolean }>).detail;
-        if (detail && typeof detail.isActive === "boolean") {
-          handler(!detail.isActive);
-        }
-      };
-      window.addEventListener("babylonslate:appstate", onAppState);
-      removeCapacitor = () =>
-        window.removeEventListener("babylonslate:appstate", onAppState);
-    })
-    .catch(() => {
-      // vfs unavailable — visibility-only
-    });
+  // VFS emits native events only on mobile; synchronous attachment also
+  // handles events forwarded to Preview Build without importing a plugin.
+  const onAppState = (event: Event) => {
+    const detail = (event as CustomEvent<{ isActive?: boolean }>).detail;
+    if (typeof detail?.isActive !== "boolean") return;
+    inactive = !detail.isActive;
+    publish();
+  };
+  window.addEventListener("babylonslate:appstate", onAppState);
+  publish();
 
   return () => {
     document.removeEventListener("visibilitychange", onVisibility);
-    removeCapacitor?.();
+    window.removeEventListener("babylonslate:appstate", onAppState);
   };
 }

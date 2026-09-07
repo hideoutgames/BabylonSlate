@@ -128,6 +128,23 @@ describe("ScopedStorageAdapter", () => {
     await expect(adapter.writeText("project.json", "unsafe")).rejects.toThrow(/reconnect/i);
   });
 
+  it("keeps the expired folder and reconnect action when a picked replacement fails validation", async () => {
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "original", name: "Cloud" }));
+    prefs.set("babylonslate:scoped-stale", "1");
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "empty", name: "Empty" } });
+    vi.mocked(plugin.exists).mockResolvedValue({ exists: false, isDirectory: false });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    await expect(adapter.reconnectFolder(async (candidate) => {
+      if (!(await candidate.exists("project.json"))) throw new Error("No project in selected folder");
+    })).rejects.toThrow("No project");
+    expect(adapter.getCurrentFolder()?.id).toBe("original");
+    expect(await adapter.needsReconnect()).toBe(true);
+    expect(JSON.parse(prefs.get("babylonslate:scoped-folder")!).id).toBe("original");
+    expect(plugin.exists).toHaveBeenCalledWith({ folder: "empty", path: "project.json" });
+  });
+
   it("keeps a stale legacy bookmark recoverable without failing startup", async () => {
     prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: btoa("legacy-security-scoped-bookmark-that-is-long"), name: "Legacy" }));
     const plugin = createMockPlugin();
