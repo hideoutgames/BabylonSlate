@@ -78,6 +78,7 @@ export function validateChecks(sourceSha, checks, requiredNames) {
 export function releaseDisposition(identity, tagSha, release) {
   requireValue(!tagSha || tagSha === identity.sourceSha, "Existing tag points to another source commit");
   requireValue(!release || release.draft === true, "Published releases are immutable; choose a new version or test dispatch");
+  requireValue(!release || release.target_commitish === identity.sourceSha, "Draft release source must be the exact validated commit");
   return release ? "resume-draft" : "create-draft";
 }
 

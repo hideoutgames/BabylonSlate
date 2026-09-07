@@ -71,7 +71,14 @@ test("published releases are immutable and tags cannot move", () => {
   assert.equal(releaseDisposition(identity, null, null), "create-draft");
   assert.throws(() => releaseDisposition(identity, "b".repeat(40), null));
   assert.throws(() => releaseDisposition(identity, request.sourceSha, { draft: false }));
-  assert.equal(releaseDisposition(identity, request.sourceSha, { draft: true }), "resume-draft");
+  assert.equal(releaseDisposition(identity, request.sourceSha, { draft: true, target_commitish: request.sourceSha }), "resume-draft");
+});
+
+test("an untagged draft cannot publish a different or mutable source reference", () => {
+  const identity = createIdentity(request);
+  for (const target_commitish of ["b".repeat(40), "main", undefined]) {
+    assert.throws(() => releaseDisposition(identity, null, { draft: true, target_commitish }), /source/i);
+  }
 });
 
 test("public assets are an exact allowlist without private Apple outputs", () => {

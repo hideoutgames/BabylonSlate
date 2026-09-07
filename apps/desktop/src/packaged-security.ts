@@ -7,7 +7,7 @@ function requireValue(condition: unknown): asserts condition {
 export function rendererFile(rawUrl: string, root: string): string {
   // Check before WHATWG URL normalization can erase dot segments.
   const decoded = decodeURIComponent(rawUrl);
-  requireValue(!/[\\\u0000%]/.test(decoded));
+  requireValue(!/[\\%]/.test(decoded) && !decoded.includes("\0"));
   requireValue(!decoded.split(/[/?#]/).some(part => part === ".." || part === "."));
   const url = new URL(decoded);
   requireValue(url.protocol === "app:" && url.host === "babylonslate" && !url.username && !url.password);
