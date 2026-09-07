@@ -798,4 +798,3 @@ describe("layout migration", () => {
     expect(migrated.tabOrder).toEqual([sceneId]);
   });
 });
-
