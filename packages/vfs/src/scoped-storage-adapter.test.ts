@@ -280,6 +280,32 @@ describe("ScopedStorageAdapter", () => {
     expect(prefs.get("babylonslate:scoped-stale")).toBe("1");
   });
 
+  it("marks the folder stale when native security-scoped access is revoked", async () => {
+    const plugin = createMockPlugin();
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "uuid-revoked", name: "Game" }));
+    vi.mocked(plugin.readFile).mockRejectedValue({ code: "ACCESS_REVOKED", message: "access revoked" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+
+    await expect(adapter.readText("x")).rejects.toMatchObject({ code: "ACCESS_REVOKED" });
+    await expect(adapter.needsReconnect()).resolves.toBe(true);
+    expect(prefs.get("babylonslate:scoped-stale")).toBe("1");
+  });
+
+  it("rejects project-root mutation and traversal before invoking the plugin", async () => {
+    const plugin = createMockPlugin();
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "uuid-paths", name: "Game" }));
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+
+    await expect(adapter.remove("")).rejects.toThrow("project root");
+    await expect(adapter.readText("../outside.txt")).rejects.toThrow("escapes project root");
+    await expect(adapter.writeText("/absolute.txt", "x")).rejects.toThrow("escapes project root");
+    expect(plugin.deleteFile).not.toHaveBeenCalled();
+    expect(plugin.readFile).not.toHaveBeenCalled();
+    expect(plugin.writeFile).not.toHaveBeenCalled();
+  });
+
   it("removes files with deleteFile and directories with rmdir", async () => {
     const plugin = createMockPlugin();
     prefs.set(

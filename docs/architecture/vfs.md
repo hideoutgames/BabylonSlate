@@ -20,7 +20,7 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 | --- | --- | --- |
 | OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids; Homepage remove deletes the OPFS directory |
 | Documents | iPad default | `@capacitor/filesystem` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
-| Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; `openKnownFolder` reopens without picker; Reconnect on staleness |
+| Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; root-confined relative paths; `openKnownFolder` reopens without picker; Reconnect on staleness or revoked scope access |
 | Memory | Tests | In-memory tree |
 | Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` / `deleteProject` throw |
 | Node | CI / tools | Real filesystem under a root path; `openAbsoluteFolder` for Electron pickers |
@@ -30,7 +30,7 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 ### External tier / Working Copy spike
 
-Sustained I/O into a file provider needs `NSFileCoordinator`, process-lifetime security scope, and bookmark staleness surfaced as **Reconnect project folder** on the Homepage. Expect a custom Swift plugin; the community scoped-storage plugin is the interim bridge. Device harness notes live with the adapter tests / docs when Mac/iPad is available.
+Sustained I/O into a file provider uses `NSFileCoordinator`, process-lifetime security scope, and surfaces bookmark staleness or denied scope access as **Reconnect project folder** on the Homepage. The custom Swift plugin rejects absolute paths, traversal components, and root mutations before coordinated I/O. Device harness notes live with the adapter tests / docs when Mac/iPad is available.
 
 ## Two storage tiers (Homepage)
 

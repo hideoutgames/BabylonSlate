@@ -2,6 +2,9 @@ name: Security
 
 on:
   pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created, edited]
   push:
     branches: [main]
 
@@ -9,11 +12,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: security-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: security-${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   public-hygiene:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -40,15 +44,37 @@ jobs:
 
       - name: Scan pull request commits for secrets
         if: github.event_name == 'pull_request'
-        run: ./gitleaks git . --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.sha }}" --config .gitleaks.toml --redact --no-banner
+        run: ./gitleaks git . --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" --config .gitleaks.toml --redact --no-banner
 
-      - name: Scan main history for secrets
+      - name: Scan pushed commits for secrets
         if: github.event_name == 'push'
-        run: ./gitleaks git . --config .gitleaks.toml --redact --no-banner
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            RANGE="$HEAD_SHA^!"
+          else
+            RANGE="$BEFORE_SHA..$HEAD_SHA"
+          fi
+          ./gitleaks git . --log-opts="$RANGE" --config .gitleaks.toml --redact --no-banner
 
-      - name: Check tracked public-repository content
-        run: node scripts/check-public-hygiene.mjs
+      - name: Check tracked content and pull request metadata
+        run: node scripts/check-public-hygiene.mjs --event "$GITHUB_EVENT_PATH"
 
-      - name: Check pull request additions
+      - name: Check pull request additions and commit messages
         if: github.event_name == 'pull_request'
-        run: node scripts/check-public-hygiene.mjs --range "${{ github.event.pull_request.base.sha }}...${{ github.sha }}"
+        run: node scripts/check-public-hygiene.mjs --range "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" --commits "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+      - name: Check pushed commit messages
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            RANGE="$HEAD_SHA^!"
+          else
+            RANGE="$BEFORE_SHA..$HEAD_SHA"
+          fi
+          node scripts/check-public-hygiene.mjs --commits "$RANGE"
