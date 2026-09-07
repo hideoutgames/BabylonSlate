@@ -13,4 +13,8 @@ describe("isPlayEngineCommandType", () => {
   it("does not forward host-only commands such as stats", () => {
     expect(isPlayEngineCommandType("stats")).toBe(false);
   });
+
+  it("routes bone attachments to both Play engine hosts", () => {
+    expect(isPlayEngineCommandType("attachToBone")).toBe(true);
+  });
 });
