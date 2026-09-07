@@ -1,5 +1,5 @@
 ---
-description: Keep PRs draft until local verify; mark ready once; cap non-draft PRs at 2 so sharded Verify stays under the GitHub Actions job cap
+description: Pass local verify before opening PRs; wait for a CI slot; monitor, repair, and merge with at most 2 counted ready PRs
 alwaysApply: true
 ---
 
