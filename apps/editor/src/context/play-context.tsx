@@ -1015,6 +1015,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...overlayTextureGuidsFromScenes(overlayScenes),
             ],
             spriteAnimations,
+            true,
           );
           texturePixelSizes = collectPlayTexturePixelSizes(
             sprites,
@@ -1045,6 +1046,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
                 ...overlayTextureGuidsFromScenes(overlayScenes),
               ],
               spriteAnimations,
+              true,
             );
             texturePixelSizes = collectPlayTexturePixelSizes(
               sprites,

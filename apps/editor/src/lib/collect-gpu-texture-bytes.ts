@@ -3,6 +3,7 @@ import {
   type BabassetHeader,
   type EditorTextureLod,
 } from "@babylonslate/assets";
+import { materialParameterTextureGuidsFromGraph, type SerializedGraph } from "@babylonslate/core";
 
 export type GpuTextureAsset = {
   path: string;
@@ -12,6 +13,8 @@ export type GpuTextureAsset = {
 export async function collectGpuTextureBytes(options: {
   assets: readonly GpuTextureAsset[];
   guids: readonly string[];
+  /** Gameplay graphs may select textures that no Material samples at startup. */
+  graphs?: readonly SerializedGraph[];
   readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   editorLod?: EditorTextureLod | null;
   downsampleSource?: (
@@ -25,7 +28,11 @@ export async function collectGpuTextureBytes(options: {
   );
   const bytes = new Map<string, Uint8Array>();
   const seen = new Set<string>();
-  for (const guid of options.guids) {
+  const guids = [
+    ...options.guids,
+    ...(options.graphs ?? []).flatMap(materialParameterTextureGuidsFromGraph),
+  ];
+  for (const guid of guids) {
     if (!guid || seen.has(guid)) continue;
     seen.add(guid);
     const asset = byGuid.get(guid);

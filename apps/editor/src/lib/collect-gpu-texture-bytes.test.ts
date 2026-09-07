@@ -20,6 +20,58 @@ function textureHeader(
 }
 
 describe("collectGpuTextureBytes", () => {
+  it("loads texture parameter literals from gameplay event and function graphs", async () => {
+    const eventBytes = new Uint8Array([1, 2, 3]);
+    const functionBytes = new Uint8Array([4, 5, 6]);
+    const sources = new Map([
+      ["assets/tex-event.texture.babasset", eventBytes],
+      ["assets/tex-function.texture.babasset", functionBytes],
+    ]);
+    const readChunk = async (path: string, chunkId: string) =>
+      chunkId === "pixels" ? sources.get(path) ?? null : null;
+    const parameterNode = (id: string, guid: string) => ({
+      id,
+      type: "material.setTextureParameter",
+      position: { x: 0, y: 0 },
+      data: { properties: { "default:name": "Albedo", "default:value": guid } },
+    });
+    const bytes = await collectGpuTextureBytes({
+      assets: ["tex-event", "tex-function"].map((guid) => ({
+        path: `assets/${guid}.texture.babasset`,
+        header: {
+          ...textureHeader([{
+            id: "pixels",
+            kind: "pixels",
+            mime: "image/png",
+            sha256: guid,
+            locator: { inline: { offset: 0, length: 3 } },
+          }], { width: 1, height: 1 }),
+          guid,
+        },
+      })),
+      guids: [],
+      graphs: [
+        { nodes: [parameterNode("event", "tex-event")], edges: [] },
+        {
+          nodes: [parameterNode("reused", "tex-event")],
+          edges: [],
+          functionGraphs: {
+            applyAppearance: {
+              nodes: [parameterNode("function", "tex-function")],
+              edges: [],
+            },
+          },
+        },
+      ],
+      readChunk,
+      editorLod: { enabled: false, quality: 1 },
+    });
+    expect(bytes).toEqual(new Map([
+      ["tex-event", eventBytes],
+      ["tex-function", functionBytes],
+    ]));
+  });
+
   it("downsamples source bytes when editor LOD wants a smaller edge", async () => {
     const png = new Uint8Array([1, 2, 3]);
     const downsampled = new Uint8Array([4, 5]);
