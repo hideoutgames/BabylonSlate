@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { waitForSceneViewportReady } from "./open-test-project";
+import { closeProjectViaSettings } from "./close-project";
 
 async function openClassAndOverflowClosableTabs(page: Page) {
   await page
@@ -35,6 +36,35 @@ async function openClassAndOverflowClosableTabs(page: Page) {
 import { openMinimalTestProject } from "./minimal-project";
 
 test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
+  test("project long-press stays open after release and can edit", async ({
+    page,
+  }) => {
+    await openMinimalTestProject(page);
+    await closeProjectViaSettings(page);
+    const project = page.getByTestId("open-listed-project-TestProject");
+    await project.click({ trial: true });
+    const well = await project.locator(".homepage-project-well").boundingBox();
+    expect(well).not.toBeNull();
+    const session = await page.context().newCDPSession(page);
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [
+        { x: well!.x + well!.width / 2, y: well!.y + well!.height / 2 },
+      ],
+    });
+    await expect(page.getByTestId("homepage-project-menu")).toBeVisible();
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expect(page.getByTestId("homepage-project-menu")).toBeVisible();
+    await page.getByTestId("homepage-project-rename").click();
+    await expect(page.getByTestId("homepage-rename-dialog")).toBeVisible();
+    await page.getByTestId("homepage-rename-input").fill("Touch Project");
+    await page.getByTestId("homepage-rename-confirm").click();
+    await expect(project).toContainText("Touch Project");
+  });
+
   test("shell styles and targets", async ({ page }) => {
     await openMinimalTestProject(page);
     await test.step("defaults to user-select none on the shell", async () => {
