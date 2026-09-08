@@ -51,6 +51,16 @@ test.describe("Phone Editor", () => {
         return box ? box.y + box.height : Infinity;
       })
       .toBeLessThanOrEqual(812);
+    await page.mouse.click(370, 800, { button: "right" });
+    const menu = page.getByTestId("context-menu-panel");
+    await expect(menu).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await menu.boundingBox();
+        return box ? box.y + box.height : Infinity;
+      })
+      .toBeLessThanOrEqual(804);
+    await page.keyboard.press("Escape");
     const device = await page.context().newCDPSession(page);
     await device.send("Emulation.setSafeAreaInsetsOverride", {
       insets: { bottom: 48 },
