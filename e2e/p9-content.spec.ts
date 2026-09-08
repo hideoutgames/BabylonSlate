@@ -302,6 +302,9 @@ test.describe("P9 content systems", () => {
       .toMatchObject({ materialInputs: { baseColor: [0.8, 0.8, 0.8] } });
     const beforeScene = await materialVisual(page, "scene", "material-actor");
     await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await expect(page.getByTestId("graph-panel")).toBeVisible({
+      timeout: 15_000,
+    });
     const mesh = createMeshComponent("refresh-prefab", "box");
     mesh.properties.materialGuid = materialGuid;
     expect(
