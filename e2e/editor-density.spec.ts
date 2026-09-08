@@ -505,8 +505,8 @@ test.describe("Editor density and IA", () => {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {
     await openTestProject(page);
-    await page.setViewportSize({ width: 1194, height: 400 });
-    for (let index = 0; index < 8; index += 1) {
+    await page.setViewportSize({ width: 1194, height: 600 });
+    for (let index = 0; index < 20; index += 1) {
       await page.getByTestId("tree-row-assets").click();
       await page.getByTestId("content-browser-new-folder").click();
       await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();

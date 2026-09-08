@@ -7,6 +7,7 @@
 - `e2e/phone-editor.spec.ts` covers 390x844 phone navigation/tools and 844x390 phone landscape, one visible Dockview window, and restoration to the 1194x834 tablet layout.
 - `e2e/phone-content-browser.spec.ts` covers touch folder navigation, explicit Open, and the two-step New Asset flow. These run under desktop-chrome with phone viewport/touch overrides; existing iPad tests remain unchanged.
 - Shared CatalogDialog tests cover category selection; real Dockview tests cover panel visibility, preservation, and layout restoration. Phone browser emulation does not certify native iOS/Android packaging or physical-device behavior.
+- Tablet folder-pan coverage creates enough rows to scroll at 1194x600, keeping the coarse-pointer viewport above the 500px phone-layout height breakpoint.
 - Set `PLAYWRIGHT_PORT` when another checkout uses the default 4173 port, so verification builds and tests the current worktree. The default CI port is unchanged.
 
 ## Quiet agent waits
