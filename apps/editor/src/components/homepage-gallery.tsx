@@ -29,7 +29,9 @@ export function HomepageGallery({
     const resize = () => {
       const width = element.clientWidth;
       if (!width) return;
-      setColumns(width >= 940 ? 3 : width >= 600 ? 2 : 1);
+      setColumns(
+        width >= 940 ? (layout === "small" ? 4 : 3) : width >= 600 ? 2 : 1,
+      );
       setListRows(
         Math.max(1, Math.min(10, Math.floor((element.clientHeight - 32) / 72))),
       );
@@ -43,7 +45,7 @@ export function HomepageGallery({
       observer?.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [layout]);
 
   useEffect(() => {
     setPage(0);

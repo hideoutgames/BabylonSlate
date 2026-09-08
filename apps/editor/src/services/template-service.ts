@@ -9,7 +9,7 @@ import {
   type EngineSettings,
   type HostPlatform,
 } from "@babylonslate/vfs";
-import { unzipSync } from "fflate";
+import { readProjectArchive } from "./project-import";
 
 const LIBRARY_ROOT = "__slate_templates__";
 
@@ -17,37 +17,7 @@ export async function importTemplateArchive(
   name: string,
   bytes: Uint8Array,
 ): Promise<void> {
-  if (bytes.byteLength > 50 * 1024 * 1024)
-    throw new Error("Template archive exceeds 50 MB.");
-  let total = 0;
-  const archive = unzipSync(bytes, {
-    filter: (entry) => {
-      total += entry.originalSize;
-      if (total > 200 * 1024 * 1024)
-        throw new Error("Expanded template exceeds 200 MB.");
-      return true;
-    },
-  });
-  const files = Object.entries(archive)
-    .filter(([path]) => !path.endsWith("/"))
-    .map(([path, data]) => ({ path, data }));
-  if (
-    files.some(
-      (file) =>
-        file.path.startsWith("/") ||
-        file.path.includes("\\") ||
-        file.path
-          .split("/")
-          .some((part) => part === ".." || part.includes(":")),
-    )
-  )
-    throw new Error("Invalid template paths.");
-  const manifest = files.find((file) => file.path === "project.json");
-  if (!manifest)
-    throw new Error("Choose an exported project ZIP containing project.json.");
-  const project: unknown = JSON.parse(new TextDecoder().decode(manifest.data));
-  if (!project || typeof project !== "object" || Array.isArray(project))
-    throw new Error("Invalid project manifest.");
+  const files = readProjectArchive(bytes);
   const storage = await createTemplateStorage(LIBRARY_ROOT);
   const base =
     name

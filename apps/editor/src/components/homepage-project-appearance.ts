@@ -19,7 +19,7 @@ import {
 
 export const DEFAULT_PROJECT_APPEARANCE: ProjectAppearance = {
   icon: "box",
-  color: "stone",
+  color: "sky",
 };
 
 export const PROJECT_ICON_PRESETS = [
@@ -38,13 +38,13 @@ export const PROJECT_ICON_PRESETS = [
 ] as const;
 
 export const PROJECT_COLOR_PRESETS = [
-  { id: "coral", label: "Coral" },
-  { id: "amber", label: "Amber" },
+  { id: "coral", label: "Crimson" },
+  { id: "amber", label: "Gold" },
   { id: "lime", label: "Lime" },
-  { id: "mint", label: "Mint" },
-  { id: "sky", label: "Sky" },
+  { id: "mint", label: "Cyan" },
+  { id: "sky", label: "Electric Blue" },
   { id: "violet", label: "Violet" },
-  { id: "rose", label: "Rose" },
+  { id: "rose", label: "Magenta" },
   { id: "stone", label: "Stone" },
 ] as const;
 

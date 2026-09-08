@@ -38,10 +38,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
-import {
-  HomepageTemplateBrowser,
-  homepageTemplates,
-} from "./homepage-template-browser";
+import { HomepageTemplateBrowser } from "./homepage-template-browser";
 import { ProjectIdentityBadge } from "./homepage-project-identity";
 import {
   PROJECT_COLOR_PRESETS,
@@ -125,9 +122,6 @@ export function HomepageCreateDialog({
   const importRequest = useRef<AbortController | null>(null);
   const [imageIssue, setImageIssue] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
-  const templateName =
-    homepageTemplates(templates).find((template) => template.id === templateId)
-      ?.name ?? "Project";
 
   useEffect(() => {
     setImageBusy(false);
@@ -330,88 +324,91 @@ export function HomepageCreateDialog({
                         </Button>
                       ))}
                     </div>
-                    <div
-                      className="homepage-composer-color-grid"
-                      role="group"
-                      aria-label="Badge Color"
-                    >
-                      {PROJECT_COLOR_PRESETS.map(({ id, label }) => (
-                        <Button
-                          key={id}
-                          type="button"
-                          variant="ghost"
-                          size="touch-icon"
-                          className="homepage-color-choice"
-                          aria-label={label}
-                          aria-pressed={appearance.color === id}
-                          onClick={() =>
-                            changeAppearance({ ...appearance, color: id })
-                          }
-                        >
-                          <span className="homepage-color-blob" data-color={id}>
-                            {appearance.color === id && <CheckIcon />}
-                          </span>
-                        </Button>
-                      ))}
-                    </div>
-                    <div className="homepage-composer-upload">
-                      <input
-                        ref={fileInput}
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        aria-label="Upload Picture"
-                        className="sr-only"
-                        tabIndex={-1}
-                        disabled={busy || imageBusy}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          event.target.value = "";
-                          if (file) void uploadPicture(file);
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={busy || imageBusy}
-                        onClick={() => fileInput.current?.click()}
+                    <div className="homepage-composer-color-row">
+                      <div
+                        className="homepage-composer-color-grid"
+                        role="group"
+                        aria-label="Badge Color"
                       >
-                        {imageBusy ? (
-                          <LoaderCircleIcon
-                            data-icon="inline-start"
-                            className="animate-spin"
-                          />
-                        ) : (
-                          <ImagePlusIcon data-icon="inline-start" />
-                        )}
-                        {appearance.image
-                          ? "Replace Picture"
-                          : "Upload Picture"}
-                      </Button>
-                      {appearance.image && (
+                        {PROJECT_COLOR_PRESETS.map(({ id, label }) => (
+                          <Button
+                            key={id}
+                            type="button"
+                            variant="ghost"
+                            size="touch-icon"
+                            className="homepage-color-choice"
+                            aria-label={label}
+                            aria-pressed={appearance.color === id}
+                            onClick={() =>
+                              changeAppearance({ ...appearance, color: id })
+                            }
+                          >
+                            <span
+                              className="homepage-color-blob"
+                              data-color={id}
+                            >
+                              {appearance.color === id && <CheckIcon />}
+                            </span>
+                          </Button>
+                        ))}
+                      </div>
+                      <div className="homepage-composer-upload">
+                        <input
+                          ref={fileInput}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          aria-label="Upload Picture"
+                          className="sr-only"
+                          tabIndex={-1}
+                          disabled={busy || imageBusy}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (file) void uploadPicture(file);
+                          }}
+                        />
                         <Button
                           type="button"
-                          variant="ghost"
-                          size="touch-icon"
-                          aria-label="Remove Picture"
+                          variant="outline"
                           disabled={busy || imageBusy}
-                          onClick={() =>
-                            changeAppearance({
-                              icon: appearance.icon,
-                              color: appearance.color,
-                            })
-                          }
+                          onClick={() => fileInput.current?.click()}
                         >
-                          <XIcon />
+                          {imageBusy ? (
+                            <LoaderCircleIcon
+                              data-icon="inline-start"
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <ImagePlusIcon data-icon="inline-start" />
+                          )}
+                          {appearance.image
+                            ? "Replace Picture"
+                            : "Upload Picture"}
                         </Button>
-                      )}
+                        {appearance.image && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="touch-icon"
+                            aria-label="Remove Picture"
+                            disabled={busy || imageBusy}
+                            onClick={() =>
+                              changeAppearance({
+                                icon: appearance.icon,
+                                color: appearance.color,
+                              })
+                            }
+                          >
+                            <XIcon />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     {imageIssue && <FieldError>{imageIssue}</FieldError>}
                   </FieldSet>
                   {!editing && (
                     <details className="homepage-project-options">
-                      <summary>
-                        Options <span>{templateName}</span>
-                      </summary>
+                      <summary>Options</summary>
                       <FieldGroup>
                         {hostPlatform !== "web" && (
                           <Field>

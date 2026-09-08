@@ -48,6 +48,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuGroup,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -114,7 +115,7 @@ interface HomepageProps {
     name: string,
     options?: CreateProjectOptions,
   ) => Promise<void>;
-  onOpenExternal: () => Promise<void>;
+  onOpenExternal: (source?: "folder" | "zip") => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
   onUpdateProject: (
     handle: ProjectFolderHandle,
@@ -576,16 +577,50 @@ export function Homepage({
           )}
           New Project
         </Button>
-        <Button
-          variant="ghost"
-          size="touch-icon"
-          aria-label="Open Folder"
-          data-testid="open-project"
-          disabled={busy}
-          onClick={() => void run(() => launch(onOpenExternal))}
-        >
-          <FolderOpenIcon />
-        </Button>
+        {hostPlatform === "web" ? (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="touch-icon"
+                  aria-label="Open Folder"
+                  data-testid="open-project"
+                  disabled={busy}
+                />
+              }
+            >
+              <FolderOpenIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() =>
+                  void run(() => launch(() => onOpenExternal("folder")))
+                }
+              >
+                Import Folder
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() =>
+                  void run(() => launch(() => onOpenExternal("zip")))
+                }
+              >
+                Import ZIP
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button
+            variant="ghost"
+            size="touch-icon"
+            aria-label="Open Folder"
+            data-testid="open-project"
+            disabled={busy}
+            onClick={() => void run(() => launch(onOpenExternal))}
+          >
+            <FolderOpenIcon />
+          </Button>
+        )}
       </footer>
       <HomepageCreateDialog
         open={createOpen}

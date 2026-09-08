@@ -1,3 +1,4 @@
+import { TemplateLibrarySettings } from "./template-library-settings";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import type { EngineSettings } from "@babylonslate/vfs";
@@ -13,7 +14,6 @@ import {
   FieldLegend,
   FieldSet,
 } from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
 import {
   Select,
   SelectContent,
@@ -67,7 +67,11 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     keepKey: "material-function",
     label: "Material Function",
   },
-  { kind: "anim-graph", keepKey: "anim-graph", label: "Animation Graph State Machine" },
+  {
+    kind: "anim-graph",
+    keepKey: "anim-graph",
+    label: "Animation Graph State Machine",
+  },
   {
     kind: "anim-graph",
     keepKey: "animGraphObject",
@@ -146,12 +150,32 @@ export function EngineSettingsForm({
       {categoryId === "about" ? (
         <FieldSet data-testid="build-identity">
           <FieldLegend>BabylonSlate</FieldLegend>
-          {identity ? <>
-            <FieldDescription><SelectableText>Version {identity.applicationVersion} · {identity.channel === "test" ? "Test" : "Release"}</SelectableText></FieldDescription>
-            <FieldDescription><SelectableText>Windows {identity.windowsVersion} · Apple Build {identity.appleBuildNumber}</SelectableText></FieldDescription>
-            <FieldDescription><SelectableText>Run {identity.runNumber} · Attempt {identity.runAttempt}</SelectableText></FieldDescription>
-            <FieldDescription><SelectableText>{identity.sourceSha}</SelectableText></FieldDescription>
-          </> : <FieldDescription>Development Build</FieldDescription>}
+          {identity ? (
+            <>
+              <FieldDescription>
+                <SelectableText>
+                  Version {identity.applicationVersion} ·{" "}
+                  {identity.channel === "test" ? "Test" : "Release"}
+                </SelectableText>
+              </FieldDescription>
+              <FieldDescription>
+                <SelectableText>
+                  Windows {identity.windowsVersion} · Apple Build{" "}
+                  {identity.appleBuildNumber}
+                </SelectableText>
+              </FieldDescription>
+              <FieldDescription>
+                <SelectableText>
+                  Run {identity.runNumber} · Attempt {identity.runAttempt}
+                </SelectableText>
+              </FieldDescription>
+              <FieldDescription>
+                <SelectableText>{identity.sourceSha}</SelectableText>
+              </FieldDescription>
+            </>
+          ) : (
+            <FieldDescription>Development Build</FieldDescription>
+          )}
         </FieldSet>
       ) : null}
       {categoryId === "appearance" ? (
@@ -266,8 +290,8 @@ export function EngineSettingsForm({
               }
             />
             <FieldDescription>
-              Caps scene and Prefab Preview while they are visible. Hidden
-              tabs and open modals freeze rendering.
+              Caps scene and Prefab Preview while they are visible. Hidden tabs
+              and open modals freeze rendering.
             </FieldDescription>
           </Field>
           <Field>
@@ -561,34 +585,7 @@ export function EngineSettingsForm({
           ))
         : null}
 
-      {categoryId === "templates" ? (
-        <FieldSet>
-          <FieldLegend>Templates</FieldLegend>
-          <Field>
-            <FieldLabel htmlFor="setting-templates-folder">
-              Templates folder
-            </FieldLabel>
-            <Input
-              id="setting-templates-folder"
-              type="text"
-              className="min-h-[var(--touch-target,44px)]"
-              data-testid="setting-templates-folder"
-              placeholder="Not available on web"
-              value={settings.templatesFolder ?? ""}
-              onChange={(event) =>
-                void onChange({
-                  templatesFolder: event.target.value
-                    ? event.target.value
-                    : null,
-                })
-              }
-            />
-            <FieldDescription>
-              Template cards on the Homepage are discovered from this folder.
-            </FieldDescription>
-          </Field>
-        </FieldSet>
-      ) : null}
+      {categoryId === "templates" ? <TemplateLibrarySettings /> : null}
     </FieldGroup>
   );
 }

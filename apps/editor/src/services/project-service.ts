@@ -1,3 +1,5 @@
+import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
+import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
 import { normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
 import type {
@@ -485,7 +487,47 @@ export class ProjectService {
     await this.storage.deleteProject?.(handle);
   }
 
-  async openProject(): Promise<ProjectLoadResult> {
+  async openProject(
+    source: "folder" | "zip" = "folder",
+  ): Promise<ProjectLoadResult | null> {
+    if (getHostPlatform() === "web") {
+      const picked = await pickImportFiles({
+        directory: source === "folder",
+        multiple: source === "folder",
+        accept: source === "zip" ? ".zip,.babproject" : undefined,
+        maxTotalBytes:
+          source === "zip" ? 50 * 1024 * 1024 : PROJECT_IMPORT_LIMIT,
+      });
+      if (!picked.length) return null;
+      const files =
+        source === "zip"
+          ? readProjectArchive(picked[0]!.bytes)
+          : normalizeImportedProject(
+              picked.map((file) => ({ path: file.name, data: file.bytes })),
+            );
+      const manifest = JSON.parse(
+        new TextDecoder().decode(
+          files.find((file) => file.path === PROJECT_FILE)!.data,
+        ),
+      ) as { metadata?: { name?: unknown } };
+      const base =
+        normalizeProjectFolderName(
+          typeof manifest.metadata?.name === "string"
+            ? manifest.metadata.name
+            : picked[0]!.name
+                .split("/")[0]!
+                .replace(/\.(zip|babproject)$/i, ""),
+        ) || "Imported Project";
+      let name = base;
+      let suffix = 2;
+      // Existing browser projects remain untouched, even when display names match.
+      for (;;) {
+        await this.storage.openDocumentsProject(name);
+        if (!(await this.storage.exists(PROJECT_FILE))) break;
+        name = `${base} ${suffix++}`;
+      }
+      return this.createFromTemplate({ templateFiles: files, name });
+    }
     await this.storage.pickProjectFolder();
     return this.loadCurrentProject();
   }

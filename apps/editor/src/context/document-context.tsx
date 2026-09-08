@@ -316,7 +316,7 @@ interface DocumentContextValue {
   templates: ProjectTemplate[];
   homepageReady: boolean;
   refreshTemplates: () => Promise<void>;
-  openProject: () => Promise<void>;
+  openProject: (source?: "folder" | "zip") => Promise<void>;
   createEmptyProject: (
     name: string,
     options?: CreateProjectOptions,
@@ -1257,11 +1257,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     void attachEnginePlugins();
   }, [attachEnginePlugins]);
 
-  const openProject = useCallback(async () => {
+  const openProject = useCallback(async (source?: "folder" | "zip") => {
     await attachEnginePlugins();
     try {
-      const { document, layouts, migrationPending: pending } =
-        await projectService.openProject();
+      const result = await projectService.openProject(source);
+      if (!result) return;
+      const { document, layouts, migrationPending: pending } = result;
       await enterEditor(document, layouts, pending);
     } finally {
       setNeedsReconnect(await projectService.needsReconnect());
