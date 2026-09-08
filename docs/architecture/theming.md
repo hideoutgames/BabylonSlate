@@ -6,7 +6,7 @@ Engine Settings **Appearance → Theme** (`system` | `light` | `dark`) is live. 
 
 ## Source scanning
 
-Tailwind v4 detects sources relative to the CSS entry, which here lives in `packages/ui/src/styles`. Every workspace package that renders UI is therefore listed with `@source` in `globals.css`. Without those entries, a utility used *only* by a workspace component (dialog centering, for example) is never generated, and the failure is silent — the class is on the element with no rule behind it. Add an `@source` line when a new package starts rendering components.
+Tailwind v4 detects sources relative to the CSS entry, which here lives in `packages/ui/src/styles`. Every workspace package that renders UI is therefore listed with `@source` in `globals.css`. Without those entries, a utility used _only_ by a workspace component (dialog centering, for example) is never generated, and the failure is silent — the class is on the element with no rule behind it. Add an `@source` line when a new package starts rendering components.
 
 ## Theme source
 
@@ -48,49 +48,49 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 ## Surface ladder
 
-| Role | Token | Light | Dark |
-| --- | --- | --- | --- |
-| Viewport / graph canvas (always dark) | `--background` (dark) | n/a — canvases ignore light chrome | `oklch(0.145 0 0)` ≈ `#242424` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` |
-| Chrome / raised cards | `--card` | `oklch(1 0 0)` | `oklch(0.205 0 0)` |
-| Headers / category bars | `--secondary` / `--muted` | `oklch(0.97 0 0)` | `oklch(0.32 0 0)` |
-| Menus / viewport overlay | `--popover` | `oklch(1 0 0)` | `oklch(0.269 0 0)` |
-| Hover / selection wash | `--accent` | `oklch(0.97 0 0)` | `oklch(0.371 0 0)` |
+| Role                                  | Token                     | Light                              | Dark                           |
+| ------------------------------------- | ------------------------- | ---------------------------------- | ------------------------------ |
+| Viewport / graph canvas (always dark) | `--background` (dark)     | n/a — canvases ignore light chrome | `oklch(0.145 0 0)` ≈ `#242424` |
+| Side panels (`PanelFrame`)            | `--sidebar`               | `oklch(0.985 0 0)`                 | `oklch(0.205 0 0)`             |
+| Chrome / raised cards                 | `--card`                  | `oklch(1 0 0)`                     | `oklch(0.205 0 0)`             |
+| Headers / category bars               | `--secondary` / `--muted` | `oklch(0.97 0 0)`                  | `oklch(0.32 0 0)`              |
+| Menus / viewport overlay              | `--popover`               | `oklch(1 0 0)`                     | `oklch(0.269 0 0)`             |
+| Hover / selection wash                | `--accent`                | `oklch(0.97 0 0)`                  | `oklch(0.371 0 0)`             |
 
 `--primary` is ink in both schemes: light `oklch(0.145 0 0)`, dark `oklch(0.985 0 0)`.
 
 ## Action and status tokens
 
-| Role | Token | Notes |
-| --- | --- | --- |
-| Default actions / ink chrome | `--primary` | Achromatic Neutral ink |
-| Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
-| Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
-| Success / Play | `--success` | Positive status and the global Play control |
+| Role                         | Token                           | Notes                                                 |
+| ---------------------------- | ------------------------------- | ----------------------------------------------------- |
+| Default actions / ink chrome | `--primary`                     | Achromatic Neutral ink                                |
+| Focus / tab indicator        | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
+| Destructive                  | `--destructive`                 | Errors, unsaved dirty dot, axis X                     |
+| Success / Play               | `--success`                     | Positive status and the global Play control           |
 
 ## Pin type colors
 
 Unreal-like mapping. **oklch values** live in `:root` / `.dark` in `globals.css`. **Kind → token maps** live in [`packages/ui/src/lib/data-types.ts`](../../packages/ui/src/lib/data-types.ts) (`pinColorVar`, `PIN_COLOR_VAR`). `graph-ui` `pinCssVar` and editor-kit `TypeColorMark` read that module only — do not add a local color table. `--vector` aliases `--pin-vector`. Pins keep `border-card` so they separate from the canvas.
 
-| Token | Kinds |
-| --- | --- |
-| `--pin-exec` | exec — light ink `oklch(0.145 0 0)`, dark near-white `oklch(0.95 0 0)` |
-| `--pin-bool` | bool (saturated red) |
-| `--pin-int` | int (cyan) |
-| `--pin-float` | float (lime) |
-| `--pin-string` | string (magenta) |
-| `--pin-vector` | vec2 / vec3 / vec4 (gold) |
-| `--pin-rotator` | rotator (violet) |
-| `--pin-quat` | quaternion (magenta-violet) |
-| `--pin-transform` | transform (orange) |
-| `--pin-color` | color |
-| `--pin-object` | objectRef (blue) |
-| `--pin-class` | classRef (purple) — a class value, not a live instance |
-| `--pin-actor` | actorRef (slightly cooler blue) |
-| `--pin-struct` | structRef (indigo, same oklch as Structure tiles `--asset-class`) |
-| `--pin-enum` | enumRef (teal, same oklch as Enum tiles `--asset-script-type`) |
-| `--pin-wildcard` | unbound resolvingWildcard / boxedWildcard / unknown (gray) |
-| `--pin-delegate` | delegate (red) |
+| Token             | Kinds                                                                  |
+| ----------------- | ---------------------------------------------------------------------- |
+| `--pin-exec`      | exec — light ink `oklch(0.145 0 0)`, dark near-white `oklch(0.95 0 0)` |
+| `--pin-bool`      | bool (saturated red)                                                   |
+| `--pin-int`       | int (cyan)                                                             |
+| `--pin-float`     | float (lime)                                                           |
+| `--pin-string`    | string (magenta)                                                       |
+| `--pin-vector`    | vec2 / vec3 / vec4 (gold)                                              |
+| `--pin-rotator`   | rotator (violet)                                                       |
+| `--pin-quat`      | quaternion (magenta-violet)                                            |
+| `--pin-transform` | transform (orange)                                                     |
+| `--pin-color`     | color                                                                  |
+| `--pin-object`    | objectRef (blue)                                                       |
+| `--pin-class`     | classRef (purple) — a class value, not a live instance                 |
+| `--pin-actor`     | actorRef (slightly cooler blue)                                        |
+| `--pin-struct`    | structRef (indigo, same oklch as Structure tiles `--asset-class`)      |
+| `--pin-enum`      | enumRef (teal, same oklch as Enum tiles `--asset-script-type`)         |
+| `--pin-wildcard`  | unbound resolvingWildcard / boxedWildcard / unknown (gray)             |
+| `--pin-delegate`  | delegate (red)                                                         |
 
 Arrays use the element color; maps use the value color. Wildcard pins recolor when a concrete type is wired in: resolving groups adopt that type for display (Array Get `out` turns float-green when `array<float>` lands on `array`), and boxed pins (Print) keep `boxedWildcard` in `__pins` but paint from the connected peer. Disconnecting with no remaining constraint restores `--pin-wildcard`. Other pin/node values are shared across schemes (colored node title bars already contrast on both chromes).
 
@@ -98,46 +98,46 @@ Arrays use the element color; maps use the value color. Wildcard pins recolor wh
 
 Title-bar fills for Blueprint-like nodes:
 
-| Token | Role |
-| --- | --- |
-| `--node-event` | `flow.event.*` / titles starting `Event` (not Call Parent) |
-| `--node-call-parent` | `flow.event.callParent` (brown title bar) |
-| `--node-function` | default impure calls |
-| `--node-pure` | `pure` (math, getters) |
-| `--node-flow` | flow control (Branch, Sequence) |
-| `--node-variable` | Get Variable / Validated Get |
-| `--node-variable-set` | Set Variable |
-| `--node-latent` | timers / `latent` |
-| `--node-debug` | debug category |
-| `--node-title-foreground` | title text on those bars |
-| `--node-dev-only-tape` | Development Only hazard-tape yellow (same in light and dark) |
-| `--node-dev-only-stripe` | Development Only hazard-tape black stripe |
-| `--node-editor-only-tape` | Editor Only hazard-tape cyan (same in light and dark) |
-| `--node-editor-only-stripe` | Editor Only hazard-tape black stripe |
-| `--node-bt-root` | Behaviour tree Root |
-| `--node-bt-composite` | Behaviour tree Selector / Sequence / Parallel |
-| `--node-bt-task` | Behaviour tree task leaves |
-| `--node-bt-decorator` | Attached decorator row tint |
-| `--node-bt-service` | Attached service row tint |
+| Token                       | Role                                                         |
+| --------------------------- | ------------------------------------------------------------ |
+| `--node-event`              | `flow.event.*` / titles starting `Event` (not Call Parent)   |
+| `--node-call-parent`        | `flow.event.callParent` (brown title bar)                    |
+| `--node-function`           | default impure calls                                         |
+| `--node-pure`               | `pure` (math, getters)                                       |
+| `--node-flow`               | flow control (Branch, Sequence)                              |
+| `--node-variable`           | Get Variable / Validated Get                                 |
+| `--node-variable-set`       | Set Variable                                                 |
+| `--node-latent`             | timers / `latent`                                            |
+| `--node-debug`              | debug category                                               |
+| `--node-title-foreground`   | title text on those bars                                     |
+| `--node-dev-only-tape`      | Development Only hazard-tape yellow (same in light and dark) |
+| `--node-dev-only-stripe`    | Development Only hazard-tape black stripe                    |
+| `--node-editor-only-tape`   | Editor Only hazard-tape cyan (same in light and dark)        |
+| `--node-editor-only-stripe` | Editor Only hazard-tape black stripe                         |
+| `--node-bt-root`            | Behaviour tree Root                                          |
+| `--node-bt-composite`       | Behaviour tree Selector / Sequence / Parallel                |
+| `--node-bt-task`            | Behaviour tree task leaves                                   |
+| `--node-bt-decorator`       | Attached decorator row tint                                  |
+| `--node-bt-service`         | Attached service row tint                                    |
 
 ## Asset type colors
 
 Content Browser, Outliner, catalogs, search, and document tabs resolve **icons** through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Colors** come from DataTypes (`assetColorVar` / `--asset-*`). Change a hue in `globals.css`; change which family uses which token in `data-types.ts`. **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent), including the New Asset Parent Class tree. Graph pin/node tokens stay on the same DataTypes maps. `TypeVisualIcon` passes Lucide `size` so the SVG `width`/`height` match the CSS box: **16** (`TYPE_VISUAL_ICON_CHROME_SIZE`) in chrome/lists, **40** (`TYPE_VISUAL_ICON_TILE_SIZE`) on Content Browser tiles. Tile glyphs also set Lucide `absoluteStrokeWidth` with design stroke **2** so the SVG `stroke-width` is `2 × 24 / 40` (1.2 viewBox units, 2 CSS px). Without that, viewBox-relative stroke 1.5–2 at 40px thickens to 2.5–3.3 px and dense icons (Film, Boxes, Grid) blob. AnimationGraph uses `Workflow`, BehaviourTree `ListTree`; clip Animation keeps `Film`.
 
-| Token | Kind | Distinct icons |
-| --- | --- | --- |
-| `--asset-scene` | Scene, AudioMixer (yellow, Unreal Level) | Scene, AudioMixer (`Volume2`) |
-| `--asset-graph` | Graph (cyan) | Graph |
-| `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
-| `--asset-material` | Material, Material Function, Shader (green, former Audio) | Material |
-| `--asset-model` | Model (orange) | Model |
-| `--asset-audio` | unused by a Content Browser type (lime; kept so asset hues stay ≥25° apart) | — |
-| `--asset-font` | Font (sky) | Font |
-| `--asset-animation` | Animation, AnimationGraph, Class / Object / Actor / ScriptInterface / BehaviourTree, SoundAttenuation, imported Audio (blue) | Animation (`Film`), AnimationGraph (`Workflow`), Object, Actor, Class, ScriptInterface (`Plug`), BehaviourTree (`ListTree`), SoundAttenuation (`Volume2`), Audio (`Volume2`) |
-| `--asset-class` | Blackboard, Structure, AudioChannel (indigo; former Class hue) | Blackboard (`List`), Structure (`Braces`), AudioChannel (`Volume2`) |
-| `--asset-script-type` | Enum, PluginSettings (teal) | Enum, PluginSettings (`Puzzle`) |
-| `--asset-component` | Engine components in Details / Add Component (purple) | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
-| `--asset-folder` | Content Browser folders (gold / yellow) | Folder glyph |
+| Token                 | Kind                                                                                                                         | Distinct icons                                                                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--asset-scene`       | Scene, AudioMixer (yellow, Unreal Level)                                                                                     | Scene, AudioMixer (`Volume2`)                                                                                                                                                |
+| `--asset-graph`       | Graph (cyan)                                                                                                                 | Graph                                                                                                                                                                        |
+| `--asset-texture`     | Texture, Sprite, Tileset, Tilemap (magenta)                                                                                  | Texture                                                                                                                                                                      |
+| `--asset-material`    | Material, Material Function, Shader (green, former Audio)                                                                    | Material                                                                                                                                                                     |
+| `--asset-model`       | Model (orange)                                                                                                               | Model                                                                                                                                                                        |
+| `--asset-audio`       | unused by a Content Browser type (lime; kept so asset hues stay ≥25° apart)                                                  | —                                                                                                                                                                            |
+| `--asset-font`        | Font (sky)                                                                                                                   | Font                                                                                                                                                                         |
+| `--asset-animation`   | Animation, AnimationGraph, Class / Object / Actor / ScriptInterface / BehaviourTree, SoundAttenuation, imported Audio (blue) | Animation (`Film`), AnimationGraph (`Workflow`), Object, Actor, Class, ScriptInterface (`Plug`), BehaviourTree (`ListTree`), SoundAttenuation (`Volume2`), Audio (`Volume2`) |
+| `--asset-class`       | Blackboard, Structure, AudioChannel (indigo; former Class hue)                                                               | Blackboard (`List`), Structure (`Braces`), AudioChannel (`Volume2`)                                                                                                          |
+| `--asset-script-type` | Enum, PluginSettings (teal)                                                                                                  | Enum, PluginSettings (`Puzzle`)                                                                                                                                              |
+| `--asset-component`   | Engine components in Details / Add Component (purple)                                                                        | one icon per `ENGINE_COMPONENT_CLASS_IDS`                                                                                                                                    |
+| `--asset-folder`      | Content Browser folders (gold / yellow)                                                                                      | Folder glyph                                                                                                                                                                 |
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-animation` (they spawn as Actors; same token as Class / Object). Unknown types fall back to a file glyph and `--muted-foreground`.
 
@@ -145,14 +145,14 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 
 ## Graph sizing tokens
 
-| Token | Value | Use |
-| --- | --- | --- |
-| `--touch-target` | `44px` | Graph pin rows and remaining large hit boxes |
-| `--chrome-row` | `28px` | Editor chrome, panel headers, property rows, catalog item rows |
-| `--graph-pin-size` | `22px` | Visual pin diamond / circle / list / map |
+| Token                           | Value   | Use                                                             |
+| ------------------------------- | ------- | --------------------------------------------------------------- |
+| `--touch-target`                | `44px`  | Graph pin rows and remaining large hit boxes                    |
+| `--chrome-row`                  | `28px`  | Editor chrome, panel headers, property rows, catalog item rows  |
+| `--graph-pin-size`              | `22px`  | Visual pin diamond / circle / list / map                        |
 | `--graph-pin-default-max-width` | `12rem` | Truncation cap for on-node literal default and type-name fields |
-| `--graph-edge-exec` | `5px` | Exec wire stroke |
-| `--graph-edge-data` | `4px` | Data wire stroke |
+| `--graph-edge-exec`             | `5px`   | Exec wire stroke                                                |
+| `--graph-edge-data`             | `4px`   | Data wire stroke                                                |
 
 Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace-nowrap` titles and pin names (`shrink-0`, no `min-w-0` pin columns) plus a `gap-6` gutter between in/out labels. Compact BT nodes use `min-w-56`. Get Variable uses a `w-max` pill (`rounded-full`, `min-h-14`, `px-4`, `gap-4`, no `min-w-80`) outlined in the value pin color. Title bars are `text-base`. Pin rows stay `--touch-target` (44px). Text pin defaults (string, numeric, type name) use `w-fit` and truncate at `--graph-pin-default-max-width`. `graph-editor.css` `[data-pin-default-field]` sets `min-width: min(12rem, max-content)` so truncate does not collapse the field, and unbounded `min-width: fit-content` cannot defeat the 12rem cap. Pin rows are `w-full min-w-max` so every row stretches to the widest pin row and `justify-between` keeps Then on the right. `[data-pin-row]` in `graph-editor.css` matches that (`width: 100%`; `min-width: max-content`). XYFlow wrappers in `.graph-editor-canvas` use `width: max-content` so a previous measured px width does not clip that chrome.
 
@@ -168,11 +168,11 @@ Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`,
 
 ## Other extension tokens
 
-| Token | Purpose |
-| --- | --- |
-| `--chrome-row` | Compact chrome / panel header height (28px) |
-| `--chrome-tab-active` | Active document tab fill (`var(--card)`) |
-| `--chrome-tab-accent` | Tab indicator (`var(--foreground)`) |
+| Token                 | Purpose                                     |
+| --------------------- | ------------------------------------------- |
+| `--chrome-row`        | Compact chrome / panel header height (28px) |
+| `--chrome-tab-active` | Active document tab fill (`var(--card)`)    |
+| `--chrome-tab-accent` | Tab indicator (`var(--foreground)`)         |
 
 ## Viewport and graph canvas
 
@@ -196,14 +196,14 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 
 **Action vs pressed:**
 
-| Treatment | Use |
-| --- | --- |
-| `Button variant="outline"` | Visible actions (chrome Save All / Undo, panel Add/Remove, catalog primary controls). Also the **trigger** that opens an irreversible confirm (Content Browser **Delete (N)**, plugin list Delete), and Close Project. |
-| `Button variant="ghost"` | Tabs, menu items, icon-only close |
-| `Button variant="destructive"` | Solid filled `--destructive` confirm on a danger `AlertDialog` — asset, folder, and plugin delete. Not a 10% tint. |
-| `AlertDialogContent variant="destructive"` | Irreversible file-destroying confirms: red ring, red media well, red title, `sm:max-w-md` |
-| `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses **accent fill + primary border** + `aria-pressed` (not a near-invisible secondary wash) |
-| Catalog / folder / outliner selected | `variant="secondary"` (where applicable) plus a 2px start-edge **primary** bar (`border-l-2 border-l-primary`) |
+| Treatment                                    | Use                                                                                                                                                                                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Button variant="outline"`                   | Visible actions (chrome Save All / Undo, panel Add/Remove, catalog primary controls). Also the **trigger** that opens an irreversible confirm (Content Browser **Delete (N)**, plugin list Delete), and Close Project. |
+| `Button variant="ghost"`                     | Tabs, menu items, icon-only close                                                                                                                                                                                      |
+| `Button variant="destructive"`               | Solid filled `--destructive` confirm on a danger `AlertDialog` — asset, folder, and plugin delete. Not a 10% tint.                                                                                                     |
+| `AlertDialogContent variant="destructive"`   | Irreversible file-destroying confirms: red ring, red media well, red title, `sm:max-w-md`                                                                                                                              |
+| `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses **accent fill + primary border** + `aria-pressed` (not a near-invisible secondary wash)                                                                                            |
+| Catalog / folder / outliner selected         | `variant="secondary"` (where applicable) plus a 2px start-edge **primary** bar (`border-l-2 border-l-primary`)                                                                                                         |
 
 **Touch sizes** on `Button` / `Toggle`: `touch` and `touch-icon` map to `min-h/min-w: var(--touch-target, 44px)`. Prefer these over repeating `min-h-11` at call sites. Docked panels omit `PanelFrame` titles when Dockview already shows the tab name; keep a toolbar-only row when actions are present. `PanelFrame` uses `--sidebar`; headers use `--card`.
 
@@ -215,11 +215,11 @@ Dev-only **Component Gallery**: `/?test=1&gallery=1` renders every installed pri
 
 Source artwork lives in [`engine-logos/`](../../engine-logos/). It is human-authored. Agents must never AI-generate replacements, icons, videos, 3D models, or similar media ([no-ai-artwork.md](../../.agents/rules/no-ai-artwork.md)).
 
-| File | Ink | Use |
-| --- | --- | --- |
-| `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Docs home hero |
-| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Homepage rail (`BrandIcon`), docs nav, favicon source |
+| File                                       | Ink                                   | Use                                                   |
+| ------------------------------------------ | ------------------------------------- | ----------------------------------------------------- |
+| `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Docs home hero                                        |
+| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark                     | Homepage rail (`BrandIcon`), docs nav, favicon source |
 
 `*Dark` is dark ink for light chrome; `*Light` is light ink for dark chrome. Served copies must stay byte-identical in `apps/editor/public/branding/` and `apps/docs/public/branding/`.
 
-Favicon is a theme-aware SVG (`prefers-color-scheme`) plus `favicon.ico` and `apple-touch-icon.png` in each app's `public/`. The editor homepage swaps **icon** marks with `html.dark` (`dark:hidden` / `dark:block`), not `prefers-color-scheme`, so Engine Settings Appearance wins. Homepage mount motion (rail/main slide, icon scale, card stagger) lives in `apps/editor/src/components/homepage.css` and is disabled under `prefers-reduced-motion: reduce`. Homepage project context menus and their backdrops render in `document.body` so the entrance transform and project-list clipping cannot offset or hide their viewport-anchored controls.
+Favicon is a theme-aware SVG (`prefers-color-scheme`) plus `favicon.ico` and `apple-touch-icon.png` in each app's public assets. The landing uses the existing icon and the text brand **Slate**. Its warm paper/forest themes and coral accent live in `homepage.css` under `.homepage-theme`, including portaled composer/profile content. The CSS is imported as text and mounted only with the landing; editor tokens and density remain independent. The hero floats the existing mark over a CSS dot field without allocating a renderer. Phone mode and reduced-motion preferences disable decoration; project cards retain keyboard, pointer, and touch access. A single page scroll surface keeps the project library and starter templates reachable on short screens. Uploaded project pictures use bounded local raster thumbnails; preset colors have named, focusable circular choices.

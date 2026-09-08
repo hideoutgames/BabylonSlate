@@ -1,6 +1,6 @@
 /** Public paths for Slate brand artwork copied from `engine-logos/`. */
 
-export const BRAND_NAME = "BabylonSlate";
+export const BRAND_NAME = "Slate";
 
 /** Dark-ink wordmark — use on light chrome. */
 export const BRAND_LOGO_ON_LIGHT = "branding/SlateLogoDark.png";

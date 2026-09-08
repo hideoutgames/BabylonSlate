@@ -1,19 +1,33 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   ArrowUpDownIcon,
+  ArrowUpRightIcon,
+  ArrowRightIcon,
+  BookOpenIcon,
   BoxIcon,
   FolderOpenIcon,
   Grid2x2Icon,
   LayoutTemplateIcon,
   ListFilterIcon,
+  MoreHorizontalIcon,
   OctagonAlertIcon,
   PlusIcon,
-  XIcon,
+  Settings2Icon,
+  Trash2Icon,
 } from "lucide-react";
 import {
   DEFAULT_RENDER_HEIGHT,
   DEFAULT_RENDER_WIDTH,
   type ProjectFolderHandle,
+  type ProjectAppearance,
 } from "@babylonslate/core";
 import {
   ContextMenuOverlay,
@@ -25,7 +39,11 @@ import {
   isTestModeEnabled,
   type HostPlatform,
 } from "@babylonslate/vfs";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@babylonslate/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,7 +56,15 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { Button } from "@babylonslate/ui/components/button";
-import { Card } from "@babylonslate/ui/components/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
+} from "@babylonslate/ui/components/card";
+import { Badge } from "@babylonslate/ui/components/badge";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -50,26 +76,12 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@babylonslate/ui/components/dialog";
-import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
 import { displayProjectName } from "../lib/display-project-name";
 import {
   filterListedProjects,
@@ -81,6 +93,7 @@ import {
   type HomepageProjectLocationFilter,
   type HomepageProjectSortMode,
   type ListedProject,
+  type UpdateListedProjectOptions,
 } from "../lib/listed-projects";
 import {
   createProjectNameIssue,
@@ -89,11 +102,20 @@ import {
   type CreateProjectOptions,
 } from "../lib/create-project";
 import { BrandIcon } from "./brand-icon";
+import { brandIconSrc } from "../lib/branding";
+import { HomepageAccount } from "./homepage-account";
+import { ProjectIdentityBadge } from "./homepage-project-identity";
+import { DEFAULT_PROJECT_APPEARANCE } from "./homepage-project-appearance";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { TemplatePickCard } from "./homepage-template-card";
 import { IconActionButton } from "./icon-action-button";
-import { SettingsModal } from "./settings-modal";
-import "./homepage.css";
+import homepageStyles from "./homepage.css?inline";
+
+const SettingsModal = lazy(() =>
+  import("./settings-modal").then((module) => ({
+    default: module.SettingsModal,
+  })),
+);
 
 function createProjectCardDescription(
   templateCount: number,
@@ -135,7 +157,7 @@ function HomepageProjectRow({
 }) {
   const skipOpenRef = useRef(false);
   const removeLabel = deleteOnRemove ? "Delete" : "Remove from list";
-  const { menu, closeMenu, bind } = useContextMenu({
+  const { menu, closeMenu, bind, openMenuAt } = useContextMenu({
     enabled: !busy,
     items: [
       {
@@ -146,7 +168,7 @@ function HomepageProjectRow({
       },
       {
         id: "rename",
-        label: "Rename",
+        label: "Edit Project",
         testId: "homepage-project-rename",
         onSelect: () => onRename(project),
       },
@@ -177,6 +199,15 @@ function HomepageProjectRow({
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
+    if (
+      event.key === "ContextMenu" ||
+      (event.key === "F10" && event.shiftKey)
+    ) {
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      openMenuAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return;
+    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       openProject();
@@ -187,9 +218,12 @@ function HomepageProjectRow({
     <li>
       <Card
         size="sm"
-        tabIndex={0}
+        role="group"
+        tabIndex={busy ? -1 : 0}
+        aria-label={`Open ${displayProjectName(project.label)}`}
+        aria-disabled={busy}
         data-testid={`open-listed-project-${project.name}`}
-        className="homepage-project-row flex cursor-pointer flex-row items-center gap-3 px-3 py-2 min-h-[var(--touch-target,44px)]"
+        className="homepage-project-row"
         {...bind}
         onClick={(event) => {
           if (skipOpenRef.current) {
@@ -201,39 +235,66 @@ function HomepageProjectRow({
         }}
         onKeyDown={onKeyDown}
       >
-        <span
+        <CardContent
+          className="homepage-project-well"
           data-testid="project-card-well"
-          className="homepage-project-well rounded-md"
+          data-color={project.appearance?.color ?? "coral"}
         >
-          <span aria-hidden="true" className="homepage-mark-diamond" />
-          <BoxIcon />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-          <span className="font-medium">
-            {displayProjectName(project.label)}
-          </span>
-          {meta.length > 0 ? (
-            <span className="text-xs text-muted-foreground">
-              {meta.join(" · ")}
-            </span>
-          ) : null}
-        </span>
-        <IconActionButton
-          type="button"
-          variant="ghost"
-          size="touch-icon"
-          label={removeLabel}
-          disabled={busy}
-          data-testid={`remove-listed-project-${project.name}`}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            event.preventDefault();
-            onRequestRemove(project);
-          }}
-        >
-          <XIcon />
-        </IconActionButton>
+          <ProjectIdentityBadge appearance={project.appearance} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="touch-icon"
+            className="homepage-project-actions"
+            aria-label={`Project Actions for ${displayProjectName(project.label)}`}
+            disabled={busy}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              openMenuAt(rect.right, rect.bottom);
+            }}
+          >
+            <MoreHorizontalIcon />
+          </Button>
+        </CardContent>
+        <CardHeader className="homepage-project-caption">
+          <CardTitle>{displayProjectName(project.label)}</CardTitle>
+          <CardDescription>
+            {meta.length > 0 ? meta.join(" · ") : "Ready for your next idea"}
+          </CardDescription>
+        </CardHeader>
+        <CardFooter className="homepage-project-footer">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Open Project ${displayProjectName(project.label)}`}
+            disabled={busy}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              openProject();
+            }}
+          >
+            Open Project <ArrowUpRightIcon data-icon="inline-end" />
+          </Button>
+          <IconActionButton
+            type="button"
+            variant="ghost"
+            size="touch-icon"
+            label={removeLabel}
+            disabled={busy}
+            data-testid={`remove-listed-project-${project.name}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              event.preventDefault();
+              onRequestRemove(project);
+            }}
+          >
+            <Trash2Icon />
+          </IconActionButton>
+        </CardFooter>
       </Card>
       <ContextMenuOverlay
         menu={menu}
@@ -249,7 +310,10 @@ interface HomepageProps {
   templates: Array<{ id: string; name: string }>;
   needsReconnect: boolean;
   recoveryAvailable: boolean;
-  onCreateEmpty: (name: string, options?: CreateProjectOptions) => Promise<void>;
+  onCreateEmpty: (
+    name: string,
+    options?: CreateProjectOptions,
+  ) => Promise<void>;
   onCreateFromTemplate: (
     templateId: string,
     name: string,
@@ -257,7 +321,10 @@ interface HomepageProps {
   ) => Promise<void>;
   onOpenExternal: () => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
-  onRenameProject: (handle: ProjectFolderHandle, name: string) => Promise<void>;
+  onUpdateProject: (
+    handle: ProjectFolderHandle,
+    details: UpdateListedProjectOptions,
+  ) => Promise<void>;
   onRemoveFromList: (handle: ProjectFolderHandle) => Promise<void>;
   onReconnect: () => Promise<void>;
   onRecover: () => void | Promise<void>;
@@ -274,7 +341,7 @@ export function Homepage({
   onCreateFromTemplate,
   onOpenExternal,
   onOpenProject,
-  onRenameProject,
+  onUpdateProject,
   onRemoveFromList,
   onReconnect,
   onRecover,
@@ -285,9 +352,11 @@ export function Homepage({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ListedProject | null>(null);
-  const [renameValue, setRenameValue] = useState("");
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [appearance, setAppearance] = useState<ProjectAppearance>(
+    DEFAULT_PROJECT_APPEARANCE,
+  );
   const [createName, setCreateName] = useState("");
   const [createTemplateId, setCreateTemplateId] = useState<string>("empty");
   const [createWidth, setCreateWidth] = useState(DEFAULT_RENDER_WIDTH);
@@ -304,10 +373,14 @@ export function Homepage({
   const deleteRemoveTarget =
     removeTarget !== null &&
     shouldDeleteOpfsOnRemove(hostPlatform, removeTarget.tier);
-  const nameIssue = createProjectNameIssue(
-    createName,
-    projects.map((project) => project.name),
-  );
+  const nameIssue = renameTarget
+    ? createName.trim()
+      ? null
+      : "Name required."
+    : createProjectNameIssue(
+        createName,
+        projects.map((project) => project.name),
+      );
   const mixedLocations =
     projects.length > 0 &&
     listedProjectLocationLabel(projects, projects[0]!) !== null;
@@ -336,6 +409,9 @@ export function Homepage({
   };
 
   const openCreate = (templateId: string) => {
+    setError(null);
+    setRenameTarget(null);
+    setAppearance(DEFAULT_PROJECT_APPEARANCE);
     setCreateName(defaultCreateProjectDisplayName(isTestModeEnabled()));
     setCreateTemplateId(templateId);
     setPickFolder(false);
@@ -347,158 +423,212 @@ export function Homepage({
 
   return (
     <div
-      className="homepage safe-frame safe-frame-top flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground lg:flex-row"
+      className="homepage homepage-theme safe-frame safe-frame-top"
       data-testid="homepage"
     >
-      <aside className="homepage-rail flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4 lg:h-full lg:w-[min(22rem,34vw)] lg:flex-col lg:items-start lg:justify-between lg:border-r lg:border-b-0 lg:px-10 lg:py-12">
-        <div className="flex items-center gap-4 lg:flex-col lg:items-start lg:gap-8">
-          <BrandIcon className="homepage-brand-icon size-12 lg:size-40" />
-          <h1 className="m-0 font-heading text-xl tracking-tight lg:text-3xl">
-            BabylonSlate
-          </h1>
+      <style data-slate-home-styles>{homepageStyles}</style>
+      <header className="homepage-header">
+        <div className="homepage-brand">
+          <BrandIcon className="homepage-brand-icon" />
+          <h1>Slate</h1>
+          <span className="homepage-brand-caption">A Space for Creating</span>
         </div>
-        <Button
-          variant="outline"
-          size="touch"
-          data-testid="engine-settings"
-          onClick={() => setSettingsOpen(true)}
-        >
-          Engine Settings
-        </Button>
-      </aside>
+        <nav className="homepage-nav" aria-label="Slate">
+          <a
+            className="homepage-docs"
+            href="https://hideoutgames.github.io/BabylonSlate/docs/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Guide <ArrowUpRightIcon aria-hidden="true" />
+          </a>
+          <Button
+            variant="ghost"
+            size="touch"
+            aria-label="Engine Settings"
+            data-testid="engine-settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings2Icon data-icon="inline-start" />
+            <span>Settings</span>
+          </Button>
+          <HomepageAccount />
+        </nav>
+      </header>
 
-      <main className="homepage-main mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-10 overflow-hidden px-6 py-8 lg:px-10 lg:py-12">
-        {needsReconnect ? (
-          <Alert variant="destructive" data-testid="reconnect-banner">
-            <AlertTitle>Project folder unavailable</AlertTitle>
-            <AlertDescription className="flex flex-col gap-3">
-              <span>
-                The external project folder bookmark is stale. Reconnect to
-                continue.
-              </span>
-              <Button
-                className="w-fit"
-                data-testid="reconnect-project"
-                disabled={busy}
-                onClick={() => void run(onReconnect)}
-              >
-                Reconnect project folder
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        {recoveryAvailable ? (
-          <Alert data-testid="recovery-prompt">
-            <AlertTitle>Recovery journal found</AlertTitle>
-            <AlertDescription className="flex flex-col gap-3">
-              <span>
-                A recovery journal was found for this project. Replay unsaved
-                edits now, or discard the journal.
-              </span>
-              <div className="flex gap-2">
+      <main className="homepage-main">
+        <div className="homepage-main-inner">
+          {needsReconnect ? (
+            <Alert variant="destructive" data-testid="reconnect-banner">
+              <AlertTitle>Project folder unavailable</AlertTitle>
+              <AlertDescription className="flex flex-col gap-3">
+                <span>
+                  The external project folder bookmark is stale. Reconnect to
+                  continue.
+                </span>
                 <Button
-                  data-testid="recover-journal"
-                  onClick={() => void onRecover()}
+                  className="w-fit"
+                  data-testid="reconnect-project"
+                  disabled={busy}
+                  onClick={() => void run(onReconnect)}
                 >
-                  Recover edits
+                  Reconnect project folder
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {recoveryAvailable ? (
+            <Alert data-testid="recovery-prompt">
+              <AlertTitle>Recovery journal found</AlertTitle>
+              <AlertDescription className="flex flex-col gap-3">
+                <span>
+                  A recovery journal was found for this project. Replay unsaved
+                  edits now, or discard the journal.
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    data-testid="recover-journal"
+                    onClick={() => void onRecover()}
+                  >
+                    Recover edits
+                  </Button>
+                  <Button
+                    variant="outline"
+                    data-testid="dismiss-journal"
+                    onClick={onDismissRecovery}
+                  >
+                    Discard journal
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          <section
+            className="homepage-hero"
+            data-testid="homepage-start"
+            aria-labelledby="homepage-welcome"
+          >
+            <div className="homepage-hero-copy">
+              <p className="homepage-eyebrow">Your Next World Starts Here</p>
+              <h2 id="homepage-welcome">
+                A blank Slate.
+                <br />
+                Endless <em>possibilities.</em>
+              </h2>
+              <p className="homepage-hero-description">
+                Big ideas. Small experiments. Whatever you have in mind, make it
+                your own.
+              </p>
+              <div
+                className="homepage-start-actions"
+                data-testid="homepage-start-actions"
+              >
+                <Button
+                  size="touch"
+                  data-testid="create-project"
+                  disabled={busy}
+                  onClick={() => openCreate("empty")}
+                >
+                  <PlusIcon data-icon="inline-start" />
+                  Create Project
                 </Button>
                 <Button
                   variant="outline"
-                  data-testid="dismiss-journal"
-                  onClick={onDismissRecovery}
+                  size="touch"
+                  data-testid="open-project"
+                  disabled={busy}
+                  onClick={() => void run(onOpenExternal)}
                 >
-                  Discard journal
+                  <FolderOpenIcon data-icon="inline-start" />
+                  Open Folder…
                 </Button>
               </div>
-            </AlertDescription>
-          </Alert>
-        ) : null}
+            </div>
+            <div className="homepage-orbit" aria-hidden="true">
+              <div className="homepage-dot-field" />
+              <span className="homepage-orbit-ring" />
+              <span className="homepage-orbit-coordinate">
+                X 00 / Y 00 / Z 00
+              </span>
+              <div className="homepage-orbit-logo">
+                <img src={brandIconSrc("light")} alt="" />
+              </div>
+              <span className="homepage-orbit-note">
+                A Little Space. A Lot of Potential.
+              </span>
+            </div>
+          </section>
 
-        <section className="flex shrink-0 flex-col gap-4" data-testid="homepage-start">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <h2 className="m-0 font-heading text-lg">Start</h2>
-              <p
-                className="text-sm text-muted-foreground"
-                data-testid="create-project-description"
-              >
-                {createProjectCardDescription(templates.length, hostPlatform)}
-              </p>
-            </div>
-            <div
-              className="flex flex-wrap items-center gap-2"
-              data-testid="homepage-start-actions"
-            >
-              <Button
-                size="touch"
-                data-testid="create-project"
-                disabled={busy}
-                onClick={() => openCreate("empty")}
-              >
-                <PlusIcon data-icon="inline-start" />
-                Create Project
-              </Button>
-              <Button
-                variant="outline"
-                size="touch"
-                data-testid="open-project"
-                disabled={busy}
-                onClick={() => void run(onOpenExternal)}
-              >
-                <FolderOpenIcon data-icon="inline-start" />
-                Open Folder…
-              </Button>
-            </div>
-          </div>
-          <div
-            className="homepage-stagger flex flex-nowrap gap-3 overflow-x-auto overscroll-x-contain pb-1"
-            data-testid="homepage-start-gallery"
+          <section
+            className="homepage-library"
+            aria-labelledby="homepage-projects-title"
           >
-            <TemplatePickCard
-              title="Empty"
-              description="Blank 3D project"
-              testId="homepage-start-empty"
-              icon={BoxIcon}
-              onSelect={() => openCreate("empty")}
-            />
-            <TemplatePickCard
-              title="2D"
-              description="Pixel-perfect Rapier"
-              testId="homepage-start-2d"
-              icon={Grid2x2Icon}
-              onSelect={() => openCreate("2d")}
-            />
-            {templates.map((template) => (
-              <TemplatePickCard
-                key={template.id}
-                title={template.name}
-                testId={`homepage-start-template-${template.id}`}
-                icon={LayoutTemplateIcon}
-                onSelect={() => openCreate(template.id)}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="flex min-h-0 flex-1 flex-col gap-4">
-          <div className="flex shrink-0 flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <h2 className="m-0 font-heading text-lg">Projects</h2>
-              <p className="text-sm text-muted-foreground">
-                Recently opened projects on this device.
-              </p>
-            </div>
-            {projects.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <SearchInput
-                  value={projectSearch}
-                  onChange={setProjectSearch}
-                  placeholder="Search projects…"
-                  className="min-h-[var(--touch-target,44px)] min-w-40"
-                  data-testid="homepage-project-search"
-                />
-                {mixedLocations ? (
+            <div className="homepage-library-heading">
+              <div className="homepage-section-title">
+                <h2 id="homepage-projects-title">Your Projects</h2>
+                <Badge variant="secondary">{projects.length}</Badge>
+              </div>
+              {projects.length > 0 ? (
+                <div className="homepage-library-tools">
+                  <SearchInput
+                    value={projectSearch}
+                    onChange={setProjectSearch}
+                    placeholder="Search projects…"
+                    className="min-h-[var(--touch-target,44px)] min-w-40"
+                    data-testid="homepage-project-search"
+                  />
+                  {mixedLocations ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="touch"
+                            data-testid="homepage-project-filter"
+                            aria-label="Filter"
+                          />
+                        }
+                      >
+                        <ListFilterIcon data-icon="inline-start" />
+                        Filter
+                        {locationFilters.length > 0
+                          ? ` (${locationFilters.length})`
+                          : ""}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="min-w-44"
+                        data-testid="homepage-project-filter-menu"
+                      >
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel>Location</DropdownMenuLabel>
+                          {HOMEPAGE_LOCATION_FILTERS.map((option) => (
+                            <DropdownMenuCheckboxItem
+                              key={option.id}
+                              checked={locationFilters.includes(option.id)}
+                              data-testid={`homepage-project-filter-${option.id}`}
+                              onCheckedChange={(checked) => {
+                                setLocationFilters((current) =>
+                                  checked === true
+                                    ? current.includes(option.id)
+                                      ? current
+                                      : [...current, option.id]
+                                    : current.filter(
+                                        (entry) => entry !== option.id,
+                                      ),
+                                );
+                              }}
+                            >
+                              {option.label}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
@@ -506,157 +636,185 @@ export function Homepage({
                           type="button"
                           variant="outline"
                           size="touch"
-                          data-testid="homepage-project-filter"
-                          aria-label="Filter"
+                          data-testid="homepage-project-sort"
+                          aria-label="Sort"
                         />
                       }
                     >
-                      <ListFilterIcon data-icon="inline-start" />
-                      Filter
-                      {locationFilters.length > 0
-                        ? ` (${locationFilters.length})`
-                        : ""}
+                      <ArrowUpDownIcon data-icon="inline-start" />
+                      Sort
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                       align="end"
                       className="min-w-44"
-                      data-testid="homepage-project-filter-menu"
+                      data-testid="homepage-project-sort-menu"
                     >
                       <DropdownMenuGroup>
-                        <DropdownMenuLabel>Location</DropdownMenuLabel>
-                        {HOMEPAGE_LOCATION_FILTERS.map((option) => (
-                          <DropdownMenuCheckboxItem
-                            key={option.id}
-                            checked={locationFilters.includes(option.id)}
-                            data-testid={`homepage-project-filter-${option.id}`}
-                            onCheckedChange={(checked) => {
-                              setLocationFilters((current) =>
-                                checked === true
-                                  ? current.includes(option.id)
-                                    ? current
-                                    : [...current, option.id]
-                                  : current.filter(
-                                      (entry) => entry !== option.id,
-                                    ),
-                              );
-                            }}
-                          >
-                            {option.label}
-                          </DropdownMenuCheckboxItem>
-                        ))}
+                        <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+                        <DropdownMenuRadioGroup
+                          value={sortMode}
+                          onValueChange={(value) => {
+                            const next = HOMEPAGE_PROJECT_SORT_OPTIONS.find(
+                              (option) => option.mode === value,
+                            );
+                            if (next) setSortMode(next.mode);
+                          }}
+                        >
+                          {HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.mode}
+                              value={option.mode}
+                              data-testid={`homepage-project-sort-${option.mode}`}
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
                       </DropdownMenuGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                ) : null}
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="touch"
-                        data-testid="homepage-project-sort"
-                        aria-label="Sort"
-                      />
-                    }
-                  >
-                    <ArrowUpDownIcon data-icon="inline-start" />
-                    Sort
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="min-w-44"
-                    data-testid="homepage-project-sort-menu"
-                  >
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel>Sort By</DropdownMenuLabel>
-                      <DropdownMenuRadioGroup
-                        value={sortMode}
-                        onValueChange={(value) => {
-                          const next = HOMEPAGE_PROJECT_SORT_OPTIONS.find(
-                            (option) => option.mode === value,
-                          );
-                          if (next) setSortMode(next.mode);
-                        }}
-                      >
-                        {HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => (
-                          <DropdownMenuRadioItem
-                            key={option.mode}
-                            value={option.mode}
-                            data-testid={`homepage-project-sort-${option.mode}`}
-                          >
-                            {option.label}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            ) : null}
-          </div>
-          {projects.length === 0 ? (
-            <Empty data-testid="no-projects">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <FolderOpenIcon />
-                </EmptyMedia>
-                <EmptyTitle>No projects yet</EmptyTitle>
-                <EmptyDescription>
-                  Create an Empty project to get started.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : visibleProjects.length === 0 ? (
-            <Empty data-testid="no-matching-projects">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <FolderOpenIcon />
-                </EmptyMedia>
-                <EmptyTitle>No matching projects</EmptyTitle>
-                <EmptyDescription>
-                  Clear search or filters to see recents again.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <ul
-              className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain touch-pan-y"
-              data-testid="project-list"
+                </div>
+              ) : null}
+            </div>
+            {projects.length === 0 ? (
+              <Empty data-testid="no-projects" className="homepage-empty">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <FolderOpenIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>Something Great Starts Here.</EmptyTitle>
+                  <EmptyDescription>
+                    Your projects will live here. Give your first idea a name
+                    and a place to grow.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <Button
+                  variant="outline"
+                  size="touch"
+                  className="homepage-empty-action"
+                  onClick={() => openCreate("empty")}
+                  disabled={busy}
+                >
+                  Make Your First Project{" "}
+                  <ArrowRightIcon data-icon="inline-end" />
+                </Button>
+              </Empty>
+            ) : visibleProjects.length === 0 ? (
+              <Empty data-testid="no-matching-projects">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <FolderOpenIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>No matching projects</EmptyTitle>
+                  <EmptyDescription>
+                    Clear search or filters to see recents again.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <ul className="homepage-project-list" data-testid="project-list">
+                {visibleProjects.map((project) => (
+                  <HomepageProjectRow
+                    key={project.id}
+                    project={project}
+                    projects={projects}
+                    busy={busy}
+                    deleteOnRemove={shouldDeleteOpfsOnRemove(
+                      hostPlatform,
+                      project.tier,
+                    )}
+                    onOpen={(next) => void run(() => onOpenProject(next))}
+                    onRename={(next) => {
+                      setError(null);
+                      setRenameTarget(next);
+                      setCreateName(displayProjectName(next.label));
+                      setAppearance(
+                        next.appearance ?? DEFAULT_PROJECT_APPEARANCE,
+                      );
+                      setCreateOpen(true);
+                    }}
+                    onRequestRemove={setRemoveTarget}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="homepage-starters">
+            <div className="homepage-starters-heading">
+              <h2>A Starting Point</h2>
+              <p data-testid="create-project-description">
+                {createProjectCardDescription(templates.length, hostPlatform)}
+              </p>
+            </div>
+            <div
+              className="homepage-template-gallery flex-nowrap overflow-x-auto overscroll-x-contain"
+              data-testid="homepage-start-gallery"
             >
-              {visibleProjects.map((project) => (
-                <HomepageProjectRow
-                  key={project.id}
-                  project={project}
-                  projects={projects}
-                  busy={busy}
-                  deleteOnRemove={shouldDeleteOpfsOnRemove(
-                    hostPlatform,
-                    project.tier,
-                  )}
-                  onOpen={(next) => void run(() => onOpenProject(next))}
-                  onRename={(next) => {
-                    setRenameTarget(next);
-                    setRenameValue(displayProjectName(next.label));
-                  }}
-                  onRequestRemove={setRemoveTarget}
+              <TemplatePickCard
+                title="Empty"
+                description="Room for a new world"
+                testId="homepage-start-empty"
+                icon={BoxIcon}
+                onSelect={() => openCreate("empty")}
+              />
+              <TemplatePickCard
+                title="2D"
+                description="A new dimension of play"
+                testId="homepage-start-2d"
+                icon={Grid2x2Icon}
+                onSelect={() => openCreate("2d")}
+              />
+              {templates.map((template) => (
+                <TemplatePickCard
+                  key={template.id}
+                  title={template.name}
+                  testId={`homepage-start-template-${template.id}`}
+                  icon={LayoutTemplateIcon}
+                  onSelect={() => openCreate(template.id)}
                 />
               ))}
-            </ul>
-          )}
-        </section>
+            </div>
+          </section>
 
-        {error ? (
-          <Alert variant="destructive" data-testid="homepage-error">
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
+          {error ? (
+            <Alert variant="destructive" data-testid="homepage-error">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {busy ? (
+            <p role="status" className="homepage-busy">
+              Getting things ready…
+            </p>
+          ) : null}
+          <footer className="homepage-footer">
+            <span>Made for making. Built around you.</span>
+            <div className="homepage-footer-links">
+              <span>Local Projects · Full Creative Freedom</span>
+              <a
+                href="https://hideoutgames.github.io/BabylonSlate/docs/"
+                target="_blank"
+                rel="noreferrer"
+                className="homepage-docs"
+              >
+                <BookOpenIcon aria-hidden="true" />
+                Documentation
+              </a>
+            </div>
+          </footer>
+        </div>
       </main>
 
       <HomepageCreateDialog
+        appearance={appearance}
+        onAppearanceChange={setAppearance}
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        mode={renameTarget ? "edit" : "create"}
+        error={error}
+        onOpenChange={(open) => {
+          if (!busy) setCreateOpen(open);
+        }}
         busy={busy}
         name={createName}
         onNameChange={setCreateName}
@@ -674,80 +832,41 @@ export function Homepage({
         blackBars={createBlackBars}
         onBlackBarsChange={setCreateBlackBars}
         onSubmit={() => {
-          if (nameIssue) return;
+          if (nameIssue || busy) return;
+          if (renameTarget) {
+            const target = renameTarget;
+            void run(async () => {
+              await onUpdateProject(target, {
+                name: createName.trim(),
+                appearance,
+              });
+              setCreateOpen(false);
+              setRenameTarget(null);
+            });
+            return;
+          }
           const folderName = normalizeProjectFolderName(createName);
           if (!folderName) return;
           const options: CreateProjectOptions = {
+            appearance,
             renderWidth: createWidth,
             renderHeight: createHeight,
             blackBars: createBlackBars,
             ...(hostPlatform === "web" ? {} : { pickFolder }),
           };
-          setCreateOpen(false);
-          if (createTemplateId === "empty" || createTemplateId === "2d") {
-            void run(() =>
-              onCreateEmpty(folderName, {
+          void run(async () => {
+            if (createTemplateId === "empty" || createTemplateId === "2d") {
+              await onCreateEmpty(folderName, {
                 ...options,
                 kind: createTemplateId,
-              }),
-            );
-          } else {
-            void run(() =>
-              onCreateFromTemplate(createTemplateId, folderName, options),
-            );
-          }
+              });
+            } else {
+              await onCreateFromTemplate(createTemplateId, folderName, options);
+            }
+            setCreateOpen(false);
+          });
         }}
       />
-
-      <Dialog
-        open={renameTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRenameTarget(null);
-        }}
-      >
-        <DialogContent data-testid="homepage-rename-dialog">
-          <DialogHeader>
-            <DialogTitle>Rename project</DialogTitle>
-            <DialogDescription>
-              Changes the display name in recents and project metadata. The
-              folder name is unchanged.
-            </DialogDescription>
-          </DialogHeader>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="homepage-rename-input">Name</FieldLabel>
-              <Input
-                id="homepage-rename-input"
-                data-testid="homepage-rename-input"
-                value={renameValue}
-                onChange={(event) => setRenameValue(event.target.value)}
-              />
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRenameTarget(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              data-testid="homepage-rename-confirm"
-              disabled={busy || !renameValue.trim()}
-              onClick={() => {
-                const target = renameTarget;
-                if (!target) return;
-                void run(() => onRenameProject(target, renameValue.trim()));
-                setRenameTarget(null);
-              }}
-            >
-              Rename
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog
         open={removeTarget !== null}
@@ -799,13 +918,17 @@ export function Homepage({
         </AlertDialogContent>
       </AlertDialog>
 
-      <SettingsModal
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        scope="engine"
-        onEngineSaved={onSettingsChanged}
-        data-testid="engine-settings-modal"
-      />
+      {settingsOpen ? (
+        <Suspense fallback={null}>
+          <SettingsModal
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            scope="engine"
+            onEngineSaved={onSettingsChanged}
+            data-testid="engine-settings-modal"
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

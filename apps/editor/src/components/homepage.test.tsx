@@ -1,8 +1,17 @@
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
-import { DEFAULT_RENDER_HEIGHT, DEFAULT_RENDER_WIDTH } from "@babylonslate/core";
+import {
+  DEFAULT_RENDER_HEIGHT,
+  DEFAULT_RENDER_WIDTH,
+} from "@babylonslate/core";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
 
@@ -40,7 +49,7 @@ function renderHomepage(
         onCreateFromTemplate={noop}
         onOpenExternal={noop}
         onOpenProject={noop}
-        onRenameProject={noop}
+        onUpdateProject={noop}
         onRemoveFromList={noop}
         onReconnect={noop}
         onRecover={noop}
@@ -65,7 +74,9 @@ describe("Homepage branding", () => {
 
     expect(screen.getByTestId("brand-icon")).toBeTruthy();
     expect(screen.queryByTestId("brand-logo")).toBeNull();
-    expect(screen.getByRole("heading", { name: "BabylonSlate" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Slate", exact: true }),
+    ).toBeTruthy();
     expect(screen.getByTestId("engine-settings")).toBeTruthy();
   });
 
@@ -106,8 +117,12 @@ describe("Homepage Start gallery", () => {
     });
 
     const gallery = screen.getByTestId("homepage-start-gallery");
-    expect(gallery.querySelector('[data-testid="homepage-start-empty"]')).toBeTruthy();
-    expect(gallery.querySelector('[data-testid="homepage-start-2d"]')).toBeTruthy();
+    expect(
+      gallery.querySelector('[data-testid="homepage-start-empty"]'),
+    ).toBeTruthy();
+    expect(
+      gallery.querySelector('[data-testid="homepage-start-2d"]'),
+    ).toBeTruthy();
     expect(
       gallery.querySelector('[data-testid="homepage-start-template-arena"]'),
     ).toBeTruthy();
@@ -203,6 +218,44 @@ describe("Homepage Create Project copy", () => {
 });
 
 describe("Homepage recent project rows", () => {
+  it("opens project actions from an accessible button without opening the project", () => {
+    const onOpenProject = vi.fn(async () => {});
+    renderHomepage({
+      projects: [listedProject("Game", "opfs")],
+      onOpenProject,
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Project Actions for Game" }),
+    );
+    expect(screen.getByTestId("homepage-project-menu")).toBeTruthy();
+    expect(screen.getByTestId("homepage-project-rename").textContent).toMatch(
+      /Edit/,
+    );
+    expect(onOpenProject).not.toHaveBeenCalled();
+  });
+
+  it("opens the project context menu with Shift+F10", () => {
+    const onOpenProject = vi.fn(async () => {});
+    renderHomepage({
+      projects: [listedProject("Game", "opfs")],
+      onOpenProject,
+    });
+    fireEvent.keyDown(screen.getByTestId("open-listed-project-Game"), {
+      key: "F10",
+      shiftKey: true,
+    });
+    expect(screen.getByTestId("homepage-project-menu")).toBeTruthy();
+    expect(onOpenProject).not.toHaveBeenCalled();
+  });
+
+  it("provides an explicit named project open action", async () => {
+    const onOpenProject = vi.fn(async () => {});
+    const project = listedProject("Game", "opfs");
+    renderHomepage({ projects: [project], onOpenProject });
+    fireEvent.click(screen.getByRole("button", { name: "Open Project Game" }));
+    await waitFor(() => expect(onOpenProject).toHaveBeenCalledWith(project));
+  });
+
   it("renders recent projects as card rows with image wells", () => {
     renderHomepage({
       projects: [listedProject("Game.babproject", "opfs")],
@@ -283,7 +336,7 @@ describe("Homepage recent project rows", () => {
     expect(screen.getByTestId("no-projects")).toBeTruthy();
   });
 
-  it("searches, sorts, and vertically scrolls recents", () => {
+  it("searches and sorts project cards", () => {
     renderHomepage({
       projects: [
         {
@@ -300,11 +353,6 @@ describe("Homepage recent project rows", () => {
     expect(screen.getByTestId("homepage-project-search")).toBeTruthy();
     expect(screen.getByTestId("homepage-project-sort")).toBeTruthy();
     expect(screen.queryByTestId("homepage-project-filter")).toBeNull();
-    expect(screen.getByTestId("project-list").className).toMatch(/overflow-y-auto/);
-    expect(screen.getByTestId("project-list").className).toMatch(
-      /overscroll-y-contain/,
-    );
-    expect(screen.getByTestId("project-list").className).toMatch(/touch-pan-y/);
 
     const list = screen.getByTestId("project-list");
     const names = () =>
@@ -320,8 +368,12 @@ describe("Homepage recent project rows", () => {
     fireEvent.change(screen.getByTestId("homepage-project-search"), {
       target: { value: "zebra" },
     });
-    expect(screen.queryByTestId("open-listed-project-Alpha.babproject")).toBeNull();
-    expect(screen.getByTestId("open-listed-project-Zebra.babproject")).toBeTruthy();
+    expect(
+      screen.queryByTestId("open-listed-project-Alpha.babproject"),
+    ).toBeNull();
+    expect(
+      screen.getByTestId("open-listed-project-Zebra.babproject"),
+    ).toBeTruthy();
   });
 
   it("filters mixed locations and shows No matching projects", () => {
@@ -335,12 +387,18 @@ describe("Homepage recent project rows", () => {
     const filter = screen.getByTestId("homepage-project-filter");
     expect(filter.textContent).toMatch(/^Filter/);
     fireEvent.click(filter);
-    fireEvent.click(screen.getByTestId("homepage-project-filter-chosen-folder"));
+    fireEvent.click(
+      screen.getByTestId("homepage-project-filter-chosen-folder"),
+    );
     expect(screen.getByTestId("homepage-project-filter").textContent).toMatch(
       /Filter \(1\)/,
     );
-    expect(screen.getByTestId("open-listed-project-Studio.babproject")).toBeTruthy();
-    expect(screen.queryByTestId("open-listed-project-Game.babproject")).toBeNull();
+    expect(
+      screen.getByTestId("open-listed-project-Studio.babproject"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("open-listed-project-Game.babproject"),
+    ).toBeNull();
 
     fireEvent.change(screen.getByTestId("homepage-project-search"), {
       target: { value: "does-not-exist" },
@@ -377,7 +435,9 @@ describe("Homepage recent project rows", () => {
     );
 
     onOpenProject.mockClear();
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    fireEvent.click(
+      screen.getByTestId("remove-listed-project-Game.babproject"),
+    );
     expect(onOpenProject).not.toHaveBeenCalled();
     expect(await screen.findByTestId("homepage-remove-dialog")).toBeTruthy();
   });
@@ -393,7 +453,9 @@ describe("Homepage recent project rows", () => {
         .getByTestId("remove-listed-project-Game.babproject")
         .getAttribute("aria-label"),
     ).toBe("Delete");
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    fireEvent.click(
+      screen.getByTestId("remove-listed-project-Game.babproject"),
+    );
     const dialog = await screen.findByTestId("homepage-remove-dialog");
     expect(dialog.textContent).toMatch(/Delete Project/);
     expect(dialog.textContent).toMatch(/permanently/i);
@@ -405,9 +467,13 @@ describe("Homepage recent project rows", () => {
 
     fireEvent.click(screen.getByTestId("homepage-remove-cancel"));
     expect(onRemoveFromList).not.toHaveBeenCalled();
-    expect(screen.getByTestId("open-listed-project-Game.babproject")).toBeTruthy();
+    expect(
+      screen.getByTestId("open-listed-project-Game.babproject"),
+    ).toBeTruthy();
 
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    fireEvent.click(
+      screen.getByTestId("remove-listed-project-Game.babproject"),
+    );
     fireEvent.click(await screen.findByTestId("homepage-remove-confirm"));
     expect(onRemoveFromList).toHaveBeenCalledTimes(1);
   });
@@ -419,10 +485,14 @@ describe("Homepage recent project rows", () => {
       projects: [listedProject("Game.babproject", "documents")],
       onRemoveFromList,
     });
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    fireEvent.click(
+      screen.getByTestId("remove-listed-project-Game.babproject"),
+    );
     const dialog = await screen.findByTestId("homepage-remove-dialog");
     expect(dialog.textContent).toMatch(/Remove from List/);
-    expect(dialog.textContent).toMatch(/files stay|remain on disk|does not delete/i);
+    expect(dialog.textContent).toMatch(
+      /files stay|remain on disk|does not delete/i,
+    );
     expect(dialog.getAttribute("data-variant")).not.toBe("destructive");
     expect(screen.getByTestId("homepage-remove-confirm").textContent).toMatch(
       /^Remove$/,
@@ -430,7 +500,9 @@ describe("Homepage recent project rows", () => {
 
     fireEvent.click(screen.getByTestId("homepage-remove-cancel"));
     expect(onRemoveFromList).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    fireEvent.click(
+      screen.getByTestId("remove-listed-project-Game.babproject"),
+    );
     fireEvent.click(await screen.findByTestId("homepage-remove-confirm"));
     expect(onRemoveFromList).toHaveBeenCalledTimes(1);
   });
@@ -455,6 +527,52 @@ describe("Homepage recent project rows", () => {
 });
 
 describe("Homepage Create Project dialog", () => {
+  it("keeps the project draft and failure visible when creation fails", async () => {
+    const onCreateEmpty = vi
+      .fn()
+      .mockRejectedValue(new Error("Storage is full"));
+    renderHomepage({ onCreateEmpty });
+    fireEvent.click(screen.getByTestId("create-project"));
+    fireEvent.change(await screen.findByTestId("create-project-name"), {
+      target: { value: "My World" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    await waitFor(() =>
+      expect(screen.getByTestId("create-project-dialog").textContent).toContain(
+        "Storage is full",
+      ),
+    );
+    expect(
+      (screen.getByTestId("create-project-name") as HTMLInputElement).value,
+    ).toBe("My World");
+    expect(
+      (screen.getByTestId("create-project-submit") as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("edits an existing project without sending create options or opening the editor", async () => {
+    const project = {
+      ...listedProject("My World", "opfs"),
+      appearance: { icon: "box", color: "mint" },
+    };
+    const onUpdateProject = vi.fn(async () => {});
+    const onCreateEmpty = vi.fn(async () => {});
+    renderHomepage({ projects: [project], onUpdateProject, onCreateEmpty });
+    fireEvent.contextMenu(screen.getByTestId("open-listed-project-My World"));
+    fireEvent.click(screen.getByTestId("homepage-project-rename"));
+    const input = await screen.findByTestId("homepage-rename-input");
+    fireEvent.change(input, { target: { value: "Reimagined" } });
+    fireEvent.click(screen.getByTestId("homepage-rename-confirm"));
+    await waitFor(() =>
+      expect(onUpdateProject).toHaveBeenCalledWith(project, {
+        name: "Reimagined",
+        appearance: { icon: "box", color: "mint" },
+      }),
+    );
+    expect(onCreateEmpty).not.toHaveBeenCalled();
+  });
+
   it("shows Name required and disables Create when Name is empty", async () => {
     renderHomepage();
     screen.getByTestId("create-project").click();
@@ -464,7 +582,8 @@ describe("Homepage Create Project dialog", () => {
       "Name required.",
     );
     expect(
-      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
+      (screen.getByTestId("create-project-submit") as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
   });
 
@@ -479,7 +598,8 @@ describe("Homepage Create Project dialog", () => {
       (await screen.findByTestId("create-project-name-issue")).textContent,
     ).toBe("Name already exists.");
     expect(
-      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
+      (screen.getByTestId("create-project-submit") as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
   });
 
@@ -492,7 +612,8 @@ describe("Homepage Create Project dialog", () => {
       "Name required.",
     );
     expect(
-      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
+      (screen.getByTestId("create-project-submit") as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
   });
 
@@ -549,7 +670,9 @@ describe("Homepage Create Project dialog", () => {
     renderHomepage();
     screen.getByTestId("create-project").click();
     const empty = await screen.findByTestId("create-project-empty");
-    expect(empty.querySelector('[data-testid="template-card-well"]')).toBeTruthy();
+    expect(
+      empty.querySelector('[data-testid="template-card-well"]'),
+    ).toBeTruthy();
     expect(
       screen
         .getByTestId("create-project-2d")
@@ -563,7 +686,9 @@ describe("Homepage Create Project dialog", () => {
     renderHomepage({ onCreateEmpty });
     screen.getByTestId("create-project").click();
 
-    expect(await screen.findByTestId("create-project-choose-location")).toBeTruthy();
+    expect(
+      await screen.findByTestId("create-project-choose-location"),
+    ).toBeTruthy();
     expect(screen.getByTestId("create-project-app-documents")).toBeTruthy();
     expect(screen.queryByTestId("create-project-choose-folder")).toBeNull();
     expect(screen.getByTestId("create-project-location").textContent).toMatch(
@@ -592,7 +717,9 @@ describe("Homepage Create Project dialog", () => {
     renderHomepage();
     screen.getByTestId("create-project").click();
 
-    expect(await screen.findByTestId("create-project-choose-location")).toBeTruthy();
+    expect(
+      await screen.findByTestId("create-project-choose-location"),
+    ).toBeTruthy();
     expect(screen.getByTestId("create-project-app-documents")).toBeTruthy();
     expect(screen.getByTestId("create-project-location").textContent).toMatch(
       /Projects folder/,
