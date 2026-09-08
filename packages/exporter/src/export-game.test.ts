@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
+import {
+  createDefaultSceneLayer,
+  DEFAULT_RENDER_PROJECT_SETTINGS,
+} from "@babylonslate/core";
 import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
 import { parseScriptRegistry } from "./scripts";
 import { GAME_MANIFEST_FILE } from "./constants";
@@ -373,7 +376,7 @@ describe("exportGame", () => {
     expect(parseScriptRegistry(scripts)[0]?.anchors[0]?.line).toBe(1);
   });
 
-  it("packs Havok wasm for 3d and Rapier for 2d, not both", async () => {
+  it("packs only the world physics engine when no SceneLayers are exported", async () => {
     const player = new Map([
       ["index.html", new TextEncoder().encode("<html></html>")],
       ["player.js", new TextEncoder().encode("void 0")],
@@ -426,6 +429,48 @@ describe("exportGame", () => {
     expect(two.value.files.has("havok/HavokPhysics.wasm")).toBe(false);
     expect(two.value.files.has("assets/HavokPhysics_es.js")).toBe(false);
   });
+
+  it.each(["packed", "loose"] as const)(
+    "retains Rapier for SceneLayers alongside a 3d world in %s exports",
+    async (mode) => {
+      const result = await exportGame({
+        bundleDebugger: false,
+        startupSceneGuid: "scene-1",
+        customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+        physicsWorld: "3d",
+        mode,
+        scripts: [],
+        assets: [
+          {
+            guid: "scene-1",
+            type: "Scene",
+            sceneGuid: "scene-1",
+            bytes: new Uint8Array([1]),
+          },
+          {
+            guid: "overlay-1",
+            type: "SceneLayer",
+            sceneGuid: "scene-1",
+            bytes: new TextEncoder().encode(
+              JSON.stringify(createDefaultSceneLayer()),
+            ),
+          },
+        ],
+        playerFiles: new Map([
+          ...stubPlayer(),
+          ["havok/HavokPhysics.wasm", new Uint8Array([1])],
+          ["assets/HavokPhysics_es.js", new TextEncoder().encode("havok")],
+          ["assets/rapier.es.js", new TextEncoder().encode("rapier")],
+        ]),
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.files.has("assets/rapier.es.js")).toBe(true);
+      expect(result.value.files.has("havok/HavokPhysics.wasm")).toBe(true);
+      expect(result.value.files.has("assets/HavokPhysics_es.js")).toBe(true);
+      expect(result.value.manifest.physicsWorld).toBe("3d");
+    },
+  );
 
   it("inlines CSS into index.html and keeps wasm as a real file", async () => {
     const result = await exportGame({
