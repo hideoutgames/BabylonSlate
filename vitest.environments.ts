@@ -12,6 +12,7 @@ export const domLogicTests = [
   "apps/editor/src/lib/project-engine.test.ts",
   "apps/editor/src/lib/resolved-theme.test.ts",
   "apps/editor/src/lib/viewport-render-gate.test.ts",
+  "apps/editor/src/shell/phone-dock-layout.test.ts",
   "packages/graph-ui/src/graph-connect.test.ts",
   "packages/graph-ui/src/graph-marquee.test.ts",
   "packages/graph-ui/src/graph-canvas-api.test.ts",
