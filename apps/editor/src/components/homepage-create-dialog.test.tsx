@@ -5,15 +5,18 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
+import { ContextMenuOverlay } from "@babylonslate/editor-kit";
 import * as appearanceHelpers from "./homepage-project-appearance";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function Composer({
@@ -21,11 +24,13 @@ function Composer({
   onSubmit = vi.fn(),
   open = true,
   busy = false,
+  onOpenChange = vi.fn(),
 }: {
   mode?: "create" | "edit";
   onSubmit?: () => void;
   open?: boolean;
   busy?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [name, setName] = useState(mode === "edit" ? "Moon Garden" : "");
   const [appearance, setAppearance] = useState({ icon: "box", color: "coral" });
@@ -33,7 +38,7 @@ function Composer({
   const props = {
     mode,
     open,
-    onOpenChange: vi.fn(),
+    onOpenChange,
     busy,
     name,
     onNameChange: setName,
@@ -58,6 +63,72 @@ function Composer({
 }
 
 describe("Project Composer", () => {
+  it("focuses the popup on touch devices so opening it does not summon the keyboard", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(pointer: coarse)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    }));
+    render(<Composer />);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByTestId("create-project-dialog"),
+      ),
+    );
+    expect(document.activeElement).not.toBe(
+      screen.getByTestId("create-project-name"),
+    );
+  });
+
+  it("restores focus to project actions after editing from its context menu", async () => {
+    function ContextEdit() {
+      const [menuOpen, setMenuOpen] = useState(false);
+      const [editOpen, setEditOpen] = useState(false);
+      return (
+        <>
+          <button
+            data-testid="project-actions"
+            onClick={() => setMenuOpen(true)}
+          >
+            Project Actions
+          </button>
+          <ContextMenuOverlay
+            menu={
+              menuOpen
+                ? {
+                    open: true,
+                    x: 20,
+                    y: 20,
+                    items: [
+                      {
+                        id: "edit",
+                        label: "Edit Project",
+                        onSelect: () => setEditOpen(true),
+                      },
+                    ],
+                  }
+                : null
+            }
+            onClose={() => setMenuOpen(false)}
+          />
+          <Composer mode="edit" open={editOpen} onOpenChange={setEditOpen} />
+        </>
+      );
+    }
+    render(<ContextEdit />);
+    const trigger = screen.getByTestId("project-actions");
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByTestId("context-menu-item-edit"));
+    const input = screen.getByTestId("homepage-rename-input");
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    fireEvent.keyDown(input, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
   it("previews the entered project name and chosen badge without losing the template selection", () => {
     render(<Composer />);
     fireEvent.change(screen.getByTestId("create-project-name"), {
@@ -166,5 +237,34 @@ describe("Project Composer", () => {
     expect(
       screen.getByTestId("create-project-empty").getAttribute("data-selected"),
     ).toBe("true");
+  });
+
+  it("guards submission and Escape dismissal while an edit is saving", async () => {
+    const onSubmit = vi.fn();
+    const onOpenChange = vi.fn();
+    const view = render(
+      <Composer
+        mode="edit"
+        busy
+        onSubmit={onSubmit}
+        onOpenChange={onOpenChange}
+      />,
+    );
+    fireEvent.submit(screen.getByTestId("create-project-form"));
+    fireEvent.keyDown(screen.getByTestId("homepage-rename-input"), {
+      key: "Escape",
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    view.rerender(
+      <Composer mode="edit" onSubmit={onSubmit} onOpenChange={onOpenChange} />,
+    );
+    fireEvent.submit(screen.getByTestId("create-project-form"));
+    expect(onSubmit).toHaveBeenCalledOnce();
+    fireEvent.keyDown(screen.getByTestId("homepage-rename-input"), {
+      key: "Escape",
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

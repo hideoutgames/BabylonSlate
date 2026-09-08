@@ -113,6 +113,8 @@ export function HomepageCreateDialog({
   const editing = mode === "edit";
   const nameId = editing ? "homepage-rename-input" : "create-project-name";
   const fileInput = useRef<HTMLInputElement>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
   const importRequest = useRef<AbortController | null>(null);
   const [imageIssue, setImageIssue] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
@@ -176,7 +178,11 @@ export function HomepageCreateDialog({
       }}
     >
       <DialogContent
-        className="homepage-composer flex h-[min(90dvh,52rem)] max-h-[90dvh] w-[min(96vw,68rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+        ref={popup}
+        initialFocus={() =>
+          isCoarsePointerEnvironment() ? popup.current : nameInput.current
+        }
+        className="homepage-theme homepage-composer flex h-[min(90dvh,52rem)] max-h-[90dvh] w-[min(96vw,68rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
         data-testid={
           editing ? "homepage-rename-dialog" : "create-project-dialog"
         }
@@ -241,9 +247,9 @@ export function HomepageCreateDialog({
                 >
                   <FieldLabel htmlFor={nameId}>Project Name</FieldLabel>
                   <Input
+                    ref={nameInput}
                     id={nameId}
                     data-testid={nameId}
-                    autoFocus={!isCoarsePointerEnvironment()}
                     placeholder="Name Your Next World"
                     autoComplete="off"
                     disabled={busy}
