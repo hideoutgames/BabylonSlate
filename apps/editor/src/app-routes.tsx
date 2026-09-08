@@ -8,6 +8,11 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import { useDocuments } from "./context/document-context";
 import { useOrientationScrollReset } from "./shell/use-orientation-scroll-reset";
 
+import {
+  LauncherTransitionProvider,
+  EditorRouteReady,
+} from "./components/launcher-transition";
+
 const HomeRoute = lazy(() => import("./routes/home-route"));
 const EditorRoute = lazy(() => import("./routes/editor-route"));
 
@@ -21,23 +26,22 @@ export function AppRoutes() {
     isTestModeEnabled() &&
     new URLSearchParams(window.location.search).has("gallery");
   return (
-    <Suspense
-      fallback={
-        <div
-          className="safe-frame flex h-full items-center justify-center bg-background text-muted-foreground"
-          role="status"
-        >
-          Opening Slate…
-        </div>
-      }
-    >
-      {gallery ? (
-        <EditorRoute gallery />
-      ) : route === "home" ? (
-        <HomeRoute />
-      ) : (
-        <EditorRoute />
-      )}
-    </Suspense>
+    <LauncherTransitionProvider route={gallery ? "editor" : route}>
+      <Suspense fallback={null}>
+        {gallery ? (
+          <>
+            <EditorRoute gallery />
+            <EditorRouteReady />
+          </>
+        ) : route === "home" ? (
+          <HomeRoute />
+        ) : (
+          <>
+            <EditorRoute />
+            <EditorRouteReady />
+          </>
+        )}
+      </Suspense>
+    </LauncherTransitionProvider>
   );
 }

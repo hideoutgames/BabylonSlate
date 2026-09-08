@@ -314,6 +314,7 @@ interface DocumentContextValue {
   dirtyDocuments: OpenDocument[];
   migrationPending: MigrationPending[];
   templates: ProjectTemplate[];
+  homepageReady: boolean;
   refreshTemplates: () => Promise<void>;
   openProject: () => Promise<void>;
   createEmptyProject: (
@@ -731,6 +732,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
     [],
   );
+  const [homepageReady, setHomepageReady] = useState(false);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [registryVersion, setRegistryVersion] = useState(0);
   const [dockWindowTick, setDockWindowTick] = useState(0);
@@ -896,8 +898,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     documentService.ensureContentBrowserTab();
-    void refreshProjectList();
-    void refreshTemplates();
+    let mounted = true;
+    void Promise.allSettled([refreshProjectList(), refreshTemplates()]).then(() => {
+      if (mounted) setHomepageReady(true);
+    });
     void settingsStore.load().then((settings) => {
       editSessionRef.current.configure({
         maxEntries: settings.undoHistoryLength,
@@ -907,6 +911,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setThumbnailsEnabled(settings.thumbnailsEnabled !== false);
     });
     bump();
+    return () => {
+      mounted = false;
+    };
   }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
 
   useEffect(
@@ -3927,6 +3934,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dirtyDocuments: documentService.getDirtyDocuments(),
       migrationPending,
       templates,
+      homepageReady,
       refreshTemplates,
       openProject,
       createEmptyProject,
@@ -4133,6 +4141,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       recoveryAvailable,
       migrationPending,
       templates,
+      homepageReady,
       refreshTemplates,
       openProject,
       createEmptyProject,

@@ -35,7 +35,21 @@ function disposeObject(root: Object3D) {
 }
 
 /** Decorative launcher canvas. No engine state or editor imports. */
-export default function HomepageSculpture() {
+export default function HomepageSculpture({
+  onReady,
+  paused = false,
+}: {
+  onReady?: () => void;
+  paused?: boolean;
+}) {
+  const readyCallback = useRef(onReady);
+  readyCallback.current = onReady;
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const motionRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    motionRef.current();
+  }, [paused]);
   const host = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -49,6 +63,7 @@ export default function HomepageSculpture() {
         powerPreference: "low-power",
       });
     } catch {
+      readyCallback.current?.();
       return;
     }
     let disposed = false;
@@ -99,9 +114,9 @@ export default function HomepageSculpture() {
     element.addEventListener("pointermove", pointer);
     element.addEventListener("pointerleave", leave);
     const draw = (time: number) => {
-      if (disposed || document.hidden) return;
+      if (disposed || document.hidden || pausedRef.current) return;
       frame = requestAnimationFrame(draw);
-      if (time - lastFrame < 1000 / 30) return;
+      if (time - lastFrame < 1000 / 30 - 1) return;
       elapsed += Math.min((time - lastFrame) / 1000, 0.05);
       lastFrame = time;
       pivot.rotation.x += (0.13 + target.y * 0.2 - pivot.rotation.x) * 0.06;
@@ -112,13 +127,15 @@ export default function HomepageSculpture() {
     };
     const motion = () => {
       cancelAnimationFrame(frame);
-      if (!reduced.matches && !document.hidden)
+      if (!reduced.matches && !document.hidden && !pausedRef.current)
         frame = requestAnimationFrame(draw);
       else renderer.render(scene, camera);
     };
+    motionRef.current = motion;
     document.addEventListener("visibilitychange", motion);
     reduced.addEventListener("change", motion);
     const controller = new AbortController();
+    const deadline = window.setTimeout(() => controller.abort(), 12000);
     void fetch(`${import.meta.env.BASE_URL}launcher/slate-object.glb`, {
       signal: controller.signal,
     })
@@ -132,18 +149,24 @@ export default function HomepageSculpture() {
           disposeObject(gltf.scene);
           return;
         }
+        clearTimeout(deadline);
         pivot.add(gltf.scene);
         pivot.rotation.set(0.13, -0.28, -0.1);
         resize();
         setReady(true);
+        readyCallback.current?.();
         motion();
       })
       .catch(() => {
+        clearTimeout(deadline);
+        if (!disposed) readyCallback.current?.();
         /* Keep the existing Slate logo if WebGL or loading fails. */
       });
     return () => {
       disposed = true;
+      motionRef.current = () => {};
       controller.abort();
+      clearTimeout(deadline);
       cancelAnimationFrame(frame);
       observer.disconnect();
       document.removeEventListener("visibilitychange", motion);

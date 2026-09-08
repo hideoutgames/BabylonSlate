@@ -31,8 +31,8 @@ export type CreateProjectOptions = {
   appearance?: ProjectAppearance;
   /** Native only: pick an external folder, then scaffold into it. */
   pickFolder?: boolean;
-  /** Built-in card: Empty (3D cube) or 2D (pixel-perfect, Rapier, no cube). */
-  kind?: "empty" | "2d";
+  /** Built-in starter: Blank, Basic 3D (legacy empty), or Basic 2D. */
+  kind?: "blank" | "empty" | "2d";
   renderWidth?: number;
   renderHeight?: number;
   blackBars?: boolean;

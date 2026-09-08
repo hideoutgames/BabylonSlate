@@ -8,6 +8,7 @@ export default function HomeRoute() {
     needsReconnect,
     recoveryAvailable,
     templates,
+    homepageReady,
     refreshTemplates,
     createEmptyProject,
     createFromTemplate,
@@ -23,6 +24,7 @@ export default function HomeRoute() {
     <HomepageMobileAccountGate>
       <Homepage
         projects={listedProjects}
+        dataReady={homepageReady}
         templates={templates.map((template) => ({
           id: template.id,
           name: template.name,

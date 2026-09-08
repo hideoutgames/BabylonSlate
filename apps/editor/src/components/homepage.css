@@ -211,7 +211,6 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   padding: 30px 20px 38px;
   scroll-snap-align: start;
   scroll-snap-stop: always;
-  perspective: 1500px;
 }
 .homepage-gallery[data-columns="2"] .homepage-gallery-page {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -225,7 +224,6 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   min-width: 0;
   height: min(46vh, 410px);
   max-height: 100%;
-  transform: translateZ(0);
 }
 .homepage-project-card,
 .homepage-template-card {
@@ -244,7 +242,7 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   transition:
     transform 380ms cubic-bezier(0.18, 0.7, 0.2, 1),
     border-color 250ms,
-    box-shadow 250ms;
+    opacity 250ms;
 }
 .homepage-project-well {
   position: relative;
@@ -267,7 +265,7 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   height: 16%;
   bottom: 13%;
   background: var(--launcher-shadow);
-  filter: blur(20px);
+  background: radial-gradient(ellipse, var(--launcher-shadow), transparent 70%);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -324,16 +322,6 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
 .homepage-theme [data-color="stone"] {
   --project-badge-color: var(--homepage-badge-stone);
 }
-.homepage-project-well .homepage-project-badge[data-has-image="true"] {
-  width: 100%;
-  height: 100%;
-  border-radius: 0;
-  box-shadow: none;
-  transform: none;
-}
-.homepage-project-well:has([data-has-image="true"])::after {
-  display: none;
-}
 .homepage-project-caption,
 .homepage-template-card [data-slot="card-header"] {
   display: flex;
@@ -381,7 +369,6 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   border-radius: 50%;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--card) 65%, transparent);
-  backdrop-filter: blur(12px);
 }
 .homepage-template-card {
   cursor: pointer;
@@ -887,7 +874,7 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: none;
   }
 }
 @media (hover: hover) and (pointer: fine) {
@@ -1152,4 +1139,184 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   width: min(880px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
+}
+
+/* Two static painted layers: soft badge-colored light and an inverted dot vignette. */
+.homepage-project-well {
+  isolation: isolate;
+  background: radial-gradient(
+    ellipse at 50% 64%,
+    color-mix(in srgb, var(--project-badge-color) 15%, transparent),
+    transparent 68%
+  );
+}
+.homepage-project-well::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--project-badge-color) 14%, transparent) 0.8px,
+    transparent 1px
+  );
+  background-size: 6px 6px;
+  mask-image: radial-gradient(
+    ellipse at center,
+    transparent 12%,
+    #000 72%,
+    transparent 100%
+  );
+}
+.homepage-project-badge {
+  transform: translateY(-6px);
+}
+.homepage-project-badge svg {
+  shape-rendering: geometricPrecision;
+}
+.homepage-project-badge img {
+  image-rendering: auto;
+}
+.homepage-project-card:hover .homepage-project-badge {
+  transform: translateY(-10px);
+}
+.homepage-gallery[data-layout="small"] .homepage-gallery-page {
+  padding: 16px 20px;
+  gap: 18px 26px;
+  align-content: stretch;
+}
+.homepage-gallery[data-layout="small"] .homepage-gallery-item {
+  height: 100%;
+  min-height: 0;
+}
+.homepage-gallery[data-layout="small"] .homepage-project-badge {
+  width: 76px;
+  height: 76px;
+  border-radius: 22px;
+}
+.homepage-gallery[data-layout="small"] .homepage-project-badge svg {
+  width: 34px;
+  height: 34px;
+}
+.homepage-gallery[data-layout="small"] .homepage-project-caption {
+  height: 48px;
+}
+.homepage-gallery[data-layout="list"] .homepage-gallery-page {
+  padding: 16px 20px;
+  gap: 8px;
+}
+.homepage-gallery[data-layout="list"] .homepage-gallery-item {
+  height: 100%;
+  min-height: 0;
+}
+.homepage-project-card[data-layout="list"] {
+  flex-direction: row;
+  align-items: center;
+  border-radius: 14px;
+  box-shadow: none;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-well {
+  flex: 0 0 72px;
+  align-self: stretch;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-well::before,
+.homepage-project-card[data-layout="list"] .homepage-project-well::after {
+  display: none;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  transform: none;
+  box-shadow:
+    inset 0 1px 0 #ffffff44,
+    0 3px 0 -1px color-mix(in srgb, var(--project-badge-color) 50%, #191c27);
+}
+.homepage-project-card[data-layout="list"] .homepage-project-badge svg {
+  width: 21px;
+  height: 21px;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-caption {
+  flex: 1;
+  height: auto;
+  border: 0;
+  padding: 0 66px 0 10px;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-actions {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.homepage-project-card[data-layout="list"]:hover {
+  transform: none;
+}
+.homepage-view-options {
+  display: flex;
+  align-items: center;
+}
+@media (max-height: 600px) {
+  .homepage-gallery[data-layout="small"] .homepage-project-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+  }
+  .homepage-gallery[data-layout="small"] .homepage-project-badge svg {
+    width: 22px;
+    height: 22px;
+  }
+  .homepage-gallery[data-layout="small"] .homepage-project-caption {
+    height: 36px;
+  }
+}
+
+.homepage-template-browser {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.homepage-template-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  flex-shrink: 0;
+}
+.homepage-template-toolbar > :first-child {
+  max-width: 300px;
+  flex: 1;
+}
+.homepage-template-toolbar > button {
+  border-radius: 50%;
+}
+.homepage-template-step {
+  display: flex;
+}
+.homepage-template-step .homepage-gallery {
+  flex: 1;
+}
+@media (max-width: 700px) {
+  .homepage-search-tools {
+    gap: 0;
+  }
+  .homepage-search-tools .homepage-search {
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    top: 172px;
+    width: auto;
+    z-index: 2;
+  }
+}
+
+.homepage-library-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  animation: launcher-arrive 280ms ease both;
+}
+.homepage-library-view[hidden] {
+  display: none;
 }

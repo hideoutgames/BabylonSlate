@@ -15,6 +15,7 @@ import { ProjectIdentityBadge } from "./homepage-project-identity";
 export function HomepageProjectCard({
   project,
   busy,
+  layout = "large",
   deleting,
   onOpen,
   onEdit,
@@ -22,6 +23,7 @@ export function HomepageProjectCard({
 }: {
   project: ListedProject;
   busy: boolean;
+  layout?: "large" | "small" | "list";
   deleting: boolean;
   onOpen: () => void;
   onEdit: () => void;
@@ -66,6 +68,8 @@ export function HomepageProjectCard({
   return (
     <Card
       className="homepage-project-card"
+      data-layout={layout}
+      data-color={project.appearance?.color ?? "stone"}
       data-testid={`open-listed-project-${project.name}`}
       {...bind}
       onKeyDown={(event) => {

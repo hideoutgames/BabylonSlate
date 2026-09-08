@@ -7,13 +7,18 @@ export function HomepageGallery({
   items,
   empty,
   label,
+  layout = "large",
 }: {
   items: Array<{ id: string; content: ReactNode }>;
   empty?: ReactNode;
   label: string;
+  layout?: "large" | "small" | "list";
 }) {
   const scroller = useRef<HTMLDivElement>(null);
-  const [pageSize, setPageSize] = useState(3);
+  const [columns, setColumns] = useState(3);
+  const [listRows, setListRows] = useState(6);
+  const rows = layout === "list" ? listRows : layout === "small" ? 2 : 1;
+  const pageSize = layout === "list" ? rows : columns * rows;
   const [page, setPage] = useState(0);
   const pages = Math.max(1, Math.ceil(items.length / pageSize));
   const currentPage = Math.min(page, pages - 1);
@@ -24,7 +29,10 @@ export function HomepageGallery({
     const resize = () => {
       const width = element.clientWidth;
       if (!width) return;
-      setPageSize(width >= 940 ? 3 : width >= 600 ? 2 : 1);
+      setColumns(width >= 940 ? 3 : width >= 600 ? 2 : 1);
+      setListRows(
+        Math.max(1, Math.min(10, Math.floor((element.clientHeight - 32) / 72))),
+      );
     };
     resize();
     const observer =
@@ -40,7 +48,7 @@ export function HomepageGallery({
   useEffect(() => {
     setPage(0);
     scroller.current?.scrollTo?.({ left: 0, behavior: "instant" });
-  }, [pageSize, items.length]);
+  }, [pageSize, items.length, layout]);
 
   const move = (next: number) => {
     const target = Math.max(0, Math.min(pages - 1, next));
@@ -53,7 +61,11 @@ export function HomepageGallery({
   };
 
   return (
-    <div className="homepage-gallery" data-columns={pageSize}>
+    <div
+      className="homepage-gallery"
+      data-columns={columns}
+      data-layout={layout}
+    >
       <div
         ref={scroller}
         className="homepage-pages"
@@ -80,7 +92,14 @@ export function HomepageGallery({
                 className="homepage-gallery-page"
                 key={index}
                 style={{
-                  gridTemplateColumns: `repeat(${Math.min(pageSize, items.length - index * pageSize)}, minmax(0, 380px))`,
+                  gridTemplateColumns:
+                    layout === "list"
+                      ? "minmax(0, 1fr)"
+                      : `repeat(${Math.min(columns, items.length - index * pageSize)}, minmax(0, 380px))`,
+                  gridTemplateRows:
+                    layout === "large"
+                      ? undefined
+                      : `repeat(${rows}, minmax(0, 1fr))`,
                   justifyContent: "center",
                 }}
                 role="group"

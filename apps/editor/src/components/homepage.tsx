@@ -1,10 +1,18 @@
-import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowUpDownIcon,
-  BoxIcon,
   FolderOpenIcon,
   Grid2x2Icon,
-  LayoutTemplateIcon,
+  Grid3x3Icon,
+  ListIcon,
   LoaderCircleIcon,
   MoonIcon,
   PlusIcon,
@@ -20,7 +28,11 @@ import {
   type ProjectFolderHandle,
 } from "@babylonslate/core";
 import { SearchInput } from "@babylonslate/editor-kit";
-import { getHostPlatform, isTestModeEnabled } from "@babylonslate/vfs";
+import {
+  getHostPlatform,
+  isTestModeEnabled,
+  pickImportFiles,
+} from "@babylonslate/vfs";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import {
   AlertDialog,
@@ -73,7 +85,12 @@ import { HomepageGallery } from "./homepage-gallery";
 import { HomepageProjectCard } from "./homepage-project-card";
 import { DEFAULT_PROJECT_APPEARANCE } from "./homepage-project-appearance";
 import { useHomepageScheme } from "./homepage-scheme";
-import { TemplatePickCard } from "./homepage-template-card";
+import {
+  HomepageTemplateBrowser,
+  recordTemplateUse,
+} from "./homepage-template-browser";
+import { importTemplateArchive } from "../services/template-service";
+import { useLauncherTransition } from "./launcher-transition";
 import homepageStyles from "./homepage.css?inline";
 
 const SettingsModal = lazy(() =>
@@ -84,6 +101,7 @@ const SettingsModal = lazy(() =>
 
 interface HomepageProps {
   projects: ListedProject[];
+  dataReady?: boolean;
   templates: Array<{ id: string; name: string; imageUrl?: string }>;
   needsReconnect: boolean;
   recoveryAvailable: boolean;
@@ -111,6 +129,7 @@ interface HomepageProps {
 
 export function Homepage({
   projects,
+  dataReady = true,
   templates,
   needsReconnect,
   recoveryAvailable,
@@ -126,13 +145,67 @@ export function Homepage({
   onSettingsChanged,
 }: HomepageProps) {
   const [scheme, setScheme] = useHomepageScheme();
+  const transition = useLauncherTransition();
+  const [artReady, setArtReady] = useState(false);
+  const markArtReady = useCallback(() => setArtReady(true), []);
+  useEffect(() => {
+    if (!dataReady || (projects.length === 0 && !artReady)) return;
+    let cancelled = false;
+    const images = Array.from(
+      document.querySelectorAll<HTMLImageElement>(
+        '[data-testid="homepage"] img',
+      ),
+    );
+    void Promise.allSettled([
+      document.fonts.ready,
+      ...images.map((image) => image.decode()),
+    ]).then(() => {
+      if (!cancelled) transition.ready("home");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataReady, projects.length, artReady, transition.ready]);
+  const launch = async (
+    action: () => Promise<void>,
+    label = "Opening Project",
+  ) => {
+    transition.begin(label);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    try {
+      await action();
+    } finally {
+      transition.settle();
+    }
+  };
+
   const [view, setView] = useState("projects");
+  const [layout, setLayout] = useState<"large" | "small" | "list">(() => {
+    try {
+      const saved = localStorage.getItem("slate:project-layout");
+      return saved === "small" || saved === "list" ? saved : "large";
+    } catch {
+      return "large";
+    }
+  });
+  const changeLayout = (value: "large" | "small" | "list") => {
+    setLayout(value);
+    try {
+      localStorage.setItem("slate:project-layout", value);
+    } catch {
+      /* Optional preference. */
+    }
+  };
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<HomepageProjectSortMode>("last-opened-desc");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [chooseTemplate, setChooseTemplate] = useState(true);
@@ -143,7 +216,7 @@ export function Homepage({
   const [appearance, setAppearance] = useState<ProjectAppearance>(
     DEFAULT_PROJECT_APPEARANCE,
   );
-  const [templateId, setTemplateId] = useState("empty");
+  const [templateId, setTemplateId] = useState("blank");
   const [width, setWidth] = useState(DEFAULT_RENDER_WIDTH);
   const [height, setHeight] = useState(DEFAULT_RENDER_HEIGHT);
   const [blackBars, setBlackBars] = useState(false);
@@ -182,7 +255,7 @@ export function Homepage({
       setBusy(false);
     }
   };
-  const create = (id = "empty", choose = true) => {
+  const create = (id = "blank", choose = true) => {
     if (busyRef.current) return;
     setEditTarget(null);
     setName(defaultCreateProjectDisplayName(isTestModeEnabled()));
@@ -203,11 +276,16 @@ export function Homepage({
     setError(null);
     setCreateOpen(true);
   };
-  const choices = [
-    { id: "empty", name: "Blank", icon: BoxIcon, imageUrl: undefined },
-    { id: "2d", name: "2D", icon: Grid2x2Icon, imageUrl: undefined },
-    ...templates.map((template) => ({ ...template, icon: LayoutTemplateIcon })),
-  ];
+  const importTemplate = () =>
+    void run(async () => {
+      const files = await pickImportFiles({
+        accept: ".zip,.babproject",
+        multiple: false,
+      });
+      if (!files[0]) return;
+      await importTemplateArchive(files[0].name, files[0].bytes);
+      await onSettingsChanged();
+    });
 
   return (
     <div
@@ -256,7 +334,7 @@ export function Homepage({
           >
             <Settings2Icon />
           </Button>
-          <HomepageAccount disabled={busy} />
+          <HomepageAccount disabled={busy} onOpenChange={setAccountOpen} />
         </div>
       </header>
       <main className="homepage-main">
@@ -265,7 +343,7 @@ export function Homepage({
             <span>{view === "projects" ? "Projects" : "Templates"}</span>
             <span>
               {String(
-                view === "projects" ? projects.length : choices.length,
+                view === "projects" ? projects.length : templates.length + 3,
               ).padStart(2, "0")}
             </span>
           </div>
@@ -314,12 +392,52 @@ export function Homepage({
                     >
                       {HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => (
                         <DropdownMenuRadioItem
+                          closeOnClick
                           key={option.mode}
                           value={option.mode}
                         >
                           {option.label}
                         </DropdownMenuRadioItem>
                       ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="touch-icon"
+                      aria-label="Project View"
+                    />
+                  }
+                >
+                  {layout === "list" ? (
+                    <ListIcon />
+                  ) : layout === "small" ? (
+                    <Grid3x3Icon />
+                  ) : (
+                    <Grid2x2Icon />
+                  )}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="homepage-theme" align="end">
+                  <DropdownMenuGroup>
+                    <DropdownMenuRadioGroup
+                      value={layout}
+                      onValueChange={(value) =>
+                        changeLayout(value as typeof layout)
+                      }
+                    >
+                      <DropdownMenuRadioItem closeOnClick value="large">
+                        Large Cards
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem closeOnClick value="small">
+                        Small Cards
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem closeOnClick value="list">
+                        List
+                      </DropdownMenuRadioItem>
                     </DropdownMenuRadioGroup>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
@@ -333,7 +451,7 @@ export function Homepage({
             <Button
               variant="outline"
               disabled={busy}
-              onClick={() => void run(onReconnect)}
+              onClick={() => void run(() => launch(onReconnect))}
             >
               Reconnect
             </Button>
@@ -358,21 +476,27 @@ export function Homepage({
             </Button>
           </Alert>
         )}
-        <div className="homepage-view" key={view}>
-          {view === "projects" ? (
+        <div className="homepage-view">
+          <div className="homepage-library-view" hidden={view !== "projects"}>
             <HomepageGallery
               label="Projects"
+              layout={layout}
               items={visibleProjects.map((project) => ({
                 id: project.id,
                 content: (
                   <HomepageProjectCard
                     project={project}
+                    layout={layout}
                     busy={busy}
                     deleting={shouldDeleteOpfsOnRemove(
                       hostPlatform,
                       project.tier,
                     )}
-                    onOpen={() => void run(() => onOpenProject(project))}
+                    onOpen={() =>
+                      void run(() =>
+                        launch(() => onOpenProject(project), project.label),
+                      )
+                    }
                     onEdit={() => edit(project)}
                     onRemove={() => {
                       setRemoveTarget(project);
@@ -386,7 +510,19 @@ export function Homepage({
                   className="homepage-empty"
                   data-testid="homepage-projects-empty"
                 >
-                  {!search && <HomepageEmptyArt scheme={scheme} />}
+                  {!search && (
+                    <HomepageEmptyArt
+                      scheme={scheme}
+                      onReady={markArtReady}
+                      paused={
+                        busy ||
+                        createOpen ||
+                        settingsOpen ||
+                        accountOpen ||
+                        view !== "projects"
+                      }
+                    />
+                  )}
                   <EmptyHeader>
                     <EmptyTitle>
                       {search ? "No Results" : "No Projects Yet"}
@@ -395,24 +531,15 @@ export function Homepage({
                 </Empty>
               }
             />
-          ) : (
-            <HomepageGallery
-              label="Templates"
-              items={choices.map((choice) => ({
-                id: choice.id,
-                content: (
-                  <TemplatePickCard
-                    title={choice.name}
-                    icon={choice.icon}
-                    imageUrl={choice.imageUrl}
-                    testId={`homepage-start-${choice.id}`}
-                    disabled={busy}
-                    onSelect={() => create(choice.id, false)}
-                  />
-                ),
-              }))}
+          </div>
+          <div className="homepage-library-view" hidden={view !== "templates"}>
+            <HomepageTemplateBrowser
+              templates={templates}
+              disabled={busy}
+              onImport={importTemplate}
+              onSelect={(id) => create(id, false)}
             />
-          )}
+          </div>
         </div>
         {error && !createOpen && (
           <Alert
@@ -455,7 +582,7 @@ export function Homepage({
           aria-label="Open Folder"
           data-testid="open-project"
           disabled={busy}
-          onClick={() => void run(onOpenExternal)}
+          onClick={() => void run(() => launch(onOpenExternal))}
         >
           <FolderOpenIcon />
         </Button>
@@ -477,6 +604,7 @@ export function Homepage({
         templateId={templateId}
         onTemplateIdChange={setTemplateId}
         templates={templates}
+        onImportTemplate={importTemplate}
         hostPlatform={hostPlatform}
         pickFolder={pickFolder}
         onPickFolderChange={setPickFolder}
@@ -495,21 +623,33 @@ export function Homepage({
                 appearance,
               });
             else {
-              const options: CreateProjectOptions = {
-                appearance,
-                renderWidth: width,
-                renderHeight: height,
-                blackBars,
-                ...(hostPlatform === "web" ? {} : { pickFolder }),
-              };
-              const folderName = normalizeProjectFolderName(name);
-              if (!folderName) return;
-              if (templateId === "empty" || templateId === "2d")
-                await onCreateEmpty(folderName, {
-                  ...options,
-                  kind: templateId,
-                });
-              else await onCreateFromTemplate(templateId, folderName, options);
+              await launch(async () => {
+                const options: CreateProjectOptions = {
+                  appearance,
+                  renderWidth: width,
+                  renderHeight: height,
+                  blackBars,
+                  ...(hostPlatform === "web" ? {} : { pickFolder }),
+                };
+                const folderName = normalizeProjectFolderName(name);
+                if (!folderName) return;
+                if (
+                  templateId === "blank" ||
+                  templateId === "empty" ||
+                  templateId === "2d"
+                )
+                  await onCreateEmpty(folderName, {
+                    ...options,
+                    kind: templateId,
+                  });
+                else
+                  await onCreateFromTemplate(
+                    templateId.slice("template:".length),
+                    folderName,
+                    options,
+                  );
+                recordTemplateUse(templateId);
+              }, name.trim());
             }
             setCreateOpen(false);
           });

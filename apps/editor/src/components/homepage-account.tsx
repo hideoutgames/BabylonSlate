@@ -49,7 +49,13 @@ class AccountErrorBoundary extends Component<
   }
 }
 
-export function HomepageAccount({ disabled = false }: { disabled?: boolean }) {
+export function HomepageAccount({
+  disabled = false,
+  onOpenChange,
+}: {
+  disabled?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const nativeAccount = useNativeHomepageAccount();
   const [open, setOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
@@ -62,6 +68,7 @@ export function HomepageAccount({ disabled = false }: { disabled?: boolean }) {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
+        onOpenChange?.(next);
         if (!next) {
           setSubscriptionOpen(false);
           setAccountView("overview");

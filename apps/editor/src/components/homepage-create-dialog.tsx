@@ -2,11 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRightIcon,
   ArrowLeftIcon,
-  BoxIcon,
   CheckIcon,
-  Grid2x2Icon,
   ImagePlusIcon,
-  LayoutTemplateIcon,
   LoaderCircleIcon,
   XIcon,
 } from "lucide-react";
@@ -41,8 +38,10 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
-import { HomepageGallery } from "./homepage-gallery";
-import { TemplatePickCard } from "./homepage-template-card";
+import {
+  HomepageTemplateBrowser,
+  homepageTemplates,
+} from "./homepage-template-browser";
 import { ProjectIdentityBadge } from "./homepage-project-identity";
 import {
   PROJECT_COLOR_PRESETS,
@@ -74,6 +73,7 @@ export function HomepageCreateDialog({
   templateId,
   onTemplateIdChange,
   templates,
+  onImportTemplate,
   hostPlatform,
   pickFolder,
   onPickFolderChange,
@@ -98,6 +98,7 @@ export function HomepageCreateDialog({
   error?: string | null;
   templateId: string;
   onTemplateIdChange: (id: string) => void;
+  onImportTemplate?: () => void;
   templates: Array<{ id: string; name: string; imageUrl?: string }>;
   hostPlatform: HostPlatform;
   pickFolder: boolean;
@@ -125,12 +126,8 @@ export function HomepageCreateDialog({
   const [imageIssue, setImageIssue] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
   const templateName =
-    templateId === "empty"
-      ? "Blank"
-      : templateId === "2d"
-        ? "2D"
-        : (templates.find((template) => template.id === templateId)?.name ??
-          "Project");
+    homepageTemplates(templates).find((template) => template.id === templateId)
+      ?.name ?? "Project";
 
   useEffect(() => {
     setImageBusy(false);
@@ -177,11 +174,6 @@ export function HomepageCreateDialog({
     if (canSubmit) onSubmit();
   };
 
-  const choices = [
-    { id: "empty", name: "Blank", icon: BoxIcon, imageUrl: undefined },
-    { id: "2d", name: "2D", icon: Grid2x2Icon, imageUrl: undefined },
-    ...templates.map((template) => ({ ...template, icon: LayoutTemplateIcon })),
-  ];
   return (
     <Dialog
       open={open}
@@ -234,37 +226,22 @@ export function HomepageCreateDialog({
             className="homepage-template-step"
             data-testid="create-project-templates"
           >
-            <HomepageGallery
-              label="Starting Point"
-              items={choices.map((choice) => ({
-                id: choice.id,
-                content: (
-                  <TemplatePickCard
-                    title={choice.name}
-                    imageUrl={choice.imageUrl}
-                    icon={choice.icon}
-                    selected={templateId === choice.id}
-                    disabled={busy}
-                    testId={
-                      choice.id === "empty"
-                        ? "create-project-empty"
-                        : choice.id === "2d"
-                          ? "create-project-2d"
-                          : `create-project-template-${choice.id}`
-                    }
-                    onSelect={() => {
-                      onTemplateIdChange(choice.id);
-                      setStep("details");
-                      requestAnimationFrame(() => {
-                        const target = isCoarsePointerEnvironment()
-                          ? popup.current
-                          : nameInput.current;
-                        target?.focus({ preventScroll: true });
-                      });
-                    }}
-                  />
-                ),
-              }))}
+            <HomepageTemplateBrowser
+              templates={templates}
+              selected={templateId}
+              disabled={busy}
+              composing
+              onImport={onImportTemplate}
+              onSelect={(id) => {
+                onTemplateIdChange(id);
+                setStep("details");
+                requestAnimationFrame(() => {
+                  const target = isCoarsePointerEnvironment()
+                    ? popup.current
+                    : nameInput.current;
+                  target?.focus({ preventScroll: true });
+                });
+              }}
             />
           </div>
         ) : (

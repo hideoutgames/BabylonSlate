@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Slate</title>
@@ -35,7 +38,66 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <style>
+        #slate-boot {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 26px;
+          background: #0c0e12;
+          color: #ededf2;
+          font:
+            400 13px system-ui,
+            sans-serif;
+        }
+        #slate-boot[data-scheme="light"] {
+          background: #eeeff2;
+          color: #1b1d23;
+        }
+        #slate-boot .mark {
+          width: 76px;
+          height: 92px;
+          box-sizing: border-box;
+          display: grid;
+          place-items: center;
+          border: 1px solid #9199b333;
+          border-radius: 18px;
+        }
+        #slate-boot img {
+          width: 38px;
+          height: 38px;
+          object-fit: contain;
+        }
+        #slate-boot .track {
+          height: 2px;
+          width: 72px;
+          background: #8792ba28;
+        }
+      </style>
+      <div id="slate-boot" role="status" aria-label="Loading Slate">
+        <div class="mark">
+          <img src="/branding/SlateIconLight.png" alt="" />
+        </div>
+        <span>Slate</span><span class="track" aria-hidden="true"></span>
+      </div>
+      <script>
+        try {
+          if (localStorage.getItem("slate:launcher-scheme") === "light") {
+            var boot = document.getElementById("slate-boot");
+            boot.dataset.scheme = "light";
+            boot.querySelector("img").src = boot
+              .querySelector("img")
+              .src.replace("SlateIconLight", "SlateIconDark");
+          }
+        } catch (e) {
+          /* The default dark splash remains usable. */
+        }
+      </script>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

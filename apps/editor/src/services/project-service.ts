@@ -1080,7 +1080,7 @@ export class ProjectService {
 
   private async scaffoldNewProject(
     name: string,
-    kind: "empty" | "2d" = "empty",
+    kind: "blank" | "empty" | "2d" = "empty",
     renderOptions?: {
       renderWidth?: number;
       renderHeight?: number;
@@ -1096,7 +1096,10 @@ export class ProjectService {
           blackBars: renderOptions.blackBars,
         }
       : undefined;
-    const document = createEmptyProject(name, { kind, render });
+    const document = createEmptyProject(name, {
+      kind: kind === "blank" ? "empty" : kind,
+      render,
+    });
     const appearance = normalizeProjectAppearance(renderOptions?.appearance);
     if (appearance) document.metadata.appearance = appearance;
     this.projectGuid = newGuid();
@@ -1104,6 +1107,11 @@ export class ProjectService {
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
     const graph = createDefaultLogicGraphSerialized();
     const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");
+    if (kind === "blank") {
+      scene.actors = [];
+      scene.settings.mainCameraActorId = null;
+      scene.settings.mainCameraComponentId = null;
+    }
     await this.storage.mkdir("assets/.blobs", true);
     await this.storage.mkdir("plugins", true);
     await this.saveDocument("scene", MAIN_SCENE_FILE, scene);
@@ -1123,7 +1131,7 @@ export class ProjectService {
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
     await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
-    if (kind !== "2d") {
+    if (kind === "empty") {
       await this.scaffoldKenneyMannequinEmpty(document);
     }
     return {

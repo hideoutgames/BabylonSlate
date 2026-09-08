@@ -1,8 +1,16 @@
-import { Component, Suspense, lazy, useState, type ReactNode } from "react";
+import {
+  Component,
+  Suspense,
+  lazy,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { getHostPlatform } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { brandIconSrc } from "../lib/branding";
 import { useHomepageScheme } from "./homepage-scheme";
+import { useLauncherTransition } from "./launcher-transition";
 import homepageStyles from "./homepage.css?inline";
 
 const NativeAccountGate = lazy(() => import("./homepage-account-native"));
@@ -26,6 +34,10 @@ export function HomepageMobileAccountFrame({
   children: ReactNode;
 }) {
   const [scheme] = useHomepageScheme();
+  const { ready } = useLauncherTransition();
+  useEffect(() => {
+    ready("home");
+  }, [ready]);
   return (
     <main
       className="homepage-theme homepage-mobile-auth safe-frame"
