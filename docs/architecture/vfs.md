@@ -51,6 +51,8 @@ Global Engine Settings stored **outside** any project:
 
 - `AppSettingsStore.update` queues a latest-read, focused mutation, schema validation, and write transaction across independently created stores. It emits the settings-change event after persistence, preventing concurrent debugger, viewport, appearance, and recent-project updates from overwriting one another.
 - Opening or creating a project persists its recent-project entry before the editor becomes interactive. Reloading during later texture-transcoder setup therefore keeps the project available on Homepage for reopening and journal recovery.
+- Project-browser identity lives in `project.json` metadata: `name` and optional `appearance: { icon, color, image? }`. Icon and color are catalog identifiers; uploaded PNG, JPEG, or WebP images are small data URLs, bounded to 96 KiB of encoded text. Legacy projects without appearance use the default badge. Invalid imported images are discarded without losing project access.
+- Recents cache that metadata so project cards need no folder reads. Opening a project refreshes the cache from its metadata, preserving edited names and badges across reopening. Editing changes metadata and its cache after the project write succeeds; the folder name, handle, templates, and game assets stay unchanged. New projects can choose a badge independently of their template.
 
 | Backend | Platform |
 | --- | --- |

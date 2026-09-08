@@ -16,6 +16,7 @@ import type {
   DocumentRef,
   ProjectDocument,
   ProjectFolderHandle,
+  ProjectMetadata,
   Result,
   SerializedGraph,
   SerializedScene,
@@ -197,8 +198,10 @@ import {
 } from "@babylonslate/assets";
 import {
   listedProjectsFromRecents,
+  recentProjectsWithOpenedProject,
   shouldDeleteOpfsOnRemove,
   type ListedProject,
+  type UpdateListedProjectOptions,
 } from "../lib/listed-projects";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -320,9 +323,13 @@ interface DocumentContextValue {
   createFromTemplate: (
     templateId: string,
     name: string,
-    options?: { pickFolder?: boolean },
+    options?: CreateProjectOptions,
   ) => Promise<void>;
   openListedProject: (handle: ProjectFolderHandle) => Promise<void>;
+  updateListedProject: (
+    handle: ProjectFolderHandle,
+    details: UpdateListedProjectOptions,
+  ) => Promise<void>;
   renameListedProject: (
     handle: ProjectFolderHandle,
     name: string,
@@ -854,23 +861,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const recordRecent = useCallback(
-    async (handle: ProjectFolderHandle | null, createdAt?: string) => {
+    async (handle: ProjectFolderHandle | null, metadata: ProjectMetadata) => {
       if (!handle) return;
       await settingsStore.update((settings) => {
-        const previous = settings.recents.find(
-          (recent) => recent.id === handle.id,
+        settings.recents = recentProjectsWithOpenedProject(
+          settings.recents,
+          handle,
+          metadata,
+          new Date().toISOString(),
         );
-        settings.recents = [
-          {
-            id: handle.id,
-            name: handle.name,
-            tier: handle.tier,
-            lastOpenedAt: new Date().toISOString(),
-            createdAt: createdAt ?? previous?.createdAt,
-            bookmark: handle.tier === "external" ? handle.id : null,
-          },
-          ...settings.recents.filter((r) => r.id !== handle.id),
-        ].slice(0, 20);
       });
     },
     [settingsStore],
@@ -1208,7 +1207,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // A reload as soon as editing starts must still find this project on Homepage.
       await recordRecent(
         projectService.storagePort.getCurrentFolder(),
-        document.metadata.createdAt,
+        document.metadata,
       );
       setRoute("editor");
       setAnimEditorModes({});
@@ -1276,7 +1275,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (
       templateId: string,
       name: string,
-      options?: { pickFolder?: boolean },
+      options?: CreateProjectOptions,
     ) => {
       const template = templates.find((t) => t.id === templateId);
       if (!template) {
@@ -1288,6 +1287,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           templateFiles: template.files,
           name,
           pickFolder: options?.pickFolder,
+          appearance: options?.appearance,
         });
       await enterEditor(document, layouts, pending);
     },
@@ -1308,23 +1308,34 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [attachEnginePlugins, enterEditor, projectService],
   );
 
-  const renameListedProject = useCallback(
-    async (handle: ProjectFolderHandle, name: string) => {
-      const trimmed = name.trim();
+  const updateListedProject = useCallback(
+    async (handle: ProjectFolderHandle, details: UpdateListedProjectOptions) => {
+      const trimmed = details.name.trim();
       if (!trimmed) return;
-      try {
-        await projectService.renameListedProjectDisplayName(handle, trimmed);
-      } catch {
-        // Recents still update when the folder cannot be opened.
-      }
+      await projectService.updateListedProject(handle, {
+        ...details,
+        name: trimmed,
+      });
       await settingsStore.update((settings) => {
         settings.recents = settings.recents.map((recent) =>
-          recent.id === handle.id ? { ...recent, name: trimmed } : recent,
+          recent.id === handle.id
+            ? {
+                ...recent,
+                name: trimmed,
+                ...(details.appearance ? { appearance: details.appearance } : {}),
+              }
+            : recent,
         );
       });
       await refreshProjectList();
     },
     [projectService, refreshProjectList, settingsStore],
+  );
+
+  const renameListedProject = useCallback(
+    (handle: ProjectFolderHandle, name: string) =>
+      updateListedProject(handle, { name }),
+    [updateListedProject],
   );
 
   const removeListedProject = useCallback(
@@ -3922,6 +3933,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createFromTemplate,
       openListedProject,
       renameListedProject,
+      updateListedProject,
       removeListedProject,
       reconnectProject,
       saveProject,
@@ -4127,6 +4139,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createFromTemplate,
       openListedProject,
       renameListedProject,
+      updateListedProject,
       removeListedProject,
       reconnectProject,
       saveProject,

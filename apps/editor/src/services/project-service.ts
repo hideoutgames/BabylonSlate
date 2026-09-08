@@ -14,6 +14,7 @@ import {
   createEmptyLayouts,
   createEmptyProject,
   normalizeProjectSettings,
+  normalizeProjectAppearance,
   migrateGameInstanceClassFromScenes,
   normalizeScene,
   normalizeSceneLayer,
@@ -28,6 +29,8 @@ import {
   migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
+  type ProjectMetadata,
+  type ProjectAppearance,
   type RenderProjectSettings,
 } from "@babylonslate/core";
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
@@ -99,7 +102,11 @@ import {
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
 import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
-import { normalizeProjectFolderName } from "../lib/create-project";
+import {
+  normalizeProjectFolderName,
+  type CreateProjectOptions,
+} from "../lib/create-project";
+import type { UpdateListedProjectOptions } from "../lib/listed-projects";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
 import {
@@ -485,13 +492,7 @@ export class ProjectService {
 
   async createEmptyProject(
     name?: string,
-    options?: {
-      pickFolder?: boolean;
-      kind?: "empty" | "2d";
-      renderWidth?: number;
-      renderHeight?: number;
-      blackBars?: boolean;
-    },
+    options?: CreateProjectOptions,
   ): Promise<ProjectLoadResult> {
     const projectName =
       name && name.trim()
@@ -517,6 +518,7 @@ export class ProjectService {
     templateFiles: ProjectTreeFile[];
     name: string;
     pickFolder?: boolean;
+    appearance?: ProjectAppearance;
   }): Promise<ProjectLoadResult> {
     const projectName = normalizeProjectFolderName(options.name);
     if (options.pickFolder) {
@@ -534,6 +536,18 @@ export class ProjectService {
       guid,
       name: projectName,
     });
+    const appearance = normalizeProjectAppearance(options.appearance);
+    if (appearance) {
+      const manifest = JSON.parse(await this.storage.readText(PROJECT_FILE)) as {
+        metadata?: Partial<ProjectMetadata>;
+      };
+      manifest.metadata = {
+        ...createEmptyProject(projectName).metadata,
+        ...manifest.metadata,
+        appearance,
+      };
+      await this.storage.writeText(PROJECT_FILE, JSON.stringify(manifest, null, 2));
+    }
     this.projectGuid = guid;
     await this.installEnginePluginDefaultsIfNeeded();
     return this.loadCurrentProject();
@@ -558,22 +572,37 @@ export class ProjectService {
     this.pluginOverrides = {};
   }
 
-  /** Display-name only: writes `metadata.name` when the folder can be opened. */
+  /** Compatibility wrapper for display-name-only callers. */
   async renameListedProjectDisplayName(
     handle: ProjectFolderHandle,
     displayName: string,
   ): Promise<void> {
-    const name = displayName.trim();
+    return this.updateListedProject(handle, { name: displayName });
+  }
+
+  /** Persist browser identity without changing the project folder or its assets. */
+  async updateListedProject(
+    handle: ProjectFolderHandle,
+    details: UpdateListedProjectOptions,
+  ): Promise<void> {
+    const name = details.name.trim();
     if (!name) return;
     await this.storage.openKnownFolder(handle);
     try {
-      if (!(await this.storage.exists(PROJECT_FILE))) return;
+      if (!(await this.storage.exists(PROJECT_FILE))) {
+        throw new Error("The project could not be found.");
+      }
       const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as {
-        metadata?: { name?: string; updatedAt?: string };
+        name?: string;
+        metadata?: Partial<ProjectMetadata>;
       };
-      if (!raw.metadata) return;
+      raw.metadata ??= createEmptyProject(name).metadata;
       raw.metadata.name = name;
       raw.metadata.updatedAt = new Date().toISOString();
+      if (typeof raw.name === "string") raw.name = name;
+      if (details.appearance !== undefined) {
+        raw.metadata.appearance = normalizeProjectAppearance(details.appearance);
+      }
       await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
     } finally {
       await this.storage.releaseFolder();
@@ -1056,6 +1085,7 @@ export class ProjectService {
       renderWidth?: number;
       renderHeight?: number;
       blackBars?: boolean;
+      appearance?: ProjectAppearance;
     },
   ): Promise<ProjectLoadResult> {
     const render: Partial<RenderProjectSettings> | undefined = renderOptions
@@ -1067,6 +1097,8 @@ export class ProjectService {
         }
       : undefined;
     const document = createEmptyProject(name, { kind, render });
+    const appearance = normalizeProjectAppearance(renderOptions?.appearance);
+    if (appearance) document.metadata.appearance = appearance;
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
@@ -1608,12 +1640,19 @@ function normalizeProjectDocument(
   if (raw.metadata && raw.settings && raw.scenes && raw.graphs) {
     return {
       ...raw,
+      metadata: {
+        ...raw.metadata,
+        appearance: normalizeProjectAppearance(raw.metadata.appearance),
+      },
       settings: normalizeProjectSettings(raw.settings),
     };
   }
-  return createEmptyProject(
+  const document = createEmptyProject(
     typeof raw.name === "string" ? raw.name : fallbackName,
   );
+  const appearance = normalizeProjectAppearance(raw.metadata?.appearance);
+  if (appearance) document.metadata.appearance = appearance;
+  return document;
 }
 
 function uniquePaths(paths: string[]): string[] {

@@ -5,6 +5,7 @@ import {
   listedProjectLocationLabel,
   listedProjectMetaParts,
   listedProjectsFromRecents,
+  recentProjectsWithOpenedProject,
   shouldDeleteOpfsOnRemove,
   sortListedProjects,
   type ListedProject,
@@ -59,6 +60,7 @@ describe("listedProjectsFromRecents", () => {
           tier: "opfs",
           lastOpenedAt: "2026-08-18T12:00:00.000Z",
           createdAt: "2026-03-15T12:00:00.000Z",
+          appearance: { icon: "rocket", color: "lilac" },
         },
       ],
       [
@@ -75,6 +77,7 @@ describe("listedProjectsFromRecents", () => {
       label: "Pretty Game",
       lastOpenedAt: "2026-08-18T12:00:00.000Z",
       createdAt: "2026-03-15T12:00:00.000Z",
+      appearance: { icon: "rocket", color: "lilac" },
     });
   });
 
@@ -85,6 +88,28 @@ describe("listedProjectsFromRecents", () => {
         [{ id: "opfs:Old.babproject", name: "Old.babproject", tier: "opfs" }],
       ),
     ).toEqual([]);
+  });
+});
+
+describe("recentProjectsWithOpenedProject", () => {
+  it("preserves the edited project identity after reopening the original folder", () => {
+    const result = recentProjectsWithOpenedProject(
+      [{ id: "opfs:Original", name: "Old Label", tier: "opfs", lastOpenedAt: "2026-09-08" }],
+      { id: "opfs:Original", name: "Original", tier: "opfs" },
+      {
+        name: "Edited Name", version: "0.0.0", createdAt: "2026-09-01", updatedAt: "2026-09-09",
+        appearance: { icon: "mountain", color: "mint" },
+      },
+      "2026-09-09T12:00:00.000Z",
+    );
+    expect(result).toEqual([{
+      id: "opfs:Original", name: "Edited Name", tier: "opfs", bookmark: null,
+      createdAt: "2026-09-01", lastOpenedAt: "2026-09-09T12:00:00.000Z",
+      appearance: { icon: "mountain", color: "mint" },
+    }]);
+    expect(listedProjectsFromRecents(result, [
+      { id: "opfs:Original", name: "Original", tier: "opfs" },
+    ])[0]).toMatchObject({ name: "Original", label: "Edited Name", appearance: { icon: "mountain", color: "mint" } });
   });
 });
 

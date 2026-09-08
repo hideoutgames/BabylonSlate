@@ -1,4 +1,10 @@
-import type { ProjectFolderHandle, StorageTier } from "@babylonslate/core";
+import type {
+  ProjectAppearance,
+  ProjectFolderHandle,
+  ProjectMetadata,
+  StorageTier,
+} from "@babylonslate/core";
+import type { EngineSettings } from "@babylonslate/vfs";
 import { displayProjectName } from "./display-project-name";
 
 export type ListedProject = ProjectFolderHandle & {
@@ -6,7 +12,35 @@ export type ListedProject = ProjectFolderHandle & {
   label: string;
   lastOpenedAt?: string;
   createdAt?: string;
+  appearance?: ProjectAppearance;
 };
+
+export type UpdateListedProjectOptions = {
+  name: string;
+  /** Omit to preserve the current badge; supply icon/color without image to remove a photo. */
+  appearance?: ProjectAppearance;
+};
+
+/** Cache metadata before entering the editor without changing the folder identity. */
+export function recentProjectsWithOpenedProject(
+  recents: EngineSettings["recents"],
+  handle: ProjectFolderHandle,
+  metadata: ProjectMetadata,
+  lastOpenedAt: string,
+): EngineSettings["recents"] {
+  return [
+    {
+      id: handle.id,
+      name: metadata.name,
+      tier: handle.tier,
+      lastOpenedAt,
+      createdAt: metadata.createdAt,
+      bookmark: handle.tier === "external" ? handle.id : null,
+      ...(metadata.appearance ? { appearance: metadata.appearance } : {}),
+    },
+    ...recents.filter((recent) => recent.id !== handle.id),
+  ].slice(0, 20);
+}
 
 function storageTierLabel(tier: StorageTier): string {
   return tier === "external" ? "Chosen folder" : "On this device";
@@ -59,6 +93,7 @@ export function listedProjectsFromRecents(
     tier: ProjectFolderHandle["tier"];
     lastOpenedAt?: string;
     createdAt?: string;
+    appearance?: ProjectAppearance;
   }>,
   stored: ProjectFolderHandle[],
 ): ListedProject[] {
@@ -74,6 +109,7 @@ export function listedProjectsFromRecents(
       label: recent.name,
       ...(recent.lastOpenedAt ? { lastOpenedAt: recent.lastOpenedAt } : {}),
       ...(recent.createdAt ? { createdAt: recent.createdAt } : {}),
+      ...(recent.appearance ? { appearance: recent.appearance } : {}),
     };
   });
 }
