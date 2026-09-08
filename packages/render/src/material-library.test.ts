@@ -168,7 +168,7 @@ describe("material library", () => {
         id: "tex",
         type: "param.texture",
         position: { x: 0, y: 0 },
-        properties: { textureGuid: "tex-1" },
+        properties: { name: "Albedo", textureGuid: "tex-1" },
       },
       {
         id: "texUv",
@@ -233,7 +233,7 @@ describe("material library", () => {
         id: "tex",
         type: "param.texture",
         position: { x: 0, y: 0 },
-        properties: { textureGuid: "tex-1" },
+        properties: { name: "Albedo", textureGuid: "tex-1" },
       },
       {
         id: "texUv",

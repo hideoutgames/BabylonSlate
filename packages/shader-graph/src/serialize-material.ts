@@ -11,6 +11,7 @@ import {
   type MaterialFunctionDocument,
 } from "./document";
 import { isNumericType, typesAreAssignable, type MaterialValueType } from "./types";
+import { isMaterialParameterNode, materialParameterName } from "./parameters";
 
 /** Pin shape the shared graph shell renders and connects. */
 export interface MaterialGraphPin {
@@ -170,7 +171,10 @@ export function serializedToMaterialGraph(
       id: node.id,
       type: node.type,
       position: node.position,
-      properties: propertiesFromNodeData(node.data),
+      properties: {
+        ...propertiesFromNodeData(node.data),
+        ...(previous && isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
+      },
     })),
     edges: graph.edges.map((edge) => ({
       id: edge.id,
@@ -192,7 +196,10 @@ export function serializedToMaterialFunctionGraph(
       id: node.id,
       type: node.type,
       position: node.position,
-      properties: propertiesFromNodeData(node.data),
+      properties: {
+        ...propertiesFromNodeData(node.data),
+        ...(isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
+      },
     })),
     edges: graph.edges.map((edge) => ({
       id: edge.id,
@@ -227,7 +234,9 @@ export function hydrateMaterialGraphForEditor(
           __pins: pins,
           __nodeType: node.type,
           ...(definition ? { __category: definition.category } : {}),
-          title: calledFunction?.name ?? definition?.title ?? node.type,
+          title: isMaterialParameterNode(node.type)
+            ? materialParameterName({ ...node, properties: data }) || definition?.title || node.type
+            : calledFunction?.name ?? definition?.title ?? node.type,
         },
       };
     }),

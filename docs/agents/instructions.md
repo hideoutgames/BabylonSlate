@@ -2,6 +2,8 @@
 
 [AGENTS.md](../../AGENTS.md) is the portable entry point. Read its required rules and every matching scope/skill row explicitly when the host does not discover them automatically.
 
+Its working agreements apply across clients: clarify ambiguous instructions before proceeding, keep explanation/investigation/review/planning requests read-only unless changes are explicitly requested, and reuse the established components and design. These agreements live in the repository so they do not depend on a developer's Codex-global instructions.
+
 ## Canonical files and compatibility
 
 - Maintain the ten shared policies in `.agents/rules/*.md` and the nine skill packages in `.agents/skills/*/SKILL.md`.
@@ -32,6 +34,8 @@ The Babylon skill keeps the maintained source files only. Git history preserves 
 - Pass `pnpm verify:local` before opening any PR, including drafts. If verification or client access is unavailable, disclose that limitation and retain the compatibility entry points.
 
 ## PR delivery
+
+Repository changes are complete only after the PR is confirmed merged into `main`. If an agent ends work or a session with unmerged changes, it must prominently warn that unmerged work remains, identify the branch and PR (or absence of one), and explain the blocker or reason for stopping and remaining merge steps. This also applies to an explicit user hold; it does not override the hold or merge gates. Read-only tasks do not require a PR.
 
 Agents own delivery through merge: local tests and `pnpm verify:local` first (infrastructure changes select the full gate; CI always runs the retained full suite), then open a draft, wait for a free Verify slot, mark ready, and monitor CI. On failure, inspect logs, fix the cause, pass local verification, push, and wait for the new run. Merge only the verified current head once all required checks and branch protections pass, and confirm the merged state. Missing tooling should be repaired where possible; an unresolved blocker must be reported, never treated as a successful test. See [the workflow](../../.agents/rules/agent-workflow.md) and [PR cadence](../../.agents/rules/github-actions-pr-cadence.md) for the authoritative gates.
 

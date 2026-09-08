@@ -363,6 +363,7 @@ class InProcessRuntime implements RuntimeDriver {
   private running = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
+  private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
   private nextUnusedSlot = 0;
   private _snapshotGeneration = 0;
@@ -857,6 +858,28 @@ class InProcessRuntime implements RuntimeDriver {
           type: "setRenderResolution",
           width: nextWidth,
           height: nextHeight,
+        });
+      },
+      setMaterialParameter: (material, parameterName, parameter) => {
+        const component = material.component;
+        const owner = component.owner;
+        if (!owner || owner.destroyed || component.destroyed) return;
+        const slotId = this.slotByGuid.get(owner.guid);
+        if (slotId === undefined) return;
+        const skipButtonMesh =
+          overlayButtonHasSiblingVisual(owner) ||
+          overlayButtonHasParentVisual(owner, this.world);
+        const renderables = owner.components.filter((entry) =>
+          isPlayRenderable(entry, skipButtonMesh),
+        );
+        if (!renderables.includes(component)) return;
+        this.emit({
+          type: "setMaterialParameter",
+          slotId,
+          componentId: component.guid,
+          materialAssetGuid: material.materialAssetGuid,
+          parameterName,
+          parameter,
         });
       },
       possessCamera: (target) => {
@@ -2725,6 +2748,9 @@ class InProcessRuntime implements RuntimeDriver {
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
         actorGuid: actor.guid,
+        ...(!parts && primary.classId === "MeshComponent"
+          ? { primaryComponentId: primary.guid }
+          : {}),
         ...(meshKind === "sprite" || meshKind === "tilemap"
           ? playSortingOf(primary)
           : {}),
@@ -3061,13 +3087,20 @@ class InProcessRuntime implements RuntimeDriver {
     multipart: boolean,
   ): void {
     for (const component of renderables) {
-      const guid = component.getVariable("materialGuid");
-      if (typeof guid !== "string" || guid === "") continue;
+      const value = component.getVariable("materialGuid");
+      const guid = typeof value === "string" && value.trim() ? value : null;
+      if (guid) this.componentsWithMaterialAssignment.add(component);
+      else if (!this.componentsWithMaterialAssignment.delete(component)) {
+        // Untouched model components retain their authored material slots.
+        continue;
+      }
       this.emit({
         type: "assignMaterial",
         slotId,
         materialAssetGuid: guid,
-        ...(multipart ? { componentId: component.guid } : {}),
+        ...(multipart || component.classId === "MeshComponent"
+          ? { componentId: component.guid }
+          : {}),
       });
     }
   }

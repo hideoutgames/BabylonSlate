@@ -1219,6 +1219,25 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("breaks links in the active graph safe zone when another graph reuses its node ids", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const first = render(<GraphEditor initialGraph={graphWithWiredPins()} />);
+      const second = render(<GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />);
+      const selector = '[data-id="log-a"] [data-handleid="execOut"][data-handlepos="right"]';
+      mockHandleRect(first.container.querySelector(selector)!, { left: 0, top: 0, width: 44, height: 44 });
+      const source = second.container.querySelector(selector)!;
+      mockHandleRect(source, { left: 500, top: 0, width: 44, height: 44 });
+      onChange.mockClear();
+      act(() => dragHandle(source, { x: 522, y: 22 }, { x: 580, y: 22 }));
+      expect(second.queryByTestId("node-palette-body")).toBeNull();
+      expect(onChange.mock.calls.at(-1)?.[0].edges).toEqual([]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("does not break wires when the drag is released on the source handle", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

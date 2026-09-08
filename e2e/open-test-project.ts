@@ -21,6 +21,10 @@ export async function openTestProject(
   path = "/?test=1",
 ): Promise<void> {
   await page.goto(path);
+  // COI bootstrap can reload twice; wait before starting project creation.
+  await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
+    timeout: 15_000,
+  });
   await expect(page.getByTestId("homepage")).toBeVisible();
   const listed = page.getByTestId("open-listed-project-TestProject");
   const listedLegacy = page.getByTestId(

@@ -16,10 +16,12 @@
     "@babylonslate/input": "workspace:*",
     "@babylonslate/ui": "workspace:*",
     "lucide-react": "^0.487.0",
-    "react": "^19.2.8"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "typescript": "~5.8.2"
   },
   "peerDependencies": {

@@ -14,6 +14,10 @@ import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { usePlay } from "../context/play-context";
 import { useDocuments } from "../context/document-context";
+import {
+  materialViewportTestSnapshot,
+  type MaterialViewportTestSnapshot,
+} from "../lib/material-viewport-test-snapshot";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { walkAncestry } from "@babylonslate/editor-kit";
 import {
@@ -31,7 +35,11 @@ import {
   prefabSelectedActorIds,
   prefabSelectedIdFromPick,
 } from "../lib/prefab-preview";
-import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "../lib/public-engine-assets";
+import {
+  editorDracoPublicBase,
+  editorKtx2PublicBase,
+  editorMeshoptPublicBase,
+} from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import {
   modelSlotMaterialGuidsFromPayloads,
@@ -39,6 +47,7 @@ import {
   skyboxFaceGuidsFromScene,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
+import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 
 /**
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
@@ -97,12 +106,21 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     setFrameActorHandler,
     collisionsVisible,
   } = useSceneEditing();
-  const { flySpeed, gridSize, editorTextureLodEnabled, editorTextureLodQuality } =
-    useEditorViewportPrefs();
+  const {
+    flySpeed,
+    gridSize,
+    editorTextureLodEnabled,
+    editorTextureLodQuality,
+  } = useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
-  const { registerScheduler, playing, preparing, ensureSharedEngine, sharedEngineGeneration } =
-    usePlay();
+  const {
+    registerScheduler,
+    playing,
+    preparing,
+    ensureSharedEngine,
+    sharedEngineGeneration,
+  } = usePlay();
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
   const setSelectedIdRef = useRef(setSelectedId);
@@ -134,11 +152,14 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       dracoBasePath: editorDracoPublicBase(),
       meshoptBasePath: editorMeshoptPublicBase(),
       onPickActor: (actorId) => {
-        const ids = new Set(componentsRef.current.map((component) => component.id));
+        const ids = new Set(
+          componentsRef.current.map((component) => component.id),
+        );
         setSelectedIdRef.current(prefabSelectedIdFromPick(actorId, ids));
       },
       onGizmoDragEnd: () => {
-        const lives = engineRef.current?.editor?.selectedActorTransforms() ?? [];
+        const lives =
+          engineRef.current?.editor?.selectedActorTransforms() ?? [];
         const selected = selectedIdRef.current;
         const live =
           lives.find((entry) => entry.actorId === selected) ??
@@ -188,8 +209,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         handle.setPostProcessingEnabled(enabled),
       setTextureBudget: (bytes, enabled) =>
         handle.setTextureBudget(bytes, enabled),
-      setAudioBudget: (bytes, enabled) =>
-        handle.setAudioBudget(bytes, enabled),
+      setAudioBudget: (bytes, enabled) => handle.setAudioBudget(bytes, enabled),
       setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
     });
     const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
@@ -226,12 +246,19 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [playing, preparing]);
 
   const previewLoadKey = prefabPreviewLoadKey(components);
+  const materialLibraryKey = savedMaterialLibraryKey(
+    assetRegistry?.list() ?? [],
+  );
+  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+
+  useEffect(() => {
+    engineRef.current?.loadScene(previewSceneFor(componentsRef.current));
+  }, [previewLoadKey, sharedEngine]);
 
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle) return;
     const scene = previewSceneFor(componentsRef.current);
-    handle.loadScene(scene);
     let cancelled = false;
     void (async () => {
       try {
@@ -245,10 +272,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           modelSlotMaterialGuidsFromPayloads(modelPayloads),
         );
         const extraTextureGuids = [
-            ...materials.textureGuids,
-            ...skyboxFaceGuidsFromScene(scene),
-            ...overlayTextureGuidsFromScene(scene),
-          ];
+          ...materials.textureGuids,
+          ...skyboxFaceGuidsFromScene(scene),
+          ...overlayTextureGuidsFromScene(scene),
+        ];
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
@@ -260,15 +287,15 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
+        const msdf = fontMsdfMapsFromPairs(
+          await collectPlayFontMsdfPair(scene),
+        );
         const fontFaceEntries = await collectPlayFontFaceEntries();
         const fontCss = collectPlayFontCssStacks();
         if (cancelled || engineRef.current !== handle) return;
-        handle.setMaterialDocuments(
-          materials.documents,
-          materials.functions,
-        );
+        handle.setMaterialDocuments(materials.documents, materials.functions);
         await handle.registerFonts(fontFaceEntries);
+        if (cancelled || engineRef.current !== handle) return;
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -297,89 +324,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     // bumps (compiler, Save All), which cancelled in-flight material binds.
   }, [
     previewLoadKey,
-    sharedEngine,
-    collectPlaySpritePayloads,
-    collectPlayTilemapContent,
-    collectPlayTextureBytes,
-    collectPlayTexturePixelSizes,
-    collectPlayFontFacetypeBytes,
-    collectPlayFontMsdfPair,
-    collectPlayFontFaceEntries,
-    collectPlayFontCssStacks,
-    collectPlayModelBytes,
-    collectPlayModelPayloads,
-    collectPlayMaterialLibrary,
-    projectDocument?.settings.twoD.pixelsPerUnit,
-  ]);
-
-  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
-  const textureLodKeyRef = useRef(textureLodKey);
-  useEffect(() => {
-    const lodChanged = textureLodKeyRef.current !== textureLodKey;
-    textureLodKeyRef.current = textureLodKey;
-    if (!lodChanged) return;
-    const handle = engineRef.current;
-    if (!handle) return;
-    const scene = previewSceneFor(componentsRef.current);
-    let cancelled = false;
-    void (async () => {
-      try {
-        const sprites = await collectPlaySpritePayloads(scene);
-        const tileContent = await collectPlayTilemapContent(scene);
-        const modelBytes = await collectPlayModelBytes(scene);
-        const modelPayloads = await collectPlayModelPayloads(scene);
-        const materials = await collectPlayMaterialLibrary(
-          scene,
-          [],
-          modelSlotMaterialGuidsFromPayloads(modelPayloads),
-        );
-        const extraTextureGuids = [
-            ...materials.textureGuids,
-            ...skyboxFaceGuidsFromScene(scene),
-            ...overlayTextureGuidsFromScene(scene),
-          ];
-        const textureBytes = await collectPlayTextureBytes(
-          sprites,
-          tileContent.tilesets,
-          extraTextureGuids,
-        );
-        const texturePixelSizes = collectPlayTexturePixelSizes(
-          sprites,
-          tileContent.tilesets,
-          extraTextureGuids,
-        );
-        const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
-        const fontFaceEntries = await collectPlayFontFaceEntries();
-        const fontCss = collectPlayFontCssStacks();
-        if (cancelled || engineRef.current !== handle) return;
-        handle.setMaterialDocuments(materials.documents, materials.functions);
-        await handle.registerFonts(fontFaceEntries);
-        handle.setMeshAssets({
-          resourceCache: handle.resourceCache,
-          spritePayloads: sprites,
-          tilemaps: tileContent.tilemaps,
-          tilesets: tileContent.tilesets,
-          textureBytes,
-          texturePixelSizes,
-          fontFacetypeBytes,
-          fontMsdfJson: msdf.json,
-          fontMsdfPng: msdf.png,
-          fontCssStack: fontCss.fontCssStack,
-          fontCssStackByGuid: fontCss.fontCssStackByGuid,
-          modelBytes,
-          modelPayloads,
-          pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
-        });
-      } catch (error) {
-        console.error("[prefab] failed to refresh mesh assets", error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
+    materialLibraryKey,
     textureLodKey,
+    sharedEngine,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
@@ -476,28 +423,35 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     if (!isTestModeEnabled()) return;
     const host = globalThis as {
       __babylonslatePrefabViewportTest?: {
-        visuals: () => Array<{
-          actorId: string;
-          position: [number, number, number];
-          materialName: string | null;
-        }>;
+        visuals: () => Array<
+          MaterialViewportTestSnapshot & {
+            actorId: string;
+            position: [number, number, number];
+            materialName: string | null;
+          }
+        >;
       };
     };
     host.__babylonslatePrefabViewportTest = {
       visuals: () => {
         const sync = engineRef.current?.editor?.sync;
         if (!sync) return [];
-        return previewSceneFor(componentsRef.current).actors.flatMap((actor) => {
-          const visual = sync.visualMeshesForActor(actor.id)[0];
-          if (!visual) return [];
-          visual.computeWorldMatrix(true);
-          const position = visual.getAbsolutePosition();
-          return [{
-            actorId: actor.id,
-            position: [position.x, position.y, position.z],
-            materialName: visual.material?.name ?? null,
-          }];
-        });
+        return previewSceneFor(componentsRef.current).actors.flatMap(
+          (actor) => {
+            const visual = sync.visualMeshesForActor(actor.id)[0];
+            if (!visual) return [];
+            visual.computeWorldMatrix(true);
+            const position = visual.getAbsolutePosition();
+            return [
+              {
+                ...materialViewportTestSnapshot(visual),
+                actorId: actor.id,
+                position: [position.x, position.y, position.z],
+                materialName: visual.material?.name ?? null,
+              },
+            ];
+          },
+        );
       },
     };
     return () => {

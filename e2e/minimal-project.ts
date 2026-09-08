@@ -58,6 +58,9 @@ export async function openMinimalTestProject(
     { entries: files, settings },
   );
   await page.goto("/?test=1");
+  await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
+    timeout: 15_000,
+  });
   await expect(page.getByTestId("homepage")).toBeVisible();
   await expect(
     page.getByTestId("open-listed-project-TestProject"),

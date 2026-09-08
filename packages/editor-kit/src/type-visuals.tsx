@@ -76,6 +76,7 @@ const ACTOR_ICON = PersonStandingIcon;
 
 const ENGINE_PARENT: Record<string, string | null> = {
   BObject: null,
+  MaterialObject: "BObject",
   Actor: "BObject",
   Scene: "BObject",
   SceneLayer: "BObject",
@@ -134,6 +135,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
 
 const ICON_BY_ID: Record<string, LucideIcon> = {
   BObject: OBJECT_ICON,
+  MaterialObject: PaintbrushIcon,
   GameInstance: OBJECT_ICON,
   FunctionLibrary: OBJECT_ICON,
   BDebugCommand: OBJECT_ICON,

@@ -11,6 +11,21 @@ function codes(doc: MaterialDocument, context = {}): string[] {
 }
 
 describe("material validation", () => {
+  it("requires nonblank names on every parameter even when it is unconnected", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(...["float", "color", "texture"].map((type) => ({
+      id: type, type: `param.${type}`, position: { x: 0, y: 0 }, properties: { name: "   " },
+    })));
+    expect(validateMaterialDocument(doc).filter((row) => row.code === "material.parameter.missingName").map((row) => row.nodeId)).toEqual(["float", "color", "texture"]);
+  });
+
+  it("rejects duplicate parameter names across value types after trimming", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(...["float", "color"].map((type) => ({
+      id: type, type: `param.${type}`, position: { x: 0, y: 0 }, properties: { name: type === "float" ? "Tint" : " Tint " },
+    })));
+    expect(validateMaterialDocument(doc).filter((row) => row.code === "material.parameter.duplicateName").map((row) => row.nodeId)).toEqual(["float", "color"]);
+  });
   it("accepts the default surface material", () => {
     expect(validateMaterialDocument(createDefaultMaterialDocument())).toEqual(
       [],

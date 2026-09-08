@@ -4,6 +4,9 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { syncEditorPlayState } from "@babylonslate/render";
+import { createDefaultScene } from "@babylonslate/core";
+import { encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry } from "@babylonslate/assets";
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
 const { createEngineMock, play, documents, handle } = vi.hoisted(() => {
   const handle = {
@@ -62,6 +65,7 @@ const { createEngineMock, play, documents, handle } = vi.hoisted(() => {
     createEngineMock,
     handle,
     documents: {
+      assetRegistry: null as Pick<AssetRegistry, "list"> | null,
       applySceneChange: vi.fn(async () => true),
       openDocuments: [] as Array<{
         id: string;
@@ -127,6 +131,7 @@ vi.mock("../context/document-context", () => ({
     collectPlaySpritePayloads: documents.collectPlaySpritePayloads,
     collectPlayTilemapContent: documents.collectPlayTilemapContent,
     collectPlayTextureBytes: documents.collectPlayTextureBytes,
+    collectPlayTexturePixelSizes: documents.collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes: documents.collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair: documents.collectPlayFontMsdfPair,
     collectPlayFontFaceEntries: documents.collectPlayFontFaceEntries,
@@ -135,7 +140,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayModelPayloads: documents.collectPlayModelPayloads,
     collectPlayMaterialLibrary: documents.collectPlayMaterialLibrary,
     readAssetChunk: documents.readAssetChunk,
-    assetRegistry: null,
+    assetRegistry: documents.assetRegistry,
   }),
 }));
 
@@ -209,6 +214,16 @@ describe("ViewportPanel engine", () => {
     play.playing = false;
     play.preparing = false;
     documents.openDocuments = [];
+    documents.assetRegistry = null;
+    handle.loadScene.mockClear();
+    handle.setMeshAssets.mockClear();
+    handle.setMaterialDocuments.mockClear();
+    documents.collectPlayMaterialLibrary.mockReset().mockResolvedValue({
+      documents: new Map(),
+      functions: new Map(),
+      textureGuids: [],
+    });
+    documents.collectPlayTextureBytes.mockReset().mockResolvedValue(new Map());
   });
 
   it("does not recreate the Engine when applySceneChange identity changes", () => {
@@ -329,5 +344,64 @@ describe("ViewportPanel engine", () => {
       true,
     );
     play.preparing = false;
+  });
+
+  it.each(["Material", "MaterialFunction"])("refreshes a saved %s without reloading the scene", async (type) => {
+    const savedAsset = async (value: number) => ({
+      rootId: "project",
+      path: "assets/Surface.material.babasset",
+      header: readAssetDocumentHeader(await encodeAssetDocument({
+        type,
+        guid: "saved-material",
+        name: "Surface",
+        version: 1,
+        payload: { value },
+      })),
+    });
+    let asset = await savedAsset(1);
+    documents.assetRegistry = { list: () => [asset] };
+    documents.openDocuments = [{
+      id: "scene:S",
+      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    const { rerender } = renderViewport();
+    await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
+    const initialLoads = handle.loadScene.mock.calls.length;
+    const initialMaterials = handle.setMaterialDocuments.mock.calls.length;
+    const updatedDocument = { ...createDefaultMaterialDocument(), name: "Saved Surface" };
+    const updatedDocuments = new Map([["surface", updatedDocument]]);
+    const newTexture = new Uint8Array([1, 2, 3, 4]);
+    documents.collectPlayMaterialLibrary.mockResolvedValueOnce({
+      documents: updatedDocuments,
+      functions: new Map(),
+      textureGuids: ["new-texture"],
+    });
+    documents.collectPlayTextureBytes.mockResolvedValueOnce(new Map([["new-texture", newTexture]]));
+    asset = await savedAsset(2);
+    rerender(
+      <DocumentWorkspaceProvider documentId="scene:S">
+        <ViewportPanel {...({} as IDockviewPanelProps)} />
+      </DocumentWorkspaceProvider>,
+    );
+    await waitFor(() => {
+      expect(handle.setMaterialDocuments).toHaveBeenLastCalledWith(updatedDocuments, new Map());
+      expect(handle.setMeshAssets).toHaveBeenLastCalledWith(expect.objectContaining({
+        textureBytes: new Map([["new-texture", newTexture]]),
+      }));
+    });
+    expect(handle.loadScene).toHaveBeenCalledTimes(initialLoads);
+    expect(handle.setMaterialDocuments).toHaveBeenCalledTimes(initialMaterials + 1);
+
+    // An unchanged Save All / registry reindex must not trigger another load.
+    asset = await savedAsset(2);
+    documents.openDocuments = [...documents.openDocuments];
+    rerender(
+      <DocumentWorkspaceProvider documentId="scene:S">
+        <ViewportPanel {...({} as IDockviewPanelProps)} />
+      </DocumentWorkspaceProvider>,
+    );
+    await Promise.resolve();
+    expect(handle.setMaterialDocuments).toHaveBeenCalledTimes(initialMaterials + 1);
   });
 });

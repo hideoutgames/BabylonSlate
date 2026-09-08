@@ -9,7 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import { Field, FieldError, FieldLabel } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 
 export interface NamePromptDialogProps {
@@ -20,6 +20,8 @@ export interface NamePromptDialogProps {
   description?: string;
   confirmLabel?: string;
   onSubmit: (name: string) => void;
+  /** Return a message to keep the prompt open with an invalid name. */
+  validate?: (name: string) => string | null;
   "data-testid"?: string;
 }
 
@@ -32,17 +34,27 @@ export function NamePromptDialog({
   description,
   confirmLabel = "Add",
   onSubmit,
+  validate,
   "data-testid": testId,
 }: NamePromptDialogProps) {
   const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) setDraft("");
+    if (open) {
+      setDraft("");
+      setError(null);
+    }
   }, [open]);
 
   const submit = () => {
     const name = draft.trim();
     if (!name) return;
+    const message = validate?.(name);
+    if (message) {
+      setError(message);
+      return;
+    }
     onSubmit(name);
     onOpenChange(false);
   };
@@ -58,13 +70,18 @@ export function NamePromptDialog({
             <AlertDialogDescription>{label}</AlertDialogDescription>
           )}
         </AlertDialogHeader>
-        <Field>
+        <Field data-invalid={Boolean(error)}>
           <FieldLabel htmlFor="name-prompt-input">{label}</FieldLabel>
           <Input
             id="name-prompt-input"
             className="min-h-[var(--touch-target,44px)]"
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "name-prompt-error" : undefined}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setError(null);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -73,6 +90,7 @@ export function NamePromptDialog({
             }}
             data-testid="name-prompt-input"
           />
+          {error ? <FieldError id="name-prompt-error">{error}</FieldError> : null}
         </Field>
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="name-prompt-cancel">

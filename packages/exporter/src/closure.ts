@@ -1,6 +1,7 @@
 import {
   err,
   isEditorOnlyAsset,
+  materialParameterTextureGuidsFromGraph,
   ok,
   text2dImageGuidsFromScene,
   type Result,
@@ -151,7 +152,10 @@ export function collectExportReachability(
         }
       } else if (asset.type === "Class" || asset.type === "Graph") {
         const graph: SerializedGraph | null = input.graphByGuid(asset.guid);
-        if (graph) collectTypedRefs(graph, refs);
+        if (graph) {
+          collectTypedRefs(graph, refs);
+          for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
+        }
       }
       const payload = input.payloadByGuid?.(asset.guid);
       if (payload) {

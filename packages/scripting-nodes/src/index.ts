@@ -18,6 +18,7 @@ import { sceneNodes } from "./scene";
 import { gameInstanceNodes } from "./game-instance";
 import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
 import { renderNodes } from "./render";
+import { materialNodes } from "./material";
 import { debugNodes } from "./debug";
 import { debugDrawNodes } from "./debug-draw";
 import { interfaceNodes } from "./interface";
@@ -54,6 +55,7 @@ export * from "./scene";
 export * from "./game-instance";
 export * from "./scene-layer";
 export * from "./render";
+export * from "./material";
 export * from "./debug";
 export * from "./debug-draw";
 export * from "./interface";
@@ -92,6 +94,7 @@ export const ALL_NODE_CATEGORIES = [
   "game-instance",
   "scene-layer",
   "render",
+  "material",
   "debug",
   "interface",
   "variables",
@@ -131,6 +134,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...gameInstanceNodes,
     ...sceneLayerNodes,
     ...renderNodes,
+    ...materialNodes,
     ...debugNodes,
     ...debugDrawNodes,
     ...interfaceNodes,

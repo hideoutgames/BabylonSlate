@@ -136,6 +136,7 @@ describe("engine script API catalog", () => {
       ["Mesh Kind", "meshKind"],
       ["Mesh", "assetGuid"],
       ["Material", "materialGuid"],
+      ["Material Object", "materialObject"],
       ["Collision Mode", "collisionMode"],
       ["Layer", "layer"],
       ["Mask", "mask"],

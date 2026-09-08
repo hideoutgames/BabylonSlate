@@ -1,4 +1,5 @@
 import type { Mesh, NodeMaterial, Scene, Texture } from "@babylonjs/core";
+import type { MaterialParameterValue } from "@babylonslate/bridge";
 import {
   lowerMaterialDocument,
   type MaterialDiagnostic,
@@ -6,6 +7,7 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
+import { validMaterialParameterValue } from "./material-parameters";
 import {
   compileMaterialPlan,
   materialCompileFailed,
@@ -40,10 +42,20 @@ export function materialAvailable(
 
 export type MaterialAcquireOptions = {
   unlit?: boolean;
+  instanceKey?: string;
 };
 
-function cacheKey(assetGuid: string, unlit?: boolean): string {
-  return unlit ? `${assetGuid}:unlit` : assetGuid;
+export type MaterialResolveOptions = MaterialAcquireOptions & {
+  parameters?: ReadonlyMap<string, MaterialParameterValue>;
+};
+
+function cacheKey(
+  assetGuid: string,
+  unlit?: boolean,
+  instanceKey?: string,
+): string {
+  const key = unlit ? `${assetGuid}:unlit` : assetGuid;
+  return instanceKey === undefined ? key : JSON.stringify([key, instanceKey]);
 }
 
 function documentForPlan(
@@ -65,6 +77,8 @@ interface CacheEntry {
   hash: string;
   refCount: number;
   dispose: () => void;
+  setParameter: (name: string, parameter: MaterialParameterValue) => boolean;
+  instanceKey?: string;
 }
 
 /**
@@ -108,7 +122,9 @@ export class MaterialLibrary {
   ): boolean {
     const lowered = this.planFor(doc, options?.unlit);
     if (!lowered.ok) return false;
-    const entry = this.entriesFor(scene).get(cacheKey(assetGuid, options?.unlit));
+    const entry = this.entriesFor(scene).get(
+      cacheKey(assetGuid, options?.unlit, options?.instanceKey),
+    );
     return (
       entry !== undefined &&
       entry.hash === lowered.plan.hash &&
@@ -131,7 +147,7 @@ export class MaterialLibrary {
     if (!lowered.ok) {
       return { ok: false, diagnostics: lowered.diagnostics };
     }
-    const key = cacheKey(assetGuid, unlit);
+    const key = cacheKey(assetGuid, unlit, options?.instanceKey);
     const entries = this.entriesFor(scene);
     const existing = entries.get(key);
     if (
@@ -163,6 +179,8 @@ export class MaterialLibrary {
       hash: lowered.plan.hash,
       refCount: (existing?.refCount ?? 0) + 1,
       dispose: compiled.dispose,
+      setParameter: compiled.setParameter,
+      instanceKey: options?.instanceKey,
     });
     return { ok: true, material: compiled.material, hash: lowered.plan.hash };
   }
@@ -173,7 +191,7 @@ export class MaterialLibrary {
     options?: MaterialAcquireOptions,
   ): void {
     const entries = this.scenes.get(scene);
-    const key = cacheKey(assetGuid, options?.unlit);
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey);
     const entry = entries?.get(key);
     if (!entries || !entry) return;
     entry.refCount -= 1;
@@ -189,6 +207,66 @@ export class MaterialLibrary {
     entries.clear();
     this.scenes.delete(scene);
     this.tracked.delete(scene);
+  }
+
+  /** Resolve without taking another reference on every mesh rebuild. */
+  resolve(
+    scene: Scene,
+    assetGuid: string,
+    doc: MaterialDocument,
+    options?: MaterialResolveOptions,
+  ): NodeMaterial | null {
+    let material = this.materialFor(scene, assetGuid, options);
+    if (!material || !this.isCompiled(scene, assetGuid, doc, options)) {
+      const acquired = this.acquire(scene, assetGuid, doc, options);
+      if (materialAvailable(acquired)) material = acquired.material;
+    }
+    if (!material) return null;
+    for (const [name, value] of options?.parameters ?? []) {
+      this.setParameter(scene, assetGuid, name, value, options);
+    }
+    return material;
+  }
+
+  /** Drop a component's private materials when its assignment changes or it despawns. */
+  releaseInstance(instanceKey: string): void {
+    for (const scene of this.tracked) {
+      const entries = this.scenes.get(scene)!;
+      for (const [key, entry] of entries) {
+        if (entry.instanceKey !== instanceKey) continue;
+        entry.dispose();
+        entries.delete(key);
+      }
+    }
+  }
+
+  acceptsParameter(
+    doc: MaterialDocument,
+    name: string,
+    parameter: MaterialParameterValue,
+  ): boolean {
+    return (
+      doc.nodes.some(
+        (node) =>
+          node.type === `param.${parameter.kind}` &&
+          typeof node.properties.name === "string" &&
+          node.properties.name.trim() === name,
+      ) && validMaterialParameterValue(parameter, this.options.resolveTexture)
+    );
+  }
+
+  setParameter(
+    scene: Scene,
+    assetGuid: string,
+    name: string,
+    parameter: MaterialParameterValue,
+    options?: MaterialAcquireOptions,
+  ): boolean {
+    const entry = this.scenes
+      .get(scene)
+      ?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey));
+    if (!entry || isDisposedNodeMaterial(entry.material, scene)) return false;
+    return entry.setParameter(name, parameter);
   }
 
   /**
@@ -215,7 +293,9 @@ export class MaterialLibrary {
     assetGuid: string,
     options?: MaterialAcquireOptions,
   ): NodeMaterial | null {
-    const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit));
+    const entry = this.scenes
+      .get(scene)
+      ?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey));
     if (!entry) return null;
     if (isDisposedNodeMaterial(entry.material, scene)) return null;
     return entry.material;

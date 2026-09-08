@@ -23,13 +23,15 @@ import {
 import { createMeshComponent } from "../packages/core/src/index.ts";
 import { openMinimalTestProject } from "./minimal-project";
 
-async function showContentBrowser(
-  page: Page,
-): Promise<void> {
+async function showContentBrowser(page: Page): Promise<void> {
   await page
-    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+    .locator(
+      '[data-testid="document-tab"][data-document-kind="content-browser"]',
+    )
     .click();
-  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+  await expect(
+    page.getByTestId("document-workspace-content-browser"),
+  ).toBeVisible();
 }
 
 async function createAsset(
@@ -96,12 +98,7 @@ async function dispatchPreviewPinch(
       const box = node.getBoundingClientRect();
       const cx = box.left + box.width / 2;
       const cy = box.top + box.height / 2;
-      const fire = (
-        type: string,
-        pointerId: number,
-        x: number,
-        y: number,
-      ) => {
+      const fire = (type: string, pointerId: number, x: number, y: number) => {
         node.dispatchEvent(
           new PointerEvent(type, {
             pointerId,
@@ -144,8 +141,239 @@ async function dragMaterialNode(
   await page.mouse.up();
 }
 
+type MaterialVisualSnapshot = {
+  actorId: string;
+  meshUniqueId: number;
+  materialUniqueId: number | null;
+  materialInputs: Record<string, number[]>;
+};
+
+async function materialVisual(
+  page: Page,
+  viewport: "scene" | "prefab",
+  actorId: string,
+): Promise<MaterialVisualSnapshot | null> {
+  return page.evaluate(
+    ({ viewport, actorId }) => {
+      const host = globalThis as unknown as {
+        __babylonslateViewportTest?: {
+          sceneVisuals: () => MaterialVisualSnapshot[];
+        };
+        __babylonslatePrefabViewportTest?: {
+          visuals: () => MaterialVisualSnapshot[];
+        };
+      };
+      const visuals =
+        viewport === "scene"
+          ? host.__babylonslateViewportTest?.sceneVisuals()
+          : host.__babylonslatePrefabViewportTest?.visuals();
+      return visuals?.find((visual) => visual.actorId === actorId) ?? null;
+    },
+    { viewport, actorId },
+  );
+}
+
 test.describe("P9 content systems", () => {
-  test("Font editor sample preview uses the compiled stack", async ({ page }) => {
+  test("Material pin drags break links inside the safe zone without opening Add Node", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "Material", "PinSafeZone");
+    await openAssetFromBrowser(page, "assets/PinSafeZone.material.babasset");
+    const graph = page.getByTestId("material-graph-editor");
+    const edge = graph.locator('.react-flow__edge[data-id="e-color-output"]');
+    await expect(edge).toHaveCount(1);
+    const handle = graph.locator(
+      '[data-nodeid="baseColor"][data-handleid="out"][data-handlepos="right"]',
+    );
+    await expect(handle).toBeVisible();
+    const box = await handle.boundingBox();
+    expect(box).not.toBeNull();
+    const x = box!.x + box!.width / 2;
+    const y = box!.y + box!.height / 2;
+    const release = await graph.evaluate((root, source) => {
+      const graphBox = root.getBoundingClientRect();
+      const nodeBoxes = Array.from(root.querySelectorAll(".react-flow__node"))
+        .map((node) => node.getBoundingClientRect());
+      const pinBoxes = Array.from(root.querySelectorAll(".react-flow__handle"))
+        .map((pin) => pin.getBoundingClientRect());
+      // Stay within the 96px safe zone, on empty canvas beyond snap distance.
+      for (let step = 0; step < 16; step++) {
+        const angle = step * Math.PI / 8;
+        const point = { x: source.x + Math.cos(angle) * 80, y: source.y + Math.sin(angle) * 80 };
+        if (point.x < graphBox.left + 8 || point.x > graphBox.right - 8 || point.y < graphBox.top + 8 || point.y > graphBox.bottom - 8) continue;
+        if (nodeBoxes.some((rect) => point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom)) continue;
+        if (pinBoxes.some((rect) => Math.hypot(point.x - (rect.left + rect.width / 2), point.y - (rect.top + rect.height / 2)) < 30)) continue;
+        return point;
+      }
+      return null;
+    }, { x, y });
+    expect(release).not.toBeNull();
+    await handle.hover();
+    await page.mouse.down();
+    await page.mouse.move(release!.x, release!.y, { steps: 5 });
+    await expect(graph.locator(".react-flow__connection-path")).toHaveCount(1);
+    await expect(graph.getByTestId("add-node-hint")).toHaveCount(0);
+    await page.mouse.up();
+    await expect(page.getByTestId("node-palette")).toHaveCount(0);
+    await expect(edge).toHaveCount(0);
+  });
+
+  test("Material parameter authoring requires unique names and preserves RGBA defaults", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "Material", "NamedParameters");
+    await openAssetFromBrowser(
+      page,
+      "assets/NamedParameters.material.babasset",
+    );
+    await addMaterialPaletteNode(
+      page,
+      "Color Parameter",
+      "param.color",
+      "Tint",
+    );
+    await page.getByTestId("property-value-w").fill("0.25");
+    await page.getByTestId("property-value-w").press("Tab");
+    const graph = page.getByTestId("material-graph-editor");
+    await graph.getByTestId("graph-add-node").click();
+    await page.getByTestId("node-palette-search").fill("Float Parameter");
+    await page.getByTestId("node-palette-item-param.float").click();
+    await expect(
+      page.getByTestId("material-parameter-name-prompt"),
+    ).toBeVisible();
+    await page.getByTestId("name-prompt-input").fill("Tint");
+    await page.getByTestId("name-prompt-confirm").click();
+    await expect(page.getByTestId("name-prompt-input")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    await expect(
+      page.getByTestId("material-parameter-name-prompt"),
+    ).toContainText("already used");
+    await page.getByTestId("name-prompt-input").fill("Roughness");
+    await page.getByTestId("name-prompt-confirm").click();
+    await expect(
+      page.getByTestId("material-parameter-name-prompt"),
+    ).toHaveCount(0);
+    await dragMaterialNode(page, "param.float-", 0, -160);
+    await saveAllIfEnabled(page);
+    await openAssetFromBrowser(
+      page,
+      "assets/NamedParameters.material.babasset",
+    );
+    await graph.locator('.react-flow__node[data-id^="param.color-"]').click();
+    await expect(page.getByTestId("property-name")).toHaveValue("Tint");
+    await expect(page.getByTestId("property-value-w")).toHaveValue("0.25");
+    await expect(page.getByTestId("material-compiler-results")).toContainText(
+      "No Issues",
+    );
+  });
+
+  test("Saving a Material refreshes existing Scene and Prefab mesh shaders", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    const materialPath = "assets/RefreshMaterial.material.babasset";
+    await createAsset(page, "Material", "RefreshMaterial");
+    const materialGuid = await guidForPath(page, materialPath);
+    expect(materialGuid).not.toBe("");
+    await openMainScene(page);
+    const scene = previewPlacementScene(materialGuid);
+    expect(
+      await page.evaluate(async (nextScene) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setActiveSceneContent: (
+              scene: typeof nextScene,
+            ) => Promise<boolean>;
+          };
+        };
+        return (
+          host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false
+        );
+      }, scene),
+    ).toBe(true);
+    await expect
+      .poll(() => materialVisual(page, "scene", "material-actor"), {
+        timeout: 15_000,
+      })
+      .toMatchObject({ materialInputs: { baseColor: [0.8, 0.8, 0.8] } });
+    const beforeScene = await materialVisual(page, "scene", "material-actor");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await expect(page.getByTestId("graph-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    const mesh = createMeshComponent("refresh-prefab", "box");
+    mesh.properties.materialGuid = materialGuid;
+    expect(
+      await page.evaluate(
+        async (components) => {
+          const host = globalThis as unknown as {
+            __babylonslateTest?: {
+              setMainGraphComponents: (
+                value: typeof components,
+              ) => Promise<boolean>;
+            };
+          };
+          return (
+            host.__babylonslateTest?.setMainGraphComponents(components) ?? false
+          );
+        },
+        [mesh],
+      ),
+    ).toBe(true);
+    await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
+    await expect(page.getByTestId("prefab-preview-canvas")).toBeVisible();
+    await expect
+      .poll(() => materialVisual(page, "prefab", "refresh-prefab"), {
+        timeout: 15_000,
+      })
+      .toMatchObject({ materialInputs: { baseColor: [0.8, 0.8, 0.8] } });
+    const beforePrefab = await materialVisual(page, "prefab", "refresh-prefab");
+    await saveAllIfEnabled(page);
+    await openAssetFromBrowser(page, materialPath);
+    await page
+      .getByTestId("material-graph-editor")
+      .locator('.react-flow__node[data-id="baseColor"]')
+      .click();
+    await page.getByTestId("property-color").fill("#ff0000");
+    await saveAllIfEnabled(page);
+    await openMainScene(page);
+    await expect
+      .poll(
+        async () =>
+          (await materialVisual(page, "scene", "material-actor"))
+            ?.materialInputs?.baseColor,
+        { timeout: 15_000 },
+      )
+      .toEqual([1, 0, 0]);
+    const afterScene = await materialVisual(page, "scene", "material-actor");
+    expect(afterScene?.meshUniqueId).toBe(beforeScene?.meshUniqueId);
+    expect(afterScene?.materialUniqueId).not.toBe(
+      beforeScene?.materialUniqueId,
+    );
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
+    await expect
+      .poll(
+        async () =>
+          (await materialVisual(page, "prefab", "refresh-prefab"))
+            ?.materialInputs?.baseColor,
+        { timeout: 15_000 },
+      )
+      .toEqual([1, 0, 0]);
+    const afterPrefab = await materialVisual(page, "prefab", "refresh-prefab");
+    expect(afterPrefab?.meshUniqueId).toBe(beforePrefab?.meshUniqueId);
+    expect(afterPrefab?.materialUniqueId).not.toBe(
+      beforePrefab?.materialUniqueId,
+    );
+  });
+  test("Font editor sample preview uses the compiled stack", async ({
+    page,
+  }) => {
     await openTestProject(page);
     await showContentBrowser(page);
     await page
@@ -154,13 +382,17 @@ test.describe("P9 content systems", () => {
     await expect(
       page.locator('[data-asset-path="assets/display.babasset"]'),
     ).toBeVisible({ timeout: 30_000 });
-    await page.locator('[data-asset-path="assets/display.babasset"]').dblclick();
+    await page
+      .locator('[data-asset-path="assets/display.babasset"]')
+      .dblclick();
     await expect(page.getByTestId("document-workspace-font")).toBeVisible();
     const sample = page.getByTestId("font-sample-preview");
     await expect(sample).toBeVisible();
     await expect(sample).toHaveAttribute("data-fonts-ready", "true");
     await expect(sample).toContainText("The quick brown fox");
-    const family = await sample.evaluate((el) => getComputedStyle(el).fontFamily);
+    const family = await sample.evaluate(
+      (el) => getComputedStyle(el).fontFamily,
+    );
     expect(family.toLowerCase()).toMatch(/display|sans-serif/);
     const stack = await sample.getAttribute("data-font-stack");
     expect(stack?.toLowerCase()).toContain("sans-serif");
@@ -174,7 +406,9 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("settings-modal-category-input").click();
     await expect(page.getByTestId("settings-input-mapping")).toBeVisible();
     await expect(page.getByTestId("settings-input-actions")).toHaveCount(0);
-    await expect(page.getByTestId("input-action-0-binding-0-code")).toBeVisible();
+    await expect(
+      page.getByTestId("input-action-0-binding-0-code"),
+    ).toBeVisible();
     await expect(page.getByText(/press a key/i)).toHaveCount(0);
   });
 
@@ -252,7 +486,9 @@ test.describe("P9 content systems", () => {
   }) => {
     await openTestProject(page);
     await createAsset(page, "Sprite", "Hero");
-    await page.locator('[data-asset-path="assets/Hero.sprite.babasset"]').dblclick();
+    await page
+      .locator('[data-asset-path="assets/Hero.sprite.babasset"]')
+      .dblclick();
     await expect(page.getByTestId("document-workspace-sprite")).toBeVisible();
     await expect(page.getByTestId("sprite-preview")).toBeVisible();
     await expect(page.getByTestId("sprite-editor")).toBeVisible();
@@ -262,25 +498,31 @@ test.describe("P9 content systems", () => {
     await page
       .locator('[data-asset-path="assets/Walk.spriteanim.babasset"]')
       .dblclick();
-    await expect(page.getByTestId("document-workspace-sprite-animation")).toBeVisible();
+    await expect(
+      page.getByTestId("document-workspace-sprite-animation"),
+    ).toBeVisible();
     await expect(page.getByTestId("sprite-animation-preview")).toBeVisible();
     await expect(page.getByTestId("sprite-animation-play")).toBeVisible();
     await expect(page.getByTestId("sprite-animation-editor")).toBeVisible();
 
     await createAsset(page, "AnimationGraph", "Loco");
-    await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible();
+    await page
+      .locator('[data-asset-path="assets/Loco.anim.babasset"]')
+      .dblclick();
+    await expect(
+      page.getByTestId("document-workspace-anim-graph"),
+    ).toBeVisible();
     await expect(page.getByTestId("anim-editor-mode-bar")).toBeVisible();
-    await expect(page.getByTestId("anim-editor-mode-state-machine")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await expect(page.getByTestId("anim-dock-surface-state-machine")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
+    await expect(
+      page.getByTestId("anim-editor-mode-state-machine"),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByTestId("anim-dock-surface-state-machine"),
+    ).toHaveAttribute("data-active", "true");
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
-    await expect(animStateMachine(page).getByTestId("anim-graph-parameters")).toBeVisible();
+    await expect(
+      animStateMachine(page).getByTestId("anim-graph-parameters"),
+    ).toBeVisible();
     await expect(page.getByTestId("anim-graph-add-state")).toBeVisible();
 
     await createAsset(page, "Material", "Surface");
@@ -298,35 +540,54 @@ test.describe("P9 content systems", () => {
     test.setTimeout(90_000);
     await openTestProject(page);
     await createAsset(page, "AnimationGraph", "Loco");
-    await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible();
+    await page
+      .locator('[data-asset-path="assets/Loco.anim.babasset"]')
+      .dblclick();
+    await expect(
+      page.getByTestId("document-workspace-anim-graph"),
+    ).toBeVisible();
     await expect(page.getByTestId("anim-editor-mode-bar")).toBeVisible();
-    await expect(page.getByTestId("anim-dock-surface-state-machine")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
+    await expect(
+      page.getByTestId("anim-dock-surface-state-machine"),
+    ).toHaveAttribute("data-active", "true");
     const stateMachine = animStateMachine(page);
-    await expect(stateMachine.getByTestId("anim-graph-add-variable")).toBeVisible();
-    await expect(stateMachine.getByTestId("anim-graph-add-variable")).not.toHaveClass(
-      /min-h-\[var\(--touch-target/,
-    );
+    await expect(
+      stateMachine.getByTestId("anim-graph-add-variable"),
+    ).toBeVisible();
+    await expect(
+      stateMachine.getByTestId("anim-graph-add-variable"),
+    ).not.toHaveClass(/min-h-\[var\(--touch-target/);
     await stateMachine.getByTestId("anim-graph-add-variable").click();
-    await expect(stateMachine.getByTestId("anim-graph-variable-var-1")).toBeVisible();
+    await expect(
+      stateMachine.getByTestId("anim-graph-variable-var-1"),
+    ).toBeVisible();
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
 
     await openWindowsMenu(page);
-    await expect(page.getByTestId("windows-menu-anim-graph-graph")).toBeVisible();
-    await expect(page.getByTestId("windows-menu-anim-graph-variables")).toBeVisible();
-    await expect(page.getByTestId("windows-menu-anim-graph-details")).toBeVisible();
-    await expect(page.getByTestId("windows-menu-anim-object-graph")).toHaveCount(0);
+    await expect(
+      page.getByTestId("windows-menu-anim-graph-graph"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("windows-menu-anim-graph-variables"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("windows-menu-anim-graph-details"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("windows-menu-anim-object-graph"),
+    ).toHaveCount(0);
     await closeWindowsMenu(page);
 
     await page.getByTestId("anim-graph-add-state").click();
     await expect(page.getByTestId("anim-state-node-idle")).toBeVisible();
     await expect(page.getByTestId("anim-state-node-state-1")).toBeVisible();
     const idleFlow = page.locator('.react-flow__node[data-id="idle"]');
-    const idleBefore = await idleFlow.evaluate((el) => (el as HTMLElement).style.transform);
-    const idleTitle = page.getByTestId("anim-state-node-idle").locator(".anim-state-node-title");
+    const idleBefore = await idleFlow.evaluate(
+      (el) => (el as HTMLElement).style.transform,
+    );
+    const idleTitle = page
+      .getByTestId("anim-state-node-idle")
+      .locator(".anim-state-node-title");
     const titleBox = await idleTitle.boundingBox();
     expect(titleBox).not.toBeNull();
     const titleX = titleBox!.x + titleBox!.width / 2;
@@ -336,9 +597,13 @@ test.describe("P9 content systems", () => {
     await page.mouse.move(titleX, titleY + 80, { steps: 8 });
     await page.mouse.up();
     await expect
-      .poll(async () => idleFlow.evaluate((el) => (el as HTMLElement).style.transform))
+      .poll(async () =>
+        idleFlow.evaluate((el) => (el as HTMLElement).style.transform),
+      )
       .not.toBe(idleBefore);
-    await expect(page.locator('[data-testid^="anim-transition-badge-"]')).toHaveCount(0);
+    await expect(
+      page.locator('[data-testid^="anim-transition-badge-"]'),
+    ).toHaveCount(0);
     const idleOut = page
       .getByTestId("anim-state-node-idle")
       .locator('[data-handleid="right-out"]');
@@ -352,7 +617,9 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("anim-rule-graph")).toHaveCount(0);
     await page.getByRole("button", { name: "Open Rule" }).click();
     await expect(page.getByTestId("anim-rule-graph")).toBeVisible();
-    await expect(page.getByTestId("anim-rule-breadcrumb")).toContainText("Idle To State");
+    await expect(page.getByTestId("anim-rule-breadcrumb")).toContainText(
+      "Idle To State",
+    );
     await page.getByTestId("anim-rule-breadcrumb-state-machine").click();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
 
@@ -360,38 +627,47 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("property-clipKind")).toBeVisible();
     await page.getByTestId("property-clipAsset").click();
     await expect(page.getByTestId("anim-graph-clip-picker")).toBeVisible();
-    await expect(page.getByTestId("anim-graph-clip-picker").getByText("Pick Animation")).toBeVisible();
+    await expect(
+      page.getByTestId("anim-graph-clip-picker").getByText("Pick Animation"),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByTestId("property-clipKind").click();
     await page.getByRole("option", { name: "Sprite" }).click();
     await page.getByTestId("property-clipAsset").click();
     await expect(page.getByTestId("anim-graph-clip-picker")).toBeVisible();
     await expect(
-      page.getByTestId("anim-graph-clip-picker").getByText("Pick Sprite Animation"),
+      page
+        .getByTestId("anim-graph-clip-picker")
+        .getByText("Pick Sprite Animation"),
     ).toBeVisible();
     await page.keyboard.press("Escape");
 
     await page.getByTestId("anim-editor-mode-animation-object").click();
-    await expect(page.getByTestId("anim-editor-mode-animation-object")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await expect(page.getByTestId("anim-dock-surface-animation-object")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-    await expect(page.getByTestId("anim-dock-surface-state-machine")).toHaveAttribute(
-      "data-active",
-      "false",
-    );
+    await expect(
+      page.getByTestId("anim-editor-mode-animation-object"),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByTestId("anim-dock-surface-animation-object"),
+    ).toHaveAttribute("data-active", "true");
+    await expect(
+      page.getByTestId("anim-dock-surface-state-machine"),
+    ).toHaveAttribute("data-active", "false");
     await expect(page.getByTestId("graph-panel")).toBeVisible();
     await expect(page.getByTestId("inspector-panel")).toBeVisible();
-    await expect(animObject(page).getByTestId("anim-graph-variable-var-1")).toBeVisible();
+    await expect(
+      animObject(page).getByTestId("anim-graph-variable-var-1"),
+    ).toBeVisible();
 
     await openWindowsMenu(page);
-    await expect(page.getByTestId("windows-menu-anim-object-graph")).toBeVisible();
-    await expect(page.getByTestId("windows-menu-anim-object-inspector")).toBeVisible();
-    await expect(page.getByTestId("windows-menu-anim-graph-details")).toHaveCount(0);
+    await expect(
+      page.getByTestId("windows-menu-anim-object-graph"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("windows-menu-anim-object-inspector"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("windows-menu-anim-graph-details"),
+    ).toHaveCount(0);
     await closeWindowsMenu(page);
   });
 
@@ -421,10 +697,14 @@ test.describe("P9 content systems", () => {
       page.getByTestId("editor-global-toolbar").getByTestId("material-render"),
     ).toHaveCount(1);
     await expect(
-      page.getByTestId("material-preview-overlay").getByTestId("material-render"),
+      page
+        .getByTestId("material-preview-overlay")
+        .getByTestId("material-render"),
     ).toHaveCount(0);
     await expect(page.getByTestId("material-preview-status")).toHaveCount(0);
-    await expect(page.getByTestId("material-preview-custom-mesh")).toHaveCount(0);
+    await expect(page.getByTestId("material-preview-custom-mesh")).toHaveCount(
+      0,
+    );
     await expect(page.getByTestId("material-compiler-results")).toContainText(
       "No Issues",
     );
@@ -443,9 +723,13 @@ test.describe("P9 content systems", () => {
       });
     }
     await page.getByTestId("material-preview-mesh-custom").click();
-    await expect(page.getByTestId("material-preview-mesh-picker")).toBeVisible();
+    await expect(
+      page.getByTestId("material-preview-mesh-picker"),
+    ).toBeVisible();
     await page.getByTestId("search-item-__none__").click();
-    await expect(page.getByTestId("material-preview-mesh-picker")).toHaveCount(0);
+    await expect(page.getByTestId("material-preview-mesh-picker")).toHaveCount(
+      0,
+    );
 
     // A static preview must replace its RTT each frame rather than accumulating
     // prior frames into progressively brighter trails.
@@ -458,7 +742,9 @@ test.describe("P9 content systems", () => {
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
     await expect(canvas).toHaveAttribute("data-camera-radius");
-    const radiusBefore = Number(await canvas.getAttribute("data-camera-radius"));
+    const radiusBefore = Number(
+      await canvas.getAttribute("data-camera-radius"),
+    );
     expect(radiusBefore).toBeGreaterThan(0);
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await page.mouse.down();
@@ -521,12 +807,15 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("play-stats-toggle").click();
     await expect(page.getByTestId("stats-hud-draws")).toBeVisible();
     await expect
-      .poll(async () => {
-        const attr = await page
-          .getByTestId("stats-hud-draws")
-          .getAttribute("data-draws");
-        return Number(attr ?? "0");
-      }, { timeout: 15_000 })
+      .poll(
+        async () => {
+          const attr = await page
+            .getByTestId("stats-hud-draws")
+            .getAttribute("data-draws");
+          return Number(attr ?? "0");
+        },
+        { timeout: 15_000 },
+      )
       .toBeGreaterThan(0);
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
@@ -546,9 +835,9 @@ test.describe("P9 content systems", () => {
     await addMaterialPaletteNode(page, "Custom GLSL", "custom.glsl");
     const glsl = page.getByTestId("material-node-glsl");
     await expect(glsl).toBeVisible();
-    await expect(page.getByTestId("material-node-glsl-signature")).toContainText(
-      "result = fn(a, b)",
-    );
+    await expect(
+      page.getByTestId("material-node-glsl-signature"),
+    ).toContainText("result = fn(a, b)");
     await glsl.click();
     const glslEditor = page.getByTestId("material-node-glsl-editor");
     await glslEditor.fill("#define X 1");
@@ -665,15 +954,12 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("scene-post-process-stack")).toBeVisible();
     await page.getByTestId("scene-post-process-stack-add").click();
     await expect(page.getByTestId("scene-post-process-picker")).toBeVisible();
-    const bloomGuid = await guidForPath(
-      page,
-      "assets/Bloom.material.babasset",
-    );
+    const bloomGuid = await guidForPath(page, "assets/Bloom.material.babasset");
     expect(bloomGuid.length).toBeGreaterThan(0);
     await page.getByTestId(`search-item-${bloomGuid}`).click();
-    await expect(page.getByTestId("scene-post-process-0-material")).toContainText(
-      "Bloom",
-    );
+    await expect(
+      page.getByTestId("scene-post-process-0-material"),
+    ).toContainText("Bloom");
     await clickPlayAndWaitForOverlay(page);
     const overlay = page.getByTestId("play-overlay");
     await expect
@@ -711,9 +997,9 @@ test.describe("P9 content systems", () => {
       .toBe("0");
     await page.getByTestId("play-overlay-close").click();
     await expect(overlay).toHaveCount(0);
-    await expect(page.getByTestId("scene-post-process-0-material")).toContainText(
-      "Bloom",
-    );
+    await expect(
+      page.getByTestId("scene-post-process-0-material"),
+    ).toContainText("Bloom");
   });
 
   test("Play assigns a MeshComponent surface material", async ({ page }) => {
@@ -762,10 +1048,14 @@ test.describe("P9 content systems", () => {
       await page.evaluate(async (nextScene) => {
         const host = globalThis as unknown as {
           __babylonslateTest?: {
-            setActiveSceneContent: (scene: typeof nextScene) => Promise<boolean>;
+            setActiveSceneContent: (
+              scene: typeof nextScene,
+            ) => Promise<boolean>;
           };
         };
-        return host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false;
+        return (
+          host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false
+        );
       }, scene),
     ).toBe(true);
     await expect
@@ -780,10 +1070,12 @@ test.describe("P9 content systems", () => {
                 }>;
               };
             };
-            return host.__babylonslateViewportTest
-              ?.sceneVisuals()
-              .find((visual) => visual.actorId === "material-actor")
-              ?.materialName ?? null;
+            return (
+              host.__babylonslateViewportTest
+                ?.sceneVisuals()
+                .find((visual) => visual.actorId === "material-actor")
+                ?.materialName ?? null
+            );
           }),
         { timeout: 15_000 },
       )
@@ -836,24 +1128,30 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("play-overlay-close").click();
 
     await showContentBrowser(page);
-    await page.locator('[data-asset-path="assets/Mannequin.class.babasset"]').dblclick();
+    await page
+      .locator('[data-asset-path="assets/Mannequin.class.babasset"]')
+      .dblclick();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     const prefabMesh = createMeshComponent("prefab-material", "box");
     prefabMesh.properties.materialGuid = materialGuid;
     expect(
-      await page.evaluate(async (components) => {
-        const host = globalThis as unknown as {
-          __babylonslateTest?: {
-            setMainGraphComponents: (
-              value: typeof components,
-            ) => Promise<boolean>;
+      await page.evaluate(
+        async (components) => {
+          const host = globalThis as unknown as {
+            __babylonslateTest?: {
+              setMainGraphComponents: (
+                value: typeof components,
+              ) => Promise<boolean>;
+            };
           };
-        };
-        return (
-          (await host.__babylonslateTest?.setMainGraphComponents(components)) ??
-          false
-        );
-      }, [prefabMesh]),
+          return (
+            (await host.__babylonslateTest?.setMainGraphComponents(
+              components,
+            )) ?? false
+          );
+        },
+        [prefabMesh],
+      ),
     ).toBe(true);
     await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
     await expect(page.getByTestId("prefab-preview-canvas")).toBeVisible();
@@ -869,10 +1167,12 @@ test.describe("P9 content systems", () => {
                 }>;
               };
             };
-            return host.__babylonslatePrefabViewportTest
-              ?.visuals()
-              .find((visual) => visual.actorId === "prefab-material")
-              ?.materialName ?? null;
+            return (
+              host.__babylonslatePrefabViewportTest
+                ?.visuals()
+                .find((visual) => visual.actorId === "prefab-material")
+                ?.materialName ?? null
+            );
           }),
         { timeout: 15_000 },
       )
@@ -886,9 +1186,12 @@ test.describe("P9 content systems", () => {
           }>;
         };
       };
-      return host.__babylonslatePrefabViewportTest
-        ?.visuals()
-        .find((visual) => visual.actorId === "prefab-root")?.materialName ?? "";
+      return (
+        host.__babylonslatePrefabViewportTest
+          ?.visuals()
+          .find((visual) => visual.actorId === "prefab-root")?.materialName ??
+        ""
+      );
     });
     expect(rootMaterial).not.toContain(materialGuid);
   });
@@ -904,7 +1207,9 @@ test.describe("P9 content systems", () => {
     await expect(
       page.getByTestId("document-workspace-material-function"),
     ).toBeVisible();
-    await expect(page.getByTestId("material-function-graph-editor")).toBeVisible();
+    await expect(
+      page.getByTestId("material-function-graph-editor"),
+    ).toBeVisible();
     await expect(page.getByTestId("material-function-inputs")).toBeVisible();
     await expect(page.getByTestId("material-function-outputs")).toBeVisible();
   });
