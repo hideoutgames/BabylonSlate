@@ -24,6 +24,16 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 - Fixed context menus and Play/Preview Build overlay chrome consume the tokens themselves; their canvases and iframe remain edge-to-edge.
 - The visible native iPad status bar follows the resolved editor theme through the VFS status-bar-style port.
 
+## Adaptive editor layout
+
+- iPad and desktop retain the compact 28px global bars, small Primary actions, pinned Content Browser/Scene tabs, and resizable dock layout. Dock tabs retain their 18px fine-pointer / 26px coarse-pointer strips; semantic borders and surfaces separate tools from content.
+- Phone layout activates below 768px wide, or at 500px tall or less with a coarse pointer. The global bars use 44px targets; Content Browser and Open Documents provide navigation, with secondary commands under More Tools.
+- Phone Dockview shows one window with a bottom **Window** picker. Window switching uses Dockview visibility and keeps the tablet layout separate; returning to a larger window restores its splits. Focus is unnecessary in this mode.
+- Phone Outliner and My Class trees use 44px rows and actions; tablet and desktop retain their compact 28px rows.
+- Content Browser keeps its tile appearance. Folders open in a Sheet, selected items have an explicit **Open** action, and **New Asset** separates type selection from details. Catalog dialogs replace their category sidebar with a picker.
+- Dialogs and sheets fit the dynamic viewport and safe areas. Menu rows expand for coarse pointers. Feedback uses color and restrained fades, without button movement; reduced-motion preferences are respected.
+- These adaptations apply [Apple HIG layout](https://developer.apple.com/design/human-interface-guidelines/layout), [button](https://developer.apple.com/design/human-interface-guidelines/buttons), and [toolbar](https://developer.apple.com/design/human-interface-guidelines/toolbars) guidance while retaining professional editor density. Device input and safe areas determine presentation; the UI does not depend on an Apple-only host.
+
 ## Design philosophy
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
@@ -145,7 +155,7 @@ Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace
 
 Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
 
-Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
+Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `--border` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
 
 The chrome document tab strip keeps pinned Content Browser and the open Scene tab (when present) outside the scroller (`.editor-chrome-tabs-pinned` inside `.editor-chrome-tabs`, `overflow: hidden`). Other document tabs pan in `.editor-chrome-tabs-scroll` (`overflow-x: auto`) when they overflow and hide native and iOS overlay scrollbars (`scrollbar-width: none` plus `::-webkit-scrollbar { display: none }`). The Scene pin is closable and is not drag-reorderable.
 
@@ -209,4 +219,4 @@ Source artwork lives in [`engine-logos/`](../../engine-logos/). It is human-auth
 
 `*Dark` is dark ink for light chrome; `*Light` is light ink for dark chrome. Served copies must stay byte-identical in `apps/editor/public/branding/` and `apps/docs/public/branding/`.
 
-Favicon is a theme-aware SVG (`prefers-color-scheme`) plus `favicon.ico` and `apple-touch-icon.png` in each app's `public/`. The editor homepage swaps **icon** marks with `html.dark` (`dark:hidden` / `dark:block`), not `prefers-color-scheme`, so Engine Settings Appearance wins. Homepage mount motion (rail/main slide, icon scale, card stagger) lives in `apps/editor/src/components/homepage.css` and is disabled under `prefers-reduced-motion: reduce`.
+Favicon is a theme-aware SVG (`prefers-color-scheme`) plus `favicon.ico` and `apple-touch-icon.png` in each app's `public/`. The editor homepage swaps **icon** marks with `html.dark` (`dark:hidden` / `dark:block`), not `prefers-color-scheme`, so Engine Settings Appearance wins. Homepage mount motion (rail/main slide, icon scale, card stagger) lives in `apps/editor/src/components/homepage.css` and is disabled under `prefers-reduced-motion: reduce`. Homepage project context menus and their backdrops render in `document.body` so the entrance transform and project-list clipping cannot offset or hide their viewport-anchored controls.

@@ -50,9 +50,10 @@ async function journalCommands(page: Page) {
 test("H6/M4: recovery retains Undo and survives a second reload before Save", async ({ page }) => {
   await openTestProject(page);
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await expect(
+    page.getByTestId("graph-panel").locator(".react-flow__node").first(),
+  ).toBeVisible();
   await saveAllIfEnabled(page);
-  await expect.poll(() => page.evaluate(() =>
-    (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition())).not.toBeNull();
   const before = await page.evaluate(() =>
     (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition());
   await page.evaluate(async () => {

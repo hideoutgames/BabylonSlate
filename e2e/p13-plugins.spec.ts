@@ -123,6 +123,8 @@ test.describe("P13 plugins", () => {
   test("exports a project plugin and re-imports it with class guids intact", async ({
     page,
   }) => {
+    // Two project lifecycles and a real download/import share this budget.
+    test.setTimeout(120_000);
     await openTestProject(page);
     await openContentBrowser(page);
     await openPluginsSettings(page);

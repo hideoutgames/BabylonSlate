@@ -18,11 +18,17 @@ type TestHost = {
   };
 };
 
+async function openClassGraph(page: Page) {
+  await openAssetFromBrowser(page, CLASS_PATH);
+  await expect(page.getByTestId("graph-panel")
+    .locator(".react-flow__node").first()).toBeVisible();
+}
+
 async function graphPosition(page: Page) {
-  await expect.poll(() => page.evaluate(() => (globalThis as unknown as TestHost)
-    .__babylonslateTest.activeGraphNodePosition())).not.toBeNull();
-  return page.evaluate(() => (globalThis as unknown as TestHost)
-    .__babylonslateTest.activeGraphNodePosition()!);
+  const position = await page.evaluate(() => (globalThis as unknown as TestHost)
+    .__babylonslateTest.activeGraphNodePosition());
+  expect(position).not.toBeNull();
+  return position!;
 }
 
 async function scenePosition(page: Page) {
@@ -47,7 +53,7 @@ async function moveGraph(page: Page) {
 test("H6: Undo in a Class preserves unsaved Scene content and its independent history", async ({ page }) => {
   await openTestProject(page);
   await openMainScene(page);
-  await openAssetFromBrowser(page, CLASS_PATH);
+  await openClassGraph(page);
   await saveAllIfEnabled(page);
   const originalGraph = await graphPosition(page);
   const originalScene = await scenePosition(page);
@@ -74,7 +80,7 @@ test("H6: Undo in a Class preserves unsaved Scene content and its independent hi
   await openTestProject(page);
   await openMainScene(page);
   expect(await scenePosition(page)).toEqual([originalScene[0] + 1.5, originalScene[1], originalScene[2]]);
-  await openAssetFromBrowser(page, CLASS_PATH);
+  await openClassGraph(page);
   expect(await graphPosition(page)).toEqual(originalGraph);
 });
 
@@ -82,7 +88,7 @@ for (const preview of [false, true]) {
   test(`M3/M4: ${preview ? "Preview Build" : "Normal Play"} saves content and retains document Undo after Stop`, async ({ page }) => {
     test.setTimeout(180_000);
     await openTestProject(page);
-    await openAssetFromBrowser(page, CLASS_PATH);
+    await openClassGraph(page);
     await saveAllIfEnabled(page);
     const original = await graphPosition(page);
     await moveGraph(page);
@@ -100,7 +106,7 @@ for (const preview of [false, true]) {
       await page.getByTestId("play-overlay-close").click();
       await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     }
-    await openAssetFromBrowser(page, CLASS_PATH);
+    await openClassGraph(page);
     expect(await graphPosition(page)).toEqual(moved);
     expect(await dirtyKinds(page)).toEqual([]);
     await expect(page.getByTestId("undo-document")).toBeEnabled();
@@ -115,7 +121,7 @@ for (const preview of [false, true]) {
 
 test("M17: an editor save does not prompt Reload, while Keep Open preserves a real conflicting edit", async ({ page }) => {
   await openTestProject(page);
-  await openAssetFromBrowser(page, CLASS_PATH);
+  await openClassGraph(page);
   await saveAllIfEnabled(page);
   await moveGraph(page);
   await saveAllIfEnabled(page);
@@ -137,7 +143,7 @@ test("M17: an editor save does not prompt Reload, while Keep Open preserves a re
   await saveAllIfEnabled(page);
   await page.reload();
   await openTestProject(page);
-  await openAssetFromBrowser(page, CLASS_PATH);
+  await openClassGraph(page);
   expect(await graphPosition(page)).toEqual(edited);
 });
 
@@ -145,7 +151,7 @@ for (const action of ["export-project", "export-game"]) {
   test(`H6/M12: ${action} preserves unsaved content and its Undo history`, async ({ page }) => {
     test.setTimeout(120_000);
     await openTestProject(page);
-    await openAssetFromBrowser(page, CLASS_PATH);
+    await openClassGraph(page);
     await saveAllIfEnabled(page);
     const original = await graphPosition(page);
     await moveGraph(page);
@@ -167,7 +173,7 @@ for (const action of ["export-project", "export-game"]) {
     await saveAllIfEnabled(page);
     await page.reload();
     await openTestProject(page);
-    await openAssetFromBrowser(page, CLASS_PATH);
+    await openClassGraph(page);
     expect(await graphPosition(page)).toEqual(edited);
   });
 }
@@ -181,7 +187,7 @@ test("H6/M12: manual NavMesh Bake preserves a separately dirty Class and Scene h
     await page.getByTestId("place-actors-catalog-search").fill(item.replace("shape-", ""));
     await page.getByTestId(`place-actors-item-${item}`).click();
   }
-  await openAssetFromBrowser(page, CLASS_PATH);
+  await openClassGraph(page);
   await saveAllIfEnabled(page);
   const originalGraph = await graphPosition(page);
   const originalScene = await scenePosition(page);
@@ -207,7 +213,7 @@ test("H6/M12: manual NavMesh Bake preserves a separately dirty Class and Scene h
   expect(await scenePosition(page)).toEqual(originalScene);
   await page.getByTestId("redo-document").click();
   expect(await scenePosition(page)).toEqual([originalScene[0] + 1.5, originalScene[1], originalScene[2]]);
-  await openAssetFromBrowser(page, CLASS_PATH);
+  await openClassGraph(page);
   expect(await graphPosition(page)).toEqual({ x: originalGraph.x + 42, y: originalGraph.y + 17 });
   await page.getByTestId("undo-document").click();
   expect(await graphPosition(page)).toEqual(originalGraph);

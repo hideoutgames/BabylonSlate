@@ -1,4 +1,5 @@
 import type { DockviewApi } from "dockview-react";
+import { captureAdaptiveDockviewLayout, isPhoneDockLayout } from "../shell/phone-dock-layout";
 import {
   createContext,
   useCallback,
@@ -929,10 +930,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const live = {
           animEditorMode: mode,
           stateMachine: stateApi
-            ? projectService.captureLayout(stateApi)
+            ? captureAdaptiveDockviewLayout(stateApi)
             : parsed.stateMachine,
           animationObject: objectApi
-            ? projectService.captureLayout(objectApi)
+            ? captureAdaptiveDockviewLayout(objectApi)
             : parsed.animationObject,
         };
         const animPreFocus = preFocusLayoutsRef.current.get(id);
@@ -953,10 +954,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const api = dockviewApisRef.current.get(id);
       if (api) {
-        documentService.setLayout(id, projectService.captureLayout(api));
+        documentService.setLayout(id, captureAdaptiveDockviewLayout(api));
       }
     },
-    [documentService, projectService, animEditorModes],
+    [documentService, animEditorModes],
   );
 
   const captureAllLayouts = useCallback(() => {
@@ -1204,6 +1205,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setLastCompiledSignature(null);
       clearPlayPreviewScripts();
       graphCompileCacheRef.current.clear();
+      // A reload as soon as editing starts must still find this project on Homepage.
+      await recordRecent(
+        projectService.storagePort.getCurrentFolder(),
+        document.metadata.createdAt,
+      );
       setRoute("editor");
       setAnimEditorModes({});
       const { probeKtx2TranscoderAvailable } = await import(
@@ -1219,10 +1225,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (guid) {
         setRecoveryAvailable(await hasJournal(derived, guid));
       }
-      await recordRecent(
-        projectService.storagePort.getCurrentFolder(),
-        document.metadata.createdAt,
-      );
       await refreshProjectList();
       await captureMtimeSnapshot();
       bump();
@@ -3625,7 +3627,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     dockSubscriptionsRef.current.delete(key);
     const rememberPlacements = () => {
-      if (preFocusLayoutsRef.current.has(id)) return;
+      if (preFocusLayoutsRef.current.has(id) || isPhoneDockLayout(api)) return;
       const dock = asDockWindowApi(api);
       const kind = documentService.getDocument(id)?.ref.kind;
       const doc = documentService.getDocument(id);
@@ -3767,7 +3769,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       def,
       remembered,
     );
-    if (result.placement) {
+    if (result.placement && !isPhoneDockLayout(api)) {
       documentService.setPanelPlacement(
         activeDocumentId,
         panelId,

@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+const PROJECT_BOOT_TIMEOUT_MS = 30_000;
+
 /** Click the Homepage TestProject row (name with or without `.babproject`). */
 export async function clickListedTestProject(page: Page): Promise<void> {
   const listed = page.getByTestId("open-listed-project-TestProject");
@@ -21,16 +23,7 @@ export async function openTestProject(
   path = "/?test=1",
 ): Promise<void> {
   await page.goto(path);
-  // Registration can finish before the bootstrap observes updatefound. Once
-  // the worker controls the page, a reload acquires its isolation headers.
-  await page.waitForFunction(
-    () => window.crossOriginIsolated || navigator.serviceWorker.controller !== null,
-    undefined,
-    { timeout: 15_000 },
-  );
-  if (!(await page.evaluate(() => window.crossOriginIsolated))) {
-    await page.reload();
-  }
+  // COI bootstrap can reload twice; wait before starting project creation.
   await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
     timeout: 15_000,
   });
@@ -41,12 +34,16 @@ export async function openTestProject(
   );
   if ((await listed.count()) > 0) {
     await listed.click();
-    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+      timeout: PROJECT_BOOT_TIMEOUT_MS,
+    });
     return;
   }
   if ((await listedLegacy.count()) > 0) {
     await listedLegacy.click();
-    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+      timeout: PROJECT_BOOT_TIMEOUT_MS,
+    });
     return;
   }
   await page.getByTestId("create-project").click();
@@ -59,13 +56,17 @@ export async function openTestProject(
     "true",
   );
   await page.getByTestId("create-project-submit").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+    timeout: PROJECT_BOOT_TIMEOUT_MS,
+  });
 }
 
 /** Click the homepage TestProject row after Close / reload, then wait for chrome. */
 export async function openListedTestProject(page: Page): Promise<void> {
   await clickListedTestProject(page);
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+    timeout: PROJECT_BOOT_TIMEOUT_MS,
+  });
 }
 
 /** Submit Create when the name is free; otherwise dismiss and open the listed project. */

@@ -183,6 +183,25 @@ describe("TreeView", () => {
     expect(screen.queryByTestId("tree-disclosure-child")).toBeNull();
   });
 
+  it("expands a touch-sized disclosure without selecting its row", () => {
+    const onSelect = vi.fn();
+    const onToggleExpanded = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        rowHeight={44}
+        onSelect={onSelect}
+        onToggleExpanded={onToggleExpanded}
+      />,
+    );
+    const disclosure = screen.getByTestId("tree-disclosure-root");
+    dispatchPointerEvent(disclosure, "pointerdown", { clientX: 20, clientY: 20 });
+    dispatchPointerEvent(disclosure, "pointerup", { clientX: 20, clientY: 20 });
+    disclosure.click();
+    expect(onToggleExpanded).toHaveBeenCalledWith("root");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("reparents when a row is held then dragged onto another row", () => {
     vi.useFakeTimers();
     const onReparent = vi.fn();

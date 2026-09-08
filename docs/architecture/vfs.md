@@ -50,6 +50,7 @@ File-provider I/O uses `NSFileCoordinator` and acquires/releases security scope 
 Global Engine Settings stored **outside** any project:
 
 - `AppSettingsStore.update` queues a latest-read, focused mutation, schema validation, and write transaction across independently created stores. It emits the settings-change event after persistence, preventing concurrent debugger, viewport, appearance, and recent-project updates from overwriting one another.
+- Opening or creating a project persists its recent-project entry before the editor becomes interactive. Reloading during later texture-transcoder setup therefore keeps the project available on Homepage for reopening and journal recovery.
 
 | Backend | Platform |
 | --- | --- |

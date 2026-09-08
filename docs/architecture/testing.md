@@ -2,6 +2,14 @@
 
 `pnpm verify` runs dependency-free Node tests for the agent-wait helper, typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
 
+## Responsive editor checks
+
+- `e2e/phone-editor.spec.ts` covers 390x844 phone navigation/tools and 844x390 phone landscape, one visible Dockview window, and restoration to the 1194x834 tablet layout.
+- `e2e/phone-content-browser.spec.ts` covers touch folder navigation, explicit Open, and the two-step New Asset flow. These run under desktop-chrome with phone viewport/touch overrides; existing iPad tests remain unchanged.
+- Shared CatalogDialog tests cover category selection; real Dockview tests cover panel visibility, preservation, and layout restoration. Phone browser emulation does not certify native iOS/Android packaging or physical-device behavior.
+- Tablet folder-pan coverage creates enough rows to scroll at 1194x600, keeping the coarse-pointer viewport above the 500px phone-layout height breakpoint.
+- Set `PLAYWRIGHT_PORT` when another checkout uses the default 4173 port, so verification builds and tests the current worktree. The default CI port is unchanged.
+
 ## Quiet agent waits
 
 For simultaneous worktrees, set `PLAYWRIGHT_PORT` to an unused local port before full verification. Playwright builds and starts that checkout on the selected port with server reuse disabled; the default remains 4173. Separate ports also isolate the test project's OPFS origin.
@@ -24,7 +32,13 @@ Playwright builds and starts its own preview server; an occupied port fails inst
 
 Local server startup allows ten minutes for the player/editor typechecks and builds when other checkouts compete for memory. CI retains its three-minute startup limit. Browser test and readiness assertion timeouts are separate from this build/startup allowance.
 
-`openTestProject` waits for cross-origin isolation after navigation before interacting with Homepage. If the COI worker takes control without the bootstrap observing its reload event, the helper reloads once to acquire the worker's isolation headers. Graph lifecycle/recovery tests wait for a loaded node before recording baseline positions.
+`openTestProject` waits for cross-origin isolation after navigation before interacting with Homepage. The COI bootstrap reloads only after the service worker can control navigation, including a late `controllerchange`, so installation cannot strand a page without isolation headers.
+
+Shared project create/reopen helpers allow up to 30 seconds for editor chrome after storage, scaffolding, and asset imports finish. They poll the actual ready UI; ordinary interaction assertions retain their default deadline.
+
+Class recovery and state-preservation tests wait for a visible graph node before saving and capturing position baselines. Dispatching the Content Browser double-click alone does not establish that the graph has loaded.
+
+The plugin export/re-import journey has a two-minute test deadline because it authors two projects and transfers a real downloaded file. Its assertions and the other browser-test deadlines are unchanged.
 
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 
@@ -115,7 +129,7 @@ Encode coverage (unit, not e2e): source-first encode + Safari RGBA fallback + `e
 
 `e2e/scene-outliner-folders.spec.ts` covers Outliner folders: create, rename, save / close / reload / reopen persistence, and undo restoring a deleted folder without losing its actors.
 
-`e2e/mannequin-empty.spec.ts` covers 3D Empty: Outliner **Mannequin** (not Cube), Skeleton Preview with bones only, and Animation Preview looping idle (`data-playing` / `data-looping`). Canvas pixel checks prove the tan model is hidden and cyan bones are drawn in Skeleton Preview and with Animation **Show Bones**, then the model returns when the toggle is off. Render tests cover transformed hierarchy rigs, multiple skins, animation updates while hidden, and visibility/resource restoration. Nested `assets/Mannequin/` clips stay collapsed in the Content Browser tree; `openAssetFromBrowser` double-clicks folder tiles to reach them.
+`e2e/mannequin-empty.spec.ts` covers 3D Empty: Outliner **Mannequin** (not Cube), Skeleton Preview bone overlay (`data-bones`), and Animation Preview looping idle (`data-playing` / `data-looping`). Nested `assets/Mannequin/` clips stay collapsed in the Content Browser tree; `openAssetFromBrowser` double-clicks folder tiles to reach them.
 
 `e2e/p15-source-control.spec.ts` uses test-mode `FakeLockProvider`: enable Source Control, edit the scene → Content Browser `data-lock-state="mine"`, Locks panel held count, hatch `addTheirs` → **Edit Anyway**, **Release All My Locks** confirm copy, and `touchAssetOnDisk` + `runForegroundRescan` → dirty-disk reload dialog. Unit tests cover Git LFS 409 already-ours via verify, skip auto-lock create after a restart verify, rename/folder lock transfer helpers, delete unlocking our paths, and desktop source-read of iOS App-target `BabylonSlateSecretsPlugin` registration. Two-device GitHub lock visibility is manual, not CI.
 
