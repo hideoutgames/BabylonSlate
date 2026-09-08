@@ -40,6 +40,21 @@ test("documentation selects its build and deleted files remain valid inputs", ()
   assert.deepEqual(result.packages, ["other"]);
 });
 
+test("specialized graph changes select their actual browser integration seams", () => {
+  for (const [name, expected] of [
+    ["anim-graph", ["e2e/p9-content.spec.ts"]],
+    ["behaviour-tree", ["e2e/bt-editor.spec.ts", "e2e/p11-ai.spec.ts"]],
+    ["shader-graph", ["e2e/p9-content.spec.ts", "e2e/p17-particles.spec.ts"]],
+  ]) {
+    const workspace = [{ name, path: `packages/${name}`, dependencies: [] }];
+    assert.deepEqual(
+      selectChecks([`packages/${name}/src/index.ts`], workspace).e2e,
+      expected,
+      name,
+    );
+  }
+});
+
 test("unknown paths and verification infrastructure fail closed to the complete gate", () => {
   for (const path of [
     "new-system/source.ts",

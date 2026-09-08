@@ -23,8 +23,17 @@ export const browserChecks = [
   [/^packages\/navigation\//, ["e2e/p11-ai.spec.ts"]],
   [/^packages\/source-control\//, ["e2e/p15-source-control.spec.ts"]],
   [
-    /^packages\/(graph-ui|scripting|scripting-nodes|anim-graph|behaviour-tree|shader-graph)\//,
+    /^packages\/(graph-ui|scripting|scripting-nodes)\//,
     ["e2e/p5-scripting.spec.ts"],
+  ],
+  [/^packages\/anim-graph\//, ["e2e/p9-content.spec.ts"]],
+  [
+    /^packages\/behaviour-tree\//,
+    ["e2e/bt-editor.spec.ts", "e2e/p11-ai.spec.ts"],
+  ],
+  [
+    /^packages\/shader-graph\//,
+    ["e2e/p9-content.spec.ts", "e2e/p17-particles.spec.ts"],
   ],
   [
     /^packages\/(ui|editor-kit)\/|^apps\/editor\//,
