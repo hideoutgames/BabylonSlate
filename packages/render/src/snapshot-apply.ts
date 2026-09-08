@@ -86,6 +86,8 @@ import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
 import { createText2DMesh } from "./text2d-mesh";
+import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
+export { applyAttachToBone } from "./bone-attachment";
 import type { MaterialResolveOptions } from "./material-library";
 
 /** Scratch math objects — never allocate per actor per frame. */
@@ -94,12 +96,17 @@ const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
 const scratchLocalPos = new Vector3();
 const scratchPartQuat = new Quaternion();
+const scratchComposedPart = { position: new Vector3(), rotation: new Quaternion() };
+const scratchBoneSlot: ActorSlot = {
+  slotId: 0, flags: 0, position: new Vector3(), rotation: new Quaternion(), scale: new Vector3(),
+};
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
 
 export interface SnapshotSceneBinding extends MeshAssetContext {
   meshes: Map<number, Mesh>;
+  boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
   cameras: Map<number, Camera>;
   lightProps: Map<number, AuthoredLightProperties>;
@@ -184,6 +191,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   return {
     meshes: new Map(),
+    boneAttachments: new Map(),
     lights: new Map(),
     cameras: new Map(),
     lightProps: new Map(),
@@ -863,6 +871,7 @@ export function retirePlaySlot(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
   binding.meshKinds.delete(slotId);
@@ -1289,6 +1298,21 @@ export function applySnapshotToScene(
         retirePlaySlot(binding, slotId);
       }
     }
+    updateBoneAttachments(binding);
+    for (const [slotId, attachment] of binding.boneAttachments) {
+      if (!attachment.applied) continue;
+      const light = binding.lights.get(slotId);
+      const camera = binding.cameras.get(slotId);
+      if (!light && !camera) continue;
+      attachment.world.decompose(
+        scratchBoneSlot.scale as Vector3,
+        scratchBoneSlot.rotation as Quaternion,
+        scratchBoneSlot.position as Vector3,
+      );
+      const composed = composeSlotPartTransform(scratchBoneSlot, binding, slotId);
+      if (light) updateAuthoredLightTransform(light, composed.position, composed.rotation);
+      if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
+    }
     refreshPlayActiveCamera(scene, binding);
   } finally {
     scene.blockMaterialDirtyMechanism = false;
@@ -1312,6 +1336,7 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  binding.boneAttachments.clear();
   for (const mesh of binding.meshes.values()) {
     mesh.dispose();
   }
@@ -1354,7 +1379,9 @@ function composeSlotPartTransform(
 } {
   const part = binding.meshParts.get(slotId)?.[0];
   if (!part) {
-    return { position: actor.position, rotation: actor.rotation };
+    scratchComposedPart.position.copyFromFloats(actor.position.x, actor.position.y, actor.position.z);
+    scratchComposedPart.rotation.copyFromFloats(actor.rotation.x, actor.rotation.y, actor.rotation.z, actor.rotation.w);
+    return scratchComposedPart;
   }
   scratchQuat.set(
     actor.rotation.x,
@@ -1374,20 +1401,13 @@ function composeSlotPartTransform(
     part.rotation[2],
     part.rotation[3],
   );
-  const rotation = scratchQuat.multiply(scratchPartQuat);
-  return {
-    position: {
-      x: actor.position.x + scratchLocalPos.x,
-      y: actor.position.y + scratchLocalPos.y,
-      z: actor.position.z + scratchLocalPos.z,
-    },
-    rotation: {
-      x: rotation.x,
-      y: rotation.y,
-      z: rotation.z,
-      w: rotation.w,
-    },
-  };
+  scratchQuat.multiplyToRef(scratchPartQuat, scratchComposedPart.rotation);
+  scratchComposedPart.position.set(
+    actor.position.x + scratchLocalPos.x,
+    actor.position.y + scratchLocalPos.y,
+    actor.position.z + scratchLocalPos.z,
+  );
+  return scratchComposedPart;
 }
 
 function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {

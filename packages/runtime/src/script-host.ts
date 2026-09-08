@@ -82,6 +82,7 @@ export interface ScriptHostServices {
   ): unknown;
   animGraphControl?(target: unknown): AnimGraphControl | null;
   spawnActor?(classId: string, transform?: unknown): Actor | null;
+  attachToBone?(actor: Actor, target: Actor | null, boneName: string): void;
   print(
     message: string,
     key: string,
@@ -298,6 +299,11 @@ export interface ScriptContext {
     parent: BObject | null | undefined,
   ): void;
   detachActor(child: BObject | null | undefined): void;
+  attachToBone(
+    actor: BObject | null | undefined,
+    target: BObject | null | undefined,
+    boneName: string,
+  ): void;
   getParent(actor: BObject | null | undefined): Actor | null;
   setOwner(
     actor: BObject | null | undefined,
@@ -999,10 +1005,29 @@ export class ScriptHost {
         );
       },
       attachActor: (child, parent) => {
+        const actor = asActor(child);
+        if (actor && !actor.destroyed) services.attachToBone?.(actor, null, "");
         setActorLink(child, "parentId", parent);
       },
       detachActor: (child) => {
+        const actor = asActor(child);
+        if (actor && !actor.destroyed) services.attachToBone?.(actor, null, "");
         setActorLink(child, "parentId", null);
+      },
+      attachToBone: (actor, target, boneName) => {
+        const child = asActor(actor ?? self);
+        const parent = asActor(target);
+        if (!child || child.destroyed || !parent || parent.destroyed ||
+          typeof boneName !== "string" || !boneName.trim()) return;
+        const seen = new Set<string>();
+        for (let ancestor: Actor | null = parent; ancestor; ancestor = readActorLink(services, ancestor, "parentId")) {
+          if (ancestor === child || seen.has(ancestor.guid)) return;
+          seen.add(ancestor.guid);
+        }
+        child.setVariable("parentId", parent.guid);
+        child.transform.position = { x: 0, y: 0, z: 0 };
+        child.transform.rotation = { x: 0, y: 0, z: 0, w: 1 };
+        services.attachToBone?.(child, parent, boneName);
       },
       getParent: (actor) => readActorLink(services, actor, "parentId"),
       setOwner: (actor, owner) => {

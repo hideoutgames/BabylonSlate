@@ -39,7 +39,7 @@ if (action === 'tree') {
   console.log('descendant-pid='+child.pid);
   setInterval(()=>{},100);
 }
-if (action === 'slow') { console.log('ready'); setInterval(() => console.log('quiet heartbeat 🌍'), 30); }
+if (action === 'slow') { console.log('ready-pid='+process.pid); setInterval(() => console.log('quiet heartbeat 🌍'), 30); }
 `,
   );
   await writeFile(join(cwd, "source.txt"), "original");
@@ -87,6 +87,20 @@ const local = {
   args: [],
   timeoutMs: fixtureTimeoutMs,
 };
+
+async function waitForLog(f, pattern) {
+  const deadline = Date.now() + fixtureTimeoutMs;
+  while (Date.now() < deadline) {
+    const firstLine = f.output().split("\n")[0];
+    if (firstLine) {
+      const { logPath } = JSON.parse(firstLine);
+      const match = (await readFile(logPath, "utf8")).match(pattern);
+      if (match) return match;
+    }
+    await delay(50);
+  }
+  assert.fail(`Fixture log did not contain ${pattern} before its startup deadline`);
+}
 
 test("local preserves argument boundaries, environment, commit, and bounded output in a path with spaces", async (t) => {
   const f = await fixture(t);
@@ -302,10 +316,27 @@ test("slow operation emits nothing between start and cancellation while retainin
 
 test("deadline terminates a slow owned process and cannot pass", async (t) => {
   const f = await fixture(t, "slow");
-  const result = await run({ ...local, timeoutMs: 1500 }, f.context);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const realSetTimeout = globalThis.setTimeout;
+  let expire;
+  t.mock.method(globalThis, "setTimeout", (callback, ms, ...args) => {
+    // Control only the operation's deadline. Process cleanup timers and the
+    // separately bounded final Git snapshot continue to use real time.
+    if (ms === fixtureTimeoutMs) expire = () => callback(...args);
+    return realSetTimeout(callback, ms, ...args);
+  });
+  const pending = run(local, { ...f.context, signal: controller.signal });
+  const [, pid] = await waitForLog(f, /ready-pid=(\d+)/);
+  assert.doesNotThrow(() => process.kill(Number(pid), 0));
+  assert.equal(typeof expire, "function", "the configured deadline must be scheduled");
+  // Initial Git capture and the owned process are ready before time expires.
+  expire();
+  const result = await pending;
   assert.equal(result.status, "timeout");
   assert.equal(result.exitCode, 124);
   assert.ok(result.finalState, "capture the final tree after deadline cleanup");
+  assert.throws(() => process.kill(Number(pid), 0), { code: "ESRCH" });
 });
 
 const goodRun = {

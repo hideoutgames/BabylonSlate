@@ -785,6 +785,12 @@ class InProcessRuntime implements RuntimeDriver {
         });
       },
       getActors: () => this.world.getActors(),
+      attachToBone: (actor, target, boneName) => {
+        const slotId = this.slotByGuid.get(actor.guid);
+        const targetSlotId = target ? this.slotByGuid.get(target.guid) : null;
+        if (slotId === undefined || targetSlotId === undefined) return;
+        this.emit({ type: "attachToBone", slotId, targetSlotId, boneName });
+      },
       getSceneReference: () => {
         const scene = this.world.currentScene;
         return scene && !scene.destroyed ? scene : null;

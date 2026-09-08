@@ -118,6 +118,21 @@ export const actorNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "actor.attachToBone",
+    title: "Attach To Bone",
+    category: "actor",
+    pins: () => [
+      pin("execIn", "Exec", "in", EXEC),
+      pin("execOut", "Then", "out", EXEC),
+      pin("actor", "Actor", "in", actorRef("Actor"), "data", true),
+      pin("target", "Target", "in", actorRef("Actor")),
+      pin("boneName", "Bone Name", "in", STRING),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.attachToBone(${ctx.input("actor")}, ${ctx.input("target")}, ${ctx.input("boneName")});`);
+    },
+  },
+  {
     id: "actor.detach",
     title: "Detach Actor",
     category: "actor",
