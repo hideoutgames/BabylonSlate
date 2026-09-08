@@ -25,7 +25,6 @@ const DesktopAccount = lazy(() => import("./homepage-account-desktop"));
 
 export type HomepageAccountView = "overview" | "sign-in" | "settings";
 
-
 class AccountErrorBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }

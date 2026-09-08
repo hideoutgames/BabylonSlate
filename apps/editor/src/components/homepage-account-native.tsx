@@ -26,10 +26,14 @@ export default function HomepageNativeAccount({
   publishableKey,
   children,
   onRetry,
+  frame: Frame = HomepageMobileAccountFrame,
+  optional = false,
 }: {
   publishableKey: string;
   children: ReactNode;
   onRetry: () => void;
+  frame?: (props: { children: ReactNode }) => ReactNode;
+  optional?: boolean;
 }) {
   const client = useMemo(
     () => createNativeClerkClient(publishableKey),
@@ -113,14 +117,14 @@ export default function HomepageNativeAccount({
 
   if (restoring) {
     return (
-      <HomepageMobileAccountFrame>
+      <Frame>
         <p role="status">Connecting your account…</p>
-      </HomepageMobileAccountFrame>
+      </Frame>
     );
   }
   if (restoreError) {
     return (
-      <HomepageMobileAccountFrame>
+      <Frame>
         <h1>Let’s Get You Connected</h1>
         <Alert variant="destructive">
           <AlertDescription>{restoreError}</AlertDescription>
@@ -128,7 +132,7 @@ export default function HomepageNativeAccount({
         <Button size="touch" onClick={onRetry}>
           Try Again
         </Button>
-      </HomepageMobileAccountFrame>
+      </Frame>
     );
   }
   if (session) {
@@ -164,7 +168,7 @@ export default function HomepageNativeAccount({
   }
 
   return (
-    <HomepageMobileAccountFrame>
+    <Frame>
       <span className="homepage-native-auth-icon">
         <MailIcon aria-hidden="true" />
       </span>
@@ -173,12 +177,16 @@ export default function HomepageNativeAccount({
           ? "Check Your Inbox"
           : mode === "sign-up"
             ? "Make Yourself at Home"
-            : "Your Studio. Everywhere."}
+            : optional
+              ? "Your Slate Account"
+              : "Your Studio. Everywhere."}
       </h1>
       <p>
         {challenge
           ? `Enter the code sent to ${challenge.email}.`
-          : "Sign in to use Slate on this device. Every editor feature is included."}
+          : optional
+            ? "Sign in with an email code, or keep creating as a guest."
+            : "Sign in to use Slate on this device. Every editor feature is included."}
       </p>
       <form
         className="homepage-native-auth-form"
@@ -318,6 +326,6 @@ export default function HomepageNativeAccount({
       <p className="homepage-native-auth-note">
         Your projects stay on this device.
       </p>
-    </HomepageMobileAccountFrame>
+    </Frame>
   );
 }
