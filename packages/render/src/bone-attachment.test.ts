@@ -1,7 +1,7 @@
 import { Bone, Matrix, Mesh, Quaternion, Skeleton, SpotLight, TransformNode, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { isPlayEngineCommandType, readActorSlot, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@babylonslate/bridge";
-import { createInProcessRuntime } from "../../runtime/src/driver";
+import { createInProcessRuntime } from "@babylonslate/test-kit";
 import { createTestEngine } from "./create-null-engine";
 import * as snapshot from "./snapshot-apply";
 import * as attachments from "./bone-attachment";
