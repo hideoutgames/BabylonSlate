@@ -1,4 +1,5 @@
 import { Matrix, Vector3, Viewport, type Scene } from "@babylonjs/core";
+import { actorMeshName } from "./picking";
 
 export interface CanvasPoint {
   x: number;
@@ -65,9 +66,14 @@ export function meshNamesInCanvasRect(
     // A marquee can run before the next render, so the world matrix a freshly
     // moved or freshly created mesh carries is still stale.
     mesh.computeWorldMatrix(true);
-    const point = projectToCanvas(scene, mesh.getAbsolutePosition(), width, height);
+    const point = projectToCanvas(
+      scene,
+      mesh.getAbsolutePosition(),
+      width,
+      height,
+    );
     if (point && rectContains(rect, point)) {
-      hits.push(mesh.name);
+      hits.push(actorMeshName(mesh));
     }
   }
   return hits;

@@ -304,7 +304,7 @@ export function attachViewportGestures(
     lastSpread = currentSpread;
   };
 
-  const endPointer = (event: PointerEvent) => {
+  const endPointer = (event: PointerEvent, cancelled = false) => {
     const point = pointers.get(event.pointerId);
     pointers.delete(event.pointerId);
     if (pointers.size === 1) {
@@ -347,10 +347,10 @@ export function attachViewportGestures(
     clearMarqueeTimer();
     options.onPointer?.("up", point.x, point.y, event.pointerId);
     const wasDragSelect = dragSelectGesture;
-    if (!moved && !skipTap) {
+    if (!cancelled && !moved && !skipTap) {
       options.onTap?.(point.x, point.y, { additive: tapAdditive });
     } else if (
-      options.onMarquee &&
+      !cancelled && options.onMarquee &&
       (wasDragSelect ||
         (controller.mode === "2d" && marqueeArmed && !skipLook))
     ) {
@@ -370,6 +370,8 @@ export function attachViewportGestures(
     dragSelectGesture = false;
     tapAdditive = false;
   };
+
+  const cancelPointer = (event: PointerEvent) => endPointer(event, true);
 
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
@@ -397,7 +399,7 @@ export function attachViewportGestures(
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", endPointer);
-  canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("pointercancel", cancelPointer);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("touchstart", onTouch, { passive: false });
   canvas.addEventListener("touchmove", onTouch, { passive: false });
@@ -407,7 +409,7 @@ export function attachViewportGestures(
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", endPointer);
-      canvas.removeEventListener("pointercancel", endPointer);
+      canvas.removeEventListener("pointercancel", cancelPointer);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("touchstart", onTouch);
       canvas.removeEventListener("touchmove", onTouch);

@@ -1,7 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createDefaultAudioPayload } from "@babylonslate/assets";
 import { AudioClips, AudioDetails, AudioPreview } from "./audio-editor";
+
+const audioIO = vi.hoisted(() => ({
+  pick: vi.fn(async () => [{ name: "new.wav", bytes: new Uint8Array([1, 2, 3]) }]),
+  write: vi.fn(async () => {}),
+  remove: vi.fn(async () => {}),
+}));
+vi.mock("@babylonslate/vfs", async (original) => ({
+  ...await original<typeof import("@babylonslate/vfs")>(),
+  pickImportFiles: audioIO.pick,
+}));
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -27,14 +37,36 @@ vi.mock("../context/document-context", () => ({
       ],
     },
     readAssetChunk: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
+    writeAudioClipChunk: audioIO.write,
+    removeAudioClipChunk: audioIO.remove,
   }),
 }));
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
 });
 
 describe("Audio editor docks", () => {
+  it("shows a failed project audio write without adding an unsaved clip", async () => {
+    audioIO.write.mockRejectedValueOnce(new Error("Folder access revoked"));
+    const onChange = vi.fn();
+    render(<AudioClips path="assets/Jump.babasset" assetName="Jump" payload={{ clips: [{ chunkId: "source", name: "Jump", weight: 1 }] }} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("audio-add-clip"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Folder access revoked"));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId("audio-add-clip").hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps the clip listed when its project storage removal fails", async () => {
+    audioIO.remove.mockRejectedValueOnce(new Error("Folder is offline"));
+    const onChange = vi.fn();
+    render(<AudioClips path="assets/Jump.babasset" assetName="Jump" payload={{ clips: [{ chunkId: "source", name: "Jump", weight: 1 }, { chunkId: "clip-1", name: "Second", weight: 1 }] }} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("audio-clip-1-remove"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Folder is offline"));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId("audio-clip-1-name").textContent).toBe("Second");
+  });
   it("keeps Preview Play, Loop, and waveform on the Preview surface", () => {
     render(
       <AudioPreview

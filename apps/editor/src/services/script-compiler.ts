@@ -31,9 +31,31 @@ import {
   materializeLogicGraph,
   type HydrateGraphOptions,
 } from "./graph-validation";
+import { mergedPrefabComponentsForClass } from "../lib/prefab-instance-sync";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
+
+type ClassPrefabContext = {
+  parentClassId?: string | null;
+  parentOf?: (classId: string) => string | null | undefined;
+  otherClassGraphs?: Record<string, SerializedGraph>;
+};
+
+function prefabComponentsForCompile(
+  content: SerializedGraph | LogicGraph,
+  classId: string,
+  options: ClassPrefabContext,
+) {
+  if (isLogicGraphPayload(content)) return null;
+  return mergedPrefabComponentsForClass({
+    classId,
+    parentOf:
+      options.parentOf ??
+      ((id) => (id === classId ? options.parentClassId : null)),
+    graphs: { ...options.otherClassGraphs, [classId]: content },
+  });
+}
 
 /**
  * Class a graph's compiled script binds to. Class (and legacy Graph) files
@@ -172,8 +194,9 @@ export function compileGraphDocument(
   );
   const instrumentInfiniteLoops =
     options.instrumentInfiniteLoops ?? options.stripDevelopmentOnly !== true;
+  const components = prefabComponentsForCompile(content, classId, options);
   const compiledPieces = [];
-  if (logic.nodes.length > 0) {
+  if (logic.nodes.length > 0 || components?.length) {
     compiledPieces.push(
       compileGraph(logic, {
         assetGuid: options.path,
@@ -236,6 +259,7 @@ export function compileGraphDocument(
     entryPoints,
     command: consoleCommandFromGraph(logic, classId),
     ...metadata,
+    ...(components ? { components } : {}),
   };
 }
 
@@ -382,6 +406,7 @@ export function graphCompileSignature(
       nodes: compileNodeFingerprint(doc.content.nodes),
       edges: compileEdgeFingerprint(doc.content.edges),
       members: doc.content.members ?? [],
+      components: doc.content.components ?? [],
       functionGraphs: compileFunctionGraphFingerprint(doc.content.functionGraphs),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
@@ -427,10 +452,11 @@ function graphDocumentCompileCacheKey(
     classId?: string;
     parentClassId?: string | null;
   },
-  options: GraphCompileCacheOptions & {
-    typesFingerprint?: string;
-    latentFingerprint?: string;
-  },
+  options: GraphCompileCacheOptions &
+    ClassPrefabContext & {
+      typesFingerprint?: string;
+      latentFingerprint?: string;
+    },
 ): string {
   const content = isLogicGraphPayload(doc.content)
     ? { nodes: doc.content.nodes, edges: doc.content.edges }
@@ -441,6 +467,10 @@ function graphDocumentCompileCacheKey(
     ]),
     classId: doc.classId ?? null,
     parentClassId: doc.parentClassId ?? null,
+    prefab: prefabComponentsForCompile(doc.content, documentClassId(doc), {
+      ...options,
+      parentClassId: doc.parentClassId,
+    }),
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
     types:
       options.typesFingerprint ??

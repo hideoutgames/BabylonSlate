@@ -5,6 +5,7 @@
   "scripts": {
     "agent:wait": "node scripts/agent-wait.mjs",
     "test:agent-wait": "node scripts/run-tests.mjs tooling scripts/agent-wait.test.mjs",
+    "test:distribution": "node scripts/run-tests.mjs tooling scripts/distribution/*.test.mjs",
     "dev": "pnpm --filter editor dev",
     "docs:dev": "pnpm --filter docs-site dev",
     "build": "node scripts/run-tests.mjs build-all",
@@ -39,6 +40,7 @@
     "typescript": "~5.8.2",
     "typescript-eslint": "^8.26.1",
     "vitest": "^4.0.0",
+    "yaml": "2.9.0",
     "zod": "^4.0.0"
   },
   "packageManager": "pnpm@10.33.3"

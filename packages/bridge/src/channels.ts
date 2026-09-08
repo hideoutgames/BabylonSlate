@@ -1,6 +1,6 @@
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ProjectInputSettings, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
@@ -63,6 +63,8 @@ export type ScriptBundleEntry = {
     generateHitEvents?: boolean;
     generateOverlapEvents?: boolean;
   };
+  /** Effective prefab component templates for runtime Spawn Actor. */
+  components?: SerializedComponent[];
 };
 
 export type ControlMessage =

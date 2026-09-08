@@ -1,19 +1,34 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
   dialog,
   ipcMain,
   net,
+  protocol,
   safeStorage,
+  session,
+  type IpcMainInvokeEvent,
 } from "electron";
 import { NodeStorageAdapter } from "@babylonslate/vfs/node";
 import type { ProjectFolderHandle } from "@babylonslate/core";
 import { DesktopSecretStore } from "./desktop-secret-store";
+import { isEditorSender, rendererFile, validateIpcArguments } from "./packaged-security";
 
-const rootDir = dirname(fileURLToPath(import.meta.url));
+const rootDir = join(app.getAppPath(), "host");
+const rendererRoot = join(app.getAppPath(), "renderer");
+const editorWindows = new Set<number>();
+protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }]);
+
+function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
+  ipcMain.handle(channel, (event, ...args: unknown[]) => {
+    if (!editorWindows.has(event.sender.id) || !isEditorSender(event.senderFrame?.url ?? "", event.senderFrame === event.sender.mainFrame)) throw new Error("Untrusted IPC sender");
+    validateIpcArguments(channel, args);
+    return listener(event, ...args);
+  });
+}
 
 function userDataFile(name: string): string {
   return join(app.getPath("userData"), name);
@@ -27,25 +42,38 @@ async function createWindow(): Promise<void> {
       preload: join(rootDir, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
-  const editorIndex = join(rootDir, "../../editor/dist/index.html");
-  await window.loadFile(editorIndex);
+  const contentsId = window.webContents.id;
+  editorWindows.add(contentsId);
+  window.on("closed", () => editorWindows.delete(contentsId));
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!isEditorSender(url, true)) event.preventDefault();
+  });
+  window.webContents.on("will-attach-webview", event => event.preventDefault());
+  await window.loadURL("app://babylonslate/index.html");
 }
 
 function registerIpc(): void {
   const projectsRoot = join(app.getPath("userData"), "projects");
   const storage = new NodeStorageAdapter(projectsRoot);
   const settingsPath = userDataFile("engine-settings.json");
+  const grantsPath = userDataFile("project-folder-grants.json");
+  async function grantedFolders(): Promise<string[]> {
+    try { return JSON.parse(await readFile(grantsPath, "utf8")) as string[]; }
+    catch { return []; }
+  }
 
-  ipcMain.handle("settings:read", async () => {
+  handle("settings:read", async () => {
     try {
       return await readFile(settingsPath, "utf8");
     } catch {
       return null;
     }
   });
-  ipcMain.handle("settings:write", async (_event, json) => {
+  handle("settings:write", async (_event, json) => {
     await mkdir(dirname(settingsPath), { recursive: true });
     await writeFile(settingsPath, String(json));
   });
@@ -62,17 +90,17 @@ function registerIpc(): void {
     safeStorage,
   );
 
-  ipcMain.handle("secrets:get", async (_event, key) => {
+  handle("secrets:get", async (_event, key) => {
     return secrets.get(String(key));
   });
-  ipcMain.handle("secrets:set", async (_event, key, value) => {
+  handle("secrets:set", async (_event, key, value) => {
     await secrets.set(String(key), String(value));
   });
-  ipcMain.handle("secrets:delete", async (_event, key) => {
+  handle("secrets:delete", async (_event, key) => {
     await secrets.delete(String(key));
   });
 
-  ipcMain.handle("lfs:fetch", async (_event, request) => {
+  handle("lfs:fetch", async (_event, request) => {
     const req = request as {
       method?: string;
       url?: string;
@@ -84,67 +112,90 @@ function registerIpc(): void {
       method: req.method ?? "GET",
       headers: req.headers ?? {},
       body: req.body,
+      redirect: "error",
     });
     return { status: response.status, bodyText: await response.text() };
   });
 
-  ipcMain.handle("project:pickFolder", async () => {
+  handle("project:pickFolder", async () => {
     const picked = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
     });
     if (picked.canceled || !picked.filePaths[0]) {
       throw new Error("Folder picker cancelled");
     }
-    return storage.openAbsoluteFolder(picked.filePaths[0]);
+    const selected = await realpath(picked.filePaths[0]);
+    const grants = new Set(await grantedFolders());
+    grants.add(selected);
+    await mkdir(dirname(grantsPath), { recursive: true });
+    await writeFile(grantsPath, JSON.stringify([...grants]));
+    return storage.openAbsoluteFolder(selected);
   });
-  ipcMain.handle("project:openDocuments", async (_event, name) => {
+  handle("project:openDocuments", async (_event, name) => {
     return storage.openDocumentsProject(String(name));
   });
-  ipcMain.handle("project:openKnown", async (_event, handle) => {
+  handle("project:openKnown", async (_event, handle) => {
     const folder = handle as ProjectFolderHandle;
     if (folder.id.startsWith("node:")) {
+      const known = await storage.listProjects();
+      const target = await realpath(folder.id.slice("node:".length));
+      if (!known.some(item => item.id === folder.id) && !(await grantedFolders()).includes(target)) throw new Error("Choose this folder using the folder picker first");
       return storage.openAbsoluteFolder(
-        folder.id.slice("node:".length),
+        target,
         folder.name,
         folder.tier,
       );
     }
     return storage.openKnownFolder(folder);
   });
-  ipcMain.handle("project:list", async () => storage.listProjects());
-  ipcMain.handle("project:current", async () => storage.getCurrentFolder());
-  ipcMain.handle("project:release", async () => storage.releaseFolder());
-  ipcMain.handle("project:readBinary", async (_event, path) => {
+  handle("project:list", async () => storage.listProjects());
+  handle("project:current", async () => storage.getCurrentFolder());
+  handle("project:release", async () => storage.releaseFolder());
+  handle("project:readBinary", async (_event, path) => {
     const bytes = await storage.readBinary(String(path));
     return bytes.buffer.slice(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength,
     );
   });
-  ipcMain.handle("project:writeBinary", async (_event, path, data) => {
+  handle("project:writeBinary", async (_event, path, data) => {
     await storage.writeBinary(
       String(path),
       new Uint8Array(data as ArrayBuffer),
     );
   });
-  ipcMain.handle("project:exists", async (_event, path) =>
+  handle("project:exists", async (_event, path) =>
     storage.exists(String(path)),
   );
-  ipcMain.handle("project:readdir", async (_event, path) =>
+  handle("project:readdir", async (_event, path) =>
     storage.readdir(String(path)),
   );
-  ipcMain.handle("project:mkdir", async (_event, path, recursive) =>
+  handle("project:mkdir", async (_event, path, recursive) =>
     storage.mkdir(String(path), recursive !== false),
   );
-  ipcMain.handle("project:remove", async (_event, path) =>
+  handle("project:remove", async (_event, path) =>
     storage.remove(String(path)),
   );
-  ipcMain.handle("project:stat", async (_event, path) =>
+  handle("project:stat", async (_event, path) =>
     storage.stat(String(path)),
   );
 }
 
 void app.whenReady().then(async () => {
+  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  protocol.handle("app", async request => {
+    try {
+      if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405 });
+      const file = rendererFile(request.url, rendererRoot);
+      const response = await net.fetch(pathToFileURL(file).href, { method: request.method });
+      const headers = new Headers(response.headers);
+      headers.set("Cross-Origin-Opener-Policy", "same-origin");
+      headers.set("Cross-Origin-Embedder-Policy", "require-corp");
+      headers.set("X-Content-Type-Options", "nosniff");
+      return new Response(response.body, { status: response.status, headers });
+    } catch { return new Response(null, { status: 404 }); }
+  });
   registerIpc();
   await createWindow();
 });

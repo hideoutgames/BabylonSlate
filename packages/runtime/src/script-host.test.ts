@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { GameInstance } from "@babylonslate/object-model";
 import { interfaceHandlerKey } from "@babylonslate/object-model";
-import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
+import { createActor, createDefaultSceneSettings, createMeshComponent } from "@babylonslate/core";
 import {
   compileGraph,
   pin,
@@ -1470,6 +1470,99 @@ describe("script host runs compiled graphs", () => {
       .find((actor) => actor.classId === "Child");
     expect(child?.transform.position).toEqual({ x: 10, y: 20, z: 30 });
     runtime.stop();
+  });
+
+  it("spawns independent prefab components before Begin Play once per Tick invocation", async () => {
+    const registry = createDefaultNodeRegistry();
+    const childGraph: LogicGraph = {
+      id: "child",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "has", "component.has", {
+          "default:classId": "MeshComponent",
+        }),
+        node(registry, "saw", "variables.set", {
+          variableName: "sawMesh",
+          typeId: "bool",
+          implicitSelf: true,
+        }),
+      ],
+      edges: [
+        edge("begin-saw", "begin", "execOut", "saw", "execIn"),
+        edge("has-saw", "has", "out", "saw", "value"),
+      ],
+    };
+    const spawnerGraph: LogicGraph = {
+      id: "spawner",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+        node(registry, "pose", "struct.makeTransform", {
+          "default:location": { x: 10, y: 20, z: 30 },
+        }),
+      ],
+      edges: [
+        edge("tick-spawn", "tick", "execOut", "spawn", "execIn"),
+        edge("pose-spawn", "pose", "out", "spawn", "transform"),
+      ],
+    };
+    const mesh = createMeshComponent("mesh", "box");
+    mesh.properties.settings = { value: 1 };
+    const childScript = {
+      ...toScript(childGraph, registry, "Child", "child"),
+      components: [
+        mesh,
+        {
+          id: "collider",
+          classId: "ColliderComponent",
+          parentId: "mesh",
+          properties: {},
+        },
+      ],
+    };
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    try {
+      await runtime.loadScripts([
+        childScript,
+        toScript(spawnerGraph, registry, "Spawner", "spawner"),
+      ]);
+      runtime.spawnScriptedActor({ classId: "Spawner" });
+      runtime.start();
+      for (let i = 0; i < 3; i++) runtime.tick();
+      const children = runtime
+        .getWorld()
+        .getActors()
+        .filter((actor) => actor.classId === "Child");
+      expect(children).toHaveLength(3);
+      for (const child of children) {
+        expect(child.components.map((component) => component.classId)).toEqual([
+          "MeshComponent",
+          "ColliderComponent",
+        ]);
+        expect(child.getVariable("sawMesh")).toBe(true);
+        expect(child.transform.position).toEqual({ x: 10, y: 20, z: 30 });
+        expect(child.components[1]!.parentId).toBe(child.components[0]!.guid);
+        expect(child.components[0]!.sourceId).toBe("mesh");
+      }
+      expect(
+        new Set(
+          children.flatMap((child) =>
+            child.components.map((component) => component.guid),
+          ),
+        ).size,
+      ).toBe(6);
+      (
+        children[0]!.components[0]!.getVariable("settings") as { value: number }
+      ).value = 7;
+      expect(children[1]!.components[0]!.getVariable("settings")).toEqual({
+        value: 1,
+      });
+      expect(mesh.properties.settings).toEqual({ value: 1 });
+    } finally {
+      runtime.stop();
+    }
   });
 
   it("Attach Actor and Set Owner write parentId and ownerId before queries", async () => {

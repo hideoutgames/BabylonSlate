@@ -132,6 +132,7 @@ export async function editorTests(options = {}) {
 
 export async function fullVerification(options = {}) {
   await runPnpm("unit", ["run", "test:tooling"], options);
+  await runPnpm("unit", ["run", "test:distribution"], options);
   await runPnpm(
     "build",
     ["--workspace-concurrency=1", "-r", "typecheck"],

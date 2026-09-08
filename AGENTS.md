@@ -18,6 +18,8 @@ The authoritative architecture and delivery plan is [docs/engineplan.md](docs/en
 
 ## Scoped rules
 
+Distribution implementation and explicitly requested packaging/upload/publication must follow [Distribution](.agents/rules/distribution.md). Ordinary delivery never implies permission to distribute.
+
 Before working on matching files or tasks, read the corresponding rule in full. Patterns are relative to the repository root; `**` includes descendants. Apply every matching row, including task triggers when no path matches yet.
 
 | Paths or task | Required rule |

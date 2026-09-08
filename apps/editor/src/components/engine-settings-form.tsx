@@ -1,4 +1,5 @@
-import { NumberField } from "@babylonslate/editor-kit";
+import { NumberField, SelectableText } from "@babylonslate/editor-kit";
+import { getBuildIdentity } from "../lib/build-identity";
 import type { EngineSettings } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { Slider } from "@babylonslate/ui/components/slider";
@@ -120,6 +121,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
 ];
 
 export type EngineSettingsCategoryId =
+  | "about"
   | "appearance"
   | "undo"
   | "viewport"
@@ -138,8 +140,20 @@ export function EngineSettingsForm({
   onChange: (patch: Partial<EngineSettings>) => void | Promise<void>;
   categoryId: EngineSettingsCategoryId;
 }) {
+  const identity = getBuildIdentity();
   return (
     <FieldGroup data-testid="engine-settings-sheet">
+      {categoryId === "about" ? (
+        <FieldSet data-testid="build-identity">
+          <FieldLegend>BabylonSlate</FieldLegend>
+          {identity ? <>
+            <FieldDescription><SelectableText>Version {identity.applicationVersion} · {identity.channel === "test" ? "Test" : "Release"}</SelectableText></FieldDescription>
+            <FieldDescription><SelectableText>Windows {identity.windowsVersion} · Apple Build {identity.appleBuildNumber}</SelectableText></FieldDescription>
+            <FieldDescription><SelectableText>Run {identity.runNumber} · Attempt {identity.runAttempt}</SelectableText></FieldDescription>
+            <FieldDescription><SelectableText>{identity.sourceSha}</SelectableText></FieldDescription>
+          </> : <FieldDescription>Development Build</FieldDescription>}
+        </FieldSet>
+      ) : null}
       {categoryId === "appearance" ? (
         <FieldSet>
           <FieldLegend>Appearance</FieldLegend>

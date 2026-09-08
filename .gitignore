@@ -1,4 +1,5 @@
 node_modules
+.pnpm-store/
 dist
 apps/editor/public/engine-plugins
 apps/editor/public/engine-content
@@ -32,3 +33,16 @@ id_rsa*
 id_ed25519*
 .netrc
 *.log
+apps/desktop/dist/
+apps/editor/dist.distribution-smoke-hidden/
+apps/player/dist.distribution-smoke-hidden/
+release/generated/
+*.p8
+*.p12
+*.mobileprovision
+*.keychain-db
+*.xcarchive/
+*.ipa
+.bundle/
+vendor/bundle/
+apps/editor/public/build-manifest.json

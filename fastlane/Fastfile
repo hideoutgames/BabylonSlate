@@ -1,0 +1,18 @@
+require "json"
+
+desc "Upload an already validated IPA directly to App Store Connect; no processing wait or submission"
+lane :upload do
+  api_key = JSON.parse(File.read(ENV.fetch("ASC_API_KEY_FILE")), symbolize_names: true)
+  upload_to_testflight(
+    api_key: api_key,
+    apple_id: ENV.fetch("ASC_APP_ID"),
+    app_identifier: ENV.fetch("APPLE_BUNDLE_ID"),
+    app_platform: "ios",
+    ipa: ENV.fetch("APPLE_IPA_PATH"),
+    skip_waiting_for_build_processing: true,
+    skip_submission: true,
+    distribute_external: false,
+    notify_external_testers: false,
+    submit_beta_review: false
+  )
+end

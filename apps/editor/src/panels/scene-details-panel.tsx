@@ -63,6 +63,7 @@ import {
   isPostProcessMaterialForPicker,
 } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+import { selectionTransformPropertyRows } from "../lib/selection-transform-property-rows";
 import { fontAssetHasFacetype, fontAssetHasMsdfJson, fontAssetHasMsdfPng } from "../lib/play-fonts";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -773,6 +774,14 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     );
   }
 
+  const selectedActors = selectedActorIds
+    .map((id) => findActor(scene, id))
+    .filter((entry): entry is SerializedActor => entry !== undefined && entry !== null);
+  const multiSelection = selectedActors.length > 1;
+  const updateSelectedActors = (update: (entry: SerializedActor) => SerializedActor) => {
+    const ids = new Set(selectedActorIds);
+    mutate({ ...scene, actors: scene.actors.map((entry) => ids.has(entry.id) ? update(entry) : entry) });
+  };
   const transformRows: PropertyRow[] = [
     {
       kind: "text",
@@ -781,19 +790,20 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       value: actor.name,
       onChange: (name) => updateActor((entry) => ({ ...entry, name })),
     },
-    ...spatialTransformPropertyRows(
+    ...(multiSelection ? selectionTransformPropertyRows(selectedActors, scene.viewportMode, updateSelectedActors) : spatialTransformPropertyRows(
       "actor",
       scene.viewportMode,
       actor.transform,
       (transform) => updateActor((entry) => ({ ...entry, transform })),
-    ),
+    )),
     {
       kind: "boolean",
       id: "actor-visible",
       label: "Visible",
       value: actor.visible,
+      mixed: selectedActors.some((entry) => entry.visible !== actor.visible),
       defaultValue: true,
-      onChange: (visible) => updateActor((entry) => ({ ...entry, visible })),
+      onChange: (visible) => updateSelectedActors((entry) => ({ ...entry, visible })),
     },
     {
       kind: "boolean",
@@ -815,7 +825,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       data-testid="scene-details-panel"
       toolbar={
         <IconActionButton
-          label="Add component"
+          label={multiSelection ? `Add Component to ${actor.name}` : "Add component"}
           onClick={() => setAddComponentOpen(true)}
           data-testid="details-add-component"
         >
@@ -826,13 +836,20 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       <div className="flex flex-col gap-3 pb-4">
         <PropertyGrid
           title={
-            selectedActorIds.length > 1
-              ? `${selectedActorIds.length} Actors`
+            multiSelection
+              ? `${selectedActors.length} Actors`
               : actor.name
           }
-          rows={transformRows}
+          rows={multiSelection ? transformRows.filter((row) => row.id !== "actor-name" && row.id !== "actor-locked") : transformRows}
           data-testid="actor-transform-grid"
         />
+        {multiSelection ? (
+          <PropertyGrid
+            title={`Primary Actor: ${actor.name}`}
+            rows={transformRows.filter((row) => row.id === "actor-name" || row.id === "actor-locked")}
+            data-testid="primary-actor-grid"
+          />
+        ) : null}
         {actor.components.map((component, index) => (
           <div
             key={component.id}

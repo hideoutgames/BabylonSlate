@@ -2023,6 +2023,21 @@ export function classMemberSymbolsFromGraphs(
       if (member.propertyKey) symbol.propertyKey = member.propertyKey;
       symbols.push(symbol);
     }
+    // The palette also exposes events declared by canvas nodes in older graphs.
+    const declaredEvents = new Set(
+      (graph.members ?? [])
+        .filter((member) => member.kind === "event")
+        .map((member) => formatEventMemberName(member.name)),
+    );
+    for (const event of customEventRows(graph)) {
+      if (declaredEvents.has(event.name)) continue;
+      symbols.push({
+        id: `node-event:${classId}:${event.name}`,
+        kind: "event",
+        name: event.name,
+        classId,
+      });
+    }
     for (const member of componentGraphMembersForClass({
       graph,
       classId,

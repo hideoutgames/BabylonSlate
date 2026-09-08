@@ -122,23 +122,44 @@ function createActorFromSerialized(
     hooks: hooksFor?.(serialized.classId),
     sceneLayerId: sceneLayerId ?? null,
   });
-  for (const component of serialized.components) {
-    if (sceneLayerId && isSceneLayerDeniedComponent(component.classId)) {
+  attachSerializedComponents(world, actor, serialized.components);
+  return actor;
+}
+
+/** Attach scene components or instantiate prefab templates with actor-scoped identities. */
+export function attachSerializedComponents(
+  world: World,
+  actor: Actor,
+  components: readonly SerializedComponent[],
+  options: { freshIds?: boolean } = {},
+): void {
+  const ids = new Map(
+    components.map((component) => [
+      component.id,
+      options.freshIds ? `${actor.guid}:${component.id}` : component.id,
+    ]),
+  );
+  for (const component of components) {
+    if (actor.sceneLayerId && isSceneLayerDeniedComponent(component.classId)) {
       continue;
     }
     actor.attachComponent(
       world.createComponent({
-        guid: component.id,
+        guid: ids.get(component.id),
         classId: component.classId,
-        variables: { ...component.properties },
+        variables: structuredClone(component.properties),
         assetGuid: componentAssetGuid(component),
-        sourceId: component.sourceId ?? null,
-        parentId: component.parentId ?? null,
+        sourceId: options.freshIds
+          ? component.id
+          : (component.sourceId ?? null),
+        parentId: component.parentId
+          ? (ids.get(component.parentId) ??
+            (options.freshIds ? null : component.parentId))
+          : null,
         transform: runtimeTransformFromSerialized(
           component.transform ?? identitySerializedTransform(),
         ),
       }),
     );
   }
-  return actor;
 }

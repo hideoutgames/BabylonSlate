@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
-const defaultDeveloperDir = "/Applications/Xcode_16.4.app/Contents/Developer";
+const defaultDeveloperDir = "/Applications/Xcode_26.6.app/Contents/Developer";
 
 function resolveDeveloperDir() {
   if (process.env.DEVELOPER_DIR) {

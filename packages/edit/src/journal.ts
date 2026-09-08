@@ -1,4 +1,5 @@
 import type { EditCommand } from "./command";
+import { CommandBatch } from "./session";
 import {
   AddEdgeCommand,
   AddNodeCommand,
@@ -70,6 +71,17 @@ export function registerCommandReviver(
 export function reviveCommand(
   payload: { type: string; [key: string]: unknown },
 ): EditCommand<unknown> | null {
+  if (payload.type === "edit.batch") {
+    if (!Array.isArray(payload.commands)) return null;
+    const commands: EditCommand<unknown>[] = [];
+    for (const child of payload.commands) {
+      if (!child || typeof child !== "object" || typeof child.type !== "string") return null;
+      const command = reviveCommand(child);
+      if (!command) return null;
+      commands.push(command);
+    }
+    return new CommandBatch(commands);
+  }
   const reviver = commandRevivers.get(payload.type);
   if (!reviver) {
     return null;
@@ -108,6 +120,11 @@ export function commandToJournalPayload(
   command: EditCommand<unknown>,
 ): { type: string; [key: string]: unknown } {
   switch (command.type) {
+    case "edit.batch":
+      return {
+        type: command.type,
+        commands: (command as CommandBatch<unknown>).commands.map(commandToJournalPayload),
+      };
     case "graph.moveNode": {
       const move = command as MoveNodeCommand;
       return {

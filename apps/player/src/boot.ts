@@ -7,11 +7,13 @@ import {
 } from "@babylonslate/behaviour-tree";
 import {
   createPlayBootCoordinator,
+  createPlayPauseGate,
   createRuntimeFromLoad,
   type RuntimeDriver,
 } from "@babylonslate/runtime";
 import {
   audioStats,
+  attachLifecyclePause,
   createEngine,
   navDebugBlockersFromActors,
   particleStats,
@@ -263,6 +265,9 @@ export function startPlayer(options: {
   let lastWorkerTickIndex = 0;
   let raf = 0;
   let halted = false;
+  let lifecyclePaused = false;
+  let detachLifecycle = () => {};
+  let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
   let hudStats: PlayerHudStats | undefined;
   let snapBuf = new Float32Array(snapshotFloatCount(256));
 
@@ -278,6 +283,8 @@ export function startPlayer(options: {
   const haltPlayback = () => {
     if (halted) return;
     halted = true;
+    detachLifecycle();
+    handle.setPaused(true);
     cancelAnimationFrame(raf);
     worker?.postControl({ type: "stop" });
     worker?.terminate();
@@ -366,6 +373,10 @@ export function startPlayer(options: {
       onCommand(command as never),
     );
     runtime = inProcess;
+    pauseGate = createPlayPauseGate({
+      pause: () => inProcess.pause(),
+      resume: () => inProcess.resume(),
+    });
     const boot = createPlayBootCoordinator();
     if (game.scripts.length > 0) {
       boot.queueScripts(inProcess, game.scripts, spawn);
@@ -408,7 +419,7 @@ export function startPlayer(options: {
     if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {
       boot.queueNavMesh(inProcess, content.navmeshBytes);
     }
-    void boot.play(inProcess).catch((error) => {
+    void pauseGate.beginPlay(() => boot.play(inProcess)).catch((error) => {
       inProcess.reportError(error);
     });
   }
@@ -424,7 +435,7 @@ export function startPlayer(options: {
   let fpsWindowStart = last;
 
   const pump = () => {
-    if (halted) return;
+    if (halted || lifecyclePaused) return;
     const now = performance.now();
     const elapsed = (now - last) / 1000;
     last = now;
@@ -456,6 +467,23 @@ export function startPlayer(options: {
     raf = requestAnimationFrame(pump);
   };
   raf = requestAnimationFrame(pump);
+  if (!halted) {
+    detachLifecycle = attachLifecyclePause((paused) => {
+      const wasPaused = lifecyclePaused;
+      lifecyclePaused = paused;
+      handle.setPaused(paused);
+      pauseGate?.setPaused(paused);
+      worker?.postControl({ type: "setPaused", paused });
+      if (paused) {
+        cancelAnimationFrame(raf);
+      } else if (wasPaused) {
+        last = performance.now();
+        fpsWindowStart = last;
+        frames = 0;
+        raf = requestAnimationFrame(pump);
+      }
+    });
+  }
 
   return {
     ticks: () => ticks,
@@ -463,6 +491,7 @@ export function startPlayer(options: {
     meshMaterialNames: () => handle.playMeshMaterialNames(),
     stop: () => {
       halted = true;
+      detachLifecycle();
       cancelAnimationFrame(raf);
       resizeObserver?.disconnect();
       input?.dispose();

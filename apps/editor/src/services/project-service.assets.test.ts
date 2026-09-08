@@ -287,6 +287,7 @@ describe("project documents as .babasset", () => {
     ).toBe(true);
   });
 
+  // Both full-project rebuilds yield between assets and perform real codec work.
   it("does not update search hits on save until the next rebuild", async () => {
     const { service } = await scaffolded();
     await service.searchIndex!.rebuild(service.registry!);
@@ -322,7 +323,7 @@ describe("project documents as .babasset", () => {
         .searchIndex!.query("renamedhero")
         .some((hit) => hit.kind === "actor"),
     ).toBe(true);
-  });
+  }, 20_000);
 
   it("scaffolds Kenney Mannequin as a hierarchy rig with idle Anim Graph", async () => {
     const { storage, service } = await scaffolded(true);

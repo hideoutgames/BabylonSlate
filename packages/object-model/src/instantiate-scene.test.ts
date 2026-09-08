@@ -8,7 +8,7 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { ClassRegistry } from "./class-registry";
-import { createActorsFromSerializedScene, createActorsFromSerializedSceneLayer } from "./instantiate-scene";
+import { attachSerializedComponents, createActorsFromSerializedScene, createActorsFromSerializedSceneLayer } from "./instantiate-scene";
 import { World } from "./world";
 
 function testWorld() {
@@ -18,6 +18,27 @@ function testWorld() {
     classRegistry: new ClassRegistry(),
   });
 }
+
+it("detaches a missing prefab parent while retaining template identity", () => {
+  const world = testWorld();
+  const actor = world.createActor({ classId: "Actor" });
+  attachSerializedComponents(
+    world,
+    actor,
+    [
+      {
+        id: "mesh",
+        classId: "MeshComponent",
+        parentId: "missing",
+        properties: {},
+      },
+    ],
+    { freshIds: true },
+  );
+  expect(actor.components[0]!.parentId).toBeNull();
+  expect(actor.components[0]!.sourceId).toBe("mesh");
+  expect(actor.components[0]!.guid).not.toBe("mesh");
+});
 
 describe("outliner folders", () => {
   it("never spawns a folder as a runtime actor", () => {
