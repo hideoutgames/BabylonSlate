@@ -55,28 +55,19 @@ export async function changedFiles(cwd, base) {
   return [...new Set((changed + untracked).split("\0").filter(Boolean))].sort();
 }
 
-/** App build inputs, excluding test/docs-only edits. Git blob IDs avoid rereading unchanged media. */
+/** Conservative build inputs; unknown code/configuration must invalidate reuse. */
 export async function buildInputState(cwd) {
   const paths = [
-    "apps/editor",
-    "apps/player",
-    "packages",
-    "engine-content",
-    "engine-plugins",
-    "engine-logos",
-    "package.json",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
-    "tsconfig.json",
-    "scripts/test-build.mjs",
-    "scripts/build-test-artifact.mjs",
-    "scripts/source-state.mjs",
-    "scripts/process-runner.mjs",
-    "scripts/test-runner.mjs",
-    "scripts/resource-admission.mjs",
-    ":(exclude)**/*.test.*",
-    ":(exclude)**/*.md",
-    ":(exclude)**/test-support/**",
+    ".",
+    ":(glob,exclude)docs/**",
+    ":(glob,exclude)apps/docs/**",
+    ":(glob,exclude)e2e/**",
+    ":(glob,exclude).agents/**",
+    ":(glob,exclude).github/**",
+    ":(glob,exclude)**/*.test.*",
+    ":(glob,exclude)**/*.spec.*",
+    ":(glob,exclude)**/*.md",
+    ":(glob,exclude)**/test-support/**",
   ];
   const commit = (await gitOutput(cwd, ["rev-parse", "HEAD"])).trim();
   const tracked = await gitOutput(cwd, [

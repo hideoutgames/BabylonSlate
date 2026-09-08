@@ -98,6 +98,7 @@ async function processSnapshot(signal) {
     {
       capture: true,
       signal,
+      env: { ...process.env, LC_ALL: "C" },
     },
   );
   if (result.code) throw new Error("Cannot sample process resources");

@@ -66,12 +66,17 @@ test("build cache ignores test edits but rejects dirty source and newly added as
   );
   const before = await buildInputState(cwd);
   await writeFile(join(cwd, "e2e/example.spec.ts"), "test two");
+  await writeFile(join(cwd, "README.md"), "documentation");
+  await writeFile(join(cwd, "apps/editor/src/main.test.ts"), "test source");
   assert.equal((await buildInputState(cwd)).digest, before.digest);
   await writeFile(join(cwd, "apps/editor/src/main.ts"), "two");
   const dirty = await buildInputState(cwd);
   assert.notEqual(dirty.digest, before.digest);
   await writeFile(join(cwd, "apps/editor/src/new.asset"), "asset");
   assert.notEqual((await buildInputState(cwd)).digest, dirty.digest);
+  const beforeConfiguration = await buildInputState(cwd);
+  await writeFile(join(cwd, "postcss.config.cjs"), "module.exports = {};");
+  assert.notEqual((await buildInputState(cwd)).digest, beforeConfiguration.digest);
   await mkdir(join(cwd, "scripts"));
   for (const file of ["process-runner.mjs", "test-runner.mjs", "resource-admission.mjs"]) {
     const previous = await buildInputState(cwd);
