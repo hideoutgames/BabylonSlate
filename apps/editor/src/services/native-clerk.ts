@@ -1,6 +1,6 @@
 import {
   createNativeHttp,
-  createSecretStore,
+  createAccountSecretStore,
   getHostPlatform,
   MemorySecretStore,
   type NativeHttp,
@@ -30,7 +30,7 @@ const messages: Record<string, string> = {
     "Could not connect to your account. Check your connection and try again.",
   authentication_failed:
     "Account sign-in could not be completed. Please try again.",
-  native_api_disabled: "Mobile sign-in is not enabled for this build yet.",
+  native_api_disabled: "App sign-in is not enabled for this build yet.",
   form_identifier_exists:
     "An account already uses this email. Sign in instead.",
   form_identifier_not_found:
@@ -41,7 +41,7 @@ const messages: Record<string, string> = {
   too_many_requests: "Please wait a moment before trying again.",
   email_code_unavailable: "Email-code sign-in is not enabled for this account.",
   additional_verification_required:
-    "This account requires additional verification that this mobile build does not support yet.",
+    "This account requires additional verification that this app build does not support yet.",
   session_unavailable:
     "Your account session has expired. Please sign in again.",
   invalid_email: "Enter a valid email address.",
@@ -126,14 +126,14 @@ export class NativeClerkClient {
   private readonly origin: string;
   private readonly tokenKey: string;
   private requests: Promise<unknown> = Promise.resolve();
+  private readonly http: NativeHttp;
+  private readonly secrets: SecretStore;
 
-  constructor(
-    publishableKey: string,
-    private readonly http: NativeHttp,
-    private readonly secrets: SecretStore,
-  ) {
+  constructor(publishableKey: string, http: NativeHttp, secrets: SecretStore) {
     this.origin = frontendOrigin(publishableKey);
     this.tokenKey = `slate-clerk-client:${publishableKey}`;
+    this.http = http;
+    this.secrets = secrets;
   }
 
   private async storedToken(): Promise<string | null> {
@@ -182,7 +182,7 @@ export class NativeClerkClient {
       const rotated = Object.entries(response.headers ?? {}).find(
         ([name]) => name.toLowerCase() === "authorization",
       )?.[1];
-      if (rotated) await this.saveToken(rotated);
+      if (typeof rotated === "string" && rotated) await this.saveToken(rotated);
       if (
         response.status === 401 ||
         (response.status === 404 && path.startsWith("/sessions/"))
@@ -321,11 +321,11 @@ export function createNativeClerkClient(
 ): NativeClerkClient {
   const host = getHostPlatform();
   const http = createNativeHttp();
-  if ((host !== "ios" && host !== "android") || !http)
+  if ((host !== "ios" && host !== "android" && host !== "electron") || !http)
     throw new NativeClerkError("configuration_error");
   return new NativeClerkClient(
     publishableKey,
     http,
-    host === "android" ? androidSessionSecrets : createSecretStore(),
+    host === "android" ? androidSessionSecrets : createAccountSecretStore(),
   );
 }

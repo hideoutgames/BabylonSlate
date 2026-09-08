@@ -28,7 +28,11 @@ export interface ElectronHttpBridge {
     url: string;
     headers: Record<string, string>;
     body?: string;
-  }): Promise<{ status: number; bodyText: string }>;
+  }): Promise<{
+    status: number;
+    bodyText: string;
+    headers?: Record<string, string>;
+  }>;
 }
 
 export interface ElectronProjectBridge {
@@ -66,6 +70,14 @@ export function getElectronSecretsBridge(): ElectronSecretsBridge | null {
     babylonslate?: { secrets?: ElectronSecretsBridge };
   };
   return host.babylonslate?.secrets ?? null;
+}
+
+/** Separate host store: account credentials must never use plaintext fallback. */
+export function getElectronAccountSecretsBridge(): ElectronSecretsBridge | null {
+  const host = globalThis as {
+    babylonslate?: { accountSecrets?: ElectronSecretsBridge };
+  };
+  return host.babylonslate?.accountSecrets ?? null;
 }
 
 export function getElectronHttpBridge(): ElectronHttpBridge | null {

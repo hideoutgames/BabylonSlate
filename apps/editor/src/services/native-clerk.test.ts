@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MemorySecretStore,
   type NativeHttpRequest,
   type NativeHttpResponse,
 } from "@babylonslate/vfs";
-import { NativeClerkClient } from "./native-clerk";
+import { createNativeClerkClient, NativeClerkClient } from "./native-clerk";
+
+afterEach(() => vi.unstubAllGlobals());
 
 const key = `pk_test_${btoa("example.clerk.accounts.dev$")}`;
 const session = {
@@ -55,6 +57,34 @@ function transport(replies: NativeHttpResponse[]) {
 }
 
 describe("NativeClerkClient", () => {
+  it("restores Electron accounts through the dedicated encrypted credential bridge", async () => {
+    const accountSecrets = new MemorySecretStore();
+    await accountSecrets.set(`slate-clerk-client:${key}`, "desktop-client");
+    const legacyRead = vi.fn();
+    const http = vi.fn(async (_request: NativeHttpRequest) =>
+      response(client, "desktop-rotated"),
+    );
+    vi.stubGlobal("babylonslate", {
+      userData: {
+        readSettings: async () => null,
+        writeSettings: async () => {},
+      },
+      secrets: { get: legacyRead },
+      accountSecrets,
+      http: { fetch: http },
+    });
+    expect(await createNativeClerkClient(key).restoreSession()).toMatchObject({
+      id: "sess_one",
+    });
+    expect(http.mock.calls[0]?.[0]).toMatchObject({
+      headers: { Authorization: "desktop-client" },
+    });
+    expect(await accountSecrets.get(`slate-clerk-client:${key}`)).toBe(
+      "desktop-rotated",
+    );
+    expect(legacyRead).not.toHaveBeenCalled();
+  });
+
   it("carries rotating client tokens across email verification and a cold client restart", async () => {
     const secrets = new MemorySecretStore();
     const { http, requests } = transport([

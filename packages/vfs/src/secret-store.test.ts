@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ElectronSecretStore } from "./electron-secret-store";
-import { createSecretStore } from "./create-secret-store";
+import {
+  createAccountSecretStore,
+  createSecretStore,
+} from "./create-secret-store";
 import { MemorySecretStore, UnavailableSecretStore } from "./secret-store";
 import { CapacitorSecretStore } from "./capacitor-secret-store";
 
@@ -23,6 +26,26 @@ describe("SecretStore", () => {
     const store = createSecretStore();
     expect(store).toBeInstanceOf(UnavailableSecretStore);
     expect(store.available).toBe(false);
+  });
+
+  it("refuses the legacy desktop store when the secure account bridge is missing", async () => {
+    const legacyWrite = vi.fn();
+    (globalThis as { babylonslate?: unknown }).babylonslate = {
+      userData: {
+        readSettings: async () => null,
+        writeSettings: async () => {},
+      },
+      secrets: {
+        get: async () => "legacy-token",
+        set: legacyWrite,
+        delete: async () => {},
+      },
+    };
+    const account = createAccountSecretStore();
+    expect(account.available).toBe(false);
+    expect(await account.get("clerk")).toBeNull();
+    await expect(account.set("clerk", "new-token")).rejects.toThrow();
+    expect(legacyWrite).not.toHaveBeenCalled();
   });
 
   it("uses the Electron secrets bridge when present", async () => {
