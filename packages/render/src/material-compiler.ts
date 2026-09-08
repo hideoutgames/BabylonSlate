@@ -35,7 +35,12 @@ import {
   type BlockRealization,
   type MaterialPlumbing,
 } from "./material-block-registry";
-import { isDisposedGpuTexture, isEngineOwnedGpuTexture } from "./gpu-resource-live";
+import {
+  isDisposedGpuTexture,
+  isEngineOwnedGpuTexture,
+} from "./gpu-resource-live";
+import { createMaterialParameterBindings } from "./material-parameters";
+import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
   scene: Scene;
@@ -49,6 +54,7 @@ export interface CompileMaterialOptions {
 export interface CompiledMaterial {
   ok: true;
   material: NodeMaterial;
+  setParameter: (name: string, parameter: MaterialParameterValue) => boolean;
   /** Idempotent: disposes the material and every block it created. */
   dispose: () => void;
 }
@@ -80,7 +86,9 @@ export function isGpuTextureSampleReady(texture: Texture): boolean {
   return !isEngineErrorSampler(texture);
 }
 
-export function nodeMaterialTexturesSampleReady(material: NodeMaterial): boolean {
+export function nodeMaterialTexturesSampleReady(
+  material: NodeMaterial,
+): boolean {
   for (const block of material.attachedBlocks) {
     const textured = block as { texture?: Texture | null };
     if (!textured.texture) continue;
@@ -165,9 +173,13 @@ export function compileMaterialPlan(
   // Normal and Screen UV read the real transformed values.
   try {
     if (plan.domain === "postProcess") {
-      outputNodes.push(...createPostProcessPlumbing(options.name, created, plumbing));
+      outputNodes.push(
+        ...createPostProcessPlumbing(options.name, created, plumbing),
+      );
     } else if (plan.domain !== "particle") {
-      outputNodes.push(...createSurfacePlumbing(options.name, created, plumbing));
+      outputNodes.push(
+        ...createSurfacePlumbing(options.name, created, plumbing),
+      );
     }
   } catch (error) {
     diagnostics.push({
@@ -230,10 +242,21 @@ export function compileMaterialPlan(
           : "float";
       const block = createConstantBlock(operation.id, type, value, asColor);
       created.push(block);
+      const blocks: NodeMaterialBlock[] = [block];
+      const outputs: Record<string, NodeMaterialConnectionPoint> = {
+        out: block.output,
+      };
+      if (operation.nodeType === "param.color") {
+        const split = new VectorSplitterBlock(`${operation.id}_rgb`);
+        block.output.connectTo(split.xyzw);
+        created.push(split);
+        blocks.push(split);
+        outputs.rgb = split.xyzOut;
+      }
       realized.set(operation.id, {
-        blocks: [block],
+        blocks,
         inputs: {},
-        outputs: { out: block.output },
+        outputs,
       });
       return true;
     }
@@ -494,12 +517,20 @@ export function compileMaterialPlan(
     }
   }
 
+  const parameters = createMaterialParameterBindings(
+    plan,
+    realized,
+    material,
+    options.resolveTexture,
+  );
   return {
     ok: true,
     material,
+    setParameter: parameters.setParameter,
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      parameters.dispose();
       for (const unsubscribe of loadObservers) unsubscribe();
       detachEngineOwnedTextures(material);
       material.dispose(false, false);
@@ -871,7 +902,11 @@ function attachSurfaceShading(
   }
   const metallic = outputPoint("metallic", `${options.name}_metallic`, false);
   if (metallic) metallic.connectTo(pbr.metallic);
-  const roughness = outputPoint("roughness", `${options.name}_roughness`, false);
+  const roughness = outputPoint(
+    "roughness",
+    `${options.name}_roughness`,
+    false,
+  );
   if (roughness) roughness.connectTo(pbr.roughness);
   const normal = outputPoint("normal", `${options.name}_normalInput`, false);
   if (normal) {

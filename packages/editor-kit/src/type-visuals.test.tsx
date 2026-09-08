@@ -25,6 +25,12 @@ import {
 } from "./type-visuals";
 
 describe("resolveTypeVisual", () => {
+  it("recognizes Material Object references as objects with the material glyph", () => {
+    expect(walkAncestry("MaterialObject", engineParentOf)).toEqual(["MaterialObject", "BObject"]);
+    const visual = resolveTypeVisual({ classId: "MaterialObject" });
+    expect(visual.family).toBe("class");
+    expect(visual.icon).toBe(resolveTypeVisual({ assetType: "Material" }).icon);
+  });
   it("gives Scene, Texture, Graph, and Class distinct colors", () => {
     const scene = resolveTypeVisual({ assetType: "Scene" });
     const texture = resolveTypeVisual({ assetType: "Texture" });

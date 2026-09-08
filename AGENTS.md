@@ -2,6 +2,13 @@
 
 This is the entry point for every agent working in BabylonSlate. Paths below are relative to the repository root. `.agents/rules/` is a repository convention: read the files explicitly; do not assume your host loads them. Repository policies take precedence over imported skill examples, subject to higher-priority host and user instructions.
 
+## Working agreements
+
+- If the user's instructions are ambiguous, ask them to clarify before proceeding.
+- Treat requests for explanations, investigations, reviews, and plans as read-only unless the user explicitly requests changes. Planning may produce an implementation plan without authorizing implementation.
+- Reuse existing components and conventions, and preserve the project's established design.
+- Never report repository changes as finished or complete until the PR is confirmed merged into `main`. If ending work or a session with unmerged changes, prominently warn that unmerged work remains, identify the branch and PR (or state that no PR exists), and explain what remains before merge. See the workflow's completion reporting rules below.
+
 ## Required reading
 
 Read these rules in full at the start of each task:

@@ -156,6 +156,7 @@ describe("p7-play-scene-load", () => {
         actorGuid: "actor-1",
         meshAssetGuid: null,
         meshKind: "sphere",
+        primaryComponentId: "component-1",
       },
     ]);
     runtime.stop();
@@ -914,6 +915,7 @@ describe("p7-play-scene-load", () => {
         type: "assignMaterial",
         slotId: 0,
         materialAssetGuid: "mat-rock",
+        componentId: "component-1",
       },
     ]);
     runtime.stop();
@@ -943,6 +945,7 @@ describe("p7-play-scene-load", () => {
         type: "assignMaterial",
         slotId: 4,
         materialAssetGuid: "mat-rock",
+        componentId: "box-mesh",
       },
     ]);
     expect(commands.some((command) => command.type === "possessCamera")).toBe(

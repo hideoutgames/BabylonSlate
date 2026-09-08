@@ -15,7 +15,6 @@ export function ContextMenuOverlay({
 }: ContextMenuOverlayProps) {
   if (!menu?.open) return null;
 
-  // Gesture coordinates are viewport-relative, even inside animated/clipped panels.
   return createPortal(
     <>
       <div

@@ -400,9 +400,10 @@ function connectDragClientPoint(
     inProgress: boolean;
     pointer?: { x: number; y: number } | null;
   },
+  root: ParentNode = document,
 ): { x: number; y: number } {
   if (connection.inProgress && connection.pointer) {
-    const flow = document.querySelector(".react-flow");
+    const flow = root.querySelector(".react-flow");
     return flow
       ? containerPointerToClient(connection.pointer, flow)
       : connection.pointer;
@@ -1063,7 +1064,7 @@ function GraphEditorCanvas({
         finishGesture();
         return;
       }
-      const root = document;
+      const root = wrapperRef.current ?? document;
       const located = screenPinsForSafeRefs(
         root,
         collectDisplayConnectPins(
@@ -1612,15 +1613,15 @@ function GraphEditorCanvas({
       const pointer = connectDragClientPoint(session, {
         inProgress: connection.inProgress,
         pointer: connection.inProgress ? connection.pointer : null,
-      });
+      }, wrapperRef.current ?? document);
       const inAddNodeZone = shouldOpenAddNodeOnConnectEnd({
         hasTargetHandle: Boolean(
           connection.inProgress && connection.toHandle,
         ),
-        pointerOverNode: isClientPointOverGraphNode(pointer),
+        pointerOverNode: isClientPointOverGraphNode(pointer, wrapperRef.current ?? document),
         pointer,
         safePins: screenCentersForSafePins(
-          document,
+          wrapperRef.current ?? document,
           collectDisplayConnectPins(
             graphStateRef.current.nodes,
             session.nodeId,
@@ -1771,6 +1772,7 @@ function GraphEditorCanvas({
       pinDisplayType,
       pinTypeNames,
       connectEndMode,
+      pinCompatibility,
       onNavigateRequest,
       selectedAttachmentId,
       onAttachmentSelect,
@@ -1793,6 +1795,7 @@ function GraphEditorCanvas({
       pinTypeNames,
       pinHasError,
       connectEndMode,
+      pinCompatibility,
       selectedAttachmentId,
       onAttachmentSelect,
       onAttachmentDoubleClick,

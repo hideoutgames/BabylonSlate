@@ -22,6 +22,7 @@ import {
   SNAPSHOT_FLAG_VISIBLE,
   type ActorSlot,
   type CommandMessage,
+  type MaterialParameterValue,
 } from "@babylonslate/bridge";
 import {
   DEFAULT_SORTING_LAYERS,
@@ -35,11 +36,22 @@ import {
 } from "@babylonslate/core";
 import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
-import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
+import {
+  applyAlbedoTexture,
+  applyTilemapAlbedoTextures,
+  type MeshAssetContext,
+} from "./mesh-assets";
 import { createOverlayTextureQuad } from "./overlay-texture-quad";
-import { createOverlayPanelMesh, type OverlayPanelMeshOptions } from "./overlay-panel-mesh";
+import {
+  createOverlayPanelMesh,
+  type OverlayPanelMeshOptions,
+} from "./overlay-panel-mesh";
 import { applyModelMaterialSlots } from "./model-preview";
-import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
+import {
+  beginSlotModelAnimLoad,
+  createModelActorRoot,
+  invalidateSlotAnimLoad,
+} from "./glb-anim";
 import {
   applySerializedTransform,
   createPrimitiveMesh,
@@ -47,7 +59,11 @@ import {
   unfreezeActorWorldMatrix,
 } from "./scene-loader";
 import { createColliderVisualMesh } from "./collider-visual";
-import { applySortingToMesh, applyWorldVisualGroup, resolveSortingLayer } from "./sorting";
+import {
+  applySortingToMesh,
+  applyWorldVisualGroup,
+  resolveSortingLayer,
+} from "./sorting";
 import {
   AUTHORED_CAMERA_PREFIX,
   AUTHORED_LIGHT_PREFIX,
@@ -72,6 +88,7 @@ import { createText3DMesh } from "./text3d-mesh";
 import { createText2DMesh } from "./text2d-mesh";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
 export { applyAttachToBone } from "./bone-attachment";
+import type { MaterialResolveOptions } from "./material-library";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -125,7 +142,10 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
     }>
   >;
   /** Last animState per slot, replayed when groups become available. */
-  pendingAnimState?: Map<number, Extract<CommandMessage, { type: "animState" }>>;
+  pendingAnimState?: Map<
+    number,
+    Extract<CommandMessage, { type: "animState" }>
+  >;
   /** In-flight GLB AnimationGroup loads, keyed by slotId. */
   slotAnimLoads?: Map<number, Promise<void>>;
   /** Cancels in-flight loads when incremented. */
@@ -141,10 +161,26 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   materialAssetGuids: Map<number, string | null>;
   /** Material asset guid per component, keyed by `slotId|componentId`. */
   componentMaterialGuids: Map<string, string | null>;
+  /** Component identity for optimized visuals whose mesh is named only by actor slot. */
+  primaryComponentIds: Map<number, string>;
+  /** Private parameter values survive visual rebuilds but not reassignment/despawn. */
+  materialParameters: Map<
+    string,
+    {
+      materialAssetGuid: string;
+      values: Map<string, MaterialParameterValue>;
+    }
+  >;
+  releaseMaterialInstance?: (instanceKey: string) => void;
+  validateMaterialParameter?: (
+    assetGuid: string,
+    name: string,
+    value: MaterialParameterValue,
+  ) => boolean;
   /** Resolves an assigned Material guid to a scene-local compiled material. */
   resolveMaterial?: (
     assetGuid: string,
-    options?: { scene?: Scene; unlit?: boolean },
+    options?: MaterialResolveOptions & { scene?: Scene },
   ) => Material | null;
   /** Overlay Play: create missing visuals in the SceneLayer scene for this slot. */
   sceneForSlot?: (slotId: number) => Scene | null;
@@ -180,6 +216,8 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     shadowQuality: "1024",
     materialAssetGuids: new Map(),
     componentMaterialGuids: new Map(),
+    primaryComponentIds: new Map(),
+    materialParameters: new Map(),
   };
 }
 
@@ -197,6 +235,14 @@ export function applyAssignMaterial(
 ): void {
   void scene;
   const componentId = command.componentId ?? null;
+  const instanceKey = materialInstanceKey(command.slotId, componentId);
+  const previous = componentId
+    ? binding.componentMaterialGuids.get(instanceKey)
+    : binding.materialAssetGuids.get(command.slotId);
+  if (previous !== command.materialAssetGuid) {
+    binding.materialParameters.delete(instanceKey);
+    binding.releaseMaterialInstance?.(instanceKey);
+  }
   if (componentId) {
     binding.componentMaterialGuids.set(
       `${command.slotId}|${componentId}`,
@@ -208,6 +254,66 @@ export function applyAssignMaterial(
   const root = binding.meshes.get(command.slotId);
   if (!root) return;
   applyMaterialToActorMeshes(binding, command.slotId, root);
+}
+
+function materialInstanceKey(
+  slotId: number,
+  componentId?: string | null,
+): string {
+  return `${slotId}|${componentId ?? ""}`;
+}
+
+function assignedMaterialGuid(
+  binding: SnapshotSceneBinding,
+  slotId: number,
+  componentId: string | null | undefined,
+): string | null | undefined {
+  const key = materialInstanceKey(slotId, componentId);
+  return componentId && binding.componentMaterialGuids.has(key)
+    ? binding.componentMaterialGuids.get(key)
+    : binding.materialAssetGuids.get(slotId);
+}
+
+/** Runtime commands only mutate the captured material assignment on the target component. */
+export function applySetMaterialParameter(
+  binding: SnapshotSceneBinding,
+  command: Extract<CommandMessage, { type: "setMaterialParameter" }>,
+): void {
+  const key = materialInstanceKey(command.slotId, command.componentId);
+  const primaryId = binding.primaryComponentIds.get(command.slotId);
+  const parts = binding.meshParts.get(command.slotId);
+  if (command.componentId && (primaryId || parts?.length)) {
+    if (
+      command.componentId !== primaryId &&
+      !parts?.some((part) => part.componentId === command.componentId)
+    )
+      return;
+  }
+  const assignedGuid = assignedMaterialGuid(
+    binding,
+    command.slotId,
+    command.componentId,
+  );
+  if (assignedGuid !== command.materialAssetGuid) return;
+  if (
+    binding.validateMaterialParameter?.(
+      command.materialAssetGuid,
+      command.parameterName,
+      command.parameter,
+    ) === false
+  )
+    return;
+  let parameters = binding.materialParameters.get(key);
+  if (!parameters) {
+    parameters = {
+      materialAssetGuid: command.materialAssetGuid,
+      values: new Map(),
+    };
+    binding.materialParameters.set(key, parameters);
+  }
+  parameters.values.set(command.parameterName, command.parameter);
+  const root = binding.meshes.get(command.slotId);
+  if (root) applyMaterialToActorMeshes(binding, command.slotId, root);
 }
 
 /** Unique Material guids currently recorded on Play meshes. */
@@ -266,13 +372,23 @@ function resolveAssignedMaterial(
   slotId: number,
   root: Mesh,
   guid: string,
+  componentId: string | null = componentIdForPlayMesh(root, slotId, binding),
 ): Material | null {
   const host = root.getScene();
   const overlay = wantsOverlayUnlitMaterial(binding, slotId);
+  let instanceKey = materialInstanceKey(slotId, componentId);
+  let parameters = binding.materialParameters.get(instanceKey);
+  if (!parameters && !binding.componentMaterialGuids.has(instanceKey)) {
+    instanceKey = materialInstanceKey(slotId);
+    parameters = binding.materialParameters.get(instanceKey);
+  }
   return (
     binding.resolveMaterial?.(guid, {
       scene: host,
       ...(overlay ? { unlit: true } : {}),
+      ...(parameters?.materialAssetGuid === guid
+        ? { instanceKey, parameters: parameters.values }
+        : {}),
     }) ?? null
   );
 }
@@ -282,18 +398,41 @@ export function applyMaterialToActorMeshes(
   slotId: number,
   root: Mesh,
 ): void {
-  const actorGuid = binding.materialAssetGuids.get(slotId) ?? null;
   const targets: Mesh[] = [root, ...root.getChildMeshes().filter(isMesh)];
   for (const target of targets) {
-    const componentId = componentIdOfPlayMesh(target.name, slotId);
-    const componentGuid = componentId
-      ? (binding.componentMaterialGuids.get(`${slotId}|${componentId}`) ?? null)
-      : null;
-    const guid = componentGuid ?? actorGuid;
+    const componentId = componentIdForPlayMesh(target, slotId, binding);
+    const guid = assignedMaterialGuid(binding, slotId, componentId);
+    if (guid === null) {
+      target.material = null;
+      continue;
+    }
     if (!guid) continue;
-    const material = resolveAssignedMaterial(binding, slotId, root, guid);
+    const material = resolveAssignedMaterial(
+      binding,
+      slotId,
+      root,
+      guid,
+      componentId,
+    );
     if (material) target.material = material;
   }
+}
+
+/** Imported glTF child names are arbitrary; their component is on an ancestor. */
+function componentIdForPlayMesh(
+  mesh: AbstractMesh,
+  slotId: number,
+  binding: SnapshotSceneBinding,
+): string | null {
+  for (
+    let node: import("@babylonjs/core").Node | null = mesh;
+    node;
+    node = node.parent
+  ) {
+    const id = componentIdOfPlayMesh(node.name, slotId);
+    if (id) return id;
+  }
+  return binding.primaryComponentIds.get(slotId) ?? null;
 }
 
 function isMesh(value: AbstractMesh): value is Mesh {
@@ -318,7 +457,9 @@ export function playComponentMeshName(
   return `actor-${slotId}|${componentId}`;
 }
 
-function partsNeedOrigin(parts: readonly AssignMeshPart[] | undefined): boolean {
+function partsNeedOrigin(
+  parts: readonly AssignMeshPart[] | undefined,
+): boolean {
   if (!parts || parts.length === 0) return false;
   if (parts.length > 1) return true;
   const part = parts[0]!;
@@ -396,6 +537,31 @@ export function applyAssignMesh(
   binding: SnapshotSceneBinding,
   command: AssignMeshCommand,
 ): void {
+  const primaryId = !partsNeedOrigin(command.parts)
+    ? (command.primaryComponentId ?? command.parts?.[0]?.componentId)
+    : undefined;
+  if (primaryId) binding.primaryComponentIds.set(command.slotId, primaryId);
+  else binding.primaryComponentIds.delete(command.slotId);
+  const componentIds = command.parts?.length
+    ? new Set(command.parts.map((part) => part.componentId))
+    : primaryId
+      ? new Set([primaryId])
+      : null;
+  if (componentIds) {
+    const prefix = `${command.slotId}|`;
+    const keys = new Set([
+      ...binding.componentMaterialGuids.keys(),
+      ...binding.materialParameters.keys(),
+    ]);
+    for (const key of keys) {
+      if (!key.startsWith(prefix)) continue;
+      const id = key.slice(prefix.length);
+      if (!id || componentIds.has(id)) continue;
+      binding.componentMaterialGuids.delete(key);
+      binding.materialParameters.delete(key);
+      binding.releaseMaterialInstance?.(key);
+    }
+  }
   const meshKind = command.meshKind ?? null;
   binding.meshKinds.set(command.slotId, meshKind);
   binding.meshAssetGuids.set(command.slotId, command.meshAssetGuid);
@@ -556,10 +722,7 @@ function applyAssignMeshSorting(mesh: Mesh, command: AssignMeshCommand): void {
   }
 }
 
-function stampOverlayPick(
-  mesh: Mesh,
-  command: AssignMeshCommand,
-): void {
+function stampOverlayPick(mesh: Mesh, command: AssignMeshCommand): void {
   if (!command.hitTest && !command.actorGuid) return;
   const apply = (target: AbstractMesh) => {
     target.metadata = {
@@ -585,20 +748,18 @@ function stampOverlayPick(
   }
 }
 
-function playMeshMetadata(
-  mesh: Mesh,
-): {
+function playMeshMetadata(mesh: Mesh): {
   playActorOrigin?: boolean;
   playHelperVisual?: boolean;
   playDebugOverlay?: boolean;
   playWireframeRestore?: boolean;
 } | null {
-  return (mesh.metadata as {
+  return mesh.metadata as {
     playActorOrigin?: boolean;
     playHelperVisual?: boolean;
     playDebugOverlay?: boolean;
     playWireframeRestore?: boolean;
-  } | null);
+  } | null;
 }
 
 function isPlayActorOrigin(mesh: Mesh): boolean {
@@ -695,7 +856,10 @@ function isWorldOverlayLeftoverName(name: string, slotId: number): boolean {
 }
 
 /** Drop world-Scene copies of an overlay slot so the perspective camera cannot draw them. */
-export function disposeWorldOverlayLeftovers(worldScene: Scene, slotId: number): void {
+export function disposeWorldOverlayLeftovers(
+  worldScene: Scene,
+  slotId: number,
+): void {
   for (const mesh of [...worldScene.meshes]) {
     if (isWorldOverlayLeftoverName(mesh.name, slotId)) {
       mesh.dispose();
@@ -713,7 +877,13 @@ export function retirePlaySlot(
   binding.meshKinds.delete(slotId);
   binding.meshAssetGuids.delete(slotId);
   binding.meshParts.delete(slotId);
+  binding.primaryComponentIds.delete(slotId);
   binding.materialAssetGuids.delete(slotId);
+  for (const key of binding.materialParameters.keys()) {
+    if (!key.startsWith(`${slotId}|`)) continue;
+    binding.materialParameters.delete(key);
+    binding.releaseMaterialInstance?.(key);
+  }
   binding.spriteOverlays?.get(slotId)?.dispose();
   binding.spriteOverlays?.delete(slotId);
   invalidateSlotAnimLoad(binding, slotId);
@@ -797,7 +967,11 @@ function createPlayVisual(
   if (!partsNeedOrigin(parts)) {
     return createPlayMesh(scene, slotId, meshKind, assetGuid, binding);
   }
-  const root = MeshBuilder.CreateSphere(`actor-${slotId}`, { diameter: 0.75 }, scene);
+  const root = MeshBuilder.CreateSphere(
+    `actor-${slotId}`,
+    { diameter: 0.75 },
+    scene,
+  );
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();
@@ -853,10 +1027,17 @@ export function createPlayMesh(
     }
   }
   if (meshKind === "sprite") {
-    const payload = assetGuid ? binding?.spritePayloads?.get(assetGuid) : undefined;
+    const payload = assetGuid
+      ? binding?.spritePayloads?.get(assetGuid)
+      : undefined;
     const frame = payload?.frames[0];
     const mesh = frame
-      ? createSpriteQuad(scene, name, frame, payload?.pixelsPerUnit ?? binding?.pixelsPerUnit)
+      ? createSpriteQuad(
+          scene,
+          name,
+          frame,
+          payload?.pixelsPerUnit ?? binding?.pixelsPerUnit,
+        )
       : createPrimitiveMesh(scene, name, "sprite");
     applyAlbedoTexture(mesh, scene, payload?.textureGuid, binding);
     if (frame && binding) {
@@ -895,11 +1076,7 @@ export function createPlayMesh(
       mesh.isPickable = false;
       return mesh;
     }
-    const mesh = MeshBuilder.CreatePlane(
-      name,
-      { width: 1, height: 1 },
-      scene,
-    );
+    const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
     const material = new StandardMaterial(`${name}-unlit`, scene);
     material.disableLighting = true;
     material.emissiveColor = Color3.White();
@@ -921,8 +1098,9 @@ export function createPlayMesh(
       partText2d ??
       binding?.meshParts
         .get(slotId)
-        ?.find((part) => playComponentMeshName(slotId, part.componentId) === name)
-        ?.text2d;
+        ?.find(
+          (part) => playComponentMeshName(slotId, part.componentId) === name,
+        )?.text2d;
     const props = fromPart ?? binding?.text2dProps.get(slotId);
     return createText2DMesh(scene, name, props ?? {}, binding, {
       rich: meshKind === "2drichtext",
@@ -968,10 +1146,13 @@ export function createPlayMesh(
       partText3d ??
       binding?.meshParts
         .get(slotId)
-        ?.find((part) => playComponentMeshName(slotId, part.componentId) === name)
-        ?.text3d;
+        ?.find(
+          (part) => playComponentMeshName(slotId, part.componentId) === name,
+        )?.text3d;
     const props = fromPart ?? binding?.text3dProps.get(slotId);
-    return finishPlayWorldMesh(createText3DMesh(scene, name, props ?? {}, binding));
+    return finishPlayWorldMesh(
+      createText3DMesh(scene, name, props ?? {}, binding),
+    );
   }
   if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);
@@ -983,21 +1164,25 @@ export function createPlayMesh(
         kind === "hemispheric"
           ? new HemisphericLight(lightName, new Vector3(0, 1, 0), scene)
           : kind === "directional"
-          ? new DirectionalLight(lightName, new Vector3(0, 0, 1), scene)
-          : kind === "spot"
-            ? new SpotLight(
-                lightName,
-                Vector3.Zero(),
-                new Vector3(0, 0, 1),
-                Math.PI / 3,
-                2,
-                scene,
-              )
-            : new PointLight(lightName, Vector3.Zero(), scene);
+            ? new DirectionalLight(lightName, new Vector3(0, 0, 1), scene)
+            : kind === "spot"
+              ? new SpotLight(
+                  lightName,
+                  Vector3.Zero(),
+                  new Vector3(0, 0, 1),
+                  Math.PI / 3,
+                  2,
+                  scene,
+                )
+              : new PointLight(lightName, Vector3.Zero(), scene);
       const props = binding.lightProps.get(slotId);
       if (props) applyAuthoredLightProperties(light, props);
       binding.lights.set(slotId, light);
-      if (kind !== "hemispheric" && props?.castShadows && binding.shadowOwnerSlot === null) {
+      if (
+        kind !== "hemispheric" &&
+        props?.castShadows &&
+        binding.shadowOwnerSlot === null
+      ) {
         binding.shadowOwnerSlot = slotId;
       }
       applyPlayShadows(scene, binding);
@@ -1085,12 +1270,20 @@ export function applySnapshotToScene(
       const light = binding.lights.get(actor.slotId);
       if (light) {
         const composed = composeSlotPartTransform(actor, binding, actor.slotId);
-        updateAuthoredLightTransform(light, composed.position, composed.rotation);
+        updateAuthoredLightTransform(
+          light,
+          composed.position,
+          composed.rotation,
+        );
       }
       const camera = binding.cameras.get(actor.slotId);
       if (camera) {
         const composed = composeSlotPartTransform(actor, binding, actor.slotId);
-        updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
+        updateAuthoredCameraTransform(
+          camera,
+          composed.position,
+          composed.rotation,
+        );
       }
       if (!wantsOverlay) {
         applyTilemapParallaxToMesh(
@@ -1134,9 +1327,10 @@ function snapPlayCameraToPixelGrid(
   if (!binding.pixelPerfect) return;
   const camera = scene.activeCamera;
   if (!camera) return;
-  const ppu = binding.pixelsPerUnit && binding.pixelsPerUnit > 0
-    ? binding.pixelsPerUnit
-    : 100;
+  const ppu =
+    binding.pixelsPerUnit && binding.pixelsPerUnit > 0
+      ? binding.pixelsPerUnit
+      : 100;
   camera.position.x = snapToPixelGrid(camera.position.x, ppu);
   camera.position.y = snapToPixelGrid(camera.position.y, ppu);
 }
@@ -1168,6 +1362,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.meshKinds.clear();
   binding.meshAssetGuids.clear();
   binding.meshParts.clear();
+  binding.primaryComponentIds.clear();
   binding.shadow = null;
   binding.shadowOwnerSlot = null;
   binding.defaultCameraSlotId = null;

@@ -6,9 +6,18 @@ import {
   Scene,
   ScenePerformancePriority,
 } from "@babylonjs/core";
-import type { AudioProjectSettings, SerializedScene, ViewportMode } from "@babylonslate/core";
+import type {
+  AudioProjectSettings,
+  SerializedScene,
+  ViewportMode,
+} from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
-import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type {
+  SpriteAnimationPayload,
+  SpritePayload,
+  TilemapPayload,
+  TilesetPayload,
+} from "@babylonslate/assets";
 import {
   isPublishedSnapshot,
   readSnapshotHeader,
@@ -58,11 +67,22 @@ import {
   sceneClearColor,
   type EditorColorScheme,
 } from "./editor-clear-color";
-import { applySceneToBabylonScene, unfreezeActorWorldMatrix, freezeStaticActorWorldMatrix } from "./scene-loader";
-import { accountedGeometryBytesForScene, isEditorModelPlaceholder } from "./glb-anim";
+import {
+  applySceneToBabylonScene,
+  unfreezeActorWorldMatrix,
+  freezeStaticActorWorldMatrix,
+} from "./scene-loader";
+import {
+  accountedGeometryBytesForScene,
+  isEditorModelPlaceholder,
+} from "./glb-anim";
 import { snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { actorFramingRadius, actorFramingTarget } from "./actor-framing";
-import { isSkyboxMesh, skyboxCubeCacheGuid, skyboxCubeCacheGuidsFromScene } from "./skybox";
+import {
+  isSkyboxMesh,
+  skyboxCubeCacheGuid,
+  skyboxCubeCacheGuidsFromScene,
+} from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
   refreshAuthoredCameraLenses,
@@ -96,11 +116,16 @@ import {
   createPlayDebugDraw,
   type PlayDebugDrawController,
 } from "./play-debug-draw";
-import { SnapshotInterpolator, writeSampledAudioPoses, type SampledAudioPose } from "./snapshot-sync";
+import {
+  SnapshotInterpolator,
+  writeSampledAudioPoses,
+  type SampledAudioPose,
+} from "./snapshot-sync";
 import {
   applySnapshotToScene,
   applyAssignMaterial,
   applyAttachToBone,
+  applySetMaterialParameter,
   applyAssignMesh,
   applyPossessCamera,
   applyShadowQuality,
@@ -135,10 +160,7 @@ import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
-import {
-  MaterialLibrary,
-  materialUnavailable,
-} from "./material-library";
+import { MaterialLibrary } from "./material-library";
 import {
   attachPostProcessStack,
   normalizePostProcessStack,
@@ -342,7 +364,10 @@ export interface CreateEngineOptions {
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   /** Model payloads (material slots / clip names) keyed by Model asset guid. */
-  modelPayloads?: ReadonlyMap<string, import("@babylonslate/assets").ModelPayload>;
+  modelPayloads?: ReadonlyMap<
+    string,
+    import("@babylonslate/assets").ModelPayload
+  >;
   /** Native clipName → Animation guid, keyed by Model guid. */
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   /** Retargeted Animation loads keyed by the actor (target) Model guid. */
@@ -562,7 +587,8 @@ function createPlayAudioBackend(
   if (injected) return injected;
   const hasAudioContext =
     typeof globalThis !== "undefined" &&
-    typeof (globalThis as { AudioContext?: unknown }).AudioContext === "function";
+    typeof (globalThis as { AudioContext?: unknown }).AudioContext ===
+      "function";
   if (!hasAudioContext) return new FakeAudioPlaybackBackend();
   return new BabylonAudioPlaybackBackend();
 }
@@ -689,8 +715,10 @@ export function createEngine(
       })
     : null;
   if (audioService) {
-    if (typeof options.audioByteCeiling === "number" ||
-      typeof options.audioBudgetEnabled === "boolean") {
+    if (
+      typeof options.audioByteCeiling === "number" ||
+      typeof options.audioBudgetEnabled === "boolean"
+    ) {
       audioService.setAudioBudget(
         typeof options.audioByteCeiling === "number"
           ? options.audioByteCeiling
@@ -799,18 +827,20 @@ export function createEngine(
   });
   binding.resolveMaterial = (guid, options) => {
     const host = options?.scene ?? scene;
-    const unlit = options?.unlit === true;
-    const live = materialLibrary.materialFor(host, guid, { unlit });
-    if (live) {
-      compiledMaterialGuids.add(guid);
-      return live;
-    }
     const document = materialDocuments.get(guid);
     if (!document) return null;
-    const acquired = materialLibrary.acquire(host, guid, document, { unlit });
-    if (materialUnavailable(acquired)) return null;
+    const material = materialLibrary.resolve(host, guid, document, options);
+    if (!material) return null;
     compiledMaterialGuids.add(guid);
-    return acquired.material;
+    return material;
+  };
+  binding.releaseMaterialInstance = (key) =>
+    materialLibrary.releaseInstance(key);
+  binding.validateMaterialParameter = (guid, name, value) => {
+    const document = materialDocuments.get(guid);
+    return (
+      !!document && materialLibrary.acceptsParameter(document, name, value)
+    );
   };
 
   const particleService = options.playMode
@@ -890,8 +920,8 @@ export function createEngine(
     sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
   binding.isOverlaySlot = (slotId) =>
     sceneLayerCompositor?.layerIdForSlot(slotId) != null;
-  particleService?.setSceneForSlot((slotId) =>
-    sceneLayerCompositor?.sceneForSlot(slotId) ?? null,
+  particleService?.setSceneForSlot(
+    (slotId) => sceneLayerCompositor?.sceneForSlot(slotId) ?? null,
   );
   const pendingOverlayAssign = new Map<
     number,
@@ -1036,7 +1066,10 @@ export function createEngine(
     scene.activeCamera?.dispose();
     const cameraController = createEditorCamera(scene, { mode, scheduler });
     let previewGameCamera = false;
-    const grid = createEditorGrid(scene, { mode, camera: cameraController.camera });
+    const grid = createEditorGrid(scene, {
+      mode,
+      camera: cameraController.camera,
+    });
     const selection = new SelectionOutline(scene);
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
     const parentIdOf = (id: string): string | null =>
@@ -1154,12 +1187,7 @@ export function createEngine(
       onMarquee: (rect) => {
         if (!options.onMarqueeSelect) return;
         const css = canvas.getBoundingClientRect();
-        const names = meshNamesInCanvasRect(
-          scene,
-          rect,
-          css.width,
-          css.height,
-        );
+        const names = meshNamesInCanvasRect(scene, rect, css.width, css.height);
         const actorIds = [
           ...new Set(
             names
@@ -1237,19 +1265,15 @@ export function createEngine(
         // Locked actors are not pickable; keep the gizmo off them so lock is
         // more than a pick filter. Attach to the first pickable selection root
         // so a selected child is not the group handle when its parent is too.
-        const attachId = pickGizmoAttachActorId(
-          actorIds,
-          parentIdOf,
-          (id) => {
-            const mesh = editorSync.meshForActor(id);
-            if (!mesh) return false;
-            const locked = editorSync
-              .serializedScene()
-              ?.actors.find((actor) => actor.id === id)?.locked;
-            if (locked) return false;
-            return mesh.isPickable || isEditorModelPlaceholder(mesh);
-          },
-        );
+        const attachId = pickGizmoAttachActorId(actorIds, parentIdOf, (id) => {
+          const mesh = editorSync.meshForActor(id);
+          if (!mesh) return false;
+          const locked = editorSync
+            .serializedScene()
+            ?.actors.find((actor) => actor.id === id)?.locked;
+          if (locked) return false;
+          return mesh.isPickable || isEditorModelPlaceholder(mesh);
+        });
         gizmos.attachTo(
           attachId ? editorSync.meshForActor(attachId) : null,
           attachId ? editorSync.visualMeshesForActor(attachId) : [],
@@ -1283,7 +1307,9 @@ export function createEngine(
         const actorId = editorSync.actorForMesh(mesh.name);
         if (!actorId) return null;
         return (
-          selectedActorTransforms().find((entry) => entry.actorId === actorId) ?? {
+          selectedActorTransforms().find(
+            (entry) => entry.actorId === actorId,
+          ) ?? {
             actorId,
             ...readMeshLocalTransform(mesh),
           }
@@ -1334,7 +1360,7 @@ export function createEngine(
       engine.resize();
     }
     const size = presentRtt
-      ? rttPresent?.canvasSize() ?? { width: 1, height: 1 }
+      ? (rttPresent?.canvasSize() ?? { width: 1, height: 1 })
       : {
           width: engine.getRenderWidth(),
           height: engine.getRenderHeight(),
@@ -1687,6 +1713,10 @@ export function createEngine(
         applyAttachToBone(binding, command);
         scheduler.invalidate("snapshot");
       }
+      if (command.type === "setMaterialParameter") {
+        applySetMaterialParameter(binding, command);
+        scheduler.invalidate("asset");
+      }
       if (command.type === "possessCamera") {
         const previousCamera = scene.activeCamera;
         applyPossessCamera(scene, binding, command.slotId);
@@ -1751,9 +1781,7 @@ export function createEngine(
         return { meshName: overlayHit.meshName, slotId: overlayHit.slotId };
       }
       const hit = pickAtCanvas(scene, mapped.x, mapped.y);
-      return hit
-        ? { meshName: hit.meshName, slotId: hit.slotId }
-        : null;
+      return hit ? { meshName: hit.meshName, slotId: hit.slotId } : null;
     },
     lastActorPositions: () => lastPositions,
     playVisualStates: () => {

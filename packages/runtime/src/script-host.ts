@@ -18,11 +18,12 @@ import {
   slerpQuats,
   type Rng,
 } from "@babylonslate/core";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { MaterialParameterValue, ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   Actor,
   ActorComponent,
   BObject,
+  MaterialObject,
   Scene,
   SceneLayer,
   dispatchInterface,
@@ -159,6 +160,11 @@ export interface ScriptHostServices {
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   setRenderResolution?(width: number, height: number): void;
+  setMaterialParameter?(
+    material: MaterialObject,
+    parameterName: string,
+    parameter: MaterialParameterValue,
+  ): void;
   possessCamera?(target: unknown): void;
   updateIllumination?(target: unknown): void;
   refreshComponent?(component: ActorComponent): void;
@@ -442,6 +448,21 @@ export interface ScriptContext {
     materialGuid: string,
   ): void;
   setRenderResolution(width: number, height: number): void;
+  setMaterialFloatParameter(
+    material: unknown,
+    name: string,
+    value: number,
+  ): void;
+  setMaterialColorParameter(
+    material: unknown,
+    name: string,
+    value: ScriptColor,
+  ): void;
+  setMaterialTextureParameter(
+    material: unknown,
+    name: string,
+    value: string | null,
+  ): void;
   possessCamera(target: unknown): void;
   getCameraFieldOfView(target: unknown): number;
   setCameraFieldOfView(target: unknown, fov: number): void;
@@ -847,6 +868,37 @@ export class ScriptHost {
         if (object instanceof ActorComponent) {
           this.applyComponentVariable(object, String(name ?? ""), value);
         }
+      },
+      setMaterialFloatParameter: (material, name, value) => {
+        if (typeof value !== "number" || !Number.isFinite(value)) return;
+        this.setMaterialParameter(material, name, { kind: "float", value });
+      },
+      setMaterialColorParameter: (material, name, value) => {
+        if (!value || typeof value !== "object") return;
+        const rgba: [number, number, number, number] = [
+          value.x,
+          value.y,
+          value.z,
+          value.w,
+        ];
+        if (
+          !rgba.every(
+            (channel) =>
+              typeof channel === "number" && Number.isFinite(channel),
+          )
+        )
+          return;
+        this.setMaterialParameter(material, name, {
+          kind: "color",
+          value: rgba,
+        });
+      },
+      setMaterialTextureParameter: (material, name, value) => {
+        if (value !== null && typeof value !== "string") return;
+        this.setMaterialParameter(material, name, {
+          kind: "texture",
+          textureAssetGuid: value?.trim() || null,
+        });
       },
       destroyActor: (actor) => {
         const target = asActor(actor ?? self);
@@ -1357,6 +1409,17 @@ export class ScriptHost {
       getBlackboard: extras?.getBlackboard ?? (() => undefined),
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
+  }
+
+  private setMaterialParameter(
+    material: unknown,
+    name: string,
+    parameter: MaterialParameterValue,
+  ): void {
+    if (!(material instanceof MaterialObject) || material.destroyed) return;
+    if (material.component.getVariable("materialObject") !== material) return;
+    if (typeof name !== "string" || !name.trim()) return;
+    this.services.setMaterialParameter?.(material, name.trim(), parameter);
   }
 
   private applyComponentVariable(

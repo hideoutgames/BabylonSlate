@@ -1,14 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
-
-// These executable fixtures launch Git, pnpm, and Node. Their startup budget
-// must not turn source/CI assertions into deadline tests on a busy Windows host.
-const OPERATION_TIMEOUT_MS = 60000;
 
 async function fixture(t, action = "success") {
   const cwd = await mkdtemp(join(tmpdir(), "agent wait fixture "));
@@ -82,10 +78,18 @@ async function run(options, context) {
   const { runAgentWait } = await import("./agent-wait.mjs");
   return runAgentWait(options, context);
 }
-const local = { mode: "local", script: "verify", args: [], timeoutMs: OPERATION_TIMEOUT_MS };
+// Real Git, pnpm, and fake-GitHub subprocesses need startup headroom on contended
+// hosts. Deadline regressions override this budget with their own short limits.
+const fixtureTimeoutMs = 60000;
+const local = {
+  mode: "local",
+  script: "verify",
+  args: [],
+  timeoutMs: fixtureTimeoutMs,
+};
 
 async function waitForLog(f, pattern) {
-  const deadline = Date.now() + OPERATION_TIMEOUT_MS;
+  const deadline = Date.now() + fixtureTimeoutMs;
   while (Date.now() < deadline) {
     const firstLine = f.output().split("\n")[0];
     if (firstLine) {
@@ -132,6 +136,38 @@ test("unfiltered verification certifies a clean unchanged commit", async (t) => 
   const result = await run(local, f.context);
   assert.equal(result.status, "success");
   assert.equal(result.deliveryEligible, true);
+});
+
+test("local retains recursive package diagnostics with a silent parent reporter", async (t) => {
+  const f = await fixture(t, "fail");
+  await writeFile(
+    join(f.cwd, "package.json"),
+    JSON.stringify({ scripts: { verify: "pnpm -r typecheck" } }),
+  );
+  await writeFile(
+    join(f.cwd, "pnpm-workspace.yaml"),
+    "packages:\n  - fixture-*\n",
+  );
+  for (const name of ["fixture-package", "fixture-other"]) {
+    await mkdir(join(f.cwd, name));
+    await writeFile(
+      join(f.cwd, name, "package.json"),
+      JSON.stringify({ name, scripts: { typecheck: "node ../fixture.mjs" } }),
+    );
+  }
+  f.env.npm_config_reporter = "silent";
+  const result = await run(local, f.context);
+  assert.equal(result.status, "failure");
+  assert.notEqual(result.exitCode, 0);
+  assert.equal(result.deliveryEligible, false);
+  const log = await readFile(result.logPath, "utf8");
+  assert.match(log, /"inherited":"preserved 🌍"/);
+  assert.match(log, /fixture failure/);
+  assert.ok(
+    log.lastIndexOf('["git","rev-parse","HEAD"]') >
+      log.indexOf("fixture failure"),
+    "final snapshot metadata follows the complete child output",
+  );
 });
 
 for (const [action, code] of [
@@ -287,7 +323,7 @@ test("deadline terminates a slow owned process and cannot pass", async (t) => {
   t.mock.method(globalThis, "setTimeout", (callback, ms, ...args) => {
     // Control only the operation's deadline. Process cleanup timers and the
     // separately bounded final Git snapshot continue to use real time.
-    if (ms === OPERATION_TIMEOUT_MS) expire = () => callback(...args);
+    if (ms === fixtureTimeoutMs) expire = () => callback(...args);
     return realSetTimeout(callback, ms, ...args);
   });
   const pending = run(local, { ...f.context, signal: controller.signal });
@@ -357,8 +393,11 @@ if(scenario.splitUnicode && key==='pr view') {
 
 test("CI discovers a delayed Verify run, watches once, and returns its identity", async (t) => {
   const f = await github(t, { discover: true });
-  f.context.discoveryMs = OPERATION_TIMEOUT_MS;
-  const result = await run({ mode: "ci", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS }, f.context);
+  f.context.discoveryMs = fixtureTimeoutMs;
+  const result = await run(
+    { mode: "ci", pr: 42, timeoutMs: fixtureTimeoutMs },
+    f.context,
+  );
   assert.equal(result.status, "success");
   assert.equal(result.runId, 100);
   assert.equal(result.commitSha, goodRun.headSha);
@@ -384,7 +423,10 @@ test("CI discovers a delayed Verify run, watches once, and returns its identity"
 
 test("Unicode split across process chunks does not corrupt the PR branch", async (t) => {
   const f = await github(t, { branch: "feature-🌍", splitUnicode: true });
-  const result = await run({ mode: "ci", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS }, f.context);
+  const result = await run(
+    { mode: "ci", pr: 42, timeoutMs: fixtureTimeoutMs },
+    f.context,
+  );
   assert.equal(result.status, "success");
 });
 
@@ -420,7 +462,7 @@ for (const [name, scenario, status] of [
   test(`CI ${name} cannot produce success`, async (t) => {
     const f = await github(t, scenario);
     const result = await run(
-      { mode: "ci", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS },
+      { mode: "ci", pr: 42, timeoutMs: fixtureTimeoutMs },
       f.context,
     );
     assert.equal(result.status, status);
@@ -446,7 +488,7 @@ test("slot waits until fewer than two other non-draft main PRs remain, excluding
     ],
   });
   const result = await run(
-    { mode: "slot", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS },
+    { mode: "slot", pr: 42, timeoutMs: fixtureTimeoutMs },
     f.context,
   );
   assert.equal(result.status, "success");
@@ -466,7 +508,7 @@ test("slot waits until fewer than two other non-draft main PRs remain, excluding
 test("missing GitHub CLI is a bounded launch failure", async (t) => {
   const f = await fixture(t);
   const result = await run(
-    { mode: "ci", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS },
+    { mode: "ci", pr: 42, timeoutMs: fixtureTimeoutMs },
     { ...f.context, gh: [join(f.cwd, "missing-gh")] },
   );
   assert.equal(result.status, "failure");
