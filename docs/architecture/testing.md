@@ -22,6 +22,8 @@ On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_scri
 
 Playwright builds and starts its own preview server; an occupied port fails instead of silently reusing a different worktree's build. Set `PLAYWRIGHT_PORT` to a free integer port from 1–65535 (default `4173`) when running multiple checkouts. The browser base URL, readiness probe, and strict-port preview server use that same port. Server reuse is disabled for both the default and explicit ports.
 
+Local server startup allows ten minutes for the player/editor typechecks and builds when other checkouts compete for memory. CI retains its three-minute startup limit. Browser test and readiness assertion timeouts are separate from this build/startup allowance.
+
 `openTestProject` waits for cross-origin isolation after navigation before interacting with Homepage. The COI service worker may reload during initial registration; waiting for its isolated page prevents those reloads from interrupting project creation or opening.
 
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.

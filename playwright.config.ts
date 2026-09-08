@@ -53,6 +53,6 @@ export default defineConfig({
     env: { VITE_TEST_MODE: "true" },
     url: baseURL,
     reuseExistingServer: false,
-    timeout: 180_000,
+    timeout: process.env.CI ? 180_000 : 600_000,
   },
 });
