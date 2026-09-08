@@ -33,6 +33,8 @@ Local server startup allows ten minutes for the player/editor typechecks and bui
 
 `openTestProject` waits for cross-origin isolation after navigation before interacting with Homepage. The COI service worker may reload during initial registration; waiting for its isolated page prevents those reloads from interrupting project creation or opening.
 
+Shared project create/reopen helpers allow up to 30 seconds for editor chrome after storage, scaffolding, and asset imports finish. They poll the actual ready UI; ordinary interaction assertions retain their default deadline.
+
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 
 ## GitHub Actions

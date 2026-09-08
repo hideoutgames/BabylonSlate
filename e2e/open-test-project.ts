@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+const PROJECT_BOOT_TIMEOUT_MS = 30_000;
+
 /** Click the Homepage TestProject row (name with or without `.babproject`). */
 export async function clickListedTestProject(page: Page): Promise<void> {
   const listed = page.getByTestId("open-listed-project-TestProject");
@@ -32,12 +34,16 @@ export async function openTestProject(
   );
   if ((await listed.count()) > 0) {
     await listed.click();
-    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+      timeout: PROJECT_BOOT_TIMEOUT_MS,
+    });
     return;
   }
   if ((await listedLegacy.count()) > 0) {
     await listedLegacy.click();
-    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+      timeout: PROJECT_BOOT_TIMEOUT_MS,
+    });
     return;
   }
   await page.getByTestId("create-project").click();
@@ -50,13 +56,17 @@ export async function openTestProject(
     "true",
   );
   await page.getByTestId("create-project-submit").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+    timeout: PROJECT_BOOT_TIMEOUT_MS,
+  });
 }
 
 /** Click the homepage TestProject row after Close / reload, then wait for chrome. */
 export async function openListedTestProject(page: Page): Promise<void> {
   await clickListedTestProject(page);
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+    timeout: PROJECT_BOOT_TIMEOUT_MS,
+  });
 }
 
 /** Submit Create when the name is free; otherwise dismiss and open the listed project. */

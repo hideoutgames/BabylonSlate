@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { createPortal } from "react-dom";
 import {
   ArrowUpDownIcon,
   BoxIcon,
@@ -236,14 +235,11 @@ function HomepageProjectRow({
           <XIcon />
         </IconActionButton>
       </Card>
-      {createPortal(
-        <ContextMenuOverlay
-          menu={menu}
-          onClose={closeMenu}
-          contentTestId="homepage-project-menu"
-        />,
-        document.body,
-      )}
+      <ContextMenuOverlay
+        menu={menu}
+        onClose={closeMenu}
+        contentTestId="homepage-project-menu"
+      />
     </li>
   );
 }
