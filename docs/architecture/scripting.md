@@ -90,6 +90,8 @@ Single module `packages/scripting/src/types.ts` (exhaustively tested, prefer fas
 
 Compilation applies that resolved view to a temporary graph before code generation. Generic container outputs therefore use their concrete type defaults (for example, a missing String Map value is `""`, not the unresolved wildcard's `null`). The authored graph and stored generic pin declarations remain unchanged.
 
+Creating an event commits its node and declaration once, then focuses that node without a second graph edit. Validation recognizes node-declared custom events in older graphs, matching the Add Node palette; calls to absent event names still fail.
+
 Inspector property rows write literal defaults using the stable pin ID (`default:in`), independently of the Title Case display name (`In`). Legacy display-name defaults remain readable, but a new edit updates the canonical key so an older ID-keyed value cannot mask the edit.
 
 - All `resolvingWildcard` slots on a node share one variable `T` unless the type sets `group` (default `"T"`). Nested `array<T>` / `map<K,V>` walk into those slots.
@@ -263,7 +265,7 @@ Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node 
 
 ### Pin defaults (Inspector + canvas)
 
-Unconnected data inputs can store a literal used at compile time when no wire is present. `pinExpr` order: connected wire → stored `default:${pin.id}` / `default:${pin.name}` → live catalog `GraphPin.defaultValue` (`registry.get(typeId).pins(properties)`) → `defaultValueLiteral(type)`. Catalog fallbacks repair existing Print graphs that never stored Duration / Color. `listUnconnectedLiteralPinDefaults` uses the same catalog values so Duration shows `2` and Color shows white on a freshly placed Print. The Inspector edits `default:${name}` so pin defaults do not collide with node properties (`severity`, `body`, `count`, …). `ctx.input` / `ctx.output` resolve a pin by **id** first, then display name, so Title Case labels can differ from codegen keys. Connected pins hide the default field. `pin()` accepts an optional last `defaultValue`.
+Unconnected data inputs can store a literal used at compile time when no wire is present. `pinExpr` order: connected wire → stored `default:${pin.id}` / `default:${pin.name}` → live catalog `GraphPin.defaultValue` (`registry.get(typeId).pins(properties)`) → `defaultValueLiteral(type)`. Catalog fallbacks repair existing Print graphs that never stored Duration / Color. `listUnconnectedLiteralPinDefaults` uses the same catalog values so Duration shows `2` and Color shows white on a freshly placed Print. The Inspector, including asset and class pickers, edits `default:${pin.id}` so pin defaults do not collide with node properties (`severity`, `body`, `count`, …). `ctx.input` / `ctx.output` resolve a pin by **id** first, then display name, so Title Case labels can differ from codegen keys. Connected pins hide the default field. `pin()` accepts an optional last `defaultValue`.
 
 The graph canvas shows a **read-only** preview on the node (`PinDefaultPreviewWidget`): handle → preview → name. Bool is a decorative checkbox and color is a swatch (`size-5`). String, numeric, vector, and type-name fields use a `text-base` / `h-8` `w-fit` field truncated at `max-width: var(--graph-pin-default-max-width)` so a long default contributes up to 12rem (`min-width: min(12rem, max-content)` in `graph-editor.css`, not unbounded `fit-content`) and ellipsizes past that. Pin names stay `whitespace-nowrap`; pin rows are `w-full min-w-max` so the Blueprint shell grows around the widest row and Then stays on the right. Typed Object / Actor / Class / Asset / Struct / Enum inputs show the **constraint type name** in that field (`classId`, `assetType`, or Structure/Enum name from `GraphEditor` `pinTypeNames`; `engine:` prefix stripped when unnamed) — not the authored guid or enum member. Previews are not focusable and do not change the graph — Inspector remains the editor. Wiring the pin hides the preview.
 
@@ -305,6 +307,8 @@ Compiled class graphs bind to object-model lifecycle without changing dispatch s
 - FunctionLibrary → module of static functions; palette injects Call Function rows (open docs + header index). EditorFunctionLibrary is editor-only.
 
 Play path: compile project graphs → worker `loadScripts` control message → `loadCompiledModule` → `registerAnchors` → spawn scripted actors → tick.
+
+Compiled Class bundles include the merged prefab component templates, including inherited components and component-only classes without event nodes. Spawn Actor attaches independent copies before realization and Begin Play, preserving local transforms, asset references and component parenting with fresh instance IDs. Component edits invalidate the Class compile cache, including affected child classes. Spawning from Tick creates one actor per executed Spawn Actor node; it does not throttle repeated calls.
 
 `shouldSpawnScriptedActor` skips `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, `Scene`, and `Scene:{guid}` so those graphs never auto-spawn as Actors. `spawnActor` also returns null for `SceneLayerActor` and subclasses — overlay actors come from SceneLayer documents / Create Scene Layer, not the world Spawn Actor node.
 

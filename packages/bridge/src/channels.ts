@@ -1,6 +1,6 @@
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ProjectInputSettings, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Serializable runtime override of one named Material Graph parameter. */
 export type MaterialParameterValue =
@@ -69,6 +69,8 @@ export type ScriptBundleEntry = {
     generateHitEvents?: boolean;
     generateOverlapEvents?: boolean;
   };
+  /** Effective prefab component templates for runtime Spawn Actor. */
+  components?: SerializedComponent[];
 };
 
 export type ControlMessage =

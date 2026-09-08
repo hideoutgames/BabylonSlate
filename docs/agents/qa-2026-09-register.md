@@ -21,6 +21,17 @@ Common accountability and context, inherited by **every subcase** unless overrid
 
 Priority: W1A state integrity; W1B observation/input ownership; W1C duplication physics; W2 core graph/runtime; W3 remaining rendering/simulation; W4 usability/validation and product decisions. The next-test column also states acceptance: the identified supported behavior must hold, and listed controls must remain intact. Unresolved historical configurations remain E rather than being silently dropped.
 
+## Implementation status at this handoff
+
+All 100 numbered IDs have dispositions below. The implementation entries record evidence at the time of each change; their pending-delivery notes are historical. Delivery requires the latest revision to pass the local and PR gates.
+
+| Evidence | Covered subcases |
+| --- | --- |
+| Fixes delivered in PR #533 | Duplicate component identity (H1.4); concurrent Save/recovery writes (H6); atomic graph/scene deletion history (H10/M5.4); authored input and keyboard ownership (H13/H21/M33); Class/Material reference warnings (H17); canonical literals and edit-gesture history (H25/M4). |
+| Further fixes with passing focused tests in this batch | Spawn Actor prefab components (H2.1); recovery after Undo and asset edits (H6/M4); References dialog overflow (H9.2); custom-event declarations and legacy validation (H12/M28); asset/Class picker defaults (H25); shared actor transforms/visibility (M5.3); camera clip ordering (M19.2); repeated node placement (M29/L2). Imported-model marquee selection also has a reproduced and corrected identity defect; the historical H8 duplication outcome was not reproduced. |
+| Fresh supported configurations pass without reproducing the historical report | BeginPlay Print, Delay and Map Has (H4/H5/H14); cross-tab and Play/Preview/bake/export state controls (H6/M3/M4/M12); Script Interface creation (H18/L15); valid-target graph rewiring (H20); several Content Browser actions and Console editing paths. See the result entries for exact boundaries. |
+| Remaining high-priority evidence gaps | H1 implicit Simple collision and host parity; H3 material rendering; H7 tilemaps on a 3D host; H15 overlap dispatch; H16 animation state switching; and original-project/configuration variants throughout the register. H14 remains historically open on 450; 690 remains blocked. |
+
 ## High / Major families
 
 | ID; historical severity/confidence; anchor | Reviewed observations and provisional subcase dispositions | Current expectation / new source evidence | Next test, dependency and priority |
@@ -224,3 +235,73 @@ Implementation entries will record failing and passing tests, exact subcases cla
 - Separate stack regressions reproduced merged-edit Undo → Redo → Undo restoring an intermediate value and a new edit after Undo merging with older history. Redo now retains the original inverse. Explicit UI gesture boundaries separate completed typing/pointer edits while retaining continuous typing and multitouch grouping; 93 edit/gesture tests pass.
 - Three desktop browser tests pass: Float 0 → 42 → 43, Undo to 42, Save/reload/Play printing 42; graph Delete/Undo/Redo; actor-subtree Delete/Undo. The test fixture uses the actual literal node's pin declarations, since raw test-hook nodes without metadata do not expose Inspector defaults.
 - These tested variants have locally passing fixes, pending full verification. H25's unavailable original project and all other commit/tab paths, M4 Preview lifecycle and other editing surfaces remain unclosed. The default-key and history defects are distinct causes, not a single explanation for all observations.
+
+### H6/M4/H10 continuation: recovery after history and asset edits
+
+- A fresh browser regression reproduced an undone node move returning after recovery. Undo/Redo now append their applied commands and schedule autosave through the same path as ordinary edits. Multi-command actions serialize as one replayable batch; an unknown child skips the entire batch. Legacy individual command lines remain supported.
+- A second reload after recovery reproduced a missing journal. Recovery now retains unsaved commands until Save or clean Close. A separate Enum fixture reproduced a lost member because recovery ignored non-graph/scene documents; target opening and replay now cover authored asset document kinds and leave untouched documents clean.
+- Both browser regressions and the batch replay/session unit tests pass; typechecking passes. These results close the tested recovery gaps. They do not close the remaining historical cross-tab, Bake/Export/Stop, or unavailable-project variants.
+
+### M29.2/L2.1: coincident toolbar node insertion
+
+- A component regression reproduced three separate Add Node activations placing three nodes at the same coordinates. Repeated toolbar insertions now stagger without moving existing nodes; pin-drag additions keep the selected drop point.
+- The GraphEditor suite passes, including one-node-per-activation and preserved pin-drag placement. This fixes the tested coincident-position case, not general graph auto-layout or a historical double-activation claim. Full delivery verification remains pending.
+
+### H6/M3/M4/M17: fresh lifecycle controls
+
+- Six desktop Chromium checks pass on an isolated build: graph Undo recovery across two reloads; Enum recovery; Class Undo preserving a separately edited Scene and its own Undo/Redo; Normal Play and Preview Build saving content while retaining history after Stop; and clean editor Save/rescan versus a real conflicting disk change dismissed by the first Keep Open click.
+- The cross-tab and Play/Preview checks inspect content and dirty state together. Save/reload preserves the selected revisions. These fresh configurations are N for the historical cross-tab, Stop/history-loss, and false-reload claims; they do not establish original-project equivalence or close Bake/Export variants.
+- Local browser verification now rejects a server already running on its selected port. `PLAYWRIGHT_PORT` isolates checkouts; Windows preview arguments reach Vite without an extra argument terminator. An earlier interrupted run that could reuse another checkout is not delivery evidence.
+
+### M19.2: camera clipping-plane order
+
+- Two tests through the real PropertyGrid reproduced Near Clip 1001 with Far Clip 1000, and Far Clip 0.01 with Near Clip 0.1. Camera Details now retain the previous value for a crossing edit and explain the required order; blur restores the displayed value.
+- The camera editing and component-property suites pass, including valid clipping edits and FOV -90 clamping to 1 while 1/179 remain accepted. This establishes the authored clip-order defect; browser persistence/Undo and full delivery verification remain pending.
+
+### Fresh Content Browser and numeric Details controls
+
+- Six desktop Chromium checks pass: three multiword Make Float insertions at distinct positions retained after reload; first Create of Script Interface with saved method and stable asset identity; plain click replacing multi-selection with an exact Delete list; title/thumbnail double-click opening one editor; camera clip rejection, Undo/Redo and FOV endpoints retained after reload; and particle capacity/prewarm/lifetime normalization retained after reload.
+- These provide N evidence for the tested H9/H18/M20/M34/L15/L27 configurations and browser validation for the M19 and M29 fixes above. They do not close the separate long-References, original-project, or general auto-layout variants. Full delivery verification remains pending.
+
+### H9.2: long References dialog
+
+- A fresh browser fixture with 24 saved Scene referrers reproduced Close extending below pixel 1158 in a 720-pixel viewport. References now limits its height and scrolls the reference body, retaining a visible heading and footer.
+- The regression passes at 1280×720 and 390×844, including clicking Close. Both class and material reference-warning controls also pass. This closes the reproduced overflow defect; full delivery verification remains pending.
+
+### H25 continuation: asset and class picker defaults
+
+- Two real Inspector/picker regressions reproduced unchanged canonical defaults after clearing an Audio reference and choosing Actor over Pawn. The callbacks wrote display-name keys while existing pin-ID keys retained precedence.
+- Both pickers now write the canonical pin ID, matching ordinary default fields. All three Inspector picker tests pass. Browser persistence and full delivery verification remain pending; this is a separate picker path from the earlier numeric default correction.
+
+### H12/M28: event creation and older node-declared events
+
+- A fresh UI Create Ping → Save test reproduced an event node without its declaration. The selection callback issued a second graph edit from its stale pre-creation graph. Event creation now commits once and focuses the created node directly. The component regression failed with two commits and now passes with one complete node/declaration edit.
+- A separate validation regression reproduced `member.missing_event` on older node-declared Ping graphs even though their palette offered Call Ping. Validation now uses the same custom-event discovery as the palette when metadata is absent; explicitly missing names remain errors and declared events are not duplicated.
+- All 174 tests across the Class member and graph validation suites pass. Browser execution of new and older saved forms in both launch modes and full delivery verification remain pending.
+
+### H6/M12 and H25: additional saved-state controls
+
+- Both Export Project and Export Game preserve an unsaved Class edit, enabled Save, and Undo/Redo in fresh browser checks. Manual NavMesh Bake writes a nonempty chunk while retaining independently dirty Class and Scene histories. Subsequent Save/reload retains the edited Scene.
+- The Class picker correction also passes browser Save/reload with the canonical `default:classId` value. These checks are N for the tested export/bake state-loss reports and persistence evidence for the picker fix; no claim is made about unavailable original projects or uninspected export contents.
+
+### H8: imported-model marquee selection
+
+- A desktop Chromium marquee over the fresh Mannequin failed to select it; a real GLB unit fixture reproduced the missing actor identity. Marquee returned imported part names while tap picking already resolved their named actor ancestor. Both now share that resolution.
+- Four browser custom-event controls also pass after Save/reload: new declarations and older node-only declarations execute Ping in Normal Play and Preview Build. This supplies the H12/M28 browser evidence pending above.
+- The browser regression now passes three drag selections with no added actors or dirty state, correct one-shot toolbar state, and selection retained across Focus layout. Rendering controls also pass, including locked imported actors remaining unselectable. This fixes the newly reproduced identity failure; the historical duplicate-placement report is N in this configuration.
+
+### M5.3: shared Details edits
+
+- The confirmed product choice is shared transform and visibility editing, with components restricted to the primary actor. New PropertyGrid/Scene Details tests reproduced updates affecting only the first actor for position, rotation, scale, visibility and 2D Z-Order.
+- Shared edits now preserve each actor's untouched axes, show mixed values, and reset the selection's visible property axes together. Primary actor fields and components are explicitly identified. Focused unit tests and desktop Chromium checks pass, including both actors restored by one Undo/Redo, preserved other axes, Save/reload, unchanged unselected control, and primary-only component removal.
+
+### Additional graph and Console controls
+
+- A fresh real-pointer H20 valid-target drag preserves its existing exec edge; one Undo and Redo restore the expected complete edge sets. This is N for that specific valid-target/Undo configuration, not an invalid-drop or touch-cancel claim.
+- A fresh M26/L32 Console check passes the first open click, native mid-line insertion, Backspace, selection replacement and history navigation. Toast-overlap and original-session variants remain unclosed.
+
+### H2: runtime prefab spawning
+
+- Compiled Class bundles omitted prefab components. Spawn Actor now attaches the effective inherited/local component templates before realization and Begin Play, with independent property values, remapped parent IDs and fresh component identities. A further failing compiler test reproduced omission of component-only classes with empty event graphs; those classes and their inheriting children now retain spawn templates too.
+- All 105 tests across the compiler, script host and scene instantiation suites pass. They cover inherited-template cache refresh, components visible during Begin Play, three Tick invocations producing exactly three instances, requested transforms and isolated component data. Desktop Chromium also passes one-shot Spawn Actor in Normal Play and Preview Build: the returned actor has its ColliderComponent and the rendered mesh reaches the requested [10, 20, 30] position. Full delivery verification remains pending.
+- H2.1 is a confirmed and locally fixed defect. The bounded Tick and transform controls pass; no spawn throttle, actor cap or kill-Z was added. These results do not establish equivalence with the unavailable original runaway project.

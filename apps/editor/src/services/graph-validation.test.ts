@@ -5,6 +5,7 @@ import { objectRef } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@babylonslate/scripting-nodes";
 import {
   classHierarchyFromParentOf,
+  classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
   hydrateClassDocumentPayload,
   hydrateSerializedGraphForEditor,
@@ -17,6 +18,31 @@ import {
 } from "./graph-validation";
 
 const registry = createDefaultNodeRegistry();
+
+describe("custom event declaration validation", () => {
+  it.each([
+    { declaration: true, name: "Ping", missing: false },
+    { declaration: false, name: "Ping", missing: false },
+    { declaration: false, name: "Gone", missing: true },
+  ])("validates a $name call with stored declaration=$declaration", ({ declaration, name, missing }) => {
+    const graph: SerializedGraph = {
+      nodes: [
+        { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "ping", type: "flow.event.custom", position: { x: 0, y: 180 }, data: { name: "Ping", pins: [] } },
+        { id: "call", type: "flow.event.call", position: { x: 300, y: 0 }, data: { name, implicitSelf: true } },
+      ],
+      edges: [{ id: "exec", source: "begin", sourceHandle: "execOut", target: "call", targetHandle: "execIn" }],
+      ...(declaration ? { members: [{ id: "ping", kind: "event" as const, name: "Ping" }] } : {}),
+    };
+    const members = classMemberSymbolsFromGraphs({ Hero: graph });
+    const diagnostics = validateSerializedGraph(graph, { assetGuid: "hero", graphId: "main", classId: "Hero", members });
+    expect(diagnostics.some((entry) => entry.code === "member.missing_event")).toBe(missing);
+    if (!missing) {
+      expect(members.filter((member) => member.classId === "Hero" && member.kind === "event" && member.name === "Ping")).toHaveLength(1);
+      expect(diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
+    }
+  });
+});
 
 describe("hydrateClassDocumentPayload", () => {
   it("seeds a default event graph when the Class payload is empty", () => {

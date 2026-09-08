@@ -20,6 +20,8 @@ Statuses are `success`, `failure`, `cancellation`, `timeout`, and `stale`. Packa
 
 On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim. Playwright passes `VITE_TEST_MODE` through its web-server environment so server startup also works with Windows' command shell.
 
+Playwright builds and starts its own preview server; an occupied port fails instead of silently reusing a different worktree's build. Set `PLAYWRIGHT_PORT` to a free integer port from 1–65535 (default `4173`) when running multiple checkouts. The browser base URL, readiness probe, and strict-port preview server use that same port. Server reuse is disabled for both the default and explicit ports.
+
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 
 ## GitHub Actions
@@ -91,8 +93,6 @@ These have already produced false-passing tests, so check against them before tr
 ## Playwright
 
 Projects: `desktop-chrome` (full suite) and `ipad-landscape` (`hasTouch`, device scale factor 2, iPad Pro 11 landscape 1194×834). iPad portrait is unsupported — there is no `ipad-portrait` project. The suite builds with `VITE_TEST_MODE=true` and previews on port 4173. Default test timeout is 60s. Dirty Play shows the Saving and compiling dialog before `play-overlay` mounts; specs that click Play after editing use `clickPlayAndWaitForOverlay` in `e2e/play.ts` (60s overlay wait) rather than the 5s default visibility timeout. Long dirty-Play cases (`p7`, `p10`, `p11` NavMesh, scene post-process) also raise `test.setTimeout`.
-
-Set `PLAYWRIGHT_PORT` to an unused integer port (1–65535) when another checkout owns 4173. An explicit port configures both the browser origin and an owned build/preview server, disables server reuse, and fails if the port is occupied. The default local 4173 behavior still permits reuse; CI owns its server.
 
 Material browser regressions also check parameter name uniqueness and RGBA defaults, link breaking inside a pin's safe zone, and saved graph edits reaching live Scene and Prefab shader inputs while preserving mesh identity. The viewport test hosts expose the assigned NodeMaterial input values and mesh/material IDs only in test mode.
 

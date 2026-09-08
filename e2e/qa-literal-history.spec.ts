@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { SerializedGraph } from "../packages/core/src/index.ts";
 import { literalNodes } from "../packages/scripting-nodes/src/literal.ts";
+import { actorNodes } from "../packages/scripting-nodes/src/actor.ts";
 import { openAssetFromBrowser, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 import { clickPlayAndWaitForOverlay } from "./play";
@@ -92,4 +93,39 @@ test("H25/M4: Float defaults persist and separately committed edits undo indepen
     timeout: 30_000,
   });
   await page.getByTestId("play-overlay-close").click();
+});
+
+test("H25: a Class picker change replaces the saved pin-ID default after reload", async ({ page }) => {
+  await openTestProject(page);
+  const definition = actorNodes.find((node) => node.id === "actor.getAllOfClass")!;
+  const graph: SerializedGraph = {
+    nodes: [{
+      id: "get-all", type: definition.id, position: { x: 80, y: 80 },
+      data: { title: definition.title, __nodeType: definition.id, __pins: definition.pins({}), "default:classId": "Pawn" },
+    }],
+    edges: [],
+  };
+  await page.evaluate((next) => (globalThis as unknown as {
+    __babylonslateTest: { setMainGraphContent: (graph: SerializedGraph) => Promise<boolean> };
+  }).__babylonslateTest.setMainGraphContent(next), graph);
+  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await page.locator('.react-flow__node[data-id="get-all"]').click();
+  await page.getByTestId("property-classId").click();
+  await page.getByTestId("search-item-Actor").click();
+  await expect(page.getByTestId("inspector-class-picker")).toHaveCount(0);
+  await expect(page.getByTestId("property-classId")).toContainText("Actor");
+  await saveAllIfEnabled(page);
+  const saved = await page.evaluate(async () => {
+    const bytes = await (globalThis as unknown as {
+      __babylonslateTest: { readAssetChunk: (path: string, chunk: string) => Promise<Uint8Array> };
+    }).__babylonslateTest.readAssetChunk("assets/Mannequin.class.babasset", "document");
+    return JSON.parse(new TextDecoder().decode(bytes)) as SerializedGraph;
+  });
+  expect(saved.nodes[0]!.data["default:classId"]).toBe("Actor");
+  expect(saved.nodes[0]!.data).not.toHaveProperty("default:Class");
+  await page.reload();
+  await openTestProject(page);
+  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await page.locator('.react-flow__node[data-id="get-all"]').click();
+  await expect(page.getByTestId("property-classId")).toContainText("Actor");
 });

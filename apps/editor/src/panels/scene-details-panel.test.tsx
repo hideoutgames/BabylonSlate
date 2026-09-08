@@ -9,12 +9,17 @@ import {
   createRichText2DComponent,
   createText2DComponent,
   createText3DComponent,
+  eulerDegreesToQuaternion,
   identitySerializedTransform,
   normalizeScene,
+  quaternionToEulerDegrees,
 } from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -28,9 +33,9 @@ const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.babasset",
-  applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(
-    async () => true,
-  ),
+  applySceneChange: vi.fn<
+    (id: string, scene: SerializedScene) => Promise<boolean>
+  >(async () => true),
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
@@ -50,7 +55,11 @@ vi.mock("../context/document-context", () => ({
     openDocuments: [
       {
         id: harness.documentId,
-        ref: { kind: harness.documentKind, path: "assets/Main.scene.babasset", label: "Main Scene" },
+        ref: {
+          kind: harness.documentKind,
+          path: "assets/Main.scene.babasset",
+          label: "Main Scene",
+        },
         content: harness.scene,
         layout: null,
         dirty: false,
@@ -66,11 +75,21 @@ vi.mock("../context/document-context", () => ({
     assetRegistry: {
       list: () => [
         {
-          header: { guid: "mesh-1", name: "Rock", type: "Mesh", parentClass: null },
+          header: {
+            guid: "mesh-1",
+            name: "Rock",
+            type: "Mesh",
+            parentClass: null,
+          },
           path: "assets/Rock.mesh.babasset",
         },
         {
-          header: { guid: "tex-1", name: "Atlas", type: "Texture", parentClass: null },
+          header: {
+            guid: "tex-1",
+            name: "Atlas",
+            type: "Texture",
+            parentClass: null,
+          },
           path: "assets/Atlas.texture.babasset",
         },
         {
@@ -140,19 +159,198 @@ function scene() {
   return harness.scene;
 }
 
+describe("shared actor Details", () => {
+  beforeEach(() => {
+    scene().actors = [
+      createActor("a", "Alpha", {
+        transform: {
+          position: [1, 2, 3],
+          rotation: eulerDegreesToQuaternion([10, 20, 30]),
+          scale: [1, 2, 3],
+        },
+      }),
+      createActor("b", "Beta", {
+        transform: {
+          position: [4, 5, 6],
+          rotation: eulerDegreesToQuaternion([15, 25, 35]),
+          scale: [4, 5, 6],
+        },
+      }),
+      createActor("control", "Control"),
+    ];
+    harness.selectedActorIds = ["a", "b"];
+  });
+
+  it.each([
+    [
+      "position",
+      "x",
+      "1.0",
+      [
+        [1, 2, 3],
+        [1, 5, 6],
+      ],
+    ],
+    [
+      "position",
+      "y",
+      "9",
+      [
+        [1, 9, 3],
+        [4, 9, 6],
+      ],
+    ],
+    [
+      "scale",
+      "z",
+      "7",
+      [
+        [1, 2, 7],
+        [4, 5, 7],
+      ],
+    ],
+  ] as const)(
+    "edits only the shared %s %s axis, including the primary actor's existing value",
+    (property, axis, value, expected) => {
+      render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+      fireEvent.change(
+        screen.getByTestId(`property-actor-${property}-${axis}`),
+        { target: { value } },
+      );
+      const next = harness.applySceneChange.mock.calls.at(-1)![1];
+      expect(
+        next.actors.slice(0, 2).map((actor) => actor.transform[property]),
+      ).toEqual(expected);
+      expect(next.actors[2]).toEqual(scene().actors[2]);
+    },
+  );
+
+  it("keeps each actor's other Euler axes when editing shared rotation", () => {
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByTestId("property-actor-rotation-x"), {
+      target: { value: "40" },
+    });
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    for (const [index, expected] of [
+      [40, 20, 30],
+      [40, 25, 35],
+    ].entries()) {
+      const rotation = quaternionToEulerDegrees(
+        next.actors[index]!.transform.rotation,
+      );
+      expected.forEach((value, axis) =>
+        expect(rotation[axis]).toBeCloseTo(value),
+      );
+    }
+  });
+
+  it("shows differing axes as Mixed and resets the whole selected property", () => {
+    scene().actors[0]!.transform.position = [0, 0, 0];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(
+      (screen.getByTestId("property-actor-position-x") as HTMLInputElement)
+        .placeholder,
+    ).toBe("Mixed");
+    const reset = screen.getByTestId(
+      "property-actor-position-reset",
+    ) as HTMLButtonElement;
+    expect(reset.disabled).toBe(false);
+    fireEvent.click(reset);
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(
+      next.actors.slice(0, 2).map((actor) => actor.transform.position),
+    ).toEqual([
+      [0, 0, 0],
+      [0, 0, 0],
+    ]);
+  });
+
+  it("edits shared 2D Z-Order without copying XY from the primary actor", () => {
+    scene().viewportMode = "2d";
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByTestId("property-actor-z-order"), {
+      target: { value: "8" },
+    });
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(
+      next.actors.slice(0, 2).map((actor) => actor.transform.position),
+    ).toEqual([
+      [1, 2, 8],
+      [4, 5, 8],
+    ]);
+  });
+
+  it("treats shared 2D scale as default when only hidden Z differs", () => {
+    scene().viewportMode = "2d";
+    scene().actors[0]!.transform.scale = [1, 1, 3];
+    scene().actors[1]!.transform.scale = [1, 1, 6];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect((screen.getByTestId("property-actor-scale-reset") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("edits shared visibility without renaming other selected actors", () => {
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("property-actor-visible"));
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(next.actors.map((actor) => actor.visible)).toEqual([
+      false,
+      false,
+      true,
+    ]);
+    fireEvent.change(screen.getByTestId("property-actor-name"), {
+      target: { value: "Renamed" },
+    });
+    expect(
+      harness.applySceneChange.mock.calls
+        .at(-1)![1]
+        .actors.map((actor) => actor.name),
+    ).toEqual(["Renamed", "Beta", "Control"]);
+  });
+
+  it("shows mixed visibility and applies the checked state to the selection", () => {
+    scene().actors[1]!.visible = false;
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const visible = screen.getByTestId("property-actor-visible");
+    expect(visible.getAttribute("aria-checked")).toBe("mixed");
+    fireEvent.click(visible);
+    expect(
+      harness.applySceneChange.mock.calls
+        .at(-1)![1]
+        .actors.map((actor) => actor.visible),
+    ).toEqual([true, true, true]);
+  });
+
+  it("keeps component removal restricted to the primary actor", () => {
+    scene().actors[0]!.components = [createMeshComponent("mesh-a", "box")];
+    scene().actors[1]!.components = [createMeshComponent("mesh-b", "sphere")];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("primary-actor-grid").textContent).toContain(
+      "Primary Actor: Alpha",
+    );
+    fireEvent.click(screen.getByTestId("component-remove-mesh-a"));
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(next.actors[0]!.components).toEqual([]);
+    expect(next.actors[1]!.components).toEqual(scene().actors[1]!.components);
+  });
+});
+
 describe("SceneDetailsPanel authoring", () => {
   it("opens an AssetPicker for mesh assetGuid and shows the asset name", async () => {
     harness.selectedActorIds = ["actor-1"];
-    scene().actors[0]!.components.push(createMeshComponent("component-1", "box"));
+    scene().actors[0]!.components.push(
+      createMeshComponent("component-1", "box"),
+    );
     scene().actors[0]!.components[0]!.properties.assetGuid = "mesh-1";
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const button = screen.getByTestId("property-actor-1-component-1-assetGuid");
     expect(button.textContent).toContain("Rock");
     expect(button.textContent).toContain("Mesh");
     expect(button.textContent).not.toContain("mesh-1");
-    expect(button.querySelector("[data-type-family]")?.getAttribute("data-type-family")).toBe(
-      "model",
-    );
+    expect(
+      button
+        .querySelector("[data-type-family]")
+        ?.getAttribute("data-type-family"),
+    ).toBe("model");
     fireEvent.click(button);
     expect(await screen.findByTestId("search-item-mesh-1")).toBeTruthy();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
@@ -179,7 +377,9 @@ describe("SceneDetailsPanel authoring", () => {
     ];
     harness.selectedActorIds = ["actor-1"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.getByTestId("property-actor-1-col-1-shape-kind")).toBeTruthy();
+    expect(
+      screen.getByTestId("property-actor-1-col-1-shape-kind"),
+    ).toBeTruthy();
     expect(screen.queryByTestId("property-actor-1-col-1-shape")).toBeNull();
     expect(screen.queryByDisplayValue("[object Object]")).toBeNull();
   });
@@ -206,8 +406,12 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["actor-1"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.getByTestId("collider-transform-grid-col-1")).toBeTruthy();
-    expect(screen.getByTestId("property-actor-1-col-1-position-x")).toBeTruthy();
-    expect(screen.getByTestId("property-actor-1-col-1-rotation-x")).toBeTruthy();
+    expect(
+      screen.getByTestId("property-actor-1-col-1-position-x"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("property-actor-1-col-1-rotation-x"),
+    ).toBeTruthy();
     expect(screen.getByTestId("property-actor-1-col-1-scale-x")).toBeTruthy();
   });
 
@@ -284,9 +488,9 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("actor-transform-grid").textContent).toContain(
       "2 Actors",
     );
-    expect(screen.getByTestId("actor-transform-grid").textContent).not.toContain(
-      "Cube",
-    );
+    expect(
+      screen.getByTestId("actor-transform-grid").textContent,
+    ).not.toContain("Cube");
   });
 
   it("shows the project Game Instance as a read-only pointer", () => {
@@ -324,7 +528,9 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["actor-1"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("details-add-component"));
-    fireEvent.click(screen.getByTestId("add-component-catalog-item-asset-mesh-1"));
+    fireEvent.click(
+      screen.getByTestId("add-component-catalog-item-asset-mesh-1"),
+    );
     expect(harness.applySceneChange).toHaveBeenCalled();
     const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
     const added = next.actors[0]?.components.at(-1);
@@ -342,15 +548,20 @@ describe("SceneDetailsPanel authoring", () => {
     ];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("scene-post-process-stack-1-move-up"));
-    const reordered = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
-    expect(reordered.settings.postProcessStack.map((entry) => entry.materialGuid)).toEqual(
-      ["pp-b", "pp-a"],
-    );
+    const reordered = harness.applySceneChange.mock
+      .calls[0]![1] as SerializedScene;
+    expect(
+      reordered.settings.postProcessStack.map((entry) => entry.materialGuid),
+    ).toEqual(["pp-b", "pp-a"]);
     fireEvent.click(screen.getByTestId("scene-post-process-0-enabled"));
-    const toggled = harness.applySceneChange.mock.calls.at(-1)![1] as SerializedScene;
+    const toggled = harness.applySceneChange.mock.calls.at(
+      -1,
+    )![1] as SerializedScene;
     expect(toggled.settings.postProcessStack[0]?.enabled).toBe(false);
     fireEvent.click(screen.getByTestId("scene-post-process-stack-0-remove"));
-    const removed = harness.applySceneChange.mock.calls.at(-1)![1] as SerializedScene;
+    const removed = harness.applySceneChange.mock.calls.at(
+      -1,
+    )![1] as SerializedScene;
     expect(removed.settings.postProcessStack).toHaveLength(1);
   });
 
@@ -380,10 +591,16 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("property-scene-physics-world")).toBeNull();
     expect(screen.queryByTestId("property-scene-default-camera")).toBeNull();
     expect(screen.queryByTestId("property-scene-fog")).toBeNull();
-    expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
+    expect(
+      screen.queryByTestId("property-scene-environment-texture"),
+    ).toBeNull();
     expect(screen.queryByTestId("scene-layers-stack")).toBeNull();
-    expect(screen.queryByTestId("property-scene-game-instance-class")).toBeNull();
-    expect(screen.getByTestId("property-row-scene-camera-bounds-width")).toBeTruthy();
+    expect(
+      screen.queryByTestId("property-scene-game-instance-class"),
+    ).toBeNull();
+    expect(
+      screen.getByTestId("property-row-scene-camera-bounds-width"),
+    ).toBeTruthy();
     expect(screen.getByText("Layer Width")).toBeTruthy();
     expect(screen.getByText("Layer Height")).toBeTruthy();
   });
@@ -432,7 +649,9 @@ describe("SceneDetailsPanel authoring", () => {
     expect(trigger.tagName).toBe("BUTTON");
     expect(trigger.textContent).toContain("Text");
     fireEvent.click(trigger);
-    const field = screen.getByTestId("text3d-text-text3d-editor") as HTMLTextAreaElement;
+    const field = screen.getByTestId(
+      "text3d-text-text3d-editor",
+    ) as HTMLTextAreaElement;
     expect(field.value).toBe("Text");
     fireEvent.change(field, { target: { value: "Hello\nWorld" } });
     fireEvent.click(screen.getByTestId("text3d-text-text3d-done"));
@@ -454,13 +673,17 @@ describe("SceneDetailsPanel authoring", () => {
     expect(trigger.tagName).toBe("BUTTON");
     expect(trigger.textContent).toContain("Text");
     fireEvent.click(trigger);
-    const field = screen.getByTestId("text2d-text-label-editor") as HTMLTextAreaElement;
+    const field = screen.getByTestId(
+      "text2d-text-label-editor",
+    ) as HTMLTextAreaElement;
     expect(field.value).toBe("Text");
     fireEvent.change(field, { target: { value: "Hello overlay" } });
     fireEvent.click(screen.getByTestId("text2d-text-label-done"));
     expect(harness.applySceneChange).toHaveBeenCalled();
     const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
-    expect(next.actors[0]?.components[0]?.properties.text).toBe("Hello overlay");
+    expect(next.actors[0]?.components[0]?.properties.text).toBe(
+      "Hello overlay",
+    );
   });
 
   it("hosts 2D Rich Text markup in a sibling trigger", () => {
@@ -472,7 +695,9 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.queryByTestId("property-hud-rich-text")).toBeNull();
-    expect(screen.getByTestId("text2d-text-rich").textContent).toContain("[color=green]");
+    expect(screen.getByTestId("text2d-text-rich").textContent).toContain(
+      "[color=green]",
+    );
   });
 
   it("opens markup tag suggestions for 2D Rich Text in the modal editor", () => {
@@ -484,11 +709,15 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("text2d-text-rich"));
-    const field = screen.getByTestId("text2d-text-rich-editor") as HTMLTextAreaElement;
+    const field = screen.getByTestId(
+      "text2d-text-rich-editor",
+    ) as HTMLTextAreaElement;
     fireEvent.change(field, { target: { value: "[" } });
     field.setSelectionRange(1, 1);
     fireEvent.select(field);
-    expect(screen.getByTestId("text2d-text-rich-editor-suggestions")).toBeTruthy();
+    expect(
+      screen.getByTestId("text2d-text-rich-editor-suggestions"),
+    ).toBeTruthy();
     expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
   });
 });

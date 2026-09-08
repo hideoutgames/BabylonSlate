@@ -68,6 +68,7 @@ export { World, type WorldOptions, type WorldInputProvider } from "./world";
 export {
   createActorsFromSerializedScene,
   createActorsFromSerializedSceneLayer,
+  attachSerializedComponents,
   runtimeTransformFromSerialized,
   type SceneActorHooks,
 } from "./instantiate-scene";

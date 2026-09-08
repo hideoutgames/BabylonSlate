@@ -22,6 +22,26 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("gives repeated toolbar node insertions distinct positions without moving existing nodes", () => {
+  const control = { id: "control", type: "debug.log", position: { x: -400, y: -400 }, data: {} };
+  let latest: GraphDocument = { nodes: [control], edges: [] };
+  const { getByTestId } = render(
+    <GraphEditor
+      initialGraph={latest}
+      paletteNodes={[{ id: "debug.log", title: "Log", category: "debug" }]}
+      onChange={(graph) => { latest = graph; }}
+    />,
+  );
+  for (let index = 0; index < 3; index++) {
+    fireEvent.click(getByTestId("graph-add-node"));
+    fireEvent.click(getByTestId("node-palette-item-debug.log"));
+    expect(latest.nodes).toHaveLength(index + 2);
+  }
+  expect(latest.nodes.find((node) => node.id === "control")?.position).toEqual({ x: -400, y: -400 });
+  const added = latest.nodes.filter((node) => node.id !== "control");
+  expect(new Set(added.map((node) => `${node.position.x},${node.position.y}`)).size).toBe(3);
+});
+
 function dispatchPointerEvent(
   target: Element,
   type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
