@@ -42,7 +42,7 @@ export function SpriteDetailsPanel(_props: IDockviewPanelProps) {
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
-    <PanelFrame data-testid="sprite-details-panel" title="Details">
+    <PanelFrame data-testid="sprite-details-panel">
       <SpriteEditor
         payload={payload}
         onChange={(next) => {
@@ -101,7 +101,7 @@ export function SpritePreview({
         className="relative aspect-square w-full overflow-hidden rounded-md border border-border"
         style={{
           backgroundImage:
-            "conic-gradient(#808080 0.25turn, #c0c0c0 0.25turn 0.5turn, #808080 0.5turn 0.75turn, #c0c0c0 0.75turn)",
+            "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
           backgroundSize: "16px 16px",
         }}
       >

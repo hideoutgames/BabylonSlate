@@ -111,7 +111,7 @@ export function HomepageCreateDialog({
               />
               <TemplatePickCard
                 title="2D"
-                description="Pixel-perfect Rapier"
+                description="Pixel Art and 2D Physics"
                 testId="create-project-2d"
                 selected={templateId === "2d"}
                 icon={Grid2x2Icon}

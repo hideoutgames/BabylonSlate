@@ -53,7 +53,7 @@ export function TilesetDetailsPanel(_props: IDockviewPanelProps) {
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
-    <PanelFrame data-testid="tileset-details-panel" title="Details">
+    <PanelFrame data-testid="tileset-details-panel">
       <TilesetEditor
         payload={payload}
         onChange={(next) => {

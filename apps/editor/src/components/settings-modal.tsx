@@ -1387,7 +1387,7 @@ export function SettingsModal({
             <Field>
               <FieldLabel>Close Project</FieldLabel>
               <FieldDescription>
-                Returns to the Homepage after a dirty-document check.
+                Return to the Homepage. You can save unsaved changes before closing.
               </FieldDescription>
             </Field>
             <Button

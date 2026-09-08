@@ -12,6 +12,8 @@ This page lists **kit** components currently in the repo. Feature screens (Homep
 
 `DockviewShell` fills its host, including stacked Animation Graph surfaces, before reserving space for the phone **Window** picker.
 
+`NumericDragField` uses the shared input slot for responsive text sizing. On coarse pointers, its input and scrub handle each receive a 44px target without changing desktop density.
+
 ## Primitives (`@babylonslate/ui`)
 
 Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Import as `@babylonslate/ui/components/<name>`. Composition parts (`DialogTitle`, `FieldLabel`, …) belong with the family, not as separate rows.

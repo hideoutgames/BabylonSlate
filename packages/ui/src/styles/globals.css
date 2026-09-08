@@ -447,6 +447,23 @@
 }
 
 @media (pointer: coarse) {
+  .numeric-drag-field [data-numeric-scrub] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+
+  .numeric-drag-field [data-slot="input"] {
+    min-height: var(--touch-target);
+    font-size: 1rem;
+  }
+
+  .numeric-drag-field[data-scalar] [data-slot="input"] {
+    padding-right: calc(var(--touch-target) + 0.25rem);
+  }
+
   :is(
     [data-slot="dropdown-menu-item"],
     [data-slot="dropdown-menu-checkbox-item"],

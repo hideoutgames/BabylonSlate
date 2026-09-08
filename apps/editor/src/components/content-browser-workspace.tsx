@@ -2397,7 +2397,7 @@ export function ContentBrowserWorkspace({
               {nameDialog?.kind === "folder"
                 ? "Create a folder under the current selection."
                 : nameDialog?.kind === "rename-folder"
-                  ? "Rename the folder. Nested assets keep their guids."
+                  ? "Rename the folder. References to its assets stay connected."
                   : "Rename the asset file. References by guid stay intact."}
             </AlertDialogDescription>
           </AlertDialogHeader>

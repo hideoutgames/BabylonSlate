@@ -313,7 +313,7 @@ export function ParticleEmitterPreview({
           <EmptyHeader>
             <EmptyTitle>No Texture</EmptyTitle>
             <EmptyDescription>
-              Pick a Texture in Details. Billboard quads sample that Texture.
+              Pick a Texture in Details to set the appearance of each particle.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -377,8 +377,7 @@ export function ParticleSystemPreview({
           <EmptyHeader>
             <EmptyTitle>No Emitters</EmptyTitle>
             <EmptyDescription>
-              Add Particle Emitter slots in Details. Play starts one Babylon
-              system per slot on the actor.
+              Add Particle Emitters in Details to preview them together.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

@@ -248,7 +248,7 @@ export function ParticlePreviewCanvas({
       <PreviewStatusEmpty
         testId="particle-preview-empty"
         title="No Texture"
-        description="Pick a Texture on the Particle Emitter. Billboard quads sample that Texture."
+        description="Pick a Texture in the Particle Emitter's Details to preview its particles."
       />
     );
   }

@@ -107,7 +107,7 @@ export function NumericDragField({
   );
 
   return (
-    <div className="relative flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1">
+    <div className="numeric-drag-field relative flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1" data-scalar={!label || undefined}>
       <span
         className={cn(
           "shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold",
@@ -119,6 +119,7 @@ export function NumericDragField({
           dragging && !accent && "text-foreground",
         )}
         data-testid={testId ? `${testId}-scrub` : undefined}
+        data-numeric-scrub=""
         title="Drag To Adjust"
         aria-hidden="true"
         onPointerDown={onPointerDown}
@@ -129,6 +130,7 @@ export function NumericDragField({
         {label || <GripVerticalIcon className="size-3" />}
       </span>
       <input
+        data-slot="input"
         type="text"
         inputMode="text"
         autoComplete="off"

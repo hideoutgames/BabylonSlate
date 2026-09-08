@@ -219,6 +219,8 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 
 Icon-only controls always have `aria-label`; tooltips are secondary and must not be the only way to discover the action. Chrome **Save All** is disabled when the project is clean; a `bg-destructive` dot (`data-testid="save-all-dirty"`) marks unsaved documents.
 
+Numeric fields retain compact desktop sizing; coarse-pointer inputs and scrub handles use separate 44px targets. Sprite transparency checks use theme surfaces. Preview Play/Resume controls share the filled Play glyph, and Tilemap tools expose hover/focus labels. Home uses a trash glyph for permanent project deletion and a close glyph for removing a recent entry.
+
 Dev-only **Component Gallery**: `/?test=1&gallery=1` renders every installed primitive for on-device visual checks.
 
 ## Brand assets

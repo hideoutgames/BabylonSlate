@@ -8,6 +8,7 @@ import {
   ListFilterIcon,
   OctagonAlertIcon,
   PlusIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import {
@@ -100,7 +101,7 @@ function createProjectCardDescription(
   hostPlatform: HostPlatform,
 ): string {
   if (templateCount > 0) {
-    return "Creating from a template copies the project and rewrites only its name and identity.";
+    return "Create an independent project from this template. The original stays unchanged.";
   }
   if (hostPlatform === "web") {
     return "Start with Empty or 2D.";
@@ -232,7 +233,7 @@ function HomepageProjectRow({
             onRequestRemove(project);
           }}
         >
-          <XIcon />
+          {deleteOnRemove ? <Trash2Icon /> : <XIcon />}
         </IconActionButton>
       </Card>
       <ContextMenuOverlay
@@ -373,8 +374,8 @@ export function Homepage({
             <AlertTitle>Project folder unavailable</AlertTitle>
             <AlertDescription className="flex flex-col gap-3">
               <span>
-                The external project folder bookmark is stale. Reconnect to
-                continue.
+                The project folder can no longer be accessed. Choose it again
+                to reconnect and continue.
               </span>
               <Button
                 className="w-fit"
@@ -464,7 +465,7 @@ export function Homepage({
             />
             <TemplatePickCard
               title="2D"
-              description="Pixel-perfect Rapier"
+              description="Pixel Art and 2D Physics"
               testId="homepage-start-2d"
               icon={Grid2x2Icon}
               onSelect={() => openCreate("2d")}
