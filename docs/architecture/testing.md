@@ -10,7 +10,7 @@ Use `pnpm --silent agent:wait local --script verify` to run full verification on
 
 `pnpm --silent agent:wait ci --pr <number>` captures the head and discovers its latest pull-request `verify.yml` run (up to ten minutes), then runs `gh run watch --exit-status --interval 60`. Final head/run/attempt checks reject superseded results; success requires `static`, `unit`, all seven e2e shards, and no skipped/unsuccessful jobs. Other required checks and final merge gates remain the agent's responsibility. `slot --pr <number>` checks every 60 seconds for fewer than two other non-draft PRs to `main`, excluding itself and #271. Recheck capacity immediately before marking ready.
 
-The foreground helper prints a start record and a terminal result; successful helper output is below 1 KiB. Failures add at most 40 trailing log lines capped below 4 KiB. `output.log` retains full process output; `result.json` records status, elapsed milliseconds, exit code, commit, and CI URL when applicable. Full verification also saves initial/final working-tree snapshots. A clean unchanged commit and unfiltered `verify` are required for `deliveryEligible`; source edits, initially dirty trees, or changed commits invalidate delivery. An interrupted run never certifies verification. Recheck the current commit and tree before using any saved result.
+The foreground helper prints a start record and a terminal result; successful helper output is below 1 KiB. Failures add at most 40 trailing log lines capped below 4 KiB. `output.log` retains full process output; local package scripts use pnpm's append-only reporter so an outer `--silent` does not suppress recursive workspace diagnostics. `result.json` records status, elapsed milliseconds, exit code, commit, and CI URL when applicable. Full verification also saves initial/final working-tree snapshots. A clean unchanged commit and unfiltered `verify` are required for `deliveryEligible`; source edits, initially dirty trees, or changed commits invalidate delivery. An interrupted run never certifies verification. Recheck the current commit and tree before using any saved result.
 
 After interrupted child cleanup, a read-only final snapshot has a separate five-second limit. If it cannot be collected, the result explicitly records an unavailable final state; the operation remains unsuccessful.
 
@@ -20,7 +20,11 @@ Statuses are `success`, `failure`, `cancellation`, `timeout`, and `stale`. Packa
 
 On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for package scripts that set environment variables inline. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim. Playwright passes `VITE_TEST_MODE` through its web-server environment so server startup also works with Windows' command shell.
 
-Playwright builds and starts its own preview server; an occupied port fails instead of silently reusing a different worktree's build. Set `PLAYWRIGHT_PORT` to a free integer port (default `4173`) when running multiple checkouts. The browser base URL, readiness probe, and strict-port preview server use that same port.
+Playwright builds and starts its own preview server; an occupied port fails instead of silently reusing a different worktree's build. Set `PLAYWRIGHT_PORT` to a free integer port from 1–65535 (default `4173`) when running multiple checkouts. The browser base URL, readiness probe, and strict-port preview server use that same port. Server reuse is disabled for both the default and explicit ports.
+
+Local server startup allows ten minutes for the player/editor typechecks and builds when other checkouts compete for memory. CI retains its three-minute startup limit. Browser test and readiness assertion timeouts are separate from this build/startup allowance.
+
+`openTestProject` waits for cross-origin isolation after navigation before interacting with Homepage. The COI service worker may reload during initial registration; waiting for its isolated page prevents those reloads from interrupting project creation or opening.
 
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 
@@ -93,6 +97,8 @@ These have already produced false-passing tests, so check against them before tr
 ## Playwright
 
 Projects: `desktop-chrome` (full suite) and `ipad-landscape` (`hasTouch`, device scale factor 2, iPad Pro 11 landscape 1194×834). iPad portrait is unsupported — there is no `ipad-portrait` project. The suite builds with `VITE_TEST_MODE=true` and previews on port 4173. Default test timeout is 60s. Dirty Play shows the Saving and compiling dialog before `play-overlay` mounts; specs that click Play after editing use `clickPlayAndWaitForOverlay` in `e2e/play.ts` (60s overlay wait) rather than the 5s default visibility timeout. Long dirty-Play cases (`p7`, `p10`, `p11` NavMesh, scene post-process) also raise `test.setTimeout`.
+
+Material browser regressions also check parameter name uniqueness and RGBA defaults, link breaking inside a pin's safe zone, and saved graph edits reaching live Scene and Prefab shader inputs while preserving mesh identity. The viewport test hosts expose the assigned NodeMaterial input values and mesh/material IDs only in test mode.
 
 iPad landscape greps `@ipad` so it only reruns tests that depend on touch, coarse pointer, or landscape viewport. Tag those cases with `IPAD_TEST_TAG` from `e2e/ipad-tag.ts`. Desktop still runs every spec (including `@ipad` cases). Behaviour that does not change with viewport or pointer (Play, scripting, import, Engine Settings, smoke) stays desktop-only. `playwright.config.test.ts` lists the iPad set via `playwright test --list`. **Chromium device emulation is not WKWebView** — `@ipad` proves viewport / `hasTouch` / DPR, not Safari Workers, `createImageBitmap` in a Worker, or Capacitor. Encode `decode_unavailable` / `Image.decode` fallback is unit-tested (`worker-encode`, `decode-source-rgba`), not by iPad Playwright.
 

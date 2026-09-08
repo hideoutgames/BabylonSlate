@@ -1,10 +1,7 @@
 import type { Engine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ContextMenuOverlay,
-  useContextMenu,
-} from "@babylonslate/editor-kit";
+import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
 import {
   applyGizmoMultiSelectDrag,
   applyViewportJoystickSteer,
@@ -20,11 +17,12 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import {
-  type SerializedScene,
-  isSceneWorkspaceKind,
-} from "@babylonslate/core";
+import { type SerializedScene, isSceneWorkspaceKind } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
+import {
+  materialViewportTestSnapshot,
+  type MaterialViewportTestSnapshot,
+} from "../lib/material-viewport-test-snapshot";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   FALLBACK_PLACE_POSITION,
@@ -43,7 +41,11 @@ import {
   applyLiveGizmoToActor,
   takeGizmoDragScene,
 } from "../lib/gizmo-drag-commit";
-import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "../lib/public-engine-assets";
+import {
+  editorDracoPublicBase,
+  editorKtx2PublicBase,
+  editorMeshoptPublicBase,
+} from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import {
   modelSlotMaterialGuidsFromPayloads,
@@ -51,6 +53,7 @@ import {
   skyboxFaceGuidsFromScene,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
+import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
@@ -315,8 +318,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         handle.setPostProcessingEnabled(enabled),
       setTextureBudget: (bytes, enabled) =>
         handle.setTextureBudget(bytes, enabled),
-      setAudioBudget: (bytes, enabled) =>
-        handle.setAudioBudget(bytes, enabled),
+      setAudioBudget: (bytes, enabled) => handle.setAudioBudget(bytes, enabled),
       setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
     });
 
@@ -367,7 +369,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     // Mode, selection and tool changes are pushed by effects below.
     // Remount when overlay vs world manipulator kind is known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registerSharedEngine, registerScheduler, sharedEngine, overlayTransformBox]);
+  }, [
+    registerSharedEngine,
+    registerScheduler,
+    sharedEngine,
+    overlayTransformBox,
+  ]);
 
   useEffect(() => {
     setFrameActorHandler((actorId) => {
@@ -407,13 +414,20 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing, preparing]);
 
-  // Key on the scene payload, not `openDocuments` array identity. Save All
-  // calls bump() after markAllClean; a new array would reload the viewport
-  // and can race the write or re-dirty the scene.
+  // Loading scene structure stays separate from refreshing saved assets.
+  // Save All must not reload or re-dirty the scene through array identity.
+  useEffect(() => {
+    if (scene) engineRef.current?.loadScene(scene);
+  }, [scene, engineEpoch]);
+
+  const materialLibraryKey = savedMaterialLibraryKey(
+    assetRegistry?.list() ?? [],
+  );
+  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+
   useEffect(() => {
     const handle = engineRef.current;
     if (!scene || !handle) return;
-    handle.loadScene(scene);
     let cancelled = false;
     const generation = engineGenerationRef.current;
     const blocking = isSceneViewportRemountLoad(
@@ -435,10 +449,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           modelSlotMaterialGuidsFromPayloads(modelPayloads),
         );
         const extraTextureGuids = [
-            ...materials.textureGuids,
-            ...skyboxFaceGuidsFromScene(scene),
-            ...overlayTextureGuidsFromScene(scene),
-          ];
+          ...materials.textureGuids,
+          ...skyboxFaceGuidsFromScene(scene),
+          ...overlayTextureGuidsFromScene(scene),
+        ];
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
@@ -450,12 +464,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
+        const msdf = fontMsdfMapsFromPairs(
+          await collectPlayFontMsdfPair(scene),
+        );
         const fontFaceEntries = await collectPlayFontFaceEntries();
         const fontCss = collectPlayFontCssStacks();
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(materials.documents, materials.functions);
         await handle.registerFonts(fontFaceEntries);
+        if (cancelled || engineRef.current !== handle) return;
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -514,6 +531,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [
     scene,
+    materialLibraryKey,
+    textureLodKey,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
@@ -529,90 +548,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     projectDocument?.settings.fonts.defaultFontGuid,
     projectDocument?.settings.fonts.globalFallback,
     engineEpoch,
-  ]);
-
-  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
-  const textureLodKeyRef = useRef(textureLodKey);
-  useEffect(() => {
-    const lodChanged = textureLodKeyRef.current !== textureLodKey;
-    textureLodKeyRef.current = textureLodKey;
-    if (!lodChanged || !scene) return;
-    const handle = engineRef.current;
-    if (!handle) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const sprites = await collectPlaySpritePayloads(scene);
-        const tileContent = await collectPlayTilemapContent(scene);
-        const modelBytes = await collectPlayModelBytes(scene);
-        const modelPayloads = await collectPlayModelPayloads(scene);
-        const materials = await collectPlayMaterialLibrary(
-          scene,
-          [],
-          modelSlotMaterialGuidsFromPayloads(modelPayloads),
-        );
-        const extraTextureGuids = [
-            ...materials.textureGuids,
-            ...skyboxFaceGuidsFromScene(scene),
-            ...overlayTextureGuidsFromScene(scene),
-          ];
-        const textureBytes = await collectPlayTextureBytes(
-          sprites,
-          tileContent.tilesets,
-          extraTextureGuids,
-        );
-        const texturePixelSizes = collectPlayTexturePixelSizes(
-          sprites,
-          tileContent.tilesets,
-          extraTextureGuids,
-        );
-        const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
-        const fontFaceEntries = await collectPlayFontFaceEntries();
-        const fontCss = collectPlayFontCssStacks();
-        if (cancelled || engineRef.current !== handle) return;
-        handle.setMaterialDocuments(materials.documents, materials.functions);
-        await handle.registerFonts(fontFaceEntries);
-        handle.setMeshAssets({
-          resourceCache: handle.resourceCache,
-          spritePayloads: sprites,
-          tilemaps: tileContent.tilemaps,
-          tilesets: tileContent.tilesets,
-          textureBytes,
-          texturePixelSizes,
-          fontFacetypeBytes,
-          fontMsdfJson: msdf.json,
-          fontMsdfPng: msdf.png,
-          fontCssStack: fontCss.fontCssStack,
-          fontCssStackByGuid: fontCss.fontCssStackByGuid,
-          modelBytes,
-          modelPayloads,
-          pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
-        });
-      } catch (error) {
-        console.error("[viewport] failed to refresh mesh assets", error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    textureLodKey,
-    scene,
-    collectPlaySpritePayloads,
-    collectPlayTilemapContent,
-    collectPlayTextureBytes,
-    collectPlayTexturePixelSizes,
-    collectPlayFontFacetypeBytes,
-    collectPlayFontMsdfPair,
-    collectPlayFontFaceEntries,
-    collectPlayFontCssStacks,
-    collectPlayModelBytes,
-    collectPlayModelPayloads,
-    collectPlayMaterialLibrary,
-    projectDocument?.settings.twoD.pixelsPerUnit,
-    projectDocument?.settings.fonts.defaultFontGuid,
-    projectDocument?.settings.fonts.globalFallback,
   ]);
 
   useEffect(() => {
@@ -720,11 +655,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
-        sceneVisuals: () => Array<{
-          actorId: string;
-          position: [number, number, number];
-          materialName: string | null;
-        }>;
+        sceneVisuals: () => Array<
+          MaterialViewportTestSnapshot & {
+            actorId: string;
+            position: [number, number, number];
+            materialName: string | null;
+          }
+        >;
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
       };
@@ -741,11 +678,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           if (!visual) return [];
           visual.computeWorldMatrix(true);
           const position = visual.getAbsolutePosition();
-          return [{
-            actorId: actor.id,
-            position: [position.x, position.y, position.z],
-            materialName: visual.material?.name ?? null,
-          }];
+          return [
+            {
+              ...materialViewportTestSnapshot(visual),
+              actorId: actor.id,
+              position: [position.x, position.y, position.z],
+              materialName: visual.material?.name ?? null,
+            },
+          ];
         });
       },
       activeSceneMeshPosition: () => {
@@ -755,8 +695,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (!mesh) return null;
         return [mesh.position.x, mesh.position.y, mesh.position.z];
       },
-      hardwareScalingLevel: () =>
-        engineRef.current?.scaling.getLevel() ?? null,
+      hardwareScalingLevel: () => engineRef.current?.scaling.getLevel() ?? null,
       postProcessPassCount: () =>
         engineRef.current?.postProcessPassCount() ?? null,
       /**
@@ -865,9 +804,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
                 const scheduler = engineRef.current?.scheduler;
                 if (!scheduler) return;
                 if (active) {
-                  joystickLeaseRef.current ??= scheduler.acquireContinuous(
-                    "viewport-joystick",
-                  );
+                  joystickLeaseRef.current ??=
+                    scheduler.acquireContinuous("viewport-joystick");
                 } else {
                   joystickLeaseRef.current?.();
                   joystickLeaseRef.current = null;

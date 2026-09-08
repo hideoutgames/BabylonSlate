@@ -108,3 +108,4 @@ export {
   type MaterialPreviewState,
   type MaterialPreviewStatus,
 } from "./preview-state";
+export { isMaterialParameterNode, materialParameterName, validateMaterialParameterNames } from "./parameters";

@@ -77,6 +77,13 @@ export class ClassRegistry {
       implementedInterfaces: [],
     });
     this.register({
+      id: "MaterialObject",
+      parentClassId: "BObject",
+      kind: "object",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    this.register({
       id: "Scene",
       parentClassId: "BObject",
       kind: "object",

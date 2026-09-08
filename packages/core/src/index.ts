@@ -17,5 +17,6 @@ export * from "./cursor-ray";
 export * from "./format-value";
 export * from "./print-hud";
 export * from "./map-default";
+export * from "./material-parameter-assets";
 export * from "./play-preview-aspect";
 export * from "./nine-slice";

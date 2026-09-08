@@ -16,6 +16,17 @@ afterEach(() => {
 });
 
 describe("NamePromptDialog", () => {
+  it("keeps the prompt open with an accessible error when the host rejects the name", () => {
+    const onSubmit = vi.fn();
+    const onOpenChange = vi.fn();
+    render(<NamePromptDialog open onOpenChange={onOpenChange} title="Name Parameter" label="Parameter Name" onSubmit={onSubmit} validate={(name) => name === "Tint" ? "Choose a unique name" : null} />);
+    fireEvent.change(screen.getByTestId("name-prompt-input"), { target: { value: "Tint" } });
+    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByText("Choose a unique name")).toBeTruthy();
+    expect(screen.getByTestId("name-prompt-input").getAttribute("aria-invalid")).toBe("true");
+  });
   it("submits a trimmed name and ignores empty drafts", () => {
     const onSubmit = vi.fn();
     const onOpenChange = vi.fn();

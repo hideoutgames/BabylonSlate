@@ -14,6 +14,7 @@ import {
   screenCentersForSafePins,
   shouldOpenAddNodeOnConnectEnd,
   type ConnectEndMode,
+  type PinCompatibilityRule,
 } from "./graph-connect";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins } from "./graph-types";
@@ -35,6 +36,7 @@ export type GraphConnectionLineViewProps = {
   nodes: Array<{ id: string; data?: Record<string, unknown> }>;
   root?: ParentNode;
   connectEndMode?: ConnectEndMode;
+  pinCompatibility?: PinCompatibilityRule;
   connectionLineKind?: "default" | "animTransition";
 };
 
@@ -76,6 +78,7 @@ export function GraphConnectionLineView({
   nodes,
   root = document,
   connectEndMode = "default",
+  pinCompatibility,
   connectionLineKind = "default",
 }: GraphConnectionLineViewProps) {
   const pin = pinOnDraggedNode(fromNode, fromHandle.id);
@@ -105,7 +108,7 @@ export function GraphConnectionLineView({
         pointer,
         safePins: screenCentersForSafePins(
           root,
-          collectSafeConnectPins(nodePinLists(nodes), fromNode.id, pin),
+          collectSafeConnectPins(nodePinLists(nodes), fromNode.id, pin, pinCompatibility),
         ),
       })
     : false;
@@ -153,8 +156,8 @@ export function GraphConnectionLineView({
 
 export function GraphConnectionLine(props: ConnectionLineComponentProps) {
   const nodes = useStore((state) => state.nodes);
-  const { connectEndMode, connectionLineKind } = useGraphEditorContext();
-  const flow = document.querySelector(".react-flow");
+  const flow = useStore((state) => state.domNode);
+  const { connectEndMode, connectionLineKind, pinCompatibility } = useGraphEditorContext();
   const pointer = flow
     ? containerPointerToClient(props.pointer, flow)
     : props.pointer;
@@ -172,7 +175,9 @@ export function GraphConnectionLine(props: ConnectionLineComponentProps) {
       toHandle={props.toHandle}
       pointer={pointer}
       nodes={nodes}
+      root={flow ?? document}
       connectEndMode={connectEndMode}
+      pinCompatibility={pinCompatibility}
       connectionLineKind={connectionLineKind}
     />
   );

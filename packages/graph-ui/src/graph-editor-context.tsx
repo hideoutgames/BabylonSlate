@@ -3,7 +3,7 @@ import type { NavigateRequest } from "./graph-types";
 import type { PinTypeRef } from "./node-theme";
 import type { NestedMenuItem } from "@babylonslate/editor-kit";
 import type { PinTypeNames } from "./pin-default-preview";
-import type { ConnectEndMode } from "./graph-connect";
+import type { ConnectEndMode, PinCompatibilityRule } from "./graph-connect";
 
 export type GraphEditorContextValue = {
   pendingPin: { nodeId: string; pinId: string } | null;
@@ -13,6 +13,7 @@ export type GraphEditorContextValue = {
   pinDisplayType: (nodeId: string, pinId: string) => PinTypeRef | undefined;
   pinTypeNames?: PinTypeNames;
   connectEndMode: ConnectEndMode;
+  pinCompatibility?: PinCompatibilityRule;
   onNavigateRequest?: (request: NavigateRequest) => void;
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;

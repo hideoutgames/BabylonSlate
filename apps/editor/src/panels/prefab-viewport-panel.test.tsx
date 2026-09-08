@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createMeshComponent } from "@babylonslate/core";
+import { encodeAssetDocument, readAssetDocumentHeader } from "@babylonslate/assets";
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { PrefabViewportPanel } from "./prefab-viewport-panel";
 
 const {
@@ -14,6 +16,7 @@ const {
   collectPlaySpritePayloads,
   collectPlayTilemapContent,
   collectPlayTextureBytes,
+  collectPlayTexturePixelSizes,
   collectPlayFontFacetypeBytes,
   collectPlayFontMsdfPair,
   collectPlayFontFaceEntries,
@@ -158,6 +161,7 @@ vi.mock("../context/document-context", () => ({
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
@@ -212,6 +216,7 @@ describe("PrefabViewportPanel engine", () => {
     handle.loadScene.mockClear();
     handle.editor.setGridSettings.mockClear();
     handle.setMaterialDocuments.mockClear();
+    handle.setMeshAssets.mockClear();
     collectPlayMaterialLibrary.mockClear();
     prefabState.components = [createMeshComponent("prefab-mesh", "box")];
     prefabDocs.openDocuments = [];
@@ -320,5 +325,33 @@ describe("PrefabViewportPanel engine", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(collectPlayMaterialLibrary.mock.calls.length).toBe(loads);
+  });
+
+  it("refreshes a saved Material while its prefab stays mounted", async () => {
+    const savedAsset = async (value: number) => ({
+      path: "assets/Surface.material.babasset",
+      header: readAssetDocumentHeader(await encodeAssetDocument({
+        type: "Material",
+        guid: "surface",
+        name: "Surface",
+        version: 1,
+        payload: { value },
+      })),
+    });
+    let asset = await savedAsset(1);
+    prefabDocs.assetRegistry = { list: () => [asset] };
+    const { rerender } = render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
+    const initialLoads = handle.loadScene.mock.calls.length;
+    const updatedDocuments = new Map([["surface", createDefaultMaterialDocument("Saved Surface")]]);
+    collectPlayMaterialLibrary.mockResolvedValueOnce({
+      documents: updatedDocuments,
+      functions: new Map(),
+      textureGuids: [],
+    });
+    asset = await savedAsset(2);
+    rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => expect(handle.setMaterialDocuments).toHaveBeenLastCalledWith(updatedDocuments, new Map()));
+    expect(handle.loadScene).toHaveBeenCalledTimes(initialLoads);
   });
 });

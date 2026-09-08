@@ -13,6 +13,57 @@ import {
 } from "./document";
 
 describe("material document", () => {
+  it("gives legacy parameters stable unique names without taking existing authored names", () => {
+    const doc = normalizeMaterialDocument({
+      schemaVersion: 2,
+      nodes: [
+        { id: "unnamed", type: "param.color", properties: {} },
+        { id: "authored", type: "param.color", properties: { name: "Color Parameter" } },
+        { id: "scale", type: "param.float", properties: { name: "Scale" } },
+        { id: "duplicate", type: "param.texture", properties: { name: "Scale" } },
+      ],
+    });
+    expect(doc.nodes.filter((node) => node.type.startsWith("param.")).map((node) => node.properties.name)).toEqual(["Color Parameter 2", "Color Parameter", "Scale", "Scale 2"]);
+    expect(normalizeMaterialDocument(doc)).toEqual(doc);
+  });
+
+  it("migrates missing function parameter names without naming new current-schema nodes", () => {
+    const legacy = normalizeMaterialFunctionDocument({ schemaVersion: 1, nodes: [{ id: "value", type: "param.float", properties: {} }] });
+    expect(legacy.nodes.find((node) => node.id === "value")?.properties.name).toBe("Float Parameter");
+    expect(normalizeMaterialFunctionDocument(legacy)).toEqual(legacy);
+    const current = normalizeMaterialDocument({ schemaVersion: 3, nodes: [{ id: "value", type: "param.float", properties: {} }] });
+    expect(current.nodes.find((node) => node.id === "value")?.properties.name).toBeUndefined();
+  });
+  it("retains Color Parameter links while migrating a legacy Shader asset", () => {
+    const doc = migrateLegacyShaderPayload({
+      nodes: [
+        { id: "tint", type: "param.color", properties: { name: "Tint", value: [0.2, 0.3, 0.4] } },
+        { id: "output", type: "output.fragment", properties: {} },
+      ],
+      edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }],
+    });
+    expect(doc.edges).toEqual([{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" }]);
+  });
+  it("preserves legacy Color Parameter RGB links while upgrading its default to RGBA", () => {
+    const doc = normalizeMaterialDocument({
+      schemaVersion: 2,
+      nodes: [{ id: "tint", type: "param.color", properties: { name: "Tint", value: [0.2, 0.3, 0.4] } }],
+      edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" }],
+    });
+    expect(doc.nodes.find((node) => node.id === "tint")?.properties.value).toEqual([0.2, 0.3, 0.4, 1]);
+    expect(doc.edges[0]?.sourcePinId).toBe("rgb");
+    expect(normalizeMaterialDocument(doc)).toEqual(doc);
+  });
+
+  it("keeps new Color Parameter Vector 4 connections intact", () => {
+    const doc = normalizeMaterialDocument({
+      schemaVersion: 3,
+      nodes: [{ id: "tint", type: "param.color", properties: { name: "Tint" } }],
+      edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }],
+    });
+    expect(doc.nodes.find((node) => node.id === "tint")?.properties.value).toEqual([1, 1, 1, 1]);
+    expect(doc.edges[0]?.sourcePinId).toBe("out");
+  });
   it("creates a surface material whose default graph reaches the output", () => {
     const doc = createDefaultMaterialDocument("Rock");
     expect(doc.schemaVersion).toBe(MATERIAL_SCHEMA_VERSION);

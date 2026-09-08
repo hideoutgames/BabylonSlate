@@ -1,9 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
 import { IPAD_TEST_GREP } from "./e2e/ipad-tag";
 
-const port = Number(process.env.PLAYWRIGHT_PORT ?? "4173");
-if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  throw new Error("PLAYWRIGHT_PORT must be an integer from 1 to 65535.");
+const explicitPort = process.env.PLAYWRIGHT_PORT;
+const port = explicitPort === undefined ? 4173 : Number(explicitPort);
+if (
+  (explicitPort !== undefined && !/^\d+$/.test(explicitPort)) ||
+  !Number.isInteger(port) || port < 1 || port > 65535
+) {
+  throw new Error("PLAYWRIGHT_PORT must be an integer between 1 and 65535.");
 }
 const baseURL = `http://127.0.0.1:${port}`;
 
@@ -49,6 +53,6 @@ export default defineConfig({
     env: { VITE_TEST_MODE: "true" },
     url: baseURL,
     reuseExistingServer: false,
-    timeout: 180_000,
+    timeout: process.env.CI ? 180_000 : 600_000,
   },
 });

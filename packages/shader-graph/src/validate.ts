@@ -27,6 +27,7 @@ import type {
   MaterialGraphNode,
 } from "./document";
 import { createTypeResolver } from "./resolve";
+import { validateMaterialParameterNames } from "./parameters";
 import {
   materialTypeLabel,
   typesAreAssignable,
@@ -284,7 +285,7 @@ function validateGraph(
   graph: GraphLike,
   options: ValidateGraphOptions,
 ): MaterialDiagnostic[] {
-  const diagnostics: MaterialDiagnostic[] = [];
+  const diagnostics: MaterialDiagnostic[] = validateMaterialParameterNames(graph);
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const definitions = new Map<string, MaterialNodeDefinition>();
   const capabilities = { ...DEFAULT_CAPABILITIES, ...options.capabilities };

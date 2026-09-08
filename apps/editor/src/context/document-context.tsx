@@ -498,6 +498,7 @@ interface DocumentContextValue {
     tilesets: ReadonlyMap<string, TilesetPayload>,
     extraGuids?: readonly string[],
     spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
+    includeMaterialParameterTextures?: boolean,
   ) => Promise<Map<string, Uint8Array>>;
   /** Authored Texture payload pixels for overlay 2DTexture world size. */
   collectPlayTexturePixelSizes: (
@@ -2773,6 +2774,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       tilesets: ReadonlyMap<string, TilesetPayload>,
       extraGuids: readonly string[] = [],
       spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
+      includeMaterialParameterTextures = false,
     ): Promise<Map<string, Uint8Array>> => {
       const assets = projectService.registry?.list() ?? [];
       const settings = await createAppSettingsStore().load();
@@ -2783,6 +2785,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return collectGpuTextureBytes({
         assets,
         guids,
+        // Play compiles all gameplay classes, including later Spawn Actor
+        // targets; use that same set and its function graphs for texture literals.
+        graphs: includeMaterialParameterTextures
+          ? (await loadProjectGraphDocuments()).map((entry) => entry.content)
+          : undefined,
         readChunk: (path, chunkId) =>
           projectService.readAssetChunk(path, chunkId),
         editorLod: {
@@ -2798,7 +2805,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    [projectService],
+    [loadProjectGraphDocuments, projectService],
   );
 
   const collectPlayTexturePixelSizes = useCallback(

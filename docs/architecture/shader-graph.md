@@ -21,12 +21,12 @@ and imported `Material` stubs as `material`. Saving rewrites the header to
 renamed, so `.shader.babasset` files keep working and their layout ids,
 references and Git LFS locks stay valid.
 
-`MaterialDocument` (v2) carries `domain` (`surface` | `postProcess` | `particle`),
+`MaterialDocument` (v3) carries `domain` (`surface` | `postProcess` | `particle`),
 `shadingModel`, `blendMode`, `twoSided`, `alphaCutoff`, `preview` and the graph.
 Unknown domain strings, including leftover HUD `interface`, parse as `surface`.
 There is no `output.interface` node and no WidgetComponent / HUD Material blit
 path.
-`MaterialFunctionDocument` (v1) carries typed `inputs` / `outputs` with **stable
+`MaterialFunctionDocument` (v2) carries typed `inputs` / `outputs` with **stable
 pin ids** plus the graph; renaming a pin does not break callers.
 
 `materialDependencies()` is the authoritative source for `header.dependencies[]`
@@ -49,6 +49,42 @@ width propagates down a chain instead of collapsing at the first hop.
 `materialPinsAreCompatible` gives the canvas the same rule through the
 `pinCompatibility` prop on `GraphEditor`; the scripting graph keeps its stricter
 exact-kind default.
+
+**Color Parameter** defaults to RGBA (`vec4`) and provides an explicit **RGB**
+(`vec3`) output for Base Color and other three-component inputs. Older material
+and function documents gain alpha `1`, and their existing Color Parameter Out
+links move to RGB so their appearance and downstream vector widths stay intact.
+
+## Parameter authoring
+
+Adding or pasting a Float, Color, or Texture Parameter opens **Name Material
+Parameter**. Enter a nonblank name unique across all parameter types in that
+graph; names are trimmed and case-sensitive. Cancel removes the unnamed node and
+its links. Pasting keeps the default value but requires a new name. The node
+title shows its name, and Details exposes **Parameter Name** and its default:
+Float value, RGBA vector plus color picker, or Texture asset.
+
+Names are stored in `properties.name`; numeric defaults use `properties.value`
+and Texture defaults use `properties.textureGuid`. Validation reports every
+unnamed or duplicate parameter, including unconnected nodes. Save rejects these
+name errors before writing the asset.
+
+The naming dialog tracks newly added or pasted nodes only. Invalid names in an
+existing or loaded graph remain editable in Details; cancelling a naming dialog
+cannot remove those nodes or their links.
+Schema upgrades give legacy unnamed or duplicate parameters deterministic unique
+names while preserving existing authored names, so older materials keep rendering.
+
+Runtime parameter setters expose parameters on the root Material graph. Material
+Function parameters remain internal defaults; expose function inputs to pass
+values from the calling material.
+
+Material graphs use the shared 96px pin safe zone: releasing a wire near a pin
+after leaving its source handle breaks that source pin's links. Releasing on the
+source handle preserves its links; releasing on distant empty canvas opens Add
+Node. Hit tests stay inside the current canvas, including when multiple docked
+or warm Material tabs reuse node IDs. Live hints use the Material Float-to-vector
+connection rule.
 
 ## Validation
 

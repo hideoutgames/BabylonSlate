@@ -30,6 +30,7 @@ export {
   type BridgeHostMessage,
   type BridgeWorkerMessage,
   type CommandMessage,
+  type MaterialParameterValue,
   type ControlMessage,
   type DebugColliderPrimitive,
   type DebugDrawCommand,
