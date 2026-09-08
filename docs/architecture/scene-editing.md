@@ -6,13 +6,13 @@ SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world
 
 ## SerializedScene v3
 
-| Field          | Role                                                                                                                                                                                                                                                                                        |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`         | Scene display name                                                                                                                                                                                                                                                                          |
-| `viewportMode` | `"3d"` \| `"2d"` — per-scene default; toolbar toggle on world Scenes (hidden on SceneLayer, locked `"2d"`)                                                                                                                                                                                  |
+| Field          | Role                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------- |
+| `name`         | Scene display name                                                                                   |
+| `viewportMode` | `"3d"` \| `"2d"` — per-scene default; toolbar toggle on world Scenes (hidden on SceneLayer, locked `"2d"`) |
 | `settings`     | Environment, gravity, timestep, fog, grid, `cameraBounds2D`, `editorJoystickEnabled`, `showNavmesh`, **`sceneLayers`** (`assetGuid` / `zOrder` / `enabled` spawn list). `gameInstanceClass` stays in the schema for old files; Play/Preview/export read `ProjectSettings.gameInstanceClass` |
-| `actors`       | Flat list with `parentId`; hierarchy resolved at apply time                                                                                                                                                                                                                                 |
-| `folders`      | Editor-only Outliner folders (`id`, `name`, `parentFolderId`); missing documents normalize to `[]`                                                                                                                                                                                          |
+| `actors`       | Flat list with `parentId`; hierarchy resolved at apply time                                          |
+| `folders`      | Editor-only Outliner folders (`id`, `name`, `parentFolderId`); missing documents normalize to `[]`   |
 
 Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / quaternion rotation / scale), `visible`, `locked`, `components[]`, `folderId`. Details shows **Position**, **Rotation**, and **Scale** as one nowrap XYZ row each. Rotation is **Euler degrees** in the UI; `transform.rotation` stays `[x,y,z,w]` quaternion (`quaternionToEulerDegrees` / `eulerDegreesToQuaternion` in `@babylonslate/core`). 2D drops unused axes (Position/Scale XY, Rotation Z).
 
@@ -26,10 +26,10 @@ Each **component**: `id`, `classId`, `properties` (typed per class in the object
 
 Folders organize the Outliner. They are **not** actors and never reach the object model, so Play spawns the same actors with or without them.
 
-| Concern              | Field                                          | Runtime            |
-| -------------------- | ---------------------------------------------- | ------------------ |
-| Grouping             | `SerializedScene.folders[]` + `actor.folderId` | Ignored            |
-| Transform attachment | `actor.parentId`                               | Authored hierarchy |
+| Concern | Field | Runtime |
+| --- | --- | --- |
+| Grouping | `SerializedScene.folders[]` + `actor.folderId` | Ignored |
+| Transform attachment | `actor.parentId` | Authored hierarchy |
 
 - Folders nest through `parentFolderId`. `normalizeScene` drops malformed rows, uniquifies ids, and resets dangling or cyclic parents to the root so a folder can never be unreachable.
 - **Drop targets decide meaning**: on a folder → `folderId` (transform parent cleared); on an actor → `parentId` (folder cleared, inherited from the new parent); on empty space → both cleared. Transform children follow their parent actor regardless of folder. If the dragged row is selected, `outlinerTreeDropMoves` moves collapsed roots only (omit nested selected folders, transform children of selected parents, and actors inside a selected folder subtree). Folder roots dropped on an actor no-op the whole selection. Unselected-row drag still moves that one row. In-tree drops never duplicate actors.
@@ -48,12 +48,12 @@ Duplicate assigns fresh actor and component IDs and remaps component `parentId` 
 
 When the Class Prefab list changes (`graph.setComponents`), the **open** scene re-merges every actor of that class (and descendants, using the same ancestor merge as the Prefab tab) through the scene command layer (dirty + undo). Undo/redo of that Class document re-runs the merge when `components` change. Opening a scene runs the same merge **in memory** so the viewport is current without auto-locking the file; Save All after a Prefab edit while the scene is open persists the instance rows. Closed scene files are not rewritten in the background.
 
-| Prefab change                               | Scene instance                                      |
-| ------------------------------------------- | --------------------------------------------------- |
-| New component                               | Added (`sourceId` set, no overrides)                |
-| Deleted component                           | Matching `sourceId` row removed, even if overridden |
-| Property / component transform / `parentId` | Copied unless listed in `overrideKeys`              |
-| Instance-only component (no `sourceId`)     | Kept                                                |
+| Prefab change | Scene instance |
+| --- | --- |
+| New component | Added (`sourceId` set, no overrides) |
+| Deleted component | Matching `sourceId` row removed, even if overridden |
+| Property / component transform / `parentId` | Copied unless listed in `overrideKeys` |
+| Instance-only component (no `sourceId`) | Kept |
 
 Editing Details on a sourced component records `overrideKeys`. Reset (and typing the prefab value back) restores the Class prefab value and drops that key. Copy-once actors without `sourceId` match leftover rows by `(classId, order)` on first sync and treat keys that already differ from the current prefab as overrides.
 
@@ -76,14 +76,14 @@ Panels never mutate selection independently — they consume `useSceneEditing()`
 
 Every scene Details / outliner / viewport mutation routes through `applySceneChange` → `diffSceneCommands` → the undo stack. Notable command types:
 
-| Command                      | Diff trigger                                                                                |
-| ---------------------------- | ------------------------------------------------------------------------------------------- |
-| `SetSceneNameCommand`        | `scene.name`                                                                                |
-| `SetViewportModeCommand`     | `scene.viewportMode`                                                                        |
-| `SetSceneSettingCommand`     | any `settings.*` field (including `grid.snapEnabled`, `grid.showGrid`, `gameInstanceClass`) |
-| `ReorderComponentCommand`    | component list order change with the same ids                                               |
-| `SetActorTransformCommand`   | single-actor gizmo drag / Details transform (merge key `transform:{actorId}`)               |
-| `SetActorsTransformsCommand` | multi-select gizmo drag (merge key `transforms:{sortedIds}`) — one undo for the group       |
+| Command                    | Diff trigger                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `SetSceneNameCommand`      | `scene.name`                                                                                |
+| `SetViewportModeCommand`   | `scene.viewportMode`                                                                        |
+| `SetSceneSettingCommand`   | any `settings.*` field (including `grid.snapEnabled`, `grid.showGrid`, `gameInstanceClass`) |
+| `ReorderComponentCommand`  | component list order change with the same ids                                               |
+| `SetActorTransformCommand` | single-actor gizmo drag / Details transform (merge key `transform:{actorId}`)               |
+| `SetActorsTransformsCommand` | multi-select gizmo drag (merge key `transforms:{sortedIds}`) — one undo for the group     |
 
 `RemoveActorCommand` stores a single-actor snapshot (not a full subtree). UI deletes that remove a hierarchy emit one remove per actor.
 
@@ -93,10 +93,10 @@ Camera Details retain the previous clipping value when an edit would make Near C
 
 Both systems are **mode-parametric** via `ViewportMode` from `@babylonslate/core`:
 
-| Mode | Camera                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Gizmo                                                                            |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `3d` | Fly/look: WASD + one-finger (or LMB) look-in-place, pinch/wheel zoom **about the pointer** (dolly toward the orbit-target plane under the cursor; radius 0.5–400), three-finger fly (look + right, not view-plane pan). **Pivot Around Center** (Viewport Settings, session-only) makes one-finger drag and the editor joystick orbit the current look-at point instead; three-finger fly still translates the orbit center with the camera. **Game Camera** preview ignores editor look/zoom/pan/fly | Full translate / rotate / scale                                                  |
-| `2d` | Orthographic; WASD/joystick XY pan, one-finger pan 1:1 with the pointer (hold-then-move marquee), pinch/wheel zoom **about the pointer / pinch centroid** (world point under the cursor stays put), three-finger pan at the same 1:1 scale (look is a no-op). **Game Camera** preview ignores editor gestures                                                                                                                                                                                         | XY translate + XY plane; Z rotate; XY scale; unused axes and YZ/XZ planes hidden |
+| Mode | Camera                                                                                                                                                                 | Gizmo                                                |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `3d` | Fly/look: WASD + one-finger (or LMB) look-in-place, pinch/wheel zoom **about the pointer** (dolly toward the orbit-target plane under the cursor; radius 0.5–400), three-finger fly (look + right, not view-plane pan). **Pivot Around Center** (Viewport Settings, session-only) makes one-finger drag and the editor joystick orbit the current look-at point instead; three-finger fly still translates the orbit center with the camera. **Game Camera** preview ignores editor look/zoom/pan/fly | Full translate / rotate / scale                      |
+| `2d` | Orthographic; WASD/joystick XY pan, one-finger pan 1:1 with the pointer (hold-then-move marquee), pinch/wheel zoom **about the pointer / pinch centroid** (world point under the cursor stays put), three-finger pan at the same 1:1 scale (look is a no-op). **Game Camera** preview ignores editor gestures | XY translate + XY plane; Z rotate; XY scale; unused axes and YZ/XZ planes hidden |
 
 **2D convention** (fixed, left-handed Babylon): content on the **XY plane**, **+Y up**, **+X right**, editor camera at **−Z** looking toward **+Z**. `scene.useRightHandedSystem` stays `false`.
 
@@ -116,13 +116,13 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 ## Packages
 
-| Package                    | Responsibility                                                                                                                                                                                                                                                                               |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@babylonslate/core`       | `SerializedScene`, `SceneSettings`, `ViewportMode`, normalisation                                                                                                                                                                                                                            |
-| `@babylonslate/edit`       | Scene commands + `diffSceneCommands`; journal revivers                                                                                                                                                                                                                                       |
-| `@babylonslate/render`     | Editor tools: camera, gizmos, grid, outline, sync, gestures                                                                                                                                                                                                                                  |
-| `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker, class picker, input mapping editor                                                                                                                                                                                             |
-| `apps/editor`              | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists Viewport, Outliner, Details, Output Log, and **Compiler Results** (tabbed `within` Output Log). Reopen restores addPanel-relative last placement. |
+| Package | Responsibility |
+| --- | --- |
+| `@babylonslate/core` | `SerializedScene`, `SceneSettings`, `ViewportMode`, normalisation |
+| `@babylonslate/edit` | Scene commands + `diffSceneCommands`; journal revivers |
+| `@babylonslate/render` | Editor tools: camera, gizmos, grid, outline, sync, gestures |
+| `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker, class picker, input mapping editor |
+| `apps/editor` | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists Viewport, Outliner, Details, Output Log, and **Compiler Results** (tabbed `within` Output Log). Reopen restores addPanel-relative last placement. |
 
 ## Outliner and Details visuals
 
@@ -151,11 +151,11 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`. Default class layout:
 
-| Dock           | Panels                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Center group   | **Graph** and **Prefab** as siblings (`direction: "within"`). Selecting Prefab fills the workspace like Viewport does on a Scene.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Dock           | Panels                                                                                                                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Center group   | **Graph** and **Prefab** as siblings (`direction: "within"`). Selecting Prefab fills the workspace like Viewport does on a Scene.                                                                                                                                               |
 | Left           | **Components** above **Class** (My Blueprint member tree with type-colored rows and trailing section +). Inspector shows the selected **component or** class member (component wins when a real component is selected; Prefab Root / empty space keeps member or node details). The Components tree uses the same TreeView multi-select as Outliner (Ctrl/Shift/Meta, swipe add, two-finger range). Additive on Prefab Root exclusive-selects Root. Viewport tap stays exclusive. Inspector shows **N Components**, their catalog/asset names, and guidance to select one for property edits or use the Components panel to reorder/reparent the group (no property grid / Prefab Origin). Remove deletes every selected local component (and descendants). Immediate drag-to-parent moves collapsed selection roots when the drag id is selected (`reparentPrefabComponents`); drop on a row middle nests, and the top/bottom 8px insert as a sibling (Prefab Root before/after still unparents). A cycle on any root no-ops the drop. |
-| Right / bottom | Inspector, Compiler Results                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Right / bottom | Inspector, Compiler Results                                                                                                                                                                                                                                                     |
 
 Selecting Prefab Root with no class member shows Inspector **Parent Class** (`inspector-parent-class`, Actor-ancestry picker) then **Actor Defaults** (`inspector-actor-defaults`): **Generate Hit Events** / **Generate Overlap Events** (default on). Parent Class writes `header.parentClass` only (`ClassRegistry.reparent` + `saveDocument(..., { parentClass })`); graph members, overrides, and components are not stripped. Cycles, depth, locked engine classes, and leaving Actor ancestry are rejected without a write. Those write `SerializedGraph.actorDefaults` and compile onto `ScriptBundleEntry.actorDefaults` for spawn / scene realize (see [scripting.md](scripting.md) Entry points). The Prefab Origin note stays visible.
 

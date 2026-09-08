@@ -342,7 +342,7 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["actor-1"];
     scene().actors[0]!.components = [createMeshComponent("mesh-a", "box")];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    const toggle = screen.getByRole("button", { name: "Mesh", exact: true });
+    const toggle = screen.getByRole("button", { name: "Mesh" });
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByTestId("property-actor-1-mesh-a-meshKind")).toBeNull();
@@ -354,7 +354,7 @@ describe("SceneDetailsPanel authoring", () => {
     );
     expect(screen.getByTestId("property-actor-1-mesh-a-meshKind")).toBeTruthy();
     expect(screen.queryByTestId("property-actor-name")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Mesh", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Mesh" }));
     expect(
       screen.getByRole("textbox", { name: "Filter Properties" }),
     ).toHaveProperty("value", "mesh kind");

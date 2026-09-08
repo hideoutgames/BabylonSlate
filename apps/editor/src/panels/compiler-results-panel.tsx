@@ -80,8 +80,8 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
               const row = rows[index]!;
               if (row.kind === "header") {
                 return (
-                  <div className="flex h-full items-center px-2 text-xs font-medium text-muted-foreground">
-                    <SelectableText className="truncate" title={row.graphId}>
+                  <div className="flex h-full items-center px-2 text-xs font-medium text-muted-foreground" title={row.graphId}>
+                    <SelectableText className="truncate">
                       {openDocuments.find((doc) => doc.id === row.graphId)?.ref.label ?? row.graphId}
                     </SelectableText>
                   </div>

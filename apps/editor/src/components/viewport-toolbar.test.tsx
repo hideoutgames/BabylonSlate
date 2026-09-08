@@ -221,7 +221,7 @@ describe("ViewportToolbar", () => {
     ({ id, label }) => {
       harness.gizmoTool = id === "translate" ? "rotate" : "translate";
       renderToolbar();
-      fireEvent.click(screen.getByRole("button", { name: label, exact: true }));
+      fireEvent.click(screen.getByRole("button", { name: label }));
       expect(harness.setGizmoTool).toHaveBeenCalledWith(id);
     },
   );
