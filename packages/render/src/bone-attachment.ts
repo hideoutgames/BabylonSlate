@@ -13,6 +13,7 @@ export interface BoneAttachment {
   rotation: Quaternion;
   inverseRotation: Quaternion;
   frame: number;
+  applied: boolean;
   root?: Mesh;
   resolved?: { node: TransformNode } | { bone: Bone; mesh: AbstractMesh };
 }
@@ -39,7 +40,7 @@ export function applyAttachToBone(binding: BoneAttachmentBinding, command: BoneA
   binding.boneAttachments.set(command.slotId, {
     targetSlotId: command.targetSlotId, boneName: command.boneName,
     world: Matrix.Identity(), local: Matrix.Identity(), boneWorld: Matrix.Identity(),
-    position: Vector3.Zero(), scale: Vector3.One(), rotation: Quaternion.Identity(), inverseRotation: Quaternion.Identity(), frame: -1,
+    position: Vector3.Zero(), scale: Vector3.One(), rotation: Quaternion.Identity(), inverseRotation: Quaternion.Identity(), frame: -1, applied: false,
   });
 }
 
@@ -71,6 +72,7 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
   const attachment = binding.boneAttachments.get(slotId);
   if (!attachment || attachment.frame === frame) return;
   attachment.frame = frame;
+  attachment.applied = false;
   updateAttachedSlot(binding, attachment.targetSlotId, frame);
   const child = binding.meshes.get(slotId);
   const target = binding.meshes.get(attachment.targetSlotId);
@@ -109,6 +111,7 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
   // Avoid Babylon parenting: disposing a character must not dispose another actor.
   // Each attachment owns its frozen matrix; snapshot TRS stays unchanged.
   child.freezeWorldMatrix(attachment.world);
+  attachment.applied = true;
 }
 
 let attachmentFrame = 0;

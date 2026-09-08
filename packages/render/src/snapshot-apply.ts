@@ -79,6 +79,10 @@ const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
 const scratchLocalPos = new Vector3();
 const scratchPartQuat = new Quaternion();
+const scratchComposedPart = { position: new Vector3(), rotation: new Quaternion() };
+const scratchBoneSlot: ActorSlot = {
+  slotId: 0, flags: 0, position: new Vector3(), rotation: new Quaternion(), scale: new Vector3(),
+};
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
@@ -1102,6 +1106,20 @@ export function applySnapshotToScene(
       }
     }
     updateBoneAttachments(binding);
+    for (const [slotId, attachment] of binding.boneAttachments) {
+      if (!attachment.applied) continue;
+      const light = binding.lights.get(slotId);
+      const camera = binding.cameras.get(slotId);
+      if (!light && !camera) continue;
+      attachment.world.decompose(
+        scratchBoneSlot.scale as Vector3,
+        scratchBoneSlot.rotation as Quaternion,
+        scratchBoneSlot.position as Vector3,
+      );
+      const composed = composeSlotPartTransform(scratchBoneSlot, binding, slotId);
+      if (light) updateAuthoredLightTransform(light, composed.position, composed.rotation);
+      if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
+    }
     refreshPlayActiveCamera(scene, binding);
   } finally {
     scene.blockMaterialDirtyMechanism = false;
@@ -1166,7 +1184,9 @@ function composeSlotPartTransform(
 } {
   const part = binding.meshParts.get(slotId)?.[0];
   if (!part) {
-    return { position: actor.position, rotation: actor.rotation };
+    scratchComposedPart.position.copyFromFloats(actor.position.x, actor.position.y, actor.position.z);
+    scratchComposedPart.rotation.copyFromFloats(actor.rotation.x, actor.rotation.y, actor.rotation.z, actor.rotation.w);
+    return scratchComposedPart;
   }
   scratchQuat.set(
     actor.rotation.x,
@@ -1186,20 +1206,13 @@ function composeSlotPartTransform(
     part.rotation[2],
     part.rotation[3],
   );
-  const rotation = scratchQuat.multiply(scratchPartQuat);
-  return {
-    position: {
-      x: actor.position.x + scratchLocalPos.x,
-      y: actor.position.y + scratchLocalPos.y,
-      z: actor.position.z + scratchLocalPos.z,
-    },
-    rotation: {
-      x: rotation.x,
-      y: rotation.y,
-      z: rotation.z,
-      w: rotation.w,
-    },
-  };
+  scratchQuat.multiplyToRef(scratchPartQuat, scratchComposedPart.rotation);
+  scratchComposedPart.position.set(
+    actor.position.x + scratchLocalPos.x,
+    actor.position.y + scratchLocalPos.y,
+    actor.position.z + scratchLocalPos.z,
+  );
+  return scratchComposedPart;
 }
 
 function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
