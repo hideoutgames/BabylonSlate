@@ -5,9 +5,21 @@ import { saveAllIfEnabled } from "./save-all";
 import {
   EXPECTED_PREVIEW_ACTOR_POSITIONS,
   previewPlacementScene,
+  previewPhysicsScene,
 } from "./preview-scene-fixture";
+import { expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
 
 test.describe("P4 Play overlay and session report", () => {
+  test("Play rolls all eight legacy duplicated spheres down an angled cube", async ({ page }) => {
+    test.setTimeout(120_000);
+    await openTestProject(page);
+    await openMainScene(page);
+    await setPreviewScene(page, previewPhysicsScene());
+    await clickPlayAndWaitForOverlay(page);
+    await expectSpheresRollDownhill(page.getByTestId("play-overlay"));
+    await page.getByTestId("play-overlay-close").click();
+  });
+
   test("overlay Play keeps each authored mesh at its own world position", async ({
     page,
   }) => {
