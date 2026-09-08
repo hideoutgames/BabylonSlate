@@ -1205,6 +1205,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setLastCompiledSignature(null);
       clearPlayPreviewScripts();
       graphCompileCacheRef.current.clear();
+      // A reload as soon as editing starts must still find this project on Homepage.
+      await recordRecent(
+        projectService.storagePort.getCurrentFolder(),
+        document.metadata.createdAt,
+      );
       setRoute("editor");
       setAnimEditorModes({});
       const { probeKtx2TranscoderAvailable } = await import(
@@ -1220,10 +1225,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (guid) {
         setRecoveryAvailable(await hasJournal(derived, guid));
       }
-      await recordRecent(
-        projectService.storagePort.getCurrentFolder(),
-        document.metadata.createdAt,
-      );
       await refreshProjectList();
       await captureMtimeSnapshot();
       bump();
