@@ -296,6 +296,12 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
   });
   test("pointer context menus", async ({ page }) => {
     await openMinimalTestProject(page);
+    const closeContextMenu = async () => {
+      await page
+        .getByTestId("context-menu-backdrop")
+        .click({ position: { x: 1, y: 1 } });
+      await expect(page.getByTestId("context-menu-backdrop")).toHaveCount(0);
+    };
 
     await page
       .locator('[data-asset-path="assets/main.scene.babasset"]')
@@ -331,7 +337,7 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
         ).toBe(true);
       }
     });
-    await page.keyboard.press("Escape");
+    await closeContextMenu();
     await test.step("keeps the native menu on opted-in selectable text", async () => {
       const prevented = await page.evaluate(() => {
         const el = document.createElement("span");
@@ -347,7 +353,6 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
       });
       expect(prevented).toBe(false);
     });
-    await page.keyboard.press("Escape");
     await test.step("opens context menu on right click in viewport panel", async () => {
       const panel = page.getByTestId("viewport-panel");
       await panel.click({ button: "right", position: { x: 40, y: 40 } });
@@ -356,7 +361,7 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
         page.getByTestId("context-menu-item-reload-scene"),
       ).toBeVisible();
     });
-    await page.keyboard.press("Escape");
+    await closeContextMenu();
     await test.step("opens context menu after long press in viewport panel", async () => {
       const panel = page.getByTestId("viewport-panel");
       await panel.evaluate((el) => {
@@ -378,6 +383,6 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
         timeout: 3_000,
       });
     });
-    await page.keyboard.press("Escape");
+    await closeContextMenu();
   });
 });

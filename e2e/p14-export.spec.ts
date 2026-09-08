@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { loadPlayerDistFiles } from "../apps/editor/src/services/load-player-files";
 import { DEFAULT_RENDER_PROJECT_SETTINGS } from "../packages/core/src/index.ts";
 import {
   BOOT_PACK_FILE,
@@ -8,22 +9,18 @@ import {
   unzipExport,
   zipExport,
 } from "../packages/exporter/src/index.ts";
-import { collectDirFiles, serveExportFiles } from "./export-static-server";
+import { serveExportFiles } from "./export-static-server";
 import {
   EXPECTED_PREVIEW_ACTOR_POSITIONS,
   previewPlacementScene,
 } from "./preview-scene-fixture";
 
-function playerDist(): string {
-  return join(process.cwd(), "apps/player/dist");
-}
-
-async function packTinyGame() {
+async function packTinyGame(playerBaseURL: string) {
   const scene = {
     ...previewPlacementScene(),
     name: "ExportBoot",
   };
-  const playerFiles = collectDirFiles(playerDist());
+  const playerFiles = await loadPlayerDistFiles(playerBaseURL);
   expect(playerFiles.has("index.html")).toBe(true);
   expect(playerFiles.has("player.js")).toBe(true);
   const packed = await exportGame({
@@ -64,8 +61,9 @@ async function packTinyGame() {
 test.describe("P14 export smoke", () => {
   test("unzip-serve-boot-tick on range and range-blind servers", async ({
     page,
+    baseURL,
   }) => {
-    const artifact = await packTinyGame();
+    const artifact = await packTinyGame(new URL("/player/", baseURL).href);
     const zip = zipExport(artifact);
     const unzipped = unzipExport(zip);
     expect(Object.keys(unzipped)).toContain("index.html");
