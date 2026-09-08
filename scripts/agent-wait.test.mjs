@@ -6,6 +6,10 @@ import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
+// These executable fixtures launch Git, pnpm, and Node. Their startup budget
+// must not turn source/CI assertions into deadline tests on a busy Windows host.
+const OPERATION_TIMEOUT_MS = 60000;
+
 async function fixture(t, action = "success") {
   const cwd = await mkdtemp(join(tmpdir(), "agent wait fixture "));
   await writeFile(join(cwd, ".gitignore"), "gh-state.json\n");
@@ -39,7 +43,7 @@ if (action === 'tree') {
   console.log('descendant-pid='+child.pid);
   setInterval(()=>{},100);
 }
-if (action === 'slow') { console.log('ready'); setInterval(() => console.log('quiet heartbeat 🌍'), 30); }
+if (action === 'slow') { console.log('ready-pid='+process.pid); setInterval(() => console.log('quiet heartbeat 🌍'), 30); }
 `,
   );
   await writeFile(join(cwd, "source.txt"), "original");
@@ -78,7 +82,21 @@ async function run(options, context) {
   const { runAgentWait } = await import("./agent-wait.mjs");
   return runAgentWait(options, context);
 }
-const local = { mode: "local", script: "verify", args: [], timeoutMs: 10000 };
+const local = { mode: "local", script: "verify", args: [], timeoutMs: OPERATION_TIMEOUT_MS };
+
+async function waitForLog(f, pattern) {
+  const deadline = Date.now() + OPERATION_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const firstLine = f.output().split("\n")[0];
+    if (firstLine) {
+      const { logPath } = JSON.parse(firstLine);
+      const match = (await readFile(logPath, "utf8")).match(pattern);
+      if (match) return match;
+    }
+    await delay(50);
+  }
+  assert.fail(`Fixture log did not contain ${pattern} before its startup deadline`);
+}
 
 test("local preserves argument boundaries, environment, commit, and bounded output in a path with spaces", async (t) => {
   const f = await fixture(t);
@@ -262,10 +280,27 @@ test("slow operation emits nothing between start and cancellation while retainin
 
 test("deadline terminates a slow owned process and cannot pass", async (t) => {
   const f = await fixture(t, "slow");
-  const result = await run({ ...local, timeoutMs: 1500 }, f.context);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const realSetTimeout = globalThis.setTimeout;
+  let expire;
+  t.mock.method(globalThis, "setTimeout", (callback, ms, ...args) => {
+    // Control only the operation's deadline. Process cleanup timers and the
+    // separately bounded final Git snapshot continue to use real time.
+    if (ms === OPERATION_TIMEOUT_MS) expire = () => callback(...args);
+    return realSetTimeout(callback, ms, ...args);
+  });
+  const pending = run(local, { ...f.context, signal: controller.signal });
+  const [, pid] = await waitForLog(f, /ready-pid=(\d+)/);
+  assert.doesNotThrow(() => process.kill(Number(pid), 0));
+  assert.equal(typeof expire, "function", "the configured deadline must be scheduled");
+  // Initial Git capture and the owned process are ready before time expires.
+  expire();
+  const result = await pending;
   assert.equal(result.status, "timeout");
   assert.equal(result.exitCode, 124);
   assert.ok(result.finalState, "capture the final tree after deadline cleanup");
+  assert.throws(() => process.kill(Number(pid), 0), { code: "ESRCH" });
 });
 
 const goodRun = {
@@ -322,8 +357,8 @@ if(scenario.splitUnicode && key==='pr view') {
 
 test("CI discovers a delayed Verify run, watches once, and returns its identity", async (t) => {
   const f = await github(t, { discover: true });
-  f.context.discoveryMs = 3000;
-  const result = await run({ mode: "ci", pr: 42, timeoutMs: 10000 }, f.context);
+  f.context.discoveryMs = OPERATION_TIMEOUT_MS;
+  const result = await run({ mode: "ci", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS }, f.context);
   assert.equal(result.status, "success");
   assert.equal(result.runId, 100);
   assert.equal(result.commitSha, goodRun.headSha);
@@ -349,7 +384,7 @@ test("CI discovers a delayed Verify run, watches once, and returns its identity"
 
 test("Unicode split across process chunks does not corrupt the PR branch", async (t) => {
   const f = await github(t, { branch: "feature-🌍", splitUnicode: true });
-  const result = await run({ mode: "ci", pr: 42, timeoutMs: 10000 }, f.context);
+  const result = await run({ mode: "ci", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS }, f.context);
   assert.equal(result.status, "success");
 });
 
@@ -385,7 +420,7 @@ for (const [name, scenario, status] of [
   test(`CI ${name} cannot produce success`, async (t) => {
     const f = await github(t, scenario);
     const result = await run(
-      { mode: "ci", pr: 42, timeoutMs: 10000 },
+      { mode: "ci", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS },
       f.context,
     );
     assert.equal(result.status, status);
@@ -411,7 +446,7 @@ test("slot waits until fewer than two other non-draft main PRs remain, excluding
     ],
   });
   const result = await run(
-    { mode: "slot", pr: 42, timeoutMs: 10000 },
+    { mode: "slot", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS },
     f.context,
   );
   assert.equal(result.status, "success");
@@ -431,7 +466,7 @@ test("slot waits until fewer than two other non-draft main PRs remain, excluding
 test("missing GitHub CLI is a bounded launch failure", async (t) => {
   const f = await fixture(t);
   const result = await run(
-    { mode: "ci", pr: 42, timeoutMs: 10000 },
+    { mode: "ci", pr: 42, timeoutMs: OPERATION_TIMEOUT_MS },
     { ...f.context, gh: [join(f.cwd, "missing-gh")] },
   );
   assert.equal(result.status, "failure");
