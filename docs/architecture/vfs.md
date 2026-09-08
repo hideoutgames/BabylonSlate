@@ -106,6 +106,8 @@ Native HTTP responses expose optional `headers`, used by the native project-brow
 
 While the native project browser is mounted, window focus and visibility resume trigger a fresh server check. Project actions are hidden during validation or sign-out; failed requests retain credentials and show a retry gate. Pending results and focus listeners cannot outlive the Home route. The editor has no account polling or listeners.
 
+Desktop account-cache writes replace the file atomically. Invalid cache JSON or schema is treated as a missing sign-in; OS decryption failures retain the encrypted cache and report temporary unavailability.
+
 Native account builds require Clerk's Native API and email-code sign-in/sign-up to be enabled. Additional mandatory profile fields, MFA, OAuth, and passkeys need corresponding flows before enabling them for app users; unsupported requirements keep the account form closed. Web authentication uses the optional Clerk React flow; Electron embeds the native email-code flow optionally in Profile. Native integration tests cover transport and session continuity with controlled API responses; real Clerk credentials and physical-device verification remain separate from browser emulation.
 
 `StatusBarStylePort` accepts `"light"` or `"dark"` glyph styles. iOS/Android use the Capacitor Status Bar plugin's `setStyle` only; Web and Electron use a no-op adapter. The editor maps resolved dark chrome to light glyphs and resolved light chrome to dark glyphs. It never hides or overlays the native status bar.

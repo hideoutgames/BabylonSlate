@@ -61,7 +61,9 @@ export class DesktopAccountSecretStore {
         throw unavailable();
       return stored.secrets as Record<string, string>;
     } catch {
-      throw unavailable();
+      // This is a replaceable sign-in cache, never project data. A damaged or
+      // incompatible record requires fresh authentication instead of a lockout.
+      return {};
     }
   }
 

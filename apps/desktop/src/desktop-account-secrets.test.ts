@@ -83,4 +83,16 @@ describe("desktop account credentials", () => {
       await new DesktopAccountSecretStore(h.files, h.safeStorage).get("clerk"),
     ).toBeNull();
   });
+
+  it("recovers an interrupted account cache by requiring a fresh sign-in", async () => {
+    const h = harness();
+    await h.files.write('{"version":1,"secrets":{"clerk":');
+    const store = new DesktopAccountSecretStore(h.files, h.safeStorage);
+    expect(await store.get("clerk")).toBeNull();
+    await store.set("clerk", "fresh-client-token");
+    expect(
+      await new DesktopAccountSecretStore(h.files, h.safeStorage).get("clerk"),
+    ).toBe("fresh-client-token");
+    expect(h.contents()).not.toContain("fresh-client-token");
+  });
 });

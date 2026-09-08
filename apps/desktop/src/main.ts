@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -107,7 +107,9 @@ function registerIpc(): void {
     read: () => readFile(accountSecretsPath, "utf8"),
     write: async (contents) => {
       await mkdir(dirname(accountSecretsPath), { recursive: true });
-      await writeFile(accountSecretsPath, contents);
+      const temporary = `${accountSecretsPath}.tmp`;
+      await writeFile(temporary, contents, { mode: 0o600 });
+      await rename(temporary, accountSecretsPath);
     },
   }, safeStorage);
   handle("account-secrets:get", async (_event, key) => accountSecrets.get(String(key)));
