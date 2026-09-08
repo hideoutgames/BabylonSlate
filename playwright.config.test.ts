@@ -6,7 +6,27 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
+
+describe("Playwright owned server port", () => {
+  it("uses an explicitly selected port for both browser and owned server", async () => {
+    vi.stubEnv("PLAYWRIGHT_PORT", "4297");
+    const { default: config } = await import("./playwright.config");
+    expect(config.use?.baseURL).toBe("http://127.0.0.1:4297");
+    expect(config.webServer).toMatchObject({ url: "http://127.0.0.1:4297", reuseExistingServer: false });
+    expect((config.webServer as { command: string }).command).toContain("--port 4297 --strictPort");
+  });
+
+  it.each(["", "0", "65536", "1.5", "other"])("rejects an invalid explicit port %s", async (port) => {
+    vi.stubEnv("PLAYWRIGHT_PORT", port);
+    await expect(import("./playwright.config")).rejects.toThrow(/PLAYWRIGHT_PORT/);
+  });
+});
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 const playwrightCli = createRequire(import.meta.url).resolve("@playwright/test/cli");

@@ -319,7 +319,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | Component | Variables | Functions | Events |
 | --- | --- | --- | --- |
 | `Scene` | Scene Name, Asset Guid (Get-only), Gravity (`vec3`) | — | — |
-| `MeshComponent` | Mesh Kind, Mesh (`assetGuid`; picker `typeClassIds` Mesh **and** Model), Material | — | — |
+| `MeshComponent` | Mesh Kind, Mesh (`assetGuid`; picker `typeClassIds` Mesh **and** Model), Material asset, Material Object (Get-only live reference) | — | — |
 | `SpriteComponent` | Sprite, Sorting Layer, Order In Layer | — | — |
 | `TilemapComponent` | Tilemap, Sorting Layer, Order In Layer | — | — |
 | `SkyboxComponent` | Size | — | — |
@@ -352,6 +352,18 @@ Compiled Get/Set of catalog variables uses `ctx.getVariableFrom` / `ctx.setVaria
 - `NavAgentComponent`: `updateAgent` on the live Recast crowd (radius / height / max speed / max acceleration). Call **Move To** / actor `navigation.moveTo` adds the crowd agent if Begin Play ran before the batch register.
 
 `setVariableOn` / Set Text on a text component also fires `onTextChanged` for entries bound to that component id.
+
+### Runtime material parameters
+
+Read **Material Object** from a Mesh Component, then connect it to **Set Material Float Parameter**, **Set Material Color Parameter**, or **Set Material Texture Parameter**. Each setter has Exec / Then, a String **Name** input with an editable literal default, and a typed **Value** input: Float, Vector 4 (RGBA), or Texture asset respectively. Names match the unique parameter names authored in the assigned Material Graph.
+
+`materialObject` is a live `MaterialObject` (`BObject` subclass) scoped to that mesh component's current material assignment. The existing **Material** asset variable (`materialGuid`) still changes the assignment. Reassigning invalidates retained references; fetch Material Object again before setting the replacement material. Clearing Material removes its private parameter values, so assigning the same asset again starts from its defaults. Initially unassigned model components keep their authored material slots. Missing materials, destroyed targets, stale references, empty names, and non-finite numeric values do not emit writes. A null Texture value clears the texture parameter.
+
+The catalog IDs are `material.setFloatParameter`, `material.setColorParameter`, and `material.setTextureParameter`; codegen calls `ctx.setMaterialFloatParameter`, `ctx.setMaterialColorParameter`, and `ctx.setMaterialTextureParameter`. Runtime emits ordered `setMaterialParameter` commands with the actor slot, optional component ID, captured material asset GUID, parameter name, and a typed float/color/texture payload. Renderer instances isolate these changes to the selected mesh; saved Material assets and sibling mesh instances retain their own values.
+
+Texture setter literal defaults and typed Texture class/local variable defaults are asset dependencies, including setters in function graphs and Texture entries in Array/Map defaults. `materialParameterTextureGuidsFromGraph` provides the shared Play/export collector so a runtime replacement texture loads even when no Material asset samples it by default. Ordinary String parameter names and String variable values are not asset references. Texture GUIDs assembled dynamically at runtime must already be available through an authored asset reference.
+
+Mesh material commands keep the actual component ID even when the actor has one visual. `assignMesh.primaryComponentId` identifies that component on the optimized single mesh; adding or removing sibling components preserves its overrides. Removed components release their private material instances. Legacy whole-actor commands remain supported.
 
 ### Entry points
 

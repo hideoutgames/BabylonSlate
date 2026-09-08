@@ -13,6 +13,21 @@ import {
 } from "./serialize-material";
 
 describe("material graph serialization", () => {
+  it("requires a new name when pasting a parameter while retaining the original name", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "roughness", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [0.4] } });
+    const graph = materialGraphToSerialized(doc);
+    graph.nodes.push({ ...graph.nodes.find((node) => node.id === "roughness")!, id: "roughness-copy" });
+    const pasted = serializedToMaterialGraph(graph, doc);
+    expect(pasted.nodes.find((node) => node.id === "roughness")?.properties.name).toBe("Roughness");
+    expect(pasted.nodes.find((node) => node.id === "roughness-copy")?.properties.name).toBe("");
+    expect(pasted.nodes.find((node) => node.id === "roughness-copy")?.properties.value).toEqual([0.4]);
+  });
+  it("exposes a Color Parameter RGBA value and an explicit RGB output", () => {
+    expect(pinsForMaterialNode("param.color").map((pin) => [pin.id, pin.type.kind])).toEqual([
+      ["out", "vec4"], ["rgb", "vec3"],
+    ]);
+  });
   it("round-trips a document through the graph shell shape", () => {
     const doc = createDefaultMaterialDocument();
     const next = serializedToMaterialGraph(materialGraphToSerialized(doc), doc);

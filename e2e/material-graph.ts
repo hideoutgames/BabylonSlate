@@ -1,8 +1,14 @@
 import path from "node:path";
 import { expect, type Page } from "@playwright/test";
-import { openContentBrowser, selectContentBrowserAssetsFolder } from "./open-test-project";
+import {
+  openContentBrowser,
+  selectContentBrowserAssetsFolder,
+} from "./open-test-project";
 
-export async function guidForPath(page: Page, assetPath: string): Promise<string> {
+export async function guidForPath(
+  page: Page,
+  assetPath: string,
+): Promise<string> {
   return page.evaluate((path) => {
     const host = globalThis as {
       __babylonslateTest?: { guidForPath: (path: string) => string | null };
@@ -15,6 +21,7 @@ export async function addMaterialPaletteNode(
   page: Page,
   search: string,
   itemId: string,
+  parameterName = search,
 ): Promise<void> {
   const graph = page.getByTestId("material-graph-editor");
   await expect(graph).toBeVisible();
@@ -25,6 +32,16 @@ export async function addMaterialPaletteNode(
   await page.getByTestId("node-palette-search").fill(search);
   await page.getByTestId(`node-palette-item-${itemId}`).click();
   await expect(page.getByTestId("node-palette")).toHaveCount(0);
+  if (itemId.startsWith("param.")) {
+    await expect(
+      page.getByTestId("material-parameter-name-prompt"),
+    ).toBeVisible();
+    await page.getByTestId("name-prompt-input").fill(parameterName);
+    await page.getByTestId("name-prompt-confirm").click();
+    await expect(
+      page.getByTestId("material-parameter-name-prompt"),
+    ).toHaveCount(0);
+  }
   await graph.locator(`.react-flow__node[data-id^="${itemId}-"]`).click();
 }
 

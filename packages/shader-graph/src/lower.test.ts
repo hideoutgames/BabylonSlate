@@ -297,7 +297,7 @@ describe("material lowering", () => {
         id: "tex",
         type: "param.texture",
         position: { x: 0, y: 0 },
-        properties: { textureGuid: "tex-1" },
+        properties: { name: "Texture", textureGuid: "tex-1" },
       },
       { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
       {

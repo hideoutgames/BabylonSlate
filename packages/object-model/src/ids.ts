@@ -1,6 +1,7 @@
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
+  "MaterialObject",
   "Actor",
   "Scene",
   "SceneLayer",

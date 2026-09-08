@@ -100,6 +100,22 @@ function renderLine(
 }
 
 describe("GraphConnectionLineView", () => {
+  it("uses the host Float-to-vector rule for the near-pin hint", () => {
+    mountHandles([
+      { nodeId: "source", pinId: "value", x: 0, y: 0 },
+      { nodeId: "target", pinId: "color", x: 300, y: 0 },
+    ]);
+    const floatOut = { ...stringOut, type: { kind: "float" } };
+    const colorIn = { ...execIn, id: "color", kind: "data" as const, type: { kind: "vec3" } };
+    const { queryByTestId } = renderLine({
+      fromNode: { id: "source", data: { __pins: [floatOut] } },
+      fromHandle: { id: "value" },
+      nodes: [{ id: "source", data: { __pins: [floatOut] } }, { id: "target", data: { __pins: [colorIn] } }],
+      pointer: { x: 340, y: 0 },
+      pinCompatibility: (from, to) => from.type.kind === "float" && to.type.kind === "vec3",
+    });
+    expect(queryByTestId("add-node-hint")).toBeNull();
+  });
   it("shows a Tap to Cancel hint when the drop would open the palette", () => {
     mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
     const { getByTestId, queryByRole } = renderLine();
