@@ -854,7 +854,6 @@ export function Homepage({
                 appearance,
               });
               setCreateOpen(false);
-              setRenameTarget(null);
             });
             return;
           }
