@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { getBuildIdentity } from "../lib/build-identity";
 import { brandIconSrc } from "../lib/branding";
 import { useHomepageScheme } from "./homepage-scheme";
 import loadingStyles from "./launcher-transition.css?inline";
@@ -16,6 +17,7 @@ type Target = "home" | "editor";
 type Transition = {
   target: Target;
   label: string;
+  status: string;
   since: number;
   mounted: boolean;
   settled: boolean;
@@ -25,6 +27,7 @@ const TransitionContext = createContext({
   begin: (_label: string) => {},
   ready: (_target: Target) => {},
   settle: () => {},
+  reportHomeLoading: (_status: string) => {},
 });
 export const useLauncherTransition = () => useContext(TransitionContext);
 export function LauncherTransitionProvider({
@@ -38,6 +41,7 @@ export function LauncherTransitionProvider({
   const [transition, setTransition] = useState<Transition | null>(() => ({
     target: route === "home" ? "home" : "editor",
     label: "Slate",
+    status: "Loading application",
     since: performance.now(),
     mounted: false,
     settled: true,
@@ -48,6 +52,7 @@ export function LauncherTransitionProvider({
       setTransition({
         target: "editor",
         label,
+        status: "Opening project",
         since: performance.now(),
         mounted: false,
         settled: false,
@@ -59,7 +64,11 @@ export function LauncherTransitionProvider({
     (target: Target) =>
       setTransition((current) =>
         current?.target === target && !current.mounted
-          ? { ...current, mounted: true }
+          ? {
+              ...current,
+              mounted: true,
+              status: current.settled ? "Ready" : "Preparing editor",
+            }
           : current,
       ),
     [],
@@ -67,10 +76,27 @@ export function LauncherTransitionProvider({
   const settle = useCallback(
     () =>
       setTransition((current) =>
-        current ? { ...current, settled: true } : current,
+        current
+          ? {
+              ...current,
+              settled: true,
+              status: current.mounted ? "Ready" : current.status,
+            }
+          : current,
       ),
     [],
   );
+  const reportHomeLoading = useCallback((status: string) => {
+    setTransition((current) =>
+      current?.target === "home" &&
+      !current.mounted &&
+      current.status !== status
+        ? { ...current, status }
+        : current,
+    );
+  }, []);
+  const build = getBuildIdentity();
+  const version = build ? `v${build.applicationVersion}` : "Development build";
   useEffect(() => {
     if (!transition) return;
     if (
@@ -99,8 +125,8 @@ export function LauncherTransitionProvider({
     return () => clearTimeout(timer);
   }, [transition, route]);
   const value = useMemo(
-    () => ({ begin, ready, settle }),
-    [begin, ready, settle],
+    () => ({ begin, ready, settle, reportHomeLoading }),
+    [begin, ready, settle, reportHomeLoading],
   );
   return (
     <TransitionContext.Provider value={value}>
@@ -127,13 +153,40 @@ export function LauncherTransitionProvider({
                   : `Opening ${transition.label}`
               }
             >
-              <div className="slate-loading-mark">
-                <img src={brandIconSrc(scheme)} alt="" />
-              </div>
-              <span className="slate-loading-label">{transition.label}</span>
-              <span className="slate-loading-track" aria-hidden="true">
-                <span />
-              </span>
+              <section className="slate-splash-card">
+                <div className="slate-splash-art" aria-hidden="true">
+                  <div className="slate-splash-brand">
+                    <img src={brandIconSrc("dark")} alt="" />
+                    <span>Slate</span>
+                  </div>
+                  <div className="slate-splash-planes">
+                    <i />
+                    <i />
+                    <i />
+                  </div>
+                  <span className="slate-splash-caption">
+                    A space to create.
+                  </span>
+                </div>
+                <div className="slate-splash-info">
+                  <div className="slate-splash-heading">
+                    <span className="slate-loading-label">
+                      {transition.label}
+                    </span>
+                    <span className="slate-splash-version">{version}</span>
+                  </div>
+                  <div className="slate-splash-status">
+                    <span>{transition.status}</span>
+                  </div>
+                  <span
+                    className="slate-loading-track"
+                    aria-hidden="true"
+                    data-ready={transition.mounted && transition.settled}
+                  >
+                    <span />
+                  </span>
+                </div>
+              </section>
             </div>
           </>,
           document.body,

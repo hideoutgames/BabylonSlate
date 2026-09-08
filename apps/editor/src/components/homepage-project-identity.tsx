@@ -35,15 +35,17 @@ export function ProjectIdentityBadge({
       data-project-icon={icon.id}
       data-has-image={Boolean(identity.image && identity.image !== failedImage)}
     >
-      {identity.image && identity.image !== failedImage ? (
-        <img
-          src={identity.image}
-          alt=""
-          onError={() => setFailedImage(identity.image)}
-        />
-      ) : (
-        <Icon />
-      )}
+      <span className="homepage-project-badge-face">
+        {identity.image && identity.image !== failedImage ? (
+          <img
+            src={identity.image}
+            alt=""
+            onError={() => setFailedImage(identity.image)}
+          />
+        ) : (
+          <Icon />
+        )}
+      </span>
     </span>
   );
 }

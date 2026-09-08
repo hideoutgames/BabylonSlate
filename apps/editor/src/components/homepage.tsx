@@ -150,6 +150,15 @@ export function Homepage({
   const [artReady, setArtReady] = useState(false);
   const markArtReady = useCallback(() => setArtReady(true), []);
   useEffect(() => {
+    transition.reportHomeLoading(
+      !dataReady
+        ? "Loading project library"
+        : projects.length === 0 && !artReady
+          ? "Loading 3D models"
+          : "Preparing interface",
+    );
+  }, [dataReady, projects.length, artReady, transition.reportHomeLoading]);
+  useEffect(() => {
     if (!dataReady || (projects.length === 0 && !artReady)) return;
     let cancelled = false;
     const images = Array.from(
@@ -169,7 +178,7 @@ export function Homepage({
   }, [dataReady, projects.length, artReady, transition.ready]);
   const launch = async (
     action: () => Promise<void>,
-    label = "Opening Project",
+    label = "Slate",
   ) => {
     transition.begin(label);
     await new Promise<void>((resolve) =>
