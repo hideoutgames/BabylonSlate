@@ -6,6 +6,7 @@ import {
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@babylonslate/core";
+import { publicAssetUrl } from "../lib/branding";
 
 /** Public path of the self-hosted Havok wasm (same pattern as `/ktx2/`). */
 export const EDITOR_HAVOK_WASM_PATH = "/havok/HavokPhysics.wasm";
@@ -16,14 +17,15 @@ export type PlayPhysicsSettings = {
 };
 
 export function editorHavokWasmUrl(): string {
+  const path = publicAssetUrl(EDITOR_HAVOK_WASM_PATH);
   const origin =
     typeof globalThis.location?.origin === "string"
       ? globalThis.location.origin
       : "";
   if (origin && origin !== "null") {
-    return new URL(EDITOR_HAVOK_WASM_PATH, origin).href;
+    return new URL(path, origin).href;
   }
-  return EDITOR_HAVOK_WASM_PATH;
+  return path;
 }
 
 export type PlaySceneDocument = {

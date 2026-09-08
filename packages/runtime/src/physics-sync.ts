@@ -1,7 +1,6 @@
 import type { PhysicsBackend, PhysicsTransform, Vec3 } from "@babylonslate/physics";
 import {
   decodeTileGid,
-  meshColliderId,
   parseMeshCollisionLayer,
   parseMeshCollisionMask,
   parseMeshCollisionMode,
@@ -26,6 +25,7 @@ import {
   type ColliderShape,
 } from "@babylonslate/physics";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
+import { componentColliderPhysicsId } from "./physics-collider-id";
 import {
   actorParentGuid,
   actorWorldTransforms,
@@ -277,7 +277,7 @@ export class PhysicsWorldSync {
       mapToRecord(component.variables),
       this.backend.kind,
     );
-    this.backend.updateCollider(`collider:${component.guid}`, {
+    this.backend.updateCollider(componentColliderPhysicsId(owner.guid, component.guid), {
       isTrigger: collider.isTrigger,
       friction: collider.friction,
       restitution: collider.restitution,
@@ -373,7 +373,7 @@ export class PhysicsWorldSync {
         worldScale(actor, this.worldTransforms),
       );
       this.backend.createCollider({
-        id: `collider:${component.guid}`,
+        id: componentColliderPhysicsId(actor.guid, component.guid),
         bodyId,
         shape: baked.shape,
         friction: collider.friction,
@@ -422,7 +422,7 @@ export class PhysicsWorldSync {
       const layer = parseMeshCollisionLayer(properties.layer);
       const mask = parseMeshCollisionMask(properties.mask);
       for (const collision of this.resolvedMeshCollisions(component)) {
-        const colliderId = meshColliderId(component.guid, collision.shapeId);
+        const colliderId = componentColliderPhysicsId(actor.guid, component.guid, collision.shapeId);
         live.add(colliderId);
         const composed = composeMeshColliderLocal(
           component.transform,
@@ -479,7 +479,7 @@ export class PhysicsWorldSync {
     const hy = Math.max(Math.abs(scale.y) / 2, 0.05);
     const hz = Math.max(Math.abs(scale.z) / 2, 0.05);
     this.backend.createCollider({
-      id: `collider:${component.guid}`,
+      id: componentColliderPhysicsId(actor.guid, component.guid),
       bodyId,
       shape:
         this.backend.kind === "2d"
@@ -535,7 +535,7 @@ export class PhysicsWorldSync {
         this.backend.kind,
       );
       if (collider.shape.kind !== "box2d") continue;
-      const colliderId = `collider:${component.guid}`;
+      const colliderId = componentColliderPhysicsId(actor.guid, component.guid);
       const baked = bakeColliderLocal(
         { kind: "box2d", halfExtents: mapped.halfExtents },
         {

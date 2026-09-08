@@ -66,6 +66,10 @@ The `jsdom` project sets `css: true` so `?raw` stylesheet imports resolve; Vites
 
 ## Preview parity fixture
 
+Physics parity regressions use eight saved spheres sharing legacy component IDs above a rotated cube. Runtime tests verify collider ownership, independent updates/removal, component-bound contact events, and real Havok contact/downhill motion. Browser tests require all eight lanes to roll downhill in normal Play and Preview Build. The shared lighting browser case checks image contribution from lights beyond the fourth in Scene viewport, Play, and Preview Build; renderer tests cover shader defines, late imported materials, frozen readiness, and Unlit/PBR transitions.
+
+Startup regressions verify deployment-base WASM URLs, failed explicit downloads and retry, strict Play backend initialization, and no simulation ticks after physics startup fails. These checks exercise error paths rather than treating Node's local WASM file as evidence that a hosted URL works.
+
 `e2e/preview-scene-fixture.ts` is the shared authored scene for Scene viewport, overlay Play, Preview Build, and served export assertions. It includes separated actors plus a parented child. Test-only hosts expose live Babylon visual positions/material names; tests assert the rendered state, not only command records or tick counters. `p9-content.spec.ts` also compares consecutive static Material Preview frames so RTT accumulation fails in browser coverage.
 
 ## Coverage gates

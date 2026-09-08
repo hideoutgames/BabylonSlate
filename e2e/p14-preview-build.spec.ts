@@ -5,7 +5,10 @@ import { saveAllIfEnabled } from "./save-all";
 import {
   EXPECTED_PREVIEW_ACTOR_POSITIONS,
   previewPlacementScene,
+  previewPhysicsScene,
+  previewManyLightsScene,
 } from "./preview-scene-fixture";
+import { expectGreenIllumination, expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
 import {
   addMaterialPaletteNode,
   compileMaterialPreview,
@@ -97,6 +100,36 @@ async function previewCanvasPixelStats(page: Page): Promise<
 }
 
 test.describe("P14 Preview Build", () => {
+  test("Preview Build rolls all eight legacy duplicated spheres down an angled cube", async ({ page }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    await openMainScene(page);
+    await setPreviewScene(page, previewPhysicsScene());
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("preview-build-toggle").click();
+    await page.getByTestId("play-preview").click();
+    const root = await waitForPreviewBuildBoot(page);
+    await expectSpheresRollDownhill(root);
+    await page.getByTestId("preview-build-close").click();
+  });
+
+  test("lights beyond the fourth illuminate Scene Viewport, Play, and Preview Build", async ({ page }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    await openMainScene(page);
+    await setPreviewScene(page, previewManyLightsScene());
+    await expectGreenIllumination(page.getByTestId("viewport-canvas"));
+    await clickPlayAndWaitForOverlay(page);
+    await expectGreenIllumination(page.getByTestId("play-canvas"));
+    await page.getByTestId("play-overlay-close").click();
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("preview-build-toggle").click();
+    await page.getByTestId("play-preview").click();
+    await waitForPreviewBuildBoot(page);
+    await expectGreenIllumination(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas"));
+    await page.getByTestId("preview-build-close").click();
+  });
+
   test("default overlay Play is unchanged when Preview Build is off", async ({
     page,
   }) => {

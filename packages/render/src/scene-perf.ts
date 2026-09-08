@@ -11,6 +11,7 @@ import type { SerializedScene } from "@babylonslate/core";
 import { prewarmMaterial } from "./material-compiler";
 import { isEngineDefaultMaterial } from "./default-material";
 import { actorVisualFingerprint } from "./scene-loader";
+import { syncSceneLighting } from "./scene-lighting";
 
 /** Fast large-scene lookups (§2.4). Babylon 9 defaults these on; pass them explicitly. */
 export const SCENE_LOOKUP_MAPS: SceneOptions = {
@@ -133,6 +134,7 @@ export async function settleOrTimeout(work: Promise<void>, ms: number): Promise<
 }
 
 export async function prewarmSceneMaterials(scene: Scene): Promise<void> {
+  syncSceneLighting(scene);
   await settleOrTimeout((async () => {
     const warmed = new Set<Material>();
     for (const mesh of scene.meshes) {

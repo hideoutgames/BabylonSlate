@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeScene } from "@babylonslate/core";
 import {
   canonicalPlaySceneGuid,
@@ -12,6 +12,25 @@ import {
 } from "./play-physics";
 
 describe("playLoadControl", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["/", "/BabylonSlate/"])(
+    "loads Havok from the editor deployment at %s in every Play host",
+    (base) => {
+      vi.stubEnv("BASE_URL", base);
+      vi.stubGlobal("location", { origin: "https://hideoutgames.github.io" });
+      const expected = `https://hideoutgames.github.io${base}havok/HavokPhysics.wasm`;
+      expect(playLoadControl({}).havokWasmUrl).toBe(expected);
+      expect(inProcessPlayRuntimeOptions({
+        physicsWorld: "3d",
+        gravity: [0, -9.81, 0],
+      }).havokWasmUrl).toBe(expected);
+    },
+  );
+
   it("forwards scene physics world, gravity, and the vendored Havok wasm URL", () => {
     const msg = playLoadControl({
       physicsWorld: "2d",

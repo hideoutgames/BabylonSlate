@@ -125,7 +125,7 @@ function attachKinematicBox(
 }
 
 describe("runtime collision events", () => {
-  it("dispatches onHit to both overlapping blocking actors", async () => {
+  it("dispatches component-bound onHit for actors sharing a legacy collider ID", async () => {
     const registry = createDefaultNodeRegistry();
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -157,8 +157,8 @@ describe("runtime collision events", () => {
     });
     expect(a).not.toBeNull();
     expect(b).not.toBeNull();
-    attachKinematicBox(runtime, a!);
-    attachKinematicBox(runtime, b!);
+    attachKinematicBox(runtime, a!, false, "col");
+    attachKinematicBox(runtime, b!, false, "col");
 
     runtime.start();
     runtime.tick();
@@ -168,7 +168,7 @@ describe("runtime collision events", () => {
     runtime.stop();
   });
 
-  it("dispatches begin then end overlap for a trigger pair", async () => {
+  it("dispatches component-bound begin and end overlap for a legacy duplicate pair", async () => {
     const registry = createDefaultNodeRegistry();
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -198,8 +198,8 @@ describe("runtime collision events", () => {
         scale: { x: 1, y: 1, z: 1 },
       },
     });
-    attachKinematicBox(runtime, a!);
-    attachKinematicBox(runtime, b!, true);
+    attachKinematicBox(runtime, a!, false, "col");
+    attachKinematicBox(runtime, b!, true, "col");
 
     runtime.start();
     runtime.tick();

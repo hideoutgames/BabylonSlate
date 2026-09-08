@@ -67,6 +67,12 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 
 Per-Scene GLB containers (`glb-anim.ts`) account GPU vertex+index bytes (`accountedGeometryBytesForScene`). The HUD shows `geo` and **Geo High** when that exceeds `GEOMETRY_BYTE_CEILING` (512 MB). Geometry is **not** LRU-evicted and has **no** Engine Setting.
 
+## Simultaneous lights
+
+`scene-lighting.ts` gives lit PBR, Standard, and surface NodeMaterials capacity for every enabled Scene light, with Babylon's four-light minimum for small scenes. This policy is shared by Scene viewport, Play, and Preview Build, including imported model materials that arrive asynchronously. Unlit surfaces and overlay materials keep their own behavior. More overlapping lights increase shader cost; there is no additional fixed editor cutoff.
+
+Light/material additions, removals, and effective enabled-state changes trigger a batched update before rendering or shader prewarm. Unchanged frames only compare collection lengths and the Scene lighting flag. Updates refresh frozen material readiness without removing the editor's freeze policy; opening a small scene does not compile a large fixed light budget.
+
 ## Engine default material
 
 Meshes with no authored surface Material (`MeshComponent.materialGuid` empty, no glTF construction material) render the engine default, not Babylon’s white `StandardMaterial`. `installEngineDefaultMaterial` (`packages/render/src/default-material.ts`) sets `scene.defaultMaterial` to a lit `PBRMaterial` matching a new user Material (opaque, not two-sided, `metallic` 0, `roughness` 0.5) with a UV-tiled 2×2 grey checker albedo (0.8 / ~0.65, wrap, nearest, 8 tiles). Installed from `setupDefaultViewport` (editor, Play, Prefab, player), `createTestEngine`, and Material Preview. Primitives keep `mesh.material === null` so Details still shows **None**. Model slot Default/None still restores the glTF construction material. Sprites, tilemaps, skybox, 3D text, colliders, billboards, and pivot markers keep their own materials. Particle / post-process **None** is unchanged.

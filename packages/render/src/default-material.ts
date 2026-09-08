@@ -6,6 +6,7 @@ import {
   Texture,
   type Scene,
 } from "@babylonjs/core";
+import { syncSceneLighting } from "./scene-lighting";
 
 export const ENGINE_DEFAULT_MATERIAL_NAME = "engineDefaultMaterial";
 /** Repeats of the 2×2 checker across UV 0–1. */
@@ -57,6 +58,7 @@ export function createEngineDefaultMaterial(scene: Scene): PBRMaterial {
   material.emissiveColor = new Color3(0, 0, 0);
   material.albedoColor = new Color3(1, 1, 1);
   material.albedoTexture = texture;
+  syncSceneLighting(scene);
   return material;
 }
 
