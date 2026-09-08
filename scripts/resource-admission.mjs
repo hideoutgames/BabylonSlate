@@ -168,7 +168,10 @@ export async function acquireResources(request, options = {}) {
           )
         )
           return false;
-        if ((options.freeMemory ?? freemem)() < limits.reserveGiB * 1024 ** 3)
+        if (
+          (options.freeMemory ?? freemem)() <
+          (limits.reserveGiB + request.memoryGiB) * 1024 ** 3
+        )
           return false;
         await publish(ticket, {
           pid: process.pid,

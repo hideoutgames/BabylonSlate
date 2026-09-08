@@ -96,20 +96,23 @@ test("a queued browser cannot exceed the browser cap and cancellation releases i
   assert.deepEqual(await readdir(join(options.directory, "queue")), []);
 });
 
-test("memory pressure queues work until capacity returns", async (t) => {
+test("memory pressure queues work until the request fits above the host reserve", async (t) => {
   const options = await fixture(t);
-  let free = 3 * 1024 ** 3;
+  let free = 4.5 * 1024 ** 3;
   let admitted = false;
+  let reportQueued;
+  const queued = new Promise((resolve) => { reportQueued = resolve; });
   const pending = acquireResources(small, {
     ...options,
     freeMemory: () => free,
+    onQueued: reportQueued,
   }).then((lease) => {
     admitted = true;
     return lease;
   });
-  await delay(30);
+  await Promise.race([queued, pending]);
   assert.equal(admitted, false);
-  free = 12 * 1024 ** 3;
+  free = 5 * 1024 ** 3;
   await (await pending).release();
 });
 

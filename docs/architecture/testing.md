@@ -159,7 +159,7 @@ Delete duplicated lower-layer assertions instead of repeating them in Chromium. 
 
 ## Local test execution
 
-- Test scripts use a per-user queue shared across worktrees: two reserved workers, one browser, 6 GiB reserved test memory. New work waits when free memory is below 4 GiB. Reservations and the admission threshold are scheduling guidance, not OS memory quotas. Coverage and builds reserve more capacity; nested commands reuse a validated lease.
+- Test scripts use a per-user queue shared across worktrees: two reserved workers, one browser, 6 GiB reserved test memory. New work waits until free memory covers its reservation plus 4 GiB of host headroom. Reservations and the admission threshold are scheduling guidance, not OS memory quotas. Coverage and builds reserve more capacity; nested commands reuse a validated lease.
 - Atomic queue updates briefly retry Windows file-sharing errors while retaining the last valid reservation. A command waits for asynchronous process registration and owned-child cleanup before releasing its reservation.
 - Isolated forks remain enabled. Pure editor/VFS/graph logic uses Node; `vitest.environments.ts` names DOM-dependent logic tests. Raw CSS stays enabled for Node stylesheet audits. A discovery regression excludes dependencies and checks every authored test appears exactly once.
 - Package coverage and uncovered editor tests stay separate. Editor logic runs once; editor DOM tests restart in batches of at most 50 files in both full and targeted verification. Package scripts route through the shared runner.
