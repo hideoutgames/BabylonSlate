@@ -15,7 +15,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const leaf = (onSelect = vi.fn()): NestedMenuItem => ({
+const leaf = (onSelect: () => void = vi.fn()): NestedMenuItem => ({
   id: "duplicate",
   label: "Duplicate",
   onSelect,
