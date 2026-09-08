@@ -3,7 +3,6 @@ import {
   ArrowLeftIcon,
   ArrowUpRightIcon,
   CircleUserRoundIcon,
-  LogOutIcon,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
@@ -17,55 +16,15 @@ import {
   DialogTrigger,
 } from "@babylonslate/ui/components/dialog";
 import { HomepageSubscription } from "./homepage-subscription";
-import {
-  useNativeHomepageAccount,
-  type NativeHomepageAccount,
-} from "./homepage-account-context";
+import { getHostPlatform } from "@babylonslate/vfs";
+import { useNativeHomepageAccount } from "./homepage-account-context";
+import { NativeAccountDetails } from "./homepage-account-native-details";
 
 const ClerkAccount = lazy(() => import("./homepage-account-clerk"));
+const DesktopAccount = lazy(() => import("./homepage-account-desktop"));
 
 export type HomepageAccountView = "overview" | "sign-in" | "settings";
 
-function NativeAccountDetails({ account }: { account: NativeHomepageAccount }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <div className="homepage-profile-account">
-      <div className="homepage-profile-identity">
-        <CircleUserRoundIcon aria-hidden="true" />
-        <div>
-          <h3>{account.session.name || "Your Account"}</h3>
-          <p>{account.session.email}</p>
-        </div>
-      </div>
-      {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
-      <Button
-        variant="outline"
-        size="touch"
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          setError(null);
-          void account.signOut().catch((reason: unknown) => {
-            setError(
-              reason instanceof Error
-                ? reason.message
-                : "Could not sign out. Please try again.",
-            );
-            setBusy(false);
-          });
-        }}
-      >
-        <LogOutIcon data-icon="inline-start" />
-        {busy ? "Signing Out…" : "Sign Out"}
-      </Button>
-    </div>
-  );
-}
 
 class AccountErrorBoundary extends Component<
   { children: ReactNode },
@@ -92,7 +51,7 @@ class AccountErrorBoundary extends Component<
   }
 }
 
-export function HomepageAccount() {
+export function HomepageAccount({ disabled = false }: { disabled?: boolean }) {
   const nativeAccount = useNativeHomepageAccount();
   const [open, setOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
@@ -112,6 +71,7 @@ export function HomepageAccount() {
       }}
     >
       <DialogTrigger
+        disabled={disabled}
         render={
           <Button
             variant="ghost"
@@ -163,11 +123,15 @@ export function HomepageAccount() {
                     </p>
                   }
                 >
-                  <ClerkAccount
-                    publishableKey={publishableKey}
-                    view={accountView}
-                    onViewChange={setAccountView}
-                  />
+                  {getHostPlatform() === "electron" ? (
+                    <DesktopAccount publishableKey={publishableKey} />
+                  ) : (
+                    <ClerkAccount
+                      publishableKey={publishableKey}
+                      view={accountView}
+                      onViewChange={setAccountView}
+                    />
+                  )}
                 </Suspense>
               </AccountErrorBoundary>
             ) : (

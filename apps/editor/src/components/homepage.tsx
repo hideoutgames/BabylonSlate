@@ -276,7 +276,9 @@ function HomepageProjectRow({
               openProject();
             }}
           >
-            Open Project <ArrowUpRightIcon data-icon="inline-end" />
+            <span className="homepage-project-open-desktop">Open Project</span>
+            <span className="homepage-project-open-phone">Open</span>
+            <ArrowUpRightIcon data-icon="inline-end" />
           </Button>
           <IconActionButton
             type="button"
@@ -351,6 +353,7 @@ export function Homepage({
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [renameTarget, setRenameTarget] = useState<ListedProject | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -397,6 +400,8 @@ export function Homepage({
   );
 
   const run = async (fn: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setError(null);
     setBusy(true);
     try {
@@ -404,11 +409,13 @@ export function Homepage({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const openCreate = (templateId: string) => {
+    if (busyRef.current) return;
     setError(null);
     setRenameTarget(null);
     setAppearance(DEFAULT_PROJECT_APPEARANCE);
@@ -447,12 +454,15 @@ export function Homepage({
             size="touch"
             aria-label="Engine Settings"
             data-testid="engine-settings"
-            onClick={() => setSettingsOpen(true)}
+            disabled={busy}
+            onClick={() => {
+              if (!busyRef.current) setSettingsOpen(true);
+            }}
           >
             <Settings2Icon data-icon="inline-start" />
             <span>Settings</span>
           </Button>
-          <HomepageAccount />
+          <HomepageAccount disabled={busy} />
         </nav>
       </header>
 
@@ -755,6 +765,7 @@ export function Homepage({
                 title="Empty"
                 description="Room for a new world"
                 testId="homepage-start-empty"
+                disabled={busy}
                 icon={BoxIcon}
                 onSelect={() => openCreate("empty")}
               />
@@ -762,6 +773,7 @@ export function Homepage({
                 title="2D"
                 description="A new dimension of play"
                 testId="homepage-start-2d"
+                disabled={busy}
                 icon={Grid2x2Icon}
                 onSelect={() => openCreate("2d")}
               />
@@ -770,6 +782,7 @@ export function Homepage({
                   key={template.id}
                   title={template.name}
                   testId={`homepage-start-template-${template.id}`}
+                  disabled={busy}
                   icon={LayoutTemplateIcon}
                   onSelect={() => openCreate(template.id)}
                 />

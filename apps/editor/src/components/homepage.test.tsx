@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -92,6 +93,56 @@ describe("Homepage branding", () => {
 });
 
 describe("Homepage Start gallery", () => {
+  it("locks project, profile, and settings actions during an open and recovers after failure", async () => {
+    let rejectOpen!: (reason: Error) => void;
+    const onOpenExternal = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectOpen = reject;
+        }),
+    );
+    renderHomepage({
+      templates: [{ id: "arena", name: "Arena" }],
+      onOpenExternal,
+    });
+    const open = screen.getByTestId("open-project");
+    const starters = [
+      screen.getByTestId("homepage-start-empty"),
+      screen.getByTestId("homepage-start-2d"),
+      screen.getByTestId("homepage-start-template-arena"),
+    ];
+
+    act(() => {
+      open.click();
+      open.click();
+      starters[0]!.click();
+    });
+    expect(onOpenExternal).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("create-project-dialog")).toBeNull();
+    for (const starter of starters) {
+      expect(starter.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(starter);
+      fireEvent.keyDown(starter, { key: "Enter" });
+    }
+    const profile = screen.getByRole("button", { name: "Profile" });
+    const settings = screen.getByRole("button", { name: "Engine Settings" });
+    expect(profile).toHaveProperty("disabled", true);
+    expect(settings).toHaveProperty("disabled", true);
+    fireEvent.click(profile);
+    fireEvent.click(settings);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await act(async () => rejectOpen(new Error("The folder is unavailable")));
+    expect(screen.getByTestId("homepage-error").textContent).toContain(
+      "The folder is unavailable",
+    );
+    expect(profile).toHaveProperty("disabled", false);
+    expect(settings).toHaveProperty("disabled", false);
+    expect(starters[0]!.getAttribute("aria-disabled")).not.toBe("true");
+    fireEvent.click(starters[0]!);
+    expect(await screen.findByTestId("create-project-dialog")).toBeTruthy();
+  });
+
   it("places Open Folder beside Create Project, not in the template gallery", () => {
     renderHomepage();
 
