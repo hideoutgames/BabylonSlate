@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const request = vi.fn();
+const getPlatform = vi.fn(() => "web");
 
 vi.mock("@capacitor/core", () => ({
-  Capacitor: { getPlatform: () => "web" },
+  Capacitor: { getPlatform },
   CapacitorHttp: { request },
   registerPlugin: () => ({}),
 }));
@@ -15,11 +16,31 @@ describe("nativeHttp", () => {
   beforeEach(() => {
     delete (globalThis as { babylonslate?: unknown }).babylonslate;
     request.mockReset();
+    getPlatform.mockReturnValue("web");
   });
 
   it("returns null on web", () => {
     expect(createNativeHttp()).toBeNull();
     expect(isElectronHost()).toBe(false);
+  });
+
+  it("preserves native response headers needed for rotating account tokens", async () => {
+    getPlatform.mockReturnValue("ios");
+    request.mockResolvedValue({
+      status: 200,
+      data: { response: {} },
+      headers: { Authorization: "rotated-client" },
+    });
+    const response = await createNativeHttp()!({
+      method: "GET",
+      url: "https://example.test/client",
+      headers: {},
+    });
+    expect(response).toEqual({
+      status: 200,
+      bodyText: '{"response":{}}',
+      headers: { Authorization: "rotated-client" },
+    });
   });
 
   it("forwards through the Electron HTTP bridge", async () => {
