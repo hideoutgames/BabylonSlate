@@ -444,7 +444,7 @@ describe("BehaviourTreeEditor", () => {
     const pane = container.querySelector(".react-flow__pane");
     expect(pane).not.toBeNull();
     fireEvent.click(pane!);
-    fireEvent.click(pane!);
+    fireEvent.click(screen.getByRole("button", { name: "Add Node", exact: true }));
     fireEvent.click(screen.getByTestId("node-palette-item-bt.task.wait"));
     await waitFor(() => {
       expect(screen.getByTestId("property-durationMs")).toBeTruthy();
@@ -456,7 +456,7 @@ describe("BehaviourTreeEditor", () => {
     const pane = container.querySelector(".react-flow__pane");
     expect(pane).not.toBeNull();
     fireEvent.click(pane!);
-    fireEvent.click(pane!);
+    fireEvent.click(screen.getByRole("button", { name: "Add Node", exact: true }));
     expect(screen.getByTestId("node-palette-item-BTTask_Custom")).toBeTruthy();
   });
 
@@ -465,7 +465,7 @@ describe("BehaviourTreeEditor", () => {
     const pane = container.querySelector(".react-flow__pane");
     expect(pane).not.toBeNull();
     fireEvent.click(pane!);
-    fireEvent.click(pane!);
+    fireEvent.click(screen.getByRole("button", { name: "Add Node", exact: true }));
     fireEvent.click(screen.getByTestId("node-palette-item-MyBrain"));
     await waitFor(() => {
       expect(
