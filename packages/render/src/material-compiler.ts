@@ -40,6 +40,7 @@ import {
   isEngineOwnedGpuTexture,
 } from "./gpu-resource-live";
 import { createMaterialParameterBindings } from "./material-parameters";
+import { syncSceneLighting } from "./scene-lighting";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
@@ -460,6 +461,7 @@ export function compileMaterialPlan(
   }
 
   applyAuthoredSurfaceBlend(material, plan);
+  syncSceneLighting(scene);
 
   const loadObservers: Array<() => void> = [];
   let disposed = false;
