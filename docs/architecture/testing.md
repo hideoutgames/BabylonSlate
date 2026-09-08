@@ -1,6 +1,18 @@
 # Testing architecture
 
-`pnpm verify:local` is a focused preflight against the merge base with main, including dirty files during development. It runs affected typechecks (including consumers), changed-file lint, relevant tooling contracts, changed and sibling unit tests in batches of at most 50, and documentation builds when needed. Unknown paths and infrastructure select static preflight, not exhaustive tests. New source without a sibling test still receives static checks; consumer regressions and the full retained suite run in CI. Only clean unchanged committed preflight runs qualify a PR for CI. `pnpm verify` is an explicit opt-in full local diagnostic, not a routine PR requirement.
+`pnpm verify:local` is a path-aware preflight over the cumulative branch diff from the merge base with main plus untracked files. It always runs `git diff --check`, lints changed JavaScript/TypeScript files, and selects the smallest relevant checks below. Unit files are batched at 50. Only a clean, unchanged, committed run qualifies a PR for CI; dirty runs remain useful during development but are not delivery evidence. `pnpm verify` is an explicit full local diagnostic, not a routine PR requirement.
+
+| Changed area | Local preflight selection |
+| --- | --- |
+| `apps/**` or `packages/**` source/test | Owning package typecheck; exact changed tests and same-directory sibling tests |
+| `scripts/**` | Exact/sibling Node tooling contracts or an explicit covering contract for an entrypoint; `scripts/distribution/**` contracts run as a separate phase |
+| Verify workflow | `verification-policy.test.mjs` plus the Vitest workflow contract |
+| Playwright config or an `e2e/**` helper | Playwright discovery/config contract; authored `*.spec.ts` files are lint-only locally |
+| `docs/**` or `apps/docs/**` | Lightweight docs catalog contract plus a docs-site build on its dedicated profile; docs-site code also receives its owner typecheck and related tests |
+| Agent rules, Cursor adapters, PR metadata, or non-site prose | Diff check only; no test, typecheck, or build process |
+| Root package/compiler/test configuration or an unknown path | All workspace typechecks and all root tooling contracts |
+
+The owner-only default deliberately avoids transitive-consumer amplification. Run `pnpm typecheck` in addition when intentionally changing exported types or another public cross-package API. GitHub Verify independently reruns the full workspace typecheck, all tooling and distribution contracts, unsharded package coverage, uncovered editor tests, and every browser partition; local selection never removes those merge gates.
 
 ## Responsive editor checks
 
@@ -179,14 +191,25 @@ Delete duplicated lower-layer assertions instead of repeating them in Chromium. 
 
 ## Local test execution
 
-- Test scripts use a per-user queue shared across worktrees: two reserved workers, one browser command at a time, and 6 GiB reserved test memory. New work waits until free memory covers its reservation plus 4 GiB of host headroom. Reservations and the admission threshold are scheduling guidance, not OS memory quotas. Coverage and builds reserve more capacity; nested commands reuse a validated lease.
-- The default `BL_TEST_PROFILE=shared` uses one test worker. Opt into `BL_TEST_PROFILE=fast` for a single active agent: unit/DOM/coverage/browser runs reserve both worker slots and twice their usual memory before using two workers. Browser commands remain mutually exclusive. Fast coverage/browser runs need 10 GiB free including host headroom; use the shared profile when that is unavailable. Builds keep their existing reservation. CI retains two Vitest workers and one browser worker per shard, independent of the local profile.
+- Test scripts use a per-user queue shared across worktrees: three worker slots, one browser command at a time, and 6 GiB of aggregate workload reservations. New work waits until free memory covers its own reservation plus 4 GiB of host headroom. Reservations and the admission threshold are scheduling guidance, not OS memory quotas. Shared one-worker phases from up to three agents may overlap when both the slot and aggregate-memory limits fit; nested commands reuse a validated lease.
+
+| Workload | Worker slots | Memory reservation |
+| --- | ---: | ---: |
+| Node tooling | 1 | 0.75 GiB |
+| Node unit | 1 | 1.5 GiB |
+| Focused unit or owner typecheck | 1 | 1.5 GiB |
+| DOM/Babylon unit | 1 | 2 GiB |
+| Docs build | 1 | 1.5 GiB |
+| Application build | 2 | 2.5 GiB |
+| Coverage or browser | 1 | 3 GiB |
+
+- The default `BL_TEST_PROFILE=shared` uses one test worker per test command. Explicit `--project node` runs and known docs/root Node contracts use the lighter unit profile; selected test files use the focused profile, and owner-only preflight typechecks use the same 1.5 GiB reservation. Opt into `BL_TEST_PROFILE=fast` only for a single active agent: unit, focused, DOM, coverage, and browser runs reserve two slots and twice their usual memory before using two workers. Tooling, owner typechecks, docs, and application-build reservations stay fixed because extra workers do not accelerate those commands. Browser commands remain mutually exclusive. Fast coverage/browser runs need 10 GiB free including host headroom; use the shared profile when that is unavailable. CI retains two Vitest workers and one browser worker per shard, independent of the local profile.
 - On PowerShell, use `$env:BL_TEST_PROFILE = 'fast'` before a focused test or preflight command and `Remove-Item Env:BL_TEST_PROFILE` to restore the default. On a POSIX shell, prefix the command with `BL_TEST_PROFILE=fast`.
 - Successful local verification phases are recorded under ignored `.cache/verification`. Reuse checks commands, source identity, environment, installed tool versions/lockfile, Node and platform. Typechecks can survive browser/prose-only commits; repository-reading test and lint phases conservatively include the entire revision because some tests inspect tracked files and Git history. Only successful, clean, unchanged phases publish cache entries. A later phase failure leaves earlier successes reusable but never makes the overall verification pass. Set `BL_VERIFY_CACHE=0` to force execution. CI always executes its checks, and explicitly requested browser runs always execute (their build artifact may still be reused).
-- Builds reserve 2.5 GiB and both workers. A successful cold source-control/editor verification probe peaked at 1.79 GiB across its sampled process tree, including typechecking and editor/player compilation; the reservation adds roughly 40% margin. Recalibrate from measurements as workloads change. The separate 4 GiB host reserve still applies.
+- Application builds reserve 2.5 GiB and two slots. A successful cold source-control/editor verification probe peaked at 1.79 GiB across its sampled process tree, including typechecking and editor/player compilation; the reservation adds roughly 40% margin. Docs builds are isolated on a one-slot 1.5 GiB profile instead of inheriting that application-build threshold. The separate 4 GiB host reserve still applies; recalibrate reservations from measured process-tree peaks as workloads change.
 - Atomic queue updates briefly retry Windows file-sharing errors while retaining the last valid reservation. A command waits for asynchronous process registration and owned-child cleanup before releasing its reservation.
 - Isolated forks remain enabled. Pure editor/VFS/graph logic uses Node; `vitest.environments.ts` names DOM-dependent logic tests, including real phone Dockview layouts. Raw CSS stays enabled for Node stylesheet audits. A discovery regression excludes dependencies and checks every authored test appears exactly once.
-- Package coverage and uncovered editor tests stay separate. Editor logic runs once; editor DOM tests restart in batches of at most 50 files in both full and targeted verification. Package scripts route through the shared runner.
+- Package coverage and uncovered editor tests stay separate in the full gate. Editor logic runs once; editor DOM tests restart in batches of at most 50 files. Focused preflight runs only exact/sibling selected files, also in batches of at most 50. Package scripts route through the shared runner.
 - Local preflight does not launch browser integration suites. For focused debugging, animation graphs use the content suite, behaviour trees use the tree-editor and AI suites, shader graphs use material/content and particle suites, and scripting/shared graph UI use the scripting suite. CI executes every retained suite.
 - `pnpm test:e2e` builds or reuses an exact-source artifact, owns an ephemeral loopback Vite preview server, and verifies its build identity and run nonce. Direct Playwright CLI execution is for discovery; use the package command to run tests. Cache identity conservatively covers repository code/configuration, assets, manifests/lockfile and toolchain; newly added root configuration and build helpers invalidate reuse. Known test/documentation areas are excluded. The manifest records the originating commit; authored test/docs-only commits can reuse identical build inputs. Artifacts live under ignored `.cache/test-build`.
 - Generic touch/menu tests use an explicitly minimal OPFS project. Authentic New Project/Mannequin and GPU integration tests retain their real fixtures. Touch-shell assertions share four focused scenarios per device.

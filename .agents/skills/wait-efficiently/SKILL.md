@@ -14,11 +14,20 @@ From the repository root:
 ```sh
 pnpm --silent agent:wait local --script verify:local
 pnpm --silent agent:wait local --script test -- --project node packages/core
+pnpm --silent agent:wait local --script typecheck
 pnpm --silent agent:wait ci --pr 123
 pnpm --silent agent:wait slot --pr 123
 ```
 
 The default deadline is two hours; set `--timeout-seconds 10800` before the argument separator when a longer wait is explicitly needed. CI discovery has a separate ten-minute limit. The helper runs in the foreground, reports start and result records, and stores complete logs plus `result.json` in the unique OS temporary directory printed at start. Node, pnpm, git, and (for CI/slots) authenticated `gh` must already be available. The helper inherits the environment and configured package-script shell; it does not repair global configuration. See [testing guidance](../../../docs/architecture/testing.md#quiet-agent-waits) for Windows setup and result meanings.
+
+## Choose the smallest required command
+
+- During development, wait on the focused regression command that proves the changed behavior. Do not repeatedly run the PR preflight after every edit.
+- Before opening a PR, wait once on the clean committed head with `local --script verify:local`. Its path-aware selector runs owner typechecks, changed-file lint, related tests, and a docs build only when applicable; instruction/prose metadata may need only its built-in diff check.
+- When intentionally changing an exported type or another public cross-package API, also wait on `local --script typecheck` so consumers are checked before CI.
+- `local --script verify` is an explicit full diagnostic, not the routine delivery gate. Do not launch local coverage or browser suites merely because tooling, instructions, or a workflow changed. Required GitHub CI independently runs the full workspace typecheck, coverage, consumer regressions, and all browser partitions.
+- Keep the default shared profile while agents overlap. Three one-worker phases can be admitted when aggregate memory and host headroom allow; Node tooling uses a 0.75 GiB reservation, while Node unit tests, focused tests, owner typechecks, and docs builds use 1.5 GiB. Heavy application builds retain two slots and 2.5 GiB. `BL_TEST_PROFILE=fast` is for one active agent and must not be used to crowd out shared work.
 
 ## Retain the session
 

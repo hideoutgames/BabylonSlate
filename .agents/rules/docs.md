@@ -3,7 +3,7 @@
 ## Mandatory updates
 
 - Any change that adds, removes, or alters behavior, architecture, public APIs, data formats, or integration points **must** include `docs/` updates in the **same branch/PR**.
-- Documentation is part of the definition of done — on par with `pnpm verify` and tests.
+- Documentation is part of the definition of done — on par with required verification and tests.
 - Never defer documentation to a follow-up task or PR.
 
 ## Location and scope

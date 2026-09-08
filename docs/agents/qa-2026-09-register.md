@@ -186,7 +186,7 @@ Baseline controls on the audited revision:
 - Script host, collision events, animation graph scripts, loop guard, Play load and Map controls: **6 files / 81 tests passed**.
 - These runs are lower-level tests. They do not establish original-project, live Pages, native audio, GPU appearance or full focus-matrix outcomes.
 
-Implementation entries will record failing and passing tests, exact subcases claimed, changed files and residual checks. Gate B requires current-revision evidence and relevant passing controls, accurate persistence/reference behavior, full local verification and repository delivery gates. E, F and N must never be relabeled fixed to finish the register.
+Implementation entries will record failing and passing tests, exact subcases claimed, changed files and residual checks. Gate B requires current-revision evidence and relevant passing controls, accurate persistence/reference behavior, the focused local preflight, and the exhaustive GitHub/repository delivery gates. E, F and N must never be relabeled fixed to finish the register.
 
 ### H10.1–.2 and M5.4: coherent deletion history
 

@@ -46,11 +46,33 @@ export async function workspacePackages() {
   return packages;
 }
 
+export function availablePreflightTests(files, deleted = new Set()) {
+  return [...new Set(files)].filter(
+    (file) =>
+      !deleted.has(file) &&
+      /\.test\.[cm]?[jt]sx?$/.test(file) &&
+      (/^(apps|packages|scripts)\//.test(file) ||
+        file === "playwright.config.test.ts"),
+  );
+}
+
 /** A local preflight must never silently dispatch coverage, all editor tests, or browsers. */
 export function preflightPhases(selection, workspace, lint) {
   const phases = [];
-  if (selection.tooling)
-    phases.push({ id: "tooling", runner: "tests", mode: "tooling", args: [] });
+  if (selection.toolingTests.length)
+    phases.push({
+      id: "tooling",
+      runner: "tests",
+      mode: "tooling",
+      args: selection.toolingTests,
+    });
+  if (selection.distributionTests.length)
+    phases.push({
+      id: "distribution",
+      runner: "tests",
+      mode: "tooling",
+      args: selection.distributionTests,
+    });
   const packages = workspace.filter(
     (pkg) => selection.packages.includes(pkg.name) && pkg.scripts.typecheck,
   );
@@ -58,7 +80,7 @@ export function preflightPhases(selection, workspace, lint) {
     phases.push({
       id: "typecheck",
       runner: "pnpm",
-      profile: "build",
+      profile: "typecheck",
       scope: "typecheck",
       args: [
         "--workspace-concurrency=1",
@@ -85,7 +107,7 @@ export function preflightPhases(selection, workspace, lint) {
     phases.push({
       id: "docs",
       runner: "pnpm",
-      profile: "build",
+      profile: "docs",
       args: ["--filter", "docs-site", "build"],
     });
   return phases;
@@ -112,23 +134,17 @@ export async function verifyLocal(options = {}) {
   const deleted = new Set(
     (await gitOutput(repoRoot, ["ls-files", "--deleted", "-z"])).split("\0"),
   );
-  const availableTests = [
-    ...new Set(
-      (
-        await gitOutput(repoRoot, [
-          "ls-files",
-          "--cached",
-          "--others",
-          "--exclude-standard",
-          "-z",
-        ])
-      ).split("\0"),
-    ),
-  ].filter(
-    (file) =>
-      !deleted.has(file) &&
-      /\.test\.[cm]?[jt]sx?$/.test(file) &&
-      (/^(apps|packages)\//.test(file) || file === "playwright.config.test.ts"),
+  const availableTests = availablePreflightTests(
+    (
+      await gitOutput(repoRoot, [
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "-z",
+      ])
+    ).split("\0"),
+    deleted,
   );
   const selection = selectChecks(files, workspace, availableTests);
   const lint = [];

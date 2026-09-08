@@ -1,10 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runStage } from "./test-runner.mjs";
+import { runStage, unitProfile } from "./test-runner.mjs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acquireResources } from "./resource-admission.mjs";
+
+test("explicit Node and docs tests use the lighter unit workload", () => {
+  assert.equal(unitProfile(["--project", "node", "packages/core"]), "unit");
+  assert.equal(unitProfile(["--project=node", "packages/core"]), "unit");
+  assert.equal(unitProfile(["apps/docs/src/sidebar.test.ts"]), "unit");
+  assert.equal(unitProfile(["playwright.config.test.ts"]), "unit");
+  assert.equal(unitProfile(["apps/editor/src/panel.test.tsx"]), "focused");
+  assert.equal(unitProfile([]), "dom");
+});
 
 test("the fast profile reaches the actual child worker settings; CI keeps its fixed limits", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "runner lease "));
