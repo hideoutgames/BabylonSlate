@@ -12,6 +12,7 @@ import {
 import { sourceState } from "./source-state.mjs";
 
 export function ownedProcesses(rows, roots, observed = new Map()) {
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
   const rootIds = new Set(roots);
   const owned = new Set(
     rows
@@ -25,9 +26,22 @@ export function ownedProcesses(rows, roots, observed = new Map()) {
   let previous;
   do {
     previous = owned.size;
-    for (const row of rows) if (owned.has(row.parent)) owned.add(row.pid);
+    for (const row of rows) {
+      if (
+        owned.has(row.parent) &&
+        row.started >= byPid.get(row.parent).started
+      ) owned.add(row.pid);
+    }
   } while (previous !== owned.size);
   return rows.filter((row) => owned.has(row.pid));
+}
+
+function processStartTime(value) {
+  const windows = /^\/Date\((\d+)\)\/$/.exec(value);
+  const timestamp = windows ? Number(windows[1]) : Date.parse(value);
+  if (!Number.isFinite(timestamp))
+    throw new Error("Cannot parse process start time");
+  return timestamp;
 }
 
 export async function waitForExit(sample, pause = () => delay(1000)) {
@@ -73,7 +87,7 @@ async function processSnapshot(signal) {
     return JSON.parse(result.output).map((row) => ({
       pid: row.ProcessId,
       parent: row.ParentProcessId,
-      started: row.CreationDate,
+      started: processStartTime(row.CreationDate),
       rss: Number(row.WorkingSetSize),
       cpuMs: (Number(row.KernelModeTime) + Number(row.UserModeTime)) / 10_000,
     }));
@@ -99,7 +113,7 @@ async function processSnapshot(signal) {
       return {
         pid: +pid,
         parent: +parent,
-        started: started.join(" "),
+        started: processStartTime(started.join(" ")),
         rss: +rss * 1024,
         cpuMs: (+days * 86400 + seconds) * 1000,
       };

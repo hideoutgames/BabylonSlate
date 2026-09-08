@@ -30,11 +30,11 @@ test("slow resource sampling never accumulates queued snapshots", async (t) => {
 
 test("resource measurements include owned descendants and exclude another agent", () => {
   const rows = [
-    { pid: 4, parent: 3 },
-    { pid: 2, parent: 1 },
-    { pid: 3, parent: 2 },
-    { pid: 7, parent: 1 },
-    { pid: 8, parent: 7 },
+    { pid: 4, parent: 3, started: 4 },
+    { pid: 2, parent: 1, started: 2 },
+    { pid: 3, parent: 2, started: 3 },
+    { pid: 7, parent: 1, started: 7 },
+    { pid: 8, parent: 7, started: 8 },
   ];
   assert.deepEqual(
     ownedProcesses(rows, [2])
@@ -46,17 +46,30 @@ test("resource measurements include owned descendants and exclude another agent"
 
 test("PID reuse cannot attribute another process tree to a completed workload", () => {
   const observed = new Map([
-    [2, "old-root"],
-    [3, "owned-child"],
+    [2, 2],
+    [3, 3],
   ]);
   const rows = [
-    { pid: 2, parent: 1, started: "new-root" },
-    { pid: 3, parent: 1, started: "owned-child" },
-    { pid: 4, parent: 2, started: "unrelated-child" },
+    { pid: 2, parent: 1, started: 5 },
+    { pid: 3, parent: 1, started: 3 },
+    { pid: 4, parent: 2, started: 6 },
   ];
   assert.deepEqual(
     ownedProcesses(rows, new Set([2]), observed).map((row) => row.pid),
     [3],
+  );
+});
+
+test("a reused parent PID cannot adopt an older unrelated process tree", () => {
+  const rows = [
+    { pid: 2, parent: 1, started: 200 },
+    { pid: 3, parent: 2, started: 100 },
+    { pid: 4, parent: 2, started: 201 },
+    { pid: 5, parent: 3, started: 202 },
+  ];
+  assert.deepEqual(
+    ownedProcesses(rows, [2]).map((row) => row.pid),
+    [2, 4],
   );
 });
 

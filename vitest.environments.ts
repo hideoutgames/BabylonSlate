@@ -1,5 +1,6 @@
 /** Tests with a real DOM dependency, including transitive browser services. */
 export const domLogicTests = [
+  "apps/editor/src/lib/audio-preview.test.ts",
   "apps/editor/src/services/template-service.test.ts",
   "apps/editor/src/services/project-service.test.ts",
   "apps/editor/src/services/project-service.assets.test.ts",
