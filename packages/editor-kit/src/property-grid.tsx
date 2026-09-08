@@ -236,8 +236,10 @@ function RowControl({ row }: { row: PropertyRow }) {
     }
     case "boolean":
       return (
+        <FieldLabel htmlFor={`property-${row.id}`} className="flex min-h-[var(--chrome-row,28px)] w-full items-center gap-2 rounded-md border border-input bg-control px-2 py-1">
         <Checkbox
           id={`property-${row.id}`}
+          aria-labelledby={`property-${row.id}-caption`}
           className="size-4"
           checked={row.mixed ? false : row.value}
           indeterminate={row.mixed}
@@ -245,12 +247,14 @@ function RowControl({ row }: { row: PropertyRow }) {
           onCheckedChange={(checked) => row.onChange(checked === true)}
           data-testid={`property-${row.id}`}
         />
+        <span aria-hidden="true" className="text-xs text-muted-foreground">{row.mixed ? "Mixed" : row.value ? "On" : "Off"}</span>
+        </FieldLabel>
       );
     case "text":
       return (
         <SelectAllInput
           id={`property-${row.id}`}
-          className="min-h-[var(--chrome-row,28px)]"
+          className="min-h-[var(--chrome-row,28px)] px-2"
           value={row.value}
           disabled={row.disabled}
           onChange={(event) => row.onChange(event.target.value)}
@@ -412,6 +416,7 @@ export function PropertyGrid({
         {rows.map((row) => {
           const label = (
             <FieldLabel
+              id={`property-${row.id}-caption`}
               htmlFor={
                 row.kind === "vector3" || row.kind === "flags"
                   ? undefined

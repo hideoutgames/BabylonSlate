@@ -51,11 +51,11 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
 | App frame | `--background` | `oklch(0.938 0.005 85)` | `oklch(0.23 0.003 75)` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.975 0.003 85)` | `oklch(0.275 0.003 75)` |
-| Raised cards / active tabs | `--card` | `oklch(0.99 0.002 85)` | `oklch(0.30 0.003 75)` |
+| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.963 0.004 85)` | `oklch(0.275 0.003 75)` |
+| Raised cards / active tabs | `--card` | `oklch(0.972 0.003 85)` | `oklch(0.30 0.003 75)` |
 | Panel toolbars / section headers | `--panel-header` | `oklch(0.953 0.005 85)` | `oklch(0.264 0.003 75)` |
-| Menus / dialogs / floating tools | `--popover` | `oklch(0.997 0.001 85)` | `oklch(0.315 0.003 75)` |
-| Inputs / outline actions | `--control` | `oklch(0.997 0.001 85)` | `oklch(0.252 0.003 75)` |
+| Menus / dialogs / floating tools | `--popover` | `oklch(0.978 0.003 85)` | `oklch(0.315 0.003 75)` |
+| Inputs / outline actions | `--control` | `oklch(0.978 0.003 85)` | `oklch(0.252 0.003 75)` |
 | Hover / selection wash | `--accent` | `oklch(0.898 0.006 85)` | `oklch(0.35 0.004 75)` |
 
 `--primary` is ink in both schemes: light `oklch(0.30 0.006 70)`, dark `oklch(0.92 0.003 85)`. The compact dimensions stay unchanged; `--radius` is 8px. Home opens without entrance/stagger animations or moving hover targets.
@@ -76,7 +76,7 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 | Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
 | Success | `--success`, `--success-foreground` | Positive status and axis Y |
-| Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes |
+| Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes; Play and Debug share a rounded neutral enclosure |
 
 ## Pin type colors
 

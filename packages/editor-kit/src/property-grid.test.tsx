@@ -20,6 +20,22 @@ describe("PropertyGrid", () => {
     cleanup();
   });
 
+  it("shows readable Boolean states and toggles from the value label", () => {
+    const onChange = vi.fn();
+    const row: PropertyRow = { kind: "boolean", id: "enabled", label: "Enabled", value: false, onChange };
+    const { rerender } = render(<PropertyGrid rows={[row]} />);
+    expect(screen.getByRole("checkbox", { name: "Enabled" })).toBeTruthy();
+    fireEvent.click(screen.getByText("Off"));
+    expect(onChange).toHaveBeenCalledWith(true);
+    rerender(<PropertyGrid rows={[{ ...row, value: true }]} />);
+    expect(screen.getByText("On")).toBeTruthy();
+    rerender(<PropertyGrid rows={[{ ...row, mixed: true, disabled: true }]} />);
+    expect(screen.getByText("Mixed")).toBeTruthy();
+    onChange.mockClear();
+    fireEvent.click(screen.getByText("Mixed"));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("edits a vector3 row per axis", () => {
     const onChange = vi.fn();
     const rows: PropertyRow[] = [

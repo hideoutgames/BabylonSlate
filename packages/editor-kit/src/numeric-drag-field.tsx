@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type PointerEvent } from "react";
+import { GripVerticalIcon } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   evaluateNumericExpression,
@@ -106,11 +107,11 @@ export function NumericDragField({
   );
 
   return (
-    <div className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1">
+    <div className="relative flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1">
       <span
         className={cn(
           "shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold",
-          !label || label.length <= 1 ? "w-3" : null,
+          label ? label.length <= 1 ? "w-3" : null : "absolute right-1 inset-y-0 flex w-4 items-center justify-center",
           accent === "x" && "text-axis-x",
           accent === "y" && "text-axis-y",
           accent === "z" && "text-axis-z",
@@ -118,13 +119,14 @@ export function NumericDragField({
           dragging && !accent && "text-foreground",
         )}
         data-testid={testId ? `${testId}-scrub` : undefined}
+        title="Drag To Adjust"
         aria-hidden="true"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        {label}
+        {label || <GripVerticalIcon className="size-3" />}
       </span>
       <input
         type="text"
@@ -132,7 +134,7 @@ export function NumericDragField({
         autoComplete="off"
         spellCheck={false}
         id={id}
-        className="h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-control px-1 text-xs"
+        className={cn("h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-control px-2 text-xs", !label && "pr-6")}
         aria-label={label || undefined}
         data-testid={testId}
         disabled={disabled}

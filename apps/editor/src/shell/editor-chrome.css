@@ -80,9 +80,9 @@
   display: flex;
   align-items: center;
   gap: 0.125rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--accent);
   padding: 0.0625rem;
 }
 
