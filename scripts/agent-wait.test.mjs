@@ -412,7 +412,8 @@ for (const [name, scenario, status] of [
   test(`CI ${name} cannot produce success`, async (t) => {
     const f = await github(t, scenario);
     const result = await run(
-      { mode: "ci", pr: 42, timeoutMs: 10000 },
+      // This checks CI conclusions, not process startup speed on a busy host.
+      { mode: "ci", pr: 42, timeoutMs: 30000 },
       f.context,
     );
     assert.equal(result.status, status);
