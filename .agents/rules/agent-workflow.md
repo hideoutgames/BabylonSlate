@@ -99,6 +99,13 @@ Distribution is a separate operation governed by [distribution.md](distribution.
 
 **Default:** merge to `main` automatically when all merge gates pass. Do not ask "should I merge?" when gates pass — merge. Leaving completed work stranded on a feature branch counts as incomplete work.
 
+### Completion reporting
+
+- Never report repository changes as finished or complete until GitHub confirms the PR is merged into `main`. Implementation, commits, pushes, and passing checks alone do not establish completion.
+- If ending work or a session with unmerged changes, prominently warn the user that **unmerged work remains**. Identify the branch and PR link (or state that no PR exists), the blocker or reason for stopping, and what remains before merge.
+- Report this warning even when the user explicitly asks to hold the PR open or stop before merge. Honor that request; the warning does not authorize merging or bypassing gates.
+- Read-only answers, investigations, reviews, and plans do not require a PR. State their scope accurately rather than implying implementation or merge occurred.
+
 ### Merge gates (all required)
 
 - Assigned task is complete (not exploratory or blocked on user input).
