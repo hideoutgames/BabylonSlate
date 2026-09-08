@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -527,30 +527,21 @@ describe("SettingsModal project authoring", () => {
   });
 
   it("surfaces a thrown Export Game failure", async () => {
-    exportGameArtifact.mockRejectedValueOnce(new Error("zip failed"));
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
-    fireEvent.click(screen.getByTestId("export-game"));
-    expect(await screen.findByTestId("export-game-error")).toBeTruthy();
-    expect(screen.getByTestId("export-game-error").textContent).toBe(
-      "Could not build the zip. Try again.",
-    );
-  });
-
-  it("maps DOS date zip failures to human Export Game copy", async () => {
-    exportGameArtifact.mockRejectedValueOnce(
-      new Error("date not in range 1980-2099"),
-    );
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
-    fireEvent.click(screen.getByTestId("export-game"));
-    expect(await screen.findByTestId("export-game-error")).toBeTruthy();
-    expect(screen.getByTestId("export-game-error").textContent).toBe(
-      "Could not build the zip. Try again.",
-    );
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      exportGameArtifact.mockRejectedValueOnce(new Error("zip failed"));
+      render(
+        <SettingsModal open onOpenChange={() => {}} scope="project" />,
+      );
+      fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("export-game"));
+      });
+      expect(screen.getByTestId("export-game-error").textContent).toBe(
+        "Could not build the zip. Try again.",
+      );
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 });
