@@ -1009,6 +1009,8 @@ class InProcessRuntime implements RuntimeDriver {
     try {
       overlayBackend = await createPhysicsBackend({
         kind: "2d",
+        // Without layer documents this session cannot create overlay actors.
+        preferSoftware: this.sceneLayerLibrary.size === 0,
         gravity: {
           x: this.overlayGravity[0],
           y: this.overlayGravity[1],

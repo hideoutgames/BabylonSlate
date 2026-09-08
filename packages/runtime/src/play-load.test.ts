@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import type { ControlMessage } from "@babylonslate/bridge";
+import { createDefaultSceneLayer } from "@babylonslate/core";
 import {
   loadedBackendModules,
   resetHavokModuleCache,
@@ -223,13 +224,14 @@ describe("createRuntimeFromLoad", () => {
     resetLoadedBackendModules();
   });
 
-  it("loadPhysics for a 3d load becomes HavokPhysicsBackend", async () => {
+  it("loads Havok and separate Rapier overlay physics when SceneLayers are available", async () => {
     resetLoadedBackendModules();
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
         sceneAssetGuid: "play-scene",
         physicsWorld: "3d",
+        sceneLayers: [{ guid: "overlay", layer: createDefaultSceneLayer() }],
       },
       () => {},
     );

@@ -3,13 +3,34 @@ import {
   HavokPhysicsBackend,
   Rapier2DPhysicsBackend,
 } from "@babylonslate/physics";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  createDefaultSceneLayer,
+} from "@babylonslate/core";
 import { createInProcessRuntime } from "./driver";
 import { createPlayBootCoordinator } from "./play-boot";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("Play physics startup", () => {
+  it("starts a 3d-only session when Rapier is not available", async () => {
+    vi.spyOn(Rapier2DPhysicsBackend, "create").mockRejectedValue(
+      new Error("Rapier is not included in a 3d-only export"),
+    );
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    try {
+      await createPlayBootCoordinator().play(runtime);
+      runtime.tick();
+      expect(runtime.getWorld().clock.tickIndex).toBe(1);
+      expect(runtime.getPhysicsSync()!.getBackend()).toBeInstanceOf(
+        HavokPhysicsBackend,
+      );
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("keeps simulation stopped when the requested physics engine cannot load", async () => {
     vi.spyOn(HavokPhysicsBackend, "create").mockRejectedValue(
       new Error("Havok download failed"),
@@ -39,7 +60,11 @@ describe("Play physics startup", () => {
       new Error("Overlay physics unavailable"),
     );
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      sceneLayerLibrary: { overlay: createDefaultSceneLayer() },
+    });
     const initialBackend = runtime.getPhysicsSync()!.getBackend();
     try {
       await expect(runtime.loadPhysics()).rejects.toThrow(
@@ -78,7 +103,11 @@ describe("Play physics startup", () => {
         ],
       }),
     ];
-    const runtime = createInProcessRuntime({ seed: 1, playScene: scene });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      playScene: scene,
+      sceneLayerLibrary: { overlay: createDefaultSceneLayer() },
+    });
     runtime.realizePlayWorld();
     const initialWorld = runtime.getPhysicsSync()!.getBackend();
     const initialOverlay = runtime.getOverlayPhysicsSync()!.getBackend();

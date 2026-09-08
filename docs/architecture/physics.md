@@ -28,11 +28,11 @@ Depends on `@babylonslate/core` at the type layer plus `@babylonjs/core` Physics
 | Kind | Engine | When loaded |
 | --- | --- | --- |
 | `3d` | Babylon Physics V2: `HavokPlugin` + `PhysicsAggregate` on a worker-local `NullEngine` Scene | Scene `physicsWorld === "3d"` |
-| `2d` | `@dimforge/rapier2d-compat` | Scene `physicsWorld === "2d"` |
+| `2d` | `@dimforge/rapier2d-compat` | Scene `physicsWorld === "2d"` or a loaded SceneLayer library |
 | either | `SoftwarePhysicsBackend` (AABB) | `preferSoftware`, tests, or callers that allow fallback |
 
 - Havok is the **primary** 3D backend; the interface is shaped around it.
-- A 3D-only play/export must not download Rapier (and vice versa).
+- A 3D-only play/export with no SceneLayer documents does not download Rapier; 2D play/export does not download Havok. A 3D world with SceneLayers loads both engines for their separate physics worlds.
 - The physics Scene is **not** the editor/render Scene. It is never drawn; the worker steps with `getPhysicsEngine()!._step(dt)`. Queries use `PhysicsEngine.raycast` and `HavokPlugin.shapeCast`.
 - `SoftwarePhysicsBackend` is the deterministic test/fallback path. Play and Preview Build request `allowSoftwareFallback: false`; a failed engine load reports an error and leaves simulation stopped.
 
@@ -50,7 +50,7 @@ Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** 
 2. `physics` phase: `backend.step(dt)`, then write body transforms back to Actors, then `pollContacts()` (see Contact events).
 3. `RuntimeDriver` times script phases and the physics phase separately into snapshot/`stats` `scriptMs` and `physicsMs`.
 
-Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, then `RuntimeDriver.loadPhysics()` loads Havok or Rapier before simulation starts and re-syncs already-spawned bodies. World and overlay engines must both initialize before the swap; failure releases the newly loaded engine. `preferSoftwarePhysics` skips the swap for explicit software tests. Loading remains deferred until Play, so opening the editor does not fetch physics WASM.
+Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, then `RuntimeDriver.loadPhysics()` loads Havok or Rapier before simulation starts and re-syncs already-spawned bodies. When SceneLayer documents are available, their separate Rapier world must also initialize before the swap; failure releases the newly loaded engines. Without those documents, no overlay actors can be created and the empty overlay world stays in software. `preferSoftwarePhysics` skips the swap for explicit software tests. Loading remains deferred until Play, so opening the editor does not fetch physics WASM.
 
 The Play `load` control message carries `sceneAssetGuid`, optional authored `scene` (`SerializedScene`), `physicsWorld`, `gravity`, and `havokWasmUrl`. The editor resolves its vendored `havok/HavokPhysics.wasm` through the deployment base (for example `/BabylonSlate/havok/HavokPhysics.wasm` on Pages) and sends an absolute worker URL. Preview Build resolves its copy relative to the player. An explicit WASM URL must load successfully; Node's package-file lookup is only used when no URL was supplied. Details / Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent`.
 
