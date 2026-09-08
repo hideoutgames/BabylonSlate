@@ -51,6 +51,19 @@ test.describe("Phone Editor", () => {
         return box ? box.y + box.height : Infinity;
       })
       .toBeLessThanOrEqual(812);
+    const device = await page.context().newCDPSession(page);
+    await device.send("Emulation.setSafeAreaInsetsOverride", {
+      insets: { bottom: 48 },
+    });
+    await expect
+      .poll(async () => {
+        const box = await workspace.boundingBox();
+        return box ? box.y + box.height : Infinity;
+      })
+      .toBe(796);
+    await device.send("Emulation.setSafeAreaInsetsOverride", {
+      insets: { bottom: 0 },
+    });
     await page.setViewportSize({ width: 844, height: 390 });
     await expect
       .poll(async () => {
