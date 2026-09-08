@@ -35,6 +35,8 @@ Local server startup allows ten minutes for the player/editor typechecks and bui
 
 Shared project create/reopen helpers allow up to 30 seconds for editor chrome after storage, scaffolding, and asset imports finish. They poll the actual ready UI; ordinary interaction assertions retain their default deadline.
 
+Class recovery and state-preservation tests wait for a visible graph node before saving and capturing position baselines. Dispatching the Content Browser double-click alone does not establish that the graph has loaded.
+
 The plugin export/re-import journey has a two-minute test deadline because it authors two projects and transfers a real downloaded file. Its assertions and the other browser-test deadlines are unchanged.
 
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
