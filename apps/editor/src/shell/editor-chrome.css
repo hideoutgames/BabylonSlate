@@ -78,12 +78,11 @@
 
 .editor-play-island {
   display: flex;
-  align-items: center;
-  gap: 0.125rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  align-items: stretch;
+  gap: 0;
+  border-radius: var(--radius-sm);
   background: var(--accent);
-  padding: 0.0625rem;
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .chrome-play-button {

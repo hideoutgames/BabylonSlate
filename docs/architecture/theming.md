@@ -76,7 +76,7 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 | Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
 | Success | `--success`, `--success-foreground` | Positive status and axis Y |
-| Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes; Play and Debug share a rounded neutral enclosure |
+| Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes; Play and Debug share a flush neutral enclosure matching the Play button height and corner radius, with an inset outline beneath the controls |
 
 ## Pin type colors
 
