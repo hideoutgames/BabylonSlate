@@ -96,7 +96,7 @@ describe("Homepage account", () => {
       }),
     ).toBeNull();
     fireEvent.click(
-      within(preview).getByRole("button", { name: "Back to Profile" }),
+      within(preview).getByRole("button", { name: "Back To Profile" }),
     );
     expect(await screen.findByRole("dialog", { name: "Profile" })).toBeTruthy();
   });
@@ -118,7 +118,7 @@ describe("Homepage account", () => {
         telemetry: false,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Back to Profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back To Profile" }));
     expect(screen.queryByTestId("clerk-sign-in")).toBeNull();
     expect(
       screen.getByRole("button", { name: "Manage Subscription" }),

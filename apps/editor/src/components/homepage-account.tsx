@@ -149,7 +149,7 @@ export function HomepageAccount() {
                 onClick={() => setAccountView("overview")}
               >
                 <ArrowLeftIcon data-icon="inline-start" />
-                Back to Profile
+                Back To Profile
               </Button>
             ) : null}
             {nativeAccount ? (

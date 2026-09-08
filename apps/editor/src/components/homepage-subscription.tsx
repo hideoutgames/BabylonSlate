@@ -44,7 +44,7 @@ export function HomepageSubscription({ onBack }: { onBack: () => void }) {
     <div className="homepage-subscription" data-testid="homepage-subscription">
       <Button variant="ghost" onClick={onBack}>
         <ArrowLeftIcon data-icon="inline-start" />
-        Back to Profile
+        Back To Profile
       </Button>
       <DialogHeader>
         <Badge variant="outline">A Look Ahead</Badge>
