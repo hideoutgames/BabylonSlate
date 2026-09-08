@@ -117,6 +117,7 @@ import {
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
+import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
@@ -1368,6 +1369,7 @@ export function createEngine(
     if (audioService) {
       if (audioService.hasSpatialVoices() && sampled) {
         writeSampledAudioPoses(sampled, audioPoses);
+        applyBoneAttachmentAudioPoses(binding, audioPoses);
         audioService.syncSnapshot(audioPoses);
       }
       const camera = scene.activeCamera;

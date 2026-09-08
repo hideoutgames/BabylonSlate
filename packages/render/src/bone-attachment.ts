@@ -1,5 +1,6 @@
 import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type TransformNode } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
+import type { SampledAudioPose } from "./snapshot-sync";
 
 export type BoneAttachmentCommand = Extract<CommandMessage, { type: "attachToBone" }>;
 export interface BoneAttachment {
@@ -119,4 +120,22 @@ let attachmentFrame = 0;
 export function updateBoneAttachments(binding: BoneAttachmentBinding): void {
   const frame = ++attachmentFrame;
   for (const slotId of binding.boneAttachments.keys()) updateAttachedSlot(binding, slotId, frame);
+}
+
+/** Spatial voices share the rendered actor pose, while gameplay snapshots stay unchanged. */
+export function applyBoneAttachmentAudioPoses(binding: BoneAttachmentBinding, poses: readonly SampledAudioPose[]): void {
+  if (binding.boneAttachments.size === 0) return;
+  for (const row of poses) {
+    const attachment = binding.boneAttachments.get(row.slotId);
+    if (!attachment?.applied) continue;
+    attachment.world.decompose(attachment.scale, attachment.rotation, attachment.position);
+    const pose = row.position;
+    pose.x = attachment.position.x;
+    pose.y = attachment.position.y;
+    pose.z = attachment.position.z;
+    pose.qx = attachment.rotation.x;
+    pose.qy = attachment.rotation.y;
+    pose.qz = attachment.rotation.z;
+    pose.qw = attachment.rotation.w;
+  }
 }
