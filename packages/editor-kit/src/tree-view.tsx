@@ -1,8 +1,11 @@
 import {
   useCallback,
+  useId,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -88,11 +91,7 @@ export interface TreeViewProps {
   /** Drop a row onto a client point outside the tree (graph canvas spawn). */
   onExternalDrop?: (id: string, clientX: number, clientY: number) => void;
   /** Fired while an external drag is armed (for graph drop hints). */
-  onExternalDragMove?: (
-    id: string,
-    clientX: number,
-    clientY: number,
-  ) => void;
+  onExternalDragMove?: (id: string, clientX: number, clientY: number) => void;
   onExternalDragEnd?: () => void;
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
@@ -101,6 +100,7 @@ export interface TreeViewProps {
   reparentArm?: "immediate" | "hold";
   rowHeight?: number;
   emptyLabel?: string;
+  "aria-label"?: string;
   "data-testid"?: string;
 }
 
@@ -149,6 +149,7 @@ export function TreeView({
   reparentArm = "hold",
   rowHeight = TREE_ROW_HEIGHT,
   emptyLabel = "Nothing here yet",
+  "aria-label": ariaLabel = "Hierarchy",
   "data-testid": testId,
 }: TreeViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -157,8 +158,34 @@ export function TreeView({
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [dropHint, setDropHint] = useState<DropHint | undefined>(undefined);
+  const treeId = useId();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
+  const activeIndex = Math.max(
+    0,
+    nodes.findIndex((node) => node.id === (activeId ?? selectedId)),
+  );
+  const activeNode = nodes[activeIndex];
+  const rowId = (id: string) => `${treeId}-${encodeURIComponent(id)}`;
+  const hierarchy = useMemo(() => {
+    const parents: string[] = [];
+    const counts = new Map<string, number>();
+    const positions = nodes.map((node) => {
+      const parent = parents[node.depth - 1] ?? "";
+      parents[node.depth] = node.id;
+      parents.length = node.depth + 1;
+      const position = (counts.get(parent) ?? 0) + 1;
+      counts.set(parent, position);
+      return { parent, position };
+    });
+    return positions.map((entry) => ({
+      ...entry,
+      size: counts.get(entry.parent),
+    }));
+  }, [nodes]);
   const selectedSet = new Set(
-    selectedIds ?? (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
+    selectedIds ??
+      (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
   );
 
   // jsdom and first paint report a zero-height client rect; render everything
@@ -170,7 +197,70 @@ export function TreeView({
     viewportHeight,
     overscan: WINDOWED_SLICE_OVERSCAN,
   });
-  const visible = nodes.slice(firstIndex, lastIndex);
+  const visibleIndices = Array.from(
+    { length: lastIndex - firstIndex },
+    (_, index) => firstIndex + index,
+  );
+  if (activeNode && !visibleIndices.includes(activeIndex)) {
+    visibleIndices.push(activeIndex);
+    visibleIndices.sort((a, b) => a - b);
+  }
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.target !== event.currentTarget ||
+      event.nativeEvent.isComposing ||
+      !activeNode
+    )
+      return;
+    const select = (index: number) => {
+      const node = nodes[index];
+      if (!node) return;
+      setActiveId(node.id);
+      const container = containerRef.current;
+      if (container && container.clientHeight > 0) {
+        const top = index * rowHeight;
+        if (top < container.scrollTop) container.scrollTop = top;
+        else if (top + rowHeight > container.scrollTop + container.clientHeight)
+          container.scrollTop = top + rowHeight - container.clientHeight;
+        setScrollTop(container.scrollTop);
+      }
+      if (event.shiftKey) onSelect?.(node.id, { range: true });
+      else if (!event.ctrlKey && !event.metaKey) onSelect?.(node.id);
+    };
+    if (event.key === "ArrowDown")
+      select(Math.min(nodes.length - 1, activeIndex + 1));
+    else if (event.key === "ArrowUp") select(Math.max(0, activeIndex - 1));
+    else if (event.key === "Home") select(0);
+    else if (event.key === "End") select(nodes.length - 1);
+    else if (event.key === "ArrowRight") {
+      const child = nodes[activeIndex + 1];
+      if (activeNode.hasChildren && !activeNode.expanded)
+        onToggleExpanded?.(activeNode.id);
+      else if (child && child.depth > activeNode.depth) select(activeIndex + 1);
+    } else if (event.key === "ArrowLeft") {
+      if (activeNode.hasChildren && activeNode.expanded)
+        onToggleExpanded?.(activeNode.id);
+      else {
+        for (let index = activeIndex - 1; index >= 0; index--) {
+          if (nodes[index]!.depth < activeNode.depth) {
+            select(index);
+            break;
+          }
+        }
+      }
+    } else if (event.key === "Enter") {
+      onSelect?.(activeNode.id);
+      onActivate?.(activeNode.id);
+    } else if (event.key === " ") {
+      onSelect?.(activeNode.id, {
+        additive: event.ctrlKey || event.metaKey,
+        range: event.shiftKey,
+      });
+    } else return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   const measure = useCallback((element: HTMLDivElement | null) => {
     containerRef.current = element;
@@ -218,10 +308,7 @@ export function TreeView({
     const drag = dragRef.current;
     if (drag?.longPressTimer) clearTimeout(drag.longPressTimer);
     if (drag?.dragArmTimer) clearTimeout(drag.dragArmTimer);
-    if (
-      drag &&
-      containerRef.current?.hasPointerCapture?.(drag.pointerId)
-    ) {
+    if (drag && containerRef.current?.hasPointerCapture?.(drag.pointerId)) {
       try {
         containerRef.current.releasePointerCapture(drag.pointerId);
       } catch {
@@ -446,7 +533,15 @@ export function TreeView({
   return (
     <div
       ref={measure}
-      className="h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+      className="h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y outline-none"
+      role="tree"
+      tabIndex={0}
+      aria-label={ariaLabel}
+      aria-multiselectable={selectedIds ? true : undefined}
+      aria-activedescendant={activeNode ? rowId(activeNode.id) : undefined}
+      onKeyDown={onKeyDown}
+      onFocus={(event) => setFocused(event.target === event.currentTarget)}
+      onBlur={() => setFocused(false)}
       data-testid={testId}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       onPointerMove={onPointerMove}
@@ -457,8 +552,9 @@ export function TreeView({
         <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
       ) : (
         <div style={{ height: nodes.length * rowHeight, position: "relative" }}>
-          {visible.map((node, index) => {
-            const top = (firstIndex + index) * rowHeight;
+          {visibleIndices.map((index) => {
+            const node = nodes[index]!;
+            const top = index * rowHeight;
             const selected = selectedSet.has(node.id);
             const placement =
               dropHint?.id === node.id ? dropHint.placement : undefined;
@@ -470,6 +566,11 @@ export function TreeView({
               <div
                 key={node.id}
                 role="treeitem"
+                id={rowId(node.id)}
+                aria-label={node.label}
+                aria-level={node.depth + 1}
+                aria-posinset={hierarchy[index]?.position}
+                aria-setsize={hierarchy[index]?.size}
                 aria-selected={selected}
                 aria-expanded={node.hasChildren ? node.expanded : undefined}
                 data-testid={`tree-row-${node.id}`}
@@ -483,13 +584,21 @@ export function TreeView({
                     ? "border-l-primary bg-primary/20 font-medium"
                     : "border-l-transparent hover:bg-accent/50",
                   dropInto ? "outline outline-1 outline-ring" : "",
+                  focused &&
+                    index === activeIndex &&
+                    "ring-1 ring-inset ring-ring",
                 )}
                 style={{
                   top,
                   height: rowHeight,
                   paddingLeft: `${insertLeft}px`,
                 }}
-                onPointerDown={(event) => onPointerDown(event, node.id)}
+                onPointerDown={(event) => {
+                  setActiveId(node.id);
+                  if (event.pointerType === "mouse")
+                    containerRef.current?.focus({ preventScroll: true });
+                  onPointerDown(event, node.id);
+                }}
                 onContextMenu={(event) => {
                   if (!onContextMenu) return;
                   event.preventDefault();
@@ -531,7 +640,10 @@ export function TreeView({
                   </button>
                 ) : (
                   <span
-                    className={cn("shrink-0", rowHeight >= 44 ? "size-11" : "size-4")}
+                    className={cn(
+                      "shrink-0",
+                      rowHeight >= 44 ? "size-11" : "size-4",
+                    )}
                     aria-hidden
                   />
                 )}

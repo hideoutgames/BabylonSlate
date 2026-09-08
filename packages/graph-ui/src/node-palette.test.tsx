@@ -7,7 +7,10 @@ afterEach(() => {
   cleanup();
 });
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -55,6 +58,33 @@ const begin: PaletteNode = {
 };
 
 describe("NodePalette", () => {
+  it("adds the keyboard-selected search result without requiring row tabbing", () => {
+    const onAddNode = vi.fn();
+    const { getByPlaceholderText, getByTestId } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[log, begin]}
+        onAddNode={onAddNode}
+      />,
+    );
+    const input = getByPlaceholderText("Search nodes");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(
+      getByTestId("node-palette-item-flow.event.beginPlay").getAttribute(
+        "aria-selected",
+      ),
+    ).toBe("true");
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(onAddNode).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAddNode).toHaveBeenCalledWith(begin);
+    onAddNode.mockClear();
+    fireEvent.change(input, { target: { value: "no-such-node" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAddNode).not.toHaveBeenCalled();
+  });
   it("defaults the Context Sensitive switch to on", () => {
     const { getByTestId, getByText } = render(
       <NodePalette
@@ -100,9 +130,7 @@ describe("NodePalette", () => {
       paletteNodes: [log, begin],
       onAddNode: vi.fn(),
     };
-    const { getByTestId, rerender } = render(
-      <NodePalette open {...props} />,
-    );
+    const { getByTestId, rerender } = render(<NodePalette open {...props} />);
 
     fireEvent.click(getByTestId("node-palette-category-Debug"));
     expect(getByTestId("node-palette-category-Debug").className).toContain(
@@ -129,7 +157,9 @@ describe("NodePalette", () => {
     );
 
     expect(
-      getByTestId("node-palette-context-sensitive").getAttribute("aria-checked"),
+      getByTestId("node-palette-context-sensitive").getAttribute(
+        "aria-checked",
+      ),
     ).toBe("true");
     expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
     expect(queryByTestId("node-palette-item-flow.event.beginPlay")).toBeNull();
@@ -149,7 +179,9 @@ describe("NodePalette", () => {
     fireEvent.click(getByTestId("node-palette-context-sensitive"));
 
     expect(
-      getByTestId("node-palette-context-sensitive").getAttribute("aria-checked"),
+      getByTestId("node-palette-context-sensitive").getAttribute(
+        "aria-checked",
+      ),
     ).toBe("false");
     expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
@@ -166,15 +198,21 @@ describe("NodePalette", () => {
     );
 
     expect(getByTestId("node-palette-category-all").textContent).toContain("2");
-    expect(getByTestId("node-palette-category-Debug").textContent).toContain("1");
-    expect(getByTestId("node-palette-category-Flow").textContent).toContain("1");
+    expect(getByTestId("node-palette-category-Debug").textContent).toContain(
+      "1",
+    );
+    expect(getByTestId("node-palette-category-Flow").textContent).toContain(
+      "1",
+    );
 
     fireEvent.change(getByPlaceholderText("Search nodes"), {
       target: { value: "log" },
     });
 
     expect(getByTestId("node-palette-category-all").textContent).toContain("1");
-    expect(getByTestId("node-palette-category-Debug").textContent).toContain("1");
+    expect(getByTestId("node-palette-category-Debug").textContent).toContain(
+      "1",
+    );
     expect(queryByTestId("node-palette-category-Flow")).toBeNull();
   });
 
@@ -218,7 +256,7 @@ describe("NodePalette", () => {
         "clientHeight",
         clientHeightDescriptor,
       );
-    }
+    } else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
   });
 
   it("mounts every palette item when the catalog body height is 0", () => {
@@ -232,7 +270,9 @@ describe("NodePalette", () => {
       />,
     );
     expect(paletteItems()).toHaveLength(80);
-    expect(document.querySelector('[data-testid="node-palette-item-n79"]')).toBeTruthy();
+    expect(
+      document.querySelector('[data-testid="node-palette-item-n79"]'),
+    ).toBeTruthy();
   });
 
   it("mounts only viewport-near rows for a ~1000-node palette", () => {
@@ -287,16 +327,16 @@ describe("NodePalette", () => {
       onAddNode: vi.fn(),
       filterPin: execOut,
     };
-    const { getByTestId, rerender } = render(
-      <NodePalette open {...props} />,
-    );
+    const { getByTestId, rerender } = render(<NodePalette open {...props} />);
 
     fireEvent.click(getByTestId("node-palette-context-sensitive"));
     rerender(<NodePalette open={false} {...props} />);
     rerender(<NodePalette open {...props} />);
 
     expect(
-      getByTestId("node-palette-context-sensitive").getAttribute("aria-checked"),
+      getByTestId("node-palette-context-sensitive").getAttribute(
+        "aria-checked",
+      ),
     ).toBe("false");
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });

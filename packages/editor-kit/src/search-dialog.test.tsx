@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { filterSearchItems, groupSearchItems, SearchDialog } from "./search-dialog";
+import {
+  filterSearchItems,
+  groupSearchItems,
+  SearchDialog,
+} from "./search-dialog";
 import { AssetPicker } from "./asset-picker";
 
 const LIST_BODY = '[data-testid="picker-body"]';
@@ -14,7 +18,10 @@ function stubScrollViewportHeight(height: number): () => void {
     configurable: true,
     get() {
       const el = this as HTMLElement;
-      if (el.matches?.(LIST_BODY) || el.getAttribute?.("data-testid") === "picker-body") {
+      if (
+        el.matches?.(LIST_BODY) ||
+        el.getAttribute?.("data-testid") === "picker-body"
+      ) {
         return height;
       }
       return descriptor?.get?.call(this) ?? 0;
@@ -23,7 +30,7 @@ function stubScrollViewportHeight(height: number): () => void {
   return () => {
     if (descriptor) {
       Object.defineProperty(HTMLElement.prototype, "clientHeight", descriptor);
-    }
+    } else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
   };
 }
 
@@ -41,7 +48,9 @@ describe("filterSearchItems", () => {
     expect(filterSearchItems(items, "SECOND").map((item) => item.id)).toEqual([
       "b",
     ]);
-    expect(filterSearchItems(items, "alp").map((item) => item.id)).toEqual(["a"]);
+    expect(filterSearchItems(items, "alp").map((item) => item.id)).toEqual([
+      "a",
+    ]);
   });
 });
 
@@ -113,6 +122,63 @@ describe("SearchDialog", () => {
     screen.getByTestId("search-item-b").click();
     expect(onSelect).toHaveBeenCalledWith("b");
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("navigates results from search and commits only a matching option", () => {
+    const onSelect = vi.fn();
+    render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick"
+        items={items}
+        onSelect={onSelect}
+        data-testid="picker"
+      />,
+    );
+    const input = screen.getByTestId("picker-query");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(
+      screen.getByTestId("search-item-b").getAttribute("aria-selected"),
+    ).toBe("true");
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("b");
+    onSelect.mockClear();
+    fireEvent.change(input, { target: { value: "missing" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("keeps the keyboard target mounted and scrolls beyond the virtual window", () => {
+    const restore = stubScrollViewportHeight(88);
+    try {
+      const onSelect = vi.fn();
+      render(
+        <SearchDialog
+          open
+          onOpenChange={() => {}}
+          title="Pick"
+          items={Array.from({ length: 100 }, (_, i) => ({
+            id: String(i),
+            label: `Item ${i}`,
+          }))}
+          onSelect={onSelect}
+          data-testid="picker"
+        />,
+      );
+      const input = screen.getByTestId("picker-query");
+      fireEvent.keyDown(input, { key: "End" });
+      const target = screen.getByTestId("search-item-99");
+      expect(input.getAttribute("aria-activedescendant")).toBe(target.id);
+      expect(screen.getByTestId("picker-body").scrollTop).toBeGreaterThan(0);
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(onSelect).toHaveBeenCalledWith("99");
+    } finally {
+      restore();
+    }
   });
 
   it("renders a leading node on each row", () => {
@@ -229,9 +295,9 @@ describe("SearchDialog", () => {
     );
     const empty = screen.getByText("No matches");
     const emptyScroller = empty.closest("[data-testid='picker-body']");
-    expect(Number.parseFloat((emptyScroller as HTMLElement).style.height)).toBeGreaterThan(
-      0,
-    );
+    expect(
+      Number.parseFloat((emptyScroller as HTMLElement).style.height),
+    ).toBeGreaterThan(0);
   });
 
   it("shows the empty label when nothing matches", () => {
@@ -287,7 +353,9 @@ describe("SearchDialog", () => {
           data-testid="picker"
         />,
       );
-      const mounted = document.querySelectorAll('[data-testid^="search-item-"]');
+      const mounted = document.querySelectorAll(
+        '[data-testid^="search-item-"]',
+      );
       expect(mounted.length).toBeGreaterThan(0);
       expect(mounted.length).toBeLessThan(40);
       expect(queryByTestId("search-item-n0")).toBeTruthy();
@@ -348,7 +416,7 @@ describe("AssetPicker", () => {
     expect(onPick).toHaveBeenCalledWith("g1");
   });
 
-  it("shows icon, asset name, and asset type instead of the path", () => {
+  it("shows the asset type and path so identical names can be distinguished", () => {
     render(
       <AssetPicker
         open
@@ -367,12 +435,11 @@ describe("AssetPicker", () => {
     );
     const row = screen.getByTestId("search-item-g1");
     expect(row.textContent).toContain("main");
-    expect(row.textContent).not.toContain("main.scene");
     expect(row.textContent).toContain("Scene");
-    expect(row.textContent).not.toContain("assets/main.scene.babasset");
-    expect(row.querySelector("[data-type-family]")?.getAttribute("data-type-family")).toBe(
-      "scene",
-    );
+    expect(row.textContent).toContain("assets/main.scene.babasset");
+    expect(
+      row.querySelector("[data-type-family]")?.getAttribute("data-type-family"),
+    ).toBe("scene");
   });
 
   it("still matches a search query against the asset path", () => {

@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -46,6 +52,11 @@ export interface CatalogDialogProps {
   searchPlaceholder?: string;
   /** When true, focus the search field on open. Default false (iPad keyboard). */
   autoFocusSearch?: boolean;
+  /** Search-result owners can supply combobox semantics and keyboard navigation. */
+  searchInputProps?: Omit<
+    ComponentProps<typeof SearchInput>,
+    "value" | "onChange" | "ref"
+  >;
   children: ReactNode;
   footer?: ReactNode;
   "data-testid"?: string;
@@ -61,7 +72,8 @@ function categorySections(
   }
   const byId = new Map(categories.map((category) => [category.id, category]));
   const used = new Set<string>();
-  const sections: Array<{ label: string | null; items: CatalogCategory[] }> = [];
+  const sections: Array<{ label: string | null; items: CatalogCategory[] }> =
+    [];
   for (const group of groups) {
     const items = group.ids.flatMap((id) => {
       const category = byId.get(id);
@@ -92,6 +104,7 @@ export function CatalogDialog({
   onSearchChange,
   searchPlaceholder = "Search",
   autoFocusSearch = false,
+  searchInputProps,
   children,
   footer,
   "data-testid": testId,
@@ -141,12 +154,18 @@ export function CatalogDialog({
             <SelectContent align="start">
               {sections.map((section, index) => (
                 <SelectGroup key={section.label ?? `ungrouped-${index}`}>
-                  {section.label ? <SelectLabel>{section.label}</SelectLabel> : null}
+                  {section.label ? (
+                    <SelectLabel>{section.label}</SelectLabel>
+                  ) : null}
                   {section.items.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
-                      <span className="min-w-0 flex-1 truncate">{category.label}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {category.label}
+                      </span>
                       {typeof category.count === "number" ? (
-                        <span className="text-muted-foreground">{category.count}</span>
+                        <span className="text-muted-foreground">
+                          {category.count}
+                        </span>
                       ) : null}
                     </SelectItem>
                   ))}
@@ -169,6 +188,7 @@ export function CatalogDialog({
           }}
         >
           <SearchInput
+            {...searchInputProps}
             ref={searchRef}
             value={search}
             onChange={onSearchChange}
@@ -186,7 +206,10 @@ export function CatalogDialog({
             data-testid={testId ? `${testId}-categories` : undefined}
           >
             {sections.map((section, index) => (
-              <div key={section.label ?? `ungrouped-${index}`} className="flex flex-col gap-1">
+              <div
+                key={section.label ?? `ungrouped-${index}`}
+                className="flex flex-col gap-1"
+              >
                 {section.label ? (
                   <>
                     {index > 0 ? <Separator className="my-1" /> : null}
@@ -229,6 +252,7 @@ export function CatalogDialog({
             ref={bodyRef}
             tabIndex={-1}
             className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain outline-none"
+            style={{ overflowY: "auto" }}
             data-testid={testId ? `${testId}-body` : undefined}
           >
             <div className="p-4">{children}</div>

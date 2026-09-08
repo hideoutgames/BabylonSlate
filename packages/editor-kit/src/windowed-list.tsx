@@ -1,9 +1,4 @@
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "./windowed-slice";
 
 /** Matches `--touch-target` for catalog and Compiler Results rows. */
@@ -25,7 +20,9 @@ const VIEWPORT_SLOT = '[data-slot="scroll-area-viewport"]';
 
 function isOverflowScroll(el: Element): boolean {
   const overflowY = getComputedStyle(el).overflowY;
-  return overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+  return (
+    overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay"
+  );
 }
 
 /** ScrollArea viewport if present; otherwise nearest overflow-y auto/scroll ancestor. */
@@ -48,12 +45,15 @@ export function findWindowedListScrollParent(
 export type WindowedListProps = {
   itemCount: number;
   rowHeight: number;
+  /** Keep a keyboard target mounted and reveal it without moving DOM focus. */
+  activeIndex?: number;
   children: (index: number) => ReactNode;
 };
 
 export function WindowedList({
   itemCount,
   rowHeight,
+  activeIndex = -1,
   children,
 }: WindowedListProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -79,6 +79,23 @@ export function WindowedList({
     };
   }, [itemCount]);
 
+  useLayoutEffect(() => {
+    if (activeIndex < 0 || activeIndex >= itemCount) return;
+    const viewport = findWindowedListScrollParent(listRef.current);
+    if (!viewport || viewport.clientHeight === 0) return;
+    const bounds = listRef.current?.getBoundingClientRect();
+    const listTop =
+      bounds && bounds.height > 0
+        ? bounds.top - viewport.getBoundingClientRect().top + viewport.scrollTop
+        : 0;
+    const top = listTop + activeIndex * rowHeight;
+    const bottom = top + rowHeight;
+    if (top < viewport.scrollTop) viewport.scrollTop = top;
+    else if (bottom > viewport.scrollTop + viewport.clientHeight)
+      viewport.scrollTop = bottom - viewport.clientHeight;
+    setScrollTop(viewport.scrollTop);
+  }, [activeIndex, itemCount, rowHeight]);
+
   const { firstIndex, lastIndex } = windowedSlice({
     itemCount,
     rowHeight,
@@ -90,6 +107,14 @@ export function WindowedList({
   const rows: number[] = [];
   for (let index = firstIndex; index < lastIndex; index++) {
     rows.push(index);
+  }
+  if (
+    activeIndex >= 0 &&
+    activeIndex < itemCount &&
+    !rows.includes(activeIndex)
+  ) {
+    rows.push(activeIndex);
+    rows.sort((a, b) => a - b);
   }
 
   return (
