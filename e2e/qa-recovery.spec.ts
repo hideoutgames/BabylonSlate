@@ -5,7 +5,7 @@ import { saveAllIfEnabled } from "./save-all";
 type TestHost = {
   __babylonslateTest: {
     nudgeActiveGraphNode: () => Promise<boolean>;
-    activeGraphNodePosition: () => { x: number; y: number };
+    activeGraphNodePosition: () => { x: number; y: number } | null;
     cancelDebouncedSave: () => void;
     hasRecoveryJournal: () => Promise<boolean>;
     dirtyDocuments: () => { kind: string; id: string }[];
@@ -51,6 +51,8 @@ test("H6/M4: recovery retains Undo and survives a second reload before Save", as
   await openTestProject(page);
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await saveAllIfEnabled(page);
+  await expect.poll(() => page.evaluate(() =>
+    (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition())).not.toBeNull();
   const before = await page.evaluate(() =>
     (globalThis as unknown as TestHost).__babylonslateTest.activeGraphNodePosition());
   await page.evaluate(async () => {

@@ -24,7 +24,7 @@ Playwright builds and starts its own preview server; an occupied port fails inst
 
 Local server startup allows ten minutes for the player/editor typechecks and builds when other checkouts compete for memory. CI retains its three-minute startup limit. Browser test and readiness assertion timeouts are separate from this build/startup allowance.
 
-`openTestProject` waits for cross-origin isolation after navigation before interacting with Homepage. The COI service worker may reload during initial registration; waiting for its isolated page prevents those reloads from interrupting project creation or opening.
+`openTestProject` waits for cross-origin isolation after navigation before interacting with Homepage. If the COI worker takes control without the bootstrap observing its reload event, the helper reloads once to acquire the worker's isolation headers. Graph lifecycle/recovery tests wait for a loaded node before recording baseline positions.
 
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 

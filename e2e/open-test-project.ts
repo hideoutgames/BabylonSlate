@@ -21,7 +21,16 @@ export async function openTestProject(
   path = "/?test=1",
 ): Promise<void> {
   await page.goto(path);
-  // COI bootstrap can reload twice; wait before starting project creation.
+  // Registration can finish before the bootstrap observes updatefound. Once
+  // the worker controls the page, a reload acquires its isolation headers.
+  await page.waitForFunction(
+    () => window.crossOriginIsolated || navigator.serviceWorker.controller !== null,
+    undefined,
+    { timeout: 15_000 },
+  );
+  if (!(await page.evaluate(() => window.crossOriginIsolated))) {
+    await page.reload();
+  }
   await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
     timeout: 15_000,
   });

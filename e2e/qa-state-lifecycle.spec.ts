@@ -8,7 +8,7 @@ const CLASS_PATH = "assets/Mannequin.class.babasset";
 type TestHost = {
   __babylonslateTest: {
     nudgeActiveGraphNode: () => Promise<boolean>;
-    activeGraphNodePosition: () => { x: number; y: number };
+    activeGraphNodePosition: () => { x: number; y: number } | null;
     nudgeActiveSceneActor: () => Promise<boolean>;
     activeSceneActorPosition: () => [number, number, number];
     cancelDebouncedSave: () => void;
@@ -19,8 +19,10 @@ type TestHost = {
 };
 
 async function graphPosition(page: Page) {
+  await expect.poll(() => page.evaluate(() => (globalThis as unknown as TestHost)
+    .__babylonslateTest.activeGraphNodePosition())).not.toBeNull();
   return page.evaluate(() => (globalThis as unknown as TestHost)
-    .__babylonslateTest.activeGraphNodePosition());
+    .__babylonslateTest.activeGraphNodePosition()!);
 }
 
 async function scenePosition(page: Page) {
