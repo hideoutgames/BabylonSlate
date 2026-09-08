@@ -5,7 +5,6 @@ import {
   CircleUserRoundIcon,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -95,10 +94,9 @@ export function HomepageAccount({ disabled = false }: { disabled?: boolean }) {
         ) : (
           <>
             <DialogHeader>
-              <Badge variant="outline">Your Slate</Badge>
               <DialogTitle>Profile</DialogTitle>
-              <DialogDescription>
-                A little space for you. Your projects stay on this device.
+              <DialogDescription className="sr-only">
+                Account and subscription settings.
               </DialogDescription>
             </DialogHeader>
             {accountView !== "overview" ? (
@@ -108,7 +106,7 @@ export function HomepageAccount({ disabled = false }: { disabled?: boolean }) {
                 onClick={() => setAccountView("overview")}
               >
                 <ArrowLeftIcon data-icon="inline-start" />
-                Back To Profile
+                Profile
               </Button>
             ) : null}
             {nativeAccount ? (
@@ -137,11 +135,8 @@ export function HomepageAccount({ disabled = false }: { disabled?: boolean }) {
               <div className="homepage-profile-identity">
                 <CircleUserRoundIcon aria-hidden="true" />
                 <div>
-                  <h3>Make Yourself at Home</h3>
-                  <p>
-                    Keep creating as a guest. Sign-in is not enabled in this
-                    build.
-                  </p>
+                  <h3>Guest</h3>
+                  <p>Sign-in is not configured.</p>
                 </div>
               </div>
             )}

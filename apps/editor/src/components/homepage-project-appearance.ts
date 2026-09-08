@@ -19,7 +19,7 @@ import {
 
 export const DEFAULT_PROJECT_APPEARANCE: ProjectAppearance = {
   icon: "box",
-  color: "coral",
+  color: "stone",
 };
 
 export const PROJECT_ICON_PRESETS = [

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRightIcon,
+  ArrowLeftIcon,
   BoxIcon,
   CheckIcon,
   Grid2x2Icon,
@@ -9,11 +10,7 @@ import {
   LoaderCircleIcon,
   XIcon,
 } from "lucide-react";
-import {
-  DEFAULT_RENDER_HEIGHT,
-  DEFAULT_RENDER_WIDTH,
-  type ProjectAppearance,
-} from "@babylonslate/core";
+import { type ProjectAppearance } from "@babylonslate/core";
 import {
   isCoarsePointerEnvironment,
   NumberField,
@@ -44,6 +41,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
+import { HomepageGallery } from "./homepage-gallery";
 import { TemplatePickCard } from "./homepage-template-card";
 import { ProjectIdentityBadge } from "./homepage-project-identity";
 import {
@@ -66,6 +64,7 @@ export function HomepageCreateDialog({
   onOpenChange,
   busy,
   mode = "create",
+  chooseTemplate = false,
   name,
   onNameChange,
   nameIssue,
@@ -90,6 +89,7 @@ export function HomepageCreateDialog({
   onOpenChange: (open: boolean) => void;
   busy: boolean;
   mode?: "create" | "edit";
+  chooseTemplate?: boolean;
   name: string;
   onNameChange: (name: string) => void;
   nameIssue: string | null;
@@ -98,7 +98,7 @@ export function HomepageCreateDialog({
   error?: string | null;
   templateId: string;
   onTemplateIdChange: (id: string) => void;
-  templates: Array<{ id: string; name: string }>;
+  templates: Array<{ id: string; name: string; imageUrl?: string }>;
   hostPlatform: HostPlatform;
   pickFolder: boolean;
   onPickFolderChange: (pick: boolean) => void;
@@ -111,6 +111,12 @@ export function HomepageCreateDialog({
   onSubmit: () => void;
 }) {
   const editing = mode === "edit";
+  const [nameTouched, setNameTouched] = useState(false);
+  const visibleNameIssue = nameTouched || name.length > 0 ? nameIssue : null;
+  const [step, setStep] = useState<"templates" | "details">("details");
+  useEffect(() => {
+    if (open) setStep(!editing && chooseTemplate ? "templates" : "details");
+  }, [open, editing, chooseTemplate]);
   const nameId = editing ? "homepage-rename-input" : "create-project-name";
   const fileInput = useRef<HTMLInputElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
@@ -120,15 +126,16 @@ export function HomepageCreateDialog({
   const [imageBusy, setImageBusy] = useState(false);
   const templateName =
     templateId === "empty"
-      ? "Empty Project"
+      ? "Blank"
       : templateId === "2d"
-        ? "2D Project"
+        ? "2D"
         : (templates.find((template) => template.id === templateId)?.name ??
           "Project");
 
   useEffect(() => {
     setImageBusy(false);
     setImageIssue(null);
+    setNameTouched(false);
     return () => {
       importRequest.current?.abort();
       importRequest.current = null;
@@ -170,405 +177,383 @@ export function HomepageCreateDialog({
     if (canSubmit) onSubmit();
   };
 
+  const choices = [
+    { id: "empty", name: "Blank", icon: BoxIcon, imageUrl: undefined },
+    { id: "2d", name: "2D", icon: Grid2x2Icon, imageUrl: undefined },
+    ...templates.map((template) => ({ ...template, icon: LayoutTemplateIcon })),
+  ];
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && !busy) onOpenChange(false);
+        if (!busy) onOpenChange(next);
       }}
     >
       <DialogContent
         ref={popup}
         initialFocus={() =>
-          isCoarsePointerEnvironment() ? popup.current : nameInput.current
+          isCoarsePointerEnvironment() || step === "templates"
+            ? popup.current
+            : nameInput.current
         }
-        className="homepage-theme homepage-composer flex h-[min(90dvh,52rem)] max-h-[90dvh] w-[min(96vw,68rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+        className="homepage-theme homepage-composer"
         data-testid={
           editing ? "homepage-rename-dialog" : "create-project-dialog"
         }
         data-mode={mode}
+        data-step={step}
         showCloseButton={!busy}
       >
-        <div className="homepage-composer-layout flex min-h-0 min-w-0 flex-1">
-          <aside
-            className="homepage-composer-preview"
-            data-testid="project-identity-preview"
-          >
-            <p className="homepage-eyebrow">
-              {editing ? "Make It Yours" : "A New Beginning"}
-            </p>
-            <div className="homepage-composer-preview-stage">
-              <ProjectIdentityBadge
-                appearance={appearance}
-                className="homepage-composer-badge"
-              />
-            </div>
-            <div className="homepage-composer-preview-caption">
-              <h2>{name.trim() || "Your Next World"}</h2>
-              <p>{editing ? "Your Project, Your Signature" : templateName}</p>
-            </div>
-            <span
-              className="homepage-composer-preview-index"
-              aria-hidden="true"
+        <DialogHeader className="homepage-composer-header">
+          {!editing && step === "details" && (
+            <Button
+              variant="ghost"
+              size="touch-icon"
+              aria-label="Choose Template"
+              disabled={busy}
+              onClick={() => setStep("templates")}
             >
-              SLATE / {editing ? "EDIT" : "CREATE"}
-            </span>
-          </aside>
+              <ArrowLeftIcon />
+            </Button>
+          )}
+          <DialogTitle>
+            {editing
+              ? "Edit Project"
+              : step === "templates"
+                ? "Start With"
+                : "New Project"}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {editing
+              ? "Edit project name and appearance."
+              : "Choose a starting point, then name and customize your project."}
+          </DialogDescription>
+        </DialogHeader>
+        {step === "templates" && !editing ? (
           <div
-            className="homepage-composer-details flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden"
-            data-testid="create-project-details"
+            className="homepage-template-step"
+            data-testid="create-project-templates"
           >
-            <DialogHeader className="homepage-composer-header shrink-0">
-              <p className="homepage-eyebrow">
-                {editing ? "Project Identity" : "Project Studio"}
-              </p>
-              <DialogTitle>
-                {editing ? "Edit Project" : "Create Project"}
-              </DialogTitle>
-              <DialogDescription>
-                {editing
-                  ? "Give your project a new name or a fresh look."
-                  : "Every great world starts with a little possibility."}
-              </DialogDescription>
-            </DialogHeader>
-            <form
-              id="homepage-project-form"
-              className="homepage-composer-form flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain"
-              data-testid="create-project-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                submit();
-              }}
-            >
-              <FieldGroup>
-                <Field
-                  data-invalid={Boolean(nameIssue) || undefined}
-                  data-disabled={busy || undefined}
-                >
-                  <FieldLabel htmlFor={nameId}>Project Name</FieldLabel>
-                  <Input
-                    ref={nameInput}
-                    id={nameId}
-                    data-testid={nameId}
-                    placeholder="Name Your Next World"
-                    autoComplete="off"
+            <HomepageGallery
+              label="Starting Point"
+              items={choices.map((choice) => ({
+                id: choice.id,
+                content: (
+                  <TemplatePickCard
+                    title={choice.name}
+                    imageUrl={choice.imageUrl}
+                    icon={choice.icon}
+                    selected={templateId === choice.id}
                     disabled={busy}
-                    aria-invalid={Boolean(nameIssue) || undefined}
-                    aria-describedby={
-                      nameIssue ? "project-name-issue" : undefined
+                    testId={
+                      choice.id === "empty"
+                        ? "create-project-empty"
+                        : choice.id === "2d"
+                          ? "create-project-2d"
+                          : `create-project-template-${choice.id}`
                     }
-                    value={name}
-                    onChange={(event) => onNameChange(event.target.value)}
+                    onSelect={() => {
+                      onTemplateIdChange(choice.id);
+                      setStep("details");
+                      requestAnimationFrame(() => {
+                        const target = isCoarsePointerEnvironment()
+                          ? popup.current
+                          : nameInput.current;
+                        target?.focus({ preventScroll: true });
+                      });
+                    }}
                   />
-                  {nameIssue ? (
-                    <FieldError
-                      id="project-name-issue"
-                      data-testid="create-project-name-issue"
-                    >
-                      {nameIssue}
-                    </FieldError>
-                  ) : null}
-                </Field>
-                <FieldSet
-                  disabled={busy}
-                  className="homepage-composer-identity"
-                >
-                  <FieldLegend
-                    variant="label"
-                    className="homepage-badge-legend"
-                  >
-                    <span>Project Badge</span>
-                    <ProjectIdentityBadge
-                      appearance={appearance}
-                      className="homepage-composer-inline-preview"
+                ),
+              }))}
+            />
+          </div>
+        ) : (
+          <div className="homepage-composer-layout" key="details">
+            <aside
+              className="homepage-composer-preview"
+              data-testid="project-identity-preview"
+            >
+              <div className="homepage-composer-preview-stage">
+                <ProjectIdentityBadge appearance={appearance} />
+              </div>
+              <span>{name.trim() || "Untitled"}</span>
+            </aside>
+            <div
+              className="homepage-composer-details"
+              data-testid="create-project-details"
+            >
+              <form
+                id="homepage-project-form"
+                className="homepage-composer-form"
+                data-testid="create-project-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submit();
+                }}
+              >
+                <FieldGroup>
+                  <Field data-invalid={Boolean(visibleNameIssue)}>
+                    <FieldLabel htmlFor={nameId}>Name</FieldLabel>
+                    <Input
+                      ref={nameInput}
+                      onBlur={() => setNameTouched(true)}
+                      id={nameId}
+                      data-testid={nameId}
+                      placeholder="Untitled"
+                      autoComplete="off"
+                      disabled={busy}
+                      value={name}
+                      onChange={(event) => onNameChange(event.target.value)}
+                      aria-invalid={Boolean(visibleNameIssue)}
                     />
-                  </FieldLegend>
-                  <div
-                    className="homepage-composer-icon-grid"
-                    role="group"
-                    aria-label="Project Icon"
+                    {visibleNameIssue && (
+                      <FieldError data-testid="create-project-name-issue">
+                        {visibleNameIssue}
+                      </FieldError>
+                    )}
+                  </Field>
+                  <FieldSet
+                    disabled={busy}
+                    className="homepage-composer-identity"
                   >
-                    {PROJECT_ICON_PRESETS.map(({ id, label, icon: Icon }) => (
+                    <FieldLegend
+                      className="homepage-badge-legend"
+                      variant="label"
+                    >
+                      <span>Icon</span>
+                      <ProjectIdentityBadge
+                        appearance={appearance}
+                        className="homepage-composer-inline-preview"
+                      />
+                    </FieldLegend>
+                    <div
+                      className="homepage-composer-icon-grid"
+                      role="group"
+                      aria-label="Project Icon"
+                    >
+                      {PROJECT_ICON_PRESETS.map(({ id, label, icon: Icon }) => (
+                        <Button
+                          key={id}
+                          type="button"
+                          variant="ghost"
+                          size="touch-icon"
+                          className="homepage-icon-choice"
+                          aria-label={label}
+                          aria-pressed={
+                            !appearance.image && appearance.icon === id
+                          }
+                          onClick={() =>
+                            changeAppearance({
+                              icon: id,
+                              color: appearance.color,
+                            })
+                          }
+                        >
+                          <Icon />
+                        </Button>
+                      ))}
+                    </div>
+                    <div
+                      className="homepage-composer-color-grid"
+                      role="group"
+                      aria-label="Badge Color"
+                    >
+                      {PROJECT_COLOR_PRESETS.map(({ id, label }) => (
+                        <Button
+                          key={id}
+                          type="button"
+                          variant="ghost"
+                          size="touch-icon"
+                          className="homepage-color-choice"
+                          aria-label={label}
+                          aria-pressed={appearance.color === id}
+                          onClick={() =>
+                            changeAppearance({ ...appearance, color: id })
+                          }
+                        >
+                          <span className="homepage-color-blob" data-color={id}>
+                            {appearance.color === id && <CheckIcon />}
+                          </span>
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="homepage-composer-upload">
+                      <input
+                        ref={fileInput}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        aria-label="Upload Picture"
+                        className="sr-only"
+                        tabIndex={-1}
+                        disabled={busy || imageBusy}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (file) void uploadPicture(file);
+                        }}
+                      />
                       <Button
-                        key={id}
                         type="button"
                         variant="outline"
-                        size="icon"
-                        className="homepage-icon-choice"
-                        aria-label={label}
-                        title={label}
-                        aria-pressed={
-                          !appearance.image && appearance.icon === id
-                        }
-                        onClick={() =>
-                          changeAppearance({
-                            icon: id,
-                            color: appearance.color,
-                          })
-                        }
+                        disabled={busy || imageBusy}
+                        onClick={() => fileInput.current?.click()}
                       >
-                        <Icon />
-                      </Button>
-                    ))}
-                  </div>
-                  <ToggleGroup
-                    className="homepage-composer-color-grid"
-                    aria-label="Badge Color"
-                    value={[appearance.color]}
-                    onValueChange={(values) => {
-                      if (values[0])
-                        changeAppearance({ ...appearance, color: values[0] });
-                    }}
-                  >
-                    {PROJECT_COLOR_PRESETS.map(({ id, label }) => (
-                      <ToggleGroupItem
-                        key={id}
-                        value={id}
-                        aria-label={label}
-                        title={label}
-                        className="homepage-color-choice"
-                        data-color={id}
-                      >
-                        <span
-                          className="homepage-color-blob"
-                          aria-hidden="true"
-                        >
-                          {appearance.color === id ? <CheckIcon /> : null}
-                        </span>
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                  <div className="homepage-composer-upload flex flex-wrap items-center gap-2">
-                    <Input
-                      ref={fileInput}
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      aria-label="Upload Picture"
-                      className="sr-only"
-                      tabIndex={-1}
-                      data-testid="project-picture-input"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        event.target.value = "";
-                        if (file) void uploadPicture(file);
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInput.current?.click()}
-                      disabled={imageBusy}
-                    >
-                      {imageBusy ? (
-                        <LoaderCircleIcon
-                          data-icon="inline-start"
-                          className="animate-spin"
-                        />
-                      ) : (
-                        <ImagePlusIcon data-icon="inline-start" />
-                      )}
-                      {imageBusy
-                        ? "Preparing Picture"
-                        : appearance.image
+                        {imageBusy ? (
+                          <LoaderCircleIcon
+                            data-icon="inline-start"
+                            className="animate-spin"
+                          />
+                        ) : (
+                          <ImagePlusIcon data-icon="inline-start" />
+                        )}
+                        {appearance.image
                           ? "Replace Picture"
                           : "Upload Picture"}
-                    </Button>
-                    {appearance.image ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          changeAppearance({
-                            icon: appearance.icon,
-                            color: appearance.color,
-                          })
-                        }
-                      >
-                        <XIcon data-icon="inline-start" />
-                        Remove Picture
                       </Button>
-                    ) : null}
-                    <FieldDescription>
-                      PNG, JPEG, Or WebP · Up To 10 MB
-                    </FieldDescription>
-                  </div>
-                  {imageIssue ? (
-                    <Alert variant="destructive">
-                      <AlertDescription>{imageIssue}</AlertDescription>
-                    </Alert>
-                  ) : null}
-                </FieldSet>
-                {!editing ? (
-                  <>
-                    <FieldSet disabled={busy}>
-                      <FieldLegend variant="label">Starting Point</FieldLegend>
-                      <div
-                        className="homepage-composer-templates"
-                        data-testid="create-project-templates"
-                      >
-                        <TemplatePickCard
-                          title="Empty"
-                          description="A Blank 3D Canvas"
-                          testId="create-project-empty"
-                          selected={templateId === "empty"}
-                          disabled={busy}
-                          icon={BoxIcon}
-                          onSelect={() => onTemplateIdChange("empty")}
-                        />
-                        <TemplatePickCard
-                          title="2D"
-                          description="A Pixel-Perfect Start"
-                          testId="create-project-2d"
-                          selected={templateId === "2d"}
-                          disabled={busy}
-                          icon={Grid2x2Icon}
-                          onSelect={() => onTemplateIdChange("2d")}
-                        />
-                        {templates.map((template) => (
-                          <TemplatePickCard
-                            key={template.id}
-                            title={template.name}
-                            testId={`create-project-template-${template.id}`}
-                            selected={templateId === template.id}
-                            disabled={busy}
-                            icon={LayoutTemplateIcon}
-                            onSelect={() => onTemplateIdChange(template.id)}
-                          />
-                        ))}
-                      </div>
-                    </FieldSet>
-                    {hostPlatform !== "web" ? (
-                      <Field>
-                        <FieldLabel id="project-location-label">
-                          Location
-                        </FieldLabel>
-                        <ToggleGroup
-                          aria-labelledby="project-location-label"
-                          value={[pickFolder ? "folder" : "default"]}
-                          disabled={busy}
-                          onValueChange={(values) => {
-                            if (values[0])
-                              onPickFolderChange(values[0] === "folder");
-                          }}
-                        >
-                          <ToggleGroupItem
-                            value="default"
-                            data-testid="create-project-app-documents"
-                          >
-                            {hostPlatform === "electron"
-                              ? "Projects Folder"
-                              : "App Documents"}
-                          </ToggleGroupItem>
-                          <ToggleGroupItem
-                            value="folder"
-                            data-testid="create-project-choose-location"
-                          >
-                            Choose Location…
-                          </ToggleGroupItem>
-                        </ToggleGroup>
-                        <FieldDescription data-testid="create-project-location">
-                          {nativeLocationStatus(hostPlatform, pickFolder)}
-                        </FieldDescription>
-                      </Field>
-                    ) : null}
-                    <FieldSet
-                      disabled={busy}
-                      className="homepage-composer-render-settings"
-                    >
-                      <FieldLegend variant="label">Canvas Settings</FieldLegend>
-                      <Field>
-                        <FieldLabel htmlFor="create-project-width">
-                          Render Size
-                        </FieldLabel>
-                        <div className="flex min-w-0 items-center gap-2">
-                          <NumberField
-                            id="create-project-width"
-                            min={1}
-                            step={1}
-                            value={width}
-                            onChange={onWidthChange}
-                            data-testid="create-project-width"
-                            aria-label="Render Width"
-                          />
-                          <span aria-hidden="true">×</span>
-                          <NumberField
-                            id="create-project-height"
-                            min={1}
-                            step={1}
-                            value={height}
-                            onChange={onHeightChange}
-                            data-testid="create-project-height"
-                            aria-label="Render Height"
-                          />
-                        </div>
-                        <FieldDescription>
-                          Play and export resolution (default{" "}
-                          {DEFAULT_RENDER_WIDTH}×{DEFAULT_RENDER_HEIGHT}).
-                        </FieldDescription>
-                      </Field>
-                      <Field orientation="horizontal">
-                        <Checkbox
-                          id="create-project-black-bars"
-                          checked={blackBars}
-                          onCheckedChange={(checked) =>
-                            onBlackBarsChange(checked === true)
+                      {appearance.image && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="touch-icon"
+                          aria-label="Remove Picture"
+                          disabled={busy || imageBusy}
+                          onClick={() =>
+                            changeAppearance({
+                              icon: appearance.icon,
+                              color: appearance.color,
+                            })
                           }
-                          data-testid="create-project-black-bars"
-                        />
-                        <FieldLabel htmlFor="create-project-black-bars">
-                          Black Bars
-                        </FieldLabel>
-                      </Field>
-                    </FieldSet>
-                  </>
-                ) : null}
-                {error ? (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                ) : null}
-              </FieldGroup>
-            </form>
-            <DialogFooter
-              className="homepage-composer-footer mx-0 mb-0 shrink-0"
-              data-testid="create-project-footer"
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => onOpenChange(false)}
-                disabled={busy}
+                        >
+                          <XIcon />
+                        </Button>
+                      )}
+                    </div>
+                    {imageIssue && <FieldError>{imageIssue}</FieldError>}
+                  </FieldSet>
+                  {!editing && (
+                    <details className="homepage-project-options">
+                      <summary>
+                        Options <span>{templateName}</span>
+                      </summary>
+                      <FieldGroup>
+                        {hostPlatform !== "web" && (
+                          <Field>
+                            <FieldLabel>Location</FieldLabel>
+                            <ToggleGroup
+                              value={[pickFolder ? "folder" : "default"]}
+                              disabled={busy}
+                              onValueChange={(values) => {
+                                if (values[0])
+                                  onPickFolderChange(values[0] === "folder");
+                              }}
+                            >
+                              <ToggleGroupItem
+                                value="default"
+                                data-testid="create-project-app-documents"
+                              >
+                                {hostPlatform === "electron"
+                                  ? "Projects Folder"
+                                  : "App Documents"}
+                              </ToggleGroupItem>
+                              <ToggleGroupItem
+                                value="folder"
+                                data-testid="create-project-choose-location"
+                              >
+                                Choose Folder
+                              </ToggleGroupItem>
+                            </ToggleGroup>
+                            <FieldDescription data-testid="create-project-location">
+                              {nativeLocationStatus(hostPlatform, pickFolder)}
+                            </FieldDescription>
+                          </Field>
+                        )}
+                        <Field>
+                          <FieldLabel htmlFor="create-project-width">
+                            Resolution
+                          </FieldLabel>
+                          <div className="homepage-resolution">
+                            <NumberField
+                              disabled={busy}
+                              id="create-project-width"
+                              min={1}
+                              step={1}
+                              value={width}
+                              onChange={onWidthChange}
+                              data-testid="create-project-width"
+                              aria-label="Render Width"
+                            />
+                            <span>&times;</span>
+                            <NumberField
+                              disabled={busy}
+                              id="create-project-height"
+                              min={1}
+                              step={1}
+                              value={height}
+                              onChange={onHeightChange}
+                              data-testid="create-project-height"
+                              aria-label="Render Height"
+                            />
+                          </div>
+                        </Field>
+                        <Field orientation="horizontal">
+                          <Checkbox
+                            disabled={busy}
+                            id="create-project-black-bars"
+                            checked={blackBars}
+                            onCheckedChange={(checked) =>
+                              onBlackBarsChange(checked === true)
+                            }
+                            data-testid="create-project-black-bars"
+                          />
+                          <FieldLabel htmlFor="create-project-black-bars">
+                            Black Bars
+                          </FieldLabel>
+                        </Field>
+                      </FieldGroup>
+                    </details>
+                  )}
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
+                </FieldGroup>
+              </form>
+              <DialogFooter
+                className="homepage-composer-footer"
+                data-testid="create-project-footer"
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                form="homepage-project-form"
-                data-testid={
-                  editing ? "homepage-rename-confirm" : "create-project-submit"
-                }
-                disabled={!canSubmit}
-              >
-                {busy ? (
-                  <LoaderCircleIcon
-                    className="animate-spin"
-                    data-icon="inline-start"
-                  />
-                ) : null}
-                {busy
-                  ? editing
-                    ? "Saving"
-                    : "Creating"
-                  : editing
-                    ? "Save Changes"
-                    : "Create Project"}
-                {!busy ? <ArrowUpRightIcon data-icon="inline-end" /> : null}
-              </Button>
-            </DialogFooter>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => onOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  form="homepage-project-form"
+                  disabled={!canSubmit}
+                  data-testid={
+                    editing
+                      ? "homepage-rename-confirm"
+                      : "create-project-submit"
+                  }
+                >
+                  {busy && (
+                    <LoaderCircleIcon
+                      data-icon="inline-start"
+                      className="animate-spin"
+                    />
+                  )}
+                  {editing ? "Save" : "Create"}
+                  <ArrowUpRightIcon data-icon="inline-end" />
+                </Button>
+              </DialogFooter>
+            </div>
           </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );

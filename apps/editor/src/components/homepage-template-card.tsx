@@ -24,10 +24,7 @@ export function TemplateCardWell({
       {imageUrl ? (
         <img src={imageUrl} alt="" className="size-full object-cover" />
       ) : (
-        <>
-          <span aria-hidden="true" className="homepage-mark-diamond" />
-          {children}
-        </>
+        children
       )}
     </div>
   );

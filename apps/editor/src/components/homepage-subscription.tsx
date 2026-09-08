@@ -9,7 +9,6 @@ import { Button } from "@babylonslate/ui/components/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -24,15 +23,13 @@ const PLANS = [
   {
     id: "free",
     name: "Free",
-    description: "Big ideas begin here.",
     icon: MonitorIcon,
     features: ["Full Editor Access", "Desktop App Access"],
-    status: "Free to Create",
+    status: "Free",
   },
   {
     id: "pro",
     name: "Pro",
-    description: "Your studio, wherever you go.",
     icon: SmartphoneIcon,
     features: ["Full Editor Access", "Desktop App Access", "Mobile App Access"],
     status: "Coming Later",
@@ -44,14 +41,12 @@ export function HomepageSubscription({ onBack }: { onBack: () => void }) {
     <div className="homepage-subscription" data-testid="homepage-subscription">
       <Button variant="ghost" onClick={onBack}>
         <ArrowLeftIcon data-icon="inline-start" />
-        Back To Profile
+        Profile
       </Button>
       <DialogHeader>
-        <Badge variant="outline">A Look Ahead</Badge>
-        <DialogTitle>Room to Create</DialogTitle>
-        <DialogDescription>
-          The same creative tools. A little more freedom to take them with you.
-        </DialogDescription>
+        <Badge variant="outline">Preview</Badge>
+        <DialogTitle>Plans</DialogTitle>
+        <DialogDescription>Full editor access on both plans.</DialogDescription>
       </DialogHeader>
       <div className="homepage-subscription-plans">
         {PLANS.map((plan) => (
@@ -65,7 +60,6 @@ export function HomepageSubscription({ onBack }: { onBack: () => void }) {
               <CardTitle>
                 <h3>{plan.name}</h3>
               </CardTitle>
-              <CardDescription>{plan.description}</CardDescription>
             </CardHeader>
             <CardContent>
               <ul>
@@ -84,9 +78,7 @@ export function HomepageSubscription({ onBack }: { onBack: () => void }) {
         ))}
       </div>
       <p className="homepage-subscription-note">
-        Preview only. Plans are not on sale and access is not restricted. Pro
-        will add mobile app access; every other editor feature is included in
-        both plans.
+        Purchases are not available yet.
       </p>
     </div>
   );

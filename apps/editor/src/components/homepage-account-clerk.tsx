@@ -39,15 +39,11 @@ function AccountDetails({ view, onViewChange }: AccountProps) {
       <div className="homepage-profile-identity">
         <CircleUserRoundIcon aria-hidden="true" />
         <div>
-          <h3>
-            {isSignedIn
-              ? user.fullName || "Your Account"
-              : "Make Yourself at Home"}
-          </h3>
+          <h3>{isSignedIn ? user.fullName || "Your Account" : "Guest"}</h3>
           <p>
             {isSignedIn
               ? user.primaryEmailAddress?.emailAddress
-              : "Sign in when you feel like it. All editor features work as a guest."}
+              : "Sign-in is optional."}
           </p>
         </div>
       </div>

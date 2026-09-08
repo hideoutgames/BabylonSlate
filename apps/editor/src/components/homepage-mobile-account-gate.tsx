@@ -1,7 +1,8 @@
 import { Component, Suspense, lazy, useState, type ReactNode } from "react";
 import { getHostPlatform } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
-import { BrandIcon } from "./brand-icon";
+import { brandIconSrc } from "../lib/branding";
+import { useHomepageScheme } from "./homepage-scheme";
 import homepageStyles from "./homepage.css?inline";
 
 const NativeAccountGate = lazy(() => import("./homepage-account-native"));
@@ -24,14 +25,16 @@ export function HomepageMobileAccountFrame({
 }: {
   children: ReactNode;
 }) {
+  const [scheme] = useHomepageScheme();
   return (
     <main
       className="homepage-theme homepage-mobile-auth safe-frame"
       data-testid="homepage-mobile-auth"
+      data-slate-theme={scheme}
     >
       <style data-slate-home-styles>{homepageStyles}</style>
       <div className="homepage-mobile-auth-brand">
-        <BrandIcon />
+        <img src={brandIconSrc(scheme)} alt="" />
         <span>Slate</span>
       </div>
       <section className="homepage-mobile-auth-content">{children}</section>
