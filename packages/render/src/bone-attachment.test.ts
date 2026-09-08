@@ -4,6 +4,8 @@ import { isPlayEngineCommandType, readActorSlot, readSnapshotHeader, snapshotFlo
 import { createInProcessRuntime } from "../../runtime/src/driver";
 import { createTestEngine } from "./create-null-engine";
 import * as snapshot from "./snapshot-apply";
+import * as attachments from "./bone-attachment";
+import { writeSampledAudioPoses } from "./snapshot-sync";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => { for (const { scene, engine } of handles.splice(0)) { scene.dispose(); engine.dispose(); } });
@@ -28,6 +30,28 @@ function fixture() {
 }
 
 describe("render bone attachment", () => {
+  it("updates spatial audio poses from animated attachments while keeping other emitters unchanged", () => {
+    const { scene, binding, target, childSlot, targetSlot, attach, apply } = fixture();
+    const hand = new TransformNode("Hand", scene);
+    hand.parent = target;
+    hand.position.y = 3;
+    hand.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.PI / 2);
+    targetSlot.position.x = 10;
+    childSlot.position.x = 10;
+    attach("Hand");
+    apply();
+    const poses = writeSampledAudioPoses({ actors: [childSlot, targetSlot], actorCount: 2 }, []);
+    expect(attachments.applyBoneAttachmentAudioPoses).toBeTypeOf("function");
+    attachments.applyBoneAttachmentAudioPoses(binding, poses);
+    expect(poses[0]!.pose.y).toBeCloseTo(3);
+    expect(poses[0]!.pose.qy).toBeCloseTo(Math.SQRT1_2);
+    expect(poses[1]!.pose).toEqual({ x: 10, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 });
+    hand.position.y = 5;
+    apply();
+    attachments.applyBoneAttachmentAudioPoses(binding, poses);
+    expect(poses[0]!.pose.y).toBeCloseTo(5);
+  });
+
   it.each(["light:spot", "camera"])("moves attached %s components with the bone and their component offset", (meshKind) => {
     const { scene, binding, target, targetSlot, childSlot, attach, apply } = fixture();
     snapshot.applyAssignMesh(scene, binding, {
