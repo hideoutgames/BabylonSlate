@@ -8,10 +8,12 @@ import {
   NumberField,
   PanelFrame,
   PropertyGrid,
+  SearchInput,
   SceneComponentPicker,
   TypeVisualIcon,
   assetRowIdentity,
   classRowIdentity,
+  humanizePropertyLabel,
   resolveTypeVisual,
   selectedPickerIdentity,
   type PropertyRow,
@@ -30,22 +32,34 @@ import {
   type SerializedScene,
   isSceneWorkspaceKind,
 } from "@babylonslate/core";
-import { ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import { Switch } from "@babylonslate/ui/components/switch";
 import {
-  Field,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
+  ChevronDownIcon,
+  ChevronUpIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
+import { Switch } from "@babylonslate/ui/components/switch";
+import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
+import {
+  useSceneEditing,
+  selectionAfterLockChange,
+} from "../context/scene-editing-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { AddComponentDialog } from "../components/add-component-dialog";
 import {
   defaultPropertiesFor,
+  prefabComponentLabel,
   projectAddComponentItems,
 } from "./add-component-catalog";
 import {
@@ -64,7 +78,11 @@ import {
 } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import { selectionTransformPropertyRows } from "../lib/selection-transform-property-rows";
-import { fontAssetHasFacetype, fontAssetHasMsdfJson, fontAssetHasMsdfPng } from "../lib/play-fonts";
+import {
+  fontAssetHasFacetype,
+  fontAssetHasMsdfJson,
+  fontAssetHasMsdfPng,
+} from "../lib/play-fonts";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { prefabTemplatesByClassId } from "../lib/prefab-instance-sync";
@@ -76,6 +94,45 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     useDocuments();
   const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
   const navBake = useOptionalNavBake();
+  const [propertyQuery, setPropertyQuery] = useState("");
+  const [collapsedComponents, setCollapsedComponents] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [filterCollapsedComponents, setFilterCollapsedComponents] = useState<
+    Set<string>
+  >(() => new Set());
+  const needle = propertyQuery.trim().toLowerCase();
+  const matches = (label: string) =>
+    !needle || humanizePropertyLabel(label).toLowerCase().includes(needle);
+  const filterRows = (rows: PropertyRow[], section = "") =>
+    matches(section)
+      ? rows
+      : rows.filter(
+          (row) => matches(row.label) || matches(row.description ?? ""),
+        );
+  const propertySearch = (
+    <div className="sticky top-0 z-10 bg-sidebar px-2 py-1">
+      <SearchInput
+        aria-label="Filter Properties"
+        placeholder="Filter Properties"
+        value={propertyQuery}
+        onChange={(value) => {
+          setPropertyQuery(value);
+          setFilterCollapsedComponents(new Set());
+        }}
+      />
+    </div>
+  );
+  const noMatchingProperties = (
+    <Empty className="gap-2 p-4">
+      <EmptyHeader>
+        <EmptyTitle>No Matching Properties</EmptyTitle>
+        <EmptyDescription>
+          Try a property or component name, or clear the filter.
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
   const [addComponentOpen, setAddComponentOpen] = useState(false);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
@@ -104,7 +161,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
-    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
+    projectDocument?.settings.physics?.collisionLayers ??
+    DEFAULT_COLLISION_LAYERS;
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
     return (
@@ -121,15 +179,21 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   };
   const fontHasFacetype = (guid: string | null | undefined) => {
     if (!guid) return false;
-    return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
+    return fontAssetHasFacetype(
+      assetRegistry?.getByGuid?.(guid)?.header.payload,
+    );
   };
   const fontHasMsdfJson = (guid: string | null | undefined) => {
     if (!guid) return false;
-    return fontAssetHasMsdfJson(assetRegistry?.getByGuid?.(guid)?.header.payload);
+    return fontAssetHasMsdfJson(
+      assetRegistry?.getByGuid?.(guid)?.header.payload,
+    );
   };
   const fontHasMsdfPng = (guid: string | null | undefined) => {
     if (!guid) return false;
-    return fontAssetHasMsdfPng(assetRegistry?.getByGuid?.(guid)?.header.payload);
+    return fontAssetHasMsdfPng(
+      assetRegistry?.getByGuid?.(guid)?.header.payload,
+    );
   };
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -202,8 +266,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onChange: () => {},
         ...classRowIdentity(
           classEntries.find(
-            (entry) =>
-              entry.id === projectDocument?.settings.gameInstanceClass,
+            (entry) => entry.id === projectDocument?.settings.gameInstanceClass,
           ),
           projectDocument?.settings.gameInstanceClass,
         ),
@@ -483,184 +546,206 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         return row;
       });
 
+    const visibleSettingsRows = filterRows(
+      overlay ? overlaySettingsRows : settingsRows,
+      "Scene Settings",
+    );
+    const showPostProcess = matches("Post Process Material Enabled");
+    const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
     return (
       <PanelFrame data-testid="scene-details-panel">
-        <PropertyGrid
-          title="Scene settings"
-          rows={overlay ? overlaySettingsRows : settingsRows}
-          data-testid="scene-settings-grid"
-        />
-        <div className="px-2 pb-3">
-          <NamedListEditor
-            title="Post Process"
-            data-testid="scene-post-process-stack"
-            values={scene.settings.postProcessStack.map(
-              (entry) => entry.materialGuid,
-            )}
-            addLabel="Add Pass"
-            onAdd={() => setPostProcessPick("add")}
-            onChange={(guids) =>
-              mutate({
-                ...scene,
-                settings: {
-                  ...scene.settings,
-                  postProcessStack: stackFromGuids(
-                    guids,
-                    scene.settings.postProcessStack,
-                  ),
-                },
-              })
-            }
-            renderItem={({ value, index }) => (
-              <>
-                <Field className="min-w-32 flex-1">
-                  <FieldLabel htmlFor={`scene-post-process-${index}-material`}>
-                    Material
-                  </FieldLabel>
-                  <AssetPickerControl value={value}>
-                    <Button
-                      type="button"
-                      id={`scene-post-process-${index}-material`}
-                      variant="outline"
-                      className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                      data-testid={`scene-post-process-${index}-material`}
-                      onClick={() => setPostProcessPick(index)}
-                    >
-                      {selectedPickerIdentity(
-                        assetRowIdentity(
-                          pickerAssets.find((asset) => asset.guid === value),
-                        ),
-                        "Pick Material",
-                      )}
-                    </Button>
-                  </AssetPickerControl>
-                </Field>
-                <Field orientation="horizontal" className="w-auto">
-                  <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
-                    Enabled
-                  </FieldLabel>
-                  <Switch
-                    id={`scene-post-process-${index}-enabled`}
-                    data-testid={`scene-post-process-${index}-enabled`}
-                    className="min-h-[var(--touch-target,44px)]"
-                    checked={
-                      scene.settings.postProcessStack[index]?.enabled !== false
-                    }
-                    onCheckedChange={(checked) =>
-                      mutate({
-                        ...scene,
-                        settings: {
-                          ...scene.settings,
-                          postProcessStack: scene.settings.postProcessStack.map(
-                            (entry, row) =>
-                              row === index
-                                ? { ...entry, enabled: checked === true }
-                                : entry,
-                          ),
-                        },
-                      })
-                    }
-                  />
-                </Field>
-              </>
-            )}
+        {propertySearch}
+        {visibleSettingsRows.length > 0 ? (
+          <PropertyGrid
+            title="Scene Settings"
+            rows={visibleSettingsRows}
+            data-testid="scene-settings-grid"
           />
-        </div>
-        {!overlay ? (
-        <div className="px-2 pb-3">
-          <NamedListEditor
-            title="Scene Layers"
-            data-testid="scene-layers-stack"
-            values={scene.settings.sceneLayers.map((entry) => entry.assetGuid)}
-            addLabel="Add Layer"
-            onAdd={() => setSceneLayerPick("add")}
-            onChange={(guids) =>
-              mutate({
-                ...scene,
-                settings: {
-                  ...scene.settings,
-                  sceneLayers: sceneLayerStackFromGuids(
-                    guids,
-                    scene.settings.sceneLayers,
-                  ),
-                },
-              })
-            }
-            renderItem={({ value, index }) => (
-              <>
-                <Field className="min-w-32 flex-1">
-                  <FieldLabel htmlFor={`scene-layer-${index}-asset`}>
-                    Scene Layer
-                  </FieldLabel>
-                  <AssetPickerControl value={value}>
-                    <Button
-                      type="button"
-                      id={`scene-layer-${index}-asset`}
-                      variant="outline"
-                      className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                      data-testid={`scene-layer-${index}-asset`}
-                      onClick={() => setSceneLayerPick(index)}
-                    >
-                      {selectedPickerIdentity(
-                        assetRowIdentity(
-                          pickerAssets.find((asset) => asset.guid === value),
-                        ),
-                        "Pick Scene Layer",
-                      )}
-                    </Button>
-                  </AssetPickerControl>
-                </Field>
-                <Field className="w-24">
-                  <FieldLabel htmlFor={`scene-layer-${index}-z`}>
-                    Z-Order
-                  </FieldLabel>
-                  <NumberField
-                    id={`scene-layer-${index}-z`}
-                    data-testid={`scene-layer-${index}-z-order`}
-                    value={scene.settings.sceneLayers[index]?.zOrder ?? index}
-                    onChange={(zOrder) =>
-                      mutate({
-                        ...scene,
-                        settings: {
-                          ...scene.settings,
-                          sceneLayers: scene.settings.sceneLayers.map(
-                            (entry, row) =>
-                              row === index ? { ...entry, zOrder } : entry,
-                          ),
-                        },
-                      })
-                    }
-                  />
-                </Field>
-                <Field orientation="horizontal" className="w-auto">
-                  <FieldLabel htmlFor={`scene-layer-${index}-enabled`}>
-                    Enabled
-                  </FieldLabel>
-                  <Switch
-                    id={`scene-layer-${index}-enabled`}
-                    data-testid={`scene-layer-${index}-enabled`}
-                    checked={scene.settings.sceneLayers[index]?.enabled !== false}
-                    onCheckedChange={(checked) =>
-                      mutate({
-                        ...scene,
-                        settings: {
-                          ...scene.settings,
-                          sceneLayers: scene.settings.sceneLayers.map(
-                            (entry, row) =>
-                              row === index
-                                ? { ...entry, enabled: checked === true }
-                                : entry,
-                          ),
-                        },
-                      })
-                    }
-                  />
-                </Field>
-              </>
-            )}
-          />
-        </div>
         ) : null}
+        {showPostProcess ? (
+          <div className="px-2 pb-3">
+            <NamedListEditor
+              title="Post Process"
+              data-testid="scene-post-process-stack"
+              values={scene.settings.postProcessStack.map(
+                (entry) => entry.materialGuid,
+              )}
+              addLabel="Add Pass"
+              onAdd={() => setPostProcessPick("add")}
+              onChange={(guids) =>
+                mutate({
+                  ...scene,
+                  settings: {
+                    ...scene.settings,
+                    postProcessStack: stackFromGuids(
+                      guids,
+                      scene.settings.postProcessStack,
+                    ),
+                  },
+                })
+              }
+              renderItem={({ value, index }) => (
+                <>
+                  <Field className="min-w-32 flex-1">
+                    <FieldLabel
+                      htmlFor={`scene-post-process-${index}-material`}
+                    >
+                      Material
+                    </FieldLabel>
+                    <AssetPickerControl value={value}>
+                      <Button
+                        type="button"
+                        id={`scene-post-process-${index}-material`}
+                        variant="outline"
+                        className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                        data-testid={`scene-post-process-${index}-material`}
+                        onClick={() => setPostProcessPick(index)}
+                      >
+                        {selectedPickerIdentity(
+                          assetRowIdentity(
+                            pickerAssets.find((asset) => asset.guid === value),
+                          ),
+                          "Pick Material",
+                        )}
+                      </Button>
+                    </AssetPickerControl>
+                  </Field>
+                  <Field orientation="horizontal" className="w-auto">
+                    <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
+                      Enabled
+                    </FieldLabel>
+                    <Switch
+                      id={`scene-post-process-${index}-enabled`}
+                      data-testid={`scene-post-process-${index}-enabled`}
+                      className="min-h-[var(--touch-target,44px)]"
+                      checked={
+                        scene.settings.postProcessStack[index]?.enabled !==
+                        false
+                      }
+                      onCheckedChange={(checked) =>
+                        mutate({
+                          ...scene,
+                          settings: {
+                            ...scene.settings,
+                            postProcessStack:
+                              scene.settings.postProcessStack.map(
+                                (entry, row) =>
+                                  row === index
+                                    ? { ...entry, enabled: checked === true }
+                                    : entry,
+                              ),
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                </>
+              )}
+            />
+          </div>
+        ) : null}
+        {showSceneLayers ? (
+          <div className="px-2 pb-3">
+            <NamedListEditor
+              title="Scene Layers"
+              data-testid="scene-layers-stack"
+              values={scene.settings.sceneLayers.map(
+                (entry) => entry.assetGuid,
+              )}
+              addLabel="Add Layer"
+              onAdd={() => setSceneLayerPick("add")}
+              onChange={(guids) =>
+                mutate({
+                  ...scene,
+                  settings: {
+                    ...scene.settings,
+                    sceneLayers: sceneLayerStackFromGuids(
+                      guids,
+                      scene.settings.sceneLayers,
+                    ),
+                  },
+                })
+              }
+              renderItem={({ value, index }) => (
+                <>
+                  <Field className="min-w-32 flex-1">
+                    <FieldLabel htmlFor={`scene-layer-${index}-asset`}>
+                      Scene Layer
+                    </FieldLabel>
+                    <AssetPickerControl value={value}>
+                      <Button
+                        type="button"
+                        id={`scene-layer-${index}-asset`}
+                        variant="outline"
+                        className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                        data-testid={`scene-layer-${index}-asset`}
+                        onClick={() => setSceneLayerPick(index)}
+                      >
+                        {selectedPickerIdentity(
+                          assetRowIdentity(
+                            pickerAssets.find((asset) => asset.guid === value),
+                          ),
+                          "Pick Scene Layer",
+                        )}
+                      </Button>
+                    </AssetPickerControl>
+                  </Field>
+                  <Field className="w-24">
+                    <FieldLabel htmlFor={`scene-layer-${index}-z`}>
+                      Z-Order
+                    </FieldLabel>
+                    <NumberField
+                      id={`scene-layer-${index}-z`}
+                      data-testid={`scene-layer-${index}-z-order`}
+                      value={scene.settings.sceneLayers[index]?.zOrder ?? index}
+                      onChange={(zOrder) =>
+                        mutate({
+                          ...scene,
+                          settings: {
+                            ...scene.settings,
+                            sceneLayers: scene.settings.sceneLayers.map(
+                              (entry, row) =>
+                                row === index ? { ...entry, zOrder } : entry,
+                            ),
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field orientation="horizontal" className="w-auto">
+                    <FieldLabel htmlFor={`scene-layer-${index}-enabled`}>
+                      Enabled
+                    </FieldLabel>
+                    <Switch
+                      id={`scene-layer-${index}-enabled`}
+                      data-testid={`scene-layer-${index}-enabled`}
+                      checked={
+                        scene.settings.sceneLayers[index]?.enabled !== false
+                      }
+                      onCheckedChange={(checked) =>
+                        mutate({
+                          ...scene,
+                          settings: {
+                            ...scene.settings,
+                            sceneLayers: scene.settings.sceneLayers.map(
+                              (entry, row) =>
+                                row === index
+                                  ? { ...entry, enabled: checked === true }
+                                  : entry,
+                            ),
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                </>
+              )}
+            />
+          </div>
+        ) : null}
+        {!visibleSettingsRows.length && !showPostProcess && !showSceneLayers
+          ? noMatchingProperties
+          : null}
         <AssetPicker
           open={envTexturePickOpen}
           onOpenChange={setEnvTexturePickOpen}
@@ -776,11 +861,21 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
 
   const selectedActors = selectedActorIds
     .map((id) => findActor(scene, id))
-    .filter((entry): entry is SerializedActor => entry !== undefined && entry !== null);
+    .filter(
+      (entry): entry is SerializedActor =>
+        entry !== undefined && entry !== null,
+    );
   const multiSelection = selectedActors.length > 1;
-  const updateSelectedActors = (update: (entry: SerializedActor) => SerializedActor) => {
+  const updateSelectedActors = (
+    update: (entry: SerializedActor) => SerializedActor,
+  ) => {
     const ids = new Set(selectedActorIds);
-    mutate({ ...scene, actors: scene.actors.map((entry) => ids.has(entry.id) ? update(entry) : entry) });
+    mutate({
+      ...scene,
+      actors: scene.actors.map((entry) =>
+        ids.has(entry.id) ? update(entry) : entry,
+      ),
+    });
   };
   const transformRows: PropertyRow[] = [
     {
@@ -790,12 +885,18 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       value: actor.name,
       onChange: (name) => updateActor((entry) => ({ ...entry, name })),
     },
-    ...(multiSelection ? selectionTransformPropertyRows(selectedActors, scene.viewportMode, updateSelectedActors) : spatialTransformPropertyRows(
-      "actor",
-      scene.viewportMode,
-      actor.transform,
-      (transform) => updateActor((entry) => ({ ...entry, transform })),
-    )),
+    ...(multiSelection
+      ? selectionTransformPropertyRows(
+          selectedActors,
+          scene.viewportMode,
+          updateSelectedActors,
+        )
+      : spatialTransformPropertyRows(
+          "actor",
+          scene.viewportMode,
+          actor.transform,
+          (transform) => updateActor((entry) => ({ ...entry, transform })),
+        )),
     {
       kind: "boolean",
       id: "actor-visible",
@@ -803,7 +904,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       value: actor.visible,
       mixed: selectedActors.some((entry) => entry.visible !== actor.visible),
       defaultValue: true,
-      onChange: (visible) => updateSelectedActors((entry) => ({ ...entry, visible })),
+      onChange: (visible) =>
+        updateSelectedActors((entry) => ({ ...entry, visible })),
     },
     {
       kind: "boolean",
@@ -820,12 +922,108 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     },
   ];
 
+  const visibleTransformRows = filterRows(transformRows, "Actor Transform");
+  const componentDetails = actor.components
+    .map((component, index) => {
+      const title = prefabComponentLabel(component, assetLabel);
+      const template = component.sourceId
+        ? prefabTemplates[actor.classId]?.find(
+            (entry) => entry.id === component.sourceId,
+          )
+        : undefined;
+      const rows = applyPrefabPropertyDefaults(
+        componentPropertyRows(
+          actor.id,
+          component,
+          (property, value) =>
+            updateActor((entry) => ({
+              ...entry,
+              components: entry.components.map((candidate) =>
+                candidate.id === component.id
+                  ? {
+                      ...candidate,
+                      properties: patchComponentProperties(
+                        candidate.properties,
+                        property,
+                        value,
+                      ),
+                    }
+                  : candidate,
+              ),
+            })),
+          {
+            sortingLayers,
+            collisionLayers,
+            assetLabel,
+            assetType,
+            fontHasFacetype,
+            fontHasMsdfJson,
+            fontHasMsdfPng,
+            physicsWorld: scene.settings.physicsWorld,
+            onPickAsset: setAssetPick,
+          },
+        ),
+        template,
+      );
+      const colliderRows =
+        component.classId === "ColliderComponent"
+          ? spatialTransformPropertyRows(
+              `${actor.id}-${component.id}`,
+              scene.viewportMode,
+              component.transform ?? identitySerializedTransform(),
+              (transform) =>
+                updateActor((entry) => ({
+                  ...entry,
+                  components: entry.components.map((candidate) =>
+                    candidate.id === component.id
+                      ? { ...candidate, transform }
+                      : candidate,
+                  ),
+                })),
+              template?.transform,
+            )
+          : [];
+      const extraLabels =
+        component.classId === "NavMeshComponent"
+          ? "Bake NavMesh"
+          : [
+                "Text3DComponent",
+                "2DTextComponent",
+                "2DRichTextComponent",
+              ].includes(component.classId)
+            ? "Text"
+            : component.classId === "2DPanelComponent"
+              ? "Nine Slice"
+              : "";
+      return {
+        component,
+        index,
+        title,
+        rows: filterRows(rows, title),
+        colliderRows: filterRows(colliderRows, `${title} Transform`),
+        showExtras:
+          matches(title) || Boolean(extraLabels && matches(extraLabels)),
+        expanded: !(
+          needle ? filterCollapsedComponents : collapsedComponents
+        ).has(`${actor.id}:${component.id}`),
+      };
+    })
+    .filter(
+      (entry) =>
+        matches(entry.title) ||
+        entry.rows.length ||
+        entry.colliderRows.length ||
+        entry.showExtras,
+    );
+
   return (
     <PanelFrame
       data-testid="scene-details-panel"
       toolbar={
         <IconActionButton
-          label={multiSelection ? `Add Component to ${actor.name}` : "Add component"}
+          label={
+            multiSelection ? `Add Component To ${actor.name}` : "Add Component"
+          }
           onClick={() => setAddComponentOpen(true)}
           data-testid="details-add-component"
         >
@@ -833,227 +1031,224 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         </IconActionButton>
       }
     >
+      {propertySearch}
       <div className="flex flex-col gap-3 pb-4">
-        <PropertyGrid
-          title={
-            multiSelection
-              ? `${selectedActors.length} Actors`
-              : actor.name
-          }
-          rows={multiSelection ? transformRows.filter((row) => row.id !== "actor-name" && row.id !== "actor-locked") : transformRows}
-          data-testid="actor-transform-grid"
-        />
-        {multiSelection ? (
+        {visibleTransformRows.length > 0 ? (
+          <PropertyGrid
+            title={
+              multiSelection ? `${selectedActors.length} Actors` : actor.name
+            }
+            rows={
+              multiSelection
+                ? visibleTransformRows.filter(
+                    (row) =>
+                      row.id !== "actor-name" && row.id !== "actor-locked",
+                  )
+                : visibleTransformRows
+            }
+            data-testid="actor-transform-grid"
+          />
+        ) : null}
+        {multiSelection &&
+        visibleTransformRows.some(
+          (row) => row.id === "actor-name" || row.id === "actor-locked",
+        ) ? (
           <PropertyGrid
             title={`Primary Actor: ${actor.name}`}
-            rows={transformRows.filter((row) => row.id === "actor-name" || row.id === "actor-locked")}
+            rows={visibleTransformRows.filter(
+              (row) => row.id === "actor-name" || row.id === "actor-locked",
+            )}
             data-testid="primary-actor-grid"
           />
         ) : null}
-        {actor.components.map((component, index) => (
-          <div
-            key={component.id}
-            className="mx-2 overflow-hidden rounded-lg border border-border/60 bg-sidebar"
-            data-testid={`component-card-${component.id}`}
-          >
-            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
-              <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
-                <TypeVisualIcon
-                  visual={resolveTypeVisual({ classId: component.classId })}
-                  data-testid={`component-type-icon-${component.id}`}
-                />
-                {component.classId}
-              </span>
-              <div className="flex shrink-0 items-center gap-1">
-                <IconActionButton
-                  label={`Move ${component.classId} up`}
-                  disabled={index === 0}
-                  onClick={() =>
-                    updateActor((entry) => {
-                      const components = [...entry.components];
-                      const [moved] = components.splice(index, 1);
-                      components.splice(index - 1, 0, moved!);
-                      return { ...entry, components };
-                    })
-                  }
-                  data-testid={`component-up-${component.id}`}
-                >
-                  <ChevronUpIcon />
-                </IconActionButton>
-                <IconActionButton
-                  label={`Remove ${component.classId}`}
-                  onClick={() =>
-                    updateActor((entry) => ({
-                      ...entry,
-                      components: entry.components.filter(
-                        (candidate) => candidate.id !== component.id,
-                      ),
-                    }))
-                  }
-                  data-testid={`component-remove-${component.id}`}
-                >
-                  <Trash2Icon />
-                </IconActionButton>
-              </div>
-            </div>
-            <PropertyGrid
-              rows={applyPrefabPropertyDefaults(
-                componentPropertyRows(
-                actor.id,
-                component,
-                (property, value) =>
-                  updateActor((entry) => ({
-                    ...entry,
-                    components: entry.components.map((candidate) =>
-                      candidate.id === component.id
-                        ? {
-                            ...candidate,
-                            properties: patchComponentProperties(
-                              candidate.properties,
-                              property,
-                              value,
-                            ),
-                          }
-                        : candidate,
-                    ),
-                  })),
-                {
-                  sortingLayers,
-                  collisionLayers,
-                  assetLabel,
-                  assetType,
-                  fontHasFacetype,
-                  fontHasMsdfJson,
-                  fontHasMsdfPng,
-                  physicsWorld: scene.settings.physicsWorld,
-                  onPickAsset: setAssetPick,
-                },
-              ),
-                component.sourceId
-                  ? prefabTemplates[actor.classId]?.find(
-                      (row) => row.id === component.sourceId,
-                    )
-                  : undefined,
-              )}
-            />
-            {component.classId === "2DPanelComponent" ? (
-              <NineSlicePreview
-                {...parseOverlayPanelProperties(component.properties)}
-              />
-            ) : null}
-            {component.classId === "Text3DComponent" ? (
-              <div className="p-2">
-                <Field>
-                  <FieldLabel htmlFor={`text3d-text-${component.id}`}>
-                    Text
-                  </FieldLabel>
-                  <MultilineTextField
-                    id={`text3d-text-${component.id}`}
-                    title="Text"
-                    value={parseText3DProperties(component.properties).text}
-                    onChange={(value) =>
-                      updateActor((entry) => ({
-                        ...entry,
-                        components: entry.components.map((candidate) =>
-                          candidate.id === component.id
-                            ? {
-                                ...candidate,
-                                properties: patchComponentProperties(
-                                  candidate.properties,
-                                  "text",
-                                  value,
-                                ),
-                              }
-                            : candidate,
-                        ),
-                      }))
-                    }
-                    data-testid={`text3d-text-${component.id}`}
-                  />
-                </Field>
-              </div>
-            ) : null}
-            {component.classId === "2DTextComponent" ||
-            component.classId === "2DRichTextComponent" ? (
-              <div className="p-2">
-                <Field>
-                  <FieldLabel htmlFor={`text2d-text-${component.id}`}>
-                    Text
-                  </FieldLabel>
-                  <MultilineTextField
-                    id={`text2d-text-${component.id}`}
-                    title="Text"
-                    markup={component.classId === "2DRichTextComponent"}
-                    value={
-                      parseText2DProperties(component.properties, {
-                        rich: component.classId === "2DRichTextComponent",
-                      }).text
-                    }
-                    onChange={(value) =>
-                      updateActor((entry) => ({
-                        ...entry,
-                        components: entry.components.map((candidate) =>
-                          candidate.id === component.id
-                            ? {
-                                ...candidate,
-                                properties: patchComponentProperties(
-                                  candidate.properties,
-                                  "text",
-                                  value,
-                                ),
-                              }
-                            : candidate,
-                        ),
-                      }))
-                    }
-                    data-testid={`text2d-text-${component.id}`}
-                  />
-                </Field>
-              </div>
-            ) : null}
-            {component.classId === "ColliderComponent" ? (
-              <PropertyGrid
-                title="Transform"
-                rows={spatialTransformPropertyRows(
-                  `${actor.id}-${component.id}`,
-                  scene.viewportMode,
-                  component.transform ?? identitySerializedTransform(),
-                  (transform) =>
-                    updateActor((entry) => ({
-                      ...entry,
-                      components: entry.components.map((candidate) =>
-                        candidate.id === component.id
-                          ? { ...candidate, transform }
-                          : candidate,
-                      ),
-                    })),
-                  component.sourceId
-                    ? prefabTemplates[actor.classId]?.find(
-                        (row) => row.id === component.sourceId,
-                      )?.transform
-                    : undefined,
-                )}
-                data-testid={`collider-transform-grid-${component.id}`}
-              />
-            ) : null}
-            {component.classId === "NavMeshComponent" ? (
-              <div className="p-2">
+        {!visibleTransformRows.length && !componentDetails.length
+          ? noMatchingProperties
+          : null}
+        {componentDetails.map(
+          ({
+            component,
+            index,
+            title,
+            rows,
+            colliderRows,
+            showExtras,
+            expanded,
+          }) => (
+            <div
+              key={component.id}
+              className="mx-2 overflow-hidden rounded-lg border border-border/60 bg-sidebar"
+              data-testid={`component-card-${component.id}`}
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
                 <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  data-testid={`navmesh-bake-${component.id}`}
-                  disabled={navBake?.baking}
+                  variant="ghost"
+                  size="sm"
+                  className="min-w-0 flex-1 justify-start px-0"
+                  aria-label={title}
+                  aria-expanded={expanded}
+                  aria-controls={`component-details-${actor.id}-${component.id}`}
                   onClick={() => {
-                    void navBake?.startBake(component.properties);
+                    (needle
+                      ? setFilterCollapsedComponents
+                      : setCollapsedComponents)((current) => {
+                      const next = new Set(current);
+                      const key = `${actor.id}:${component.id}`;
+                      if (expanded) next.add(key);
+                      else next.delete(key);
+                      return next;
+                    });
                   }}
                 >
-                  Bake NavMesh
+                  <ChevronDownIcon
+                    className={expanded ? undefined : "-rotate-90"}
+                  />
+                  <TypeVisualIcon
+                    visual={resolveTypeVisual({ classId: component.classId })}
+                    data-testid={`component-type-icon-${component.id}`}
+                  />
+                  <span className="truncate">{title}</span>
                 </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <IconActionButton
+                    label={`Move ${title} Up`}
+                    disabled={index === 0}
+                    onClick={() =>
+                      updateActor((entry) => {
+                        const components = [...entry.components];
+                        const [moved] = components.splice(index, 1);
+                        components.splice(index - 1, 0, moved!);
+                        return { ...entry, components };
+                      })
+                    }
+                    data-testid={`component-up-${component.id}`}
+                  >
+                    <ChevronUpIcon />
+                  </IconActionButton>
+                  <IconActionButton
+                    label={`Remove ${title}`}
+                    onClick={() =>
+                      updateActor((entry) => ({
+                        ...entry,
+                        components: entry.components.filter(
+                          (candidate) => candidate.id !== component.id,
+                        ),
+                      }))
+                    }
+                    data-testid={`component-remove-${component.id}`}
+                  >
+                    <Trash2Icon />
+                  </IconActionButton>
+                </div>
               </div>
-            ) : null}
-          </div>
-        ))}
+              {expanded ? (
+                <div id={`component-details-${actor.id}-${component.id}`}>
+                  {rows.length ? <PropertyGrid rows={rows} /> : null}
+                  {showExtras && component.classId === "2DPanelComponent" ? (
+                    <NineSlicePreview
+                      {...parseOverlayPanelProperties(component.properties)}
+                    />
+                  ) : null}
+                  {showExtras && component.classId === "Text3DComponent" ? (
+                    <div className="p-2">
+                      <Field>
+                        <FieldLabel htmlFor={`text3d-text-${component.id}`}>
+                          Text
+                        </FieldLabel>
+                        <MultilineTextField
+                          id={`text3d-text-${component.id}`}
+                          title="Text"
+                          value={
+                            parseText3DProperties(component.properties).text
+                          }
+                          onChange={(value) =>
+                            updateActor((entry) => ({
+                              ...entry,
+                              components: entry.components.map((candidate) =>
+                                candidate.id === component.id
+                                  ? {
+                                      ...candidate,
+                                      properties: patchComponentProperties(
+                                        candidate.properties,
+                                        "text",
+                                        value,
+                                      ),
+                                    }
+                                  : candidate,
+                              ),
+                            }))
+                          }
+                          data-testid={`text3d-text-${component.id}`}
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
+                  {showExtras &&
+                  (component.classId === "2DTextComponent" ||
+                    component.classId === "2DRichTextComponent") ? (
+                    <div className="p-2">
+                      <Field>
+                        <FieldLabel htmlFor={`text2d-text-${component.id}`}>
+                          Text
+                        </FieldLabel>
+                        <MultilineTextField
+                          id={`text2d-text-${component.id}`}
+                          title="Text"
+                          markup={component.classId === "2DRichTextComponent"}
+                          value={
+                            parseText2DProperties(component.properties, {
+                              rich: component.classId === "2DRichTextComponent",
+                            }).text
+                          }
+                          onChange={(value) =>
+                            updateActor((entry) => ({
+                              ...entry,
+                              components: entry.components.map((candidate) =>
+                                candidate.id === component.id
+                                  ? {
+                                      ...candidate,
+                                      properties: patchComponentProperties(
+                                        candidate.properties,
+                                        "text",
+                                        value,
+                                      ),
+                                    }
+                                  : candidate,
+                              ),
+                            }))
+                          }
+                          data-testid={`text2d-text-${component.id}`}
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
+                  {colliderRows.length ? (
+                    <PropertyGrid
+                      title="Transform"
+                      rows={colliderRows}
+                      data-testid={`collider-transform-grid-${component.id}`}
+                    />
+                  ) : null}
+                  {showExtras && component.classId === "NavMeshComponent" ? (
+                    <div className="p-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        data-testid={`navmesh-bake-${component.id}`}
+                        disabled={navBake?.baking}
+                        onClick={() => {
+                          void navBake?.startBake(component.properties);
+                        }}
+                      >
+                        Bake NavMesh
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ),
+        )}
       </div>
       <AssetPicker
         open={assetPick !== null}

@@ -21,7 +21,9 @@ if (
 }
 
 const applyGraphChange = vi.hoisted(() =>
-  vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(async () => true),
+  vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(
+    async () => true,
+  ),
 );
 const sceneEditing = vi.hoisted(() => ({ viewportMode: "3d" as "2d" | "3d" }));
 
@@ -131,9 +133,15 @@ describe("Inspector prefab component details", () => {
 
   it("shows Position Rotation and Scale for the selected prefab component", () => {
     renderInspector({ selectedComponentId: "prefab-mesh" });
-    expect(screen.getByTestId("property-vector3-prefab-mesh-position")).toBeTruthy();
-    expect(screen.getByTestId("property-vector3-prefab-mesh-rotation")).toBeTruthy();
-    expect(screen.getByTestId("property-vector3-prefab-mesh-scale")).toBeTruthy();
+    expect(
+      screen.getByTestId("property-vector3-prefab-mesh-position"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("property-vector3-prefab-mesh-rotation"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("property-vector3-prefab-mesh-scale"),
+    ).toBeTruthy();
     expect(screen.getByTestId("property-prefab-mesh-position-z")).toBeTruthy();
     expect(screen.queryByTestId("property-prefab-mesh-z-order")).toBeNull();
   });
@@ -148,7 +156,9 @@ describe("Inspector prefab component details", () => {
     });
     expect(applyGraphChange).toHaveBeenCalled();
     const next = applyGraphChange.mock.calls[0]![1];
-    const mesh = next.components.find((component) => component.id === "prefab-mesh");
+    const mesh = next.components.find(
+      (component) => component.id === "prefab-mesh",
+    );
     expect(mesh?.transform?.position[2]).toBe(4);
   });
 
@@ -189,7 +199,7 @@ describe("Inspector prefab component details", () => {
     renderInspector({
       selectedComponentIds: ["prefab-mesh", "prefab-sphere"],
     });
-    expect(screen.getByTestId("inspector-prefab-multi").textContent).toBe(
+    expect(screen.getByTestId("inspector-prefab-multi").textContent).toContain(
       "2 Components",
     );
     expect(screen.queryByTestId("inspector-prefab-component")).toBeNull();

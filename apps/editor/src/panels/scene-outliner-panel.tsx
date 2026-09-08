@@ -55,7 +55,10 @@ import {
   spawnPlacedActor,
   type PlaceActorItem,
 } from "../lib/place-actors";
-import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
+import {
+  classIdFromClassAsset,
+  classParentLookup,
+} from "../lib/content-browser-helpers";
 import { prefabComponentsFromGraph } from "../lib/prefab-preview";
 import {
   actorRowId,
@@ -65,6 +68,9 @@ import {
   outlinerRowTarget,
   outlinerTreeDropMoves,
 } from "../lib/outliner-drop";
+
+const QUIET_ROW_ACTION =
+  "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
 
 export {
   actorRowId,
@@ -117,7 +123,9 @@ export function flattenOutliner(
     bucket.push(folder);
     foldersByParent.set(folder.parentFolderId, bucket);
   }
-  const folderById = new Map(scene.folders.map((folder) => [folder.id, folder]));
+  const folderById = new Map(
+    scene.folders.map((folder) => [folder.id, folder]),
+  );
 
   const folderPath = (folderId: string | null): string => {
     const parts: string[] = [];
@@ -245,10 +253,20 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const phone = usePhoneLayout();
   const actionSize = phone ? "touch-icon" : "icon-sm";
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, assetRegistry, loadGraphDocument, openDocument } =
-    useDocuments();
-  const { selectedActorIds, selectActor, setSelectedActorIds, frameActor, viewportDropApi } =
-    useSceneEditing();
+  const {
+    openDocuments,
+    applySceneChange,
+    assetRegistry,
+    loadGraphDocument,
+    openDocument,
+  } = useDocuments();
+  const {
+    selectedActorIds,
+    selectActor,
+    setSelectedActorIds,
+    frameActor,
+    viewportDropApi,
+  } = useSceneEditing();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
@@ -410,9 +428,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       return diskGraphs.get(path);
                     },
                   }) ??
-                  (graph
-                    ? prefabComponentsFromGraph(graph)
-                    : kind.components),
+                  (graph ? prefabComponentsFromGraph(graph) : kind.components),
               },
             });
           });
@@ -521,7 +537,9 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               : entry,
           ),
         actors: scene.actors.map((actor) =>
-          actor.folderId === folderId ? { ...actor, folderId: promoteTo } : actor,
+          actor.folderId === folderId
+            ? { ...actor, folderId: promoteTo }
+            : actor,
         ),
       });
       setSelectedRowId(null);
@@ -590,7 +608,9 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       setDropHint({
         clientX,
         clientY,
-        allowed: Boolean(viewportDropApi?.containsClientPoint(clientX, clientY)),
+        allowed: Boolean(
+          viewportDropApi?.containsClientPoint(clientX, clientY),
+        ),
         label: name,
       });
     },
@@ -622,6 +642,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       }
       items.push(
         {
+          id: "frame-actor",
+          label: "Frame Selection",
+          testId: `outliner-frame-${actorId}`,
+          onSelect: () => frameActor(actorId),
+        },
+        {
           id: "duplicate-actor",
           label: "Duplicate",
           testId: `outliner-duplicate-${actorId}`,
@@ -646,7 +672,15 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       );
       return items;
     },
-    [assetRegistry, mutate, openDocument, removeActor, scene, selectActor],
+    [
+      assetRegistry,
+      frameActor,
+      mutate,
+      openDocument,
+      removeActor,
+      scene,
+      selectActor,
+    ],
   );
 
   const folderMenuItems = useCallback(
@@ -676,7 +710,10 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
-            className={cn("min-h-[var(--chrome-row,28px)]", phone && "min-h-11")}
+            className={cn(
+              "min-h-[var(--chrome-row,28px)]",
+              phone && "min-h-11",
+            )}
             placeholder="Search actors"
             aria-label="Search actors"
             value={search}
@@ -739,6 +776,8 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       variant="ghost"
                       onClick={() => toggleFlag(actorId, "visible")}
                       data-testid={`outliner-visibility-${actorId}`}
+                      aria-pressed={!node.muted}
+                      className={node.muted ? undefined : QUIET_ROW_ACTION}
                     >
                       {node.muted ? <EyeOffIcon /> : <EyeIcon />}
                     </IconActionButton>
@@ -749,7 +788,11 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       onClick={() => toggleFlag(actorId, "locked")}
                       data-testid={`outliner-lock-${actorId}`}
                       aria-pressed={lockedIds.has(actorId)}
-                      className={lockedIds.has(actorId) ? "text-primary" : undefined}
+                      className={
+                        lockedIds.has(actorId)
+                          ? "text-primary"
+                          : QUIET_ROW_ACTION
+                      }
                     >
                       {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
                     </IconActionButton>
@@ -761,6 +804,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                           variant="ghost"
                           size={actionSize}
                           aria-label={`Actor menu for ${node.label}`}
+                          className={QUIET_ROW_ACTION}
                           data-testid={`outliner-menu-${actorId}`}
                         >
                           <MoreHorizontalIcon />
@@ -791,7 +835,13 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             onExternalDragMove={moveActorDropHint}
             onExternalDragEnd={() => setDropHint(null)}
             reparentArm="immediate"
-            emptyLabel={scene ? search.trim() ? "No Matching Actors" : "No Actors Yet" : "Open A Scene"}
+            emptyLabel={
+              scene
+                ? search.trim()
+                  ? "No Matching Actors"
+                  : "No Actors Yet"
+                : "Open A Scene"
+            }
             data-testid="outliner-tree"
           />
         </div>

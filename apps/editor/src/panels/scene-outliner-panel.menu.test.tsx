@@ -5,7 +5,10 @@ import type { SerializedScene } from "@babylonslate/core";
 import { createActor, createDefaultScene } from "@babylonslate/core";
 import { SceneOutlinerPanel } from "./scene-outliner-panel";
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -15,9 +18,12 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const applySceneChange = vi.hoisted(() =>
-  vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
+  vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(
+    async () => true,
+  ),
 );
 const openDocument = vi.hoisted(() => vi.fn());
+const frameActor = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
   phone: false,
   scene: null as SerializedScene | null,
@@ -32,7 +38,9 @@ vi.mock("../shell/use-platform-layout", () => ({
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({ documentId: "scene:assets/Main.scene.babasset" }),
+  useDocumentWorkspace: () => ({
+    documentId: "scene:assets/Main.scene.babasset",
+  }),
 }));
 
 vi.mock("../context/scene-editing-context", () => ({
@@ -40,7 +48,7 @@ vi.mock("../context/scene-editing-context", () => ({
     selectedActorIds: [],
     selectActor: vi.fn(),
     setSelectedActorIds: vi.fn(),
-    frameActor: vi.fn(),
+    frameActor,
   }),
   selectionAfterLockChange: (ids: string[]) => ids,
 }));
@@ -50,7 +58,11 @@ vi.mock("../context/document-context", () => ({
     openDocuments: [
       {
         id: "scene:assets/Main.scene.babasset",
-        ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+        ref: {
+          kind: "scene",
+          path: "assets/Main.scene.babasset",
+          label: "Main",
+        },
         content: harness.scene,
         layout: null,
         dirty: false,
@@ -67,17 +79,37 @@ afterEach(() => {
   cleanup();
   applySceneChange.mockClear();
   openDocument.mockClear();
+  frameActor.mockClear();
   harness.assets = [];
   harness.phone = false;
 });
 
 describe("SceneOutlinerPanel menus", () => {
+  it("frames the actor from its row menu and exposes visibility state", () => {
+    harness.scene = createDefaultScene();
+    harness.scene.actors = [createActor("actor-1", "Cube", { visible: false })];
+    render(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
+    expect(
+      screen
+        .getByTestId("outliner-visibility-actor-1")
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Frame Selection" }));
+    expect(frameActor).toHaveBeenCalledWith("actor-1");
+  });
+
   it("keeps phone row targets separate and restores compact row placement on iPad", () => {
     const scene = createDefaultScene();
-    scene.actors = [createActor("actor-1", "Cube"), createActor("actor-2", "Sphere")];
+    scene.actors = [
+      createActor("actor-1", "Cube"),
+      createActor("actor-2", "Sphere"),
+    ];
     harness.scene = scene;
     harness.phone = true;
-    const { rerender } = render(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
+    const { rerender } = render(
+      <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />,
+    );
     let rows = screen.getAllByRole("treeitem");
     expect(rows[0]!.style.height).toBe("44px");
     expect(rows[1]!.style.top).toBe("44px");

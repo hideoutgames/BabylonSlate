@@ -71,7 +71,11 @@ import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
-import { fontAssetHasFacetype, fontAssetHasMsdfJson, fontAssetHasMsdfPng } from "../lib/play-fonts";
+import {
+  fontAssetHasFacetype,
+  fontAssetHasMsdfJson,
+  fontAssetHasMsdfPng,
+} from "../lib/play-fonts";
 import {
   componentPropertyRows,
   subclassClassEntries,
@@ -101,10 +105,22 @@ import {
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
-import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
+import {
+  defaultValueForMember,
+  keepsTypeClassId,
+  pinDefaultPropertyKey,
+} from "@babylonslate/scripting";
 import { patchClassMember } from "../lib/class-members";
-import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
-import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
+import {
+  classDocumentShowsPrefab,
+  classIdFromClassAsset,
+  classParentLookup,
+  filterInspectorPinPickerAssets,
+} from "../lib/content-browser-helpers";
+import {
+  physicsWorldFromOpenDocuments,
+  prefabComponentLabel,
+} from "./add-component-catalog";
 import {
   commitLogicGraph,
   collectGraphTypeAssets,
@@ -190,7 +206,10 @@ function asArrayDefaults(value: unknown): unknown[] {
   return Array.isArray(value) ? [...value] : [];
 }
 
-function constrainedTypeClassId(typeId: string, typeClassId?: string): string | undefined {
+function constrainedTypeClassId(
+  typeId: string,
+  typeClassId?: string,
+): string | undefined {
   const trimmed = typeClassId?.trim();
   if (trimmed) return trimmed;
   if (typeId === "actor") return "Actor";
@@ -214,7 +233,12 @@ function ClassMemberDetails({
   interfaceAssets: Array<{ guid: string; name: string; type: string }>;
   classEntries: ClassPickerEntry[];
   typeAssets: Array<{ guid: string; name: string; type: string }>;
-  pickerAssets: Array<{ guid: string; name: string; type: string; path?: string }>;
+  pickerAssets: Array<{
+    guid: string;
+    name: string;
+    type: string;
+    path?: string;
+  }>;
   schemas: ReturnType<typeof typeSchemasFromGraphAssets>;
   enumMembers: Record<string, string[]>;
   onChange: (next: SerializedGraph) => void;
@@ -358,9 +382,7 @@ function ClassMemberDetails({
           </Field>
         ) : isStruct || isEnum ? (
           <Field>
-            <FieldLabel>
-              {isEnum ? "Enum Type" : "Structure Type"}
-            </FieldLabel>
+            <FieldLabel>{isEnum ? "Enum Type" : "Structure Type"}</FieldLabel>
             <AssetPickerControl value={typeClassId}>
               <Button
                 type="button"
@@ -438,24 +460,17 @@ function ClassMemberDetails({
                 orientation="horizontal"
                 hideLabels
                 density="compact"
-                rows={variableDefaultPropertyRows(
-                  typeId,
-                  item,
-                  changeItem,
-                  {
-                    typeClassId: member.typeClassId,
-                    schemas,
-                    enumMembers,
-                    assetEntries,
-                    onPickAsset: () =>
-                      setEntryPick({ index, field: "value" }),
-                    classEntries,
-                    onPickClass: () =>
-                      setEntryPick({ index, field: "value" }),
-                    label: `Item ${index + 1}`,
-                    pinId: `item-${index}`,
-                  },
-                )}
+                rows={variableDefaultPropertyRows(typeId, item, changeItem, {
+                  typeClassId: member.typeClassId,
+                  schemas,
+                  enumMembers,
+                  assetEntries,
+                  onPickAsset: () => setEntryPick({ index, field: "value" }),
+                  classEntries,
+                  onPickClass: () => setEntryPick({ index, field: "value" }),
+                  label: `Item ${index + 1}`,
+                  pinId: `item-${index}`,
+                })}
               />
             )}
           />
@@ -489,11 +504,9 @@ function ClassMemberDetails({
                       schemas,
                       enumMembers,
                       assetEntries,
-                      onPickAsset: () =>
-                        setEntryPick({ index, field: "key" }),
+                      onPickAsset: () => setEntryPick({ index, field: "key" }),
                       classEntries,
-                      onPickClass: () =>
-                        setEntryPick({ index, field: "key" }),
+                      onPickClass: () => setEntryPick({ index, field: "key" }),
                       label: "Key",
                       pinId: `key-${index}`,
                     },
@@ -753,7 +766,9 @@ function ClassMemberDetails({
           >
             {selectedPickerIdentity(
               assetRowIdentity(
-                interfaceAssets.find((asset) => asset.guid === member.assetGuid),
+                interfaceAssets.find(
+                  (asset) => asset.guid === member.assetGuid,
+                ),
               ),
               picked || "Pick Script Interface",
             )}
@@ -969,27 +984,26 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     assetType: indexed?.header.type,
   });
   const parsedAnim =
-    doc?.ref.kind === "anim-graph"
-      ? parseAnimGraphDocument(doc.content)
-      : null;
+    doc?.ref.kind === "anim-graph" ? parseAnimGraphDocument(doc.content) : null;
   const openRuleId = animEditing?.openTransitionId ?? null;
   const ruleTransition =
     openRuleId && parsedAnim
       ? (parsedAnim.transitions.find((row) => row.id === openRuleId) ?? null)
       : null;
-  const graph = ruleTransition && parsedAnim
-    ? {
-        ...decorateTransitionRuleGraph(
-          ruleTransition.ruleGraph,
-          !findReverseTransition(
-            parsedAnim.transitions,
-            ruleTransition.fromStateId,
-            ruleTransition.toStateId,
+  const graph =
+    ruleTransition && parsedAnim
+      ? {
+          ...decorateTransitionRuleGraph(
+            ruleTransition.ruleGraph,
+            !findReverseTransition(
+              parsedAnim.transitions,
+              ruleTransition.fromStateId,
+              ruleTransition.toStateId,
+            ),
           ),
-        ),
-        members: animGraphMembersFromVariables(parsedAnim.variables),
-      }
-    : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content);
+          members: animGraphMembersFromVariables(parsedAnim.variables),
+        }
+      : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content);
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
     if (ruleTransition && parsedAnim) {
@@ -1061,7 +1075,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
-    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
+    projectDocument?.settings.physics?.collisionLayers ??
+    DEFAULT_COLLISION_LAYERS;
   const physicsWorld = physicsWorldFromOpenDocuments(openDocuments);
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
@@ -1079,15 +1094,21 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   };
   const fontHasFacetype = (guid: string | null | undefined) => {
     if (!guid) return false;
-    return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
+    return fontAssetHasFacetype(
+      assetRegistry?.getByGuid?.(guid)?.header.payload,
+    );
   };
   const fontHasMsdfJson = (guid: string | null | undefined) => {
     if (!guid) return false;
-    return fontAssetHasMsdfJson(assetRegistry?.getByGuid?.(guid)?.header.payload);
+    return fontAssetHasMsdfJson(
+      assetRegistry?.getByGuid?.(guid)?.header.payload,
+    );
   };
   const fontHasMsdfPng = (guid: string | null | undefined) => {
     if (!guid) return false;
-    return fontAssetHasMsdfPng(assetRegistry?.getByGuid?.(guid)?.header.payload);
+    return fontAssetHasMsdfPng(
+      assetRegistry?.getByGuid?.(guid)?.header.payload,
+    );
   };
 
   const selectedPrefabComponentIds = prefabSelectedIds.filter(
@@ -1097,12 +1118,29 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   if (selectedPrefabComponentIds.length > 1) {
     return (
       <PanelFrame data-testid="inspector-panel">
-        <p
-          className="p-4 text-sm font-semibold text-foreground"
+        <div
+          className="flex flex-col gap-2 p-3"
           data-testid="inspector-prefab-multi"
         >
-          {`${selectedPrefabComponentIds.length} Components`}
-        </p>
+          <p className="text-sm font-semibold text-foreground">
+            {`${selectedPrefabComponentIds.length} Components`}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Select one component to edit its properties. Use the Components
+            panel to reorder or reparent this selection.
+          </p>
+          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {prefabComponents
+              .filter((component) =>
+                selectedPrefabComponentIds.includes(component.id),
+              )
+              .map((component) => (
+                <li key={component.id}>
+                  {prefabComponentLabel(component, assetLabel)}
+                </li>
+              ))}
+          </ul>
+        </div>
       </PanelFrame>
     );
   }
@@ -1138,7 +1176,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  if (graph && selectedMember && !openRuleId && selectedMember.kind !== "event") {
+  if (
+    graph &&
+    selectedMember &&
+    !openRuleId &&
+    selectedMember.kind !== "event"
+  ) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <ClassMemberDetails
@@ -1163,7 +1206,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  if (prefabSelectedId === PREFAB_ROOT_ID && doc?.ref.kind === "graph" && graph) {
+  if (
+    prefabSelectedId === PREFAB_ROOT_ID &&
+    doc?.ref.kind === "graph" &&
+    graph
+  ) {
     const defaults = graph.actorDefaults ?? {};
     const selfClassId = classIdFromClassAsset({
       path: doc.ref.path,
@@ -1521,7 +1568,9 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
                   String(selectedNode.data.commandName ?? ""),
                 ) ? (
                   <FieldError data-testid="command-name-reserved">
-                    Command Name '{String(selectedNode.data.commandName ?? "").trim()}' is reserved by the engine
+                    Command Name '
+                    {String(selectedNode.data.commandName ?? "").trim()}' is
+                    reserved by the engine
                   </FieldError>
                 ) : null}
               </Field>
@@ -1582,7 +1631,9 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               }
               // Canvas custom-event without a members[] row: upsert then sync Calls.
               const bodyName = formatEventMemberName(
-                String(selectedNode.data.name ?? selectedNode.data.title ?? "Custom"),
+                String(
+                  selectedNode.data.name ?? selectedNode.data.title ?? "Custom",
+                ),
               );
               const memberId = selectedNode.id;
               const withMember: SerializedGraph = {

@@ -285,7 +285,10 @@ describe("shared actor Details", () => {
     scene().actors[0]!.transform.scale = [1, 1, 3];
     scene().actors[1]!.transform.scale = [1, 1, 6];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect((screen.getByTestId("property-actor-scale-reset") as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByTestId("property-actor-scale-reset") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it("edits shared visibility without renaming other selected actors", () => {
@@ -335,6 +338,37 @@ describe("shared actor Details", () => {
 });
 
 describe("SceneDetailsPanel authoring", () => {
+  it("filters properties and reveals matching collapsed component fields", () => {
+    harness.selectedActorIds = ["actor-1"];
+    scene().actors[0]!.components = [createMeshComponent("mesh-a", "box")];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const toggle = screen.getByRole("button", { name: "Mesh", exact: true });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("property-actor-1-mesh-a-meshKind")).toBeNull();
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Filter Properties" }),
+      {
+        target: { value: "mesh kind" },
+      },
+    );
+    expect(screen.getByTestId("property-actor-1-mesh-a-meshKind")).toBeTruthy();
+    expect(screen.queryByTestId("property-actor-name")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Mesh", exact: true }));
+    expect(
+      screen.getByRole("textbox", { name: "Filter Properties" }),
+    ).toHaveProperty("value", "mesh kind");
+    expect(screen.queryByTestId("property-actor-1-mesh-a-meshKind")).toBeNull();
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Filter Properties" }),
+      {
+        target: { value: "not a property" },
+      },
+    );
+    expect(screen.queryByTestId("component-card-mesh-a")).toBeNull();
+    expect(screen.getByText("No Matching Properties")).toBeTruthy();
+  });
+
   it("opens an AssetPicker for mesh assetGuid and shows the asset name", async () => {
     harness.selectedActorIds = ["actor-1"];
     scene().actors[0]!.components.push(
