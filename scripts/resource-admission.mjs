@@ -18,27 +18,35 @@ export const admissionDirectory = join(
   "babylonslate-test-admission-v1",
 );
 export const capacity = {
-  workers: 2,
+  workers: 3,
   browsers: 1,
   memoryGiB: 6,
   reserveGiB: 4,
 };
 export const workloads = {
+  tooling: { workers: 1, browsers: 0, memoryGiB: 0.75 },
   unit: { workers: 1, browsers: 0, memoryGiB: 1.5 },
+  focused: { workers: 1, browsers: 0, memoryGiB: 1.5 },
+  typecheck: { workers: 1, browsers: 0, memoryGiB: 1.5 },
   dom: { workers: 1, browsers: 0, memoryGiB: 2 },
   coverage: { workers: 1, browsers: 0, memoryGiB: 3 },
+  docs: { workers: 1, browsers: 0, memoryGiB: 1.5 },
   build: { workers: 2, browsers: 0, memoryGiB: 2.5 },
   browser: { workers: 1, browsers: 1, memoryGiB: 3 },
 };
 
-/** Fast mode owns both worker slots; the browser slot counts admitted commands. */
+/** Fast mode reserves two worker slots; the browser slot counts admitted commands. */
 export function workloadFor(name, env = process.env) {
   const request = workloads[name];
   if (!request) throw new Error(`Unknown workload: ${name}`);
   const profile = env.BL_TEST_PROFILE ?? "shared";
   if (!["shared", "fast"].includes(profile))
     throw new Error(`Unknown test profile: ${profile}`);
-  if (profile === "shared" || name === "build" || env.CI === "true")
+  if (
+    profile === "shared" ||
+    ["tooling", "typecheck", "docs", "build"].includes(name) ||
+    env.CI === "true"
+  )
     return { ...request };
   return { ...request, workers: 2, memoryGiB: request.memoryGiB * 2 };
 }
@@ -96,6 +104,10 @@ async function locked(directory, check, operation) {
     try {
       handle = await open(path, "wx");
     } catch (error) {
+      if (["EPERM", "EACCES", "EBUSY"].includes(error.code)) {
+        await delay(20);
+        continue;
+      }
       if (error.code !== "EEXIST") throw error;
       const owner = await readJson(path);
       // A killed owner may leave a lock; an unpublished owner gets a grace period.

@@ -103,6 +103,27 @@ async function vitest(args, options = {}) {
   );
 }
 
+export function unitProfile(args) {
+  const projectIndex = args.indexOf("--project");
+  const project =
+    projectIndex >= 0
+      ? args[projectIndex + 1]
+      : args
+          .find((arg) => arg.startsWith("--project="))
+          ?.slice("--project=".length);
+  if (project === "node") return "unit";
+  if (
+    args.length &&
+    args.every(
+      (arg) =>
+        arg === "playwright.config.test.ts" ||
+        /^(?:apps\/docs|apps\/player|apps\/desktop)\//.test(arg),
+    )
+  )
+    return "unit";
+  return args.length ? "focused" : "dom";
+}
+
 export async function editorTests(options = {}) {
   await vitest(["--project", "node", "apps/editor"], {
     ...options,
@@ -178,10 +199,11 @@ export async function fullVerification(options = {}) {
 }
 
 export async function runTests(mode, args, options = {}) {
-  if (mode === "unit") return vitest(args, options);
+  if (mode === "unit")
+    return vitest(args, { ...options, profile: unitProfile(args) });
   if (mode === "tooling")
     return runStage(
-      "unit",
+      "tooling",
       process.execPath,
       [
         "--test",

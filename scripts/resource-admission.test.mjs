@@ -26,7 +26,42 @@ async function fixture(t) {
 }
 const small = { workers: 1, memoryGiB: 1, browsers: 0 };
 
-test("fast runs reserve both workers and cannot overlap another admitted workload", async (t) => {
+test("docs builds use a fixed one-worker reservation smaller than application builds", () => {
+  const docs = { workers: 1, browsers: 0, memoryGiB: 1.5 };
+  assert.deepEqual(workloadFor("docs", {}), docs);
+  assert.deepEqual(workloadFor("docs", { BL_TEST_PROFILE: "fast" }), docs);
+  assert.deepEqual(workloadFor("build", {}), {
+    workers: 2,
+    browsers: 0,
+    memoryGiB: 2.5,
+  });
+});
+
+test("Node tooling uses a small fixed reservation in shared and fast modes", () => {
+  const tooling = { workers: 1, browsers: 0, memoryGiB: 0.75 };
+  assert.deepEqual(workloadFor("tooling", {}), tooling);
+  assert.deepEqual(
+    workloadFor("tooling", { BL_TEST_PROFILE: "fast" }),
+    tooling,
+  );
+});
+
+test("routine typechecks and selected test files fit concurrent shared agents", () => {
+  const typecheck = { workers: 1, browsers: 0, memoryGiB: 1.5 };
+  assert.deepEqual(workloadFor("typecheck", {}), typecheck);
+  assert.deepEqual(
+    workloadFor("typecheck", { BL_TEST_PROFILE: "fast" }),
+    typecheck,
+  );
+  assert.deepEqual(workloadFor("focused", {}), typecheck);
+  assert.deepEqual(workloadFor("focused", { BL_TEST_PROFILE: "fast" }), {
+    workers: 2,
+    browsers: 0,
+    memoryGiB: 3,
+  });
+});
+
+test("fast browser runs reserve all memory and cannot overlap another workload", async (t) => {
   const options = await fixture(t);
   const fast = workloadFor("browser", { BL_TEST_PROFILE: "fast" });
   assert.deepEqual(fast, { workers: 2, browsers: 1, memoryGiB: 6 });
@@ -82,13 +117,13 @@ test("a transient Windows replacement lock retains the old reservation until ato
   assert.deepEqual(await readdir(options.directory), ["ticket.json"]);
 });
 
-test("four independent callers respect capacity and progress in FIFO order", async (t) => {
+test("four independent callers admit three shared workers and preserve FIFO progress", async (t) => {
   const options = await fixture(t);
   const events = [];
   let active = 0,
     peak = 0;
   let filled;
-  const firstPair = new Promise((resolve) => {
+  const firstWave = new Promise((resolve) => {
     filled = resolve;
   });
   await Promise.all(
@@ -96,13 +131,13 @@ test("four independent callers respect capacity and progress in FIFO order", asy
       const lease = await acquireResources(small, options);
       events.push(id);
       peak = Math.max(peak, ++active);
-      if (active === 2) filled();
-      await firstPair;
+      if (active === 3) filled();
+      await firstWave;
       active--;
       await lease.release();
     }),
   );
-  assert.equal(peak, 2);
+  assert.equal(peak, 3);
   assert.deepEqual([...events].sort(), [0, 1, 2, 3]);
   assert.deepEqual(await readdir(join(options.directory, "queue")), []);
 });
@@ -157,7 +192,7 @@ test("abandoned tickets do not block work; an impossible request fails immediate
   const lease = await acquireResources(small, options);
   await lease.release();
   await assert.rejects(
-    acquireResources({ ...small, workers: 3 }, options),
+    acquireResources({ ...small, workers: 4 }, options),
     /capacity/,
   );
 });
