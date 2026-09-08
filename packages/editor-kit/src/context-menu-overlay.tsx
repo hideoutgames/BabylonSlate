@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { NestedMenu } from "./nested-menu";
 import type { ContextMenuState } from "./use-context-menu";
 
@@ -14,7 +15,8 @@ export function ContextMenuOverlay({
 }: ContextMenuOverlayProps) {
   if (!menu?.open) return null;
 
-  return (
+  // Gesture coordinates are viewport-relative, even inside animated/clipped panels.
+  return createPortal(
     <>
       <div
         className="context-menu-backdrop"
@@ -32,6 +34,7 @@ export function ContextMenuOverlay({
         size="touch"
         contentTestId={contentTestId}
       />
-    </>
+    </>,
+    document.body,
   );
 }
