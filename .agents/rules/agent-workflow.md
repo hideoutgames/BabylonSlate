@@ -2,7 +2,8 @@
 
 ## Verification
 
-- Run the relevant local tests during development, then pass the `pnpm verify:local` gate before opening any PR, including a draft. An attempted, failed, or unavailable run does not satisfy this gate.
+- Run focused regression tests during development, then pass the `pnpm verify:local` preflight before opening any PR, including a draft. Fetch main and resolve routine merge conflicts before running local verification. An attempted, failed, or unavailable run does not satisfy this gate.
+- Use GitHub CI for exhaustive unit coverage, consumer regressions, and browser suites. Do not automatically run full local verification for infrastructure changes or CI repairs. `pnpm verify` remains an explicit opt-in diagnostic; reproduce CI failures with the smallest relevant test selection.
 - Add or update meaningful tests for new behavior in `packages/*`; reuse existing coverage when it already verifies the requirement.
 - Fix local failures before opening a PR. If verification cannot run, repair the local setup where possible; otherwise report the concrete blocker and do not open a PR.
 - For local tests, Verify CI, and slot waits, read and apply [wait-efficiently](../skills/wait-efficiently/SKILL.md). Launch one foreground `pnpm --silent agent:wait` helper, retain its session, and keep polling/full logs out of the conversation. Default to start/end reporting except for host-required updates. A timeout, cancellation, stale result, or changed source is not a pass.
@@ -43,7 +44,7 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 - Do not add tests for documentation-only, formatting-only, or other reversible, low-impact changes without a meaningful behavioral risk. Explain why existing coverage or a focused check is sufficient when no new test is needed.
 - Keep tests deterministic and proportionate to the risk. Preserve required coverage gates, but satisfy them with meaningful cases rather than filler assertions or weakened thresholds.
 - See [docs/architecture/testing.md](../../docs/architecture/testing.md) for the Vitest projects, per-package coverage gates, and known environment limits.
-- `pnpm verify:local` selects checks for changes and transitive consumers against the merge base with main. Unknown paths and verification infrastructure select the complete local gate. It records source identity and rejects dirty or changed revisions for delivery. `pnpm verify` retains the complete tooling, typecheck, lint, covered unit, browser, and docs gate. Full retained tests and coverage remain mandatory in CI.
+- `pnpm verify:local` selects affected typechecks, changed-file lint, relevant tooling checks, changed/sibling unit tests, and documentation builds against the merge base with main. Unknown paths and infrastructure select static preflight, never automatic coverage or browser execution. It records source identity and rejects dirty or changed revisions for delivery. Local phase caches never certify CI; all retained tests, coverage thresholds, and seven browser shards remain mandatory for merge.
 
 ## shadcn/ui
 

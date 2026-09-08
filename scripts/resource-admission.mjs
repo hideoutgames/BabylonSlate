@@ -31,6 +31,18 @@ export const workloads = {
   browser: { workers: 1, browsers: 1, memoryGiB: 3 },
 };
 
+/** Fast mode owns both worker slots; the browser slot counts admitted commands. */
+export function workloadFor(name, env = process.env) {
+  const request = workloads[name];
+  if (!request) throw new Error(`Unknown workload: ${name}`);
+  const profile = env.BL_TEST_PROFILE ?? "shared";
+  if (!["shared", "fast"].includes(profile))
+    throw new Error(`Unknown test profile: ${profile}`);
+  if (profile === "shared" || name === "build" || env.CI === "true")
+    return { ...request };
+  return { ...request, workers: 2, memoryGiB: request.memoryGiB * 2 };
+}
+
 function alive(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {

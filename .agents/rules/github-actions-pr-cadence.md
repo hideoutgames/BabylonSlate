@@ -4,7 +4,7 @@ Verify uses standard runners: `static` + `unit` + seven `e2e` shards = 9 jobs pe
 
 ## Local verification before opening
 
-- Pass local `pnpm verify:local` before opening any PR, including a draft. A failed or unavailable run is not sufficient.
+- Pass the focused local `pnpm verify:local` preflight before opening any PR, including a draft. Exhaustive tests belong in CI; do not run a full local suite merely because infrastructure changed. A failed or unavailable preflight is not sufficient.
 - Open the verified work as a draft, then check for a Verify slot. Do not use draft PRs as a substitute for local testing.
 
 ## Wait for a slot, then mark ready once

@@ -1,37 +1,53 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runSelectedUnitTests } from "./verify-local.mjs";
+import { preflightPhases } from "./verify-local.mjs";
 
-test("targeted consumer checks keep editor tests in the bounded editor runner", async () => {
-  const commands = [],
-    calls = [];
-  await runSelectedUnitTests(
-    [{ path: "packages/source-control" }, { path: "apps/editor" }],
-    commands,
-    {},
-    async (mode, args) => {
-      calls.push([mode, args]);
-    },
+test("infrastructure preflight stays bounded and leaves exhaustive tests to CI", () => {
+  const files = Array.from(
+    { length: 103 },
+    (_, index) => `apps/editor/src/panel-${index}.test.tsx`,
   );
-  assert.deepEqual(calls, [
-    ["unit", ["packages/source-control", "--passWithNoTests"]],
-    ["editor", []],
-  ]);
-  assert.deepEqual(commands, [
-    ["test", "packages/source-control"],
-    ["test:editor-unit"],
-  ]);
+  const phases = preflightPhases(
+    {
+      tooling: true,
+      packages: ["core", "editor"],
+      unitTests: files,
+      docs: true,
+    },
+    [
+      { name: "core", scripts: { typecheck: "tsc" } },
+      { name: "editor", scripts: { typecheck: "tsc" } },
+      { name: "unrelated", scripts: { typecheck: "tsc" } },
+    ],
+    ["scripts/test-runner.mjs"],
+  );
+  const units = phases.filter((phase) => phase.mode === "unit");
+  assert.deepEqual(
+    units.flatMap((phase) => phase.args),
+    files,
+  );
+  assert.ok(units.every((phase) => phase.args.length <= 50));
+  assert.ok(phases.some((phase) => phase.mode === "tooling"));
+  assert.ok(
+    !phases.some((phase) =>
+      ["coverage", "editor", "e2e", "verify"].includes(phase.mode),
+    ),
+  );
+  assert.ok(
+    !phases
+      .find((phase) => phase.id === "typecheck")
+      .args.includes("unrelated"),
+  );
 });
 
-test("a package-only selection does not start the editor runner", async () => {
-  const calls = [];
-  await runSelectedUnitTests(
-    [{ path: "packages/core" }],
+test("documentation-only preflight does not start unit or browser processes", () => {
+  const phases = preflightPhases(
+    { tooling: false, packages: [], unitTests: [], docs: true },
     [],
-    {},
-    async (mode, args) => {
-      calls.push([mode, args]);
-    },
+    [],
   );
-  assert.deepEqual(calls, [["unit", ["packages/core", "--passWithNoTests"]]]);
+  assert.deepEqual(
+    phases.map((phase) => phase.id),
+    ["docs"],
+  );
 });

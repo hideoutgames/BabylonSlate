@@ -15,6 +15,7 @@ import {
   acquireResources,
   inheritedLease,
   publish,
+  workloadFor,
 } from "./resource-admission.mjs";
 import { runCommand } from "./process-runner.mjs";
 
@@ -24,6 +25,33 @@ async function fixture(t) {
   return { directory, pollMs: 5, freeMemory: () => 16 * 1024 ** 3 };
 }
 const small = { workers: 1, memoryGiB: 1, browsers: 0 };
+
+test("fast runs reserve both workers and cannot overlap another admitted workload", async (t) => {
+  const options = await fixture(t);
+  const fast = workloadFor("browser", { BL_TEST_PROFILE: "fast" });
+  assert.deepEqual(fast, { workers: 2, browsers: 1, memoryGiB: 6 });
+  assert.equal(workloadFor("dom", {}).workers, 1);
+  assert.throws(
+    () => workloadFor("dom", { BL_TEST_PROFILE: "unbounded" }),
+    /profile/i,
+  );
+  const first = await acquireResources(small, options);
+  let queued;
+  const observed = new Promise((resolve) => {
+    queued = resolve;
+  });
+  let admitted = false;
+  const pending = acquireResources(fast, { ...options, onQueued: queued }).then(
+    (lease) => {
+      admitted = true;
+      return lease;
+    },
+  );
+  await observed;
+  assert.equal(admitted, false);
+  await first.release();
+  await (await pending).release();
+});
 
 test("a transient Windows replacement lock retains the old reservation until atomic publication", async (t) => {
   const options = await fixture(t);
@@ -101,7 +129,9 @@ test("memory pressure queues work until the request fits above the host reserve"
   let free = 4.5 * 1024 ** 3;
   let admitted = false;
   let reportQueued;
-  const queued = new Promise((resolve) => { reportQueued = resolve; });
+  const queued = new Promise((resolve) => {
+    reportQueued = resolve;
+  });
   const pending = acquireResources(small, {
     ...options,
     freeMemory: () => free,

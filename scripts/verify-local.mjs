@@ -11,7 +11,8 @@ import { pathToFileURL } from "node:url";
 import { commandSignal, repoRoot } from "./process-runner.mjs";
 import { changedFiles, gitOutput, sourceState } from "./source-state.mjs";
 import { selectChecks } from "./test-selection.mjs";
-import { fullVerification, runPnpm, runTests } from "./test-runner.mjs";
+import { runPnpm, runTests } from "./test-runner.mjs";
+import { cachedVerificationPhase } from "./verification-cache.mjs";
 
 export async function workspacePackages() {
   const packages = [];
@@ -45,23 +46,49 @@ export async function workspacePackages() {
   return packages;
 }
 
-export async function runSelectedUnitTests(
-  selected,
-  commands,
-  options,
-  execute = runTests,
-) {
-  const paths = selected
-    .filter((pkg) => pkg.path !== "apps/editor")
-    .map((pkg) => pkg.path);
-  if (paths.length) {
-    commands.push(["test", ...paths]);
-    await execute("unit", [...paths, "--passWithNoTests"], options);
-  }
-  if (selected.some((pkg) => pkg.path === "apps/editor")) {
-    commands.push(["test:editor-unit"]);
-    await execute("editor", [], options);
-  }
+/** A local preflight must never silently dispatch coverage, all editor tests, or browsers. */
+export function preflightPhases(selection, workspace, lint) {
+  const phases = [];
+  if (selection.tooling)
+    phases.push({ id: "tooling", runner: "tests", mode: "tooling", args: [] });
+  const packages = workspace.filter(
+    (pkg) => selection.packages.includes(pkg.name) && pkg.scripts.typecheck,
+  );
+  if (packages.length)
+    phases.push({
+      id: "typecheck",
+      runner: "pnpm",
+      profile: "build",
+      scope: "typecheck",
+      args: [
+        "--workspace-concurrency=1",
+        ...packages.flatMap((pkg) => ["--filter", pkg.name]),
+        "-r",
+        "typecheck",
+      ],
+    });
+  if (lint.length)
+    phases.push({
+      id: "lint",
+      runner: "pnpm",
+      profile: "unit",
+      args: ["exec", "eslint", ...lint],
+    });
+  for (let index = 0; index < selection.unitTests.length; index += 50)
+    phases.push({
+      id: `unit-${index / 50 + 1}`,
+      runner: "tests",
+      mode: "unit",
+      args: selection.unitTests.slice(index, index + 50),
+    });
+  if (selection.docs)
+    phases.push({
+      id: "docs",
+      runner: "pnpm",
+      profile: "build",
+      args: ["--filter", "docs-site", "build"],
+    });
+  return phases;
 }
 
 export async function verifyLocal(options = {}) {
@@ -82,8 +109,39 @@ export async function verifyLocal(options = {}) {
     );
   const files = await changedFiles(repoRoot, base);
   const workspace = await workspacePackages();
-  const selection = selectChecks(files, workspace);
+  const deleted = new Set(
+    (await gitOutput(repoRoot, ["ls-files", "--deleted", "-z"])).split("\0"),
+  );
+  const availableTests = [
+    ...new Set(
+      (
+        await gitOutput(repoRoot, [
+          "ls-files",
+          "--cached",
+          "--others",
+          "--exclude-standard",
+          "-z",
+        ])
+      ).split("\0"),
+    ),
+  ].filter(
+    (file) =>
+      !deleted.has(file) &&
+      /\.test\.[cm]?[jt]sx?$/.test(file) &&
+      (/^(apps|packages)\//.test(file) || file === "playwright.config.test.ts"),
+  );
+  const selection = selectChecks(files, workspace, availableTests);
+  const lint = [];
+  for (const file of files.filter((file) => /\.[cm]?[jt]sx?$/.test(file))) {
+    try {
+      await access(join(repoRoot, file));
+      lint.push(file);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   const report = {
+    scope: "preflight",
     base,
     initial,
     files,
@@ -91,6 +149,7 @@ export async function verifyLocal(options = {}) {
     deliveryEligible: false,
     status: "running",
     commands: [],
+    requiredCi: ["static", "unit", "all seven e2e shards"],
   };
   const reportPath = join(directory, "result.json");
   const save = () =>
@@ -99,60 +158,25 @@ export async function verifyLocal(options = {}) {
   process.stdout.write(
     JSON.stringify({
       event: "selection",
-      full: selection.full,
-      packages: selection.packages,
-      e2e: selection.e2e,
+      scope: "preflight",
+      ...selection,
       reportPath,
     }) + "\n",
   );
   try {
-    if (selection.full) {
-      report.commands.push(["verify"]);
-      await fullVerification(options);
-    } else {
-      const selected = workspace.filter((pkg) =>
-        selection.packages.includes(pkg.name),
+    await gitOutput(repoRoot, ["diff", "--check", base]);
+    for (const phase of preflightPhases(selection, workspace, lint)) {
+      report.commands.push(phase);
+      const result = await cachedVerificationPhase(
+        phase,
+        () =>
+          phase.runner === "tests"
+            ? runTests(phase.mode, phase.args, options)
+            : runPnpm(phase.profile, phase.args, options),
+        { env: { ...process.env, ...options.env } },
       );
-      for (const pkg of selected) {
-        if (pkg.scripts.typecheck) {
-          const command = ["--filter", pkg.name, "typecheck"];
-          report.commands.push(command);
-          await runPnpm("build", command, options);
-        }
-      }
-      const lint = [];
-      for (const file of files.filter((file) => /\.[cm]?[jt]sx?$/.test(file))) {
-        try {
-          await access(join(repoRoot, file));
-          lint.push(file);
-        } catch {
-          /* deleted */
-        }
-      }
-      if (lint.length) {
-        report.commands.push(["exec", "eslint", ...lint]);
-        await runPnpm("unit", ["exec", "eslint", ...lint], options);
-      }
-      // Discovery covers split environments and packages without authored tests.
-      await runSelectedUnitTests(selected, report.commands, options);
-      const browser = [];
-      for (const file of selection.e2e) {
-        try {
-          await access(join(repoRoot, file));
-          browser.push(file);
-        } catch {
-          if (!files.includes(file))
-            throw new Error(`Browser mapping points to missing ${file}`);
-        }
-      }
-      if (browser.length) {
-        report.commands.push(["test:e2e", ...browser]);
-        await runTests("e2e", browser, options);
-      }
-      if (selection.docs) {
-        report.commands.push(["--filter", "docs-site", "build"]);
-        await runPnpm("build", ["--filter", "docs-site", "build"], options);
-      }
+      phase.cached = result.cached;
+      await save();
     }
     report.final = await sourceState(repoRoot);
     if (initial.digest !== report.final.digest)

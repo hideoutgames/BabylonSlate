@@ -19,7 +19,7 @@ Read these rules in full at the start of each task:
 - [PR cadence](.agents/rules/github-actions-pr-cadence.md)
 - [DockView asset editor tabs](.agents/rules/dockview-editor-tabs.md)
 
-Never generate artwork or use larger GitHub runners. Pass local `pnpm verify:local` (infrastructure changes select full verification) before opening any PR, including drafts. Mark ready once when fewer than two counted non-draft PRs target `main` (#271 is excluded); if both slots are occupied, keep the draft and wait for a slot. Monitor CI, fix failures with local verification before each repair push, and merge automatically once the current head passes all gates. Public PR descriptions contain only a short change summary, without attribution, session links, secrets, or logs.
+Never generate artwork or use larger GitHub runners. Pass the focused local `pnpm verify:local` preflight before opening any PR, including drafts. Leave exhaustive coverage and browser suites to GitHub CI; infrastructure changes do not require a full local run. Mark ready once when fewer than two counted non-draft PRs target `main` (#271 is excluded); if both slots are occupied, keep the draft and wait for a slot. Monitor CI, fix failures with focused regression checks and local preflight before each repair push, and merge automatically once the current head passes all gates. Public PR descriptions contain only a short change summary, without attribution, session links, secrets, or logs.
 
 The authoritative architecture and delivery plan is [docs/engineplan.md](docs/engineplan.md). Do not re-add the removed game HUD / UserInterface system.
 
