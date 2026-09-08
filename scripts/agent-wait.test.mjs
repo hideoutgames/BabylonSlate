@@ -134,7 +134,9 @@ test("local retains recursive package diagnostics with a silent parent reporter"
     );
   }
   f.env.npm_config_reporter = "silent";
-  const result = await run(local, f.context);
+  // Nested pnpm processes and the final Git snapshot need startup headroom on
+  // contended hosts; this case checks diagnostics, not deadline enforcement.
+  const result = await run({ ...local, timeoutMs: 60000 }, f.context);
   assert.equal(result.status, "failure");
   assert.notEqual(result.exitCode, 0);
   assert.equal(result.deliveryEligible, false);
