@@ -10,7 +10,7 @@ Tailwind v4 detects sources relative to the CSS entry, which here lives in `pack
 
 ## Theme source
 
-Chrome uses **Soft Graphite**: subtly cool charcoal and off-white surfaces with ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not import a preset over those editor-function tokens.
+Chrome uses **Soft Graphite**: warm stone light surfaces and soft charcoal dark surfaces with ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not import a preset over those editor-function tokens.
 
 `apps/editor/src/shell/design-tokens.test.ts` checks actual palette contrast for main/secondary text and focus indicators, ink `--primary`, semantic type/axis colors, and Dockview boundaries. Screenshots and interaction review remain necessary to validate composed surfaces, transparency, clipping, and density.
 
@@ -44,21 +44,21 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 - **Primary is ink** (near-neutral). Buttons, focus rings, and selection bars follow Graphite. Active tabs use `--chrome-tab-accent` → `var(--foreground)`; the active dock group has the stronger indicator.
 - **Layered surfaces** differentiate chrome, side panels, and canvases.
 - **Saturated pin/node and `--asset-*` colors are type cues** — not whole toolbars.
-- **Axis and status accents** stay chromatic: X/Y/Z, Play (`--success`), destructive actions.
+- **Axis and status accents** stay chromatic: X/Y/Z, Play (`--play`), destructive actions.
 
 ## Surface ladder
 
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| App frame | `--background` | `oklch(0.958 0.004 260)` | `oklch(0.215 0.006 260)` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.979 0.003 260)` | `oklch(0.246 0.006 260)` |
-| Raised cards / active tabs | `--card` | `oklch(0.991 0.002 260)` | `oklch(0.276 0.006 260)` |
-| Panel toolbars / section headers | `--panel-header` | `oklch(0.963 0.004 260)` | `oklch(0.258 0.006 260)` |
-| Menus / dialogs / floating tools | `--popover` | `oklch(0.995 0.001 260)` | `oklch(0.285 0.007 260)` |
-| Inputs / outline actions | `--control` | `oklch(0.991 0.002 260)` | `oklch(0.231 0.006 260)` |
-| Hover / selection wash | `--accent` | `oklch(0.91 0.008 260)` | `oklch(0.332 0.008 260)` |
+| App frame | `--background` | `oklch(0.938 0.005 85)` | `oklch(0.23 0.003 75)` |
+| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.975 0.003 85)` | `oklch(0.275 0.003 75)` |
+| Raised cards / active tabs | `--card` | `oklch(0.99 0.002 85)` | `oklch(0.30 0.003 75)` |
+| Panel toolbars / section headers | `--panel-header` | `oklch(0.953 0.005 85)` | `oklch(0.264 0.003 75)` |
+| Menus / dialogs / floating tools | `--popover` | `oklch(0.997 0.001 85)` | `oklch(0.315 0.003 75)` |
+| Inputs / outline actions | `--control` | `oklch(0.997 0.001 85)` | `oklch(0.252 0.003 75)` |
+| Hover / selection wash | `--accent` | `oklch(0.898 0.006 85)` | `oklch(0.35 0.004 75)` |
 
-`--primary` is ink in both schemes: light `oklch(0.278 0.008 260)`, dark `oklch(0.934 0.004 260)`. The compact dimensions stay unchanged; `--radius` is 8px. Home opens without entrance/stagger animations or moving hover targets.
+`--primary` is ink in both schemes: light `oklch(0.30 0.006 70)`, dark `oklch(0.92 0.003 85)`. The compact dimensions stay unchanged; `--radius` is 8px. Home opens without entrance/stagger animations or moving hover targets.
 
 Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared card adjustment cannot flatten the workbench. Graph hosts retain their existing dark default and explicit light override. Animation states use the same surface system with `--graph-state-selected` and `--graph-state-entry`. Pin/handle geometry, functional preview mattes, and transparency checkerboards are unchanged.
 
@@ -75,7 +75,8 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 | Default actions / ink chrome | `--primary` | Near-neutral ink |
 | Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
-| Success / Play | `--success`, `--success-foreground` | Positive status and a contrasting label on the global Play control |
+| Success | `--success`, `--success-foreground` | Positive status and axis Y |
+| Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes |
 
 ## Pin type colors
 

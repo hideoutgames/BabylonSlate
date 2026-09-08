@@ -168,12 +168,13 @@ describe("Graphite theme tokens", () => {
 
   it.each([":root", ".dark"])("keeps secondary text and keyboard focus readable in %s", (scheme) => {
     const block = cssBlock(globalsCss, scheme);
-    for (const surface of ["--background", "--sidebar", "--card", "--popover", "--muted", "--accent"]) {
+    for (const surface of ["--background", "--sidebar", "--card", "--popover", "--muted", "--accent", "--control", "--panel-header"]) {
       expect(contrast(block, "--foreground", surface), `text on ${surface}`).toBeGreaterThanOrEqual(4.5);
       expect(contrast(block, "--muted-foreground", surface), `secondary text on ${surface}`).toBeGreaterThanOrEqual(4.5);
       expect(contrast(block, "--ring", surface), `focus on ${surface}`).toBeGreaterThanOrEqual(3);
     }
     expect(contrast(block, "--primary-foreground", "--primary")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(block, "--play-foreground", "--play")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("points the chrome tab accent at foreground", () => {

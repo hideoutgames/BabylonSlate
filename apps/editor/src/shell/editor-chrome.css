@@ -87,12 +87,12 @@
 }
 
 .chrome-play-button {
-  background: var(--success);
-  color: var(--success-foreground);
+  background: var(--play);
+  color: var(--play-foreground);
 }
 
 .chrome-play-button:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--success) 92%, var(--foreground));
+  background: color-mix(in oklch, var(--play) 90%, var(--play-foreground));
 }
 
 .chrome-play-button:disabled {

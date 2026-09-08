@@ -132,7 +132,7 @@ export function NumericDragField({
         autoComplete="off"
         spellCheck={false}
         id={id}
-        className="h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-background px-1 text-xs"
+        className="h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-control px-1 text-xs"
         aria-label={label || undefined}
         data-testid={testId}
         disabled={disabled}
