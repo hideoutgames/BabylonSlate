@@ -656,6 +656,15 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 7px;
 }
+.homepage-badge-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.homepage-composer-inline-preview {
+  display: none;
+}
 .homepage-composer-color-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1079,6 +1088,16 @@
     width: 38%;
     flex-shrink: 0;
     display: none;
+  }
+  .homepage-composer-inline-preview {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+  .homepage-composer-inline-preview svg {
+    width: 22px;
+    height: 22px;
   }
   .homepage-composer-header,
   .homepage-composer-form {

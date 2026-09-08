@@ -273,7 +273,16 @@ export function HomepageCreateDialog({
                   disabled={busy}
                   className="homepage-composer-identity"
                 >
-                  <FieldLegend variant="label">Project Badge</FieldLegend>
+                  <FieldLegend
+                    variant="label"
+                    className="homepage-badge-legend"
+                  >
+                    <span>Project Badge</span>
+                    <ProjectIdentityBadge
+                      appearance={appearance}
+                      className="homepage-composer-inline-preview"
+                    />
+                  </FieldLegend>
                   <div
                     className="homepage-composer-icon-grid"
                     role="group"
