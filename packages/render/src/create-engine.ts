@@ -124,6 +124,7 @@ import {
 import {
   applySnapshotToScene,
   applyAssignMaterial,
+  applyAttachToBone,
   applySetMaterialParameter,
   applyAssignMesh,
   applyPossessCamera,
@@ -141,6 +142,7 @@ import {
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
+import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
@@ -1393,6 +1395,7 @@ export function createEngine(
     if (audioService) {
       if (audioService.hasSpatialVoices() && sampled) {
         writeSampledAudioPoses(sampled, audioPoses);
+        applyBoneAttachmentAudioPoses(binding, audioPoses);
         audioService.syncSnapshot(audioPoses);
       }
       const camera = scene.activeCamera;
@@ -1705,6 +1708,10 @@ export function createEngine(
       if (command.type === "assignMaterial") {
         applyAssignMaterial(scene, binding, command);
         scheduler.invalidate("asset");
+      }
+      if (command.type === "attachToBone") {
+        applyAttachToBone(binding, command);
+        scheduler.invalidate("snapshot");
       }
       if (command.type === "setMaterialParameter") {
         applySetMaterialParameter(binding, command);

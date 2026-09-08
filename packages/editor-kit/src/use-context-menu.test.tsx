@@ -205,6 +205,30 @@ describe("useContextMenu", () => {
     expect(panel.style.top).toBe("45px");
   });
 
+  it("keeps viewport menus outside transformed and clipped host surfaces", () => {
+    const { getByTestId, unmount } = render(
+      <section
+        data-testid="clipping-surface"
+        style={{ transform: "translateY(24px)", overflow: "hidden", height: 40 }}
+      >
+        <TestHost items={[{ id: "a", label: "Action", onSelect: vi.fn() }]} />
+      </section>,
+    );
+    fireEvent.contextMenu(getByTestId("target"), { clientX: 123, clientY: 45 });
+
+    const surface = getByTestId("clipping-surface");
+    const panel = getByTestId("context-menu-panel");
+    const backdrop = getByTestId("context-menu-backdrop");
+    expect(surface.contains(panel)).toBe(false);
+    expect(surface.contains(backdrop)).toBe(false);
+    expect(document.body.contains(panel)).toBe(true);
+    expect(document.body.contains(backdrop)).toBe(true);
+
+    unmount();
+    expect(document.body.contains(panel)).toBe(false);
+    expect(document.body.contains(backdrop)).toBe(false);
+  });
+
   it("opens with an items override instead of the hook default list", () => {
     const { getByTestId } = renderHost([{ id: "a", label: "Action", onSelect: vi.fn() }]);
     fireEvent.click(getByTestId("open-override"));

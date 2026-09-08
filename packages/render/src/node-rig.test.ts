@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Animation } from "@babylonjs/core/Animations/animation";
 import { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import { Bone } from "@babylonjs/core/Bones/bone";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
-import { Quaternion } from "@babylonjs/core/Maths/math.vector";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
@@ -84,15 +86,136 @@ describe("node-rig helpers", () => {
     expect(skeleton.bones.map((bone) => bone.name)).not.toContain("__root__");
   });
 
-  it("parents a hierarchy overlay used for SkeletonViewer", () => {
+  it("shows the hierarchy alone, follows hidden animated nodes, and restores visibility", () => {
     const { engine, scene } = makeScene();
     engines.push(engine);
-    const { root } = makeHierarchy(scene);
+    const { root, torso, arm } = makeHierarchy(scene);
+    root.position.set(10, 0, 0);
+    root.scaling.setAll(2);
+    torso.position.y = 1;
+    torso.visibility = 0.35;
+    arm.position.y = 1;
+    arm.isVisible = false;
+    void scene.defaultMaterial;
+    const originalMeshCount = scene.meshes.length;
+    const originalMaterialCount = scene.materials.length;
     const handle = attachSkeletonPreview(root, scene, "hierarchy");
-    expect(
-      root.getChildMeshes(false).some((mesh) => mesh.name.endsWith("_overlay")),
-    ).toBe(true);
+    expect(torso.isVisible).toBe(false);
+    expect(arm.isVisible).toBe(false);
+    expect(torso.isEnabled()).toBe(true);
+    expect(torso.rotationQuaternion).toBeNull();
+    expect(handle.boneCount).toBe(3);
+    const overlay = root
+      .getChildMeshes(false)
+      .find((mesh) => mesh.name.endsWith("_overlay"))!;
+    const firstBounds = overlay.getHierarchyBoundingVectors(true);
+    expect(firstBounds.min.x).toBeGreaterThan(9);
+    expect(firstBounds.max.x).toBeLessThan(11);
+    expect(firstBounds.max.y).toBeGreaterThan(4);
+    expect(firstBounds.max.y).toBeLessThan(5);
+
+    arm.position.y = 3;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    const movedBounds = overlay.getHierarchyBoundingVectors(true);
+    expect(movedBounds.max.y).toBeGreaterThan(8);
+    expect(movedBounds.max.y).toBeLessThan(9);
+
     handle.dispose();
+    expect(torso.isVisible).toBe(true);
+    expect(torso.visibility).toBe(0.35);
+    expect(arm.isVisible).toBe(false);
+    expect(scene.meshes).toHaveLength(originalMeshCount);
+    expect(scene.materials).toHaveLength(originalMaterialCount);
+    expect(scene.onBeforeRenderObservable.hasObservers()).toBe(false);
+    torso.isVisible = false;
+    handle.dispose();
+    expect(torso.isVisible).toBe(false);
+  });
+
+  it("draws all skins at their mesh transforms while the source meshes stay hidden", () => {
+    const { engine, scene } = makeScene();
+    engines.push(engine);
+    const root = MeshBuilder.CreateBox("root", { size: 0.2 }, scene);
+    root.position.x = 10;
+    root.scaling.setAll(2);
+    const skeleton = new Skeleton("skin-a", "skin-a", scene);
+    new Bone("hips", skeleton, null, Matrix.Identity());
+    const hand = new Bone(
+      "hand",
+      skeleton,
+      skeleton.bones[0],
+      Matrix.Translation(0, 2, 0),
+    );
+    root.skeleton = skeleton;
+    const part = MeshBuilder.CreateBox("part", { size: 0.2 }, scene);
+    part.parent = root;
+    part.position.x = 3;
+    const otherSkeleton = new Skeleton("skin-b", "skin-b", scene);
+    new Bone("head", otherSkeleton, null, Matrix.Translation(0, 3, 0));
+    part.skeleton = otherSkeleton;
+    const handle = attachSkeletonPreview(root, scene, "skin");
+    expect(root.isVisible).toBe(false);
+    expect(part.isVisible).toBe(false);
+    expect(handle.boneCount).toBe(3);
+    const overlay = root
+      .getChildMeshes(false)
+      .find((mesh) => mesh.name.endsWith("_overlay"))!;
+    const bounds = overlay.getHierarchyBoundingVectors(true);
+    expect(bounds.min.x).toBeGreaterThan(9);
+    expect(bounds.max.x).toBeGreaterThan(16);
+    expect(bounds.max.x).toBeLessThan(17);
+    expect(bounds.max.y).toBeGreaterThan(6);
+    expect(bounds.max.y).toBeLessThan(7);
+
+    hand.setPosition(new Vector3(0, 5, 0));
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(overlay.getHierarchyBoundingVectors(true).max.y).toBeGreaterThan(10);
+    handle.dispose();
+    expect(root.isVisible).toBe(true);
+    expect(part.isVisible).toBe(true);
+    expect(root.skeleton).toBe(skeleton);
+    expect(scene.skeletons).toContain(otherSkeleton);
+  });
+
+  it("keeps the source visible when the requested skin has no bones", () => {
+    const { engine, scene } = makeScene();
+    engines.push(engine);
+    const { root, torso } = makeHierarchy(scene);
+    const handle = attachSkeletonPreview(root, scene, "skin");
+    expect(handle.boneCount).toBe(0);
+    expect(torso.isVisible).toBe(true);
+    handle.dispose();
+  });
+
+  it("follows glTF-linked joints independently of the hidden skin mesh transform", () => {
+    const { engine, scene } = makeScene();
+    engines.push(engine);
+    const root = new TransformNode("__importScale", scene);
+    root.position.x = 10;
+    root.scaling.setAll(2);
+    const mesh = MeshBuilder.CreateBox("skin", {}, scene);
+    mesh.parent = root;
+    mesh.position.x = 3;
+    const joint = new TransformNode("hand", scene);
+    joint.parent = root;
+    joint.position.y = 2;
+    const skeleton = new Skeleton("skin", "skin", scene);
+    const bone = new Bone("hand", skeleton, null, Matrix.Identity());
+    bone.linkTransformNode(joint);
+    mesh.skeleton = skeleton;
+
+    const preview = attachSkeletonPreview(root, scene, "skin");
+    const overlay = root
+      .getChildMeshes(false)
+      .find((part) => part.name.endsWith("_overlay"))!;
+    expect(overlay.getHierarchyBoundingVectors(true).max.x).toBeLessThan(11);
+    joint.position.y = 4;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    const bounds = overlay.getHierarchyBoundingVectors(true);
+    expect(bounds.max.y).toBeGreaterThan(8);
+    expect(bounds.max.y).toBeLessThan(9);
+    expect(mesh.isVisible).toBe(false);
+    preview.dispose();
   });
 
   it("ensures rotationQuaternion so Mesh parts can become bones", () => {
@@ -110,7 +233,8 @@ describe("node-rig helpers", () => {
     const { torso } = makeHierarchy(scene);
     const group = rotationClip(scene, torso, "idle");
     expect(group.targetedAnimations[0]!.target.getClassName()).toBe("Mesh");
-    const { group: proxied, dispose } = withTransformNodeAnimationTargets(group);
+    const { group: proxied, dispose } =
+      withTransformNodeAnimationTargets(group);
     expect(proxied.targetedAnimations[0]!.target.getClassName()).toBe(
       "TransformNode",
     );
