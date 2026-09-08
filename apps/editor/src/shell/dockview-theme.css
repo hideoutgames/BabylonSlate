@@ -12,14 +12,17 @@
   --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
   --dv-tab-margin: 0 2px;
   --dv-tab-divider-color: var(--border);
-  --dv-separator-border: 1px solid
-    color-mix(in oklch, var(--foreground) 18%, transparent);
+  --dv-separator-border: 1px solid var(--border);
   --dv-paneview-header-border-color: var(--border);
-  --dv-drag-over-background-color: color-mix(in oklch, var(--chrome-tab-accent) 20%, transparent);
+  --dv-drag-over-background-color: color-mix(
+    in oklch,
+    var(--chrome-tab-accent) 20%,
+    transparent
+  );
   --dv-drag-over-border-color: var(--chrome-tab-accent);
 }
 
-/* Compact tab strip on fine pointers (mouse / trackpad). */
+/* Preserve compact tab strips on fine pointers (mouse / trackpad). */
 .dockview-theme-babylonslate .dv-tab {
   min-height: 18px;
   min-width: 56px;
@@ -32,7 +35,7 @@
   min-height: 18px;
 }
 
-/* Coarse pointers: half of the previous 52px strip. */
+/* Coarse pointers retain their compact 26px strip and wider labels. */
 @media (pointer: coarse) {
   .dockview-theme-babylonslate {
     --dv-tabs-and-actions-container-font-size: 11px;
@@ -79,7 +82,7 @@
 
 .dockview-theme-babylonslate .dv-content-container {
   background: var(--background);
-  outline: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
+  outline: 1px solid var(--border);
   outline-offset: -1px;
 }
 

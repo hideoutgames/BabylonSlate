@@ -222,18 +222,31 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("node-palette-body")).toBeVisible();
   });
 
-  test("homepage project rows expose Open, Rename, and Remove from list", async ({
+  test("homepage project rows expose Open, Rename, and Remove from list during entrance", async ({
     page,
   }) => {
     await openTestProject(page);
     await saveAllIfEnabled(page);
+    // Keep the real entrance transform active so menu hit testing is deterministic.
+    await page.addStyleTag({
+      content:
+        ".homepage-main { animation-play-state: paused; animation-delay: -0.325s; }",
+    });
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
 
     const listed = page.getByTestId("open-listed-project-TestProject");
     await expect(listed).toContainText("TestProject");
-    await listed.click({ button: "right" });
+    const listedBox = await listed.boundingBox();
+    expect(listedBox).not.toBeNull();
+    await listed.click({
+      button: "right",
+      position: { x: listedBox!.width - 64, y: listedBox!.height / 2 },
+    });
     await expect(page.getByTestId("homepage-project-menu")).toBeVisible();
+    await expect(page.getByTestId("homepage-project-menu")).toBeInViewport({
+      ratio: 1,
+    });
     await expect(page.getByTestId("homepage-project-open")).toBeVisible();
     await expect(page.getByTestId("homepage-project-rename")).toBeVisible();
     await expect(page.getByTestId("homepage-project-remove")).toBeVisible();
@@ -492,8 +505,8 @@ test.describe("Editor density and IA", () => {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {
     await openTestProject(page);
-    await page.setViewportSize({ width: 1194, height: 400 });
-    for (let index = 0; index < 8; index += 1) {
+    await page.setViewportSize({ width: 1194, height: 600 });
+    for (let index = 0; index < 20; index += 1) {
       await page.getByTestId("tree-row-assets").click();
       await page.getByTestId("content-browser-new-folder").click();
       await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();

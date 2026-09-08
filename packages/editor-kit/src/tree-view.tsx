@@ -516,7 +516,11 @@ export function TreeView({
                   <button
                     type="button"
                     aria-label={`${node.expanded ? "Collapse" : "Expand"} ${node.label}`}
-                    className="flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+                    className={cn(
+                      "flex shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      rowHeight >= 44 ? "size-11" : "size-4",
+                    )}
+                    onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
                       onToggleExpanded?.(node.id);
@@ -526,7 +530,10 @@ export function TreeView({
                     {node.expanded ? "▾" : "▸"}
                   </button>
                 ) : (
-                  <span className="size-4 shrink-0" aria-hidden />
+                  <span
+                    className={cn("shrink-0", rowHeight >= 44 ? "size-11" : "size-4")}
+                    aria-hidden
+                  />
                 )}
                 {node.icon ? (
                   <span className="flex size-4 shrink-0 items-center justify-center text-primary [&_svg]:size-4">
