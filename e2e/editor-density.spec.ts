@@ -240,7 +240,7 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("node-palette-body")).toBeVisible();
   });
 
-  test("homepage project rows expose Open, Rename, and Remove from list during entrance", async ({
+  test("homepage project cards edit their identity and keep it after reopening", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -248,7 +248,7 @@ test.describe("Editor density and IA", () => {
     // Keep the real entrance transform active so menu hit testing is deterministic.
     await page.addStyleTag({
       content:
-        ".homepage-main { animation-play-state: paused; animation-delay: -0.325s; }",
+        ".homepage-library { animation-play-state: paused; animation-delay: -0.325s; }",
     });
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
@@ -271,12 +271,36 @@ test.describe("Editor density and IA", () => {
 
     await page.getByTestId("homepage-project-rename").click();
     await expect(page.getByTestId("homepage-rename-dialog")).toBeVisible();
+    await expect(page.getByTestId("create-project-empty")).toHaveCount(0);
     await page.getByTestId("homepage-rename-input").fill("Renamed Game");
+    await page.getByRole("button", { name: "Orbit", exact: true }).click();
+    await page.getByRole("button", { name: "Violet", exact: true }).click();
     await page.getByTestId("homepage-rename-confirm").click();
     await expect(listed).toContainText("Renamed Game");
+    await expect(listed.locator("[data-project-icon='orbit']")).toHaveAttribute(
+      "data-color",
+      "violet",
+    );
+
+    await listed.focus();
+    await page.keyboard.press("Shift+F10");
+    await expect(page.getByTestId("homepage-project-open")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(listed).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await expect(page.locator("[data-slate-home-styles]")).toHaveCount(0);
+    await closeProjectViaSettings(page);
+    await expect(listed).toContainText("Renamed Game");
+    await expect(listed.locator("[data-project-icon='orbit']")).toHaveAttribute(
+      "data-color",
+      "violet",
+    );
   });
 
-  test("homepage project row X confirms Delete for OPFS", async ({ page }) => {
+  test("homepage project card trash action confirms Delete for OPFS", async ({
+    page,
+  }) => {
     await openTestProject(page);
     await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);
