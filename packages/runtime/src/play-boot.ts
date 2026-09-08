@@ -60,12 +60,9 @@ export function createPlayBootCoordinator() {
       for (const entry of unmatchedScriptSpawns(pendingSpawn, sceneClassIds)) {
         runtime.spawnScriptedActor(entry);
       }
-      try {
-        await runtime.loadPhysics();
-      } finally {
-        runtime.start();
-        runtime.resume();
-      }
+      await runtime.loadPhysics();
+      runtime.start();
+      runtime.resume();
     },
   };
 }

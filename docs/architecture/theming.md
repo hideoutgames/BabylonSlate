@@ -19,6 +19,9 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 `globals.css` owns the four safe-area tokens: `--safe-top`, `--safe-right`, `--safe-bottom`, and `--safe-left`. They resolve the corresponding `env(safe-area-inset-*, 0px)` values, keeping web, Electron, and jsdom at zero. Surfaces consume these tokens and never call `env()` directly.
 
 - The editor and Homepage roots use `.safe-frame` for left, right, and bottom insets.
+- Installed phone apps reserve at least 2rem at the bottom when the platform reports a zero home-indicator inset; larger reported insets still win. Browser tabs and tablet/desktop layouts use their reported insets without this minimum.
+- `--safe-bottom` is a registered CSS length, so JavaScript-positioned menus read the same resolved pixels as CSS layout, including the installed-phone minimum.
+- The body owns the dynamic viewport height; Homepage and editor fill it without inherited viewport minimums. Body/root clipping prevents extra shell scroll containers, while orientation recovery resets retained document offsets during the following second of viewport resize events. Panel scrolling and input focus are preserved.
 - Full-height Homepage chrome also uses `.safe-frame-top`; editor chrome consumes the top inset in its title bar.
 - The editor chrome shell owns the top inset while preserving the interactive row height.
 - Fixed context menus and Play/Preview Build overlay chrome consume the tokens themselves; their canvases and iframe remain edge-to-edge.

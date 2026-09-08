@@ -39,6 +39,7 @@ import { EditorUtilityRuntime } from "./components/editor-utility-runtime";
 import { ModelThumbnailCaptureHost } from "./components/model-thumbnail-capture-host";
 import { TestAudioHostStats } from "./lib/test-audio-host-stats";
 import { TestParticleHostStats } from "./lib/test-particle-host-stats";
+import { useOrientationScrollReset } from "./shell/use-orientation-scroll-reset";
 import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
@@ -250,7 +251,7 @@ function EditorLayout() {
   };
 
   return (
-    <div className="safe-frame flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground">
+    <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
       <EditorChromeBar
         onCloseProject={() => void requestClose()}
         onSaveProject={() => void requestSave()}
@@ -358,6 +359,7 @@ function AppRoutes() {
   useSuppressNativeContextMenu();
   useSuppressIosEditingGestures();
   usePreventDocumentOverscroll();
+  useOrientationScrollReset();
   const {
     route,
     listedProjects,

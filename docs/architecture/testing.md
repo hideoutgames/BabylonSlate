@@ -16,7 +16,8 @@ The owner-only default deliberately avoids transitive-consumer amplification. Ru
 
 ## Responsive editor checks
 
-- `e2e/phone-editor.spec.ts` covers 390x844 phone navigation/tools and 844x390 phone landscape, one visible Dockview window, and restoration to the 1194x834 tablet layout.
+- `e2e/phone-editor.spec.ts` covers 390x844 phone navigation/tools, the return from 844x390 landscape to portrait, bottom safe-area clearance, one visible Dockview window, and restoration to the 1194x834 tablet layout. It also injects a stale document offset and checks recovery plus real touch hit testing.
+- Installed-phone minimum spacing is tested by activating only the standalone CSS media condition; Chromium cannot emulate that display mode. Its real pointer/size queries still verify that the minimum leaves tablet layouts unchanged. Physical Home Screen testing remains necessary for iOS status-bar effects and rotation timing.
 - `e2e/phone-content-browser.spec.ts` covers touch folder navigation, explicit Open, and the two-step New Asset flow. These run under desktop-chrome with phone viewport/touch overrides; existing iPad tests remain unchanged.
 - Shared CatalogDialog tests cover category selection; real Dockview tests cover panel visibility, preservation, and layout restoration. Phone browser emulation does not certify native iOS/Android packaging or physical-device behavior.
 - Tablet folder-pan coverage creates enough rows to scroll at 1194x600, keeping the coarse-pointer viewport above the 500px phone-layout height breakpoint.
@@ -76,6 +77,10 @@ The Node project also includes pure editor, graph-ui and VFS logic tests. Run on
 The `jsdom` project sets `css: true` so `?raw` stylesheet imports resolve; Vitest stubs CSS to an empty string otherwise, which silently made the radius audit pass on empty input.
 
 ## Preview parity fixture
+
+Physics parity regressions use eight saved spheres sharing legacy component IDs above a rotated cube. Runtime tests verify collider ownership, independent updates/removal, component-bound contact events, and real Havok contact/downhill motion. Browser tests require all eight lanes to roll downhill in normal Play and Preview Build. The shared lighting browser case checks image contribution from lights beyond the fourth in Scene viewport, Play, and Preview Build; renderer tests cover shader defines, late imported materials, frozen readiness, and Unlit/PBR transitions.
+
+Startup regressions verify deployment-base WASM URLs, failed explicit downloads and retry, strict Play backend initialization, and no simulation ticks after physics startup fails. These checks exercise error paths rather than treating Node's local WASM file as evidence that a hosted URL works.
 
 `e2e/preview-scene-fixture.ts` is the shared authored scene for Scene viewport, overlay Play, Preview Build, and served export assertions. It includes separated actors plus a parented child. Test-only hosts expose live Babylon visual positions/material names; tests assert the rendered state, not only command records or tick counters. `p9-content.spec.ts` also compares consecutive static Material Preview frames so RTT accumulation fails in browser coverage.
 
