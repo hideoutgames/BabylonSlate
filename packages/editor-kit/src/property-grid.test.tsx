@@ -22,7 +22,13 @@ describe("PropertyGrid", () => {
 
   it("shows readable Boolean states and toggles from the value label", () => {
     const onChange = vi.fn();
-    const row: PropertyRow = { kind: "boolean", id: "enabled", label: "Enabled", value: false, onChange };
+    const row: PropertyRow = {
+      kind: "boolean",
+      id: "enabled",
+      label: "Enabled",
+      value: false,
+      onChange,
+    };
     const { rerender } = render(<PropertyGrid rows={[row]} />);
     expect(screen.getByRole("checkbox", { name: "Enabled" })).toBeTruthy();
     fireEvent.click(screen.getByText("Off"));
@@ -49,10 +55,47 @@ describe("PropertyGrid", () => {
     ];
     render(<PropertyGrid rows={rows} />);
 
-    fireEvent.change(screen.getByTestId("property-position-y"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Position Y" }), {
       target: { value: "9" },
     });
     expect(onChange).toHaveBeenCalledWith([1, 9, 3]);
+  });
+
+  it("names compound color and slider controls with their property context", async () => {
+    // Base UI's inset thumb needs a measured track before it becomes accessible.
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 100, 20));
+    try {
+      render(
+        <PropertyGrid
+          rows={[
+            {
+              kind: "color",
+              id: "light-color",
+              label: "Light Color",
+              value: [1, 0, 0],
+              onChange: () => {},
+            },
+            {
+              kind: "slider",
+              id: "intensity",
+              label: "Intensity",
+              value: 0.5,
+              min: 0,
+              max: 1,
+              onChange: () => {},
+            },
+          ]}
+        />,
+      );
+      expect(
+        screen.getByRole("textbox", { name: "Light Color Hex" }),
+      ).toBeTruthy();
+      expect(await screen.findByRole("slider", { name: "Intensity" })).toBeTruthy();
+    } finally {
+      bounds.mockRestore();
+    }
   });
 
   it("reports the edited axis separately for a shared vector and resets the entire row", () => {

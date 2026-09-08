@@ -47,6 +47,8 @@ function Slider({
         </SliderPrimitive.Track>
         {thumbs.map((_, index) => (
           <SliderPrimitive.Thumb
+            aria-label={props["aria-label"]}
+            aria-labelledby={props["aria-labelledby"]}
             data-slot="slider-thumb"
             key={index}
             className="relative block size-4 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,box-shadow] select-none after:absolute after:-inset-3 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"

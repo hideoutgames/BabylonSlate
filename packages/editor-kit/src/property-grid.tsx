@@ -24,7 +24,8 @@ import { PickerIdentity } from "./picker-identity";
 import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
 
-export type Vector3Value = [number, number, number] | [number, number, number, number];
+export type Vector3Value =
+  [number, number, number] | [number, number, number, number];
 
 interface PropertyRowBase {
   id: string;
@@ -212,6 +213,7 @@ function RowControl({ row }: { row: PropertyRow }) {
             <div key={axis} className="min-w-0 flex-1">
               <NumericDragField
                 label={axis}
+                aria-label={`${humanizePropertyLabel(row.label)} ${axis}`}
                 value={row.value[index] ?? 0}
                 mixed={row.mixedAxes?.[index] ?? row.mixed}
                 accent={axis.toLowerCase() as "x" | "y" | "z"}
@@ -236,18 +238,23 @@ function RowControl({ row }: { row: PropertyRow }) {
     }
     case "boolean":
       return (
-        <FieldLabel htmlFor={`property-${row.id}`} className="flex min-h-[var(--chrome-row,28px)] w-full items-center gap-2 rounded-md border border-input bg-control px-2 py-1">
-        <Checkbox
-          id={`property-${row.id}`}
-          aria-labelledby={`property-${row.id}-caption`}
-          className="size-4"
-          checked={row.mixed ? false : row.value}
-          indeterminate={row.mixed}
-          disabled={row.disabled}
-          onCheckedChange={(checked) => row.onChange(checked === true)}
-          data-testid={`property-${row.id}`}
-        />
-        <span aria-hidden="true" className="text-xs text-muted-foreground">{row.mixed ? "Mixed" : row.value ? "On" : "Off"}</span>
+        <FieldLabel
+          htmlFor={`property-${row.id}`}
+          className="flex min-h-[var(--chrome-row,28px)] w-full items-center gap-2 rounded-md border border-input bg-control px-2 py-1"
+        >
+          <Checkbox
+            id={`property-${row.id}`}
+            aria-labelledby={`property-${row.id}-caption`}
+            className="size-4"
+            checked={row.mixed ? false : row.value}
+            indeterminate={row.mixed}
+            disabled={row.disabled}
+            onCheckedChange={(checked) => row.onChange(checked === true)}
+            data-testid={`property-${row.id}`}
+          />
+          <span aria-hidden="true" className="text-xs text-muted-foreground">
+            {row.mixed ? "Mixed" : row.value ? "On" : "Off"}
+          </span>
         </FieldLabel>
       );
     case "text":
@@ -302,6 +309,7 @@ function RowControl({ row }: { row: PropertyRow }) {
       return (
         <ColorField
           id={`property-${row.id}`}
+          aria-label={humanizePropertyLabel(row.label)}
           value={row.value}
           disabled={row.disabled}
           onChange={row.onChange}
@@ -312,6 +320,7 @@ function RowControl({ row }: { row: PropertyRow }) {
       return (
         <div className="flex min-w-0 items-center gap-2">
           <Slider
+            aria-label={humanizePropertyLabel(row.label)}
             className="min-w-0 flex-1"
             value={row.value}
             min={row.min}
@@ -364,7 +373,9 @@ function RowControl({ row }: { row: PropertyRow }) {
           >
             {selected && (row.visual || row.displayType) ? (
               <PickerIdentity
-                label={row.displayLabel ?? row.value ?? row.placeholder ?? "None"}
+                label={
+                  row.displayLabel ?? row.value ?? row.placeholder ?? "None"
+                }
                 description={row.displayType}
                 visual={row.visual}
               />
@@ -406,7 +417,11 @@ export function PropertyGrid({
 }: PropertyGridProps) {
   const compact = density === "compact";
   return (
-    <div className="flex flex-col gap-0" data-slot="property-grid" data-testid={testId}>
+    <div
+      className="flex flex-col gap-0"
+      data-slot="property-grid"
+      data-testid={testId}
+    >
       {title ? (
         <h3 className="bg-panel-header px-2 py-1.5 text-xs font-semibold text-foreground">
           {title}
@@ -423,9 +438,7 @@ export function PropertyGrid({
                   : `property-${row.id}`
               }
               className={
-                hideLabels
-                  ? "sr-only"
-                  : "w-auto min-w-0 flex-1 truncate"
+                hideLabels ? "sr-only" : "w-auto min-w-0 flex-1 truncate"
               }
             >
               {humanizePropertyLabel(row.label)}
