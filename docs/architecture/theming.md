@@ -10,9 +10,9 @@ Tailwind v4 detects sources relative to the CSS entry, which here lives in `pack
 
 ## Theme source
 
-Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000h04l1gu419ckw)): achromatic surfaces and ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not re-import a tweakcn preset over those editor-function tokens.
+Chrome uses **Soft Graphite**: subtly cool charcoal and off-white surfaces with ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not import a preset over those editor-function tokens.
 
-`apps/editor/src/shell/design-tokens.test.ts` asserts ink `--primary`, Neutral backgrounds, `--chrome-tab-accent: var(--foreground)`, a chromatic `--axis-z` that is not `var(--primary)`, a darker light-mode `--pin-exec`, dark `--secondary`/`--muted` distinct from `--popover`, and Dockview tab colors plus 1px content-container outlines.
+`apps/editor/src/shell/design-tokens.test.ts` checks actual palette contrast for main/secondary text and focus indicators, ink `--primary`, semantic type/axis colors, and Dockview boundaries. Screenshots and interaction review remain necessary to validate composed surfaces, transparency, clipping, and density.
 
 ## Safe-area insets
 
@@ -41,7 +41,7 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
 
-- **Primary is ink** (achromatic). Buttons, focus rings, and selection bars follow Neutral. Active tabs use `--chrome-tab-accent` → `var(--foreground)`.
+- **Primary is ink** (near-neutral). Buttons, focus rings, and selection bars follow Graphite. Active tabs use `--chrome-tab-accent` → `var(--foreground)`; the active dock group has the stronger indicator.
 - **Layered surfaces** differentiate chrome, side panels, and canvases.
 - **Saturated pin/node and `--asset-*` colors are type cues** — not whole toolbars.
 - **Axis and status accents** stay chromatic: X/Y/Z, Play (`--success`), destructive actions.
@@ -50,23 +50,32 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| Viewport / graph canvas (always dark) | `--background` (dark) | n/a — canvases ignore light chrome | `oklch(0.145 0 0)` ≈ `#242424` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` |
-| Chrome / raised cards | `--card` | `oklch(1 0 0)` | `oklch(0.205 0 0)` |
-| Headers / category bars | `--secondary` / `--muted` | `oklch(0.97 0 0)` | `oklch(0.32 0 0)` |
-| Menus / viewport overlay | `--popover` | `oklch(1 0 0)` | `oklch(0.269 0 0)` |
-| Hover / selection wash | `--accent` | `oklch(0.97 0 0)` | `oklch(0.371 0 0)` |
+| App frame | `--background` | `oklch(0.958 0.004 260)` | `oklch(0.215 0.006 260)` |
+| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.979 0.003 260)` | `oklch(0.246 0.006 260)` |
+| Raised cards / active tabs | `--card` | `oklch(0.991 0.002 260)` | `oklch(0.276 0.006 260)` |
+| Panel toolbars / section headers | `--panel-header` | `oklch(0.963 0.004 260)` | `oklch(0.258 0.006 260)` |
+| Menus / dialogs / floating tools | `--popover` | `oklch(0.995 0.001 260)` | `oklch(0.285 0.007 260)` |
+| Inputs / outline actions | `--control` | `oklch(0.991 0.002 260)` | `oklch(0.231 0.006 260)` |
+| Hover / selection wash | `--accent` | `oklch(0.91 0.008 260)` | `oklch(0.332 0.008 260)` |
 
-`--primary` is ink in both schemes: light `oklch(0.145 0 0)`, dark `oklch(0.985 0 0)`.
+`--primary` is ink in both schemes: light `oklch(0.278 0.008 260)`, dark `oklch(0.934 0.004 260)`. The compact dimensions stay unchanged; `--radius` is 8px. Home opens without entrance/stagger animations or moving hover targets.
+
+Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared card adjustment cannot flatten the workbench. Graph hosts retain their existing dark default and explicit light override. Animation states use the same surface system with `--graph-state-selected` and `--graph-state-entry`. Pin/handle geometry, functional preview mattes, and transparency checkerboards are unchanged.
+
+## Search and folder navigation
+
+- Global Search keeps focus in the query: Up/Down selects a result across groups, Enter opens it, and Escape closes the dialog. The active result remains visible while navigating. Indexing hides stale results.
+- Content Browser shows the current folder path and a Parent Folder action within the selected project/plugin root. Ancestor navigation clears tile selection and retains filters.
+- Empty folders offer New Asset and Import when writable. An unsuccessful asset search offers Clear Filters; Outliner distinguishes No Matching Actors from an empty scene and retains its search-clear action.
 
 ## Action and status tokens
 
 | Role | Token | Notes |
 | --- | --- | --- |
-| Default actions / ink chrome | `--primary` | Achromatic Neutral ink |
+| Default actions / ink chrome | `--primary` | Near-neutral ink |
 | Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
-| Success / Play | `--success` | Positive status and the global Play control |
+| Success / Play | `--success`, `--success-foreground` | Positive status and a contrasting label on the global Play control |
 
 ## Pin type colors
 

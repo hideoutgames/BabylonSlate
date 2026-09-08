@@ -404,7 +404,7 @@ export function PropertyGrid({
   return (
     <div className="flex flex-col gap-0" data-slot="property-grid" data-testid={testId}>
       {title ? (
-        <h3 className="bg-secondary px-3 py-2 text-sm font-semibold text-foreground">
+        <h3 className="bg-panel-header px-2 py-1.5 text-xs font-semibold text-foreground">
           {title}
         </h3>
       ) : null}
@@ -435,7 +435,7 @@ export function PropertyGrid({
               className={
                 compact
                   ? "gap-0.5 px-0 py-0"
-                  : "gap-0.5 border-b border-border/60 px-2 py-1"
+                  : "gap-0.5 border-b border-border/30 px-2 py-1"
               }
             >
               {orientation === "horizontal" ? (

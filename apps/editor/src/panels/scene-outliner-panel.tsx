@@ -674,7 +674,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame data-testid="scene-outliner-panel">
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 items-center gap-1 px-1 py-1">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
             className={cn("min-h-[var(--chrome-row,28px)]", phone && "min-h-11")}
             placeholder="Search actors"
@@ -791,7 +791,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             onExternalDragMove={moveActorDropHint}
             onExternalDragEnd={() => setDropHint(null)}
             reparentArm="immediate"
-            emptyLabel={scene ? "No actors yet" : "Open a scene"}
+            emptyLabel={scene ? search.trim() ? "No Matching Actors" : "No Actors Yet" : "Open A Scene"}
             data-testid="outliner-tree"
           />
         </div>

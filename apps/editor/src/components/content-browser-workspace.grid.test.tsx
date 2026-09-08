@@ -171,6 +171,27 @@ afterEach(async () => {
 });
 
 describe("ContentBrowserWorkspace grid window", () => {
+  it("navigates back to Content with the location bar after opening a folder", async () => {
+    installRegistry([], ["Characters"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.doubleClick(await screen.findByTestId("content-folder-assets/Characters"));
+    const location = await screen.findByRole("navigation", { name: "Folder Location" });
+    expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Characters");
+    fireEvent.click(screen.getByRole("button", { name: "Parent Folder" }));
+    expect(await screen.findByTestId("content-folder-assets/Characters")).toBeTruthy();
+    expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Content");
+    expect(screen.getByRole("button", { name: "Parent Folder" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("clears an unsuccessful search without leaving the current folder", async () => {
+    installRegistry([texture(1)]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.change(screen.getByTestId("content-browser-search"), { target: { value: "missing" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Clear Filters" }));
+    expect((screen.getByTestId("content-browser-search") as HTMLInputElement).value).toBe("");
+    expect(await screen.findByTestId("content-item-assets/tex-1.babasset")).toBeTruthy();
+  });
+
   beforeEach(() => {
     installRegistry(Array.from({ length: 80 }, (_, index) => texture(index)));
   });

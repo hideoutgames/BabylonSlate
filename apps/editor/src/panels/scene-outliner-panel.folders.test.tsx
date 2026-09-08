@@ -67,6 +67,17 @@ function renderOutliner(scene: SerializedScene) {
   return render(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
 }
 
+it("distinguishes an unsuccessful actor search from an empty scene and restores the tree when cleared", () => {
+  const scene = createDefaultScene();
+  scene.actors = [createActor("hero", "Hero")];
+  renderOutliner(scene);
+  fireEvent.change(screen.getByTestId("outliner-search"), { target: { value: "missing" } });
+  expect(screen.getByText("No Matching Actors")).toBeTruthy();
+  expect(screen.queryByTestId(`tree-row-${actorRowId("hero")}`)).toBeNull();
+  fireEvent.click(screen.getByTestId("outliner-search-clear"));
+  expect(screen.getByTestId(`tree-row-${actorRowId("hero")}`)).toBeTruthy();
+});
+
 function lastScene(): SerializedScene {
   const calls = applySceneChange.mock.calls;
   return calls[calls.length - 1]![1];

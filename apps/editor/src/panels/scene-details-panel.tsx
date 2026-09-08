@@ -853,10 +853,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         {actor.components.map((component, index) => (
           <div
             key={component.id}
-            className="mx-2 rounded-lg border border-border bg-card"
+            className="mx-2 overflow-hidden rounded-lg border border-border/60 bg-sidebar"
             data-testid={`component-card-${component.id}`}
           >
-            <div className="flex items-center justify-between gap-2 border-b border-border bg-secondary px-2 py-1">
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
               <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
                 <TypeVisualIcon
                   visual={resolveTypeVisual({ classId: component.classId })}

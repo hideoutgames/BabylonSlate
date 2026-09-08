@@ -350,10 +350,10 @@ export function Homepage({
       className="homepage safe-frame safe-frame-top flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground lg:flex-row"
       data-testid="homepage"
     >
-      <aside className="homepage-rail flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4 lg:h-full lg:w-[min(22rem,34vw)] lg:flex-col lg:items-start lg:justify-between lg:border-r lg:border-b-0 lg:px-10 lg:py-12">
-        <div className="flex items-center gap-4 lg:flex-col lg:items-start lg:gap-8">
-          <BrandIcon className="homepage-brand-icon size-12 lg:size-40" />
-          <h1 className="m-0 font-heading text-xl tracking-tight lg:text-3xl">
+      <aside className="homepage-rail flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4 lg:h-full lg:w-60 lg:flex-col lg:items-start lg:justify-between lg:border-r lg:border-b-0 lg:px-7 lg:py-8">
+        <div className="flex items-center gap-4 lg:flex-col lg:items-start lg:gap-4">
+          <BrandIcon className="homepage-brand-icon size-10 lg:size-16" />
+          <h1 className="m-0 font-heading text-xl tracking-tight lg:text-2xl">
             BabylonSlate
           </h1>
         </div>
@@ -367,7 +367,7 @@ export function Homepage({
         </Button>
       </aside>
 
-      <main className="homepage-main mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-10 overflow-hidden px-6 py-8 lg:px-10 lg:py-12">
+      <main className="homepage-main mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-7 overflow-hidden px-6 py-8 lg:px-7 lg:py-8">
         {needsReconnect ? (
           <Alert variant="destructive" data-testid="reconnect-banner">
             <AlertTitle>Project folder unavailable</AlertTitle>

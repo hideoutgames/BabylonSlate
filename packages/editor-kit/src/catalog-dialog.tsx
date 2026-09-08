@@ -190,7 +190,7 @@ export function CatalogDialog({
                 {section.label ? (
                   <>
                     {index > 0 ? <Separator className="my-1" /> : null}
-                    <p className="px-2 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="px-2 pt-1 text-xs font-medium text-muted-foreground">
                       {section.label}
                     </p>
                   </>

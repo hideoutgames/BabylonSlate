@@ -111,6 +111,35 @@ function circularHueDistance(a: number, b: number): number {
   return Math.min(diff, 360 - diff);
 }
 
+/** OKLCH to linear sRGB luminance, so unreadable palette pairs fail the audit. */
+function luminance(value: string): number {
+  const lightness = oklchLightness(value);
+  const chroma = oklchChroma(value);
+  const radians = (oklchHue(value) * Math.PI) / 180;
+  const a = chroma * Math.cos(radians);
+  const b = chroma * Math.sin(radians);
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const clamp = (channel: number) => Math.max(0, Math.min(1, channel));
+  return (
+    0.2126 * clamp(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s) +
+    0.7152 * clamp(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s) +
+    0.0722 * clamp(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)
+  );
+}
+
+function contrast(block: string, foreground: string, background: string): number {
+  const resolve = (name: string): string => {
+    const value = tokenValue(block, name);
+    const alias = value.match(/^var\((--[\w-]+)\)$/);
+    return alias ? resolve(alias[1]!) : value;
+  };
+  const first = luminance(resolve(foreground));
+  const second = luminance(resolve(background));
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+
 describe("authored shell stylesheets", () => {
   it.each(Object.entries(AUTHORED_STYLESHEETS))(
     "%s draws every radius from the token scale",
@@ -128,7 +157,7 @@ describe("authored shell stylesheets", () => {
   });
 });
 
-describe("Minimal Neutral theme tokens", () => {
+describe("Graphite theme tokens", () => {
   const root = cssBlock(globalsCss, ":root");
   const dark = cssBlock(globalsCss, ".dark");
 
@@ -137,9 +166,14 @@ describe("Minimal Neutral theme tokens", () => {
     expect(oklchChroma(tokenValue(dark, "--primary"))).toBeLessThan(0.01);
   });
 
-  it("uses Neutral light and dark backgrounds", () => {
-    expect(tokenValue(root, "--background")).toBe("oklch(1 0 0)");
-    expect(tokenValue(dark, "--background")).toBe("oklch(0.145 0 0)");
+  it.each([":root", ".dark"])("keeps secondary text and keyboard focus readable in %s", (scheme) => {
+    const block = cssBlock(globalsCss, scheme);
+    for (const surface of ["--background", "--sidebar", "--card", "--popover", "--muted", "--accent"]) {
+      expect(contrast(block, "--foreground", surface), `text on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(block, "--muted-foreground", surface), `secondary text on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(block, "--ring", surface), `focus on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+    expect(contrast(block, "--primary-foreground", "--primary")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("points the chrome tab accent at foreground", () => {
@@ -291,10 +325,10 @@ describe("compact dock tab strips", () => {
 describe("dockview theme contrast", () => {
   const theme = cssBlock(dockviewCss, ".dockview-theme-babylonslate");
 
-  it("paints tab strips with card chrome and tab labels with foreground tokens", () => {
+  it("paints tab strips with panel-header chrome and tab labels with foreground tokens", () => {
     expect(
       tokenValue(theme, "--dv-tabs-and-actions-container-background-color"),
-    ).toBe("var(--card)");
+    ).toBe("var(--panel-header)");
     expect(tokenValue(theme, "--dv-activegroup-visiblepanel-tab-color")).toBe(
       "var(--foreground)",
     );

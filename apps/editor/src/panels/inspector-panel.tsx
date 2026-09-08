@@ -832,8 +832,8 @@ function PrefabComponentDetails({
         )}
         data-testid="prefab-component-transform-grid"
       />
-      <div className="rounded-lg border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border bg-secondary px-2 py-1">
+      <div className="overflow-hidden rounded-lg border border-border/60 bg-sidebar">
+        <div className="flex items-center gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
           <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
             <TypeVisualIcon
               visual={resolveTypeVisual({ classId: component.classId })}

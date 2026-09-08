@@ -351,7 +351,7 @@ export function BlueprintNodeShell({
         data-node-role={role}
         data-disabled={disabled ? "true" : undefined}
         className={cn(
-          "overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
+          "overflow-hidden rounded-lg border border-border bg-graph-node text-card-foreground shadow-sm",
           compact ? "min-w-56" : "w-max min-w-80",
           selected && "ring-2 ring-primary",
           disabled && "opacity-50",

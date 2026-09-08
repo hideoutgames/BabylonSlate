@@ -2710,6 +2710,8 @@ describe("GraphEditor", () => {
       <GraphEditor initialGraph={{ nodes: [], edges: [] }} />,
     );
     expect(container.querySelector(".react-flow")?.className).toMatch(/\bdark\b/);
+    const background = container.querySelector<SVGElement>(".react-flow__background");
+    expect(background?.style.getPropertyValue("--xy-background-color-props")).toBe("var(--graph-canvas)");
   });
 
   it("renders an Add node toolbar button", () => {

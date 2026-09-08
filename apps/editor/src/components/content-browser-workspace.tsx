@@ -26,6 +26,7 @@ import {
 } from "@babylonslate/render";
 import {
   ContextMenuOverlay,
+  FolderBreadcrumbs,
   SearchInput,
   SelectableText,
   TreeView,
@@ -48,6 +49,7 @@ import {
   pickImportFiles,
 } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from "@babylonslate/ui/components/empty";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   Sheet,
@@ -343,6 +345,7 @@ export function ContentBrowserWorkspace({
   const selectedRootWritable = canMutateContentBrowserRoot(
     browserRoots.find((root) => root.id === selectedRoot.rootId),
   );
+  const folderRoot = browserRoots.find((root) => root.id === selectedRoot.rootId) ?? browserRoots[0]!;
 
   useEffect(() => {
     if (
@@ -1851,12 +1854,12 @@ export function ContentBrowserWorkspace({
 
   return (
     <div
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
       data-testid="content-browser-workspace"
     >
       <div
         className={cn(
-          "flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2",
+          "flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel-header px-2 py-1.5",
           phone && "px-2",
         )}
       >
@@ -2059,12 +2062,24 @@ export function ContentBrowserWorkspace({
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {!phone ? (
-          <aside className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-hidden border-r border-border p-2">
+          <aside className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-hidden border-r border-border bg-sidebar p-2">
             {folderNavigation}
           </aside>
         ) : null}
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="shrink-0 border-b border-border/60 bg-sidebar px-1 py-0.5">
+            <FolderBreadcrumbs
+              root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_ROOT_ID ? "Content" : folderRoot.label }}
+              path={selectedFolderPath}
+              touch={phone}
+              onNavigate={(path) => {
+                setSelectedFolderPath(path);
+                setSelectedGuids(new Set());
+                setSelectedFolderPaths(new Set());
+              }}
+            />
+          </div>
           <div
             ref={scrollerRef}
             className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
@@ -2113,12 +2128,22 @@ export function ContentBrowserWorkspace({
             onPointerCancelCapture={paintBind.onPointerCancelCapture}
           >
             {gridItems.length === 0 ? (
-              <p
-                className="p-3 text-sm text-muted-foreground"
-                data-testid="content-browser-empty-copy"
-              >
-                No assets in this folder match the current filters.
-              </p>
+              <Empty data-testid="content-browser-empty-copy" className="border-0 py-10">
+                <EmptyHeader>
+                  <EmptyTitle>{search.trim() || typeFilters.length ? "No Matching Assets" : "This Folder Is Empty"}</EmptyTitle>
+                  <EmptyDescription>{search.trim() || typeFilters.length ? "Try another search or clear the filters." : "Add an asset or import files to get started."}</EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  {search.trim() || typeFilters.length ? (
+                    <Button variant="outline" size={phone ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
+                  ) : selectedRootWritable ? (
+                    <div className="flex items-center gap-2">
+                      <Button size={phone ? "touch" : "sm"} disabled={busy} onClick={openNewAssetDialog}><PlusIcon data-icon="inline-start" />New Asset</Button>
+                      <Button variant="outline" size={phone ? "touch" : "sm"} disabled={busy} onClick={() => void handleImport()}><UploadIcon data-icon="inline-start" />Import</Button>
+                    </div>
+                  ) : null}
+                </EmptyContent>
+              </Empty>
             ) : (
               <div className="relative" style={{ height: spacerHeight }}>
                 {gridItems
