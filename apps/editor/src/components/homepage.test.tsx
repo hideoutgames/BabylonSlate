@@ -76,7 +76,7 @@ describe("Homepage branding", () => {
     expect(screen.getByTestId("brand-icon")).toBeTruthy();
     expect(screen.queryByTestId("brand-logo")).toBeNull();
     expect(
-      screen.getByRole("heading", { name: "Slate", exact: true }),
+      screen.getByRole("heading", { name: "Slate" }),
     ).toBeTruthy();
     expect(screen.getByTestId("engine-settings")).toBeTruthy();
   });

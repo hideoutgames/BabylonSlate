@@ -552,9 +552,9 @@ function OverlayMenu({
 }
 
 function enabledOverlayItems(panel: HTMLElement): HTMLButtonElement[] {
-  return [
-    ...panel.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]'),
-  ].filter((item) => !item.disabled);
+  return Array.from(
+    panel.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]'),
+  ).filter((item) => !item.disabled);
 }
 
 function parseCssPixelToken(name: string): number {
