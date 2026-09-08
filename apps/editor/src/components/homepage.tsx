@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDownIcon,
   BoxIcon,
@@ -176,32 +176,28 @@ function HomepageProjectRow({
     if (busy) return;
     onOpen(project);
   };
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      openProject();
-    }
-  };
-
   return (
     <li>
       <Card
         size="sm"
-        tabIndex={0}
-        data-testid={`open-listed-project-${project.name}`}
         className="homepage-project-row flex cursor-pointer flex-row items-center gap-3 px-3 py-2 min-h-[var(--touch-target,44px)]"
         {...bind}
-        onClick={(event) => {
+      >
+        <Button
+          variant="ghost"
+          size="touch"
+          className="h-auto min-w-0 flex-1 justify-start gap-3 px-0 text-left"
+          aria-label={`Open ${displayProjectName(project.label)}`}
+          disabled={busy}
+          data-testid={`open-listed-project-${project.name}`}
+          onClick={() => {
           if (skipOpenRef.current) {
             skipOpenRef.current = false;
             return;
           }
-          if ((event.target as HTMLElement).closest("button")) return;
           openProject();
         }}
-        onKeyDown={onKeyDown}
-      >
+        >
         <span
           data-testid="project-card-well"
           className="homepage-project-well rounded-md"
@@ -210,15 +206,16 @@ function HomepageProjectRow({
           <BoxIcon />
         </span>
         <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-          <span className="font-medium">
+          <span className="max-w-full truncate font-medium" title={displayProjectName(project.label)}>
             {displayProjectName(project.label)}
           </span>
           {meta.length > 0 ? (
-            <span className="text-xs text-muted-foreground">
+            <span className="max-w-full truncate text-xs text-muted-foreground" title={meta.join(" · ")}>
               {meta.join(" · ")}
             </span>
           ) : null}
         </span>
+        </Button>
         <IconActionButton
           type="button"
           variant="ghost"
@@ -285,6 +282,7 @@ export function Homepage({
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<ListedProject | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
@@ -324,19 +322,23 @@ export function Homepage({
     [projects, projectSearch, locationFilters, sortMode],
   );
 
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => void | Promise<void>, label = "Opening Project") => {
+    if (busy) return;
     setError(null);
     setBusy(true);
+    setOperation(label);
     try {
       await fn();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+      setOperation(null);
     }
   };
 
   const openCreate = (templateId: string) => {
+    if (busy) return;
     setCreateName(defaultCreateProjectDisplayName(isTestModeEnabled()));
     setCreateTemplateId(templateId);
     setPickFolder(false);
@@ -369,6 +371,11 @@ export function Homepage({
       </aside>
 
       <main className="homepage-main mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-7 overflow-hidden px-6 py-8 lg:px-7 lg:py-8">
+        {operation ? (
+          <p role="status" className="shrink-0 text-sm text-muted-foreground">
+            {operation}…
+          </p>
+        ) : null}
         {needsReconnect ? (
           <Alert variant="destructive" data-testid="reconnect-banner">
             <AlertTitle>Project folder unavailable</AlertTitle>
@@ -381,7 +388,7 @@ export function Homepage({
                 className="w-fit"
                 data-testid="reconnect-project"
                 disabled={busy}
-                onClick={() => void run(onReconnect)}
+                onClick={() => void run(onReconnect, "Reconnecting Project")}
               >
                 Reconnect project folder
               </Button>
@@ -400,13 +407,15 @@ export function Homepage({
               <div className="flex gap-2">
                 <Button
                   data-testid="recover-journal"
-                  onClick={() => void onRecover()}
+                  disabled={busy}
+                  onClick={() => void run(onRecover, "Recovering Edits")}
                 >
                   Recover edits
                 </Button>
                 <Button
                   variant="outline"
                   data-testid="dismiss-journal"
+                  disabled={busy}
                   onClick={onDismissRecovery}
                 >
                   Discard journal
@@ -448,7 +457,7 @@ export function Homepage({
                 onClick={() => void run(onOpenExternal)}
               >
                 <FolderOpenIcon data-icon="inline-start" />
-                Open Folder…
+                {operation === "Opening Project" ? "Opening…" : "Open Folder…"}
               </Button>
             </div>
           </div>
@@ -457,6 +466,7 @@ export function Homepage({
             data-testid="homepage-start-gallery"
           >
             <TemplatePickCard
+              disabled={busy}
               title="Empty"
               description="Blank 3D project"
               testId="homepage-start-empty"
@@ -464,6 +474,7 @@ export function Homepage({
               onSelect={() => openCreate("empty")}
             />
             <TemplatePickCard
+              disabled={busy}
               title="2D"
               description="Pixel Art and 2D Physics"
               testId="homepage-start-2d"
@@ -472,6 +483,7 @@ export function Homepage({
             />
             {templates.map((template) => (
               <TemplatePickCard
+                disabled={busy}
                 key={template.id}
                 title={template.name}
                 testId={`homepage-start-template-${template.id}`}
@@ -690,11 +702,11 @@ export function Homepage({
               onCreateEmpty(folderName, {
                 ...options,
                 kind: createTemplateId,
-              }),
+              }), "Creating Project",
             );
           } else {
             void run(() =>
-              onCreateFromTemplate(createTemplateId, folderName, options),
+              onCreateFromTemplate(createTemplateId, folderName, options), "Creating Project",
             );
           }
         }}
@@ -740,7 +752,7 @@ export function Homepage({
               onClick={() => {
                 const target = renameTarget;
                 if (!target) return;
-                void run(() => onRenameProject(target, renameValue.trim()));
+                void run(() => onRenameProject(target, renameValue.trim()), "Renaming Project");
                 setRenameTarget(null);
               }}
             >
@@ -790,7 +802,7 @@ export function Homepage({
               onClick={() => {
                 const target = removeTarget;
                 if (!target) return;
-                void run(() => onRemoveFromList(target));
+                void run(() => onRemoveFromList(target), deleteRemoveTarget ? "Deleting Project" : "Removing Project From List");
                 setRemoveTarget(null);
               }}
             >

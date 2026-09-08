@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -17,6 +17,7 @@ import { useOptionalDocumentWorkspace } from "../context/document-workspace-cont
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
+import { MessageDetails } from "../components/message-details";
 
 type CompilerRow =
   | { kind: "header"; graphId: string }
@@ -62,6 +63,8 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   }, [activeDocumentId, documentId, openDocuments, setDiagnostics]);
 
   const rows = useMemo(() => flattenCompilerRows(diagnostics), [diagnostics]);
+  const [selectedDiagnostic, setSelectedDiagnostic] = useState<Diagnostic | null>(null);
+  const selected = selectedDiagnostic && diagnostics.includes(selectedDiagnostic) ? selectedDiagnostic : null;
 
   return (
     <PanelFrame data-testid="compiler-results">
@@ -78,7 +81,9 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
               if (row.kind === "header") {
                 return (
                   <div className="flex h-full items-center px-2 text-xs font-medium text-muted-foreground">
-                    <SelectableText className="truncate">{row.graphId}</SelectableText>
+                    <SelectableText className="truncate" title={row.graphId}>
+                      {openDocuments.find((doc) => doc.id === row.graphId)?.ref.label ?? row.graphId}
+                    </SelectableText>
                   </div>
                 );
               }
@@ -91,6 +96,7 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                   className="h-full w-full min-h-0 flex-col items-start justify-center gap-0 px-2 py-0 text-left"
                   data-testid="compiler-result-row"
                   onClick={() => {
+                    setSelectedDiagnostic(d);
                     clearFocusedNode();
                     setFocusDiagnostic(d);
                     if (d.actorId) sceneEditing?.selectActor(d.actorId);
@@ -121,6 +127,7 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
           </WindowedList>
         )}
       </ScrollArea>
+      {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}\n${selected.graphId}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}${selected.pinId ? `\nPin: ${selected.pinId}` : ""}`} onClose={() => setSelectedDiagnostic(null)} /> : null}
     </PanelFrame>
   );
 }

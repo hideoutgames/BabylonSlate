@@ -70,6 +70,8 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { Input } from "@babylonslate/ui/components/input";
+import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
   Progress,
   ProgressLabel,
@@ -267,6 +269,7 @@ export function ContentBrowserWorkspace({
   const [newAssetName, setNewAssetName] = useState("");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [busy, setBusy] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
   const [nameDialog, setNameDialog] = useState<
     | { kind: "rename"; guid: string; value: string }
     | { kind: "folder"; value: string }
@@ -276,8 +279,8 @@ export function ContentBrowserWorkspace({
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [refsSummary, setRefsSummary] = useState<{
     name: string;
-    inbound: string;
-    outbound: string;
+    inbound: string[];
+    outbound: string[];
   } | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
@@ -287,7 +290,12 @@ export function ContentBrowserWorkspace({
     done: number;
     currentName: string;
   } | null>(null);
-  const [importErrors, setImportErrors] = useState<string[] | null>(null);
+  const [importErrors, updateImportErrors] = useState<string[] | null>(null);
+  const [importedFileCount, setImportedFileCount] = useState(0);
+  const setImportErrors = useCallback((errors: string[] | null) => {
+    updateImportErrors(errors);
+    setImportedFileCount(0);
+  }, []);
   const [retargetPickerOpen, setRetargetPickerOpen] = useState(false);
   const [retargetErrors, setRetargetErrors] = useState<string[] | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -296,6 +304,11 @@ export function ContentBrowserWorkspace({
   thumbnailUrlsRef.current = thumbnailUrls;
   const menuTargetGuidsRef = useRef<string[]>([]);
   const menuTargetFoldersRef = useRef<string[]>([]);
+  const operationDialog = newAssetOpen ? "create" : nameDialog ? "name" : moveTarget ? "move" : deleteTarget ? "delete" : null;
+
+  useEffect(() => {
+    if (operationDialog) setOperationError(null);
+  }, [operationDialog]);
 
   useEffect(() => {
     if (!pendingTarget) return;
@@ -1020,16 +1033,10 @@ export function ContentBrowserWorkspace({
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
           const refs = assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments);
-          const inbound = refs.inbound
-            .map((id) => assetRegistry.getByGuid(id)?.header.name ?? id)
-            .join(", ");
-          const outbound = refs.outbound
-            .map((id) => assetRegistry.getByGuid(id)?.header.name ?? id)
-            .join(", ");
           setRefsSummary({
             name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
-            inbound: inbound || "(none)",
-            outbound: outbound || "(none)",
+            inbound: refs.inbound,
+            outbound: refs.outbound,
           });
         },
       },
@@ -1156,6 +1163,7 @@ export function ContentBrowserWorkspace({
       }
     }
     setBusy(true);
+    setOperationError(null);
     try {
       closeDocumentsForPaths(paths);
       for (const path of folders) {
@@ -1182,6 +1190,8 @@ export function ContentBrowserWorkspace({
         await sourceControl.releasePath(path);
       }
       await repairAfterAssetDelete(deletedGuids, deletedClassNames);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
@@ -1200,6 +1210,7 @@ export function ContentBrowserWorkspace({
     async (files: Array<{ name: string; bytes: Uint8Array }>) => {
       if (!assetRegistry || !files.length || selectedRoot.readOnly) return;
       const errors: string[] = [];
+      let importedCount = 0;
       const incoming = filterBabpluginFiles(files);
       if (incoming.length === 0) return;
       const createdModels: Array<{
@@ -1246,6 +1257,7 @@ export function ContentBrowserWorkspace({
                     sidecars: file.sidecars,
                   },
                 );
+                importedCount += 1;
                 for (const asset of created) {
                   if (asset.header.type !== "Model") continue;
                   createdModels.push({
@@ -1271,14 +1283,18 @@ export function ContentBrowserWorkspace({
           }
         },
       );
-      if (errors.length) setImportErrors(errors);
+      if (errors.length) {
+        setImportErrors(errors);
+        setImportedFileCount(importedCount);
+      }
       enqueueModelThumbnailJobs(createdModels);
     },
-    [assetRegistry, play, refreshAssetRegistry, selectedRoot],
+    [assetRegistry, play, refreshAssetRegistry, selectedRoot, setImportErrors],
   );
 
   const confirmNameDialog = useCallback(async () => {
     if (!assetRegistry || !nameDialog) return;
+    setOperationError(null);
     setBusy(true);
     try {
       if (nameDialog.kind === "folder") {
@@ -1341,6 +1357,8 @@ export function ContentBrowserWorkspace({
         await refreshAssetRegistry();
       }
       setNameDialog(null);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
@@ -1359,7 +1377,7 @@ export function ContentBrowserWorkspace({
   ]);
 
   const applyRegistryMoves = useCallback(
-    async (moves: ContentBrowserDropMove[]) => {
+    async (moves: ContentBrowserDropMove[], onMoved?: (move: ContentBrowserDropMove) => void) => {
       if (!assetRegistry || moves.length === 0) return;
       const destPath = moves[0]!.destinationPath;
       const dest = contentBrowserFolderOps(destPath, browserRoots);
@@ -1392,7 +1410,7 @@ export function ContentBrowserWorkspace({
             from.relative,
             destRelative,
           );
-          await transferFolderLocks(fromPath, nextFolder);
+          onMoved?.(move);
           for (const asset of contained) {
             repairDocumentPath(
               asset.path,
@@ -1401,6 +1419,7 @@ export function ContentBrowserWorkspace({
             );
           }
           setSelectedFolderPath(nextFolder);
+          await transferFolderLocks(fromPath, nextFolder);
         } else if (move.guid) {
           const before = assetRegistry.getByGuid(move.guid);
           if (!before) continue;
@@ -1413,13 +1432,14 @@ export function ContentBrowserWorkspace({
             dest.rootId,
             relative,
           );
+          onMoved?.(move);
+          repairDocumentPath(before.path, moved.path, moved.header.type);
+          setSelectedFolderPath(destPath);
           await applyLockTransfers(
             [{ from: before.path, to: moved.path }],
             (path) => sourceControl.lockStateForPath(path),
             (from, to) => sourceControl.transferLock(from, to),
           );
-          repairDocumentPath(before.path, moved.path, moved.header.type);
-          setSelectedFolderPath(destPath);
         }
       }
     },
@@ -1439,6 +1459,10 @@ export function ContentBrowserWorkspace({
     const dest = contentBrowserFolderOps(moveTarget.folderPath, browserRoots);
     if (dest.readOnly) return;
     setBusy(true);
+    setOperationError(null);
+    const remainingGuids = new Set(moveTarget.guids);
+    const remainingFolders = new Set(moveTarget.folderPaths);
+    const total = remainingGuids.size + remainingFolders.size;
     try {
       const destPath = moveTarget.folderPath;
       const destRelative = dest.relative;
@@ -1451,9 +1475,11 @@ export function ContentBrowserWorkspace({
             from.relative,
             destRelative,
           );
+          remainingFolders.delete(fromPath);
         }
         for (const guid of moveTarget.guids) {
           await assetRegistry.copyAsset(guid, dest.rootId, destRelative);
+          remainingGuids.delete(guid);
         }
       } else {
         const moves: ContentBrowserDropMove[] = [
@@ -1477,10 +1503,40 @@ export function ContentBrowserWorkspace({
             ];
           }),
         ];
-        await applyRegistryMoves(moves);
+        await applyRegistryMoves(moves, (move) => {
+          if (move.kind === "folder") remainingFolders.delete(move.sourcePath);
+          else if (move.guid) remainingGuids.delete(move.guid);
+        });
       }
       await refreshAssetRegistry();
       setMoveTarget(null);
+    } catch (error) {
+      const remaining = remainingGuids.size + remainingFolders.size;
+      const completed = total - remaining;
+      const message = error instanceof Error ? error.message : String(error);
+      if (completed > 0) {
+        const guids = [...remainingGuids];
+        const folders = [...remainingFolders];
+        setMoveTarget(remaining > 0 ? {
+          ...moveTarget,
+          guids,
+          folderPaths: folders,
+          folderSourcePaths: folders,
+          assetSourcePaths: [...new Set(guids.flatMap((guid) => {
+            const asset = assetRegistry.getByGuid(guid);
+            return asset ? [parentFolderPath(asset.path)] : [];
+          }))],
+          itemCount: remaining,
+          kind: guids.length === 0 ? "folder" : "asset",
+          name: contentBrowserMovePreviewName([
+            ...folders.map((path) => path.split("/").at(-1) ?? path),
+            ...guids.map((guid) => displayAssetTitle(assetRegistry.getByGuid(guid)?.header.name ?? guid)),
+          ]),
+        } : null);
+      }
+      setOperationError(completed > 0
+        ? `${completed} item${completed === 1 ? "" : "s"} ${moveTarget.operation === "copy" ? "copied" : "moved"}. ${message}${remaining > 0 ? " Retry to process only the remaining items." : " The file operation completed; the follow-up step failed."}`
+        : message);
     } finally {
       setBusy(false);
     }
@@ -1508,7 +1564,7 @@ export function ContentBrowserWorkspace({
       return;
     }
     importInputRef.current?.click();
-  }, [importPickedFiles]);
+  }, [importPickedFiles, setImportErrors]);
 
   const openNewAssetDialog = useCallback(() => {
     if (busy || !selectedRootWritable) return;
@@ -1687,9 +1743,12 @@ export function ContentBrowserWorkspace({
       if (moves.length === 0) return;
       void (async () => {
         setBusy(true);
+        setOperationError(null);
         try {
           await applyRegistryMoves(moves);
           await refreshAssetRegistry();
+        } catch (error) {
+          setOperationError(error instanceof Error ? error.message : String(error));
         } finally {
           setBusy(false);
         }
@@ -1708,17 +1767,29 @@ export function ContentBrowserWorkspace({
 
   const handleImportInputChange = useCallback(
     async (fileList: FileList | null) => {
-      if (!fileList?.length) return;
-      const files: Array<{ name: string; bytes: Uint8Array }> = [];
-      for (const file of Array.from(fileList)) {
-        files.push({
-          name: file.name,
-          bytes: new Uint8Array(await file.arrayBuffer()),
-        });
+      if (!fileList?.length || busy) return;
+      setBusy(true);
+      setImportErrors(null);
+      let readingName: string | null = null;
+      try {
+        const selected = Array.from(fileList);
+        const files: Array<{ name: string; bytes: Uint8Array }> = [];
+        for (const file of selected) {
+          readingName = file.name;
+          setImportProgress({ total: selected.length, done: files.length, currentName: `Reading ${file.name}` });
+          files.push({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+        }
+        readingName = null;
+        await importPickedFiles(files);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setImportErrors([readingName ? `${readingName}: ${message}` : message]);
+      } finally {
+        setImportProgress(null);
+        setBusy(false);
       }
-      await importPickedFiles(files);
     },
-    [importPickedFiles],
+    [busy, importPickedFiles, setImportErrors],
   );
 
   const handleCreateAsset = useCallback(async () => {
@@ -1726,6 +1797,7 @@ export function ContentBrowserWorkspace({
     const name = newAssetName.trim();
     if (!name) return;
     setBusy(true);
+    setOperationError(null);
     try {
       const type = newAssetType;
       const relative = selectedRoot.relative;
@@ -1759,6 +1831,8 @@ export function ContentBrowserWorkspace({
       if (type === "Scene") {
         await openOrFocusDocument(created);
       }
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
@@ -1857,6 +1931,13 @@ export function ContentBrowserWorkspace({
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
       data-testid="content-browser-workspace"
     >
+      {operationError && !operationDialog ? (
+        <Alert variant="destructive">
+          <AlertTitle>Asset Action Failed</AlertTitle>
+          <AlertDescription>{operationError}</AlertDescription>
+          <Button variant="outline" size="sm" onClick={() => setOperationError(null)}>Dismiss</Button>
+        </Alert>
+      ) : null}
       <div
         className={cn(
           "flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel-header px-2 py-1.5",
@@ -2050,6 +2131,7 @@ export function ContentBrowserWorkspace({
           ref={importInputRef}
           type="file"
           multiple
+          disabled={busy}
           className="hidden"
           data-testid="content-browser-import-input"
           accept={pickerImportAccept()}
@@ -2282,6 +2364,7 @@ export function ContentBrowserWorkspace({
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         nameTaken={newAssetNameTaken}
+        error={operationError}
         busy={busy}
         onCreate={() => {
           void handleCreateAsset();
@@ -2352,6 +2435,7 @@ export function ContentBrowserWorkspace({
               <p>No inbound references.</p>
             )}
           </div>
+          {operationError ? <Alert variant="destructive"><AlertTitle>Could Not Delete Items</AlertTitle><AlertDescription>{operationError}</AlertDescription></Alert> : null}
           <AlertDialogFooter>
             <AlertDialogCancel
               disabled={busy}
@@ -2372,7 +2456,7 @@ export function ContentBrowserWorkspace({
                 void confirmDelete();
               }}
             >
-              Delete
+              {busy ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2398,10 +2482,13 @@ export function ContentBrowserWorkspace({
                 ? "Create a folder under the current selection."
                 : nameDialog?.kind === "rename-folder"
                   ? "Rename the folder. References to its assets stay connected."
-                  : "Rename the asset file. References by guid stay intact."}
+                  : "Rename the asset file. References to it stay connected."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <Field data-invalid={nameDialogTaken || undefined}>
+          <FieldLabel htmlFor="content-browser-name">Name</FieldLabel>
           <Input
+            id="content-browser-name"
             className="min-h-[var(--touch-target,44px)]"
             data-testid="content-browser-name-input"
             aria-invalid={nameDialogTaken || undefined}
@@ -2412,6 +2499,7 @@ export function ContentBrowserWorkspace({
               )
             }
           />
+          </Field>
           {nameDialogTaken ? (
             <p
               className="text-sm text-destructive"
@@ -2419,6 +2507,12 @@ export function ContentBrowserWorkspace({
             >
               That name is already used in this folder.
             </p>
+          ) : null}
+          {operationError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could Not Save Name</AlertTitle>
+              <AlertDescription>{operationError}</AlertDescription>
+            </Alert>
           ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
@@ -2430,7 +2524,7 @@ export function ContentBrowserWorkspace({
                 void confirmNameDialog();
               }}
             >
-              Confirm
+              {busy ? "Saving…" : nameDialog?.kind === "folder" ? "Create Folder" : "Rename"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2477,6 +2571,7 @@ export function ContentBrowserWorkspace({
         }
         onConfirm={() => void confirmMove()}
         busy={busy}
+        error={operationError}
         typeVisual={moveTarget?.typeVisual ?? null}
         itemCount={moveTarget?.itemCount}
         assetSourcePaths={moveTarget?.assetSourcePaths}
@@ -2500,14 +2595,20 @@ export function ContentBrowserWorkspace({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain break-words text-sm">
-            <p>
-              <span className="font-medium">Inbound:</span>{" "}
-              <SelectableText>{refsSummary?.inbound}</SelectableText>
-            </p>
-            <p>
-              <span className="font-medium">Outbound:</span>{" "}
-              <SelectableText>{refsSummary?.outbound}</SelectableText>
-            </p>
+            {([['Used By', refsSummary?.inbound ?? []], ['Uses', refsSummary?.outbound ?? []]] as const).map(([label, guids]) => (
+              <div key={label} className="flex flex-col gap-1">
+                <p className="font-medium">{label}</p>
+                {guids.length === 0 ? <p>None</p> : guids.map((guid) => {
+                  const asset = assetRegistry?.getByGuid(guid);
+                  return asset && documentKindForAssetType(asset.header.type) ? (
+                    <Button key={guid} variant="ghost" size="sm" className="h-auto justify-start whitespace-normal text-left" title={asset.path} onClick={() => {
+                      setRefsSummary(null);
+                      void openOrFocusDocument(asset);
+                    }}>{displayAssetTitle(asset.header.name)}</Button>
+                  ) : <SelectableText key={guid}>{asset ? displayAssetTitle(asset.header.name) : `${guid} (Missing Asset)`}</SelectableText>;
+                })}
+              </div>
+            ))}
           </div>
           <AlertDialogFooter className="shrink-0">
             <AlertDialogAction onClick={() => setRefsSummary(null)}>
@@ -2525,7 +2626,7 @@ export function ContentBrowserWorkspace({
           <DialogHeader>
             <DialogTitle>Importing</DialogTitle>
             <DialogDescription>
-              Writing assets into the project. Texture compression continues in
+              Reading files and writing assets into the project. Texture compression continues in
               the background after this finishes.
             </DialogDescription>
           </DialogHeader>
@@ -2583,7 +2684,7 @@ export function ContentBrowserWorkspace({
           <AlertDialogHeader>
             <AlertDialogTitle>Retarget Failed</AlertDialogTitle>
             <AlertDialogDescription>
-              No matching bones. The Animation was not created.
+              Retargeting could not complete for the items below.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
@@ -2612,9 +2713,10 @@ export function ContentBrowserWorkspace({
       >
         <AlertDialogContent data-testid="import-errors-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Import failed</AlertDialogTitle>
-            <AlertDialogDescription>
-              Some files could not be imported.
+            <AlertDialogTitle>{importedFileCount > 0 ? "Import Partially Completed" : "Import Failed"}</AlertDialogTitle>
+            <AlertDialogDescription data-testid="import-result-summary">
+              {importedFileCount > 0 ? `${importedFileCount} file${importedFileCount === 1 ? "" : "s"} imported successfully. ` : ""}
+              {importErrors?.length} issue{importErrors?.length === 1 ? "" : "s"} need attention. Successfully imported assets remain in the project.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">

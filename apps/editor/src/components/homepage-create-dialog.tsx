@@ -156,7 +156,12 @@ export function HomepageCreateDialog({
                 </Field>
                 <Field>
                   <FieldLabel>Location</FieldLabel>
-                  {hostPlatform === "web" ? null : (
+                  {hostPlatform === "web" ? (
+                    <FieldDescription>
+                      Stored in this browser on this device. Export a project
+                      backup to keep a separate copy.
+                    </FieldDescription>
+                  ) : (
                     <div className="flex w-full min-w-0 flex-col gap-2">
                       <Button
                         type="button"

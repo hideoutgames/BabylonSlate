@@ -40,6 +40,7 @@ export function TemplatePickCard({
   title,
   description,
   selected = false,
+  disabled = false,
   testId,
   imageUrl,
   icon: Icon,
@@ -49,13 +50,16 @@ export function TemplatePickCard({
   title: string;
   description?: string;
   selected?: boolean;
+  disabled?: boolean;
   testId: string;
   imageUrl?: string;
   icon: LucideIcon;
   className?: string;
   onSelect: () => void;
 }) {
-  const activate = () => onSelect();
+  const activate = () => {
+    if (!disabled) onSelect();
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -67,12 +71,14 @@ export function TemplatePickCard({
     <Card
       size="sm"
       role="button"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled || undefined}
       data-testid={testId}
       data-selected={selected ? "true" : "false"}
       className={cn(
         "homepage-template-card w-52 shrink-0 cursor-pointer gap-0 py-0",
         selected ? "ring-2 ring-primary" : "",
+        disabled && "cursor-default opacity-50",
         className,
       )}
       onClick={activate}

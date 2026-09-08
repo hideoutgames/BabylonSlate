@@ -31,6 +31,21 @@ async function serviceWithLocks(): Promise<SourceControlService> {
 }
 
 describe("LocksPanelContents", () => {
+  it("requires confirmation before force unlocking another person's asset", async () => {
+    const service = await serviceWithLocks();
+    try {
+      render(<LocksPanelContents sourceControl={service} />);
+      fireEvent.click(screen.getByTestId("locks-force-unlock-assets/theirs.babasset"));
+      expect(screen.getByTestId("locks-force-unlock-confirm")).toBeTruthy();
+      expect(service.lockForPath("assets/theirs.babasset")).toBeTruthy();
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("locks-force-unlock-confirm-action"));
+      });
+      expect(service.lockForPath("assets/theirs.babasset")).toBeUndefined();
+    } finally {
+      service.dispose();
+    }
+  });
   afterEach(() => {
     cleanup();
   });

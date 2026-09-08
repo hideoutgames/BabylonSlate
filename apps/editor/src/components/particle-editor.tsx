@@ -21,6 +21,7 @@ import {
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
@@ -334,6 +335,8 @@ export function ParticleSystemPreview({
     string,
     ParticleEmitterPayload
   > | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   const openPayloads = new Map<string, unknown>();
   for (const asset of assets) {
@@ -345,6 +348,7 @@ export function ParticleSystemPreview({
   const guidKey = system.emitterGuids.join(",");
 
   useEffect(() => {
+    setLoadError(null);
     if (system.emitterGuids.length === 0) {
       setEmitters(new Map());
       return;
@@ -361,6 +365,8 @@ export function ParticleSystemPreview({
           : Promise.resolve(null),
     }).then((next) => {
       if (!cancelled) setEmitters(next);
+    }).catch((error: unknown) => {
+      if (!cancelled) setLoadError(error instanceof Error ? error.message : "A Particle Emitter could not be loaded.");
     });
     return () => {
       cancelled = true;
@@ -368,7 +374,7 @@ export function ParticleSystemPreview({
     // assets/openPayloads are rebuilt each render; keys capture the inputs that
     // should refetch Emitter documents.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guidKey, openKey, loadAssetDocument]);
+  }, [guidKey, openKey, loadAssetDocument, attempt]);
 
   return (
     <div className="flex h-full flex-col p-3" data-testid="particle-system-preview">
@@ -380,6 +386,14 @@ export function ParticleSystemPreview({
               Add Particle Emitters in Details to preview them together.
             </EmptyDescription>
           </EmptyHeader>
+        </Empty>
+      ) : loadError ? (
+        <Empty role="status">
+          <EmptyHeader>
+            <EmptyTitle>Preview Failed</EmptyTitle>
+            <EmptyDescription>{loadError} Check the linked Particle Emitters in Details.</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent><Button type="button" variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}>Retry</Button></EmptyContent>
         </Empty>
       ) : emitters === null ? (
         <Empty data-testid="particle-preview-loading">

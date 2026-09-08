@@ -67,6 +67,16 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 - Global Search keeps focus in the query: Up/Down selects a result across groups, Enter opens it, and Escape closes the dialog. The active result remains visible while navigating. Indexing hides stale results.
 - Content Browser shows the current folder path and a Parent Folder action within the selected project/plugin root. Ancestor navigation clears tile selection and retains filters.
 - Empty folders offer New Asset and Import when writable. An unsuccessful asset search offers Clear Filters; Outliner distinguishes No Matching Actors from an empty scene and retains its search-clear action.
+- Engine and Project Settings search field names and categories. Results open the relevant category and focus a specific control when available; an unmatched query offers Clear Search.
+
+## Operation feedback and recovery
+
+- Homepage actions name the pending operation and prevent repeated submissions. Native project tiles keep Open separate from their context-menu trigger; browser projects explain their storage location.
+- Content Browser keeps names and destinations after failed create, rename, move, or copy operations. Retrying a partial batch omits completed top-level items. Import summaries distinguish successful files from failures; delete failures remain visible and asset references can be opened before confirming deletion.
+- Settings export and plugin actions show pending and failure states. Failed plugin actions offer Retry. Source-control freshness and unlock recovery are described in [Source control](source-control.md).
+- Texture, Font, and Particle previews distinguish loading, missing content, and failed reads or initialization. Retry stays inside the document where possible; unsupported Model preview sources explain the supported formats. A workspace rendering failure offers Retry.
+- Compiler Results, Output Log, and Trace Log keep compact rows and show the selected message in a scrollable, selectable details area with Copy. Log rows reserve 44px for coarse pointers and 28px on desktop.
+- Long Play preparation explains the current wait after ten seconds. Trace charts scale bars to the largest frame or the tick budget and identify the selected frame and duration. Boolean graph defaults show On/Off beside the swatch.
 
 ## Action and status tokens
 

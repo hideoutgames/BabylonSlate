@@ -8,6 +8,7 @@ import {
   type TypeVisual,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,7 @@ export interface ContentBrowserMoveDialogProps {
   onDestinationChange: (path: string) => void;
   onConfirm: () => void;
   busy?: boolean;
+  error?: string | null;
   typeVisual?: TypeVisual | null;
   itemCount?: number;
   assetSourcePaths?: readonly string[];
@@ -56,6 +58,7 @@ export function ContentBrowserMoveDialog({
   onDestinationChange,
   onConfirm,
   busy = false,
+  error = null,
   typeVisual = null,
   itemCount,
   assetSourcePaths,
@@ -185,10 +188,20 @@ export function ContentBrowserMoveDialog({
             data-testid="content-browser-move-tree"
           />
         </div>
+        <p className="text-sm text-muted-foreground" data-testid="content-browser-move-destination">
+          Destination: <span className="text-foreground">{destinationPath}</span>
+        </p>
+        {!canConfirm ? (
+          <p className="text-xs text-muted-foreground">
+            Choose a different folder. Items cannot move to their current folder or inside themselves.
+          </p>
+        ) : null}
+        {error ? <Alert variant="destructive"><AlertTitle>Could Not {operation === "copy" ? "Copy" : "Move"} Items</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
         <DialogFooter>
           <Button
             type="button"
             variant="outline"
+            disabled={busy}
             onClick={() => onOpenChange(false)}
           >
             Cancel
@@ -199,7 +212,7 @@ export function ContentBrowserMoveDialog({
             disabled={busy || !canConfirm}
             onClick={() => onConfirm()}
           >
-            {operation === "copy" ? "Copy" : "Move"}
+            {busy ? operation === "copy" ? "Copying…" : "Moving…" : operation === "copy" ? "Copy" : "Move"}
           </Button>
         </DialogFooter>
       </DialogContent>

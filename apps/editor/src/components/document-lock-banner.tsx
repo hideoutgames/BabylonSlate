@@ -19,7 +19,8 @@ export function DocumentLockBanner({
       <Alert data-testid="document-lock-banner" data-lock-banner="theirs">
         <AlertTitle>Locked by {banner.lock.ownerName}</AlertTitle>
         <AlertDescription>
-          {formatLockAge(banner.lock.lockedAt)}
+          {formatLockAge(banner.lock.lockedAt)}. Editing anyway may conflict
+          with their changes. Coordinate with the lock owner before saving.
         </AlertDescription>
         <AlertAction>
           <Button

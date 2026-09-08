@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { TracePayload } from "@babylonslate/debugger";
 import { TracePlayback } from "./trace-playback";
 
@@ -27,6 +27,20 @@ const payload: TracePayload = {
 };
 
 describe("TracePlayback", () => {
+  it("opens complete trace log text for selection and copying", () => {
+    render(<TracePlayback payload={payload} />);
+    fireEvent.click(screen.getAllByTestId("trace-playback-log-line")[0]!);
+    const details = within(screen.getByRole("region", { name: "Log Details" }));
+    expect(details.getByText(/first/)).toBeTruthy();
+    expect(details.getByRole("button", { name: "Copy" })).toBeTruthy();
+  });
+  it("exposes timing and selected state for an over-budget frame", () => {
+    render(<TracePlayback payload={{ ...payload, frames: [{ ...payload.frames[0]!, scriptMs: 20, physicsMs: 2 }] }} />);
+    const bar = screen.getByRole("button", { name: /Frame 0.*22.00 ms/ });
+    expect(bar.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("trace-frame-timing").textContent).toContain("22.00 ms");
+    expect(screen.getByTestId("trace-frame-timing").textContent).toContain("Over Budget");
+  });
   afterEach(() => {
     cleanup();
   });

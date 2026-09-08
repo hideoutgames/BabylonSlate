@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
 import { DEFAULT_RENDER_HEIGHT, DEFAULT_RENDER_WIDTH } from "@babylonslate/core";
 import type { ListedProject } from "../lib/listed-projects";
@@ -81,6 +81,19 @@ describe("Homepage branding", () => {
 });
 
 describe("Homepage Start gallery", () => {
+  it("reports an opening operation and blocks every create entry point until it finishes", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    renderHomepage({ onOpenExternal: () => pending });
+    fireEvent.click(screen.getByTestId("open-project"));
+    expect(screen.getByRole("status").textContent).toMatch(/Opening Project/i);
+    fireEvent.click(screen.getByTestId("homepage-start-empty"));
+    expect(screen.queryByTestId("create-project-dialog")).toBeNull();
+    await act(async () => { finish(); await pending; });
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.click(screen.getByTestId("homepage-start-empty"));
+    expect(await screen.findByTestId("create-project-dialog")).toBeTruthy();
+  });
   it("places Open Folder beside Create Project, not in the template gallery", () => {
     renderHomepage();
 
@@ -349,13 +362,12 @@ describe("Homepage recent project rows", () => {
     expect(screen.getByTestId("homepage-project-search")).toBeTruthy();
   });
 
-  it("renders recents as Cards, not full-width buttons", () => {
+  it("exposes separate open and remove actions for each recent project", () => {
     renderHomepage({
       projects: [listedProject("Game.babproject", "opfs")],
     });
-    const row = screen.getByTestId("open-listed-project-Game.babproject");
-    expect(row.tagName).toBe("DIV");
-    expect(row.getAttribute("data-slot")).toBe("card");
+    expect(screen.getByRole("button", { name: "Open Game" })).toBeTruthy();
+    expect(screen.getByTestId("remove-listed-project-Game.babproject").getAttribute("aria-label")).toBeTruthy();
   });
 
   it("opens a project from a row tap and not from the remove control", async () => {
@@ -496,13 +508,14 @@ describe("Homepage Create Project dialog", () => {
     ).toBe(true);
   });
 
-  it("drops template copy, On this device, and Black Bars helper", async () => {
+  it("explains browser storage without native location controls", async () => {
     renderHomepage();
     screen.getByTestId("create-project").click();
     const dialog = await screen.findByTestId("create-project-dialog");
     expect(dialog.textContent).not.toMatch(/or a template/i);
     expect(screen.queryByTestId("create-project-location")).toBeNull();
-    expect(dialog.textContent).not.toMatch(/On this device/i);
+    expect(dialog.textContent).toMatch(/Stored in this browser/i);
+    expect(dialog.textContent).toMatch(/backup/i);
     expect(dialog.textContent).not.toMatch(/opfs/i);
     expect(screen.queryByTestId("create-project-choose-location")).toBeNull();
     expect(dialog.textContent).toContain(

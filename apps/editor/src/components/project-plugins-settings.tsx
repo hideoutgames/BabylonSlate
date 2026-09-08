@@ -5,6 +5,7 @@ import type { PluginDescriptor } from "@babylonslate/assets";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
   Field,
   FieldDescription,
@@ -75,6 +76,27 @@ export function ProjectPluginsSettings() {
     bytes: Uint8Array;
   } | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const pendingRef = useRef(false);
+  const [operationError, setOperationError] = useState<{ message: string; retry: () => void } | null>(null);
+
+  const run = async (label: string, action: () => Promise<unknown>) => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    setPending(label);
+    setOperationError(null);
+    try {
+      await action();
+    } catch (error) {
+      setOperationError({
+        message: error instanceof Error ? error.message : String(error),
+        retry: () => { void run(label, action); },
+      });
+    } finally {
+      pendingRef.current = false;
+      setPending(null);
+    }
+  };
 
   const overrides = projectDocument?.settings.pluginOverrides ?? {};
 
@@ -120,7 +142,7 @@ export function ProjectPluginsSettings() {
         return;
       }
     }
-    void setEnabled(plugin, enabled);
+    void run(enabled ? "Enabling Plugin" : "Disabling Plugin", () => setEnabled(plugin, enabled));
   };
 
   const downloadPlugin = async (plugin: PluginDescriptor) => {
@@ -153,6 +175,7 @@ export function ProjectPluginsSettings() {
 
   const handleImportClick = async () => {
     if (isMobilePlatform()) {
+      await run("Importing Plugin", async () => {
       const files = await pickImportFiles({
         multiple: false,
         accept: ".babplugin",
@@ -160,6 +183,7 @@ export function ProjectPluginsSettings() {
       const file =
         files.find((entry) => isBabpluginFile(entry.name)) ?? files[0];
       if (file) await runImport(file.bytes);
+      });
       return;
     }
     importInputRef.current?.click();
@@ -173,6 +197,16 @@ export function ProjectPluginsSettings() {
           Enable engine or project plugins. Disabled plugins unmount from the
           asset registry.
         </FieldDescription>
+        {pending ? <p role="status" className="text-sm text-muted-foreground">{pending}…</p> : null}
+        {operationError ? (
+          <Alert variant="destructive">
+            <AlertTitle>Plugin Action Failed</AlertTitle>
+            <AlertDescription>
+              {operationError.message}
+              <Button variant="outline" size="sm" className="mt-2 w-fit" disabled={Boolean(pending)} onClick={operationError.retry}>Retry</Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <Field orientation="horizontal">
           <FieldLabel htmlFor="settings-show-plugin-content">
             Show Plugin Content
@@ -227,6 +261,7 @@ export function ProjectPluginsSettings() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Switch
                     checked={enabled}
+                    disabled={Boolean(pending)}
                     onCheckedChange={(checked) =>
                       requestEnableChange(plugin, checked === true)
                     }
@@ -239,6 +274,7 @@ export function ProjectPluginsSettings() {
                     size="sm"
                     className="min-h-[var(--touch-target,44px)]"
                     data-testid={`settings-plugin-open-${plugin.pluginGuid}`}
+                    disabled={Boolean(pending)}
                     onClick={() => {
                       const kind = documentKindForAssetType("PluginSettings");
                       if (!kind) return;
@@ -257,7 +293,8 @@ export function ProjectPluginsSettings() {
                     size="sm"
                     className="min-h-[var(--touch-target,44px)]"
                     data-testid={`settings-plugin-export-${plugin.pluginGuid}`}
-                    onClick={() => void downloadPlugin(plugin)}
+                    disabled={Boolean(pending)}
+                    onClick={() => void run("Exporting Plugin", () => downloadPlugin(plugin))}
                   >
                     Export
                   </Button>
@@ -268,6 +305,7 @@ export function ProjectPluginsSettings() {
                       size="sm"
                       className="min-h-[var(--touch-target,44px)]"
                       data-testid={`settings-plugin-delete-${plugin.pluginGuid}`}
+                      disabled={Boolean(pending)}
                       onClick={() => setConfirmDelete(plugin)}
                     >
                       Delete
@@ -284,6 +322,8 @@ export function ProjectPluginsSettings() {
             variant="outline"
             className="min-h-[var(--touch-target,44px)] w-fit"
             data-testid="settings-plugin-new"
+            id="settings-plugin-new"
+            disabled={Boolean(pending)}
             onClick={() => setNewOpen(true)}
           >
             New Plugin
@@ -293,6 +333,8 @@ export function ProjectPluginsSettings() {
             variant="outline"
             className="min-h-[var(--touch-target,44px)] w-fit"
             data-testid="settings-plugin-import"
+            id="settings-plugin-import"
+            disabled={Boolean(pending)}
             onClick={() => void handleImportClick()}
           >
             Import Plugin
@@ -308,9 +350,7 @@ export function ProjectPluginsSettings() {
             const file = event.target.files?.[0];
             event.target.value = "";
             if (!file) return;
-            void file.arrayBuffer().then((buffer) =>
-              runImport(new Uint8Array(buffer)),
-            );
+            void run("Importing Plugin", async () => runImport(new Uint8Array(await file.arrayBuffer())));
           }}
         />
       </FieldSet>
@@ -322,7 +362,7 @@ export function ProjectPluginsSettings() {
         confirmLabel="Create"
         data-testid="settings-plugin-new-dialog"
         onSubmit={(name) => {
-          void createProjectPlugin(name);
+          void run("Creating Plugin", () => createProjectPlugin(name));
         }}
       />
       <AlertDialog
@@ -343,7 +383,7 @@ export function ProjectPluginsSettings() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (confirmEnable) void setEnabled(confirmEnable, true);
+                if (confirmEnable) void run("Enabling Plugin", () => setEnabled(confirmEnable, true));
                 setConfirmEnable(null);
               }}
             >
@@ -371,7 +411,8 @@ export function ProjectPluginsSettings() {
             <AlertDialogAction
               onClick={() => {
                 if (confirmDisable) {
-                  void setEnabled(confirmDisable.plugin, false);
+                  const plugin = confirmDisable.plugin;
+                  void run("Disabling Plugin", () => setEnabled(plugin, false));
                 }
                 setConfirmDisable(null);
               }}
@@ -410,10 +451,12 @@ export function ProjectPluginsSettings() {
               onClick={() => {
                 if (!confirmDelete) return;
                 const guid = confirmDelete.pluginGuid;
-                void deleteProjectPlugin(guid);
-                const next = { ...overrides };
-                delete next[guid];
-                updateProjectSettings({ pluginOverrides: next });
+                void run("Deleting Plugin", async () => {
+                  await deleteProjectPlugin(guid);
+                  const next = { ...overrides };
+                  delete next[guid];
+                  updateProjectSettings({ pluginOverrides: next });
+                });
                 setConfirmDelete(null);
               }}
             >
@@ -437,14 +480,17 @@ export function ProjectPluginsSettings() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="settings-plugin-import-keep">
+            <AlertDialogCancel disabled={Boolean(pending)} data-testid="settings-plugin-import-keep">
               Keep
             </AlertDialogCancel>
             <AlertDialogAction
               data-testid="settings-plugin-import-replace"
+              disabled={Boolean(pending)}
               onClick={() => {
                 if (!importConflict) return;
-                void runImport(importConflict.bytes, "replace");
+                const bytes = importConflict.bytes;
+                setImportConflict(null);
+                void run("Replacing Plugin", () => runImport(bytes, "replace"));
               }}
             >
               Replace

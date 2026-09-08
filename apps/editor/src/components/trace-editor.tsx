@@ -16,6 +16,9 @@ import {
   WindowedList,
 } from "@babylonslate/editor-kit";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import { Button } from "@babylonslate/ui/components/button";
+import { MessageDetails } from "./message-details";
+import { useCoarsePointer } from "../shell/use-platform-layout";
 import { Slider } from "@babylonslate/ui/components/slider";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
@@ -91,6 +94,9 @@ export function TraceTimelineView({
   onIndexChange: (index: number) => void;
 }) {
   const max = Math.max(0, payload.frames.length - 1);
+  const selectedFrame = payload.frames[index];
+  const selectedMs = selectedFrame ? frameTickMs(selectedFrame) : 0;
+  const scaleMs = payload.frames.reduce((largest, frame) => Math.max(largest, frameTickMs(frame)), TICK_BUDGET_MS);
   return (
     <div className="flex flex-col gap-2 p-3" data-testid="trace-playback">
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -109,7 +115,7 @@ export function TraceTimelineView({
       >
         {payload.frames.map((frame, frameIndex) => {
           const total = frameTickMs(frame);
-          const height = Math.max(2, Math.min(100, (total / TICK_BUDGET_MS) * 100));
+          const height = Math.max(2, (total / scaleMs) * 100);
           return (
             <button
               key={frame.tickIndex}
@@ -118,9 +124,12 @@ export function TraceTimelineView({
                 "min-h-[2px] min-w-px flex-1 rounded-sm",
                 frameIndex === index ? "bg-ring" : "bg-muted-foreground",
                 total > TICK_BUDGET_MS && "bg-destructive",
+                frameIndex === index && "ring-2 ring-ring ring-offset-1 ring-offset-background",
               )}
               style={{ height: `${height}%` }}
-              aria-label={`Frame ${frameIndex}`}
+              aria-label={`Frame ${frameIndex}, ${total.toFixed(2)} ms`}
+              title={`Frame ${frameIndex} · ${total.toFixed(2)} ms${total > TICK_BUDGET_MS ? " · Over Budget" : ""}`}
+              aria-pressed={frameIndex === index}
               data-testid={`trace-playback-graph-bar-${frameIndex}`}
               data-selected={frameIndex === index ? "true" : "false"}
               onClick={() => onIndexChange(frameIndex)}
@@ -128,6 +137,10 @@ export function TraceTimelineView({
           );
         })}
       </div>
+      <p className="text-xs text-muted-foreground" data-testid="trace-frame-timing">
+        Frame {index} · {selectedMs.toFixed(2)} ms · {TICK_BUDGET_MS.toFixed(2)} ms Budget
+        {selectedMs > TICK_BUDGET_MS ? " · Over Budget" : ""}
+      </p>
       <Field>
         <FieldLabel htmlFor="trace-frame">Frame</FieldLabel>
         <div className="flex min-w-0 items-center gap-2">
@@ -188,27 +201,37 @@ export function TraceLogView({
   index: number;
 }) {
   const lines = collectTraceLogWindow(payload, index);
+  const coarsePointer = useCoarsePointer();
+  const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
+  const selected = selectedMessage && lines.some((line) => `${line.tickIndex} ${line.text}` === selectedMessage) ? selectedMessage : null;
   return (
+    <>
     <ScrollArea className="min-h-0 flex-1 p-2">
       {lines.length === 0 ? (
         <p className="text-sm text-muted-foreground">No log output in this window.</p>
       ) : (
         <div data-testid="trace-playback-log">
-          <WindowedList itemCount={lines.length} rowHeight={TREE_ROW_HEIGHT}>
+          <WindowedList itemCount={lines.length} rowHeight={coarsePointer ? 44 : TREE_ROW_HEIGHT}>
             {(row) => (
-              <li
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 data-testid="trace-playback-log-line"
-                className="flex h-full items-center font-mono text-xs"
+                className="h-full min-h-0 w-full justify-start rounded-none px-1 font-mono text-xs touch-pan-y"
+                onClick={() => setSelectedMessage(`${lines[row]?.tickIndex} ${lines[row]?.text}`)}
               >
                 <SelectableText className="truncate">
                   {lines[row]?.tickIndex} {lines[row]?.text}
                 </SelectableText>
-              </li>
+              </Button>
             )}
           </WindowedList>
         </div>
       )}
     </ScrollArea>
+    {selected ? <MessageDetails title="Log Details" message={selected} onClose={() => setSelectedMessage(null)} /> : null}
+    </>
   );
 }
 
