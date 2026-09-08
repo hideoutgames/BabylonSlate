@@ -26,11 +26,13 @@ export function HomepageEmptyArt({
   }, [desktop, onReady]);
   return (
     <div className="homepage-empty-art" aria-hidden="true">
-      <div className="homepage-empty-object">
-        <span />
-        <span />
-        <img src={brandIconSrc(scheme)} alt="" />
-      </div>
+      {!desktop && (
+        <div className="homepage-empty-object">
+          <span />
+          <span />
+          <img src={brandIconSrc(scheme)} alt="" />
+        </div>
+      )}
       {desktop && (
         <Suspense fallback={null}>
           <Sculpture onReady={onReady} paused={paused} />

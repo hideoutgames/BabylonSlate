@@ -97,7 +97,7 @@ export function HomepageGallery({
                   gridTemplateColumns:
                     layout === "list"
                       ? "minmax(0, 1fr)"
-                      : `repeat(${Math.min(columns, items.length - index * pageSize)}, minmax(0, 380px))`,
+                      : `repeat(${layout === "small" ? columns : Math.min(columns, items.length - index * pageSize)}, minmax(0, 380px))`,
                   gridTemplateRows:
                     layout === "large"
                       ? undefined
