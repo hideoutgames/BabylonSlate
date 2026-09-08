@@ -31,6 +31,10 @@ function dispatchPointerEvent(
 }
 
 const applyGraphChange = vi.hoisted(() => vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(async () => true));
+const device = vi.hoisted(() => ({ phone: false }));
+vi.mock("../shell/use-platform-layout", () => ({
+  usePhoneLayout: () => device.phone,
+}));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
@@ -74,9 +78,32 @@ vi.mock("../context/validation-context", () => ({
 afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
+  device.phone = false;
 });
 
 describe("MyClassPanel name prompt", () => {
+  it("spaces Class tree targets for phone touch without changing iPad density", () => {
+    device.phone = true;
+    const panel = (
+      <GraphEditingProvider>
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>
+    );
+    const { rerender } = render(panel);
+    let rows = screen.getAllByRole("treeitem");
+    expect(rows[0]!.style.height).toBe("44px");
+    expect(rows[1]!.style.top).toBe("44px");
+    device.phone = false;
+    rerender(
+      <GraphEditingProvider>
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    rows = screen.getAllByRole("treeitem");
+    expect(rows[0]!.style.height).toBe("28px");
+    expect(rows[1]!.style.top).toBe("28px");
+  });
+
   it("adds a function through AddFunctionDialog instead of window.prompt", () => {
     const prompt = vi.spyOn(window, "prompt");
     render(

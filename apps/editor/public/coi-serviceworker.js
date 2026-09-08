@@ -94,22 +94,32 @@ if (typeof window === 'undefined') {
 
         // In some environments (e.g. Chrome incognito mode) this won't be available
         if (n.serviceWorker) {
+            let reloading = false;
+            const reloadOnce = () => {
+                if (reloading) return;
+                reloading = true;
+                n.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+                !coi.quiet && console.log("Reloading page to make use of COOP/COEP Service Worker.");
+                coi.doReload();
+            };
+            const onControllerChange = () => {
+                if (n.serviceWorker.controller && !window.crossOriginIsolated) {
+                    reloadOnce();
+                }
+            };
+            // updatefound precedes activation; a reload then can still miss the isolation headers.
+            n.serviceWorker.addEventListener("controllerchange", onControllerChange);
             n.serviceWorker.register(window.document.currentScript.src).then(
                 (registration) => {
                     !coi.quiet && console.log("COOP/COEP Service Worker registered", registration.scope);
 
-                    registration.addEventListener("updatefound", () => {
-                        !coi.quiet && console.log("Reloading page to make use of updated COOP/COEP Service Worker.");
-                        coi.doReload();
-                    });
-
                     // If the registration is active, but it's not controlling the page
                     if (registration.active && !n.serviceWorker.controller) {
-                        !coi.quiet && console.log("Reloading page to make use of COOP/COEP Service Worker.");
-                        coi.doReload();
+                        reloadOnce();
                     }
                 },
                 (err) => {
+                    n.serviceWorker.removeEventListener("controllerchange", onControllerChange);
                     !coi.quiet && console.error("COOP/COEP Service Worker failed to register:", err);
                 }
             );

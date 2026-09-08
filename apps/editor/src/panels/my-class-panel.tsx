@@ -47,6 +47,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { IconActionButton } from "../components/icon-action-button";
+import { usePhoneLayout } from "../shell/use-platform-layout";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import {
   collectClassGraphsForPalette,
@@ -400,6 +401,7 @@ export function ClassMembersView({
   canvasDropApi?: GraphDropPoint | null;
   onOpenInherited?: (member: MyClassMember) => void;
 }) {
+  const phone = usePhoneLayout();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [memberPromptKind, setMemberPromptKind] =
     useState<GraphClassMemberKind | null>(null);
@@ -561,6 +563,7 @@ export function ClassMembersView({
           trailing: (
             <IconActionButton
               label={`Add ${section.label.replace(/s$/, "")}`}
+              size={phone ? "touch-icon" : "icon-sm"}
               data-testid={`class-add-${section.id}`}
               onClick={(event) => {
                 event.stopPropagation();
@@ -572,7 +575,7 @@ export function ClassMembersView({
           ),
         };
       }),
-    [activeFunctionId, collapsed, members, membersOptions, treeSections],
+    [activeFunctionId, collapsed, members, membersOptions, treeSections, phone],
   );
 
   const { menu, closeMenu, openMenuAt } = useContextMenu({
@@ -609,6 +612,7 @@ export function ClassMembersView({
   return (
     <>
       <TreeView
+        rowHeight={phone ? 44 : undefined}
         nodes={nodes}
         selectedId={selectedId}
         onSelect={(id) => {

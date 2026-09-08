@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import { useState } from "react";
 import { CatalogDialog } from "./catalog-dialog";
 
 afterEach(() => {
@@ -7,6 +8,42 @@ afterEach(() => {
 });
 
 describe("CatalogDialog", () => {
+  it("changes the active category through the compact category picker", () => {
+    function Catalog() {
+      const [active, setActive] = useState("general");
+      return (
+        <CatalogDialog
+          open
+          onOpenChange={() => {}}
+          title="Settings"
+          categories={[
+            { id: "general", label: "General", count: 2 },
+            { id: "input", label: "Input", count: 3 },
+          ]}
+          groups={[{ label: "Project", ids: ["general", "input"] }]}
+          activeCategoryId={active}
+          onCategoryChange={setActive}
+          search=""
+          onSearchChange={() => {}}
+          data-testid="catalog"
+        >
+          <p>{active === "general" ? "General Preferences" : "Input Preferences"}</p>
+        </CatalogDialog>
+      );
+    }
+    const { getByRole, getByTestId, getByText } = render(<Catalog />);
+    const picker = getByRole("combobox", { name: "Category" });
+    expect(picker.textContent).toContain("General");
+    fireEvent.click(picker);
+    const inputCategory = getByRole("option", { name: /Input/ });
+    fireEvent.pointerDown(inputCategory);
+    fireEvent.click(inputCategory);
+    expect(picker.textContent).toContain("Input");
+    expect(getByText("Input Preferences")).toBeTruthy();
+    expect(getByTestId("catalog-category-input").getAttribute("aria-current")).toBe("true");
+    expect(getByTestId("catalog-category-general").getAttribute("aria-current")).toBeNull();
+  });
+
   it("renders categories and search", () => {
     const onSearchChange = vi.fn();
     const onCategoryChange = vi.fn();

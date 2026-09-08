@@ -28,6 +28,7 @@ import {
   XIcon,
   BugIcon,
   Maximize2Icon,
+  EllipsisIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -52,13 +53,27 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@babylonslate/ui/components/sheet";
+import { cn } from "@babylonslate/ui/lib/utils";
+import { usePhoneLayout } from "../shell/use-platform-layout";
+import { DocumentSwitcher } from "./document-switcher";
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
-import { classParentLookup, materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import {
+  classParentLookup,
+  materialDomainsFromAssets,
+} from "../lib/content-browser-helpers";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   classHierarchyFromParentOf,
@@ -66,7 +81,12 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "../services/graph-validation";
-import { collectClassGraphsForPalette, collectGraphTypeAssets, collectSceneDocumentsForPalette, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
+import {
+  collectClassGraphsForPalette,
+  collectGraphTypeAssets,
+  collectSceneDocumentsForPalette,
+  typeSchemasFromGraphAssets,
+} from "../lib/logic-graph-document";
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
@@ -135,14 +155,20 @@ function SortableDocumentTab({
       data-testid="document-tab"
       data-active={active ? "true" : "false"}
       data-document-kind={doc.ref.kind}
-      className={`chrome-tab chrome-tab-closable ${active ? "chrome-tab-active" : ""} ${isDragging ? "chrome-tab-dragging" : ""}`}
+      className={cn(
+        "chrome-tab chrome-tab-closable",
+        active && "chrome-tab-active",
+        isDragging && "chrome-tab-dragging",
+      )}
       {...attributes}
       {...listeners}
     >
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         data-testid={active ? "document-tab-active" : "document-tab-select"}
         className="chrome-tab-label"
+        aria-current={active ? "page" : undefined}
         onClick={onSelect}
       >
         {kindIcon(doc.ref.kind, indexed?.header.type)}
@@ -150,9 +176,10 @@ function SortableDocumentTab({
           {doc.ref.label}
           {doc.dirty ? " *" : ""}
         </span>
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
         data-testid="document-tab-close"
         className="chrome-tab-close"
         aria-label={`Close ${doc.ref.label}`}
@@ -160,7 +187,7 @@ function SortableDocumentTab({
         onClick={onClose}
       >
         <XIcon />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -187,12 +214,17 @@ function PinnedDocumentTab({
       data-active={active ? "true" : "false"}
       data-document-kind={doc.ref.kind}
       data-pinned="true"
-      className={`chrome-tab chrome-tab-pinned ${active ? "chrome-tab-active" : ""}`}
+      className={cn(
+        "chrome-tab chrome-tab-pinned",
+        active && "chrome-tab-active",
+      )}
     >
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         data-testid={active ? "document-tab-active" : "document-tab-select"}
         className="chrome-tab-label"
+        aria-current={active ? "page" : undefined}
         onClick={onSelect}
       >
         {kindIcon(doc.ref.kind, indexed?.header.type)}
@@ -200,10 +232,11 @@ function PinnedDocumentTab({
           {doc.ref.label}
           {doc.dirty ? " *" : ""}
         </span>
-      </button>
+      </Button>
       {onClose ? (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           data-testid="document-tab-close"
           className="chrome-tab-close"
           aria-label={`Close ${doc.ref.label}`}
@@ -211,7 +244,7 @@ function PinnedDocumentTab({
           onClick={onClose}
         >
           <XIcon />
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -273,6 +306,8 @@ export function EditorChromeBar({
     "project" | "engine" | null
   >(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const phone = usePhoneLayout();
 
   const contentBrowserDoc = openDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
@@ -341,73 +376,238 @@ export function EditorChromeBar({
     };
   }, [projectName, redoActiveDocument, undoActiveDocument]);
 
-  return (
-    <div className="editor-chrome-shell">
-      <header className="editor-chrome-bar" data-testid="editor-chrome-bar">
-        <div
-          className="editor-chrome-title"
-          data-testid="project-name"
-          title={projectName ? displayProjectName(projectName) : undefined}
-        >
-          {projectName ? displayProjectName(projectName) : ""}
-        </div>
-
-        <div className="editor-chrome-tabs" data-testid="document-tab-bar">
-          <div
-            className="editor-chrome-tabs-pinned"
-            data-testid="document-tab-pinned"
-          >
-            {contentBrowserDoc ? (
-              <PinnedDocumentTab
-                doc={contentBrowserDoc}
-                active={activeDocumentId === CONTENT_BROWSER_ID}
-                onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
-              />
-            ) : null}
-            {pinnedSceneDoc ? (
-              <PinnedDocumentTab
-                doc={pinnedSceneDoc}
-                active={activeDocumentId === pinnedSceneDoc.id}
-                onSelect={() => setActiveDocument(pinnedSceneDoc.id)}
-                onClose={() =>
-                  onCloseDocument
-                    ? onCloseDocument(pinnedSceneDoc.id)
-                    : closeDocument(pinnedSceneDoc.id)
-                }
-              />
-            ) : null}
-          </div>
-
-          <div
-            className="editor-chrome-tabs-scroll"
-            data-testid="document-tab-scroll"
-          >
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={scrollableDocs.map((doc) => doc.id)}
-                strategy={horizontalListSortingStrategy}
+  const openSearch = () => {
+    setToolsOpen(false);
+    setSearchOpen(true);
+  };
+  const openSettings = (scope: "project" | "engine") => {
+    setToolsOpen(false);
+    setSettingsScope(scope);
+  };
+  const debugMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="debug-menu"
+            className="chrome-action-button"
+            aria-label="Debug"
+            disabled={!projectName}
+          />
+        }
+      >
+        <BugIcon data-icon="inline-start" />
+        Debug
+        <ChevronDownIcon data-icon="inline-end" />
+      </DropdownMenuTrigger>
+      <PlayDebugMenuItems
+        overlayStats={overlayStats}
+        overlayConsole={overlayConsole}
+        overlayInspector={overlayInspector}
+        pauseOnPlay={pauseOnPlay}
+        previewBuild={previewBuild}
+        playFromScene={playFromScene}
+        sessionLocked={playing || preparing}
+        onOverlayStatsChange={setOverlayStats}
+        onOverlayConsoleChange={setOverlayConsole}
+        onOverlayInspectorChange={setOverlayInspector}
+        onPauseOnPlayChange={setPauseOnPlay}
+        onPreviewBuildChange={setPreviewBuild}
+        onPlayFromSceneChange={setPlayFromScene}
+      />
+    </DropdownMenu>
+  );
+  const utilityTools = (
+    <>
+      {phone && activeKind === "graph" ? (
+        <CompilationErrorIndicator
+          errorCount={errorCount}
+          onOpenResults={() => {
+            setToolsOpen(false);
+            activateDockPanel("compiler-results");
+          }}
+        />
+      ) : null}
+      <WindowsMenu />
+      {!phone ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Toggle
+                variant="outline"
+                size="sm"
+                aria-label="Focus"
+                pressed={isLayoutFocused}
+                disabled={!projectName || !canFocus}
+                onPressedChange={() => toggleLayoutFocus()}
+                data-testid="focus-layout"
+                className="chrome-icon-button"
               >
-                {scrollableDocs.map((doc) => (
-                  <SortableDocumentTab
-                    key={doc.id}
-                    doc={doc}
-                    active={doc.id === activeDocumentId}
-                    onSelect={() => setActiveDocument(doc.id)}
-                    onClose={() =>
-                      onCloseDocument
-                        ? onCloseDocument(doc.id)
-                        : closeDocument(doc.id)
-                    }
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
+                <Maximize2Icon />
+              </Toggle>
+            }
+          />
+          <TooltipContent>Focus</TooltipContent>
+        </Tooltip>
+      ) : null}
+      {phone ? (
+        <Button
+          variant="outline"
+          size="touch"
+          data-testid="global-search"
+          disabled={!projectName}
+          onClick={openSearch}
+        >
+          <SearchIcon data-icon="inline-start" /> Search Project
+        </Button>
+      ) : (
+        <IconActionButton
+          label="Search project"
+          data-testid="global-search"
+          className="chrome-icon-button"
+          disabled={!projectName}
+          onClick={openSearch}
+        >
+          <SearchIcon />
+        </IconActionButton>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="settings-menu"
+              className="chrome-action-button"
+              aria-label="Settings"
+              disabled={!projectName}
+            />
+          }
+        >
+          <SettingsIcon data-icon="inline-start" />
+          Settings
+          <ChevronDownIcon data-icon="inline-end" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              data-testid="project-settings"
+              onClick={() => openSettings("project")}
+            >
+              Project Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-testid="engine-settings"
+              onClick={() => openSettings("engine")}
+            >
+              Engine Settings
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
+
+  return (
+    <div className="editor-chrome-shell" data-phone={phone ? "true" : "false"}>
+      <header className="editor-chrome-bar" data-testid="editor-chrome-bar">
+        {!phone ? (
+          <div
+            className="editor-chrome-title"
+            data-testid="project-name"
+            title={projectName ? displayProjectName(projectName) : undefined}
+          >
+            {projectName ? displayProjectName(projectName) : ""}
           </div>
-        </div>
+        ) : null}
+        {phone ? (
+          <div className="editor-phone-documents">
+            <Button
+              variant="ghost"
+              size="touch-icon"
+              aria-label="Content Browser"
+              title="Content Browser"
+              onClick={() => setActiveDocument(CONTENT_BROWSER_ID)}
+              aria-current={
+                activeDocumentId === CONTENT_BROWSER_ID ? "page" : undefined
+              }
+            >
+              <LayoutGridIcon />
+            </Button>
+            <DocumentSwitcher
+              documents={openDocuments}
+              activeDocumentId={activeDocumentId}
+              onSelect={setActiveDocument}
+              onClose={onCloseDocument ?? closeDocument}
+              compact
+            />
+          </div>
+        ) : (
+          <div className="editor-chrome-tabs" data-testid="document-tab-bar">
+            <div
+              className="editor-chrome-tabs-pinned"
+              data-testid="document-tab-pinned"
+            >
+              {contentBrowserDoc ? (
+                <PinnedDocumentTab
+                  doc={contentBrowserDoc}
+                  active={activeDocumentId === CONTENT_BROWSER_ID}
+                  onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
+                />
+              ) : null}
+              {pinnedSceneDoc ? (
+                <PinnedDocumentTab
+                  doc={pinnedSceneDoc}
+                  active={activeDocumentId === pinnedSceneDoc.id}
+                  onSelect={() => setActiveDocument(pinnedSceneDoc.id)}
+                  onClose={() =>
+                    onCloseDocument
+                      ? onCloseDocument(pinnedSceneDoc.id)
+                      : closeDocument(pinnedSceneDoc.id)
+                  }
+                />
+              ) : null}
+            </div>
+
+            <div
+              className="editor-chrome-tabs-scroll"
+              data-testid="document-tab-scroll"
+            >
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={scrollableDocs.map((doc) => doc.id)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {scrollableDocs.map((doc) => (
+                    <SortableDocumentTab
+                      key={doc.id}
+                      doc={doc}
+                      active={doc.id === activeDocumentId}
+                      onSelect={() => setActiveDocument(doc.id)}
+                      onClose={() =>
+                        onCloseDocument
+                          ? onCloseDocument(doc.id)
+                          : closeDocument(doc.id)
+                      }
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            </div>
+            <DocumentSwitcher
+              documents={openDocuments}
+              activeDocumentId={activeDocumentId}
+              onSelect={setActiveDocument}
+              onClose={onCloseDocument ?? closeDocument}
+            />
+          </div>
+        )}
       </header>
 
       <div
@@ -538,12 +738,14 @@ export function EditorChromeBar({
                 }}
               >
                 <HammerIcon data-icon="inline-start" />
-                Compile
+                <span className="chrome-optional-label">Compile</span>
               </Button>
-              <CompilationErrorIndicator
-                errorCount={errorCount}
-                onOpenResults={() => activateDockPanel("compiler-results")}
-              />
+              {!phone ? (
+                <CompilationErrorIndicator
+                  errorCount={errorCount}
+                  onOpenResults={() => activateDockPanel("compiler-results")}
+                />
+              ) : null}
             </>
           ) : null}
           {activeKind === "material" ? (
@@ -561,7 +763,7 @@ export function EditorChromeBar({
               onClick={() => materialRenderControl?.requestRender()}
             >
               <RefreshCwIcon data-icon="inline-start" />
-              Render
+              <span className="chrome-optional-label">Render</span>
             </Button>
           ) : null}
         </div>
@@ -594,7 +796,9 @@ export function EditorChromeBar({
               }}
             >
               <PlayIcon data-icon="inline-start" />
-              {playChromeLaunchLabel(previewBuild)}
+              {phone && previewBuild
+                ? "Build"
+                : playChromeLaunchLabel(previewBuild)}
               {errorCount > 0 ? (
                 <span
                   className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
@@ -604,104 +808,42 @@ export function EditorChromeBar({
                 </span>
               ) : null}
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    data-testid="debug-menu"
-                    className="chrome-action-button"
-                    aria-label="Debug"
-                    disabled={!projectName}
-                  />
-                }
-              >
-                <BugIcon data-icon="inline-start" />
-                Debug
-                <ChevronDownIcon data-icon="inline-end" />
-              </DropdownMenuTrigger>
-              <PlayDebugMenuItems
-                overlayStats={overlayStats}
-                overlayConsole={overlayConsole}
-                overlayInspector={overlayInspector}
-                pauseOnPlay={pauseOnPlay}
-                previewBuild={previewBuild}
-                playFromScene={playFromScene}
-                sessionLocked={playing || preparing}
-                onOverlayStatsChange={setOverlayStats}
-                onOverlayConsoleChange={setOverlayConsole}
-                onOverlayInspectorChange={setOverlayInspector}
-                onPauseOnPlayChange={setPauseOnPlay}
-                onPreviewBuildChange={setPreviewBuild}
-                onPlayFromSceneChange={setPlayFromScene}
-              />
-            </DropdownMenu>
+            {!phone ? debugMenu : null}
           </div>
         </div>
 
         <div className="editor-global-toolbar-end">
-          <WindowsMenu />
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  variant="outline"
-                  size="sm"
-                  aria-label="Focus"
-                  pressed={isLayoutFocused}
-                  disabled={!projectName || !canFocus}
-                  onPressedChange={() => toggleLayoutFocus()}
-                  data-testid="focus-layout"
-                  className="chrome-icon-button"
-                >
-                  <Maximize2Icon />
-                </Toggle>
-              }
-            />
-            <TooltipContent>Focus</TooltipContent>
-          </Tooltip>
-          <IconActionButton
-            label="Search project"
-            data-testid="global-search"
-            className="chrome-icon-button"
-            disabled={!projectName}
-            onClick={() => setSearchOpen(true)}
-          >
-            <SearchIcon />
-          </IconActionButton>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid="settings-menu"
-                  className="chrome-action-button"
-                  aria-label="Settings"
-                  disabled={!projectName}
-                />
-              }
-            >
-              <SettingsIcon data-icon="inline-start" />
-              Settings
-              <ChevronDownIcon data-icon="inline-end" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                data-testid="project-settings"
-                onClick={() => setSettingsScope("project")}
+          {phone ? (
+            <Sheet open={toolsOpen} onOpenChange={setToolsOpen}>
+              <SheetTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="touch-icon"
+                    aria-label="More Tools"
+                    data-testid="editor-more-tools"
+                  />
+                }
               >
-                Project Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                data-testid="engine-settings"
-                onClick={() => setSettingsScope("engine")}
+                <EllipsisIcon />
+              </SheetTrigger>
+              <SheetContent
+                side="bottom"
+                className="editor-tools-sheet"
+                data-testid="editor-tools-sheet"
               >
-                Engine Settings
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <SheetHeader>
+                  <SheetTitle>Editor Tools</SheetTitle>
+                </SheetHeader>
+                <div className="editor-tools-sheet-actions">
+                  {debugMenu}
+                  {utilityTools}
+                </div>
+              </SheetContent>
+            </Sheet>
+          ) : (
+            utilityTools
+          )}
         </div>
       </div>
 

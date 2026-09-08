@@ -6,11 +6,13 @@ export function ContentBrowserSelectionActions({
   busy,
   onDeselectAll,
   onRequestDelete,
+  compact = false,
 }: {
   selectionCount: number;
   busy: boolean;
   onDeselectAll: () => void;
   onRequestDelete: () => void;
+  compact?: boolean;
 }) {
   if (selectionCount <= 0) return null;
   return (
@@ -18,18 +20,19 @@ export function ContentBrowserSelectionActions({
       <Button
         type="button"
         variant="outline"
-        size="sm"
+        size={compact ? "touch-icon" : "sm"}
+        aria-label="Deselect All"
         data-testid="content-browser-deselect-all"
         disabled={busy}
         onClick={onDeselectAll}
       >
         <XIcon data-icon="inline-start" />
-        Deselect All
+        {!compact ? "Deselect All" : null}
       </Button>
       <Button
         type="button"
         variant="outline"
-        size="sm"
+        size={compact ? "touch" : "sm"}
         data-testid="content-browser-delete-selected"
         disabled={busy}
         onClick={onRequestDelete}

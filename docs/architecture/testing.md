@@ -2,6 +2,13 @@
 
 `pnpm verify:local` selects checks against the merge base with main, including dirty files during development. Only clean unchanged committed runs qualify for PR delivery. Unknown files and verification infrastructure select the full gate. `pnpm verify` remains the complete local gate; full retained coverage and browser tests remain mandatory in CI.
 
+## Responsive editor checks
+
+- `e2e/phone-editor.spec.ts` covers 390x844 phone navigation/tools and 844x390 phone landscape, one visible Dockview window, and restoration to the 1194x834 tablet layout.
+- `e2e/phone-content-browser.spec.ts` covers touch folder navigation, explicit Open, and the two-step New Asset flow. These run under desktop-chrome with phone viewport/touch overrides; existing iPad tests remain unchanged.
+- Shared CatalogDialog tests cover category selection; real Dockview tests cover panel visibility, preservation, and layout restoration. Phone browser emulation does not certify native iOS/Android packaging or physical-device behavior.
+- Tablet folder-pan coverage creates enough rows to scroll at 1194x600, keeping the coarse-pointer viewport above the 500px phone-layout height breakpoint.
+
 ## Quiet agent waits
 
 Use `pnpm --silent agent:wait local --script verify` to run full verification once with complete stdout/stderr in a unique OS temporary directory. Use `local --script test -- --project node packages/core` to forward filters unchanged to other scripts. Arguments after `--` belong to the package script. `--timeout-seconds <seconds>` overrides the two-hour operation deadline. The helper launches the current `npm_execpath` entry through Node for JavaScript package managers, or directly for executable pnpm; it never executes a Windows `.cmd` shim or changes script-shell configuration.
@@ -19,6 +26,14 @@ Statuses are `success`, `failure`, `cancellation`, `timeout`, and `stale`. Packa
 On Windows, use a POSIX script shell (for example, Git Bash via `npm_config_script_shell`) for remaining package scripts that set environment variables inline. The owned test-build command passes environment variables directly, preserving the URL base `/` against MSYS path conversion. The Playwright project-filter test invokes the installed CLI through Node directly so it does not depend on an executable `pnpm` shim.
 
 Both authentic and minimal project helpers wait for cross-origin isolation after navigation before interacting with Homepage. The COI service worker may reload during initial registration; waiting for its isolated page prevents those reloads from interrupting project creation or opening.
+
+The COI bootstrap reloads only after the service worker can control navigation, including a late `controllerchange`, so installation cannot strand a page without isolation headers.
+
+Shared project create/reopen helpers allow up to 30 seconds for editor chrome after storage, scaffolding, and asset imports finish. They poll the actual ready UI; ordinary interaction assertions retain their default deadline.
+
+Class recovery and state-preservation tests wait for a visible graph node before saving and capturing position baselines. Dispatching the Content Browser double-click alone does not establish that the graph has loaded.
+
+The plugin export/re-import journey has a two-minute test deadline because it authors two projects and transfers a real downloaded file. Its assertions and the other browser-test deadlines are unchanged.
 
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 
