@@ -47,26 +47,47 @@ export default function HomepageNativeAccount({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const alive = useRef(true);
+  const currentSession = useRef<NativeClerkSession | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     alive.current = true;
     let cancelled = false;
-    void client.restoreSession().then(
-      (restored) => {
-        if (cancelled) return;
-        setSession(restored);
-        setRestoring(false);
-      },
-      (cause: unknown) => {
-        if (cancelled) return;
-        setRestoreError(accountError(cause));
-        setRestoring(false);
-      },
-    );
+    let pending = false;
+    const restore = () => {
+      if (cancelled || pending || busyRef.current) return;
+      pending = true;
+      setRestoring(true);
+      setRestoreError(null);
+      void client.restoreSession().then(
+        (restored) => {
+          if (cancelled) return;
+          currentSession.current = restored;
+          setSession(restored);
+          setRestoring(false);
+          pending = false;
+        },
+        (cause: unknown) => {
+          if (cancelled) return;
+          setRestoreError(accountError(cause));
+          setRestoring(false);
+          pending = false;
+        },
+      );
+    };
+    const resume = () => {
+      if (document.visibilityState === "visible" && currentSession.current) {
+        restore();
+      }
+    };
+    restore();
+    window.addEventListener("focus", resume);
+    document.addEventListener("visibilitychange", resume);
     return () => {
       cancelled = true;
       alive.current = false;
+      window.removeEventListener("focus", resume);
+      document.removeEventListener("visibilitychange", resume);
     };
   }, [client]);
 
@@ -116,13 +137,24 @@ export default function HomepageNativeAccount({
         value={{
           session,
           signOut: async () => {
-            await client.signOut(session);
-            if (!alive.current) return;
-            setSession(null);
-            setChallenge(null);
-            setCode("");
-            setError(null);
-            setStatus(null);
+            if (busyRef.current) return;
+            busyRef.current = true;
+            setRestoring(true);
+            try {
+              await client.signOut(session);
+              if (!alive.current) return;
+              currentSession.current = null;
+              setSession(null);
+              setChallenge(null);
+              setCode("");
+              setError(null);
+              setStatus(null);
+            } catch (cause) {
+              if (alive.current) setRestoreError(accountError(cause));
+            } finally {
+              busyRef.current = false;
+              if (alive.current) setRestoring(false);
+            }
           },
         }}
       >
@@ -155,7 +187,10 @@ export default function HomepageNativeAccount({
           if (challenge && code.trim()) {
             void run(async () => {
               const verified = await client.verifyCode(challenge, code.trim());
-              if (alive.current) setSession(verified);
+              if (alive.current) {
+                currentSession.current = verified;
+                setSession(verified);
+              }
             });
           } else if (!challenge && email.trim()) {
             void run(async () => {
@@ -228,7 +263,7 @@ export default function HomepageNativeAccount({
             ? "One Moment…"
             : challenge
               ? "Verify & Continue"
-              : "Continue with Email"}
+              : "Continue With Email"}
           <ArrowRightIcon data-icon="inline-end" aria-hidden="true" />
         </Button>
       </form>
@@ -276,7 +311,7 @@ export default function HomepageNativeAccount({
               setStatus(null);
             }}
           >
-            {mode === "sign-in" ? "Create Account" : "Back to Sign In"}
+            {mode === "sign-in" ? "Create Account" : "Back To Sign In"}
           </Button>
         )}
       </div>
