@@ -132,7 +132,7 @@ describe("createPlayBootCoordinator", () => {
     expect(runtime.started).toBe(true);
   });
 
-  it("starts Play even when loadPhysics rejects", async () => {
+  it("does not start Play when loadPhysics rejects", async () => {
     const runtime = fakeRuntime({
       loadPhysics: async () => {
         throw new Error("havok missing");
@@ -140,7 +140,7 @@ describe("createPlayBootCoordinator", () => {
     });
     const boot = createPlayBootCoordinator();
     await expect(boot.play(runtime)).rejects.toThrow("havok missing");
-    expect(runtime.started).toBe(true);
+    expect(runtime.started).toBe(false);
   });
 
   it("reset drops queued graph spawns from a previous session", async () => {

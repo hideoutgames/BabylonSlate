@@ -8,6 +8,8 @@ export type CreatePhysicsBackendOptions = PhysicsBackendOptions & {
    * and as a fallback when a wasm engine fails to load.
    */
   preferSoftware?: boolean;
+  /** Set false for Play so a failed engine load cannot change collision behavior. */
+  allowSoftwareFallback?: boolean;
 };
 
 /** Tracks which heavy backends were dynamically imported (lazy-load tests). */
@@ -39,6 +41,7 @@ export async function createPhysicsBackend(
       loadedBackendModules.havok = true;
       return backend;
     } catch (error) {
+      if (options.allowSoftwareFallback === false) throw error;
       console.warn(
         "[physics] Havok failed to load; falling back to software backend",
         error,
@@ -53,6 +56,7 @@ export async function createPhysicsBackend(
     loadedBackendModules.rapier = true;
     return backend;
   } catch (error) {
+    if (options.allowSoftwareFallback === false) throw error;
     console.warn(
       "[physics] Rapier2D failed to load; falling back to software backend",
       error,

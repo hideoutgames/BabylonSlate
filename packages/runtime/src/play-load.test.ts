@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import type { ControlMessage } from "@babylonslate/bridge";
 import {
   loadedBackendModules,
@@ -270,7 +271,13 @@ describe("createRuntimeFromLoad", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       requested.push(String(input));
-      return new Response("missing", { status: 404 });
+      const bytes = readFileSync(
+        new URL(
+          "../../../apps/editor/public/havok/HavokPhysics.wasm",
+          import.meta.url,
+        ),
+      );
+      return new Response(Uint8Array.from(bytes).buffer);
     }) as typeof fetch;
     try {
       const runtime = createRuntimeFromLoad(

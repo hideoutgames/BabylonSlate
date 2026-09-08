@@ -35,15 +35,17 @@ export function resetHavokModuleCache(): void {
 }
 
 async function resolveWasmBinary(havokWasmUrl?: string): Promise<Uint8Array> {
-  if (havokWasmUrl && typeof fetch === "function") {
-    try {
-      const response = await fetch(havokWasmUrl);
-      if (response.ok) {
-        return new Uint8Array(await response.arrayBuffer());
-      }
-    } catch {
-      // fall through to filesystem resolve
+  if (havokWasmUrl) {
+    if (typeof fetch !== "function") {
+      throw new Error(`Havok WASM download is unavailable: ${havokWasmUrl}`);
     }
+    const response = await fetch(havokWasmUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Havok WASM request failed (${response.status}): ${havokWasmUrl}`,
+      );
+    }
+    return new Uint8Array(await response.arrayBuffer());
   }
 
   // Node / Vitest: resolve the package wasm without static `node:*` imports so

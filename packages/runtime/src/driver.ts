@@ -61,6 +61,7 @@ import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
   SoftwarePhysicsBackend,
+  type PhysicsBackend,
   type PhysicsWorldKind,
 } from "@babylonslate/physics";
 import {
@@ -81,6 +82,7 @@ import {
   type UserCommandDef,
 } from "@babylonslate/debugger";
 import { LogRingBuffer } from "./log-ring";
+import { componentIdFromColliderPhysicsId } from "./physics-collider-id";
 import {
   SessionDiagnosticAggregator,
   type RuntimeDiagnostic,
@@ -1001,28 +1003,44 @@ class InProcessRuntime implements RuntimeDriver {
         z: this.gravity[2],
       },
       havokWasmUrl: this.havokWasmUrl,
+      allowSoftwareFallback: false,
     });
-    this.physicsSync.dispose();
-    this.physicsSync = new PhysicsWorldSync(backend, {
+    let overlayBackend: PhysicsBackend;
+    try {
+      overlayBackend = await createPhysicsBackend({
+        kind: "2d",
+        gravity: {
+          x: this.overlayGravity[0],
+          y: this.overlayGravity[1],
+          z: this.overlayGravity[2],
+        },
+        allowSoftwareFallback: false,
+      });
+    } catch (error) {
+      backend.dispose();
+      throw error;
+    }
+
+    const physicsSync = new PhysicsWorldSync(backend, {
       actorFilter: (actor) => actor.sceneLayerId == null,
     });
-    this.bindPhysicsContent(this.physicsSync);
-    this.physicsSync.syncFromWorld(this.world);
-
-    const overlayBackend = await createPhysicsBackend({
-      kind: "2d",
-      gravity: {
-        x: this.overlayGravity[0],
-        y: this.overlayGravity[1],
-        z: this.overlayGravity[2],
-      },
-    });
-    this.overlayPhysicsSync.dispose();
-    this.overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
+    const overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
       actorFilter: (actor) => actor.sceneLayerId != null,
     });
-    this.bindPhysicsContent(this.overlayPhysicsSync);
-    this.overlayPhysicsSync.syncFromWorld(this.world);
+    try {
+      this.bindPhysicsContent(physicsSync);
+      physicsSync.syncFromWorld(this.world);
+      this.bindPhysicsContent(overlayPhysicsSync);
+      overlayPhysicsSync.syncFromWorld(this.world);
+    } catch (error) {
+      physicsSync.dispose();
+      overlayPhysicsSync.dispose();
+      throw error;
+    }
+    this.physicsSync.dispose();
+    this.overlayPhysicsSync.dispose();
+    this.physicsSync = physicsSync;
+    this.overlayPhysicsSync = overlayPhysicsSync;
   }
 
   getPhysicsSync(): PhysicsWorldSync | null {
@@ -3865,15 +3883,6 @@ function overlayPanelVariables(component: ActorComponent): Record<string, unknow
     marginBottom: component.getVariable("marginBottom"),
     hitTest: component.getVariable("hitTest"),
   };
-}
-
-function componentIdFromColliderPhysicsId(
-  colliderId: string | undefined,
-): string | undefined {
-  if (!colliderId) return undefined;
-  return colliderId.startsWith("collider:")
-    ? colliderId.slice("collider:".length)
-    : colliderId;
 }
 
 function isPlayRenderable(
