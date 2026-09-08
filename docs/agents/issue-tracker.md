@@ -160,7 +160,7 @@ When the code-review skill reports Standards or Spec findings:
 ## PR checklist
 
 - [ ] Spec identified (engineplan slice or issue).
-- [ ] `pnpm verify` green.
+- [ ] Focused regressions and `pnpm verify:local` green; required GitHub Verify passes before merge.
 - [ ] `docs/` updated if behaviour or APIs changed.
 - [ ] Code-review skill run against merge-base; findings recorded here or fixed.
 - [ ] Tests added/updated for new behaviour.

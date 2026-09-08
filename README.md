@@ -51,12 +51,15 @@ Projects are ordinary folders (or a `.zip` of that folder). Editor scenes and gr
 
 ```bash
 pnpm install
-pnpm dev          # start Vite dev server
-pnpm docs:dev     # VitePress docs site from docs/
-pnpm verify       # typecheck + lint + unit tests + Playwright E2E + docs build
-pnpm test         # unit tests only
-pnpm test:e2e     # Playwright smoke tests (CI runs this)
+pnpm dev            # start Vite dev server
+pnpm docs:dev       # VitePress docs site from docs/
+pnpm verify:local   # path-aware local PR preflight
+pnpm verify         # explicit full local diagnostic, including Playwright
+pnpm test <files>   # focused unit tests; omit files to run all
+pnpm test:e2e       # Playwright integration tests (all run in CI)
 ```
+
+GitHub Verify remains the exhaustive merge gate: full workspace typechecking, tooling and distribution contracts, coverage, and all seven browser partitions. See [testing architecture](docs/architecture/testing.md) for local selection details.
 
 ## Testing on iPad (no Mac)
 

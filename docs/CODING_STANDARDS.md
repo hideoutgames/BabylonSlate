@@ -68,4 +68,4 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. Reuse Luc
 
 - One roadmap slice per PR when possible.
 - Update `docs/` in the same PR as behavioural or API changes.
-- Run `pnpm verify` before marking ready.
+- Run focused regressions and `pnpm verify:local` before opening a PR. Add `pnpm typecheck` for intentional public cross-package API changes; exhaustive coverage and browser suites remain required in GitHub CI.

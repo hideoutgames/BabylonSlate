@@ -1,5 +1,5 @@
 ---
-description: Pass local verify before opening PRs; wait for a CI slot; monitor, repair, and merge with at most 2 counted ready PRs
+description: Pass the focused local preflight before opening PRs; wait for a CI slot; monitor, repair, and merge with at most 2 counted ready PRs
 alwaysApply: true
 ---
 
