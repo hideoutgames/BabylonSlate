@@ -10,6 +10,8 @@ This page lists **kit** components currently in the repo. Feature screens (Homep
 
 **Asset document shells** are DockView (`DockviewShell` + `window-catalog.ts`), not shadcn `Tabs` and not a new `AssetDocumentWorkspace` page. Register every panel so the toolbar **Windows** menu can show, hide, and restore it. Animation Graph adds a chrome **State Machine | Animation Object** mode bar outside DockView (see the exception in the rule). Rule: [`.agents/rules/dockview-editor-tabs.md`](../../.agents/rules/dockview-editor-tabs.md). Compose each dock tab from this catalog (`PanelFrame`, `PropertyGrid`, …).
 
+`DockviewShell` fills its host, including stacked Animation Graph surfaces, before reserving space for the phone **Window** picker.
+
 ## Primitives (`@babylonslate/ui`)
 
 Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Import as `@babylonslate/ui/components/<name>`. Composition parts (`DialogTitle`, `FieldLabel`, …) belong with the family, not as separate rows.
