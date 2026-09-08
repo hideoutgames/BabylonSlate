@@ -5,7 +5,7 @@ import { createInProcessRuntime } from "../../runtime/src/driver";
 import { createTestEngine } from "./create-null-engine";
 import * as snapshot from "./snapshot-apply";
 import * as attachments from "./bone-attachment";
-import { writeSampledAudioPoses } from "./snapshot-sync";
+import { writeSampledAudioPoses, type SampledAudioPose } from "./snapshot-sync";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => { for (const { scene, engine } of handles.splice(0)) { scene.dispose(); engine.dispose(); } });
@@ -40,16 +40,17 @@ describe("render bone attachment", () => {
     childSlot.position.x = 10;
     attach("Hand");
     apply();
-    const poses = writeSampledAudioPoses({ actors: [childSlot, targetSlot], actorCount: 2 }, []);
+    const poses: SampledAudioPose[] = [];
+    writeSampledAudioPoses({ actors: [childSlot, targetSlot], actorCount: 2 }, poses);
     expect(attachments.applyBoneAttachmentAudioPoses).toBeTypeOf("function");
     attachments.applyBoneAttachmentAudioPoses(binding, poses);
-    expect(poses[0]!.pose.y).toBeCloseTo(3);
-    expect(poses[0]!.pose.qy).toBeCloseTo(Math.SQRT1_2);
-    expect(poses[1]!.pose).toEqual({ x: 10, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 });
+    expect(poses[0]!.position.y).toBeCloseTo(3);
+    expect(poses[0]!.position.qy).toBeCloseTo(Math.SQRT1_2);
+    expect(poses[1]!.position).toEqual({ x: 10, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 });
     hand.position.y = 5;
     apply();
     attachments.applyBoneAttachmentAudioPoses(binding, poses);
-    expect(poses[0]!.pose.y).toBeCloseTo(5);
+    expect(poses[0]!.position.y).toBeCloseTo(5);
   });
 
   it.each(["light:spot", "camera"])("moves attached %s components with the bone and their component offset", (meshKind) => {
