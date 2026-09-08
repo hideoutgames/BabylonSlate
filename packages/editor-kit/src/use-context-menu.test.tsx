@@ -18,7 +18,10 @@ function TestHost({
   items: ContextMenuItem[];
   enabled?: boolean;
 }) {
-  const { menu, closeMenu, bind, openMenuAt } = useContextMenu({ items, enabled });
+  const { menu, closeMenu, bind, openMenuAt } = useContextMenu({
+    items,
+    enabled,
+  });
   return (
     <div data-testid="target" {...bind}>
       <span data-testid="state">{menu?.open ? "open" : "closed"}</span>
@@ -26,7 +29,9 @@ function TestHost({
         type="button"
         data-testid="open-override"
         onClick={() =>
-          openMenuAt(12, 24, [{ id: "override", label: "Override", onSelect: vi.fn() }])
+          openMenuAt(12, 24, [
+            { id: "override", label: "Override", onSelect: vi.fn() },
+          ])
         }
       >
         Override
@@ -38,9 +43,10 @@ function TestHost({
 
 const ORIGIN = { clientX: 5, clientY: 5 };
 
-function renderHost(items: ContextMenuItem[] = [
-  { id: "a", label: "Action", onSelect: vi.fn() },
-], enabled = true) {
+function renderHost(
+  items: ContextMenuItem[] = [{ id: "a", label: "Action", onSelect: vi.fn() }],
+  enabled = true,
+) {
   const utils = render(<TestHost items={items} enabled={enabled} />);
   return {
     ...utils,
@@ -77,6 +83,43 @@ describe("useContextMenu", () => {
     dispatchPointerEvent(target, "pointerdown", ORIGIN);
     await advancePastLongPress();
     expect(state()).toBe("open");
+  });
+
+  it("keeps a held menu open through its retargeted release click and closes on the next backdrop tap", async () => {
+    vi.useFakeTimers();
+    const { target, state, getByTestId } = renderHost();
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    await advancePastLongPress();
+    const backdrop = getByTestId("context-menu-backdrop");
+    dispatchPointerEvent(target, "pointerup", ORIGIN);
+    fireEvent.click(backdrop, { detail: 1 });
+    expect(state()).toBe("open");
+
+    dispatchPointerEvent(backdrop, "pointerdown", ORIGIN);
+    dispatchPointerEvent(backdrop, "pointerup", ORIGIN);
+    fireEvent.click(backdrop, { detail: 1 });
+    expect(state()).toBe("closed");
+  });
+
+  it("does not select an item under the holding finger until a fresh tap starts", async () => {
+    vi.useFakeTimers();
+    const onSelect = vi.fn();
+    const { target, state, getByTestId } = renderHost([
+      { id: "a", label: "Action", onSelect },
+    ]);
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    await advancePastLongPress();
+    const action = getByTestId("context-menu-item-a");
+    dispatchPointerEvent(target, "pointerup", ORIGIN);
+    fireEvent.click(action, { detail: 1 });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(state()).toBe("open");
+
+    dispatchPointerEvent(action, "pointerdown", ORIGIN);
+    dispatchPointerEvent(action, "pointerup", ORIGIN);
+    fireEvent.click(action, { detail: 1 });
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(state()).toBe("closed");
   });
 
   it("does not open before the long-press delay elapses", async () => {
@@ -209,7 +252,11 @@ describe("useContextMenu", () => {
     const { getByTestId, unmount } = render(
       <section
         data-testid="clipping-surface"
-        style={{ transform: "translateY(24px)", overflow: "hidden", height: 40 }}
+        style={{
+          transform: "translateY(24px)",
+          overflow: "hidden",
+          height: 40,
+        }}
       >
         <TestHost items={[{ id: "a", label: "Action", onSelect: vi.fn() }]} />
       </section>,
@@ -230,7 +277,9 @@ describe("useContextMenu", () => {
   });
 
   it("opens with an items override instead of the hook default list", () => {
-    const { getByTestId } = renderHost([{ id: "a", label: "Action", onSelect: vi.fn() }]);
+    const { getByTestId } = renderHost([
+      { id: "a", label: "Action", onSelect: vi.fn() },
+    ]);
     fireEvent.click(getByTestId("open-override"));
     expect(getByTestId("state").textContent).toBe("open");
     expect(getByTestId("context-menu-item-override")).toBeTruthy();
@@ -264,9 +313,9 @@ describe("useContextMenu", () => {
 
 describe("resolveHoldPointerPhase", () => {
   it("treats early movement as scroll, not drag or menu", () => {
-    expect(
-      resolveHoldPointerPhase({ elapsedMs: 80, moved: true }),
-    ).toBe("scroll");
+    expect(resolveHoldPointerPhase({ elapsedMs: 80, moved: true })).toBe(
+      "scroll",
+    );
   });
 
   it("arms drag after the hold delay", () => {
