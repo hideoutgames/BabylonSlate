@@ -1,22 +1,25 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
+import { domLogicTests } from "./vitest.environments.ts";
 
 /** Package coverage (`pnpm test:coverage`) skips editor jsdom tests; a second process runs them. */
 const packageCoverageOnly = process.env.VITEST_COVERAGE === "1";
 
 export default defineConfig({
   test: {
-    // This VM reports 2 logical CPUs (`availableParallelism`), so Vitest's
-    // default `cpus - 1` is a single worker. Four forks stay on standard
-    // GitHub-hosted runners.
+    // A single admitted worker is the local default; CI can grant more.
     pool: "forks",
     fileParallelism: true,
-    maxWorkers: 4,
+    maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 1),
     projects: [
       {
         extends: "./vitest.projects.node.ts",
         test: {
           name: "node",
+          exclude: [...configDefaults.exclude, ...domLogicTests],
           include: [
+            ...(packageCoverageOnly ? [] : ["apps/editor/**/*.test.ts"]),
+            "packages/vfs/**/*.test.ts",
+            "packages/graph-ui/**/*.test.ts",
             "packages/core/**/*.test.ts",
             "packages/assets/**/*.test.ts",
             "packages/edit/**/*.test.ts",
@@ -49,9 +52,12 @@ export default defineConfig({
           name: "jsdom",
           include: [
             "packages/editor-kit/**/*.test.tsx",
-            "packages/graph-ui/**/*.test.{ts,tsx}",
-            "packages/vfs/**/*.test.ts",
-            ...(packageCoverageOnly ? [] : ["apps/editor/**/*.test.{ts,tsx}"]),
+            "packages/graph-ui/**/*.test.tsx",
+            ...domLogicTests.filter(
+              (file) =>
+                !packageCoverageOnly || !file.startsWith("apps/editor/"),
+            ),
+            ...(packageCoverageOnly ? [] : ["apps/editor/**/*.test.tsx"]),
           ],
         },
       },

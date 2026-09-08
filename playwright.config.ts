@@ -1,16 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { IPAD_TEST_GREP } from "./e2e/ipad-tag";
 
-const explicitPort = process.env.PLAYWRIGHT_PORT;
-const port = explicitPort === undefined ? 4173 : Number(explicitPort);
-if (
-  (explicitPort !== undefined && !/^\d+$/.test(explicitPort)) ||
-  !Number.isInteger(port) || port < 1 || port > 65535
-) {
-  throw new Error("PLAYWRIGHT_PORT must be an integer between 1 and 65535.");
-}
-const baseURL = `http://127.0.0.1:${port}`;
-
 const IPAD_TOUCH = {
   hasTouch: true,
   deviceScaleFactor: 2,
@@ -23,11 +13,12 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // Shared origin OPFS (`TestProject`) cannot run two browser workers at once.
-  workers: 1,
-  reporter: "list",
+  // One browser worker per admitted run keeps local memory and CPU use bounded.
+  workers: Number(process.env.BL_TEST_BROWSER_WORKERS ?? 1),
+  reporter: [["list"], ["json", { outputFile: "test-results/timings.json" }]],
+  globalSetup: "./e2e/verify-test-server.ts",
   use: {
-    baseURL,
+    baseURL: process.env.BL_TEST_BASE_URL,
     trace: "on-first-retry",
   },
   projects: [
@@ -47,12 +38,4 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command:
-      `pnpm --filter editor build && pnpm --filter editor preview --host 127.0.0.1 --port ${port} --strictPort`,
-    env: { VITE_TEST_MODE: "true" },
-    url: baseURL,
-    reuseExistingServer: false,
-    timeout: process.env.CI ? 180_000 : 600_000,
-  },
 });

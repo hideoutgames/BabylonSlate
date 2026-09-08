@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RenderScheduler } from "@babylonslate/render";
+import { RenderScheduler } from "@babylonslate/render/render-scheduler";
 import {
   attachViewportRenderGate,
   applyLiveEngineSettings,

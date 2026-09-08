@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeAll } from "vitest";
 import "@babylonjs/core/Physics/physicsEngineComponent";
 import { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
 import { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
@@ -75,7 +75,7 @@ function spawnFallingBox(backend: PhysicsBackend): void {
 }
 
 describe("Havok 3D backend uses Babylon Physics V2", () => {
-  beforeEach(() => {
+  beforeAll(() => {
     resetLoadedBackendModules();
     resetHavokModuleCache();
   });
@@ -120,10 +120,7 @@ describe("Havok 3D backend uses Babylon Physics V2", () => {
     expect(y).toBeLessThan(4.5);
     expect(y).toBeGreaterThan(0.5);
 
-    const hit = backend.lineTrace(
-      { x: 0, y: 10, z: 0 },
-      { x: 0, y: -1, z: 0 },
-    );
+    const hit = backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: -1, z: 0 });
     expect(hit.hit).toBe(true);
     expect(hit.actorId).toBeTruthy();
     expect((backend as unknown as HavokV2Surface).plugin).toBeInstanceOf(

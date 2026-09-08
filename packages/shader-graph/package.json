@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/shader-graph"
+    "test": "node ../../scripts/run-tests.mjs unit packages/shader-graph"
   },
   "dependencies": {
     "@babylonslate/core": "workspace:*"

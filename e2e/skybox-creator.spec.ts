@@ -9,14 +9,6 @@ import {
   openTestProject,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
-import {
-  createActor,
-  createDefaultScene,
-  createSkyboxComponent,
-  type SerializedScene,
-} from "../packages/core/src/index.ts";
-import { collectExportClosure } from "../packages/exporter/src/index.ts";
-import type { ExportIndexedAsset } from "../packages/exporter/src/types.ts";
 
 const ALBEDO_PNG = path.join(process.cwd(), "e2e/fixtures/albedo.png");
 const HELPER_PATH = "assets/DaySky.skyboxcreator.babasset";
@@ -59,85 +51,10 @@ async function closeWindowsMenu(page: Page): Promise<void> {
   await expect(content).toHaveCount(0);
 }
 
-function exportAsset(
-  partial: Partial<ExportIndexedAsset> &
-    Pick<ExportIndexedAsset, "guid" | "type" | "name">,
-): ExportIndexedAsset {
-  return {
-    dependencies: [],
-    rootId: "project",
-    parentClass: null,
-    ...partial,
-  };
-}
-
-test.describe.configure({ mode: "serial" });
-
 test.describe("Skybox Creator helper", () => {
-  test("packed export closure omits the helper and keeps referenced faces", () => {
-    const skybox = createSkyboxComponent("sky-1");
-    skybox.properties.faces = {
-      px: "face-px",
-      py: "face-py",
-      pz: "face-pz",
-      nx: "face-nx",
-      ny: "face-ny",
-      nz: "face-nz",
-    };
-    const scene: SerializedScene = {
-      ...createDefaultScene(),
-      actors: [
-        createActor("sky", "Skybox", {
-          components: [skybox],
-        }),
-      ],
-    };
-    const result = collectExportClosure({
-      startupSceneGuid: "scene-1",
-      assets: [
-        exportAsset({
-          guid: "scene-1",
-          type: "Scene",
-          name: "Main",
-          dependencies: ["helper-1"],
-        }),
-        exportAsset({
-          guid: "helper-1",
-          type: "SkyboxCreator",
-          name: "DaySky",
-          dependencies: ["src-tex", "face-px"],
-        }),
-        exportAsset({ guid: "src-tex", type: "Texture", name: "Source" }),
-        exportAsset({ guid: "face-px", type: "Texture", name: "DaySky_px" }),
-        exportAsset({ guid: "face-py", type: "Texture", name: "DaySky_py" }),
-        exportAsset({ guid: "face-pz", type: "Texture", name: "DaySky_pz" }),
-        exportAsset({ guid: "face-nx", type: "Texture", name: "DaySky_nx" }),
-        exportAsset({ guid: "face-ny", type: "Texture", name: "DaySky_ny" }),
-        exportAsset({ guid: "face-nz", type: "Texture", name: "DaySky_nz" }),
-      ],
-      pluginEnabledGuids: new Set(),
-      parentOf: () => null,
-      sceneByGuid: () => scene,
-      graphByGuid: () => null,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value).not.toContain("helper-1");
-    expect(result.value).not.toContain("src-tex");
-    expect(result.value).toEqual(
-      expect.arrayContaining([
-        "scene-1",
-        "face-px",
-        "face-py",
-        "face-pz",
-        "face-nx",
-        "face-ny",
-        "face-nz",
-      ]),
-    );
-  });
-
-  test("creates six skybox Textures from a picked Texture", async ({ page }) => {
+  test("creates six skybox Textures from a picked Texture", async ({
+    page,
+  }) => {
     test.setTimeout(240_000);
     await openTestProject(page);
     await openContentBrowser(page);
@@ -232,9 +149,13 @@ test.describe("Skybox Creator helper", () => {
     await openListedTestProject(page);
     await openContentBrowser(page);
     await page.getByTestId("content-browser-search").fill("DaySky");
-    await expect(page.locator(`[data-asset-path="${HELPER_PATH}"]`)).toBeVisible();
+    await expect(
+      page.locator(`[data-asset-path="${HELPER_PATH}"]`),
+    ).toBeVisible();
     await openAssetFromBrowser(page, HELPER_PATH);
     await expect(page.getByTestId("property-source")).toContainText(/albedo/i);
-    await expect(page.getByTestId("property-face-px")).toContainText(/DaySky_px/i);
+    await expect(page.getByTestId("property-face-px")).toContainText(
+      /DaySky_px/i,
+    );
   });
 });

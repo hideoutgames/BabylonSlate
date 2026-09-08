@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultAudioPayload } from "@babylonslate/assets";
-import { FakeAudioPlaybackBackend } from "@babylonslate/render";
+import { FakeAudioPlaybackBackend } from "@babylonslate/render/audio-playback-backend";
 import {
   createAudioPreviewSession,
   stopAudioPreviewElement,
@@ -29,7 +29,6 @@ describe("createAudioPreviewSession", () => {
       backend,
       readChunk: async () => {
         reads += 1;
-        await new Promise((resolve) => setTimeout(resolve, 20));
         return new Uint8Array([1, 2, 3]);
       },
       random: () => 0,

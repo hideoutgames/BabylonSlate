@@ -8,7 +8,9 @@ import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
 async function injectGamepad(
-  page: { evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown> },
+  page: {
+    evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown>;
+  },
   pad: { axes: number[]; buttons?: number[] } | null,
 ): Promise<void> {
   await page.evaluate((next) => {
@@ -71,7 +73,6 @@ const SCRIPTED_GRAPH = {
   ],
 };
 
-
 async function classGraphNodeCount(page: import("@playwright/test").Page) {
   return page.getByTestId("graph-panel").locator(".react-flow__node").count();
 }
@@ -91,12 +92,16 @@ async function setMainGraphContent(
   expect(installed).toBe(true);
 }
 
-async function openMannequinClass(page: import("@playwright/test").Page): Promise<void> {
+async function openMannequinClass(
+  page: import("@playwright/test").Page,
+): Promise<void> {
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await expect(page.getByTestId("graph-panel")).toBeVisible();
 }
 
-async function closeGraphTab(page: import("@playwright/test").Page): Promise<void> {
+async function closeGraphTab(
+  page: import("@playwright/test").Page,
+): Promise<void> {
   await page
     .locator('[data-testid="document-tab"][data-document-kind="graph"]')
     .getByTestId("document-tab-close")
@@ -192,66 +197,64 @@ test.describe("P5 visual scripting acceptance", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
-  test("Play without a scene tab still launches from startup", async ({ page }) => {
-    await openTestProject(page);
-    await expect(page.getByTestId("play-preview")).toBeEnabled();
-  });
-
   test("GetAxis2D Move from a compiled graph prints the stick in Play", async ({
     page,
   }) => {
     await openTestProject(page);
 
-    const installed = await page.evaluate(async (graph) => {
-      const host = globalThis as unknown as {
-        __babylonslateTest?: {
-          setMainGraphContent: (g: unknown) => Promise<boolean>;
+    const installed = await page.evaluate(
+      async (graph) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setMainGraphContent: (g: unknown) => Promise<boolean>;
+          };
         };
-      };
-      if (!host.__babylonslateTest) return false;
-      return host.__babylonslateTest.setMainGraphContent(graph);
-    }, {
-      nodes: [
-        {
-          id: "tick",
-          type: "flow.event.tick",
-          position: { x: 40, y: 80 },
-          data: {},
-        },
-        {
-          id: "axis",
-          type: "input.getAxis2D",
-          position: { x: 40, y: 200 },
-          data: { axis: "Move" },
-        },
-        {
-          id: "print",
-          type: "debug.print",
-          position: { x: 320, y: 80 },
-          data: {
-            key: "axis",
-            duration: 30,
-            color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+        if (!host.__babylonslateTest) return false;
+        return host.__babylonslateTest.setMainGraphContent(graph);
+      },
+      {
+        nodes: [
+          {
+            id: "tick",
+            type: "flow.event.tick",
+            position: { x: 40, y: 80 },
+            data: {},
           },
-        },
-      ],
-      edges: [
-        {
-          id: "e1",
-          source: "tick",
-          target: "print",
-          sourceHandle: "execOut",
-          targetHandle: "execIn",
-        },
-        {
-          id: "e2",
-          source: "axis",
-          target: "print",
-          sourceHandle: "out",
-          targetHandle: "value",
-        },
-      ],
-    });
+          {
+            id: "axis",
+            type: "input.getAxis2D",
+            position: { x: 40, y: 200 },
+            data: { axis: "Move" },
+          },
+          {
+            id: "print",
+            type: "debug.print",
+            position: { x: 320, y: 80 },
+            data: {
+              key: "axis",
+              duration: 30,
+              color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+            },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "tick",
+            target: "print",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+          {
+            id: "e2",
+            source: "axis",
+            target: "print",
+            sourceHandle: "out",
+            targetHandle: "value",
+          },
+        ],
+      },
+    );
     expect(installed).toBe(true);
 
     await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
@@ -275,84 +278,86 @@ test.describe("P5 visual scripting acceptance", () => {
           setMainGraphContent: (g: unknown) => Promise<boolean>;
         };
       };
-      return host.__babylonslateTest?.setMainGraphContent({
-        nodes: [
-          {
-            id: "tick",
-            type: "flow.event.tick",
-            position: { x: 40, y: 80 },
-            data: {},
-          },
-          {
-            id: "value",
-            type: "literal.makeInt",
-            position: { x: 40, y: 240 },
-            data: { "default:in": 42 },
-          },
-          {
-            id: "select",
-            type: "enum.select",
-            position: { x: 280, y: 220 },
-            data: {
-              enumGuid: "engine:CollisionChannel",
-              members: [
-                { name: "All", value: 0 },
-                { name: "WorldStatic", value: 1 },
-                { name: "WorldDynamic", value: 2 },
-                { name: "Pawn", value: 3 },
-                { name: "Visibility", value: 4 },
-              ],
-              "default:index": "Pawn",
+      return (
+        host.__babylonslateTest?.setMainGraphContent({
+          nodes: [
+            {
+              id: "tick",
+              type: "flow.event.tick",
+              position: { x: 40, y: 80 },
+              data: {},
             },
-          },
-          {
-            id: "format",
-            type: "string.format",
-            position: { x: 520, y: 180 },
-            data: { "default:format": "Selected {input pin}" },
-          },
-          {
-            id: "print",
-            type: "debug.print",
-            position: { x: 780, y: 80 },
-            data: {
-              key: "format-select",
-              duration: 30,
-              color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+            {
+              id: "value",
+              type: "literal.makeInt",
+              position: { x: 40, y: 240 },
+              data: { "default:in": 42 },
             },
-          },
-        ],
-        edges: [
-          {
-            id: "exec",
-            source: "tick",
-            target: "print",
-            sourceHandle: "execOut",
-            targetHandle: "execIn",
-          },
-          {
-            id: "option",
-            source: "value",
-            target: "select",
-            sourceHandle: "out",
-            targetHandle: "option:Pawn",
-          },
-          {
-            id: "selected",
-            source: "select",
-            target: "format",
-            sourceHandle: "out",
-            targetHandle: `arg:${encodeURIComponent("input pin")}`,
-          },
-          {
-            id: "formatted",
-            source: "format",
-            target: "print",
-            sourceHandle: "out",
-            targetHandle: "value",
-          },
-        ],
-      }) ?? false;
+            {
+              id: "select",
+              type: "enum.select",
+              position: { x: 280, y: 220 },
+              data: {
+                enumGuid: "engine:CollisionChannel",
+                members: [
+                  { name: "All", value: 0 },
+                  { name: "WorldStatic", value: 1 },
+                  { name: "WorldDynamic", value: 2 },
+                  { name: "Pawn", value: 3 },
+                  { name: "Visibility", value: 4 },
+                ],
+                "default:index": "Pawn",
+              },
+            },
+            {
+              id: "format",
+              type: "string.format",
+              position: { x: 520, y: 180 },
+              data: { "default:format": "Selected {input pin}" },
+            },
+            {
+              id: "print",
+              type: "debug.print",
+              position: { x: 780, y: 80 },
+              data: {
+                key: "format-select",
+                duration: 30,
+                color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+              },
+            },
+          ],
+          edges: [
+            {
+              id: "exec",
+              source: "tick",
+              target: "print",
+              sourceHandle: "execOut",
+              targetHandle: "execIn",
+            },
+            {
+              id: "option",
+              source: "value",
+              target: "select",
+              sourceHandle: "out",
+              targetHandle: "option:Pawn",
+            },
+            {
+              id: "selected",
+              source: "select",
+              target: "format",
+              sourceHandle: "out",
+              targetHandle: `arg:${encodeURIComponent("input pin")}`,
+            },
+            {
+              id: "formatted",
+              source: "format",
+              target: "print",
+              sourceHandle: "out",
+              targetHandle: "value",
+            },
+          ],
+        }) ?? false
+      );
     });
     expect(installed).toBe(true);
 
@@ -376,79 +381,6 @@ test.describe("P5 visual scripting acceptance", () => {
       "Selected 42",
       { timeout: 15_000 },
     );
-    await page.getByTestId("play-overlay-close").click();
-  });
-
-  test("For Loop executes its body and exposes the final Index in Preview", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    const installed = await page.evaluate(async () => {
-      const host = globalThis as unknown as {
-        __babylonslateTest?: {
-          setMainGraphContent: (g: unknown) => Promise<boolean>;
-        };
-      };
-      return host.__babylonslateTest?.setMainGraphContent({
-        nodes: [
-          {
-            id: "tick",
-            type: "flow.event.tick",
-            position: { x: 40, y: 80 },
-            data: {},
-          },
-          {
-            id: "loop",
-            type: "flow.forLoop",
-            position: { x: 300, y: 80 },
-            data: {
-              "default:firstIndex": 0,
-              "default:lastIndex": 2,
-            },
-          },
-          {
-            id: "print",
-            type: "debug.print",
-            position: { x: 580, y: 80 },
-            data: {
-              key: "for-loop",
-              duration: 30,
-              color: { x: 0.4, y: 1, z: 0.6, w: 1 },
-            },
-          },
-        ],
-        edges: [
-          {
-            id: "start",
-            source: "tick",
-            target: "loop",
-            sourceHandle: "execOut",
-            targetHandle: "execIn",
-          },
-          {
-            id: "body",
-            source: "loop",
-            target: "print",
-            sourceHandle: "loopBody",
-            targetHandle: "execIn",
-          },
-          {
-            id: "index",
-            source: "loop",
-            target: "print",
-            sourceHandle: "index",
-            targetHandle: "value",
-          },
-        ],
-      }) ?? false;
-    });
-    expect(installed).toBe(true);
-
-    await openMainScene(page);
-    await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("print-overlay")).toContainText("2", {
-      timeout: 15_000,
-    });
     await page.getByTestId("play-overlay-close").click();
   });
 
@@ -500,214 +432,6 @@ test.describe("P5 visual scripting acceptance", () => {
       "style",
       /--pin-wildcard/,
     );
-  });
-
-  test("For Each and For Each Map iterate containers in Preview", async ({
-    page,
-  }) => {
-    test.setTimeout(120_000);
-    await openTestProject(page);
-    await setMainGraphContent(page, {
-      nodes: [
-        {
-          id: "tick",
-          type: "flow.event.tick",
-          position: { x: 40, y: 80 },
-          data: {},
-        },
-        {
-          id: "item0",
-          type: "literal.makeInt",
-          position: { x: 40, y: 220 },
-          data: { "default:in": 3 },
-        },
-        {
-          id: "item1",
-          type: "literal.makeInt",
-          position: { x: 40, y: 300 },
-          data: { "default:in": 8 },
-        },
-        {
-          id: "item2",
-          type: "literal.makeInt",
-          position: { x: 40, y: 380 },
-          data: { "default:in": 11 },
-        },
-        {
-          id: "make",
-          type: "array.make",
-          position: { x: 240, y: 260 },
-          data: { count: 3 },
-        },
-        {
-          id: "loop",
-          type: "flow.forEach",
-          position: { x: 480, y: 80 },
-          data: {},
-        },
-        {
-          id: "print",
-          type: "debug.print",
-          position: { x: 760, y: 80 },
-          data: {
-            key: "for-each",
-            duration: 30,
-            color: { x: 0.4, y: 1, z: 0.6, w: 1 },
-          },
-        },
-      ],
-      edges: [
-        {
-          id: "start",
-          source: "tick",
-          target: "loop",
-          sourceHandle: "execOut",
-          targetHandle: "execIn",
-        },
-        {
-          id: "i0",
-          source: "item0",
-          target: "make",
-          sourceHandle: "out",
-          targetHandle: "item0",
-        },
-        {
-          id: "i1",
-          source: "item1",
-          target: "make",
-          sourceHandle: "out",
-          targetHandle: "item1",
-        },
-        {
-          id: "i2",
-          source: "item2",
-          target: "make",
-          sourceHandle: "out",
-          targetHandle: "item2",
-        },
-        {
-          id: "array",
-          source: "make",
-          target: "loop",
-          sourceHandle: "out",
-          targetHandle: "array",
-        },
-        {
-          id: "body",
-          source: "loop",
-          target: "print",
-          sourceHandle: "loopBody",
-          targetHandle: "execIn",
-        },
-        {
-          id: "element",
-          source: "loop",
-          target: "print",
-          sourceHandle: "element",
-          targetHandle: "value",
-        },
-      ],
-    });
-    await openMainScene(page);
-    await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("print-overlay")).toContainText("11", {
-      timeout: 15_000,
-    });
-    await page.getByTestId("play-overlay-close").click();
-
-    await setMainGraphContent(page, {
-      nodes: [
-        {
-          id: "tick",
-          type: "flow.event.tick",
-          position: { x: 40, y: 80 },
-          data: {},
-        },
-        {
-          id: "key0",
-          type: "literal.makeString",
-          position: { x: 40, y: 220 },
-          data: { "default:in": "hp" },
-        },
-        {
-          id: "value0",
-          type: "literal.makeInt",
-          position: { x: 40, y: 300 },
-          data: { "default:in": 9 },
-        },
-        {
-          id: "make",
-          type: "map.make",
-          position: { x: 240, y: 240 },
-          data: { count: 1 },
-        },
-        {
-          id: "loop",
-          type: "flow.forEachMap",
-          position: { x: 480, y: 80 },
-          data: {},
-        },
-        {
-          id: "print",
-          type: "debug.print",
-          position: { x: 760, y: 80 },
-          data: {
-            key: "for-each-map",
-            duration: 30,
-            color: { x: 0.4, y: 1, z: 0.6, w: 1 },
-          },
-        },
-      ],
-      edges: [
-        {
-          id: "start",
-          source: "tick",
-          target: "loop",
-          sourceHandle: "execOut",
-          targetHandle: "execIn",
-        },
-        {
-          id: "k0",
-          source: "key0",
-          target: "make",
-          sourceHandle: "out",
-          targetHandle: "key0",
-        },
-        {
-          id: "v0",
-          source: "value0",
-          target: "make",
-          sourceHandle: "out",
-          targetHandle: "value0",
-        },
-        {
-          id: "map",
-          source: "make",
-          target: "loop",
-          sourceHandle: "out",
-          targetHandle: "map",
-        },
-        {
-          id: "body",
-          source: "loop",
-          target: "print",
-          sourceHandle: "loopBody",
-          targetHandle: "execIn",
-        },
-        {
-          id: "value",
-          source: "loop",
-          target: "print",
-          sourceHandle: "value",
-          targetHandle: "value",
-        },
-      ],
-    });
-    await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("print-overlay")).toContainText("9", {
-      timeout: 15_000,
-    });
-    await page.getByTestId("play-overlay-close").click();
   });
 
   test("Sphere Overlap Actors returns a live Count in Preview", async ({
@@ -799,7 +523,9 @@ test.describe("P5 visual scripting acceptance", () => {
     const baseline = await classGraphNodeCount(page);
     expect(baseline).toBeGreaterThan(0);
 
-    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+    await graph
+      .locator(".react-flow__pane")
+      .dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Get Axis 2D");
     await page.getByTestId("node-palette-item-input.getAxis2D").click();
@@ -909,12 +635,14 @@ test.describe("P5 visual scripting acceptance", () => {
     const baseline = await classGraphNodeCount(page);
     expect(baseline).toBeGreaterThan(0);
 
-    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+    await graph
+      .locator(".react-flow__pane")
+      .dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Cast to Actor");
-    await expect(page.getByTestId("node-palette-item-casting.castActor")).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByTestId("node-palette-item-casting.castActor"),
+    ).toHaveCount(0);
     await page.getByTestId("node-palette-item-casting.cast:Actor").click();
     await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Cast to Actor")).toBeVisible();

@@ -42,7 +42,13 @@ describe("texture compression policy", () => {
 });
 
 describe("EncodeQueue", () => {
-  it("runs one job at a time and reports compressed state", async () => {
+  it("runs one job at a time and reports compressed state", async ({
+    onTestFinished,
+  }) => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const states: string[] = [];
     const completed: string[] = [];
     const queue = new EncodeQueue({
@@ -74,14 +80,20 @@ describe("EncodeQueue", () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await vi.advanceTimersByTimeAsync(0);
     expect(completed).toEqual(["a", "b"]);
     expect(states).toContain("a:encoding");
     expect(states).toContain("a:compressed");
     expect(queue.recycleCount).toBe(1);
   });
 
-  it("pauses during Preview/background and resumes later", async () => {
+  it("pauses during Preview/background and resumes later", async ({
+    onTestFinished,
+  }) => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const completed: string[] = [];
     const queue = new EncodeQueue({
       onComplete: (result) => {
@@ -99,10 +111,10 @@ describe("EncodeQueue", () => {
         generateMipmaps: true,
       },
     });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await vi.advanceTimersByTimeAsync(10);
     expect(completed).toEqual([]);
     queue.resume();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await vi.advanceTimersByTimeAsync(0);
     expect(completed).toEqual(["paused"]);
   });
 
@@ -211,7 +223,9 @@ describe("stubEncodeKtx2", () => {
       maxDimension: 2048,
       generateMipmaps: true,
     });
-    expect(new TextDecoder().decode(ktx2.subarray(0, 12))).toContain("BABS-KTX2");
+    expect(new TextDecoder().decode(ktx2.subarray(0, 12))).toContain(
+      "BABS-KTX2",
+    );
   });
 });
 
@@ -358,12 +372,8 @@ describe("registry encode pipeline", () => {
     registry.setEncodePipeline(queue);
     await registry.mountRoot(projectContentRoot());
 
-    expect(
-      await registry.retryTextureEncoding("pend-tex"),
-    ).toBe(true);
-    expect(
-      await registry.retryTextureEncoding("enc-tex"),
-    ).toBe(true);
+    expect(await registry.retryTextureEncoding("pend-tex")).toBe(true);
+    expect(await registry.retryTextureEncoding("enc-tex")).toBe(true);
     await vi.waitFor(() => {
       expect(
         registry.getByGuid("pend-tex")!.header.payload.compressionState,
@@ -463,7 +473,9 @@ describe("registry encode pipeline", () => {
     const selected = selectTextureChunk(updated.header);
     expect(selected.kind).toBe("source");
     const fileBytes = await storage.readBinary("assets/keep.babasset");
-    const pixels = updated.header.chunks.find((chunk) => chunk.kind === "pixels")!;
+    const pixels = updated.header.chunks.find(
+      (chunk) => chunk.kind === "pixels",
+    )!;
     const loaded = await registry.payloadLoader.loadChunk(fileBytes, pixels);
     expect(loaded).toEqual(new Uint8Array([9, 8, 7, 6]));
   });
@@ -514,9 +526,9 @@ describe("registry encode pipeline", () => {
     const updated = registry.getByGuid("clear-tex")!;
     expect(updated.header.payload.compressionState).toBe("compressed");
     expect(updated.header.payload.encodeError).toBeUndefined();
-    expect(
-      updated.header.chunks.some((chunk) => chunk.kind === "pixels"),
-    ).toBe(true);
+    expect(updated.header.chunks.some((chunk) => chunk.kind === "pixels")).toBe(
+      true,
+    );
   });
 
   it("does not let a slow encoding write clobber encode_failed", async () => {

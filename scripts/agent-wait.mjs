@@ -7,6 +7,10 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { StringDecoder } from "node:string_decoder";
+import {
+  requiredVerifyJobs,
+  verificationPolicy,
+} from "./verification-policy.mjs";
 
 const TWO_HOURS = 2 * 60 * 60 * 1000;
 const CODES = { failure: 1, cancellation: 130, timeout: 124, stale: 3 };
@@ -80,6 +84,7 @@ export async function runAgentWait(options, context = {}) {
   };
   const controller = new AbortController();
   let stopped;
+  let commandFailureEnd;
   const stop = (status, code) => {
     if (!stopped) {
       stopped = new WaitError(
@@ -129,7 +134,7 @@ export async function runAgentWait(options, context = {}) {
       let termination;
       const child = spawn(prefix[0], [...prefix.slice(1), ...args], {
         cwd,
-        env,
+        env: { ...env, BL_TEST_PROCESS_GROUP: "1" },
         windowsHide: true,
         detached: process.platform !== "win32",
         stdio: ["ignore", capture ? "pipe" : fd, fd],
@@ -335,6 +340,7 @@ export async function runAgentWait(options, context = {}) {
         ...(options.args ?? []),
       ]);
       result.childExitCode = response.code;
+      if (response.code !== 0) commandFailureEnd = fstatSync(fd).size;
       result.finalState = await state("final");
       if (response.signal)
         throw new WaitError(
@@ -352,7 +358,7 @@ export async function runAgentWait(options, context = {}) {
         result.initialState.commit === result.finalState.commit &&
         result.initialState.digest === result.finalState.digest;
       if (
-        options.script === "verify" &&
+        ["verify", "verify:local"].includes(options.script) &&
         (!unchanged || !result.initialState.clean || !result.finalState.clean)
       )
         throw new WaitError(
@@ -360,7 +366,8 @@ export async function runAgentWait(options, context = {}) {
           "Verification does not match a clean, unchanged committed tree.",
         );
       result.deliveryEligible =
-        options.script === "verify" && !options.args?.length;
+        ["verify", "verify:local"].includes(options.script) &&
+        !options.args?.length;
     } else if (options.mode === "ci") {
       const pr = await head();
       if (!/^[a-f0-9]{40}$/i.test(pr.headRefOid) || !pr.headRefName)
@@ -431,11 +438,7 @@ export async function runAgentWait(options, context = {}) {
         finalRun.conclusion !== "success"
       )
         throw new WaitError("failure", "Verify did not complete successfully.");
-      const required = [
-        "static",
-        "unit",
-        ...Array.from({ length: 7 }, (_, i) => `e2e (${i + 1})`),
-      ];
+      const required = requiredVerifyJobs;
       if (
         !Array.isArray(detail.jobs) ||
         required.some(
@@ -484,7 +487,7 @@ export async function runAgentWait(options, context = {}) {
         result.otherReadyPrs = prs.filter(
           (pr) => !pr.isDraft && pr.number !== options.pr && pr.number !== 271,
         ).length;
-        if (result.otherReadyPrs < 2) break;
+        if (result.otherReadyPrs < verificationPolicy.readyPrSlots) break;
         await pause();
       }
     } else throw new Error("Unknown operation.");
@@ -498,6 +501,7 @@ export async function runAgentWait(options, context = {}) {
     result.message = failure.message;
     log(`\n${result.status}: ${result.message}\n`);
     if (options.mode === "local" && result.initialState && !result.finalState) {
+      commandFailureEnd ??= fstatSync(fd).size;
       // Children have stopped. A separately bounded, read-only snapshot cannot
       // turn the failed/interrupted operation into a pass.
       try {
@@ -529,7 +533,7 @@ export async function runAgentWait(options, context = {}) {
   };
   emit(JSON.stringify(terminal) + "\n");
   if (result.status !== "success") {
-    const size = fstatSync(fd).size;
+    const size = commandFailureEnd ?? fstatSync(fd).size;
     const tail = Buffer.alloc(Math.min(size, 3072));
     readSync(fd, tail, 0, tail.length, size - tail.length);
     // Discard a partial UTF-8 codepoint at the byte boundary.

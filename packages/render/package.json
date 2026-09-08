@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./render-scheduler": "./src/render-scheduler.ts",
+    "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/render"
+    "test": "node ../../scripts/run-tests.mjs unit packages/render"
   },
   "dependencies": {
     "@babylonjs/core": "^9.20.0",

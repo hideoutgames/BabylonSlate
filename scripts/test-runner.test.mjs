@@ -1,0 +1,44 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { runStage } from "./test-runner.mjs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { acquireResources } from "./resource-admission.mjs";
+
+test("the fast profile reaches the actual child worker settings; CI keeps its fixed limits", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "runner lease "));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const lease = await acquireResources(
+    { workers: 2, browsers: 1, memoryGiB: 6 },
+    {
+      directory,
+      freeMemory: () => 16 * 1024 ** 3,
+    },
+  );
+  t.after(() => lease.release());
+  for (const [env, expected] of [
+    [{ BL_TEST_PROFILE: "fast", CI: "" }, ["2", "2"]],
+    [{ BL_TEST_PROFILE: "fast", CI: "true" }, ["2", "1"]],
+  ]) {
+    const result = await runStage(
+      "unit",
+      process.execPath,
+      [
+        "-e",
+        "console.log(JSON.stringify([process.env.VITEST_MAX_WORKERS,process.env.BL_TEST_BROWSER_WORKERS]))",
+      ],
+      {
+        env: {
+          ...env,
+          BL_TEST_LEASE: JSON.stringify({
+            ticket: lease.ticket,
+            token: lease.token,
+          }),
+        },
+        capture: true,
+      },
+    );
+    assert.deepEqual(JSON.parse(result.output), expected);
+  }
+});

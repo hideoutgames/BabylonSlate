@@ -238,6 +238,7 @@ export default tseslint.config(
       "coverage",
       "playwright-report",
       "test-results",
+      ".cache",
       "apps/docs/.vitepress/cache",
       "apps/docs/.vitepress/dist",
       "apps/player/dist",

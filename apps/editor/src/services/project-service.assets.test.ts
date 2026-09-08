@@ -1,3 +1,4 @@
+import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
 import { describe, expect, it } from "vitest";
 import {
   createDefaultScene,
@@ -31,9 +32,10 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
 const DEFAULT_3D_CLASS_FILE = `assets/${MANNEQUIN_CLASS_FILE}`;
 
-async function scaffolded() {
+async function scaffolded(authentic = false) {
   const storage = new MemoryStorageAdapter("documents");
   await storage.openDocumentsProject("Assets.babproject");
+  if (!authentic) await installMinimalProject(storage);
   const service = new ProjectService(storage);
   const loaded = await service.loadCurrentProject();
   return { storage, service, loaded };
@@ -65,44 +67,115 @@ describe("project documents as .babasset", () => {
     const replacementGuid = service.guidForPath(replacementPath)!;
     const mesh = createMeshComponent("mesh", "sphere");
     mesh.properties.materialGuid = materialGuid;
-    await service.saveDocument("graph", classPath, { nodes: [], edges: [], components: [mesh] });
+    await service.saveDocument("graph", classPath, {
+      nodes: [],
+      edges: [],
+      components: [mesh],
+    });
     const classGuid = service.guidForPath(classPath)!;
     const scene = {
       ...createDefaultScene(),
-      actors: [createActor("instance", "Different Display Name", { classId: "My_Hero", components: [mesh] })],
+      actors: [
+        createActor("instance", "Different Display Name", {
+          classId: "My_Hero",
+          components: [mesh],
+        }),
+      ],
     };
     await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
     const sceneGuid = service.guidForPath(MAIN_SCENE_FILE)!;
-    expect(readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE)).dependencies).toEqual([classGuid, materialGuid].sort());
-    expect(service.registry!.showReferences(classGuid).inbound).toContain(sceneGuid);
-    expect(service.registry!.showReferences(materialGuid).inbound.sort()).toEqual([sceneGuid, classGuid].sort());
+    expect(
+      readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE))
+        .dependencies,
+    ).toEqual([classGuid, materialGuid].sort());
+    expect(service.registry!.showReferences(classGuid).inbound).toContain(
+      sceneGuid,
+    );
+    expect(
+      service.registry!.showReferences(materialGuid).inbound.sort(),
+    ).toEqual([sceneGuid, classGuid].sort());
 
     const reloaded = new ProjectService(storage);
     await reloaded.loadCurrentProject();
-    expect(reloaded.registry!.showReferences(classGuid).inbound).toContain(sceneGuid);
-    expect(reloaded.registry!.showReferences(materialGuid).inbound.sort()).toEqual([sceneGuid, classGuid].sort());
-    const replacement = { ...scene, actors: scene.actors.map((actor) => ({ ...actor, components: [{ ...mesh, properties: { ...mesh.properties, materialGuid: replacementGuid } }] })) };
+    expect(reloaded.registry!.showReferences(classGuid).inbound).toContain(
+      sceneGuid,
+    );
+    expect(
+      reloaded.registry!.showReferences(materialGuid).inbound.sort(),
+    ).toEqual([sceneGuid, classGuid].sort());
+    const replacement = {
+      ...scene,
+      actors: scene.actors.map((actor) => ({
+        ...actor,
+        components: [
+          {
+            ...mesh,
+            properties: { ...mesh.properties, materialGuid: replacementGuid },
+          },
+        ],
+      })),
+    };
     await reloaded.saveDocument("scene", MAIN_SCENE_FILE, replacement);
-    expect(reloaded.registry!.showReferences(materialGuid).inbound).toEqual([classGuid]);
-    expect(reloaded.registry!.showReferences(replacementGuid).inbound).toEqual([sceneGuid]);
-    await reloaded.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([1]), replacement as unknown as Record<string, unknown>);
-    await reloaded.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([2]), replacement as unknown as Record<string, unknown>);
-    expect(readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE)).dependencies).toEqual([classGuid, replacementGuid].sort());
-    expect(reloaded.registry!.showReferences(replacementGuid).inbound).toEqual([sceneGuid]);
+    expect(reloaded.registry!.showReferences(materialGuid).inbound).toEqual([
+      classGuid,
+    ]);
+    expect(reloaded.registry!.showReferences(replacementGuid).inbound).toEqual([
+      sceneGuid,
+    ]);
+    await reloaded.writeSceneNavmeshChunk(
+      MAIN_SCENE_FILE,
+      new Uint8Array([1]),
+      replacement as unknown as Record<string, unknown>,
+    );
+    await reloaded.writeSceneAudioReverbChunk(
+      MAIN_SCENE_FILE,
+      new Uint8Array([2]),
+      replacement as unknown as Record<string, unknown>,
+    );
+    expect(
+      readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE))
+        .dependencies,
+    ).toEqual([classGuid, replacementGuid].sort());
+    expect(reloaded.registry!.showReferences(replacementGuid).inbound).toEqual([
+      sceneGuid,
+    ]);
   });
 
   it("H17: ignores identity and text fields that happen to equal an asset guid", async () => {
     const { storage, service } = await scaffolded();
-    await service.saveDocument("material", "assets/Unassigned.material.babasset", {});
+    await service.saveDocument(
+      "material",
+      "assets/Unassigned.material.babasset",
+      {},
+    );
     const guid = service.guidForPath("assets/Unassigned.material.babasset")!;
-    const scene = { ...createDefaultScene(), actors: [createActor(guid, guid, { parentId: guid, components: [{ id: guid, classId: "MeshComponent", parentId: null, sourceId: guid, properties: { label: guid, materialGuid: null, assetGuid: "" } }] })] };
+    const scene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor(guid, guid, {
+          parentId: guid,
+          components: [
+            {
+              id: guid,
+              classId: "MeshComponent",
+              parentId: null,
+              sourceId: guid,
+              properties: { label: guid, materialGuid: null, assetGuid: "" },
+            },
+          ],
+        }),
+      ],
+    };
     await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
-    expect(readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE)).dependencies).toEqual([]);
+    expect(
+      readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE))
+        .dependencies,
+    ).toEqual([]);
     expect(service.registry!.showReferences(guid).inbound).toEqual([]);
   });
 
   it("scaffolds scene and graph assets under assets/", async () => {
-    const { storage, loaded } = await scaffolded();
+    const { storage, loaded } = await scaffolded(true);
     expect(loaded.document.scenes).toEqual([MAIN_SCENE_FILE]);
     expect(await storage.exists(MAIN_SCENE_FILE)).toBe(true);
     expect(await storage.exists(DEFAULT_3D_CLASS_FILE)).toBe(true);
@@ -143,20 +216,20 @@ describe("project documents as .babasset", () => {
       "scene",
       MAIN_SCENE_FILE,
     )) as SerializedScene;
-    const graph = (await service.loadDocument(
-      "graph",
-      DEFAULT_3D_CLASS_FILE,
-    )) as { name?: string; components?: unknown[] };
+    const graph = (await service.loadDocument("graph", MAIN_CLASS_FILE)) as {
+      name?: string;
+      components?: unknown[];
+    };
     expect(scene.actors.find((actor) => actor.id === "actor-1")?.name).toBe(
-      "Mannequin",
+      "Actor",
     );
     expect(graph.components?.length).toBeGreaterThan(0);
     const classHeader = readAssetDocumentHeader(
-      await storage.readBinary(DEFAULT_3D_CLASS_FILE),
+      await storage.readBinary(MAIN_CLASS_FILE),
     );
     expect(classHeader.type).toBe("Class");
     expect(classHeader.parentClass).toBe("Actor");
-    expect(classHeader.name).toBe("Mannequin");
+    expect(classHeader.name).toBe("Main");
   });
 
   it("keeps an asset guid stable across saves", async () => {
@@ -179,8 +252,12 @@ describe("project documents as .babasset", () => {
     ).guid;
     expect(after).toBe(before);
     expect(
-      ((await service.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene)
-        .name,
+      (
+        (await service.loadDocument(
+          "scene",
+          MAIN_SCENE_FILE,
+        )) as SerializedScene
+      ).name,
     ).toBe("Renamed");
   });
 
@@ -217,7 +294,7 @@ describe("project documents as .babasset", () => {
   });
 
   it("finds the default Mannequin actor after an explicit search rebuild", async () => {
-    const { service } = await scaffolded();
+    const { service } = await scaffolded(true);
     await service.searchIndex!.rebuild(service.registry!);
     const hits = service.searchIndex!.query("mannequin");
     expect(
@@ -241,26 +318,30 @@ describe("project documents as .babasset", () => {
     });
     expect(
       service
-        .searchIndex!.query("mannequin")
-        .some((hit) => hit.kind === "actor" && hit.label === "Mannequin"),
+        .searchIndex!.query("actor")
+        .some((hit) => hit.kind === "actor" && hit.label === "Actor"),
     ).toBe(true);
     expect(
-      service.searchIndex!.query("renamedhero").some((hit) => hit.kind === "actor"),
+      service
+        .searchIndex!.query("renamedhero")
+        .some((hit) => hit.kind === "actor"),
     ).toBe(false);
 
     await service.searchIndex!.rebuild(service.registry!);
     expect(
       service
-        .searchIndex!.query("mannequin")
-        .some((hit) => hit.kind === "actor" && hit.label === "Mannequin"),
+        .searchIndex!.query("actor")
+        .some((hit) => hit.kind === "actor" && hit.label === "Actor"),
     ).toBe(false);
     expect(
-      service.searchIndex!.query("renamedhero").some((hit) => hit.kind === "actor"),
+      service
+        .searchIndex!.query("renamedhero")
+        .some((hit) => hit.kind === "actor"),
     ).toBe(true);
   }, 20_000);
 
   it("scaffolds Kenney Mannequin as a hierarchy rig with idle Anim Graph", async () => {
-    const { storage, service } = await scaffolded();
+    const { storage, service } = await scaffolded(true);
     const scene = (await service.loadDocument(
       "scene",
       MAIN_SCENE_FILE,
@@ -279,7 +360,9 @@ describe("project documents as .babasset", () => {
 
     const registry = service.registry;
     expect(registry).toBeTruthy();
-    const model = registry!.list().find((asset) => asset.header.type === "Model");
+    const model = registry!
+      .list()
+      .find((asset) => asset.header.type === "Model");
     const skeleton = registry!
       .list()
       .find((asset) => asset.header.type === "Skeleton");
@@ -294,16 +377,17 @@ describe("project documents as .babasset", () => {
     expect(animations).toHaveLength(27);
     const idle = animations.find(
       (asset) =>
-        normalizeAnimationPayload(asset.header.payload).clipName.toLowerCase() ===
-        "idle",
+        normalizeAnimationPayload(
+          asset.header.payload,
+        ).clipName.toLowerCase() === "idle",
     );
     expect(idle).toBeTruthy();
 
     expect(await storage.exists("assets/Mannequin.class.babasset")).toBe(true);
     expect(await storage.exists("assets/main.class.babasset")).toBe(false);
-    expect(await storage.exists("assets/Mannequin/Mannequin.anim.babasset")).toBe(
-      true,
-    );
+    expect(
+      await storage.exists("assets/Mannequin/Mannequin.anim.babasset"),
+    ).toBe(true);
     const classHeader = readAssetDocumentHeader(
       await storage.readBinary("assets/Mannequin.class.babasset"),
     );
@@ -315,8 +399,9 @@ describe("project documents as .babasset", () => {
       await storage.readBinary("assets/Mannequin/Mannequin.anim.babasset"),
     );
     expect(graphDoc.type).toBe("AnimationGraph");
-    const clips = (graphDoc.payload as { clips?: Array<{ assetGuid?: string }> })
-      .clips;
+    const clips = (
+      graphDoc.payload as { clips?: Array<{ assetGuid?: string }> }
+    ).clips;
     expect(clips?.[0]?.assetGuid).toBe(idle!.header.guid);
     expect(animGraph?.properties.graphGuid).toBe(graphDoc.guid);
   });
@@ -366,7 +451,10 @@ describe("project documents as .babasset", () => {
     expect(payload.family).toBe("Ui");
     expect(await service.readAssetChunk(path, "source")).toEqual(source);
 
-    await service.saveDocument("font", path, { ...payload, family: "Ui Display" });
+    await service.saveDocument("font", path, {
+      ...payload,
+      family: "Ui Display",
+    });
     const saved = await decodeBabasset(await storage.readBinary(path));
     expect(saved.chunks.get("source")).toEqual(source);
     const reloaded = (await service.loadDocument("font", path)) as Record<
@@ -435,9 +523,9 @@ describe("project documents as .babasset", () => {
     expect(saved.header.type).toBe("Texture");
     expect(saved.header.payload.usage).toBe("pixelArt");
     expect(saved.chunks.get("pixels")).toEqual(pixels);
-    expect(
-      saved.header.chunks.some((chunk) => chunk.id === "document"),
-    ).toBe(false);
+    expect(saved.header.chunks.some((chunk) => chunk.id === "document")).toBe(
+      false,
+    );
   });
 
   it("saves Model slots onto the header without replacing the source GLB", async () => {
@@ -464,7 +552,12 @@ describe("project documents as .babasset", () => {
           },
         },
         chunks: [
-          { id: "source", kind: "geometry", mime: "model/gltf-binary", data: source },
+          {
+            id: "source",
+            kind: "geometry",
+            mime: "model/gltf-binary",
+            data: source,
+          },
         ],
       }),
     );
@@ -475,9 +568,7 @@ describe("project documents as .babasset", () => {
     >;
     await service.saveDocument("model", path, {
       ...payload,
-      materialSlots: [
-        { index: 0, name: "Hero Mat", materialGuid: "mat-new" },
-      ],
+      materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-new" }],
     });
 
     const saved = await decodeBabasset(await storage.readBinary(path));
@@ -488,9 +579,9 @@ describe("project documents as .babasset", () => {
     ]);
     expect(saved.header.dependencies).toEqual(["mat-new"]);
     expect(saved.chunks.get("source")).toEqual(source);
-    expect(
-      saved.header.chunks.some((chunk) => chunk.id === "document"),
-    ).toBe(false);
+    expect(saved.header.chunks.some((chunk) => chunk.id === "document")).toBe(
+      false,
+    );
   });
 
   it("writes a Scene navmesh extra chunk without regenerating at Play", async () => {
@@ -500,19 +591,23 @@ describe("project documents as .babasset", () => {
       MAIN_SCENE_FILE,
     )) as SerializedScene;
     const bake = new Uint8Array([11, 22, 33, 44]);
-    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, bake, scene as unknown as Record<string, unknown>);
-    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
+    await service.writeSceneNavmeshChunk(
+      MAIN_SCENE_FILE,
       bake,
+      scene as unknown as Record<string, unknown>,
     );
+    expect(
+      await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID),
+    ).toEqual(bake);
     const again = new Uint8Array([99]);
     await service.writeSceneNavmeshChunk(
       MAIN_SCENE_FILE,
       again,
       scene as unknown as Record<string, unknown>,
     );
-    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
-      again,
-    );
+    expect(
+      await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID),
+    ).toEqual(again);
   });
 
   it("keeps a Scene navmesh extra chunk when saveDocument rewrites the JSON body", async () => {
@@ -531,12 +626,16 @@ describe("project documents as .babasset", () => {
       ...scene,
       name: "AfterSave",
     });
-    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
-      bake,
-    );
     expect(
-      ((await service.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene)
-        .name,
+      await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID),
+    ).toEqual(bake);
+    expect(
+      (
+        (await service.loadDocument(
+          "scene",
+          MAIN_SCENE_FILE,
+        )) as SerializedScene
+      ).name,
     ).toBe("AfterSave");
   });
 
@@ -557,12 +656,12 @@ describe("project documents as .babasset", () => {
       field,
       scene as unknown as Record<string, unknown>,
     );
-    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(
-      field,
-    );
-    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
-      new Uint8Array([1, 2]),
-    );
+    expect(
+      await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID),
+    ).toEqual(field);
+    expect(
+      await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID),
+    ).toEqual(new Uint8Array([1, 2]));
   });
 
   it("indexes FunctionLibrary function members on the Class header", async () => {
@@ -724,13 +823,12 @@ describe("project documents as .babasset", () => {
     );
     await service.remountRegistry();
     const extra = new Uint8Array([9, 8, 7]);
-    await service.writeAudioClipChunk(
-      path,
-      "source:2",
-      extra,
-      "audio/ogg",
-      { clips: [{ chunkId: "source", weight: 1 }, { chunkId: "source:2", weight: 1 }] },
-    );
+    await service.writeAudioClipChunk(path, "source:2", extra, "audio/ogg", {
+      clips: [
+        { chunkId: "source", weight: 1 },
+        { chunkId: "source:2", weight: 1 },
+      ],
+    });
     expect(await service.readAssetChunk(path, "source")).toEqual(source);
     expect(await service.readAssetChunk(path, "source:2")).toEqual(extra);
     await service.removeAudioClipChunk(path, "source", {
@@ -778,21 +876,20 @@ describe("project documents as .babasset", () => {
     );
     await service.remountRegistry();
     await service.registry!.deleteAsset("tex-1");
-    const dangling = (await service.loadDocument(
-      "sprite",
-      spritePath,
-    )) as { textureGuid: string | null };
+    const dangling = (await service.loadDocument("sprite", spritePath)) as {
+      textureGuid: string | null;
+    };
     expect(dangling.textureGuid).toBe("tex-1");
 
     await service.clearDeletedAssetReferences(new Set(["tex-1"]));
 
-    const cleared = (await service.loadDocument(
-      "sprite",
-      spritePath,
-    )) as { textureGuid: string | null };
+    const cleared = (await service.loadDocument("sprite", spritePath)) as {
+      textureGuid: string | null;
+    };
     expect(cleared.textureGuid).toBeNull();
     expect(
-      readAssetDocumentHeader(await storage.readBinary(spritePath)).dependencies,
+      readAssetDocumentHeader(await storage.readBinary(spritePath))
+        .dependencies,
     ).toEqual([]);
   });
 
@@ -900,7 +997,9 @@ describe("project documents as .babasset", () => {
     docs.patchLoadedContent(spriteId, walked.value as Record<string, unknown>);
     const open = docs.getDocument(spriteId);
     expect(open?.dirty).toBe(true);
-    expect((open?.content as { textureGuid: string | null }).textureGuid).toBeNull();
+    expect(
+      (open?.content as { textureGuid: string | null }).textureGuid,
+    ).toBeNull();
     expect((open?.content as { pixelsPerUnit: number }).pixelsPerUnit).toBe(50);
   });
 
@@ -922,8 +1021,8 @@ describe("project documents as .babasset", () => {
     };
     expect(loaded.seed).toBe(8);
     expect(loaded.frames).toEqual([]);
-    await expect(
-      service.saveDocument("trace", path, loaded),
-    ).rejects.toThrow(/read-only/i);
+    await expect(service.saveDocument("trace", path, loaded)).rejects.toThrow(
+      /read-only/i,
+    );
   });
 });

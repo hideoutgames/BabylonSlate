@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/debugger"
+    "test": "node ../../scripts/run-tests.mjs unit packages/debugger"
   },
   "devDependencies": {
     "typescript": "~5.8.2"

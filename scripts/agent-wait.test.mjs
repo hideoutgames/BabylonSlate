@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
-async function fixture(t, action = "success") {
+async function fixture(t, action = "success", realManager = false) {
   const cwd = await mkdtemp(join(tmpdir(), "agent wait fixture "));
   await writeFile(join(cwd, ".gitignore"), "gh-state.json\n");
   await writeFile(
@@ -14,6 +14,7 @@ async function fixture(t, action = "success") {
     JSON.stringify({
       scripts: {
         verify: "node fixture.mjs",
+        "verify:local": "node fixture.mjs",
         test: "node fixture.mjs",
       },
     }),
@@ -43,6 +44,16 @@ if (action === 'slow') { console.log('ready-pid='+process.pid); setInterval(() =
 `,
   );
   await writeFile(join(cwd, "source.txt"), "original");
+  // Most cases exercise the helper's process/state contract. One case below retains real pnpm integration.
+  await writeFile(
+    join(cwd, "package-manager.mjs"),
+    `
+import { spawn } from 'node:child_process';
+if (process.argv[2] !== '--reporter=append-only' || process.argv[3] !== 'run') throw new Error('Expected package-manager reporter and run');
+const child = spawn(process.execPath, ['fixture.mjs', ...process.argv.slice(5)], { stdio: 'inherit' });
+child.on('close', code => { process.exitCode = code ?? 1; });
+`,
+  );
   const git = (...args) =>
     execFileSync("git", args, { cwd, stdio: "pipe" }).toString().trim();
   git("init", "-q");
@@ -59,6 +70,7 @@ if (action === 'slow') { console.log('ready-pid='+process.pid); setInterval(() =
   let output = "";
   const env = {
     ...process.env,
+    ...(realManager ? {} : { npm_execpath: join(cwd, "package-manager.mjs") }),
     WAIT_FIXTURE_ACTION: action,
     WAIT_FIXTURE_VALUE: "preserved 🌍",
   };
@@ -102,8 +114,23 @@ async function waitForLog(f, pattern) {
   assert.fail(`Fixture log did not contain ${pattern} before its startup deadline`);
 }
 
-test("local preserves argument boundaries, environment, commit, and bounded output in a path with spaces", async (t) => {
+test("targeted local verification certifies only a clean unchanged unfiltered revision", async (t) => {
   const f = await fixture(t);
+  const clean = await run({ ...local, script: "verify:local" }, f.context);
+  assert.equal(clean.deliveryEligible, true);
+  const filtered = await run(
+    { ...local, script: "verify:local", args: ["--filter", "core"] },
+    f.context,
+  );
+  assert.equal(filtered.deliveryEligible, false);
+  await writeFile(join(f.cwd, "source.txt"), "dirty");
+  const dirty = await run({ ...local, script: "verify:local" }, f.context);
+  assert.equal(dirty.status, "stale");
+  assert.equal(dirty.deliveryEligible, false);
+});
+
+test("local preserves argument boundaries, environment, commit, and bounded output in a path with spaces", async (t) => {
+  const f = await fixture(t, "success", true);
   const result = await run(
     { ...local, args: ["test filter with spaces", "🌍", "--reporter=dot"] },
     f.context,
@@ -139,7 +166,7 @@ test("unfiltered verification certifies a clean unchanged commit", async (t) => 
 });
 
 test("local retains recursive package diagnostics with a silent parent reporter", async (t) => {
-  const f = await fixture(t, "fail");
+  const f = await fixture(t, "fail", true);
   await writeFile(
     join(f.cwd, "package.json"),
     JSON.stringify({ scripts: { verify: "pnpm -r typecheck" } }),

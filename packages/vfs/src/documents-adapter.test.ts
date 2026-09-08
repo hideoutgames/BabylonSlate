@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import {
   createFakeDocumentsFs,
@@ -54,6 +54,19 @@ describe("DocumentsStorageAdapter", () => {
 
   it("rejects pickProjectFolder", async () => {
     await expect(storage.pickProjectFolder()).rejects.toThrow(/no picker/i);
+  });
+
+  it("uses one bridge write per asset and preserves each payload", async () => {
+    await storage.openDocumentsProject("Writes.babproject");
+    await storage.mkdir("assets", true);
+    const write = vi.spyOn(fs, "writeFile");
+    for (const value of [1, 2, 3]) {
+      await storage.writeBinary(`assets/${value}.bin`, new Uint8Array([value]));
+      expect(await storage.readBinary(`assets/${value}.bin`)).toEqual(
+        new Uint8Array([value]),
+      );
+    }
+    expect(write).toHaveBeenCalledTimes(3);
   });
 
   it.each(["../Other", "", ".", "..", "/Other", "Game/Other", "Game\\Other"])("rejects unsafe project folder names: %s", async (name) => {

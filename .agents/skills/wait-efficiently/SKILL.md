@@ -12,7 +12,7 @@ Use the repository helper to keep process monitoring, CLI polling, and full logs
 From the repository root:
 
 ```sh
-pnpm --silent agent:wait local --script verify
+pnpm --silent agent:wait local --script verify:local
 pnpm --silent agent:wait local --script test -- --project node packages/core
 pnpm --silent agent:wait ci --pr 123
 pnpm --silent agent:wait slot --pr 123
@@ -30,8 +30,8 @@ The default deadline is two hours; set `--timeout-seconds 10800` before the argu
 
 ## Act on the terminal result
 
-- `success` with exit code 0 means this operation passed. For full local verification, additionally require `deliveryEligible: true` in `result.json`, a matching current commit, and a clean unchanged working tree. Filters, dirty source, and later edits cannot certify a PR head.
+- `success` with exit code 0 means this operation passed. For PR eligibility, additionally require `deliveryEligible: true` in `result.json`, a matching current commit, and a clean unchanged working tree. Filters, dirty source, and later edits cannot certify a PR head.
 - `failure`, `cancellation`, `timeout`, and `stale` never satisfy a gate. Read only bounded failure output or the necessary portion of the saved log when action is needed. Full logs are local artifacts; do not paste them into public PRs.
 - A free slot is an observation, not a reservation: recheck capacity immediately before marking ready. The helper never opens, readies, or merges a PR.
 - CI success covers the captured head's latest pull-request Verify run and all nine jobs. Still check other required checks, reviews, mergeability, and the current PR head immediately before merge.
-- Continue fix → commit → full local verification → push → CI → merge as required by the delivery workflow. Do not automatically rerun tests or retry failed workflows without investigating the result.
+- Continue fix → commit → local verification with `pnpm verify:local` → push → CI → merge as required by the delivery workflow. Do not automatically rerun tests or retry failed workflows without investigating the result.

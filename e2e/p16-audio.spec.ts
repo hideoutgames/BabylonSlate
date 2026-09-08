@@ -10,6 +10,7 @@ import {
 } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
+import { openAudioTestProject } from "./audio-project";
 
 const BEEP_WAV = path.join(process.cwd(), "e2e/fixtures/beep.wav");
 
@@ -48,8 +49,6 @@ async function enableImportedAudioLoop(
   await saveAllIfEnabled(page);
 }
 
-test.describe.configure({ mode: "serial" });
-
 test.describe("P16 audio", () => {
   test("hears an imported sound after Place Project Audio and a canvas click", async ({
     page,
@@ -58,7 +57,9 @@ test.describe("P16 audio", () => {
     await openTestProject(page);
     await openContentBrowser(page);
 
-    await page.getByTestId("content-browser-import-input").setInputFiles([BEEP_WAV]);
+    await page
+      .getByTestId("content-browser-import-input")
+      .setInputFiles([BEEP_WAV]);
     await expect(
       page.locator('[data-asset-path="assets/beep.babasset"]'),
     ).toBeVisible({ timeout: 30_000 });
@@ -83,32 +84,39 @@ test.describe("P16 audio", () => {
       force: true,
     });
     await expect
-      .poll(async () => {
-        return page.evaluate(() => {
-          const stats = (
-            window as {
-              __babylonslateAudioStats?: {
-                unlocked: boolean;
-                voices: number;
-              };
-            }
-          ).__babylonslateAudioStats;
-          return stats ?? null;
-        });
-      }, { timeout: 15_000 })
+      .poll(
+        async () => {
+          return page.evaluate(() => {
+            const stats = (
+              window as {
+                __babylonslateAudioStats?: {
+                  unlocked: boolean;
+                  voices: number;
+                };
+              }
+            ).__babylonslateAudioStats;
+            return stats ?? null;
+          });
+        },
+        { timeout: 15_000 },
+      )
       .toEqual(
         expect.objectContaining({
           unlocked: true,
         }),
       );
     await expect
-      .poll(async () => {
-        return page.evaluate(() => {
-          return (
-            window as { __babylonslateAudioStats?: { voices: number } }
-          ).__babylonslateAudioStats?.voices ?? 0;
-        });
-      }, { timeout: 15_000 })
+      .poll(
+        async () => {
+          return page.evaluate(() => {
+            return (
+              (window as { __babylonslateAudioStats?: { voices: number } })
+                .__babylonslateAudioStats?.voices ?? 0
+            );
+          });
+        },
+        { timeout: 15_000 },
+      )
       .toBeGreaterThan(0);
     await expect(page.getByTestId("play-audio-unlock-hint")).toHaveCount(0);
   });
@@ -120,7 +128,9 @@ test.describe("P16 audio", () => {
     await openTestProject(page);
     await openContentBrowser(page);
 
-    await page.getByTestId("content-browser-import-input").setInputFiles([BEEP_WAV]);
+    await page
+      .getByTestId("content-browser-import-input")
+      .setInputFiles([BEEP_WAV]);
     await expect(
       page.locator('[data-asset-path="assets/beep.babasset"]'),
     ).toBeVisible({ timeout: 30_000 });
@@ -130,20 +140,26 @@ test.describe("P16 audio", () => {
     await createContentBrowserAsset(page, "SoundAttenuation", "Near");
 
     await openAssetFromBrowser(page, "assets/SFX.channel.babasset");
-    await expect(page.getByTestId("document-workspace-audio-channel")).toBeVisible();
+    await expect(
+      page.getByTestId("document-workspace-audio-channel"),
+    ).toBeVisible();
     await expect(page.getByTestId("audio-channel-details-panel")).toBeVisible();
 
     await openAssetFromBrowser(page, "assets/Near.atten.babasset");
     await expect(
       page.getByTestId("document-workspace-sound-attenuation"),
     ).toBeVisible();
-    await expect(page.getByTestId("sound-attenuation-details-panel")).toBeVisible();
+    await expect(
+      page.getByTestId("sound-attenuation-details-panel"),
+    ).toBeVisible();
     await expect(page.getByTestId("attenuation-falloff-plot")).toBeVisible();
     await expect(page.getByTestId("property-coneEnabled")).toBeVisible();
     await expect(page.getByTestId("property-dopplerEnabled")).toBeVisible();
 
     await openAssetFromBrowser(page, "assets/Master.mixer.babasset");
-    await expect(page.getByTestId("document-workspace-audio-mixer")).toBeVisible();
+    await expect(
+      page.getByTestId("document-workspace-audio-mixer"),
+    ).toBeVisible();
     await expect(page.getByTestId("audio-mixer-details-panel")).toBeVisible();
     await expect(page.getByTestId("audio-mixer-empty-channels")).toBeVisible();
     const channelGuid = await guidForPath(page, "assets/SFX.channel.babasset");
@@ -198,7 +214,9 @@ test.describe("P16 audio", () => {
     await saveAllIfEnabled(page);
 
     await openContentBrowser(page);
-    const sfxTile = page.locator('[data-asset-path="assets/SFX.channel.babasset"]');
+    const sfxTile = page.locator(
+      '[data-asset-path="assets/SFX.channel.babasset"]',
+    );
     await expect(sfxTile).toBeVisible();
     const deselect = page.getByTestId("content-browser-deselect-all");
     if ((await deselect.count()) > 0) {
@@ -206,7 +224,9 @@ test.describe("P16 audio", () => {
     }
     await sfxTile.click();
     await sfxTile.click({ button: "right" });
-    await expect(page.getByTestId("context-menu-item-show-references")).toBeVisible();
+    await expect(
+      page.getByTestId("context-menu-item-show-references"),
+    ).toBeVisible();
     await page.getByTestId("context-menu-item-show-references").click();
     const refs = page.getByTestId("content-browser-refs-dialog");
     await expect(refs).toBeVisible();
@@ -218,9 +238,7 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
-    await page
-      .getByTestId("open-listed-project-TestProject")
-      .click();
+    await page.getByTestId("open-listed-project-TestProject").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openContentBrowser(page);
     await expect(
@@ -241,30 +259,16 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("property-audioChannelGuid")).toContainText(
       /SFX/i,
     );
-    await expect(page.getByTestId("property-soundAttenuationGuid")).toContainText(
-      /Near/i,
-    );
+    await expect(
+      page.getByTestId("property-soundAttenuationGuid"),
+    ).toContainText(/Near/i);
   });
 
   test("Play unlocks on first gesture, reports spatial distance, and tears down", async ({
     page,
   }) => {
     test.setTimeout(240_000);
-    await openTestProject(page);
-    await openContentBrowser(page);
-
-    await page.getByTestId("content-browser-import-input").setInputFiles([BEEP_WAV]);
-    await expect(
-      page.locator('[data-asset-path="assets/beep.babasset"]'),
-    ).toBeVisible({ timeout: 30_000 });
-    await enableImportedAudioLoop(page);
-    await createContentBrowserAsset(page, "SoundAttenuation", "Near");
-
-    await openAssetFromBrowser(page, "assets/beep.babasset");
-    const attenGuid = await guidForPath(page, "assets/Near.atten.babasset");
-    expect(attenGuid.length).toBeGreaterThan(0);
-    await page.getByTestId("property-soundAttenuationGuid").click();
-    await pickAsset(page, "audio-attenuation-picker", attenGuid);
+    await openAudioTestProject(page, true);
 
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
@@ -291,20 +295,23 @@ test.describe("P16 audio", () => {
       force: true,
     });
     await expect
-      .poll(async () => {
-        return page.evaluate(() => {
-          const stats = (
-            window as {
-              __babylonslateAudioStats?: {
-                unlocked: boolean;
-                lastDistance: number | null;
-                voices: number;
-              };
-            }
-          ).__babylonslateAudioStats;
-          return stats ?? null;
-        });
-      }, { timeout: 15_000 })
+      .poll(
+        async () => {
+          return page.evaluate(() => {
+            const stats = (
+              window as {
+                __babylonslateAudioStats?: {
+                  unlocked: boolean;
+                  lastDistance: number | null;
+                  voices: number;
+                };
+              }
+            ).__babylonslateAudioStats;
+            return stats ?? null;
+          });
+        },
+        { timeout: 15_000 },
+      )
       .toEqual(
         expect.objectContaining({
           unlocked: true,
@@ -312,16 +319,21 @@ test.describe("P16 audio", () => {
       );
     let nearDistance: number | null = null;
     await expect
-      .poll(async () => {
-        nearDistance = await page.evaluate(() => {
-          return (
-            window as {
-              __babylonslateAudioStats?: { lastDistance: number | null };
-            }
-          ).__babylonslateAudioStats?.lastDistance ?? null;
-        });
-        return nearDistance;
-      }, { timeout: 15_000 })
+      .poll(
+        async () => {
+          nearDistance = await page.evaluate(() => {
+            return (
+              (
+                window as {
+                  __babylonslateAudioStats?: { lastDistance: number | null };
+                }
+              ).__babylonslateAudioStats?.lastDistance ?? null
+            );
+          });
+          return nearDistance;
+        },
+        { timeout: 15_000 },
+      )
       .toEqual(expect.any(Number));
 
     await page.getByTestId("play-overlay-close").click();
@@ -335,32 +347,37 @@ test.describe("P16 audio", () => {
       force: true,
     });
     await expect
-      .poll(async () => {
-        return page.evaluate((previous) => {
-          const distance = (
-            window as {
-              __babylonslateAudioStats?: { lastDistance: number | null };
-            }
-          ).__babylonslateAudioStats?.lastDistance;
-          return (
-            typeof distance === "number" &&
-            typeof previous === "number" &&
-            Math.abs(distance - previous) > 1
-          );
-        }, nearDistance);
-      }, { timeout: 15_000 })
+      .poll(
+        async () => {
+          return page.evaluate((previous) => {
+            const distance = (
+              window as {
+                __babylonslateAudioStats?: { lastDistance: number | null };
+              }
+            ).__babylonslateAudioStats?.lastDistance;
+            return (
+              typeof distance === "number" &&
+              typeof previous === "number" &&
+              Math.abs(distance - previous) > 1
+            );
+          }, nearDistance);
+        },
+        { timeout: 15_000 },
+      )
       .toBe(true);
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     await expect
-      .poll(async () => {
-        return page.evaluate(() => {
-          return (
-            window as { __babylonslateAudioStats?: { voices: number } }
-          ).__babylonslateAudioStats?.voices;
-        });
-      }, { timeout: 10_000 })
+      .poll(
+        async () => {
+          return page.evaluate(() => {
+            return (window as { __babylonslateAudioStats?: { voices: number } })
+              .__babylonslateAudioStats?.voices;
+          });
+        },
+        { timeout: 10_000 },
+      )
       .toBe(0);
   });
 
@@ -368,17 +385,9 @@ test.describe("P16 audio", () => {
     page,
   }) => {
     test.setTimeout(240_000);
-    await openTestProject(page);
-    await openContentBrowser(page);
-
-    await page.getByTestId("content-browser-import-input").setInputFiles([BEEP_WAV]);
-    await expect(
-      page.locator('[data-asset-path="assets/beep.babasset"]'),
-    ).toBeVisible({ timeout: 30_000 });
+    await openAudioTestProject(page);
     const beepGuid = await guidForPath(page, "assets/beep.babasset");
     expect(beepGuid.length).toBeGreaterThan(0);
-    await enableImportedAudioLoop(page);
-
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
@@ -400,7 +409,9 @@ test.describe("P16 audio", () => {
     const root = frame.getByTestId("player-root");
     await expect(root).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("preview-build-error")).toHaveCount(0);
-    await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
+    await expect(root).toHaveAttribute("data-booted", "true", {
+      timeout: 30_000,
+    });
 
     await frame.getByTestId("player-canvas").click({
       position: { x: 200, y: 200 },
@@ -419,7 +430,9 @@ test.describe("P16 audio", () => {
           }),
         { timeout: 15_000 },
       )
-      .toEqual(expect.objectContaining({ unlocked: true, voices: expect.any(Number) }));
+      .toEqual(
+        expect.objectContaining({ unlocked: true, voices: expect.any(Number) }),
+      );
     await expect
       .poll(
         async () =>

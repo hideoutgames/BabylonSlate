@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter player build && vite",
     "build": "pnpm --filter player build && tsc -b && vite build",
-    "test": "vitest run --config ../../vitest.workspace.ts --project jsdom apps/editor",
+    "test": "node ../../scripts/run-tests.mjs unit apps/editor",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
     "ios:sync": "node scripts/ios-sync.mjs",
