@@ -20,10 +20,7 @@ export function TemplateCardWell({
   testId?: string;
 }) {
   return (
-    <div
-      data-testid={testId}
-      className={cn("homepage-card-well", className)}
-    >
+    <div data-testid={testId} className={cn("homepage-card-well", className)}>
       {imageUrl ? (
         <img src={imageUrl} alt="" className="size-full object-cover" />
       ) : (
@@ -40,6 +37,7 @@ export function TemplatePickCard({
   title,
   description,
   selected = false,
+  disabled = false,
   testId,
   imageUrl,
   icon: Icon,
@@ -49,13 +47,16 @@ export function TemplatePickCard({
   title: string;
   description?: string;
   selected?: boolean;
+  disabled?: boolean;
   testId: string;
   imageUrl?: string;
   icon: LucideIcon;
   className?: string;
   onSelect: () => void;
 }) {
-  const activate = () => onSelect();
+  const activate = () => {
+    if (!disabled) onSelect();
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -67,7 +68,9 @@ export function TemplatePickCard({
     <Card
       size="sm"
       role="button"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
+      aria-pressed={selected}
+      aria-disabled={disabled || undefined}
       data-testid={testId}
       data-selected={selected ? "true" : "false"}
       className={cn(
@@ -83,9 +86,7 @@ export function TemplatePickCard({
       </TemplateCardWell>
       <CardHeader className="gap-1 px-3 py-3">
         <CardTitle>{title}</CardTitle>
-        {description ? (
-          <CardDescription>{description}</CardDescription>
-        ) : null}
+        {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
     </Card>
   );
