@@ -1,0 +1,361 @@
+import { useEffect, useState } from "react";
+import { Button } from "@babylonslate/ui/components/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@babylonslate/ui/components/alert";
+import { ComponentGallery } from "../components/component-gallery";
+import { EditorChromeBar } from "../components/editor-chrome-bar";
+import { DocumentWorkspace } from "../components/document-workspace";
+import { ExternalChangeDialogs } from "../components/external-change-dialogs";
+import { useDocuments } from "../context/document-context";
+import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
+import { PlayProvider, usePlay } from "../context/play-context";
+import { ProjectSearchProvider } from "../context/project-search-context";
+import { ValidationProvider } from "../context/validation-context";
+import { MaterialRenderControlProvider } from "../context/material-render-control-context";
+import { EditorUtilityRuntime } from "../components/editor-utility-runtime";
+import { ModelThumbnailCaptureHost } from "../components/model-thumbnail-capture-host";
+import { TestAudioHostStats } from "../lib/test-audio-host-stats";
+import { TestParticleHostStats } from "../lib/test-particle-host-stats";
+import {
+  shouldPromptBeforeUnload,
+  tabCloseDecision,
+} from "../lib/dirty-document-prompts";
+
+function DirtyCloseDialog({
+  dirtyNames,
+  open,
+  onSave,
+  onDiscard,
+  onCancel,
+}: {
+  dirtyNames: string[];
+  open: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+    >
+      <AlertDialogContent data-testid="dirty-close-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unsaved documents</AlertDialogTitle>
+          <AlertDialogDescription>
+            Save before closing? Unsaved:
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <ul className="list-disc pl-5 text-sm">
+          {dirtyNames.map((name) => (
+            <li key={name}>{name}</li>
+          ))}
+        </ul>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="dirty-cancel">
+            Cancel
+          </AlertDialogCancel>
+          <Button
+            variant="secondary"
+            data-testid="dirty-discard"
+            onClick={onDiscard}
+          >
+            Discard
+          </Button>
+          <AlertDialogAction data-testid="dirty-save" onClick={onSave}>
+            Save All
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function MigrationPrompt({
+  paths,
+  open,
+  onApprove,
+  onCancel,
+}: {
+  paths: string[];
+  open: boolean;
+  onApprove: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+    >
+      <AlertDialogContent data-testid="migrate-on-save-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Schema migration required</AlertDialogTitle>
+          <AlertDialogDescription>
+            Some assets were made with an older schema. Migrate them on save?
+            Files you do not save stay untouched.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <ul className="list-disc pl-5 text-sm">
+          {paths.map((path) => (
+            <li key={path}>{path}</li>
+          ))}
+        </ul>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="migrate-cancel">
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction data-testid="migrate-approve" onClick={onApprove}>
+            Migrate on save
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function RecoveryBanner() {
+  const { recoveryAvailable, keepRecovery, dismissRecovery } = useDocuments();
+  if (!recoveryAvailable) return null;
+  return (
+    <Alert
+      className="rounded-none border-x-0 border-t-0"
+      data-testid="recovery-prompt"
+    >
+      <AlertTitle>Recovery journal found</AlertTitle>
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+        <span>Replay unsaved graph edits, or discard the journal.</span>
+        <div className="flex gap-2">
+          <Button
+            data-testid="recover-journal"
+            onClick={() => void keepRecovery()}
+          >
+            Recover edits
+          </Button>
+          <Button
+            variant="outline"
+            data-testid="dismiss-journal"
+            onClick={() => void dismissRecovery()}
+          >
+            Discard journal
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function EditorLayout() {
+  const {
+    closeProject,
+    forceCloseProject,
+    saveAll,
+    dirtyDocuments,
+    migrationPending,
+    pendingExclusiveScene,
+    confirmExclusiveSceneOpen,
+    cancelExclusiveSceneOpen,
+    approveMigrationsAndSave,
+    closeDocument,
+    openDocuments,
+    externalChangePrompt,
+    confirmExternalChangeReloadProject,
+    confirmExternalChangeReloadDocs,
+    dismissExternalChange,
+  } = useDocuments();
+  const {
+    playAwaitingMigration,
+    resumePlayAfterMigration,
+    cancelPlayMigration,
+  } = usePlay();
+  const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
+  const [showMigrate, setShowMigrate] = useState(false);
+  const [pendingTabClose, setPendingTabClose] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (playAwaitingMigration) setShowMigrate(true);
+  }, [playAwaitingMigration]);
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!shouldPromptBeforeUnload(dirtyDocuments.length)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirtyDocuments.length]);
+
+  const requestClose = async () => {
+    const result = await closeProject();
+    if (result.blocked) {
+      setDirtyPrompt(result.dirty.map((d) => d.ref.label));
+    }
+  };
+
+  const exclusiveDirtyNames = pendingExclusiveScene
+    ? dirtyDocuments
+        .filter((doc) => doc.ref.kind === "scene")
+        .map((doc) => doc.ref.label)
+    : [];
+  const promptNames = pendingTabClose
+    ? [pendingTabClose.name]
+    : (dirtyPrompt ?? exclusiveDirtyNames);
+
+  const requestCloseDocument = (id: string) => {
+    const doc = openDocuments.find((entry) => entry.id === id);
+    if (!doc) return;
+    if (tabCloseDecision(doc.dirty) === "prompt") {
+      setPendingTabClose({ id: doc.id, name: doc.ref.label });
+      return;
+    }
+    closeDocument(id);
+  };
+
+  const requestSave = async () => {
+    if (migrationPending.length > 0) {
+      setShowMigrate(true);
+      return;
+    }
+    await saveAll();
+  };
+
+  return (
+    <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
+      <EditorChromeBar
+        onCloseProject={() => void requestClose()}
+        onSaveProject={() => void requestSave()}
+        onCloseDocument={requestCloseDocument}
+      />
+      <RecoveryBanner />
+      <main className="flex min-h-0 flex-1 flex-col">
+        <DocumentWorkspace />
+      </main>
+      <DirtyCloseDialog
+        dirtyNames={promptNames}
+        open={
+          dirtyPrompt !== null ||
+          pendingExclusiveScene !== null ||
+          pendingTabClose !== null
+        }
+        onCancel={() => {
+          setDirtyPrompt(null);
+          setPendingTabClose(null);
+          cancelExclusiveSceneOpen();
+        }}
+        onDiscard={() => {
+          if (pendingTabClose) {
+            closeDocument(pendingTabClose.id);
+            setPendingTabClose(null);
+            return;
+          }
+          if (pendingExclusiveScene) {
+            void confirmExclusiveSceneOpen("discard");
+            return;
+          }
+          setDirtyPrompt(null);
+          void forceCloseProject();
+        }}
+        onSave={() => {
+          if (pendingTabClose) {
+            const id = pendingTabClose.id;
+            void (async () => {
+              if (migrationPending.length > 0) {
+                setShowMigrate(true);
+                return;
+              }
+              const saved = await saveAll();
+              if (!saved) return;
+              setPendingTabClose(null);
+              closeDocument(id);
+            })();
+            return;
+          }
+          if (pendingExclusiveScene) {
+            void confirmExclusiveSceneOpen("save");
+            return;
+          }
+          void (async () => {
+            await requestSave();
+            setDirtyPrompt(null);
+            await forceCloseProject();
+          })();
+        }}
+      />
+      <MigrationPrompt
+        paths={migrationPending.map((p) => p.path)}
+        open={showMigrate}
+        onCancel={() => {
+          setShowMigrate(false);
+          cancelPlayMigration();
+        }}
+        onApprove={() => {
+          setShowMigrate(false);
+          void (async () => {
+            await approveMigrationsAndSave();
+            if (playAwaitingMigration) {
+              await resumePlayAfterMigration();
+            }
+          })();
+        }}
+      />
+      <ExternalChangeDialogs
+        prompt={externalChangePrompt}
+        onReloadProject={() => {
+          void confirmExternalChangeReloadProject();
+        }}
+        onReloadDocs={(paths) => {
+          void confirmExternalChangeReloadDocs(paths);
+        }}
+        onKeepEdits={dismissExternalChange}
+        onDismiss={dismissExternalChange}
+      />
+      <span className="sr-only" data-testid="dirty-count">
+        {dirtyDocuments.length}
+      </span>
+    </div>
+  );
+}
+
+export default function EditorRoute({
+  gallery = false,
+}: {
+  gallery?: boolean;
+}) {
+  return (
+    <AssetOpenDocumentsProvider>
+      <ValidationProvider>
+        <PlayProvider>
+          <MaterialRenderControlProvider>
+            <EditorUtilityRuntime />
+            <TestAudioHostStats />
+            <TestParticleHostStats />
+            <ModelThumbnailCaptureHost />
+            <ProjectSearchProvider>
+              {gallery ? <ComponentGallery /> : <EditorLayout />}
+            </ProjectSearchProvider>
+          </MaterialRenderControlProvider>
+        </PlayProvider>
+      </ValidationProvider>
+    </AssetOpenDocumentsProvider>
+  );
+}

@@ -3,6 +3,7 @@ import {
   ArrowLeftIcon,
   ArrowUpRightIcon,
   CircleUserRoundIcon,
+  LogOutIcon,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
@@ -16,10 +17,55 @@ import {
   DialogTrigger,
 } from "@babylonslate/ui/components/dialog";
 import { HomepageSubscription } from "./homepage-subscription";
+import {
+  useNativeHomepageAccount,
+  type NativeHomepageAccount,
+} from "./homepage-account-context";
 
 const ClerkAccount = lazy(() => import("./homepage-account-clerk"));
 
 export type HomepageAccountView = "overview" | "sign-in" | "settings";
+
+function NativeAccountDetails({ account }: { account: NativeHomepageAccount }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="homepage-profile-account">
+      <div className="homepage-profile-identity">
+        <CircleUserRoundIcon aria-hidden="true" />
+        <div>
+          <h3>{account.session.name || "Your Account"}</h3>
+          <p>{account.session.email}</p>
+        </div>
+      </div>
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      <Button
+        variant="outline"
+        size="touch"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          void account.signOut().catch((reason: unknown) => {
+            setError(
+              reason instanceof Error
+                ? reason.message
+                : "Could not sign out. Please try again.",
+            );
+            setBusy(false);
+          });
+        }}
+      >
+        <LogOutIcon data-icon="inline-start" />
+        {busy ? "Signing Out…" : "Sign Out"}
+      </Button>
+    </div>
+  );
+}
 
 class AccountErrorBoundary extends Component<
   { children: ReactNode },
@@ -47,6 +93,7 @@ class AccountErrorBoundary extends Component<
 }
 
 export function HomepageAccount() {
+  const nativeAccount = useNativeHomepageAccount();
   const [open, setOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const [accountView, setAccountView] =
@@ -105,7 +152,9 @@ export function HomepageAccount() {
                 Back to Profile
               </Button>
             ) : null}
-            {open && publishableKey ? (
+            {nativeAccount ? (
+              <NativeAccountDetails account={nativeAccount} />
+            ) : open && publishableKey ? (
               <AccountErrorBoundary>
                 <Suspense
                   fallback={

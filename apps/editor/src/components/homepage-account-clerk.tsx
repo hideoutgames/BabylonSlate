@@ -13,7 +13,6 @@ import {
   LogOutIcon,
   Settings2Icon,
 } from "lucide-react";
-import { getHostPlatform } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import type { HomepageAccountView } from "./homepage-account";
@@ -85,10 +84,6 @@ export default function HomepageClerkAccount({
   publishableKey,
   ...props
 }: AccountProps & { publishableKey: string }) {
-  const host = getHostPlatform();
-  // Native Homepage is already inside the mandatory account gate's provider.
-  if (host === "ios" || host === "android")
-    return <AccountDetails {...props} />;
   return (
     <HomepageClerkProvider publishableKey={publishableKey}>
       <ClerkLoading>

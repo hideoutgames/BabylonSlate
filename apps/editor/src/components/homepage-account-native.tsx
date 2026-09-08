@@ -1,29 +1,25 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowRightIcon, MailIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
+import { Button } from "@babylonslate/ui/components/button";
 import {
-  ClerkFailed,
-  ClerkLoaded,
-  ClerkLoading,
-  SignIn,
-  useSession,
-} from "@clerk/react";
-import { HomepageClerkProvider } from "./homepage-account-provider";
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
+import { Input } from "@babylonslate/ui/components/input";
 import {
-  HomepageMobileAccountFailure,
-  HomepageMobileAccountFrame,
-} from "./homepage-mobile-account-gate";
+  createNativeClerkClient,
+  type NativeClerkChallenge,
+  type NativeClerkSession,
+} from "../services/native-clerk";
+import { NativeHomepageAccountContext } from "./homepage-account-context";
+import { HomepageMobileAccountFrame } from "./homepage-mobile-account-gate";
 
-function NativeSessionGate({ children }: { children: ReactNode }) {
-  const { isLoaded, session } = useSession();
-  if (isLoaded && session?.status === "active") return children;
-  return (
-    <HomepageMobileAccountFrame>
-      <h1>Your Studio. Everywhere.</h1>
-      <p>
-        Sign in to use Slate on this device. Every editor feature is included.
-      </p>
-      <SignIn routing="hash" withSignUp />
-    </HomepageMobileAccountFrame>
-  );
+function accountError(error: unknown) {
+  return error instanceof Error
+    ? error.message
+    : "Your account could not connect. Please try again.";
 }
 
 export default function HomepageNativeAccount({
@@ -35,19 +31,258 @@ export default function HomepageNativeAccount({
   children: ReactNode;
   onRetry: () => void;
 }) {
+  const client = useMemo(
+    () => createNativeClerkClient(publishableKey),
+    [publishableKey],
+  );
+  const [session, setSession] = useState<NativeClerkSession | null>(null);
+  const [restoring, setRestoring] = useState(true);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [challenge, setChallenge] = useState<NativeClerkChallenge | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const alive = useRef(true);
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    alive.current = true;
+    let cancelled = false;
+    void client.restoreSession().then(
+      (restored) => {
+        if (cancelled) return;
+        setSession(restored);
+        setRestoring(false);
+      },
+      (cause: unknown) => {
+        if (cancelled) return;
+        setRestoreError(accountError(cause));
+        setRestoring(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+      alive.current = false;
+    };
+  }, [client]);
+
+  useEffect(() => {
+    if (!restoring && !session) input.current?.focus();
+  }, [challenge, mode, restoring, session]);
+
+  async function run(action: () => Promise<void>) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    setStatus(null);
+    try {
+      await action();
+    } catch (cause) {
+      if (alive.current) setError(accountError(cause));
+    } finally {
+      busyRef.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  if (restoring) {
+    return (
+      <HomepageMobileAccountFrame>
+        <p role="status">Connecting your account…</p>
+      </HomepageMobileAccountFrame>
+    );
+  }
+  if (restoreError) {
+    return (
+      <HomepageMobileAccountFrame>
+        <h1>Let’s Get You Connected</h1>
+        <Alert variant="destructive">
+          <AlertDescription>{restoreError}</AlertDescription>
+        </Alert>
+        <Button size="touch" onClick={onRetry}>
+          Try Again
+        </Button>
+      </HomepageMobileAccountFrame>
+    );
+  }
+  if (session) {
+    return (
+      <NativeHomepageAccountContext.Provider
+        value={{
+          session,
+          signOut: async () => {
+            await client.signOut(session);
+            if (!alive.current) return;
+            setSession(null);
+            setChallenge(null);
+            setCode("");
+            setError(null);
+            setStatus(null);
+          },
+        }}
+      >
+        {children}
+      </NativeHomepageAccountContext.Provider>
+    );
+  }
+
   return (
-    <HomepageClerkProvider publishableKey={publishableKey}>
-      <ClerkLoading>
-        <HomepageMobileAccountFrame>
-          <p role="status">Connecting your account…</p>
-        </HomepageMobileAccountFrame>
-      </ClerkLoading>
-      <ClerkFailed>
-        <HomepageMobileAccountFailure onRetry={onRetry} />
-      </ClerkFailed>
-      <ClerkLoaded>
-        <NativeSessionGate>{children}</NativeSessionGate>
-      </ClerkLoaded>
-    </HomepageClerkProvider>
+    <HomepageMobileAccountFrame>
+      <span className="homepage-native-auth-icon">
+        <MailIcon aria-hidden="true" />
+      </span>
+      <h1>
+        {challenge
+          ? "Check Your Inbox"
+          : mode === "sign-up"
+            ? "Make Yourself at Home"
+            : "Your Studio. Everywhere."}
+      </h1>
+      <p>
+        {challenge
+          ? `Enter the code sent to ${challenge.email}.`
+          : "Sign in to use Slate on this device. Every editor feature is included."}
+      </p>
+      <form
+        className="homepage-native-auth-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (challenge && code.trim()) {
+            void run(async () => {
+              const verified = await client.verifyCode(challenge, code.trim());
+              if (alive.current) setSession(verified);
+            });
+          } else if (!challenge && email.trim()) {
+            void run(async () => {
+              const nextChallenge = await client.beginEmail(email.trim(), mode);
+              if (!alive.current) return;
+              setChallenge(nextChallenge);
+              setCode("");
+            });
+          }
+        }}
+      >
+        <FieldGroup>
+          <Field data-invalid={!!error}>
+            <FieldLabel
+              htmlFor={
+                challenge ? "native-account-code" : "native-account-email"
+              }
+            >
+              {challenge ? "Verification Code" : "Email Address"}
+            </FieldLabel>
+            {challenge ? (
+              <Input
+                ref={input}
+                id="native-account-code"
+                name="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={code}
+                maxLength={12}
+                required
+                disabled={busy}
+                aria-invalid={!!error}
+                onChange={(event) => {
+                  setCode(event.target.value);
+                  setError(null);
+                }}
+              />
+            ) : (
+              <Input
+                ref={input}
+                id="native-account-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={email}
+                required
+                disabled={busy}
+                aria-invalid={!!error}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setError(null);
+                }}
+              />
+            )}
+          </Field>
+        </FieldGroup>
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {status && <p role="status">{status}</p>}
+        <Button
+          type="submit"
+          size="touch"
+          disabled={busy || !(challenge ? code.trim() : email.trim())}
+        >
+          {busy
+            ? "One Moment…"
+            : challenge
+              ? "Verify & Continue"
+              : "Continue with Email"}
+          <ArrowRightIcon data-icon="inline-end" aria-hidden="true" />
+        </Button>
+      </form>
+      <div className="homepage-native-auth-actions">
+        {challenge ? (
+          <>
+            <Button
+              variant="ghost"
+              size="touch"
+              disabled={busy}
+              onClick={() => {
+                void run(async () => {
+                  const nextChallenge = await client.resendCode(challenge);
+                  if (!alive.current) return;
+                  setChallenge(nextChallenge);
+                  setCode("");
+                  setStatus("A fresh code is on its way.");
+                });
+              }}
+            >
+              Resend Code
+            </Button>
+            <Button
+              variant="ghost"
+              size="touch"
+              disabled={busy}
+              onClick={() => {
+                setChallenge(null);
+                setCode("");
+                setError(null);
+                setStatus(null);
+              }}
+            >
+              Use Another Email
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="ghost"
+            size="touch"
+            disabled={busy}
+            onClick={() => {
+              setMode(mode === "sign-in" ? "sign-up" : "sign-in");
+              setError(null);
+              setStatus(null);
+            }}
+          >
+            {mode === "sign-in" ? "Create Account" : "Back to Sign In"}
+          </Button>
+        )}
+      </div>
+      <p className="homepage-native-auth-note">
+        Your projects stay on this device.
+      </p>
+    </HomepageMobileAccountFrame>
   );
 }
