@@ -1,4 +1,4 @@
-import { Bone, Matrix, Mesh, Quaternion, Skeleton, TransformNode, Vector3 } from "@babylonjs/core";
+import { Bone, Matrix, Mesh, Quaternion, Skeleton, SpotLight, TransformNode, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { isPlayEngineCommandType, readActorSlot, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "../../runtime/src/driver";
@@ -28,6 +28,31 @@ function fixture() {
 }
 
 describe("render bone attachment", () => {
+  it.each(["light:spot", "camera"])("moves attached %s components with the bone and their component offset", (meshKind) => {
+    const { scene, binding, target, targetSlot, childSlot, attach, apply } = fixture();
+    snapshot.applyAssignMesh(scene, binding, {
+      type: "assignMesh", slotId: 1, meshAssetGuid: null, meshKind,
+      parts: [{ componentId: "component", meshKind, meshAssetGuid: null, position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }],
+    });
+    const hand = new TransformNode("Hand", scene);
+    hand.parent = target;
+    hand.position.y = 2;
+    hand.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.PI / 2);
+    targetSlot.position.x = 10;
+    childSlot.position.x = 10;
+    attach("Hand");
+    apply();
+    const entity = meshKind === "camera" ? binding.cameras.get(1) as UniversalCamera : binding.lights.get(1) as SpotLight;
+    expect(entity.position.x).toBeCloseTo(10);
+    expect(entity.position.y).toBeCloseTo(2);
+    expect(entity.position.z).toBeCloseTo(-1);
+    if (entity instanceof SpotLight) expect(entity.direction.x).toBeCloseTo(1);
+    else expect(entity.rotationQuaternion!.y).toBeCloseTo(Math.SQRT1_2);
+    hand.position.y = 4;
+    apply();
+    expect(entity.position.y).toBeCloseTo(4);
+  });
+
   it("routes a runtime attachment and composes its published world snapshot exactly once", async () => {
     const { scene, binding, target, child } = fixture();
     binding.meshes.clear();
