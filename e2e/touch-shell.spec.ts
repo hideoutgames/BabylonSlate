@@ -60,14 +60,21 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
       expect(styles.textarea).toBe("text");
     });
     await test.step("locks document scroll on the root shell", async () => {
-      const overflow = await page.evaluate(() => ({
-        html: getComputedStyle(document.documentElement).overflow,
-        body: getComputedStyle(document.body).overflow,
-        root: getComputedStyle(document.getElementById("root")!).overflow,
-      }));
-      expect(overflow.html).toBe("hidden");
-      expect(overflow.body).toBe("hidden");
-      expect(overflow.root).toBe("hidden");
+      const offsets = await page.evaluate(() => {
+        const root = document.getElementById("root")!;
+        const excessContent = document.createElement("div");
+        excessContent.style.height = "400px";
+        root.append(excessContent);
+        try {
+          root.scrollTop = 200;
+          document.body.scrollTop = 200;
+          window.scrollTo(0, 200);
+          return [window.scrollY, document.body.scrollTop, root.scrollTop];
+        } finally {
+          excessContent.remove();
+        }
+      });
+      expect(offsets).toEqual([0, 0, 0]);
     });
     await test.step("global toolbar buttons meet minimum touch target size", async () => {
       const button = page.getByTestId("undo-document");

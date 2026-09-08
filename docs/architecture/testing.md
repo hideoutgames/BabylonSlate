@@ -4,7 +4,8 @@
 
 ## Responsive editor checks
 
-- `e2e/phone-editor.spec.ts` covers 390x844 phone navigation/tools and 844x390 phone landscape, one visible Dockview window, and restoration to the 1194x834 tablet layout.
+- `e2e/phone-editor.spec.ts` covers 390x844 phone navigation/tools, the return from 844x390 landscape to portrait, bottom safe-area clearance, one visible Dockview window, and restoration to the 1194x834 tablet layout. It also injects a stale document offset and checks recovery plus real touch hit testing.
+- Installed-phone minimum spacing is tested by activating only the standalone CSS media condition; Chromium cannot emulate that display mode. Its real pointer/size queries still verify that the minimum leaves tablet layouts unchanged. Physical Home Screen testing remains necessary for iOS status-bar effects and rotation timing.
 - `e2e/phone-content-browser.spec.ts` covers touch folder navigation, explicit Open, and the two-step New Asset flow. These run under desktop-chrome with phone viewport/touch overrides; existing iPad tests remain unchanged.
 - Shared CatalogDialog tests cover category selection; real Dockview tests cover panel visibility, preservation, and layout restoration. Phone browser emulation does not certify native iOS/Android packaging or physical-device behavior.
 - Tablet folder-pan coverage creates enough rows to scroll at 1194x600, keeping the coarse-pointer viewport above the 500px phone-layout height breakpoint.
