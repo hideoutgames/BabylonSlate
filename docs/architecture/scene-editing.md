@@ -134,7 +134,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 ### Drop and Snap Grid
 
-- **Drop** is a one-click action immediately before Viewport Settings. Scene uses the selected actors; Prefab uses every selected component from Components. The synthetic Prefab Root remains an origin-editing helper and cannot be dropped. Prefab still hides Drag Select.
+- **Drop** is a one-click action immediately before Viewport Settings. Scene uses the selected actors; Prefab uses every selected component from Components. The synthetic Prefab Root remains an origin-editing helper and cannot be dropped. Prefab still hides Drag Select. Its collision preview follows the open scene's physics world independently of camera mode; SceneLayerActor prefabs always use 2D collision.
 - Each object probes down along world Y from the bottom center of its bounds and rests on the nearest configured blocking collision surface. Mesh Simple / Complex / No Collision, explicit non-trigger colliders, and Blocking Volumes determine support; visibility, pickability, grid display, and collision debug dashes do not. The visual grid is not a surface.
 - A missing surface or downward distance **at least 10,000 units** leaves that object in place. Each selected object's destination is computed independently from one snapshot, excluding the selected objects and their descendants as landing targets. World X/Z, rotation, and scale stay unchanged; parent-relative positions compensate for selected ancestors so nested selections do not move twice.
 - One Drop click is one document undo step. No placements means no edit. Drop stays disabled without an eligible selection, while assets/models load, and during Play preparation or Play.
