@@ -7,6 +7,7 @@ import {
   Vector3,
   VertexData,
   type LinesMesh,
+  type Material,
   type Scene,
 } from "@babylonjs/core";
 import type { CommandMessage, DebugColliderPrimitive } from "@babylonslate/bridge";
@@ -17,6 +18,7 @@ import { RENDERING_GROUP } from "./sorting";
 import { createPlayNavigationOverlay } from "./play-navigation-overlay";
 
 const DEBUG_OVERLAY_PREFIX = "playConsoleViz:";
+const wireframeRestore = new WeakMap<Scene, Map<Material, boolean>>();
 
 function markDebugOverlay(mesh: Mesh | LinesMesh): void {
   mesh.isPickable = false;
@@ -36,28 +38,24 @@ function playMeshes(scene: Scene): Mesh[] {
 }
 
 export function applyPlayWireframe(scene: Scene, enabled: boolean): void {
-  for (const mesh of playMeshes(scene)) {
-    const material = mesh.material as { wireframe?: boolean } | null;
-    if (!material || typeof material.wireframe !== "boolean") continue;
-    const meta = (mesh.metadata ?? {}) as {
-      playWireframeRestore?: boolean;
-    };
-    if (enabled) {
-      if (meta.playWireframeRestore === undefined) {
-        mesh.metadata = {
-          ...(mesh.metadata ?? {}),
-          playWireframeRestore: material.wireframe,
-        };
-      }
-      material.wireframe = true;
-    } else if (meta.playWireframeRestore !== undefined) {
-      material.wireframe = meta.playWireframeRestore;
-      const next = { ...(mesh.metadata ?? {}) } as {
-        playWireframeRestore?: boolean;
-      };
-      delete next.playWireframeRestore;
-      mesh.metadata = next;
+  if (!enabled) {
+    const originals = wireframeRestore.get(scene);
+    for (const [material, wireframe] of originals ?? []) {
+      material.wireframe = wireframe;
     }
+    wireframeRestore.delete(scene);
+    return;
+  }
+  let originals = wireframeRestore.get(scene);
+  if (!originals) {
+    originals = new Map();
+    wireframeRestore.set(scene, originals);
+  }
+  for (const mesh of playMeshes(scene)) {
+    const material = mesh.material;
+    if (!material || typeof material.wireframe !== "boolean") continue;
+    if (!originals.has(material)) originals.set(material, material.wireframe);
+    material.wireframe = true;
   }
 }
 
