@@ -847,8 +847,8 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         overlay={overlay}
       />
       <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
-      <AlertDialog
-        open={Boolean(deletingFolder)}
+      {deletingFolder ? <AlertDialog
+        open
         onOpenChange={(open) => {
           if (!open) setDeleteFolderId(null);
         }}
@@ -857,7 +857,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Folder</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete {deletingFolder?.name} only and move its contents up one level,
+              Delete {deletingFolder.name} only and move its contents up one level,
               or delete the folder and everything inside it? Either choice can be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -866,19 +866,19 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             <AlertDialogAction
               size="sm"
               variant="outline"
-              onClick={() => deletingFolder && removeFolder(deletingFolder.id, false)}
+              onClick={() => removeFolder(deletingFolder.id, false)}
             >
               Folder Only
             </AlertDialogAction>
             <AlertDialogAction
               size="sm"
-              onClick={() => deletingFolder && removeFolder(deletingFolder.id, true)}
+              onClick={() => removeFolder(deletingFolder.id, true)}
             >
               Folder And Contents
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog> : null}
       {renamingFolder ? (
         <NamePromptDialog
           open

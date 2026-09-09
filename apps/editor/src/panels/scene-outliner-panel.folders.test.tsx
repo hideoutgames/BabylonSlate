@@ -143,6 +143,7 @@ describe("Scene Outliner folders", () => {
     expect(applySceneChange).not.toHaveBeenCalled();
     expect(screen.getByRole("alertdialog")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Folder Only", exact: true }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
 
     const next = lastScene();
     expect(next.folders.map((folder) => folder.id)).toEqual(["outer"]);
