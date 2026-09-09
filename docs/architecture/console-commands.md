@@ -11,7 +11,7 @@ The organising idea does not change: **the command system is always present; onl
 | `@babylonslate/debugger` | Parser, registry, builtin catalog, `createUserCommand`, autocomplete. No React, Babylon, or runtime. |
 | `ConsoleCommandHost` | Callbacks the registry invokes. `RuntimeDriver.consoleHost()` implements it. |
 | `RuntimeDriver.executeConsoleCommand` | Play, Preview, `ExecuteConsoleCommand`, and worker `{ type: "console" }` all go through this. |
-| Overlay `DebugConsole` | Modal dialog; Play keeps ticking. Completions from `playConsoleCommands` (builtins + compiled `script.command`). |
+| Overlay `DebugConsole` | Flat bottom-edge Sheet shared by Play and Preview Build; simulation keeps ticking. Completions from `playConsoleCommands` (builtins + compiled `script.command`). Live logs, prints, warnings, errors, and command results share the transcript. |
 | `BDebugCommand` | User class → `Event On Command Run` → compiled as **core** via `loadScripts` / `bindUserCommand`. Ships even when `includeDebug: false`. |
 
 Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `snapshot start`), positional or `name=value` args, coercion to string/float/int/bool/enum. Unknown names and stripped debug names return `{ success: false, output }` and never throw.
@@ -62,16 +62,18 @@ Play chrome **Pause** / **Resume** and **Step** share `RuntimeDriver.pause` / `r
 
 `suggestConsoleCompletions(line, commands, context?)` completes:
 
-- Command names (prefix)
+- Command names ranked by exact, prefix, interior, then abbreviated subsequence match (`nav` finds `shownavagent`; `physics` finds `debugphysics`)
 - Enum values
 - Bool flags: `on` / `off`
-- `param=` chips when the next arg is empty
+- `param=` suggestions when the next arg is empty; named arguments resolve their parameter regardless of order
 - Default / example values when `defaultValue` is set
 - Context lists from `CommandParameter.complete`: `scenes` (`changescene`), `actors` (`inspect`), `commands` (`help`)
 
 Play passes scene keys and live actor names (inspect snapshots while the **console or inspector** is open). Debugger stays headless.
 
-`applyConsoleCompletion(line, suggestion, commands)` replaces the **current token** (or appends after a trailing space). Command-name hits become `name `. DebugConsole chips and Tab call this helper; history stays ArrowUp/Down.
+`applyConsoleCompletion(line, suggestion, commands)` replaces the **current token** (or appends after a trailing space). Command-name hits become `name `; values containing spaces are quoted and earlier quoted arguments are preserved. Context values match prefixes and interior text too.
+
+The console shows a scrollable suggestion list above the input with command descriptions and parameter types. ArrowUp/Down selects a row; Tab or a tap accepts it; Enter executes the command. With no suggestions, ArrowUp/Down browses history and restores the unsubmitted draft. Clear removes the current transcript without discarding history or hiding future session messages. Copy Transcript includes logs and command results. The input focuses on keyboard opening; touch opening leaves the software keyboard closed until the input is tapped.
 
 ### User commands
 

@@ -8,29 +8,60 @@ import { createUserCommand } from "./user-commands";
 
 describe("suggestConsoleCompletions", () => {
   it("ranks command prefixes before interior and fuzzy matches", () => {
-    const commands = ["shownav", "navinspect", "navigation", "showbounds", "debugphysics"].map((name) =>
-      createUserCommand({ name, description: name, category: "debug", parameters: [], run: () => ({ success: true, output: "" }) }),
+    const commands = [
+      "shownav",
+      "navinspect",
+      "navigation",
+      "showbounds",
+      "debugphysics",
+    ].map((name) =>
+      createUserCommand({
+        name,
+        description: name,
+        category: "debug",
+        parameters: [],
+        run: () => ({ success: true, output: "" }),
+      }),
     );
     expect(suggestConsoleCompletions("nav", commands)).toEqual([
-      "navigation", "navinspect", "shownav",
+      "navigation",
+      "navinspect",
+      "shownav",
     ]);
-    expect(suggestConsoleCompletions("PHYSICS", commands)).toEqual(["debugphysics"]);
-    expect(suggestConsoleCompletions("dbphys", commands)).toEqual(["debugphysics"]);
+    expect(suggestConsoleCompletions("PHYSICS", commands)).toEqual([
+      "debugphysics",
+    ]);
+    expect(suggestConsoleCompletions("dbphys", commands)).toEqual([
+      "debugphysics",
+    ]);
     expect(suggestConsoleCompletions("zzzzz", commands)).toEqual([]);
   });
 
   it("completes named arguments in any order and finds context substrings", () => {
     const command = createUserCommand({
-      name: "follow", description: "Follow an actor", category: "game",
+      name: "follow",
+      description: "Follow an actor",
+      category: "game",
       parameters: [
         { name: "actor", type: "string", complete: "actors" },
         { name: "enabled", type: "bool" },
       ],
       run: () => ({ success: true, output: "" }),
     });
-    expect(suggestConsoleCompletions("follow enabled=o", [command])).toEqual(["on", "off"]);
-    expect(suggestConsoleCompletions("follow enabled=on Gu", [command], { actors: ["North Guard", "Guide"] })).toEqual(["Guide", "North Guard"]);
-    expect(suggestConsoleCompletions('follow actor="North G', [command], { actors: ["North Guard"] })).toEqual(["North Guard"]);
+    expect(suggestConsoleCompletions("follow enabled=o", [command])).toEqual([
+      "on",
+      "off",
+    ]);
+    expect(
+      suggestConsoleCompletions("follow enabled=on Gu", [command], {
+        actors: ["North Guard", "Guide"],
+      }),
+    ).toEqual(["Guide", "North Guard"]);
+    expect(
+      suggestConsoleCompletions('follow actor="North G', [command], {
+        actors: ["North Guard"],
+      }),
+    ).toEqual(["North Guard"]);
   });
 
   it("prefix-matches command names including user commands", () => {
@@ -122,13 +153,24 @@ describe("suggestConsoleCompletions", () => {
 describe("applyConsoleCompletion", () => {
   it("quotes completed values and preserves earlier quoted arguments", () => {
     const command = createUserCommand({
-      name: "follow", description: "Follow", category: "game",
-      parameters: [{ name: "actor", type: "string" }, { name: "mode", type: "string" }],
+      name: "follow",
+      description: "Follow",
+      category: "game",
+      parameters: [
+        { name: "actor", type: "string" },
+        { name: "mode", type: "string" },
+      ],
       run: () => ({ success: true, output: "" }),
     });
-    expect(applyConsoleCompletion("follow No", "North Guard", [command])).toBe('follow "North Guard"');
-    expect(applyConsoleCompletion('follow actor="North G', "North Guard", [command])).toBe('follow actor="North Guard"');
-    expect(applyConsoleCompletion('follow "North Guard" mode=fa', "fast", [command])).toBe('follow "North Guard" mode=fast');
+    expect(applyConsoleCompletion("follow No", "North Guard", [command])).toBe(
+      'follow "North Guard"',
+    );
+    expect(
+      applyConsoleCompletion('follow actor="North G', "North Guard", [command]),
+    ).toBe('follow actor="North Guard"');
+    expect(
+      applyConsoleCompletion('follow "North Guard" mode=fa', "fast", [command]),
+    ).toBe('follow "North Guard" mode=fast');
   });
 
   it("replaces the current token instead of the whole line", () => {

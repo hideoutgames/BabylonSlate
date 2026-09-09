@@ -827,7 +827,7 @@ User commands are discovered by the asset registry (any class whose parent chain
 
 ### 9.3 The console
 
-A command line with history, argument hints and autocomplete driven by the registry: prefix match on command names, inline parameter names and types as you type, enum values, bool `on`/`off`, `param=` chips, defaults, and Play context lists (scene keys, actor names, registered commands). Chips and Tab replace the current token in place (a command-name hit becomes `name `). It is always available in editor preview, and in an exported build only when the debugger is bundled. The console is a centered dialog with the same accessory key bar as the code editor, and its transcript is `SelectableText` so output can be copied.
+A command line with history, argument hints and registry autocomplete ranked by exact, prefix, interior, then abbreviated subsequence match (`nav` finds `shownavagent`). A scrollable context list above the input shows command descriptions and parameter types, enum values, bool `on`/`off`, `param=`, defaults, and scene/actor/command values. ArrowUp/Down selects a suggestion; Tab or tap replaces the current token while preserving quoted arguments, and Enter executes. History is available when no suggestions are shown. Play and Preview Build share a flat full-width bottom console Sheet with compact desktop controls, touch accessory keys, and a selectable transcript of commands, logs, prints, warnings, and errors. Clear keeps history and permits future logs; Copy Transcript includes the visible messages. Keyboard opening focuses input; touch opening waits for a tap. Exported builds include debugger UI only when the debugger is bundled.
 
 ### 9.4 On-screen stats and overlays
 
