@@ -211,7 +211,7 @@ describe("physics nodes", () => {
     expect(diags.some((d) => d.code === "physics.radius")).toBe(true);
   });
 
-  it("compiled LineTrace returns on the same tick from ctx.lineTrace", () => {
+  it.each([undefined, false])("compiled LineTrace returns on the same tick with Draw Debug %s", (drawDebug) => {
     const registry: NodeRegistry = createDefaultNodeRegistry();
     const def = registry.get("physics.lineTrace");
     expect(def).toBeDefined();
@@ -234,6 +234,7 @@ describe("physics nodes", () => {
         node("trace", "physics.lineTrace", {
           start: { x: 0, y: 10, z: 0 },
           end: { x: 0, y: -1, z: 0 },
+          ...(drawDebug === undefined ? {} : { drawDebug }),
         }),
         node("log", "debug.log"),
       ],
@@ -271,18 +272,28 @@ describe("physics nodes", () => {
       onBeginPlay: (ctx: unknown) => void;
     };
     const logs: string[] = [];
+    const traceArgs: unknown[][] = [];
     const ground = { guid: "ground" };
     mod.onBeginPlay({
       formatValue: (v: unknown) => String(v),
       log: (_s: string, _c: string, message: string) => logs.push(message),
-      lineTrace: () => ({
+      lineTrace: (...args: unknown[]) => {
+        traceArgs.push(args);
+        return {
         hit: true,
         location: { x: 0, y: 0.5, z: 0 },
         normal: { x: 0, y: 1, z: 0 },
         distance: 9.5,
         actor: ground,
-      }),
+        };
+      },
     });
     expect(logs).toEqual(["true"]);
+    expect(traceArgs).toEqual([[
+      { x: 0, y: 10, z: 0 },
+      { x: 0, y: -1, z: 0 },
+      expect.anything(),
+      { drawDebug: drawDebug ?? true, actorsToIgnore: [] },
+    ]]);
   });
 });
