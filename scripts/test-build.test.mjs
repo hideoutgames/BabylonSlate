@@ -9,6 +9,7 @@ import {
   readFile,
   readdir,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -322,6 +323,51 @@ test("different ignored installed lockfiles do not share compiled output", async
   assert.equal(await compilations(second), 1);
 });
 
+test("braced dotenv references include inherited keys containing punctuation", async (t) => {
+  const f = await fixture(t);
+  const first = await f.worktree("first");
+  const second = await f.worktree("second");
+  for (const directory of [first, second])
+    await writeFile(
+      join(directory, "apps/editor/.env.production.local"),
+      "VITE_ENDPOINT=${BUILD.ORIGIN}\n",
+    );
+  const built = await f.run(first, { "BUILD.ORIGIN": "first-origin" });
+  const changed = await f.run(second, { "BUILD.ORIGIN": "second-origin" });
+  assert.equal(built.error, undefined);
+  assert.equal(changed.error, undefined);
+  assert.notEqual(changed.identity.key, built.identity.key);
+  assert.equal(await compilations(second), 1);
+});
+
+test("nested dotenv defaults track both the outer override and its inherited fallback", async (t) => {
+  const f = await fixture(t);
+  const first = await f.worktree("first");
+  const second = await f.worktree("second");
+  for (const directory of [first, second])
+    await writeFile(
+      join(directory, "apps/editor/.env.production.local"),
+      "VITE_ENDPOINT=${FIXTURE_UPSTREAM:-${FIXTURE_ORIGIN}}\n",
+    );
+  const built = await f.run(first, {
+    FIXTURE_UPSTREAM: "first",
+    FIXTURE_ORIGIN: "fallback",
+  });
+  const changed = await f.run(second, {
+    FIXTURE_UPSTREAM: "second",
+    FIXTURE_ORIGIN: "fallback",
+  });
+  const fallback = await f.run(second, {
+    FIXTURE_UPSTREAM: "",
+    FIXTURE_ORIGIN: "different-fallback",
+  });
+  assert.equal(built.error, undefined);
+  assert.equal(changed.error, undefined);
+  assert.equal(fallback.error, undefined);
+  assert.notEqual(changed.identity.key, built.identity.key);
+  assert.notEqual(fallback.identity.key, changed.identity.key);
+});
+
 test("corrupt shared chunks are ignored without replacing an artifact another browser may use", async (t) => {
   const f = await fixture(t);
   const first = await f.worktree("first");
@@ -340,6 +386,33 @@ test("corrupt shared chunks are ignored without replacing an artifact another br
   assert.equal(await compilations(second), 1);
   assert.equal(await readFile(damagedChunk, "utf8"), "damaged");
 });
+
+for (const filename of [".test-build.json", ".test-build-files.json"]) {
+  test(`shared artifacts cannot use external symlinked ${filename} metadata`, async (t) => {
+    const f = await fixture(t);
+    const first = await f.worktree("first");
+    const second = await f.worktree("second");
+    await f.run(first);
+    const [published] = await publishedArtifacts(f.cache);
+    assert.ok(published);
+    const path = join(published, filename);
+    const external = join(f.root, "external-metadata.json");
+    await writeFile(external, await readFile(path));
+    await rm(path);
+    try {
+      await symlink(external, path, "file");
+    } catch (error) {
+      if (process.platform === "win32" && error.code === "EPERM") {
+        t.skip("This Windows account cannot create file symlinks");
+        return;
+      }
+      throw error;
+    }
+    const rebuilt = await f.run(second);
+    assert.equal(rebuilt.error, undefined);
+    assert.equal(await compilations(second), 1);
+  });
+}
 
 test("a build queued behind another worktree rechecks the shared artifact after admission", async (t) => {
   const f = await fixture(t);

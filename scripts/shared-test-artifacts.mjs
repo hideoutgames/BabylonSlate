@@ -65,6 +65,20 @@ export async function buildEnvironmentFingerprint(root, environment) {
   };
   names.add("VITE_TEST_MODE");
   names.add("VITE_BASE_PATH");
+  // Vite expands inherited values recursively, including fallback expressions.
+  // A visited set also terminates cycles without retaining any value in metadata.
+  const pending = [...names];
+  for (let index = 0; index < pending.length; index++) {
+    const value = effective[pending[index]];
+    if (typeof value !== "string") continue;
+    for (const match of value.matchAll(/\$(?:\{)?([a-zA-Z_][a-zA-Z0-9_]*)/g)) {
+      const name = match[1];
+      if (Object.hasOwn(effective, name) && !names.has(name)) {
+        names.add(name);
+        pending.push(name);
+      }
+    }
+  }
   hash.update(
     JSON.stringify(
       [...names].sort().map((name) => [name, effective[name] ?? null]),

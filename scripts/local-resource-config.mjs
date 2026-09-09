@@ -86,9 +86,11 @@ export async function readLocalResourceConfig(env = process.env) {
     throw invalid(path, "profile must be standard or low-memory");
 
   const lowMemory = config.profile === "low-memory";
-  const reserveGiB = config.reserveGiB ?? (lowMemory ? 3 : 4);
-  const maxHeavy = config.maxHeavy ?? (lowMemory ? 1 : 3);
-  const maxBypasses = config.maxBypasses ?? 3;
+  const reserveGiB =
+    config.reserveGiB === undefined ? (lowMemory ? 3 : 4) : config.reserveGiB;
+  const maxHeavy =
+    config.maxHeavy === undefined ? (lowMemory ? 1 : 3) : config.maxHeavy;
+  const maxBypasses = config.maxBypasses === undefined ? 3 : config.maxBypasses;
   if (!Number.isFinite(reserveGiB) || reserveGiB < 1 || reserveGiB > 64)
     throw invalid(path, "reserveGiB must be a number from 1 to 64");
   if (
