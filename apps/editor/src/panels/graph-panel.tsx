@@ -312,6 +312,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     parentOf,
     scriptInterfaces,
     setDiagnostics,
+    inputAssets,
     typeSchemas,
     animEditorMode,
     assetRegistry,

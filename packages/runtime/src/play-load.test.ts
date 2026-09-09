@@ -358,3 +358,18 @@ describe("unmatchedScriptSpawns", () => {
     expect(shouldSpawnScriptedActor("Mover")).toBe(true);
   });
 });
+
+
+it("uses input asset identities and controls through worker load, including an explicit empty catalog", () => {
+  const inputAssets = [{ guid: "jump", name: "Jump", type: "InputAction" as const, valueType: "button" as const, bindings: [{ id: "keyboard", device: "key" as const, code: "KeyJ" }] }];
+  for (const assets of [inputAssets, []]) {
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "empty", inputAssets: assets }, () => {});
+    try {
+      runtime.start();
+      runtime.pushInput([{ kind: "key", tick: 0, code: "KeyJ", phase: "down" }]);
+      runtime.tick();
+      expect(runtime.getResolvedInput().inputs.jump?.held ?? false).toBe(assets.length > 0);
+      expect(runtime.getResolvedInput().actions.Confirm).toBeUndefined();
+    } finally { runtime.stop(); }
+  }
+});

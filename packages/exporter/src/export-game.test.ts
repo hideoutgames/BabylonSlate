@@ -791,3 +791,11 @@ describe("exportGame", () => {
     ).toBe("Display");
   });
 });
+
+
+it("retains stable input asset controls in an exported player manifest", async () => {
+  const inputAssets = [{ guid: "jump", name: "Jump", type: "InputAction" as const, valueType: "button" as const, bindings: [{ id: "keyboard", device: "key" as const, code: "KeyJ" }] }];
+  const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", customResolution: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputAssets });
+  if (!result.ok) throw new Error("Export failed");
+  expect(parseGameManifest(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE))).inputAssets).toEqual(inputAssets);
+});

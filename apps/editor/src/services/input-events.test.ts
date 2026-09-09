@@ -1,3 +1,4 @@
+import { graphCompileSignature } from "./script-compiler";
 import { describe, expect, it } from "vitest";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import {
@@ -86,4 +87,16 @@ describe("input asset graph authoring", () => {
     row.onChange("jump");
     expect(value).toEqual({ Name: "Jump", Asset: "jump" });
   });
+});
+
+it("invalidates compiled graph signatures when an input asset changes dimensions or name", () => {
+  const catalog = [
+    { guid: "move", name: "Move", type: "InputAxis", valueType: "1d" },
+  ];
+  expect(graphCompileSignature([], catalog)).not.toBe(
+    graphCompileSignature([], [{ ...catalog[0]!, valueType: "2d" }]),
+  );
+  expect(graphCompileSignature([], catalog)).not.toBe(
+    graphCompileSignature([], [{ ...catalog[0]!, name: "Movement" }]),
+  );
 });

@@ -759,20 +759,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const graphCompileCacheRef = useRef(new GraphScriptCompileCache());
   const markScriptsCurrent = useCallback(() => {
     setLastCompiledSignature(
-      graphCompileSignature(openGraphCompileDocuments(documentServiceRef.current)),
+      graphCompileSignature(openGraphCompileDocuments(documentServiceRef.current), inputAssetCatalog(projectService.registry?.list() ?? [], [...documentServiceRef.current.getState().openDocuments.values()])),
     );
-  }, []);
+  }, [projectService]);
   const recordPlayPreviewScripts = useCallback(
     (bundles: ScriptBundleEntry[], nextDiagnostics: Diagnostic[]) => {
       const signature = graphCompileSignature(
         openGraphCompileDocuments(documentServiceRef.current),
+        inputAssetCatalog(projectService.registry?.list() ?? [], [...documentServiceRef.current.getState().openDocuments.values()]),
       );
       setLastCompiledSignature(signature);
       setPlayLoadedSignature(signature);
       setPlayPreviewBundles(bundles);
       setPlayPreviewDiagnostics(nextDiagnostics);
     },
-    [],
+    [projectService],
   );
   const clearPlayPreviewScripts = useCallback(() => {
     setPlayLoadedSignature(null);
@@ -1450,7 +1451,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           enums: typeSchemas.enums,
           structs: typeSchemas.structs,
         });
-        setLastCompiledSignature(graphCompileSignature(graphs));
+        setLastCompiledSignature(graphCompileSignature(graphs, inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()])));
       }
       const layouts = documentService.buildLayouts();
       await projectService.saveProject(document, layouts);
@@ -2432,7 +2433,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       enums: typeSchemas.enums,
       structs: typeSchemas.structs,
     });
-  }, [collectGraphTypeSchemas, loadClassGraphDocuments, projectService]);
+  }, [collectGraphTypeSchemas, loadClassGraphDocuments, projectService, documentService]);
 
   const loadAssetDocument = useCallback(
     async (
@@ -2477,6 +2478,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     loadProjectAnimGraphDocuments,
     loadProjectGraphDocuments,
     markScriptsCurrent,
+    documentService,
+    projectService,
   ]);
 
   const collectPlayPreviewScripts = useCallback(async (): Promise<{
@@ -2512,6 +2515,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           ...Object.keys(classGraphs),
           ...sceneClassIds,
         ]),
+        inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
         materialDomains: materialDomainsFromAssets(
@@ -3958,6 +3962,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void sourceControlTick;
       const currentGraphSignature = graphCompileSignature(
         openGraphCompileDocuments(documentService),
+        inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
       );
       return {
       route,

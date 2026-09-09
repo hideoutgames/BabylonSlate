@@ -401,6 +401,7 @@ function compileFunctionGraphFingerprint(
  */
 export function graphCompileSignature(
   documents: ReadonlyArray<GraphCompileDocument>,
+  inputAssets?: HydrateGraphOptions["inputAssets"],
 ): string {
   const payload = [...documents]
     .map((doc) => ({
@@ -412,7 +413,7 @@ export function graphCompileSignature(
       functionGraphs: compileFunctionGraphFingerprint(doc.content.functionGraphs),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
-  return JSON.stringify(payload);
+  return JSON.stringify(inputAssets === undefined ? payload : { graphs: payload, inputAssets });
 }
 
 export function graphsNeedCompile(

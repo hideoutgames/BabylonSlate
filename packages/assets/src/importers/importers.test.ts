@@ -329,3 +329,18 @@ describe("importers", () => {
     expect(audio.dependencies).toContain(channel.guid);
   });
 });
+
+
+it("remaps native Input Type references inside document chunks and nested graph defaults", () => {
+  const value = { functionGraphs: { fn: { nodes: [{ data: { "default:input": { Name: "Jump", Asset: "jump" } } }] } } };
+  const results = remapImportResultGuids([
+    { type: "InputAction", name: "Jump", guid: "jump", version: 1, dependencies: [], payload: {}, chunks: [] },
+    { type: "Class", name: "Player", guid: "player", version: 1, dependencies: ["jump"], payload: value, chunks: [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode(JSON.stringify(value)) }] },
+  ], new Set(["jump"]));
+  const guid = results[0]!.guid;
+  expect(guid).not.toBe("jump");
+  const expected = { functionGraphs: { fn: { nodes: [{ data: { "default:input": { Name: "Jump", Asset: guid } } }] } } };
+  expect(results[1]!.payload).toEqual(expected);
+  expect(JSON.parse(new TextDecoder().decode(results[1]!.chunks[0]!.data))).toEqual(expected);
+  expect(results[1]!.dependencies).toEqual([guid]);
+});

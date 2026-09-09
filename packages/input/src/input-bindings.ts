@@ -1,4 +1,8 @@
-import type { InputTypeValue, InputBindingValue, InputControlValue } from "@babylonslate/core";
+import type {
+  InputTypeValue,
+  InputBindingValue,
+  InputControlValue,
+} from "@babylonslate/core";
 import { bindingCodeLabel } from "./binding-catalog";
 import {
   normalizeInputMappings,
@@ -21,7 +25,10 @@ export interface InputBindingInfo {
 
 export interface InputBindingControls {
   getInputBindings?(input: InputTypeValue): InputBindingValue[];
-  setInputControl?(binding: InputBindingValue, control: InputControlValue): boolean;
+  setInputControl?(
+    binding: InputBindingValue,
+    control: InputControlValue,
+  ): boolean;
   beginInputRebind?(binding: InputBindingValue): boolean;
   resetInputBindings?(input: InputTypeValue): boolean;
 
@@ -108,7 +115,10 @@ function slot(
   if (!Number.isInteger(index) || index < 0) return undefined;
   const rows =
     kind === "action" ? mappings.actions : kind === "axis" ? mappings.axes : [];
-  return rows.find((row) => row.id === mapping || row.name === mapping || row.legacyName === mapping)?.bindings[index];
+  return rows.find(
+    (row) =>
+      row.id === mapping || row.name === mapping || row.legacyName === mapping,
+  )?.bindings[index];
 }
 
 function validControl(device: unknown, code: unknown): device is InputDevice {
@@ -161,32 +171,75 @@ export class InputBindingProfile implements InputBindingControls {
   }
 
   getInputBindings(input: InputTypeValue): InputBindingValue[] {
-    const row = [...this.current.actions, ...this.current.axes].find((entry) => entry.id === input?.Asset);
+    const row = [...this.current.actions, ...this.current.axes].find(
+      (entry) => entry.id === input?.Asset,
+    );
     if (!row) return [];
-    return row.bindings.flatMap((binding) => binding.id ? [{ Input: { Name: row.name, Asset: row.id! }, Id: binding.id, Control: { Device: binding.device, Code: binding.code, Shift: !!binding.modifiers?.shift, Ctrl: !!binding.modifiers?.ctrl, Alt: !!binding.modifiers?.alt, Meta: !!binding.modifiers?.meta } }] : []);
+    return row.bindings.flatMap((binding) =>
+      binding.id
+        ? [
+            {
+              Input: { Name: row.name, Asset: row.id! },
+              Id: binding.id,
+              Control: {
+                Device: binding.device,
+                Code: binding.code,
+                Shift: !!binding.modifiers?.shift,
+                Ctrl: !!binding.modifiers?.ctrl,
+                Alt: !!binding.modifiers?.alt,
+                Meta: !!binding.modifiers?.meta,
+              },
+            },
+          ]
+        : [],
+    );
   }
 
   private typedSlot(binding: InputBindingValue) {
     for (const kind of ["action", "axis"] as const) {
-      const row = (kind === "action" ? this.current.actions : this.current.axes).find((entry) => entry.id === binding?.Input?.Asset);
-      const index = row?.bindings.findIndex((entry) => entry.id === binding?.Id) ?? -1;
+      const row = (
+        kind === "action" ? this.current.actions : this.current.axes
+      ).find((entry) => entry.id === binding?.Input?.Asset);
+      const index =
+        row?.bindings.findIndex((entry) => entry.id === binding?.Id) ?? -1;
       if (row && index >= 0) return { kind, mapping: row.id!, index };
     }
     return null;
   }
 
-  setInputControl(binding: InputBindingValue, control: InputControlValue): boolean {
+  setInputControl(
+    binding: InputBindingValue,
+    control: InputControlValue,
+  ): boolean {
     const target = this.typedSlot(binding);
-    return !!target && !!control && this.setBinding(target.kind, target.mapping, target.index, control.Device, control.Code, control.Shift, control.Ctrl, control.Alt, control.Meta);
+    return (
+      !!target &&
+      !!control &&
+      this.setBinding(
+        target.kind,
+        target.mapping,
+        target.index,
+        control.Device,
+        control.Code,
+        control.Shift,
+        control.Ctrl,
+        control.Alt,
+        control.Meta,
+      )
+    );
   }
 
   beginInputRebind(binding: InputBindingValue): boolean {
     const target = this.typedSlot(binding);
-    return !!target && this.beginRebind(target.kind, target.mapping, target.index);
+    return (
+      !!target && this.beginRebind(target.kind, target.mapping, target.index)
+    );
   }
 
   resetInputBindings(input: InputTypeValue): boolean {
-    const kind = this.current.actions.some((row) => row.id === input?.Asset) ? "action" : "axis";
+    const kind = this.current.actions.some((row) => row.id === input?.Asset)
+      ? "action"
+      : "axis";
     return this.resetBindings(kind, input?.Asset);
   }
 
@@ -230,7 +283,14 @@ export class InputBindingProfile implements InputBindingControls {
     alt = false,
     meta = false,
   ): boolean {
-    const mappingRow = (kind === "action" ? this.defaults.actions : this.defaults.axes).find((row) => row.id === mapping || row.name === mapping || row.legacyName === mapping);
+    const mappingRow = (
+      kind === "action" ? this.defaults.actions : this.defaults.axes
+    ).find(
+      (row) =>
+        row.id === mapping ||
+        row.name === mapping ||
+        row.legacyName === mapping,
+    );
     mapping = mappingRow?.id ?? mapping;
     const original = slot(this.defaults, kind, mapping, index);
     if (
@@ -299,14 +359,29 @@ export class InputBindingProfile implements InputBindingControls {
 
   resetBindings(kind?: string, mapping?: string): boolean {
     const resetAll = kind === undefined && mapping === undefined;
-    mapping = [...this.defaults.actions, ...this.defaults.axes].find((row) => row.id === mapping || row.name === mapping || row.legacyName === mapping)?.id ?? mapping;
+    mapping =
+      [...this.defaults.actions, ...this.defaults.axes].find(
+        (row) =>
+          row.id === mapping ||
+          row.name === mapping ||
+          row.legacyName === mapping,
+      )?.id ?? mapping;
     const rows =
       kind === "action"
         ? this.defaults.actions
         : kind === "axis"
           ? this.defaults.axes
           : null;
-    if (!resetAll && (!mapping || !rows?.some((row) => row.id === mapping || row.name === mapping || row.legacyName === mapping)))
+    if (
+      !resetAll &&
+      (!mapping ||
+        !rows?.some(
+          (row) =>
+            row.id === mapping ||
+            row.name === mapping ||
+            row.legacyName === mapping,
+        ))
+    )
       return false;
     for (const [key, override] of this.overrides) {
       if (resetAll || (override.kind === kind && override.mapping === mapping))
@@ -334,7 +409,10 @@ export class InputBindingProfile implements InputBindingControls {
     }
     if (!parsed || typeof parsed !== "object") return false;
     const document = parsed as Record<string, unknown>;
-    if ((document.version !== 1 && document.version !== 2) || !Array.isArray(document.overrides))
+    if (
+      (document.version !== 1 && document.version !== 2) ||
+      !Array.isArray(document.overrides)
+    )
       return false;
     const next = new Map<string, BindingOverride>();
     for (const value of document.overrides) {
@@ -347,13 +425,27 @@ export class InputBindingProfile implements InputBindingControls {
         !validControl(row.device, row.code)
       )
         return false;
-      const mappings = row.kind === "action" ? this.defaults.actions : this.defaults.axes;
-      const candidates = mappings.filter((entry) => entry.id === row.mapping || entry.name === row.mapping || entry.legacyName === row.mapping);
+      const mappings =
+        row.kind === "action" ? this.defaults.actions : this.defaults.axes;
+      const candidates = mappings.filter(
+        (entry) =>
+          entry.id === row.mapping ||
+          entry.name === row.mapping ||
+          entry.legacyName === row.mapping,
+      );
       if (candidates.length !== 1) return false;
       const mapping = candidates[0]!;
       const originalAuthored = row.defaultBinding as AxisBinding | undefined;
-      const matching = mapping.bindings.map((binding, index) => ({ binding, index })).filter(({ binding, index }) =>
-        typeof row.bindingId === "string" ? binding.id === row.bindingId : originalAuthored && authoredSignature(binding) === authoredSignature(originalAuthored) && (!mapping.id ? index === row.index : true));
+      const matching = mapping.bindings
+        .map((binding, index) => ({ binding, index }))
+        .filter(({ binding, index }) =>
+          typeof row.bindingId === "string"
+            ? binding.id === row.bindingId
+            : originalAuthored &&
+              authoredSignature(binding) ===
+                authoredSignature(originalAuthored) &&
+              (!mapping.id ? index === row.index : true),
+        );
       if (matching.length !== 1) return false;
       const { binding: original, index } = matching[0]!;
       row.mapping = mapping.id ?? mapping.name;
@@ -369,7 +461,7 @@ export class InputBindingProfile implements InputBindingControls {
         mapping: mapping.id ?? mapping.name,
         index,
         ...(original.id ? { bindingId: original.id } : {}),
-      defaultBinding: structuredClone(original),
+        defaultBinding: structuredClone(original),
         device: row.device,
         code: row.code as string,
       };

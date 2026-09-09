@@ -4,8 +4,18 @@
  * on-screen joystick can drive the same axis identically.
  */
 
-import type { InputDevice, BindingModifiers, ActionBinding, AxisBinding } from "@babylonslate/core";
-export type { InputDevice, BindingModifiers, ActionBinding, AxisBinding } from "@babylonslate/core";
+import type {
+  InputDevice,
+  BindingModifiers,
+  ActionBinding,
+  AxisBinding,
+} from "@babylonslate/core";
+export type {
+  InputDevice,
+  BindingModifiers,
+  ActionBinding,
+  AxisBinding,
+} from "@babylonslate/core";
 
 export interface ActionMapping {
   id?: string;
@@ -98,9 +108,7 @@ export const DEFAULT_INPUT_MAPPINGS: InputMappings = {
     {
       name: "Look",
       kind: "1d",
-      bindings: [
-        { device: "gamepadAxis", code: "0:2", deadZone: 0.15 },
-      ],
+      bindings: [{ device: "gamepadAxis", code: "0:2", deadZone: 0.15 }],
     },
   ],
 };
@@ -189,7 +197,11 @@ export function normalizeInputMappings(
             .map((binding) => normalizeActionBinding(binding, allowIncomplete))
             .filter((binding): binding is ActionBinding => binding !== null)
         : [];
-      actions.push({ name: row.name.trim(), ...mappingIdentity(row), bindings });
+      actions.push({
+        name: row.name.trim(),
+        ...mappingIdentity(row),
+        bindings,
+      });
     }
   }
   const axes: AxisMapping[] = [];
@@ -216,9 +228,14 @@ export function normalizeInputMappings(
   return { actions, axes };
 }
 
-function mappingIdentity(row: Record<string, unknown>): { id?: string; legacyName?: string } {
+function mappingIdentity(row: Record<string, unknown>): {
+  id?: string;
+  legacyName?: string;
+} {
   return {
     ...(typeof row.id === "string" && row.id ? { id: row.id } : {}),
-    ...(typeof row.legacyName === "string" && row.legacyName ? { legacyName: row.legacyName } : {}),
+    ...(typeof row.legacyName === "string" && row.legacyName
+      ? { legacyName: row.legacyName }
+      : {}),
   };
 }

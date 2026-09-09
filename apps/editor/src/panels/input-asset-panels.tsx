@@ -189,7 +189,7 @@ export function InputBindingsPanel(_props: IDockviewPanelProps) {
         </>
       }
     >
-      <div className="input-asset-editor space-y-3 p-3">
+      <div className="input-asset-editor flex flex-col gap-3 p-3">
         <p className="text-sm text-muted-foreground">
           {isAxis
             ? "Combine controls into a movement value. Use the matching input event in your graph."
@@ -394,7 +394,7 @@ export function InputBindingDetailsPanel(_props: IDockviewPanelProps) {
   }
   return (
     <PanelFrame data-testid="input-details-panel">
-      <div className="input-asset-editor space-y-3 p-3">
+      <div className="input-asset-editor flex flex-col gap-3 p-3">
         <PropertyGrid rows={rows} />
         {!rows.length && (
           <p className="text-sm text-muted-foreground">

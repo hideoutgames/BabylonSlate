@@ -34,8 +34,25 @@ export type EngineStruct = {
 
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
-  { id: "engine:InputRebindStatus", name: "Input Rebind Status", members: ["idle", "listening", "completed", "cancelled"].map((name, value) => ({ name, value })) },
-  { id: ENGINE_INPUT_DEVICE_ENUM_ID, name: "Input Device", members: ["key", "mouseButton", "pointer", "gamepadButton", "gamepadAxis", "touch"].map((name, value) => ({ name, value })) },
+  {
+    id: "engine:InputRebindStatus",
+    name: "Input Rebind Status",
+    members: ["idle", "listening", "completed", "cancelled"].map(
+      (name, value) => ({ name, value }),
+    ),
+  },
+  {
+    id: ENGINE_INPUT_DEVICE_ENUM_ID,
+    name: "Input Device",
+    members: [
+      "key",
+      "mouseButton",
+      "pointer",
+      "gamepadButton",
+      "gamepadAxis",
+      "touch",
+    ].map((name, value) => ({ name, value })),
+  },
   {
     id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
     name: "Collision Channel",
@@ -45,15 +62,47 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
 
 /** Engine user-style structs. Pin-kind math types stay first-class. */
 export const ENGINE_STRUCTS: readonly EngineStruct[] = [
-  { id: ENGINE_INPUT_TYPE_STRUCT_ID, name: "Input Type", fields: [{ name: "Name", typeId: "string" }, { name: "Asset", typeId: "asset" }] },
-  { id: ENGINE_INPUT_CONTROL_STRUCT_ID, name: "Input Control", fields: [
-    { name: "Device", typeId: "enum", typeClassId: ENGINE_INPUT_DEVICE_ENUM_ID }, { name: "Code", typeId: "string" },
-    ...["Shift", "Ctrl", "Alt", "Meta"].map((name) => ({ name, typeId: "bool" })),
-  ] },
-  { id: ENGINE_INPUT_BINDING_STRUCT_ID, name: "Input Binding", fields: [
-    { name: "Input", typeId: "struct", typeClassId: ENGINE_INPUT_TYPE_STRUCT_ID }, { name: "Id", typeId: "string" },
-    { name: "Control", typeId: "struct", typeClassId: ENGINE_INPUT_CONTROL_STRUCT_ID },
-  ] },
+  {
+    id: ENGINE_INPUT_TYPE_STRUCT_ID,
+    name: "Input Type",
+    fields: [
+      { name: "Name", typeId: "string" },
+      { name: "Asset", typeId: "asset" },
+    ],
+  },
+  {
+    id: ENGINE_INPUT_CONTROL_STRUCT_ID,
+    name: "Input Control",
+    fields: [
+      {
+        name: "Device",
+        typeId: "enum",
+        typeClassId: ENGINE_INPUT_DEVICE_ENUM_ID,
+      },
+      { name: "Code", typeId: "string" },
+      ...["Shift", "Ctrl", "Alt", "Meta"].map((name) => ({
+        name,
+        typeId: "bool",
+      })),
+    ],
+  },
+  {
+    id: ENGINE_INPUT_BINDING_STRUCT_ID,
+    name: "Input Binding",
+    fields: [
+      {
+        name: "Input",
+        typeId: "struct",
+        typeClassId: ENGINE_INPUT_TYPE_STRUCT_ID,
+      },
+      { name: "Id", typeId: "string" },
+      {
+        name: "Control",
+        typeId: "struct",
+        typeClassId: ENGINE_INPUT_CONTROL_STRUCT_ID,
+      },
+    ],
+  },
   {
     id: ENGINE_HIT_RESULT_STRUCT_ID,
     name: "Hit Result",
