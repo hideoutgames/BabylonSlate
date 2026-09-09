@@ -22,6 +22,7 @@ export const admissionDirectory = join(
   "babylonslate-test-admission-v1",
 );
 export const capacity = DEFAULT_RESOURCE_CAPACITY;
+const standardPolicy = { capacity, maxHeavy: 3, maxBypasses: 3 };
 export const workloads = {
   tooling: { workers: 1, browsers: 0, memoryGiB: 0.75 },
   unit: { workers: 1, browsers: 0, memoryGiB: 1.5 },
@@ -141,9 +142,14 @@ async function locked(directory, check, operation) {
 export async function acquireResources(request, options = {}) {
   const directory = options.directory ?? admissionDirectory;
   const config = options.capacity
-    ? { capacity: options.capacity, maxHeavy: 3, maxBypasses: 3 }
+    ? { ...standardPolicy, capacity: options.capacity }
     : await readLocalResourceConfig(options.env ?? process.env);
-  const limits = config.capacity;
+  const policy = {
+    capacity: { ...config.capacity },
+    maxHeavy: config.maxHeavy,
+    maxBypasses: config.maxBypasses,
+  };
+  const limits = policy.capacity;
   for (const key of ["workers", "browsers", "memoryGiB"]) {
     if (
       !Number.isFinite(request[key]) ||
@@ -175,6 +181,7 @@ export async function acquireResources(request, options = {}) {
       request,
       active: false,
       bypasses: 0,
+      policy,
     });
   });
   let announced = false;
@@ -207,20 +214,29 @@ export async function acquireResources(request, options = {}) {
         );
         const heavyCount = active.filter((row) => isHeavy(row.request)).length;
         const freeMemory = (options.freeMemory ?? freemem)();
-        const fits = (candidate) =>
-          keys.every((key) => used[key] + candidate[key] <= limits[key]) &&
-          (!isHeavy(candidate) || heavyCount < config.maxHeavy) &&
-          freeMemory >= (limits.reserveGiB + candidate.memoryGiB) * 1024 ** 3;
-        if (!fits(request)) return false;
+        const fits = (candidate, candidatePolicy) =>
+          keys.every(
+            (key) =>
+              used[key] + candidate[key] <= candidatePolicy.capacity[key],
+          ) &&
+          (!isHeavy(candidate) || heavyCount < candidatePolicy.maxHeavy) &&
+          freeMemory >=
+            (candidatePolicy.capacity.reserveGiB + candidate.memoryGiB) *
+              1024 ** 3;
+        if (!fits(request, policy)) return false;
         const older = waiting.slice(0, position);
         if (
           older.length &&
           (isHeavy(request) ||
-            older.some(
-              (row) =>
-                fits(row.request) ||
-                (row.bypasses ?? 0) >= config.maxBypasses,
-            ))
+            older.some((row) => {
+              // Waiting commands retain the policy they started with. Tickets
+              // from older schedulers used the standard four-GiB headroom.
+              const olderPolicy = row.policy ?? standardPolicy;
+              return (
+                fits(row.request, olderPolicy) ||
+                (row.bypasses ?? 0) >= olderPolicy.maxBypasses
+              );
+            }))
         )
           return false;
         // Only light work may use otherwise idle capacity. Charge every older
