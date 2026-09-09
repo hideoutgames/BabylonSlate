@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createMeshComponent, engineCommandBus } from "@babylonslate/core";
-import { encodeAssetDocument, readAssetDocumentHeader } from "@babylonslate/assets";
+import {
+  encodeAssetDocument,
+  readAssetDocumentHeader,
+} from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { PrefabViewportPanel } from "./prefab-viewport-panel";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
@@ -64,12 +73,13 @@ const {
     dispose: disposeFn,
     resourceCache: {},
   };
-  const createEngineMock = vi.fn<
-    (
-      canvas?: unknown,
-      options?: { sharedEngine?: unknown; present?: string },
-    ) => typeof handle
-  >();
+  const createEngineMock =
+    vi.fn<
+      (
+        canvas?: unknown,
+        options?: { sharedEngine?: unknown; present?: string },
+      ) => typeof handle
+    >();
   createEngineMock.mockReturnValue(handle);
   return {
     dispose: disposeFn,
@@ -112,7 +122,10 @@ const {
           },
         },
       ],
-    } as { components: import("@babylonslate/core").SerializedComponent[]; selectedIds: string[] },
+    } as {
+      components: import("@babylonslate/core").SerializedComponent[];
+      selectedIds: string[];
+    },
     prefabDocs: {
       openDocuments: [] as Array<{
         id: string;
@@ -183,7 +196,9 @@ vi.mock("../context/document-context", () => ({
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({ documentId: "graph:assets/Hero.class.babasset" }),
+  useDocumentWorkspace: () => ({
+    documentId: "graph:assets/Hero.class.babasset",
+  }),
 }));
 
 vi.mock("../context/scene-editing-context", () => ({
@@ -203,8 +218,16 @@ vi.mock("../context/scene-editing-context", () => ({
 }));
 
 vi.mock("../components/viewport-toolbar", () => ({
-  ViewportToolbar: ({ onDrop, dropDisabled }: { onDrop?: () => void; dropDisabled?: boolean }) => (
-    <button type="button" onClick={onDrop} disabled={dropDisabled}>Drop</button>
+  ViewportToolbar: ({
+    onDrop,
+    dropDisabled,
+  }: {
+    onDrop?: () => void;
+    dropDisabled?: boolean;
+  }) => (
+    <button type="button" onClick={onDrop} disabled={dropDisabled}>
+      Drop
+    </button>
   ),
 }));
 
@@ -244,7 +267,9 @@ describe("PrefabViewportPanel engine", () => {
     const requests: string[][] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type !== "editor.drop") return;
-      const viewportId = (createEngineMock.mock.calls.at(-1)?.[1] as { editorViewportId?: string }).editorViewportId;
+      const viewportId = (
+        createEngineMock.mock.calls.at(-1)?.[1] as { editorViewportId?: string }
+      ).editorViewportId;
       if (command.viewportId !== viewportId) return;
       requests.push([...command.actorIds]);
       engineCommandBus.dispatch({
@@ -252,8 +277,18 @@ describe("PrefabViewportPanel engine", () => {
         viewportId: command.viewportId,
         requestId: command.requestId,
         transforms: [
-          { actorId: "prefab-mesh", position: [0, -2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
-          { actorId: "second-mesh", position: [3, -5, 4], rotation: [0, 1, 0, 0], scale: [2, 3, 4] },
+          {
+            actorId: "prefab-mesh",
+            position: [0, -2, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          {
+            actorId: "second-mesh",
+            position: [3, -5, 4],
+            rotation: [0, 1, 0, 0],
+            scale: [2, 3, 4],
+          },
         ],
       });
     });
@@ -263,8 +298,22 @@ describe("PrefabViewportPanel engine", () => {
       fireEvent.click(screen.getByRole("button", { name: "Drop" }));
       expect(requests).toEqual([["prefab-mesh", "second-mesh"]]);
       expect(commitComponentTransforms).toHaveBeenCalledExactlyOnceWith([
-        { componentId: "prefab-mesh", transform: { position: [0, -2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
-        { componentId: "second-mesh", transform: { position: [3, -5, 4], rotation: [0, 1, 0, 0], scale: [2, 3, 4] } },
+        {
+          componentId: "prefab-mesh",
+          transform: {
+            position: [0, -2, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+        {
+          componentId: "second-mesh",
+          transform: {
+            position: [3, -5, 4],
+            rotation: [0, 1, 0, 0],
+            scale: [2, 3, 4],
+          },
+        },
       ]);
     } finally {
       unsubscribe();
@@ -281,19 +330,39 @@ describe("PrefabViewportPanel engine", () => {
 
   it("disables Drop until models are ready and for root-only or empty selections", async () => {
     let finishModels!: () => void;
-    handle.whenEditorModelsReady.mockReturnValueOnce(new Promise<void>((resolve) => { finishModels = resolve; }));
+    handle.whenEditorModelsReady.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishModels = resolve;
+      }),
+    );
     prefabState.selectedIds = ["prefab-mesh"];
-    const { rerender } = render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    const { rerender } = render(
+      <PrefabViewportPanel {...({} as IDockviewPanelProps)} />,
+    );
     await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
-    expect((screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
     finishModels();
-    await waitFor(() => expect((screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
     prefabState.selectedIds = [PREFAB_ROOT_ID];
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
-    expect((screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
     prefabState.selectedIds = [];
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
-    expect((screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it("pushes 2D camera bounds after the prefab engine is created", async () => {
@@ -400,20 +469,26 @@ describe("PrefabViewportPanel engine", () => {
   it("refreshes a saved Material while its prefab stays mounted", async () => {
     const savedAsset = async (value: number) => ({
       path: "assets/Surface.material.babasset",
-      header: readAssetDocumentHeader(await encodeAssetDocument({
-        type: "Material",
-        guid: "surface",
-        name: "Surface",
-        version: 1,
-        payload: { value },
-      })),
+      header: readAssetDocumentHeader(
+        await encodeAssetDocument({
+          type: "Material",
+          guid: "surface",
+          name: "Surface",
+          version: 1,
+          payload: { value },
+        }),
+      ),
     });
     let asset = await savedAsset(1);
     prefabDocs.assetRegistry = { list: () => [asset] };
-    const { rerender } = render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    const { rerender } = render(
+      <PrefabViewportPanel {...({} as IDockviewPanelProps)} />,
+    );
     await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
     const initialLoads = handle.loadScene.mock.calls.length;
-    const updatedDocuments = new Map([["surface", createDefaultMaterialDocument("Saved Surface")]]);
+    const updatedDocuments = new Map([
+      ["surface", createDefaultMaterialDocument("Saved Surface")],
+    ]);
     collectPlayMaterialLibrary.mockResolvedValueOnce({
       documents: updatedDocuments,
       functions: new Map(),
@@ -421,7 +496,12 @@ describe("PrefabViewportPanel engine", () => {
     });
     asset = await savedAsset(2);
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
-    await waitFor(() => expect(handle.setMaterialDocuments).toHaveBeenLastCalledWith(updatedDocuments, new Map()));
+    await waitFor(() =>
+      expect(handle.setMaterialDocuments).toHaveBeenLastCalledWith(
+        updatedDocuments,
+        new Map(),
+      ),
+    );
     expect(handle.loadScene).toHaveBeenCalledTimes(initialLoads);
   });
 });

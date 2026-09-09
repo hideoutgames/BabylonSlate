@@ -225,13 +225,7 @@ export function PrefabEditingProvider({
       upsertLocalFromViews(next);
       setSelectedIds([id]);
     },
-    [
-      components,
-      physicsWorld,
-      selectedId,
-      upsertLocalFromViews,
-      viewportMode,
-    ],
+    [components, physicsWorld, selectedId, upsertLocalFromViews, viewportMode],
   );
 
   const removeSelected = useCallback(() => {
@@ -336,7 +330,12 @@ export function PrefabEditingProvider({
   );
 
   const commitComponentTransforms = useCallback(
-    (changes: readonly { componentId: string; transform: SerializedTransform }[]) => {
+    (
+      changes: readonly {
+        componentId: string;
+        transform: SerializedTransform;
+      }[],
+    ) => {
       const transforms = new Map(
         changes
           .filter((change) => change.componentId !== PREFAB_ROOT_ID)
