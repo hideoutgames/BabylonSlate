@@ -15,6 +15,7 @@ import {
   patchClassMember,
   pruneEventMembersToNodes,
   removeClassMember,
+  renameCustomEvent,
   resolveClassMemberDrop,
 } from "./class-members";
 
@@ -182,6 +183,17 @@ describe("addClassMember", () => {
     }
     graph.nodes[0]!.data.eventQualifier = "Inherited";
     expect(patchClassMember(graph, "evt-1", { name: "Different" })).toBe(graph);
+  });
+
+  it("renames legacy node declarations and explicit calls to their class", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    delete graph.members;
+    graph = addCallEventNode(graph, { name: "On Hit" }, {
+      idFactory: () => "target-call", classId: "Hero", implicitSelf: false,
+    });
+    const next = renameCustomEvent(graph, "evt-1", "On Damage", "Hero");
+    expect(next.nodes.map((node) => node.data.name)).toEqual(["On Damage", "On Damage"]);
+    expect(next.members).toBeUndefined();
   });
 
   it("uses one id for the event member and node so Class tree remove matches", () => {

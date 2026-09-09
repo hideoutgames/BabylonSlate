@@ -6,7 +6,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
-import { humanizePropertyLabel, PinShapeGlyph } from "@babylonslate/editor-kit";
+import { ContextMenuOverlay, humanizePropertyLabel, PinShapeGlyph, useContextMenu } from "@babylonslate/editor-kit";
 import { isDevelopmentOnlyNode } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
@@ -388,11 +388,21 @@ export function BlueprintNodeShell({
 }
 
 export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
+  const { contextMenuItemsForNode } = useGraphEditorContext();
+  const items = contextMenuItemsForNode?.(id) ?? [];
+  const menu = useContextMenu({ items, enabled: items.length > 0 });
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const { title, role } = visualFromData(data, type);
   const rows = zipPinRows(pins);
 
   return (
+    <div
+      {...menu.bind}
+      onContextMenu={(event) => {
+        if (items.length > 0) event.stopPropagation();
+        menu.bind.onContextMenu(event);
+      }}
+    >
     <BlueprintNodeShell
       nodeId={id}
       title={title}
@@ -412,6 +422,8 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
         ))}
       </div>
     </BlueprintNodeShell>
+    <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} />
+    </div>
   );
 }
 
