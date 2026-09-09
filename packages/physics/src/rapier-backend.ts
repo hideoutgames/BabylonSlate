@@ -1,3 +1,4 @@
+import type { InteractionGroups, QueryFilterFlags } from "@dimforge/rapier2d-compat";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
@@ -43,6 +44,11 @@ type RapierApi = {
       ray: unknown,
       maxToi: number,
       solid: boolean,
+      filterFlags?: QueryFilterFlags,
+      filterGroups?: InteractionGroups,
+      filterExcludeCollider?: RapierCollider,
+      filterExcludeRigidBody?: RapierRigidBody,
+      filterPredicate?: (collider: RapierCollider) => boolean,
     ): { timeOfImpact: number; collider: RapierCollider } | null;
     intersectionsWithPoint(
       point: { x: number; y: number },
