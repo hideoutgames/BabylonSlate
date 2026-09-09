@@ -881,7 +881,17 @@ describe("project documents as .babasset", () => {
     };
     expect(dangling.textureGuid).toBe("tex-1");
 
-    await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+    let releaseProgress!: () => void;
+    const progressPause = new Promise<void>((resolve) => { releaseProgress = resolve; });
+    const progress = vi.fn(() => progressPause);
+    const repair = service.clearDeletedAssetReferences(new Set(["tex-1"]), {
+      onProgress: progress,
+    });
+    await vi.waitFor(() => expect(progress).toHaveBeenCalled());
+    expect((await service.loadDocument("sprite", spritePath) as { textureGuid: string | null }).textureGuid).toBe("tex-1");
+    releaseProgress();
+    await repair;
+    expect(progress).toHaveBeenCalledWith(spritePath);
 
     const cleared = (await service.loadDocument("sprite", spritePath)) as {
       textureGuid: string | null;
