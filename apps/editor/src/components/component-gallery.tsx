@@ -185,6 +185,7 @@ const createGalleryTreeNodes = (): TreeViewNode[] => [
   },
   {
     id: "player",
+    preview: <span className="text-xs text-muted-foreground">Health 100</span>,
     label: "Player",
     depth: 1,
     hasChildren: true,
@@ -373,6 +374,7 @@ function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
         data-testid={touch ? "gallery-tree-view-touch" : "gallery-tree-view"}
       >
         <TreeView
+          aria-label={touch ? "Touch Component Gallery Tree" : "Component Gallery Tree"}
           nodes={nodes}
           rowHeight={touch ? 44 : undefined}
           selectedId={`${prefix}${selectedId}`}
