@@ -213,6 +213,34 @@ describe("editor Drop", () => {
     expect(setup([box("selected", [0, 10, 0]), surface]).drop(["selected"])[0]?.position).toEqual([0, 2.75, 0]);
   });
 
+  it("keeps runtime radius axes when a component rotates under nonuniform actor scale", () => {
+    const surface = createActor("support", "Support", {
+      transform: { ...identitySerializedTransform(), scale: [2, 1, 1] },
+      components: [{ id: "shape", classId: "ColliderComponent", properties: { shape: { kind: "cylinder", radius: 1, height: 2 } },
+        transform: { ...identitySerializedTransform(), rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] } }],
+    });
+    expect(setup([box("selected", [0, 10, 0]), surface]).drop(["selected"])[0]?.position[1]).toBeCloseTo(2.75);
+  });
+
+  it("supports small invertible colliders and parent transforms", () => {
+    const support = createActor("support", "Support", {
+      transform: { ...identitySerializedTransform(), scale: [0.001, 0.001, 0.001] },
+      components: [{ id: "shape", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 1000 } } }],
+    });
+    expect(setup([box("selected", [0, 10, 0]), support]).drop(["selected"])[0]?.position[1]).toBeCloseTo(1.75);
+    const parent = createActor("parent", "Parent", { components: [],
+      transform: { ...identitySerializedTransform(), position: [0, 10, 0], scale: [0.001, 0.001, 0.001] } });
+    const child = { ...box("child", [0, 0, 0]), parentId: "parent" };
+    expect(setup([parent, child, box("floor", [0, 0, 0])]).drop(["child"])[0]?.position[1]).toBeCloseTo(-9249.25, 1);
+  });
+
+  it("does not drop through a filled 2D polygon enclosing the bottom", () => {
+    const polygon = createActor("polygon", "Polygon", { components: [{ id: "shape", classId: "ColliderComponent", properties: { shape: {
+      kind: "polygon", points: [{ x: -2, y: -2 }, { x: 2, y: -2 }, { x: 2, y: 2 }, { x: -2, y: 2 }],
+    } } }] });
+    expect(setup([box("selected", [0, 1, 0]), polygon], undefined, "2d").drop(["selected"])).toEqual([]);
+  });
+
   it("does not drop downward through a collider that already encloses the object's bottom", () => {
     const enclosing = createActor("enclosing", "Enclosing", { components: [{ id: "shape", classId: "ColliderComponent", properties: {
       shape: { kind: "convex", points: [-2, 2].flatMap((x) => [-2, 2].flatMap((y) => [-2, 2].map((z) => ({ x, y, z })))) },
