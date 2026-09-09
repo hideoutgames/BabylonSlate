@@ -71,7 +71,8 @@ function handleControl(msg: ControlMessage): void {
     case "load": {
       stopConsoleCapture?.();
       stopConsoleCapture = captureConsoleLogs(console, (message, severity) => {
-        onCommand({ type: "log", message, severity, category: "console", frameId: 0 });
+        if (runtime) runtime.reportLog(message, severity);
+        else onCommand({ type: "log", message, severity, category: "console", frameId: 0 });
       });
       scheduler.stop();
       if (runtime) {

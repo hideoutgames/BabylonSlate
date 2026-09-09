@@ -84,7 +84,7 @@ import {
   type TracePayload,
   type UserCommandDef,
 } from "@babylonslate/debugger";
-import { LogRingBuffer } from "./log-ring";
+import { LogRingBuffer, type LogSeverity } from "./log-ring";
 import { componentIdFromColliderPhysicsId } from "./physics-collider-id";
 import {
   SessionDiagnosticAggregator,
@@ -220,6 +220,8 @@ export interface RuntimeDriver {
   getWorld(): World;
   getLogRing(): LogRingBuffer;
   getDiagnostics(): SessionDiagnosticAggregator;
+  /** Add a host/native console message to both live output and dumplog. */
+  reportLog(message: string, severity?: LogSeverity, category?: string): void;
   registerAnchors(assetGuid: string, anchors: readonly AnchorEntry[]): void;
   reportError(
     error: unknown,
@@ -3775,6 +3777,11 @@ class InProcessRuntime implements RuntimeDriver {
 
   getDiagnostics(): SessionDiagnosticAggregator {
     return this.diagnostics;
+  }
+
+  reportLog(message: string, severity: LogSeverity = "log", category = "console"): void {
+    this.logs.push({ message, severity, category, frameId: this.frameId, tickIndex: this.world.clock.tickIndex });
+    this.emit({ type: "log", message, severity, category, frameId: this.frameId });
   }
 
   registerAnchors(assetGuid: string, anchors: readonly AnchorEntry[]): void {
