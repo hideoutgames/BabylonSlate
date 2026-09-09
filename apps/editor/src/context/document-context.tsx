@@ -410,6 +410,7 @@ interface DocumentContextValue {
     payload: Record<string, unknown>,
   ) => Promise<void>;
   /** Persist project.json settings (Input, 2D units, textures, …). */
+  updateProjectVersion: (version: string) => void;
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   sourceControl: SourceControlService;
   prefillSourceControlFromGit: () => Promise<GitConfigPrefill>;
@@ -1641,6 +1642,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           : (projectDocument?.settings.startupSceneGuid ?? null);
       return collectAndExportGame({
         startupSceneGuid,
+        project: projectDocument?.metadata,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:
@@ -1929,6 +1931,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [bump, documentService],
   );
+
+  const updateProjectVersion = useCallback((version: string) => {
+    setProjectDocument(current => current ? {
+      ...current,
+      metadata: { ...current.metadata, version, updatedAt: new Date().toISOString() },
+    } : current);
+    scheduleDebouncedSave();
+    bump();
+  }, [bump, scheduleDebouncedSave]);
 
   const updateProjectSettings = useCallback(
     (settings: Partial<ProjectDocument["settings"]>) => {
@@ -3957,6 +3968,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       removeAudioClipChunk,
       writeSceneNavmeshChunk,
       writeSceneAudioReverbChunk,
+      updateProjectVersion,
       updateProjectSettings,
       sourceControl: sourceControlRef.current,
       prefillSourceControlFromGit,
@@ -4162,6 +4174,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       removeAudioClipChunk,
       writeSceneNavmeshChunk,
       writeSceneAudioReverbChunk,
+      updateProjectVersion,
       updateProjectSettings,
       prefillSourceControlFromGit,
       sourceControlTick,

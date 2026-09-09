@@ -11,7 +11,7 @@ const alertDialogContentVariants = cva(
     variants: {
       variant: {
         default: "ring-foreground/10 data-[size=default]:sm:max-w-sm",
-        destructive: "ring-destructive sm:max-w-md",
+        destructive: "ring-destructive/30 sm:max-w-md",
       },
     },
     defaultVariants: {
@@ -115,7 +115,7 @@ function AlertDialogMedia({
     <div
       data-slot="alert-dialog-media"
       className={cn(
-        "mb-2 inline-flex size-10 items-center justify-center rounded-md bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 group-data-[variant=destructive]/alert-dialog-content:bg-destructive group-data-[variant=destructive]/alert-dialog-content:text-destructive-foreground *:[svg:not([class*='size-'])]:size-6",
+        "mb-2 inline-flex size-10 items-center justify-center rounded-md bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 group-data-[variant=destructive]/alert-dialog-content:bg-destructive/10 group-data-[variant=destructive]/alert-dialog-content:text-destructive *:[svg:not([class*='size-'])]:size-6",
         className
       )}
       {...props}

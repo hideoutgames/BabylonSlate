@@ -1067,18 +1067,21 @@ export function ContentBrowserWorkspace({
 
   const deleteInboundRefs = useMemo(() => {
     if (!deleteTarget || !assetRegistry) return [];
-    const refs = new Set<string>();
-    for (const guid of deleteTarget.guids) {
+    const refs = new Map<string, string[]>();
+    const deleting = new Set(deleteTarget.guids);
+    for (const guid of deleting) {
       for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments).inbound) {
-        if (!deleteTarget.guids.includes(inbound)) {
-          refs.add(inbound);
-        }
+        if (deleting.has(inbound)) continue;
+        const targets = refs.get(inbound) ?? [];
+        targets.push(resolveAssetName(guid));
+        refs.set(inbound, targets);
       }
     }
-    return [...refs].map((guid) => ({
-      guid,
-      name: resolveAssetName(guid),
-    }));
+    return [...refs].map(([guid, targets]) => {
+      const asset = assetRegistry.getByGuid(guid);
+      return { guid, name: resolveAssetName(guid), path: asset?.path ?? guid,
+        type: asset?.header.type, targets };
+    }).sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
   }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName]);
 
   const deleteListNames = useMemo(() => {
@@ -2272,63 +2275,61 @@ export function ContentBrowserWorkspace({
       >
         <AlertDialogContent
           variant="destructive"
+          className="editor-dialog-large editor-dialog-delete flex flex-col gap-0 overflow-hidden p-0"
           data-testid="content-browser-delete-dialog"
         >
-          <AlertDialogHeader>
+          <AlertDialogHeader className="shrink-0 border-b p-4">
             <AlertDialogMedia data-testid="content-browser-delete-media">
               <OctagonAlertIcon />
             </AlertDialogMedia>
             <AlertDialogTitle>
-              {deleteTarget?.kind === "folder"
-                ? "Delete folder?"
-                : deleteTarget?.kind === "selection"
-                  ? "Delete items?"
-                  : "Delete assets?"}
+              {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget?.kind === "folder"
-                ? `Folder ${deleteTarget.path} and its assets will be removed permanently. This action is not undoable.`
-                : deleteTarget?.kind === "selection"
-                  ? "The selected folders and assets will be removed permanently. This action is not undoable."
-                  : "The following assets will be removed permanently. This action is not undoable."}
+              Permanently removes the selected items. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-            <ul
-              className="list-disc pl-5"
-              data-testid="content-browser-delete-list"
-            >
-              {deleteListNames.map((name) => (
-                <li key={name}>
-                  <SelectableText>{name}</SelectableText>
-                </li>
-              ))}
-            </ul>
-            {deleteLastSceneClassLines.map((line) => (
-              <p
-                key={line}
-                className="font-medium text-foreground"
-                data-testid="content-browser-delete-last-warning"
-              >
-                {line}
-              </p>
-            ))}
-            {deleteInboundRefs.length > 0 ? (
-              <>
-                <p>Referenced By:</p>
-                <ul className="list-disc pl-5">
-                  {deleteInboundRefs.map((ref) => (
-                    <li key={ref.guid}>
-                      <SelectableText>{ref.name}</SelectableText>
+          <div className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y p-4"
+            tabIndex={0} role="region" aria-label="Assets And References"
+            data-testid="content-browser-delete-body">
+            <div className="grid min-w-0 gap-5 md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]">
+              <section className="min-w-0" aria-label="Selected For Deletion">
+                <h3 className="mb-2 text-sm font-medium">Selected ({deleteListNames.length})</h3>
+                <ul className="flex flex-col divide-y rounded-md border" data-testid="content-browser-delete-list">
+                  {deleteListNames.map((name) => (
+                    <li key={name} className="min-w-0 px-3 py-2 text-sm break-words">
+                      <SelectableText>{name}</SelectableText>
                     </li>
                   ))}
                 </ul>
-              </>
-            ) : (
-              <p>No inbound references.</p>
-            )}
+                {deleteLastSceneClassLines.map((line) => (
+                  <p key={line} className="mt-2 text-sm font-medium text-destructive"
+                    data-testid="content-browser-delete-last-warning">{line}</p>
+                ))}
+              </section>
+              <section className="min-w-0" aria-label="Referenced By">
+                <h3 className="mb-2 text-sm font-medium">Referenced By ({deleteInboundRefs.length})</h3>
+                {deleteInboundRefs.length > 0 ? (
+                  <>
+                    <p className="mb-3 text-sm text-muted-foreground">These assets will have missing references.</p>
+                    <ul className="flex min-w-0 flex-col divide-y rounded-md border">
+                      {deleteInboundRefs.map((ref) => (
+                        <li key={ref.guid} className="flex min-w-0 items-start gap-3 p-3">
+                          <TypeVisualIcon visual={resolveTypeVisual({ assetType: ref.type })} />
+                          <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+                            <SelectableText className="font-medium break-words">{ref.name}</SelectableText>
+                            <SelectableText className="text-xs text-muted-foreground break-all">{ref.path}</SelectableText>
+                            <span className="text-xs text-muted-foreground break-words">Uses {ref.targets.join(", ")}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : <p className="text-sm text-muted-foreground">No inbound references.</p>}
+              </section>
+            </div>
           </div>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="m-0 shrink-0">
             <AlertDialogCancel
               disabled={busy}
               size="touch"

@@ -92,7 +92,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     id: "general",
     label: "General",
     keywords:
-      "compile autosave editor utility objects infinite loop detection loop count",
+      "project version build compile autosave editor utility objects infinite loop detection loop count",
   },
   {
     id: "input",
@@ -277,6 +277,7 @@ export function SettingsModal({
     zipExportedGame,
     retryFailedTextureEncoding,
     updateProjectSettings,
+    updateProjectVersion,
     assetRegistry,
     sourceControl,
     prefillSourceControlFromGit,
@@ -451,6 +452,13 @@ export function SettingsModal({
         <FieldGroup>
           <FieldSet>
             <FieldLegend>General</FieldLegend>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="settings-project-version">Project Version</FieldLabel>
+              <Input id="settings-project-version" data-testid="settings-project-version"
+                value={projectDocument.metadata.version}
+                onChange={event => updateProjectVersion(event.target.value)} />
+              <FieldDescription>Included in packaged builds.</FieldDescription>
+            </Field>
               <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-compile-on-save">
                   Compile On Save
@@ -853,9 +861,10 @@ export function SettingsModal({
               ] as const
             ).map(([id, label, key]) => (
               <Field key={id}>
-                <FieldLabel htmlFor={id}>{label}</FieldLabel>
+                <FieldLabel id={`${id}-label`} htmlFor={id}>{label}</FieldLabel>
                 <div className="flex min-w-0 items-center gap-2">
                   <Slider
+                    aria-labelledby={`${id}-label`}
                     className="min-w-0 flex-1"
                     min={0}
                     max={2}

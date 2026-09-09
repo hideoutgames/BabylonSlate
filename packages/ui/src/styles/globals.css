@@ -409,9 +409,21 @@
 
 /* Shared working size: leave the surrounding editor visible on every device. */
 .editor-dialog-large {
-  width: min(92vw, 72rem);
-  height: min(86dvh, 52rem);
-  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2rem);
+  --dialog-edge: clamp(0.5rem, 1vw, 1rem);
+  width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge));
+  height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge));
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
+}
+
+.editor-dialog-delete {
+  height: auto;
+  width: fit-content;
+  min-width: min(44rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
+}
+
+.settings-dialog [data-slot="field-group"] {
+  max-width: 64rem;
 }
 
 .settings-dialog [data-slot="field-set"] {
@@ -434,7 +446,14 @@
 }
 
 .settings-dialog .settings-field > [role="switch"] {
-  width: auto;
+  justify-self: end;
+  margin-inline: 0.75rem;
+}
+
+@media (pointer: coarse) {
+  .settings-dialog .settings-field:has(> [role="switch"]) {
+    min-height: var(--touch-target, 44px);
+  }
 }
 
 @media (max-width: 480px) {
@@ -513,7 +532,7 @@
     min-width: var(--touch-target);
   }
 
-  .editor-dialog {
+  .editor-dialog:not(.editor-dialog-large) {
     max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2rem);
     max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2rem);
   }

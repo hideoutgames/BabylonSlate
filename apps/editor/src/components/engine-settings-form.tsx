@@ -375,11 +375,14 @@ export function EngineSettingsForm({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="setting-editor-texture-lod-quality">
+            <FieldLabel id="setting-editor-texture-lod-quality-label" htmlFor="setting-editor-texture-lod-quality">
               Editor Texture Quality
             </FieldLabel>
+            <div className="flex min-w-0 items-center gap-3">
             <Slider
               id="setting-editor-texture-lod-quality"
+              aria-labelledby="setting-editor-texture-lod-quality-label"
+              className="min-w-0 flex-1"
               data-testid="setting-editor-texture-lod-quality"
               min={25}
               max={100}
@@ -392,6 +395,15 @@ export function EngineSettingsForm({
                 void onChange({ editorTextureLodQuality: percent / 100 });
               }}
             />
+            <NumberField
+              aria-label="Editor Texture Quality (%)"
+              className="w-20 shrink-0"
+              min={25} max={100} step={5}
+              value={Math.round(settings.editorTextureLodQuality * 100)}
+              disabled={!settings.editorTextureLodEnabled}
+              onChange={percent => void onChange({ editorTextureLodQuality: percent / 100 })}
+            />
+            </div>
             <FieldDescription>Percentage of source size.</FieldDescription>
           </Field>
           <Field orientation="horizontal" className="settings-field">

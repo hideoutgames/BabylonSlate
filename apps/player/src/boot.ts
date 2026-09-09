@@ -238,6 +238,7 @@ export function startPlayer(options: {
     layer,
   }));
   const loadControl = {
+    project: manifest.project,
     type: "load" as const,
     sceneAssetGuid: startup,
     scene,

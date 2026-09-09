@@ -229,6 +229,7 @@ export async function exportGame(
   inlineCssIntoIndex(files);
 
   const manifest: GameManifest = {
+    project: { name: options.project?.name ?? "", version: options.project?.version ?? "" },
     ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.gameInstanceClass?.trim()
@@ -337,6 +338,10 @@ export function parseGameManifest(source: string): GameManifest {
   delete rest.uiDesignerPresets;
   return {
     ...rest,
+    project: {
+      name: typeof parsed.project?.name === "string" ? parsed.project.name : "",
+      version: typeof parsed.project?.version === "string" ? parsed.project.version : "",
+    },
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(audioMixerGuid ? { audioMixerGuid } : {}),
     occlusionEnabled: parsed.occlusionEnabled !== false,

@@ -12,6 +12,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const {
+  updateProjectVersion,
   updateProjectSettings,
   setShowPluginContent,
   sourceControl,
@@ -22,6 +23,7 @@ const {
 } = vi.hoisted(() => {
   const lastProjectInput = { current: null as unknown };
   return {
+    updateProjectVersion: vi.fn(),
     updateProjectSettings: vi.fn((patch: { input?: unknown }) => {
       if (patch?.input) lastProjectInput.current = patch.input;
     }),
@@ -70,6 +72,7 @@ vi.mock("../context/document-context", async () => {
       zipExportedGame: vi.fn(),
       retryFailedTextureEncoding: vi.fn(),
       updateProjectSettings,
+      updateProjectVersion,
       sourceControl,
       prefillSourceControlFromGit: sourceControl.readGitPrefill,
       assetRegistry: {
@@ -137,6 +140,7 @@ afterEach(() => {
   cleanup();
   lastProjectInput.current = null;
   updateProjectSettings.mockClear();
+  updateProjectVersion.mockClear();
   setShowPluginContent.mockClear();
   sourceControl.saveToken.mockClear();
   sourceControl.clearToken.mockClear();
@@ -162,6 +166,13 @@ it("hides unrelated settings when search has no matching section", () => {
 });
 
 describe("SettingsModal project authoring", () => {
+  it("edits the authored project version from General", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    const version = screen.getByRole("textbox", { name: "Project Version" });
+    expect((version as HTMLInputElement).value).toBe("1.0.0");
+    fireEvent.change(version, { target: { value: "2.4.0-beta.3" } });
+    expect(updateProjectVersion).toHaveBeenCalledWith("2.4.0-beta.3");
+  });
   it("edits input mappings with the structured editor instead of JSON", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,

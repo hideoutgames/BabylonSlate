@@ -2,6 +2,30 @@ import { expect, test, type Page } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
+test("settings retain visible slider tracks and full switch travel", async ({ page }) => {
+  await page.goto("/?test=1");
+  await page.getByTestId("engine-settings").click();
+  await page.getByTestId("engine-settings-modal-category-assets").click();
+  const toggle = page.getByTestId("setting-editor-texture-lod");
+  if (await toggle.getAttribute("aria-checked") !== "true") await toggle.click();
+  const control = page.getByTestId("setting-editor-texture-lod-quality");
+  const track = control.locator('[data-slot="slider-track"]');
+  const trackBounds = await track.boundingBox();
+  expect(trackBounds?.height).toBeGreaterThan(0);
+  expect(trackBounds?.width).toBeGreaterThan(100);
+  const slider = control.getByRole("slider");
+  await slider.focus();
+  await slider.press("Home");
+  await expect(slider).toHaveValue("25");
+  await slider.press("ArrowRight");
+  await expect(slider).toHaveValue("30");
+  const thumb = toggle.locator('[data-slot="switch-thumb"]');
+  const on = await thumb.boundingBox();
+  await toggle.click();
+  await expect(slider).toBeDisabled();
+  await expect.poll(async () => (await thumb.boundingBox())?.x ?? 0).toBeLessThan(on!.x);
+});
+
 async function viewportPostProcessPassCount(
   page: Page,
 ): Promise<number | null> {

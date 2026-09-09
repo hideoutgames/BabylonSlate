@@ -39,11 +39,13 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 ## Modal workflows and settings
 
-- Large catalogs, New Asset, and multiline editors use `editor-dialog-large`: 92vw up to 72rem wide, 86dvh up to 52rem tall, with at least 1rem of safe-area-adjusted space on each edge. Headers and actions stay outside their scrolling bodies. Small prompts remain content-sized.
+- Large catalogs, New Asset, and multiline editors use `editor-dialog-large`: the available viewport minus safe areas and an 8-16px gap per edge, without a fixed desktop size cap. Headers and actions stay outside their scrolling bodies. Small prompts remain content-sized.
 - Modal actions and editable fields keep compact desktop defaults. Coarse pointers receive non-overlapping 44px targets, including search Clear, and readable text-entry sizing. Footer actions wrap in their DOM order.
 - New Asset uses grouped type rows and a wider working details pane. Phones retain Type, Next, Details, and Back without discarding the draft. Step changes focus the content rather than opening the touch keyboard. Type and parent choices support arrow navigation; Enter in Name creates only when the draft is valid and idle.
 - Project and Engine Settings keep their immediate-save behavior. Done closes the dialog; it does not apply a draft. Scalar controls align with their labels and stack on narrow phones; lists retain the full content width.
-- General shows editable project behavior rather than static project-name, version, or touch-target metadata. Settings copy explains consequences only; implementation details and repeated label descriptions are omitted. Focus explains retained windows once, and unmatched settings searches show an empty state.
+- General includes editable Project Version (`metadata.version`) alongside project behavior; it omits static project-name and touch-target readouts. Settings copy explains consequences only; implementation details and repeated label descriptions are omitted. Focus explains retained windows once, and unmatched settings searches show an empty state.
+- Delete confirms grow with their content up to the large-dialog bounds. Selected items and incoming references share a contained touch-scroll region; reference rows show type, asset path, and affected targets. Headers and Cancel/Delete remain visible.
+- Shared sliders use Base UI `data-orientation` selectors for track sizing. Settings retain the shared Switch width and reserve its expanded touch area; they never override the track width.
 - Picker navigation supports arrows and Enter with the active result kept visible and mounted. Touch opening avoids text autofocus; keyboard opening starts in search. Existing Base UI dismissal and return-focus semantics remain in place.
 
 ## Design philosophy
