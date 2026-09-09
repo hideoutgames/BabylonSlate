@@ -5,12 +5,13 @@ export type HullVec3 = { x: number; y: number; z: number };
 export const GENERATED_COLLISION_MAX_POINTS = 64;
 
 /** Closed collision hull triangles, without reducing the authored point cloud. */
-export function convexHullMesh(_points: readonly HullVec3[]): {
+export function convexHullMesh(points: readonly HullVec3[]): {
   vertices: HullVec3[];
   indices: number[];
 } {
-  void _points;
-  return { vertices: [], indices: [] };
+  const vertices = uniquePoints(points);
+  const indices = buildHullFaces(vertices).flatMap(({ a, b, c }) => [a, b, c]);
+  return { vertices, indices };
 }
 
 const EPS = 1e-8;
