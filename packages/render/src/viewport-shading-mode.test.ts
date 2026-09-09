@@ -29,12 +29,18 @@ import {
 function compiledPbr(scene: Scene) {
   // NullEngine cannot upload the BRDF lookup; retain real shader compilation.
   scene.environmentBRDFTexture ??= RawTexture.CreateRGBATexture(
-    new Uint8Array([255, 255, 255, 255]), 1, 1, scene,
+    new Uint8Array([255, 255, 255, 255]),
+    1,
+    1,
+    scene,
   );
   vi.spyOn(scene.environmentBRDFTexture, "isReady").mockReturnValue(true);
   const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
   if (!lowered.ok) throw new Error("Fixture material did not lower");
-  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "surface" });
+  const compiled = compileMaterialPlan(lowered.plan, {
+    scene,
+    name: "surface",
+  });
   if (!compiled.ok) throw new Error("Fixture material did not compile");
   compiled.material.allowShaderHotSwapping = false;
   return compiled.material;
@@ -63,13 +69,21 @@ describe("isViewportShadingTarget", () => {
     origin.metadata = { editorActorOrigin: true };
     const placeholder = new Mesh("model-root", scene);
     placeholder.metadata = { editorModelPlaceholder: true };
-    const grid = MeshBuilder.CreateGround(GRID_MESH_NAME, { width: 1, height: 1 }, scene);
+    const grid = MeshBuilder.CreateGround(
+      GRID_MESH_NAME,
+      { width: 1, height: 1 },
+      scene,
+    );
     const bounds = MeshBuilder.CreateGround(
       CAMERA_BOUNDS_MESH_NAME,
       { width: 1, height: 1 },
       scene,
     );
-    const frustum = MeshBuilder.CreateBox("debugFrustum:cam:0", { size: 1 }, scene);
+    const frustum = MeshBuilder.CreateBox(
+      "debugFrustum:cam:0",
+      { size: 1 },
+      scene,
+    );
 
     expect(isViewportShadingTarget(actor)).toBe(true);
     expect(isViewportShadingTarget(billboard)).toBe(false);
@@ -93,7 +107,10 @@ describe("ViewportShadingOverlay", () => {
         // No light-policy transition can mask a missing overlay invalidation.
         scene.lightsEnabled = false;
         const mesh = MeshBuilder.CreateBox("actor", {}, scene);
-        const material = kind === "compiled" ? compiledPbr(scene) : new PBRMaterial("native", scene);
+        const material =
+          kind === "compiled"
+            ? compiledPbr(scene)
+            : new PBRMaterial("native", scene);
         material.allowShaderHotSwapping = false;
         mesh.material = material;
         material.freeze();
@@ -129,7 +146,8 @@ describe("ViewportShadingOverlay", () => {
       const mesh = MeshBuilder.CreateBox("late-model", {}, scene);
       const authored = compiledPbr(scene);
       const block = authored.attachedBlocks.find(
-        (candidate): candidate is PBRMetallicRoughnessBlock => candidate instanceof PBRMetallicRoughnessBlock,
+        (candidate): candidate is PBRMetallicRoughnessBlock =>
+          candidate instanceof PBRMetallicRoughnessBlock,
       )!;
       block.unlit = true;
       mesh.material = authored;

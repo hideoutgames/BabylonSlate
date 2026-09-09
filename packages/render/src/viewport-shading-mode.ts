@@ -1,4 +1,10 @@
-import { Material, Mesh, type Scene } from "@babylonjs/core";
+import {
+  Material,
+  Mesh,
+  NodeMaterial,
+  PBRMetallicRoughnessBlock,
+  type Scene,
+} from "@babylonjs/core";
 import { isColliderVisualMesh } from "./collider-visual";
 import { isEditorBillboardMesh } from "./editor-billboard";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
@@ -18,6 +24,7 @@ type ShadingRestore = {
   pointsCloud: boolean;
   unlit?: boolean;
   disableLighting?: boolean;
+  pbrBlocks: { block: PBRMetallicRoughnessBlock; unlit: boolean }[];
 };
 
 const SKIP_NAME_PREFIXES = [
@@ -76,10 +83,12 @@ export class ViewportShadingOverlay {
     this.scene.lightsEnabled =
       this.current === "unlit" ? false : this.lightsEnabledRestore;
 
+    const applied = new Set<Material>();
     for (const mesh of this.scene.meshes) {
       if (!(mesh instanceof Mesh) || !isViewportShadingTarget(mesh)) continue;
       const material = mesh.material ?? this.scene.defaultMaterial;
-      if (!material) continue;
+      if (!material || applied.has(material)) continue;
+      applied.add(material);
       this.snapshot(material);
       this.applyFlags(material);
     }
@@ -94,6 +103,15 @@ export class ViewportShadingOverlay {
       unlit: "unlit" in lit ? Boolean(lit.unlit) : undefined,
       disableLighting:
         "disableLighting" in lit ? Boolean(lit.disableLighting) : undefined,
+      pbrBlocks:
+        material instanceof NodeMaterial
+          ? material.attachedBlocks
+              .filter(
+                (block): block is PBRMetallicRoughnessBlock =>
+                  block instanceof PBRMetallicRoughnessBlock,
+              )
+              .map((block) => ({ block, unlit: block.unlit }))
+          : [],
     });
   }
 
@@ -101,6 +119,9 @@ export class ViewportShadingOverlay {
     const original = this.originals.get(material);
     if (!original) return;
     const lit = lightingMaterial(material);
+    const previousFill = material.fillMode;
+    const previousUnlit = lit.unlit;
+    const previousDisableLighting = lit.disableLighting;
     if (this.current === "wireframe") {
       material.fillMode = Material.WireFrameFillMode;
     } else if (original.wireframe) {
@@ -116,6 +137,26 @@ export class ViewportShadingOverlay {
     if (original.disableLighting !== undefined) {
       lit.disableLighting =
         this.current === "unlit" ? true : original.disableLighting;
+    }
+    let changed =
+      material.fillMode !== previousFill ||
+      lit.unlit !== previousUnlit ||
+      lit.disableLighting !== previousDisableLighting;
+    for (const { block, unlit } of original.pbrBlocks) {
+      const next = this.current === "unlit" ? true : unlit;
+      if (block.unlit === next) continue;
+      block.unlit = next;
+      changed = true;
+    }
+    if (!changed) return;
+    // Block properties have no invalidating setter. Frozen materials also
+    // cache readiness, so refresh both defines and readiness without unfreezing.
+    const blocked = this.scene.blockMaterialDirtyMechanism;
+    this.scene.blockMaterialDirtyMechanism = false;
+    try {
+      material.markDirty(true);
+    } finally {
+      this.scene.blockMaterialDirtyMechanism = blocked;
     }
   }
 }
