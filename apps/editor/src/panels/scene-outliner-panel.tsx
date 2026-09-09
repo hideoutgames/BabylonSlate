@@ -757,10 +757,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       onPressedChange={() => toggleFlag(actorId, "locked")}
                       data-testid={`outliner-lock-${actorId}`}
                       pressed={lockedIds.has(actorId)}
-                      className={lockedIds.has(actorId) ? undefined : "px-0"}
+                      className={lockedIds.has(actorId) ? "px-0 @min-[20rem]/tree:px-2" : "px-0"}
                     >
                       {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
-                      {lockedIds.has(actorId) ? "Locked" : null}
+                      {lockedIds.has(actorId) ? (
+                        <span className="hidden @min-[20rem]/tree:inline">Locked</span>
+                      ) : null}
                     </Toggle>
                     <NestedMenu
                       items={actorMenuItems(actorId)}

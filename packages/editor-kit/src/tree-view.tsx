@@ -447,7 +447,7 @@ export function TreeView({
   return (
     <div
       ref={measure}
-      className="h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y text-foreground"
+      className="@container/tree h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y text-foreground"
       data-testid={testId}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       onPointerMove={onPointerMove}
@@ -508,9 +508,10 @@ export function TreeView({
                 {!node.hasChildren && node.depth > 0 ? (
                   <span
                     aria-hidden
-                    className="pointer-events-none absolute top-1/2 h-px w-4 bg-border/70"
+                    className="pointer-events-none absolute top-1/2 h-px bg-border/70"
                     style={{
                       left: (node.depth - 1) * 16 + (rowHeight >= 44 ? 30 : 18),
+                      width: rowHeight >= 44 ? 36 : 24,
                     }}
                   />
                 ) : null}
