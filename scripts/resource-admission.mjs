@@ -115,7 +115,17 @@ async function locked(directory, check, operation) {
         continue;
       }
       if (error.code !== "EEXIST") throw error;
-      const owner = await readJson(path);
+      let owner;
+      try {
+        owner = await readJson(path);
+      } catch (readError) {
+        if (!["EPERM", "EACCES", "EBUSY"].includes(readError.code))
+          throw readError;
+        // A Windows sharing denial does not prove the lock is abandoned.
+        // Retry through the outer cancellation/deadline check before inspecting it.
+        await delay(20);
+        continue;
+      }
       // A killed owner may leave a lock; an unpublished owner gets a grace period.
       let age = 0;
       try {

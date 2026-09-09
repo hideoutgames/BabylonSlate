@@ -15,6 +15,15 @@ import { basename, dirname, join, resolve } from "node:path";
 const FILE_MANIFEST = ".test-build-files.json";
 const BUILD_MARKER = ".test-build.json";
 
+function* environmentReferences(value) {
+  // Match the key prefix before a Vite expansion operator. Matching an entire
+  // braced expression would lose its outer key when the fallback is nested.
+  for (const match of value.matchAll(
+    /\$\{([^{}]*?)(?=:\+|\+|:-|-|})|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+  ))
+    yield match[1] ?? match[2];
+}
+
 /** Only a digest is recorded; dotenv values and inherited credentials stay local. */
 export async function buildEnvironmentFingerprint(root, environment) {
   const hash = createHash("sha256");
@@ -44,10 +53,8 @@ export async function buildEnvironmentFingerprint(root, environment) {
           // Retain only enough overlap to recognize an inherited variable split
           // between chunks; even an unusually large env file stays bounded.
           const text = tail + bytes.toString("utf8");
-          for (const match of text.matchAll(
-            /\$(?:\{)?([a-zA-Z_][a-zA-Z0-9_]*)/g,
-          ))
-            if (Object.hasOwn(environment, match[1])) names.add(match[1]);
+          for (const name of environmentReferences(text))
+            if (Object.hasOwn(environment, name)) names.add(name);
           tail = text.slice(-overlap);
         }
         hash.update(JSON.stringify([path, size, content.digest("hex")]));
@@ -71,8 +78,7 @@ export async function buildEnvironmentFingerprint(root, environment) {
   for (let index = 0; index < pending.length; index++) {
     const value = effective[pending[index]];
     if (typeof value !== "string") continue;
-    for (const match of value.matchAll(/\$(?:\{)?([a-zA-Z_][a-zA-Z0-9_]*)/g)) {
-      const name = match[1];
+    for (const name of environmentReferences(value)) {
       if (Object.hasOwn(effective, name) && !names.has(name)) {
         names.add(name);
         pending.push(name);
@@ -114,13 +120,13 @@ async function artifactFiles(directory, prefix = "") {
   const files = [];
   for (const entry of entries) {
     const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isSymbolicLink())
+      throw new Error("Test artifacts cannot contain symbolic links");
     if (
       !prefix &&
       (entry.name === FILE_MANIFEST || entry.name === BUILD_MARKER)
     )
       continue;
-    if (entry.isSymbolicLink())
-      throw new Error("Test artifacts cannot contain symbolic links");
     if (entry.isDirectory())
       files.push(...(await artifactFiles(join(directory, entry.name), path)));
     else if (entry.isFile())

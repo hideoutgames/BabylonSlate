@@ -212,6 +212,8 @@ Machine settings live outside checkouts at `%LOCALAPPDATA%/BabylonSlate/local-re
 
 The profile may be `standard` or `low-memory`; optional numeric fields override its defaults. `reserveGiB` accepts 1–64, `maxHeavy` 1–3, and `maxBypasses` 0–10 (integer counts). Standard permits three heavy jobs subject to the existing slot/memory limits; low-memory permits one. A heavy job requests at least two slots, at least 2 GiB, or a browser. Lighter jobs can overlap when they fit. Later lightweight jobs can pass an older job that cannot currently fit, at most three times per older ticket by default. A fitting older job always keeps priority, and a job that exhausts its bypass allowance is protected until it starts or leaves the queue. Counters are shared across processes.
 
+Fractional headroom is supported for machine-specific tuning. For example, `reserveGiB: 2.5` lets a 2 GiB application build start with 4.5 GiB free; it does not reduce the build reservation. Choose this override from observed memory availability and process-tree measurements while retaining one heavy job on constrained machines.
+
 Low-memory also enables the shared build cache described below. `cacheDirectory` can set an absolute cache root, or `null` to disable sharing. Its default is `%LOCALAPPDATA%/BabylonSlate/build-cache` or `$XDG_CACHE_HOME/babylonslate/build-cache` (default `~/.cache/babylonslate/build-cache`). Missing configuration retains worktree-local artifacts. Existing commands keep the settings/code they started with; older worktrees must integrate the updated runner through their normal Git workflow. Do not terminate other agents or rewrite their checkouts to force adoption.
 
 | Workload | Worker slots | Memory reservation |
