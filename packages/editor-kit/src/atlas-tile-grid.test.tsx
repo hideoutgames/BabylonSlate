@@ -34,6 +34,23 @@ function twoTileSet() {
 }
 
 describe("AtlasTileGrid", () => {
+  it.each(["move", "select"] as const)("selects a tile on a captured %s tap", (tool) => {
+    const onSelect = vi.fn();
+    render(<AtlasTileGrid tileset={twoTileSet()} imageUrl={null} selectedId={1}
+      onSelect={onSelect} onSelectionChange={() => {}} panZoom tool={tool} data-testid="atlas" />);
+    const cell = screen.getByTestId("atlas-cell-2");
+    const surface = screen.getByTestId("atlas-surface");
+    cell.parentElement!.getBoundingClientRect = () =>
+      ({ left: 100, top: 50, width: 64, height: 32 }) as DOMRect;
+    act(() => {
+      dispatchPointerEvent(cell, "pointerdown", { pointerId: 1, clientX: 148, clientY: 66 });
+      dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 148, clientY: 66 });
+    });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(2);
+    fireEvent.click(cell);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
   it.each([false, true])(
     "selects an atlas rectangle at display scale, reversed=%s",
     (reverse) => {
