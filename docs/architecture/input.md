@@ -63,7 +63,7 @@ Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolv
 
 ## Project Settings
 
-**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` — Action/Axis `Card`s with a muted header, a **Bindings** group, per-binding device Select, searchable `BindingCodePicker`, explicit Ctrl/Shift/Alt/Meta toggles, and contextual axis extras. Device rows use `TypeColorMark` plus a 2px start-edge pin-token bar (key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`). Actions/Axes legends reuse bool/vector pin colors. Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-x` / `dpad-y` / `Jump`). Persists through `updateProjectSettings({ input })` + `normalizeInputMappings(..., { allowIncomplete: true })`. Runtime still uses the default stripper. No JSON textarea and no listen-to-bind.
+**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` with a searchable action/axis overview, binding summaries, and one selected mapping's details. Each binding uses a device Select and searchable `BindingCodePicker`; modifiers and axis tuning stay in optional detail controls with full labels and `NumberField` inputs. Names reject empty/duplicate values. Plain borders and whole-row selection replace colored edge bars and type marks. Desktop remains compact; touch uses larger targets and a responsive detail layout. Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-x` / `dpad-y` / `Jump`). Persists through `updateProjectSettings({ input })` + `normalizeInputMappings(..., { allowIncomplete: true })`. Runtime still strips incomplete bindings. Authoring uses structured pickers; runtime graphs can listen for a player's replacement keyboard key.
 
 Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchDPad shares the analog-stick path with defaults `dpad-x` / `dpad-y`.
 
@@ -79,7 +79,7 @@ Per engineplan §11.1: input is tested through **synthetic event streams** repla
 
 ### Runtime rebinding
 
-Project Settings owns the game's default mappings. Rebinding creates session-local overrides by mapping kind (`action` / `axis`), name, and zero-based binding index. Changing one keyboard slot leaves gamepad/touch alternatives and axis direction, dead zone, scale, and sensitivity intact. Rebinding never rewrites `project.json`; separate Input assets are unnecessary for these project-wide defaults.
+Project Settings owns the game's default mappings. Rebinding creates session-local overrides by mapping kind (`action` / `axis`), name, and zero-based binding index: index `0` is the first binding in that mapping's Project Settings list. Changing one keyboard slot leaves gamepad/touch alternatives and axis direction, dead zone, scale, and sensitivity intact. Rebinding never rewrites `project.json`; separate Input assets are unnecessary for these project-wide defaults.
 
 | Node | Behaviour |
 | --- | --- |
