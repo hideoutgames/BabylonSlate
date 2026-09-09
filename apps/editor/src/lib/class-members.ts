@@ -1385,7 +1385,7 @@ export function renameCustomEvent(
   const nextName = formatEventMemberName(name);
   if (previousName === nextName) return graph;
   const next = mapGraphNodes(graph, (node) => {
-    const isEvent = node.id === nodeId;
+    const isEvent = node === event;
     const isCall = node.type === "flow.event.call" &&
       formatEventMemberName(String(node.data.name ?? "")) === previousName &&
       !node.data.componentId &&

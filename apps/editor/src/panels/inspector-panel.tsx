@@ -1578,6 +1578,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             title="Rename Event"
             label="Event Name"
             confirmLabel="Rename"
+            initialValue={formatEventMemberName(String(selectedNode.data.name ?? selectedNode.data.title ?? ""))}
             validate={(name) => customEventRenameError(graph, selectedNode.id, name)}
             onSubmit={(name) => persistGraph(renameCustomEvent(graph, selectedNode.id, name, doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined))}
           />

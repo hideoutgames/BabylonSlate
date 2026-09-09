@@ -5,7 +5,7 @@ import {
   GRAPH_DEFAULT_ZOOM,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
-import { NamePromptDialog, PanelFrame } from "@babylonslate/editor-kit";
+import { formatEventMemberName, NamePromptDialog, PanelFrame } from "@babylonslate/editor-kit";
 import { type SerializedGraph } from "@babylonslate/core";
 import {
   Empty,
@@ -426,6 +426,10 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         title="Rename Event"
         label="Event Name"
         confirmLabel="Rename"
+        initialValue={(() => {
+          const node = graphContent?.nodes.find((entry) => entry.id === renameEventId);
+          return formatEventMemberName(String(node?.data.name ?? node?.data.title ?? ""));
+        })()}
         validate={(name) => graphContent && renameEventId ? customEventRenameError(graphContent, renameEventId, name) : null}
         onSubmit={(name) => {
           if (!doc || !graphContent || !renameEventId) return;

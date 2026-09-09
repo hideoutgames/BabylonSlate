@@ -126,6 +126,7 @@ describe("Inspector custom event details", () => {
     );
     fireEvent.contextMenu(screen.getByText("Event On Hit"));
     fireEvent.click(screen.getByText("Rename Event"));
+    expect((screen.getByLabelText("Event Name") as HTMLInputElement).value).toBe("On Hit");
     fireEvent.change(screen.getByLabelText("Event Name"), { target: { value: "On Damage" } });
     fireEvent.click(screen.getByTestId("name-prompt-confirm"));
     expect(applyGraphChange.mock.calls[0]?.[1].nodes[0]?.data.name).toBe("On Damage");
@@ -135,6 +136,7 @@ describe("Inspector custom event details", () => {
   it("renames the selected custom event and its call from Details", () => {
     renderEventInspector();
     fireEvent.click(screen.getByRole("button", { name: "Rename Event" }));
+    expect((screen.getByLabelText("Event Name") as HTMLInputElement).value).toBe("On Hit");
     fireEvent.change(screen.getByLabelText("Event Name"), { target: { value: "onDamage" } });
     fireEvent.click(screen.getByTestId("name-prompt-confirm"));
     const next = applyGraphChange.mock.calls[0]?.[1];
