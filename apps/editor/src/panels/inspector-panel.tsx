@@ -117,7 +117,6 @@ import {
   typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
-import { classIdForGraphPath } from "../services/script-compiler";
 
 function memberPinRows(
   pins: GraphClassMember["pins"],
