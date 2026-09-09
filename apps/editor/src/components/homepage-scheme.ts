@@ -1,38 +1,17 @@
-import { useSyncExternalStore } from "react";
-
-const key = "slate:launcher-scheme";
-const changed = "slate-launcher-scheme";
-type Scheme = "dark" | "light";
-let memoryScheme: Scheme = "dark";
-
-function read(): Scheme {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored === "light" || stored === "dark" ? stored : memoryScheme;
-  } catch {
-    return memoryScheme;
-  }
-}
-
-function subscribe(update: () => void) {
-  window.addEventListener(changed, update);
-  window.addEventListener("storage", update);
-  return () => {
-    window.removeEventListener(changed, update);
-    window.removeEventListener("storage", update);
-  };
-}
+import { useCallback } from "react";
+import { useAppSettings } from "../context/app-settings-context";
+import { useResolvedTheme } from "../context/theme-context";
+import type { ResolvedTheme } from "../lib/resolved-theme";
 
 export function useHomepageScheme() {
-  const scheme = useSyncExternalStore(subscribe, read, () => "dark" as const);
-  const setScheme = (value: Scheme) => {
-    memoryScheme = value;
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      // The launcher remains usable when storage is unavailable.
-    }
-    window.dispatchEvent(new Event(changed));
-  };
+  const scheme = useResolvedTheme();
+  const { updateSettings } = useAppSettings();
+  const setScheme = useCallback(
+    (value: ResolvedTheme) =>
+      updateSettings((settings) => {
+        settings.appearance.theme = value;
+      }),
+    [updateSettings],
+  );
   return [scheme, setScheme] as const;
 }

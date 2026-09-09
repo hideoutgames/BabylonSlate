@@ -327,7 +327,10 @@ export function Homepage({
             variant="ghost"
             size="touch-icon"
             aria-label={scheme === "dark" ? "Light Mode" : "Dark Mode"}
-            onClick={() => setScheme(scheme === "dark" ? "light" : "dark")}
+            disabled={busy}
+            onClick={() =>
+              void run(() => setScheme(scheme === "dark" ? "light" : "dark"))
+            }
           >
             {scheme === "dark" ? <SunIcon /> : <MoonIcon />}
           </Button>

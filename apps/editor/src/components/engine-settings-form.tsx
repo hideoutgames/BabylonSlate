@@ -214,8 +214,8 @@ export function EngineSettingsForm({
               </SelectContent>
             </Select>
             <FieldDescription>
-              Light, Dark, or match this device. Applies to chrome, the graph
-              canvas, and the viewport background.
+              Light, Dark, or match this device. Applies to the main menu,
+              loading screens, and editor chrome.
             </FieldDescription>
           </Field>
           <Field>

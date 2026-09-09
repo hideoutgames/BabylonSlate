@@ -1248,6 +1248,14 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
 .homepage-project-card[data-layout="list"]:hover {
   transform: none;
 }
+.homepage-project-card[data-layout="list"]:hover .homepage-project-badge {
+  transform: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .homepage-project-card[data-layout="list"]:hover .homepage-project-badge {
+    transform: translateY(-2px);
+  }
+}
 .homepage-view-options {
   display: flex;
   align-items: center;

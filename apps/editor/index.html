@@ -323,7 +323,7 @@
           <div class="slate-splash-info">
             <div class="slate-splash-heading">
               <span class="slate-loading-label">Slate</span
-              ><span class="slate-splash-version">Slate Engine</span>
+              ><span class="slate-splash-version">__SLATE_BUILD_LABEL__</span>
             </div>
             <div class="slate-splash-status">Loading application</div>
             <span class="slate-loading-track" aria-hidden="true"
@@ -333,14 +333,8 @@
         </section>
       </div>
       <script>
-        try {
-          if (localStorage.getItem("slate:launcher-scheme") === "light") {
-            var boot = document.getElementById("slate-boot");
-            boot.dataset.scheme = "light";
-          }
-        } catch (e) {
-          /* The default dark splash remains usable. */
-        }
+        document.getElementById("slate-boot").dataset.scheme =
+          document.documentElement.classList.contains("dark") ? "dark" : "light";
       </script>
     </div>
     <script type="module" src="/src/main.tsx"></script>

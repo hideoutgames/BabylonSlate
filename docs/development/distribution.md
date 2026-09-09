@@ -6,6 +6,8 @@ Distribution is explicitly invoked and separate from ordinary build, Verify, Pre
 
 The version declared at the selected source commit is the intended application version. The dispatch version must match it. Generated counters are never committed by Actions.
 
+Vite reads `release/version.json` for the startup and project-loading cards, including the HTML splash before React loads. Local and non-distribution builds display `<version> Development build`; distribution builds use the generated manifest channel to display either `<version> Development build` or `<version> Release`. A distribution manifest with a different application version is rejected. Platform build counters remain in the manifest and Engine Settings build details.
+
 | Identity | Test | Release |
 | --- | --- | --- |
 | Windows | `0.0.1-indev.417.1` | `0.0.1-release` |

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { getBuildIdentity } from "../lib/build-identity";
+import { getBuildLabel } from "../lib/build-identity";
 import { brandIconSrc } from "../lib/branding";
 import { useHomepageScheme } from "./homepage-scheme";
 import loadingStyles from "./launcher-transition.css?inline";
@@ -101,8 +101,7 @@ export function LauncherTransitionProvider({
         : current,
     );
   }, []);
-  const build = getBuildIdentity();
-  const version = build ? `v${build.applicationVersion}` : "Development build";
+  const version = getBuildLabel();
   useEffect(() => {
     if (!transition) return;
     if (
