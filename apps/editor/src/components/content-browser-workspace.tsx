@@ -221,6 +221,7 @@ export function ContentBrowserWorkspace({
     setActiveDocument,
     tabOrder,
     loadAssetThumbnail,
+    loadAssetDocument,
     thumbnailEpoch,
     thumbnailsEnabled,
     pluginDescriptors,
@@ -1065,24 +1066,86 @@ export function ContentBrowserWorkspace({
     [assetRegistry],
   );
 
+  const deletingGuids = useMemo(() => contentBrowserDeletingGuids({
+    extraGuids: deleteTarget?.guids ?? [],
+    folderPaths: deleteTarget?.kind === "folder"
+      ? [deleteTarget.path]
+      : deleteTarget?.kind === "selection" ? deleteTarget.folders : [],
+    assets: allAssets,
+  }), [allAssets, deleteTarget]);
+  const deletingClassGuids = useMemo(() => new Set(referenceAssets
+    .filter((asset) => deletingGuids.has(asset.header.guid) &&
+      (asset.header.type === "Class" || asset.header.type === "Graph"))
+    .map((asset) => asset.header.guid)), [deletingGuids, referenceAssets]);
+  const [deleteReferenceScan, setDeleteReferenceScan] = useState<{
+    deleting: ReadonlySet<string>;
+    assets: readonly IndexedAsset[];
+    openDocuments: typeof openDocuments;
+    documents: Array<{ ref: { path: string }; content: unknown }>;
+    failed: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (deletingClassGuids.size === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const documents: Array<{ ref: { path: string }; content: unknown }> = [];
+      let failed = false;
+      // Older scenes may predate Class dependency headers. Read their actual
+      // payloads before allowing a Class (or its containing folder) to disappear.
+      for (const asset of referenceAssets) {
+        if (deletingGuids.has(asset.header.guid)) continue;
+        if (!["Scene", "SceneLayer", "Class", "Graph"].includes(asset.header.type)) continue;
+        if (openDocuments.some((doc) => doc.ref.path === asset.path)) continue;
+        const kind = documentKindForAssetType(asset.header.type);
+        if (!kind) continue;
+        try {
+          const content = await loadAssetDocument(kind, asset.path);
+          if (cancelled) return;
+          if (!content) failed = true;
+          else documents.push({ ref: { path: asset.path }, content });
+        } catch {
+          failed = true;
+        }
+      }
+      if (!cancelled) setDeleteReferenceScan({
+        deleting: deletingGuids, assets: referenceAssets, openDocuments,
+        documents, failed,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [deletingClassGuids, deletingGuids, referenceAssets, openDocuments, loadAssetDocument]);
+
+  const deleteReferenceScanCurrent = deleteReferenceScan?.deleting === deletingGuids &&
+    deleteReferenceScan.assets === referenceAssets &&
+    deleteReferenceScan.openDocuments === openDocuments;
+  const checkingDeleteReferences = deletingClassGuids.size > 0 && !deleteReferenceScanCurrent;
+  const deleteReferenceCheckFailed = deletingClassGuids.size > 0 &&
+    deleteReferenceScanCurrent && deleteReferenceScan.failed;
+
   const deleteInboundRefs = useMemo(() => {
     if (!deleteTarget || !assetRegistry) return [];
     const refs = new Map<string, string[]>();
-    const deleting = new Set(deleteTarget.guids);
-    for (const guid of deleting) {
-      for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments).inbound) {
-        if (deleting.has(inbound)) continue;
+    const documents = [...openDocuments,
+      ...(deleteReferenceScanCurrent ? deleteReferenceScan.documents : [])];
+    for (const guid of deletingGuids) {
+      for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, documents).inbound) {
+        if (deletingGuids.has(inbound)) continue;
         const targets = refs.get(inbound) ?? [];
-        targets.push(resolveAssetName(guid));
+        targets.push(guid);
         refs.set(inbound, targets);
       }
     }
     return [...refs].map(([guid, targets]) => {
       const asset = assetRegistry.getByGuid(guid);
       return { guid, name: resolveAssetName(guid), path: asset?.path ?? guid,
-        type: asset?.header.type, targets };
+        type: asset?.header.type, targets: targets.map(resolveAssetName),
+        blocksClassDelete: targets.some((target) => deletingClassGuids.has(target)) };
     }).sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
-  }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName]);
+  }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName,
+    deletingGuids, deletingClassGuids, deleteReferenceScan, deleteReferenceScanCurrent]);
+  const hasReferencedClass = deleteInboundRefs.some((ref) => ref.blocksClassDelete);
+  const deleteBlocked = hasReferencedClass || checkingDeleteReferences || deleteReferenceCheckFailed;
 
   const deleteListNames = useMemo(() => {
     if (!deleteTarget) return [];
@@ -1120,7 +1183,7 @@ export function ContentBrowserWorkspace({
   }, [allAssets, deleteTarget]);
 
   const confirmDelete = useCallback(async () => {
-    if (!assetRegistry || !deleteTarget) return;
+    if (!assetRegistry || !deleteTarget || deleteBlocked) return;
     const paths = new Set<string>();
     for (const guid of deleteTarget.guids) {
       const path = assetRegistry.getByGuid(guid)?.path;
@@ -1192,6 +1255,7 @@ export function ContentBrowserWorkspace({
     browserRoots,
     closeDocumentsForPaths,
     deleteTarget,
+    deleteBlocked,
     repairAfterAssetDelete,
     refuseTheirsAssetPaths,
     sourceControl,
@@ -2288,7 +2352,11 @@ export function ContentBrowserWorkspace({
                 {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {deleteInboundRefs.length > 0
+                {hasReferencedClass
+                  ? "Classes still referenced by remaining assets cannot be deleted. Remove their references and save those assets first."
+                  : checkingDeleteReferences ? "Checking Class references before deletion."
+                  : deleteReferenceCheckFailed ? "Class references could not be checked. Reopen the affected assets and try again."
+                  : deleteInboundRefs.length > 0
                   ? "Deleting these items will break the references below. This cannot be undone."
                   : "Permanently removes the selected items. This cannot be undone."}
               </AlertDialogDescription>
@@ -2347,7 +2415,7 @@ export function ContentBrowserWorkspace({
               variant="destructive"
               size="touch"
               className="h-[var(--touch-target,44px)]"
-              disabled={busy}
+              disabled={busy || deleteBlocked}
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {
                 event.preventDefault();
