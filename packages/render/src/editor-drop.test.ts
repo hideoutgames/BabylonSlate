@@ -426,6 +426,26 @@ describe("editor Drop", () => {
     ).toBeCloseTo(-9249.25, 1);
   });
 
+  it("composes model collider offsets before nonuniform actor scale", () => {
+    const surface = createActor("model", "Model", {
+      transform: { ...identitySerializedTransform(), scale: [2, 1, 1] },
+      components: [{
+        ...createMeshComponent("model-mesh", "box"),
+        properties: { assetGuid: "model-guid", collisionMode: "simple" },
+        transform: { ...identitySerializedTransform(), rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] },
+      }],
+    });
+    const result = setup([box("selected", [0, 10, 0]), surface], {
+      modelPayloads: new Map([["model-guid", {
+        materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1,
+        simpleColliders: [{ id: "offset-sphere", name: "Offset Sphere", kind: "sphere", radius: 1,
+          position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }],
+      }]]),
+    }).drop(["selected"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.position[1]).toBeCloseTo(3.75);
+  });
+
   it("does not drop through a filled 2D polygon enclosing the bottom", () => {
     const polygon = createActor("polygon", "Polygon", {
       components: [
