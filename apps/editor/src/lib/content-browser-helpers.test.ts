@@ -1351,6 +1351,8 @@ describe("content-browser-helpers", () => {
       "AudioMixer",
       "AudioChannel",
       "SoundAttenuation",
+      "InputAction",
+      "InputAxis",
       "ParticleEmitter",
       "ParticleSystem",
       "SkyboxCreator",
@@ -1380,6 +1382,7 @@ describe("content-browser-helpers", () => {
     expect([...grouped].sort()).toEqual([...CREATABLE_ASSET_TYPES].sort());
     expect(CREATABLE_ASSET_TYPE_GROUPS.map((group) => group.label)).toEqual([
       "World",
+      "Input",
       "Scripting",
       "2D",
       "Animation",
