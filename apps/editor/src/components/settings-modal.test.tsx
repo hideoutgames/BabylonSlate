@@ -522,7 +522,7 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("labels the Session category Done instead of Close", () => {
+  it("keeps Close Project available in the Session category", () => {
     render(
       <SettingsModal
         open
@@ -533,7 +533,7 @@ describe("SettingsModal project authoring", () => {
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-project"));
     expect(screen.getByTestId("settings-modal-category-project").textContent).toBe(
-      "Done",
+      "Session",
     );
     expect(screen.getByTestId("close-project").textContent).toMatch(/Close Project/);
   });

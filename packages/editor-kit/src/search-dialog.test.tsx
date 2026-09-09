@@ -23,6 +23,8 @@ function stubScrollViewportHeight(height: number): () => void {
   return () => {
     if (descriptor) {
       Object.defineProperty(HTMLElement.prototype, "clientHeight", descriptor);
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
     }
   };
 }
