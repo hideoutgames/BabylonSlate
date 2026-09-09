@@ -248,7 +248,7 @@ describe("spawnPlacedActor", () => {
     expect(item.category).toBe("Environment");
     expect(visualForPlaceActor(item).iconKey).toBe("SkyboxComponent");
     const actor = spawnPlacedActor(createDefaultScene(), item, "actor-sky", ORIGIN);
-    expect(actor.name).toBe("Skybox");
+    expect(actor.name).toBe("Skybox 2");
     expect(actor.locked).toBe(true);
     expect(actor.components[0]?.classId).toBe("SkyboxComponent");
     expect(actor.components[0]?.properties.size).toBe(1000);

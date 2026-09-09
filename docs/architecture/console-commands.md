@@ -49,12 +49,16 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `showaudiodebug` | yes | **yes** | DOM voice overlay from `AudioService` `debugVoices` (`setShowAudioDebug`). Flag default is **on**. |
 | `dumpactors` | yes | **yes** | One line per actor from `inspectWorld()` (name, class, guid, position). |
 | `inspect` | yes | **yes** | Prints inspect-snapshot variables. No arg uses overlay Inspector selection when known, else usage. |
+| `possess <name\|guid>` | yes | **yes** | Switches to a live actor's CameraComponent and exits free cam, including while paused. Ambiguous names or actors without cameras are rejected. |
+| `destroyactor <name\|guid>` | yes | **yes** | Destroys a live actor through its runtime lifecycle, including while paused. Ambiguous names are rejected; authored scene data is unchanged. |
 | `dumplog` | yes | **yes** | Returns the log-ring messages. |
 | `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. |
 
 ### Overlay vs console (session control)
 
 Play chrome **Pause** / **Resume** and **Step** share `RuntimeDriver.pause` / `resume` and the overlay step helper. Console pause/resume emit `sessionPaused` so the chrome label matches. Overlay Pause still toggles via `session.setPaused`.
+
+The Play **Inspector** exposes **Use Camera** for selected camera actors and **Destroy Actor** for selected actors. Both send the debug commands above using the selected live GUID, so duplicate display names cannot target the wrong actor. The result is shown in the dialog; live snapshots remove destroyed actors. These actions affect only the current Play session.
 
 ### Autocomplete
 

@@ -192,12 +192,12 @@ export function DebugInspectDialog({
                 {onExecute && selected.kind === "actor" ? (
                   <div className="flex flex-wrap gap-2">
                     {selectedHasCamera ? (
-                      <Button size="sm" variant="outline" disabled={actionPending}
+                      <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={actionPending}
                         onClick={() => void executeAction("possess")}>
                         Use Camera
                       </Button>
                     ) : null}
-                    <Button size="sm" variant="outline" disabled={actionPending}
+                    <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={actionPending}
                       onClick={() => void executeAction("destroyactor")}>
                       Destroy Actor
                     </Button>
