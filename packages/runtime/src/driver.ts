@@ -17,6 +17,7 @@ import {
   attachSerializedComponents,
   createWorldSnapshot,
   createDebugInspectSnapshot,
+  sanitizeInspectValue,
   stringifyWorldSnapshot,
   Actor,
   ActorComponent,
@@ -2601,11 +2602,12 @@ class InProcessRuntime implements RuntimeDriver {
       this.btEvalBySlot.set(slotId, next);
       this.currentBtNodeId = null;
       this.currentBtAssetGuid = null;
+      const debugBlackboard = this.debugBlackboard(next.blackboard);
       const payload = JSON.stringify({
         status: next.status,
         btNodeId: next.btNodeId,
         lastResults: next.lastResults,
-        blackboard: next.blackboard,
+        blackboard: debugBlackboard,
         stack: next.stack,
       });
       if (this.lastBtStateJson.get(slotId) === payload) continue;
@@ -2616,7 +2618,7 @@ class InProcessRuntime implements RuntimeDriver {
         status: next.status,
         btNodeId: next.btNodeId,
         lastResults: next.lastResults,
-        blackboard: next.blackboard,
+        blackboard: debugBlackboard,
         stack: next.stack,
       });
     }
@@ -2629,6 +2631,10 @@ class InProcessRuntime implements RuntimeDriver {
   private debugActorName(actor: Actor): string {
     const name = actor.getVariable("name");
     return typeof name === "string" && name.trim() ? name : actor.classId;
+  }
+
+  private debugBlackboard(values: BlackboardValues): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, sanitizeInspectValue(value)]));
   }
 
   private emitNavigationDebug(force = false): void {
@@ -2681,7 +2687,7 @@ class InProcessRuntime implements RuntimeDriver {
         status: state?.status ?? "idle",
         btNodeId: state?.btNodeId ?? null,
         lastResults: { ...state?.lastResults },
-        blackboard: { ...(state?.blackboard ?? this.blackboardDefaults(this.stringGuid(component.getVariable("blackboardGuid")))) },
+        blackboard: this.debugBlackboard(state?.blackboard ?? this.blackboardDefaults(this.stringGuid(component.getVariable("blackboardGuid")))),
         stack: state?.stack.map((frame) => ({ ...frame })) ?? [],
         nodes: document.nodes.map((node) => ({
           id: node.id, kind: node.kind, classId: node.classId,

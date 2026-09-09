@@ -61,7 +61,7 @@ function toRecastConfig(settings: NavMeshSettings) {
   };
 }
 
-function walkableTileCacheMeshProcess(): TileCacheMeshProcess {
+export function walkableTileCacheMeshProcess(): TileCacheMeshProcess {
   return new TileCacheMeshProcess((params, polyAreas, polyFlags) => {
     const count = params.polyCount();
     for (let i = 0; i < count; i += 1) {
@@ -84,7 +84,7 @@ function recastGenerateErrorMessage(error: string | undefined): Error {
   );
 }
 
-function unwrapTileCacheBytes(bytes: Uint8Array): Uint8Array | null {
+export function unwrapTileCacheBytes(bytes: Uint8Array): Uint8Array | null {
   if (bytes.byteLength < TILE_CACHE_MAGIC.length) return null;
   for (let i = 0; i < TILE_CACHE_MAGIC.length; i += 1) {
     if (bytes[i] !== TILE_CACHE_MAGIC[i]) return null;

@@ -91,6 +91,8 @@ Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 
 `behaviourtreedebug on/off` opens or closes the Play / Preview Build inspector. Its actor selector uses `Actor Name (Tree Name)` and shows the current node, execution stack, node results, decorators, services and blackboard values. Opening captures the current state immediately, including paused sessions and trees that have not ticked yet. While enabled, `behaviourTreeSnapshot` replaces the full live tree list at up to 5 Hz, removing despawned actors and old scenes. Disabling or stopping clears the list. Existing `btState` messages continue to drive the authoring graph independently. The console command belongs to the debug tier and is unavailable in exports without the debugger.
 
+Both inspector snapshots and authoring `btState` messages sanitize blackboard values using the existing inspect formatter. Actor/object references become GUID/class identities; cyclic values, functions and BigInts become readable text. This keeps console/worker transport safe without replacing the values used by the running tree.
+
 ## Honest residuals
 
 - Without a `BtTaskHost`, hosted tasks still stub-succeed (package-only tests).

@@ -12,7 +12,7 @@ import {
   initNavigation,
   navMeshDebugPrimitives,
 } from "@babylonslate/navigation";
-import type { SerializedActor } from "@babylonslate/core";
+import type { PhysicsWorldKind, SerializedActor } from "@babylonslate/core";
 import {
   createNavDebugBlockerMesh,
   type EditorVolumeKind,
@@ -66,13 +66,14 @@ export function navmeshOverlayEnabled(scene: {
 }
 
 /**
- * Editor-only navmesh overlay. Recast has no published `@recast-navigation/babylon`
+ * Editor and Play navmesh overlay. Recast has no published `@recast-navigation/babylon`
  * helper; primitives come from Recast `DebugDrawerUtils` and land as a Babylon mesh.
  */
 export class NavMeshDebugOverlay {
   mesh: Mesh | null = null;
   blockerMeshes: Mesh[] = [];
   private readonly scene: Scene;
+  private generation = 0;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -81,10 +82,13 @@ export class NavMeshDebugOverlay {
   async sync(
     bytes: Uint8Array | null,
     blockers: readonly NavDebugBlockerPose[] = [],
+    world: PhysicsWorldKind = "3d",
   ): Promise<void> {
     this.clear();
+    const generation = this.generation;
     if (bytes && bytes.byteLength > 0) {
       await initNavigation();
+      if (generation !== this.generation) return;
       const primitives = navMeshDebugPrimitives(bytes);
       const positions: number[] = [];
       const indices: number[] = [];
@@ -92,7 +96,11 @@ export class NavMeshDebugOverlay {
         if (primitive.type !== "tris") continue;
         const start = positions.length / 3;
         for (const vertex of primitive.vertices) {
-          positions.push(vertex[0], vertex[1] + NAVMESH_DEBUG_Y_OFFSET, vertex[2]);
+          if (world === "2d") {
+            positions.push(vertex[0], vertex[2], -NAVMESH_DEBUG_Y_OFFSET);
+          } else {
+            positions.push(vertex[0], vertex[1] + NAVMESH_DEBUG_Y_OFFSET, vertex[2]);
+          }
         }
         for (let i = 0; i < primitive.vertices.length; i += 1) {
           indices.push(start + i);
@@ -102,8 +110,9 @@ export class NavMeshDebugOverlay {
       mesh.isPickable = false;
       mesh.receiveShadows = false;
       const data = new VertexData();
-      data.positions =
-        positions.length > 0 ? positions : [0, NAVMESH_DEBUG_Y_OFFSET, 0, 1, NAVMESH_DEBUG_Y_OFFSET, 0, 0, NAVMESH_DEBUG_Y_OFFSET, 1];
+      data.positions = positions.length > 0 ? positions : world === "2d"
+        ? [0, 0, -NAVMESH_DEBUG_Y_OFFSET, 1, 0, -NAVMESH_DEBUG_Y_OFFSET, 0, 1, -NAVMESH_DEBUG_Y_OFFSET]
+        : [0, NAVMESH_DEBUG_Y_OFFSET, 0, 1, NAVMESH_DEBUG_Y_OFFSET, 0, 0, NAVMESH_DEBUG_Y_OFFSET, 1];
       data.indices = indices.length > 0 ? indices : [0, 1, 2];
       data.applyToMesh(mesh);
       const material = new StandardMaterial("navmeshDebugMat", this.scene);
@@ -142,7 +151,8 @@ export class NavMeshDebugOverlay {
   }
 
   clear(): void {
-    this.mesh?.dispose();
+    this.generation += 1;
+    this.mesh?.dispose(false, true);
     this.mesh = null;
     for (const mesh of this.blockerMeshes) mesh.dispose();
     this.blockerMeshes = [];

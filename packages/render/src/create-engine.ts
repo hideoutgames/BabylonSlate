@@ -8,6 +8,7 @@ import {
 } from "@babylonjs/core";
 import type {
   AudioProjectSettings,
+  PhysicsWorldKind,
   SerializedScene,
   ViewportMode,
 } from "@babylonslate/core";
@@ -300,6 +301,8 @@ export interface CreateEngineOptions {
   /** Attach the editor camera, gizmos, grid, selection and scene sync. */
   editor?: boolean;
   viewportMode?: ViewportMode;
+  /** Navigation debug geometry follows the physics world, independently of the camera view. */
+  physicsWorld?: PhysicsWorldKind;
   /** Actor id under an explicit tap, or null when the tap missed. */
   onPickActor?: (
     actorId: string | null,
@@ -794,6 +797,7 @@ export function createEngine(
     ? createPlayConsoleViz(scene, {
         navmeshBytes: options.navmeshBytes,
         navBlockers: options.navBlockers,
+        world: options.physicsWorld ?? options.viewportMode,
       })
     : null;
   const playDebugDraw: PlayDebugDrawController | null = options.playMode

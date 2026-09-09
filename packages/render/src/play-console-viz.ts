@@ -12,6 +12,7 @@ import {
 } from "@babylonjs/core";
 import type { CommandMessage, DebugColliderPrimitive } from "@babylonslate/bridge";
 import { convexHullEdges } from "@babylonslate/assets";
+import type { PhysicsWorldKind } from "@babylonslate/core";
 import { NavMeshDebugOverlay, type NavDebugBlockerPose } from "./nav-debug-overlay";
 import { isPlayConsoleVizSkipMesh } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
@@ -307,6 +308,7 @@ export function createPlayConsoleViz(
   options: {
     navmeshBytes?: Uint8Array | null;
     navBlockers?: readonly NavDebugBlockerPose[] | null;
+    world?: PhysicsWorldKind;
   } = {},
 ): PlayConsoleVizController {
   let wireframe = false;
@@ -343,7 +345,7 @@ export function createPlayConsoleViz(
       }
       if (command.type === "setShowNav") {
         if (command.enabled) {
-          void nav.sync(options.navmeshBytes ?? null, options.navBlockers ?? []);
+          void nav.sync(options.navmeshBytes ?? null, options.navBlockers ?? [], options.world);
         } else {
           nav.clear();
         }

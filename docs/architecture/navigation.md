@@ -66,6 +66,8 @@ Play and Preview Build console commands `shownav` / `shownavdebug` toggle the ba
 
 `NavigationBackend.agentDebugState(id)` returns detached live crowd position, velocity, radius, height, target, corridor path and request state, or `null` for a missing agent. Paths come from Recast's active crowd corners, so debug drawing does not issue a second path query. Stop Movement clears the path; an arrived agent has no active path. These debug commands are stripped from exports without a bundled debugger.
 
+The baked-mesh debug importer accepts both solo navmeshes and `BSNT` tile-cache chunks used by dynamic obstacles. Each overlay extraction releases its temporary navmesh, tile cache, allocator, compressor and mesh-process handles.
+
 ## Honest residuals
 
 - Auto-bake-on-save default **off**. Closing the Scene tab unregisters the bake collector (no painted meshes until a Scene remounts). Closing the Viewport panel on a mounted scene also unregisters collect.
