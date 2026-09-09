@@ -113,4 +113,34 @@ describe("runtime input bindings", () => {
       "touch",
     );
   });
+
+  it("keeps gamepad state and cursor samples while listening for a keyboard binding", () => {
+    const resolver = new InputResolver(createDefaultInputMappings());
+    resolver.resolve([
+      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0.8], buttons: [1] },
+      {
+        kind: "pointer",
+        tick: 0,
+        pointerId: 1,
+        phase: "down",
+        x: 40,
+        y: 20,
+        button: 0,
+      },
+    ]);
+    resolver.bindings.beginRebind("action", "Jump", 0);
+    const listening = resolver.resolve([
+      { kind: "gamepad", tick: 1, gamepadIndex: 0, axes: [0.8], buttons: [1] },
+      key("KeyJ"),
+    ]);
+    expect(listening.gamepadConnections).toEqual([]);
+    expect(listening.cursor).toEqual({ x: 40, y: 20, pressed: true });
+    expect(listening.actions.Jump?.held).toBe(true);
+    expect(listening.axes2D.Move!.x).toBeGreaterThan(0.5);
+    resolver.reset();
+    expect(resolver.bindings.getRebindStatus()).toBe("idle");
+    resolver.bindings.beginRebind("action", "Jump", 0);
+    resolver.resolve([key("KeyJ")]);
+    expect(resolver.bindings.getRebindStatus()).toBe("completed");
+  });
 });

@@ -194,8 +194,15 @@ export class InputResolver {
   readonly bindings: InputBindingProfile;
 
   constructor(mappings: InputMappings) {
-    this.mappings = mappings;
-    this.bindings = new InputBindingProfile(mappings, (current) => { this.mappings = current; }, () => this.reset());
+    this.mappings = structuredClone(mappings);
+    this.bindings = new InputBindingProfile(
+      mappings,
+      (current) => { this.mappings = current; },
+      () => {
+        this.state.heldKeys.clear();
+        this.state.modifiers = { shift: false, ctrl: false, alt: false, meta: false };
+      },
+    );
   }
 
   setMappings(mappings: InputMappings): void {
@@ -376,6 +383,7 @@ export class InputResolver {
   }
 
   reset(): void {
+    this.bindings.clearInputState();
     this.state.heldKeys.clear();
     this.state.heldMouseButtons.clear();
     this.state.heldPointerButtons.clear();

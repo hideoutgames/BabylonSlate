@@ -229,6 +229,13 @@ export class InputBindingProfile implements InputBindingControls {
     this.status = "cancelled";
   }
 
+  clearInputState(): void {
+    this.heldKeys.clear();
+    this.blockedKeys.clear();
+    this.target = null;
+    this.status = "idle";
+  }
+
   resetBindings(kind = "", mapping = ""): boolean {
     const rows =
       kind === "action"
