@@ -616,12 +616,15 @@ describe("createPlayMesh", () => {
     }
   });
 
-  it("seeks pack-GLB idle on paused groups with live animatables", async () => {
+  it("seeks pack-GLB Idle and Walk state jumps on paused groups with live animatables", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["mannequin", kenneyMannequinGlb()]]);
+    binding.modelClipAnimationGuids = new Map([
+      ["mannequin", new Map([["idle", "mannequin-idle"], ["walk", "mannequin-walk"]])],
+    ]);
     createPlayMesh(scene, 2, "box", "mannequin", binding);
     await binding.slotAnimLoads?.get(2);
     const native = scene.animationGroups.find((group) => group.name === "idle");
@@ -648,12 +651,33 @@ describe("createPlayMesh", () => {
       blendWeights: { idle: 1 },
       clipName: "idle",
       clipKind: "animation" as const,
-      clipAssetGuid: "mannequin",
+      clipAssetGuid: "mannequin-idle",
     };
     applyAnimStateToScene(host, command);
     const atStart = poseAt();
     applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
     expect(poseAt()).not.toEqual(atStart);
+    applyAnimStateToScene(host, {
+      ...command,
+      stateId: "walk",
+      clipName: "walk",
+      clipAssetGuid: "mannequin-walk",
+      blendWeights: { walk: 1 },
+      normalisedTime: 0.25,
+    });
+    const walking = poseAt();
+    expect(walking).not.toEqual(atStart);
+    applyAnimStateToScene(host, {
+      ...command,
+      stateId: "walk",
+      clipName: "walk",
+      clipAssetGuid: "mannequin-walk",
+      blendWeights: { walk: 1 },
+      normalisedTime: 0.75,
+    });
+    expect(poseAt()).not.toEqual(walking);
+    applyAnimStateToScene(host, command);
+    expect(poseAt()).toEqual(atStart);
     expect(native!.isPlaying).toBe(false);
   });
 

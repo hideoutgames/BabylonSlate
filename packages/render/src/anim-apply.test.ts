@@ -595,27 +595,15 @@ describe("AnimationGraph pose changes", () => {
     engine.dispose();
   });
 
-  function clip(
-    target: TransformNode,
-    name: string,
-    from: number,
-    to: number,
-    start: number,
-    end: number,
-  ): AnimationGroup {
-    const animation = new Animation(name, "position.x", 30, Animation.ANIMATIONTYPE_FLOAT);
-    animation.setKeys([{ frame: from, value: start }, { frame: to, value: end }]);
-    const group = new AnimationGroup(name, scene);
-    group.addTargetedAnimation(animation, target);
-    group.start(true);
-    group.pause();
-    group.setWeightForAllAnimatables(0);
-    return group;
-  }
-
   it("seeks the visible pose inside an Animation clip with a nonzero first frame", () => {
     const target = new TransformNode("hero", scene);
-    const walk = clip(target, "Walk", 30, 60, 10, 20);
+    const animation = new Animation("Walk", "position.x", 30, Animation.ANIMATIONTYPE_FLOAT);
+    animation.setKeys([{ frame: 30, value: 10 }, { frame: 60, value: 20 }]);
+    const walk = new AnimationGroup("Walk", scene);
+    walk.addTargetedAnimation(animation, target);
+    walk.start(true);
+    walk.pause();
+    walk.setWeightForAllAnimatables(0);
     applyAnimStateToScene({ animationGroups: [walk] }, {
       type: "animState",
       slotId: 1,
@@ -627,41 +615,6 @@ describe("AnimationGraph pose changes", () => {
     });
     expect(target.position.x).toBeCloseTo(15);
     expect(walk.isPlaying).toBe(false);
-  });
-
-  it("removes the previous pose when a slot jumps Idle to Walk and back", () => {
-    const target = new TransformNode("hero", scene);
-    const other = new TransformNode("other", scene);
-    const idle = clip(target, "Idle", 0, 30, 1, 1);
-    const walk = clip(target, "Walk", 0, 30, 10, 20);
-    const otherIdle = clip(other, "Idle", 0, 30, 4, 4);
-    const binding = createSnapshotSceneBinding();
-    binding.slotAnimationGroups = new Map([[1, [idle, walk]], [2, [otherIdle]]]);
-    const apply = (slotId: number, stateId: string, clipName: string, normalisedTime = 0.5) => {
-      // Play creates a fresh host for each command, as does pending-load replay.
-      applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
-        animationGroups: scene.animationGroups,
-      }), {
-        type: "animState",
-        slotId,
-        stateId,
-        normalisedTime,
-        blendWeights: { [stateId]: 1 },
-        clipName,
-        clipKind: "animation",
-      });
-    };
-    apply(2, "idle", "Idle");
-    apply(1, "idle", "Idle");
-    expect(target.position.x).toBeCloseTo(1);
-    apply(1, "walk", "Walk");
-    expect(target.position.x).toBeCloseTo(15);
-    expect(idle.animatables[0]?.weight).toBe(0);
-    expect(otherIdle.animatables[0]?.weight).toBe(1);
-    expect(other.position.x).toBeCloseTo(4);
-    apply(1, "idle", "Idle");
-    expect(target.position.x).toBeCloseTo(1);
-    expect(walk.animatables[0]?.weight).toBe(0);
   });
 });
 

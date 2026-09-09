@@ -147,6 +147,8 @@ Helpers live in `@babylonslate/render` (`node-rig.ts`) because `@babylonslate/as
 
 Skeleton assets show bones only. Animation **Show Bones** hides the model and displays the same cyan bone connectors and white joints while the clip keeps looping; switching it off restores the original mesh visibility. `attachSkeletonPreview` keeps source nodes enabled for animation, updates debug geometry in world space each render, and releases its geometry/materials and restores visibility on disposal. Rigs with no bones keep their original model visibility.
 
+Gameplay AnimationGraph state changes seek each paused clip within its authored `from`–`to` frame range. A clip whose first key is after frame zero advances normally; normalized time zero selects that first key. Jump To State uses the wired AnimationGraphComponent and resolves the selected state's Animation asset and clip name before rendering (see [Animation Graph runtime](anim-graph.md#runtime)).
+
 See [asset-registry.md](asset-registry.md) and [anim-graph.md](anim-graph.md).
 
 ## AudioService (P16)

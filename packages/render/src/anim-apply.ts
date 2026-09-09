@@ -13,6 +13,7 @@ import type { SnapshotSceneBinding } from "./snapshot-apply";
  * lets Babylon auto-advance a gameplay-relevant clip (engineplan §2.3).
  */
 export interface SeekableAnimationGroup {
+  from?: number;
   pause(): void;
   goToFrame(frame: number): void;
   setWeightForAllAnimatables?(weight: number): void;
@@ -29,7 +30,7 @@ export function seekGameplayAnimation(
   const t = Number.isFinite(normalisedTime)
     ? Math.min(1, Math.max(0, normalisedTime))
     : 0;
-  group.goToFrame(t * span);
+  group.goToFrame((group.from ?? 0) + t * span);
   group.setWeightForAllAnimatables?.(weight);
 }
 
