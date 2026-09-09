@@ -439,6 +439,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly lastBtStateJson = new Map<number, string>();
   private showPathfinding = false;
   private showNavAgent = false;
+  private lastNavigationDebugMs = -Infinity;
   private behaviourTreeDebug = false;
   private lastBehaviourTreeDebugMs = -Infinity;
 
@@ -1595,7 +1596,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.cameraPossessedByScript = false;
     this.possessedCameraSlotId = null;
     this.realizePlayWorld();
-    this.emitNavigationDebug();
+    this.emitNavigationDebug(true);
     this.emitBehaviourTreeSnapshot(true);
   }
 
@@ -1790,7 +1791,9 @@ class InProcessRuntime implements RuntimeDriver {
     }
     const agentId = this.navAgentByActor.get(actorGuid);
     if (!agentId) return false;
-    return this.nav.setAgentTarget(agentId, this.toNav(target));
+    const accepted = this.nav.setAgentTarget(agentId, this.toNav(target));
+    this.emitNavigationDebug(true);
+    return accepted;
   }
 
   findNavPath(from: NavPoint, to: NavPoint): NavPoint[] {
@@ -1817,6 +1820,7 @@ class InProcessRuntime implements RuntimeDriver {
     const agentId = this.navAgentByActor.get(actorGuid);
     if (!agentId || !this.nav) return;
     this.nav.stopAgent(agentId);
+    this.emitNavigationDebug(true);
   }
 
   private toNav(point: NavPoint): NavPoint {
@@ -1988,6 +1992,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (!this.nav) return;
     this.syncNavCostVolumes();
     this.nav.stepCrowd(this.simulationDt());
+    let removed = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);
       if (!actor || actor.destroyed || !actor.components.some((component) =>
@@ -1995,6 +2000,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.nav.removeAgent(agentId);
         this.navAgentByActor.delete(actorGuid);
         this.navYawByActor.delete(actorGuid);
+        removed = true;
         continue;
       }
       const position = this.nav.agentPosition(agentId);
@@ -2017,6 +2023,7 @@ class InProcessRuntime implements RuntimeDriver {
       actor.transform.rotation.z = quat[2];
       actor.transform.rotation.w = quat[3];
     }
+    if (removed) this.emitNavigationDebug(true);
   }
 
   private animGraphGuid(component: {
@@ -2622,8 +2629,11 @@ class InProcessRuntime implements RuntimeDriver {
     return typeof name === "string" && name.trim() ? name : actor.classId;
   }
 
-  private emitNavigationDebug(): void {
+  private emitNavigationDebug(force = false): void {
     if (!this.showPathfinding && !this.showNavAgent) return;
+    const now = nowMs();
+    if (!force && now - this.lastNavigationDebugMs < 200) return;
+    this.lastNavigationDebugMs = now;
     const agents: DebugNavAgent[] = [];
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);
@@ -2761,7 +2771,7 @@ class InProcessRuntime implements RuntimeDriver {
       setShowPathfinding: (enabled) => {
         this.showPathfinding = enabled;
         this.emit({ type: "setShowPathfinding", enabled });
-        this.emitNavigationDebug();
+        this.emitNavigationDebug(true);
         if (!this.showPathfinding && !this.showNavAgent) {
           this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
         }
@@ -2769,7 +2779,7 @@ class InProcessRuntime implements RuntimeDriver {
       setShowNavAgent: (enabled) => {
         this.showNavAgent = enabled;
         this.emit({ type: "setShowNavAgent", enabled });
-        this.emitNavigationDebug();
+        this.emitNavigationDebug(true);
         if (!this.showPathfinding && !this.showNavAgent) {
           this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
         }

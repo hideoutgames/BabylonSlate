@@ -90,6 +90,14 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
 }
 
 describe("createCommandRegistry", () => {
+  it("allows each stat overlay to be disabled again", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    for (const name of ["unit", "memory", "draws", "threads"]) {
+      expect(registry.execute(`stat ${name} off`, host)).toEqual({ success: true, output: `stat ${name} off` });
+    }
+    expect(host.calls).toEqual(["stat:unit:false", "stat:memory:false", "stat:draws:false", "stat:threads:false"]);
+  });
   it("runs the physics/navigation/AI flags and strips them from release registries", () => {
     const host = recordingHost();
     host.setShowPathfinding = (enabled) => host.calls.push(`path:${enabled}`);

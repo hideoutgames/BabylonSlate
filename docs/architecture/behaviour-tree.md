@@ -89,6 +89,8 @@ Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 
 ## Honest residuals
 
+`behaviourtreedebug on/off` opens or closes the Play / Preview Build inspector. Its actor selector uses `Actor Name (Tree Name)` and shows the current node, execution stack, node results, decorators, services and blackboard values. Opening captures the current state immediately, including paused sessions and trees that have not ticked yet. While enabled, `behaviourTreeSnapshot` replaces the full live tree list at up to 5 Hz, removing despawned actors and old scenes. Disabling or stopping clears the list. Existing `btState` messages continue to drive the authoring graph independently. The console command belongs to the debug tier and is unavailable in exports without the debugger.
+
 - Without a `BtTaskHost`, hosted tasks still stub-succeed (package-only tests).
 - **PlaySound** stays on AudioService (`voiceId` on retrigger and abort). Mixer/channel setup is optional.
 - Viewport glTF listen/watch is not a Playwright gate; P11 §18 and P19 hosts are headless.
