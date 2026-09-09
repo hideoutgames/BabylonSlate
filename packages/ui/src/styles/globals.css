@@ -42,6 +42,7 @@
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
+    --color-list-stripe: var(--list-stripe);
     --color-destructive: var(--destructive);
     --color-destructive-foreground: var(--destructive-foreground);
     --color-success: var(--success);
@@ -140,6 +141,7 @@
     --destructive-foreground: oklch(1 0 0);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
+    --list-stripe: oklch(0.97 0 0);
     --ring: oklch(0.708 0 0);
     --chart-1: oklch(0.81 0.10 252);
     --chart-2: oklch(0.62 0.19 260);
@@ -245,8 +247,9 @@
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --destructive-foreground: oklch(0.985 0 0);
-    --border: oklch(0.275 0 0);
-    --input: oklch(0.325 0 0);
+    --border: oklch(0.43 0 0);
+    --input: oklch(0.50 0 0);
+    --list-stripe: oklch(0.235 0 0);
     --ring: oklch(0.556 0 0);
     --chart-1: oklch(0.81 0.10 252);
     --chart-2: oklch(0.62 0.19 260);
@@ -259,7 +262,7 @@
     --sidebar-primary-foreground: oklch(0.145 0 0);
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.275 0 0);
+    --sidebar-border: oklch(0.43 0 0);
     --sidebar-ring: oklch(0.439 0 0);
     --shadow-color: oklch(0 0 0);
     --shadow-opacity: 0.1;
@@ -439,6 +442,8 @@
   grid-template-columns: minmax(0, 1fr) minmax(8rem, 40%);
   align-items: center;
   gap: 0.375rem 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
 }
 
 .settings-dialog .settings-field > [data-slot="field-description"] {
@@ -488,6 +493,8 @@
   .editor-dialog
     :is(
       [data-slot="button"],
+      [data-slot="alert-dialog-action"],
+      [data-slot="alert-dialog-cancel"],
       [data-slot="input"],
       [data-slot="select-trigger"]
     ) {

@@ -33,7 +33,7 @@ export interface NodePaletteProps {
 
 type PaletteRow =
   | { kind: "header"; key: string; category: string }
-  | { kind: "item"; key: string; node: PaletteNode };
+  | { kind: "item"; key: string; node: PaletteNode; striped: boolean };
 
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   const needle = query.trim().toLowerCase();
@@ -48,12 +48,19 @@ function flattenPaletteRows(
   omitHeaders: boolean,
 ): PaletteRow[] {
   const rows: PaletteRow[] = [];
+  let itemIndex = 0;
   for (const [category, nodes] of grouped) {
     if (!omitHeaders) {
       rows.push({ kind: "header", key: `header:${category}`, category });
     }
     for (const node of nodes) {
-      rows.push({ kind: "item", key: node.id, node });
+      rows.push({
+        kind: "item",
+        key: node.id,
+        node,
+        striped: itemIndex % 2 === 1,
+      });
+      itemIndex += 1;
     }
   }
   return rows;
@@ -73,9 +80,7 @@ function PaletteWindowedList({
   const listRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    const body = listRef.current?.closest(
-      '[data-testid="node-palette-body"]',
-    );
+    const body = listRef.current?.closest('[data-testid="node-palette-body"]');
     if (!(body instanceof HTMLElement)) return;
     const read = () => {
       setViewportHeight(body.clientHeight);
@@ -133,6 +138,7 @@ function PaletteWindowedList({
             className={cn(
               buttonVariants({ variant: "ghost", size: "touch" }),
               "absolute right-0 left-0 h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 overflow-hidden touch-pan-y",
+              row.striped && "bg-list-stripe",
             )}
             style={{ top, height: NODE_PALETTE_ROW_HEIGHT }}
             data-testid={`node-palette-item-${node.id}`}
@@ -282,9 +288,7 @@ export function NodePalette({
           <Switch
             id="node-palette-context-sensitive"
             checked={contextSensitive}
-            onCheckedChange={(checked) =>
-              setContextSensitive(checked === true)
-            }
+            onCheckedChange={(checked) => setContextSensitive(checked === true)}
             data-testid="node-palette-context-sensitive"
           />
           <FieldLabel htmlFor="node-palette-context-sensitive">

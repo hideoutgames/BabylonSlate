@@ -272,7 +272,9 @@ describe("Minimal Neutral theme tokens", () => {
     for (const name of ["--border", "--input", "--sidebar-border"]) {
       // Achromatic OKLCH lightness cubed is relative luminance.
       const boundary = oklchLightness(tokenValue(dark, name)) ** 3;
-      expect((boundary + 0.05) / (surface + 0.05), name).toBeGreaterThanOrEqual(1.5);
+      expect((boundary + 0.05) / (surface + 0.05), name).toBeGreaterThanOrEqual(
+        1.5,
+      );
     }
   });
 });
@@ -359,4 +361,3 @@ describe("document tab strip", () => {
     );
   });
 });
-

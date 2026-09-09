@@ -250,8 +250,9 @@ export function SearchDialog({
                       className={cn(
                         buttonVariants({ variant: "ghost", size: "touch" }),
                         "h-full w-full min-h-0 justify-between gap-2 overflow-hidden text-left touch-pan-y",
-                        index === activeIndex &&
-                          "bg-secondary border-l-2 border-l-primary",
+                        index === activeIndex
+                          ? "bg-accent text-accent-foreground"
+                          : index % 2 === 1 && "bg-list-stripe",
                       )}
                       onClick={() => commit(item.id)}
                       onKeyDown={(event) => {

@@ -7,7 +7,10 @@ afterEach(() => {
   cleanup();
 });
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -100,17 +103,19 @@ describe("NodePalette", () => {
       paletteNodes: [log, begin],
       onAddNode: vi.fn(),
     };
-    const { getByTestId, rerender } = render(
-      <NodePalette open {...props} />,
-    );
+    const { getByTestId, rerender } = render(<NodePalette open {...props} />);
 
     fireEvent.click(getByTestId("node-palette-category-Debug"));
-    expect(getByTestId("node-palette-category-Debug").getAttribute("aria-current")).toBe("true");
+    expect(
+      getByTestId("node-palette-category-Debug").getAttribute("aria-current"),
+    ).toBe("true");
 
     rerender(<NodePalette open={false} {...props} />);
     rerender(<NodePalette open {...props} />);
 
-    expect(getByTestId("node-palette-category-all").getAttribute("aria-current")).toBe("true");
+    expect(
+      getByTestId("node-palette-category-all").getAttribute("aria-current"),
+    ).toBe("true");
   });
 
   it("lists only compatible opposite pins when Context Sensitive is on", () => {
@@ -125,7 +130,9 @@ describe("NodePalette", () => {
     );
 
     expect(
-      getByTestId("node-palette-context-sensitive").getAttribute("aria-checked"),
+      getByTestId("node-palette-context-sensitive").getAttribute(
+        "aria-checked",
+      ),
     ).toBe("true");
     expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
     expect(queryByTestId("node-palette-item-flow.event.beginPlay")).toBeNull();
@@ -145,7 +152,9 @@ describe("NodePalette", () => {
     fireEvent.click(getByTestId("node-palette-context-sensitive"));
 
     expect(
-      getByTestId("node-palette-context-sensitive").getAttribute("aria-checked"),
+      getByTestId("node-palette-context-sensitive").getAttribute(
+        "aria-checked",
+      ),
     ).toBe("false");
     expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
@@ -162,15 +171,21 @@ describe("NodePalette", () => {
     );
 
     expect(getByTestId("node-palette-category-all").textContent).toContain("2");
-    expect(getByTestId("node-palette-category-Debug").textContent).toContain("1");
-    expect(getByTestId("node-palette-category-Flow").textContent).toContain("1");
+    expect(getByTestId("node-palette-category-Debug").textContent).toContain(
+      "1",
+    );
+    expect(getByTestId("node-palette-category-Flow").textContent).toContain(
+      "1",
+    );
 
     fireEvent.change(getByPlaceholderText("Search nodes"), {
       target: { value: "log" },
     });
 
     expect(getByTestId("node-palette-category-all").textContent).toContain("1");
-    expect(getByTestId("node-palette-category-Debug").textContent).toContain("1");
+    expect(getByTestId("node-palette-category-Debug").textContent).toContain(
+      "1",
+    );
     expect(queryByTestId("node-palette-category-Flow")).toBeNull();
   });
 
@@ -228,7 +243,9 @@ describe("NodePalette", () => {
       />,
     );
     expect(paletteItems()).toHaveLength(80);
-    expect(document.querySelector('[data-testid="node-palette-item-n79"]')).toBeTruthy();
+    expect(
+      document.querySelector('[data-testid="node-palette-item-n79"]'),
+    ).toBeTruthy();
   });
 
   it("mounts only viewport-near rows for a ~1000-node palette", () => {
@@ -258,14 +275,31 @@ describe("NodePalette", () => {
     const nodes = manyNodes(100);
     nodes[0] = { ...nodes[0]!, category: "A" };
     const { getByTestId } = render(
-      <NodePalette open onOpenChange={() => {}} paletteNodes={nodes} onAddNode={() => {}} />,
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={nodes}
+        onAddNode={() => {}}
+      />,
     );
-    expect(getByTestId("node-palette-item-n0").classList.contains("bg-list-stripe")).toBe(false);
-    expect(getByTestId("node-palette-item-n1").classList.contains("bg-list-stripe")).toBe(true);
-    expect(getByTestId("node-palette-item-n2").classList.contains("bg-list-stripe")).toBe(false);
-    fireEvent.scroll(getByTestId("node-palette-body"), { target: { scrollTop: 880 } });
-    expect(getByTestId("node-palette-item-n19").classList.contains("bg-list-stripe")).toBe(true);
-    expect(getByTestId("node-palette-item-n20").classList.contains("bg-list-stripe")).toBe(false);
+    expect(
+      getByTestId("node-palette-item-n0").classList.contains("bg-list-stripe"),
+    ).toBe(false);
+    expect(
+      getByTestId("node-palette-item-n1").classList.contains("bg-list-stripe"),
+    ).toBe(true);
+    expect(
+      getByTestId("node-palette-item-n2").classList.contains("bg-list-stripe"),
+    ).toBe(false);
+    fireEvent.scroll(getByTestId("node-palette-body"), {
+      target: { scrollTop: 880 },
+    });
+    expect(
+      getByTestId("node-palette-item-n19").classList.contains("bg-list-stripe"),
+    ).toBe(true);
+    expect(
+      getByTestId("node-palette-item-n20").classList.contains("bg-list-stripe"),
+    ).toBe(false);
   });
 
   it("search finds the last item without mounting the full palette", () => {
@@ -298,16 +332,16 @@ describe("NodePalette", () => {
       onAddNode: vi.fn(),
       filterPin: execOut,
     };
-    const { getByTestId, rerender } = render(
-      <NodePalette open {...props} />,
-    );
+    const { getByTestId, rerender } = render(<NodePalette open {...props} />);
 
     fireEvent.click(getByTestId("node-palette-context-sensitive"));
     rerender(<NodePalette open={false} {...props} />);
     rerender(<NodePalette open {...props} />);
 
     expect(
-      getByTestId("node-palette-context-sensitive").getAttribute("aria-checked"),
+      getByTestId("node-palette-context-sensitive").getAttribute(
+        "aria-checked",
+      ),
     ).toBe("false");
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });

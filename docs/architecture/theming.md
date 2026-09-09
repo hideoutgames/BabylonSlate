@@ -52,7 +52,7 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
 
-- **Primary is ink** (achromatic). Buttons, focus rings, and selection bars follow Neutral. Active tabs use `--chrome-tab-accent` → `var(--foreground)`.
+- **Primary is ink** (achromatic). Buttons and focus rings follow Neutral. Selected navigation/tree rows and active tabs use a whole-surface fill; do not add curved edge stripes or inset underline highlights.
 - **Layered surfaces** differentiate chrome, side panels, and canvases.
 - **Saturated pin/node and `--asset-*` colors are type cues** — not whole toolbars.
 - **Axis and status accents** stay chromatic: X/Y/Z, Play (`--success`), destructive actions.
@@ -70,12 +70,14 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 `--primary` is ink in both schemes: light `oklch(0.145 0 0)`, dark `oklch(0.985 0 0)`.
 
+Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` supplies a slightly darker alternate background in both themes for catalog and picker rows. Add Node assigns stripes by item order before virtualization, excluding category headers.
+
 ## Action and status tokens
 
 | Role | Token | Notes |
 | --- | --- | --- |
 | Default actions / ink chrome | `--primary` | Achromatic Neutral ink |
-| Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
+| Focus / docking indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; docking targets use foreground ink |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
 | Success / Play | `--success` | Positive status and the global Play control |
 
@@ -214,7 +216,9 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 | `Button variant="destructive"` | Solid filled `--destructive` confirm on a danger `AlertDialog` — asset, folder, and plugin delete. Not a 10% tint. |
 | `AlertDialogContent variant="destructive"` | Irreversible file-destroying confirms: red ring, red media well, red title, `sm:max-w-md` |
 | `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses **accent fill + primary border** + `aria-pressed` (not a near-invisible secondary wash) |
-| Catalog / folder / outliner selected | `variant="secondary"` (where applicable) plus a 2px start-edge **primary** bar (`border-l-2 border-l-primary`) |
+| Catalog / folder / outliner selected | Whole-row `secondary` / `accent` fill with accessible selected/current state; no start-edge bar |
+
+Dialog footer actions, including AlertDialog Save / Discard / Cancel, share the same 44px minimum on coarse pointers and preserve compact desktop sizing.
 
 **Touch sizes** on `Button` / `Toggle`: `touch` and `touch-icon` map to `min-h/min-w: var(--touch-target, 44px)`. Prefer these over repeating `min-h-11` at call sites. Docked panels omit `PanelFrame` titles when Dockview already shows the tab name; keep a toolbar-only row when actions are present. `PanelFrame` uses `--sidebar`; headers use `--card`.
 

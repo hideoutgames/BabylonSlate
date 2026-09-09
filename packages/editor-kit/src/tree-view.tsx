@@ -482,10 +482,10 @@ export function TreeView({
                 data-drop-before={dropBefore ? "true" : undefined}
                 data-drop-after={dropAfter ? "true" : undefined}
                 className={cn(
-                  "group/tree-row absolute right-1 left-1 flex items-center gap-1 rounded-sm border-l-2 pr-1 text-[13px] transition-colors motion-reduce:transition-none",
+                  "group/tree-row absolute right-1 left-1 flex items-center gap-1 rounded-sm pr-1 text-[13px] transition-colors motion-reduce:transition-none",
                   selected
-                    ? "border-l-primary bg-accent text-accent-foreground"
-                    : "border-l-transparent hover:bg-accent/50",
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50",
                   dropInto ? "bg-accent/50 outline outline-1 -outline-offset-1 outline-ring" : "",
                 )}
                 style={{
