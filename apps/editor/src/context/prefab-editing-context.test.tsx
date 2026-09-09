@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createMeshComponent } from "@babylonslate/core";
+import { createMeshComponent, type SerializedTransform } from "@babylonslate/core";
 import {
   PrefabEditingProvider,
   usePrefabEditing,
@@ -8,6 +8,7 @@ import {
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 
 const applyGraphChange = vi.hoisted(() => vi.fn(async () => true));
+const documentOverrides = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
 vi.mock("./document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
@@ -36,6 +37,7 @@ vi.mock("./document-context", () => ({
       },
     ],
     applyGraphChange,
+    ...documentOverrides.value,
   }),
 }));
 
@@ -145,6 +147,78 @@ function UpdateProbe() {
 afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
+  documentOverrides.value = {};
+});
+
+function BatchTransformProbe({
+  changes,
+}: {
+  changes: Array<{ componentId: string; transform: SerializedTransform }>;
+}) {
+  const { commitComponentTransforms } = usePrefabEditing();
+  return (
+    <button type="button" onClick={() => commitComponentTransforms?.(changes)}>
+      Commit Transforms
+    </button>
+  );
+}
+
+describe("PrefabEditingContext batch transforms", () => {
+  it("persists inherited and local drops together without changing other components", () => {
+    const inherited = createMeshComponent("inherited-mesh", "sphere");
+    const local = { ...createMeshComponent("local-mesh", "box"), parentId: "inherited-mesh" };
+    const untouched = createMeshComponent("untouched-mesh", "cylinder");
+    documentOverrides.value = {
+      openDocuments: [
+        {
+          id: "graph:assets/Hero.class.babasset",
+          ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+          content: { nodes: [], edges: [], members: [], components: [local, untouched] },
+        },
+        {
+          id: "graph:assets/Base.class.babasset",
+          ref: { kind: "graph", path: "assets/Base.class.babasset" },
+          content: { nodes: [], edges: [], members: [], components: [inherited] },
+        },
+      ],
+      assetRegistry: {
+        list: () => [
+          { path: "assets/Hero.class.babasset", header: { type: "Class", name: "Hero", parentClass: "Base" } },
+          { path: "assets/Base.class.babasset", header: { type: "Class", name: "Base", parentClass: "Actor" } },
+        ],
+      },
+    };
+    render(
+      <PrefabEditingProvider>
+        <BatchTransformProbe changes={[
+          { componentId: "inherited-mesh", transform: { position: [0, -2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+          { componentId: "local-mesh", transform: { position: [3, -7, 4], rotation: [0, 1, 0, 0], scale: [2, 3, 4] } },
+        ]} />
+      </PrefabEditingProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Commit Transforms" }));
+    expect(applyGraphChange).toHaveBeenCalledTimes(1);
+    expect(applyGraphChange).toHaveBeenCalledWith(
+      "graph:assets/Hero.class.babasset",
+      expect.objectContaining({
+        components: [
+          { ...inherited, parentId: null, transform: { position: [0, -2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+          { ...local, transform: { position: [3, -7, 4], rotation: [0, 1, 0, 0], scale: [2, 3, 4] } },
+          { ...untouched, parentId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+        ],
+      }),
+    );
+  });
+
+  it("leaves the document clean when no component can move", () => {
+    render(
+      <PrefabEditingProvider>
+        <BatchTransformProbe changes={[]} />
+      </PrefabEditingProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Commit Transforms" }));
+    expect(applyGraphChange).not.toHaveBeenCalled();
+  });
 });
 
 describe("PrefabEditingContext updateComponent", () => {
