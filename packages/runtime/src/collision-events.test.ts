@@ -125,7 +125,7 @@ function attachKinematicBox(
 }
 
 describe("runtime collision events", () => {
-  it("dispatches Havok begin and end overlap when a dynamic actor passes through a trigger", async () => {
+  it.each([-2, 0])("dispatches Havok begin and end overlap from dynamic start X=%s", async (startX) => {
     const registry = createDefaultNodeRegistry();
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -144,11 +144,15 @@ describe("runtime collision events", () => {
       const moving = runtime.spawnScriptedActor({ classId: "Sensor" })!;
       attachKinematicBox(runtime, sensor, true);
       attachKinematicBox(runtime, moving);
+      moving.attachComponent(runtime.getWorld().createComponent({
+        classId: "MeshComponent",
+        variables: { meshKind: "box", collisionMode: "simple" },
+      }));
       sensor.components.find((component) => component.classId === "RigidBodyComponent")!
         .setVariable("motionType", "static");
       moving.components.find((component) => component.classId === "RigidBodyComponent")!
         .setVariable("motionType", "dynamic");
-      moving.transform.position.x = -2;
+      moving.transform.position.x = startX;
       await runtime.loadPhysics();
       runtime.getPhysicsSync()!.addImpulse(moving.guid, { x: 3, y: 0, z: 0 });
       runtime.start();
