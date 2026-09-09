@@ -430,7 +430,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly navYawByActor = new Map<string, number>();
   private readonly navTargetByActor = new Map<string, NavPoint>();
   private readonly navSteeredActors = new Set<string>();
-  private navFrameActors: ReadonlyMap<string, Actor> | null = null;
+  private navFrameActors: Map<string, Actor> | null = null;
   private readonly audioAssetGuids = new Set<string>();
   private readonly animClipCatalog = new Map<string, AnimClipCatalogEntry>();
   private readonly btPlayAnimOwnedSlots = new Set<number>();
@@ -3135,6 +3135,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.emitAudioComponents(actor);
     this.emitParticleComponents(actor);
     this.world.spawnActorNow(actor);
+    this.navFrameActors?.set(actor.guid, actor);
   }
 
   private emitAudioComponents(actor: Actor): void {
