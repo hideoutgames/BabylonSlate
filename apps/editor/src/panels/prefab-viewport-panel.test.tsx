@@ -423,25 +423,38 @@ describe("PrefabViewportPanel engine", () => {
       expect.objectContaining({ overlayTransformBox: true }),
     );
     expect(handle.loadScene).toHaveBeenLastCalledWith(
-      expect.objectContaining({ settings: expect.objectContaining({ physicsWorld: "2d" }) }),
+      expect.objectContaining({
+        settings: expect.objectContaining({ physicsWorld: "2d" }),
+      }),
     );
   });
 
   it.each([
     { physicsWorld: "2d", cameraMode: "3d" },
     { physicsWorld: "3d", cameraMode: "2d" },
-  ] as const)("uses the open scene's $physicsWorld physics in a $cameraMode Prefab camera", ({ physicsWorld, cameraMode }) => {
-    viewportState.mode = cameraMode;
-    prefabDocs.openDocuments = [{
-      id: "scene:assets/World.scene.babasset",
-      ref: { kind: "scene", path: "assets/World.scene.babasset", label: "World" },
-      content: { settings: { physicsWorld } },
-    }];
-    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
-    expect(handle.loadScene).toHaveBeenLastCalledWith(
-      expect.objectContaining({ settings: expect.objectContaining({ physicsWorld }) }),
-    );
-  });
+  ] as const)(
+    "uses the open scene's $physicsWorld physics in a $cameraMode Prefab camera",
+    ({ physicsWorld, cameraMode }) => {
+      viewportState.mode = cameraMode;
+      prefabDocs.openDocuments = [
+        {
+          id: "scene:assets/World.scene.babasset",
+          ref: {
+            kind: "scene",
+            path: "assets/World.scene.babasset",
+            label: "World",
+          },
+          content: { settings: { physicsWorld } },
+        },
+      ];
+      render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+      expect(handle.loadScene).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ physicsWorld }),
+        }),
+      );
+    },
+  );
 
   it("rebinds Prefab when the shared Engine generation changes", () => {
     const first = { id: "engine-1" };

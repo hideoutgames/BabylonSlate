@@ -5,6 +5,7 @@ import {
   createMeshComponent,
   identitySerializedTransform,
   wouldCreateComponentCycle,
+  type PhysicsWorldKind,
   type SerializedComponent,
   type SerializedScene,
   type SerializedTransform,
@@ -102,9 +103,7 @@ export function mergePrefabComponents(
             scale: [...component.transform.scale] as [number, number, number],
           }
         : undefined,
-      ...(prior?.inheritedFrom
-        ? { inheritedFrom: prior.inheritedFrom }
-        : {}),
+      ...(prior?.inheritedFrom ? { inheritedFrom: prior.inheritedFrom } : {}),
     });
   }
   return [...byId.values()];
@@ -231,7 +230,9 @@ export function reparentPrefabComponents(
     ? selectedIds.filter((id) => id !== PREFAB_ROOT_ID)
     : [dragId];
   const selectedSet = new Set(selected);
-  const byId = new Map(components.map((component) => [component.id, component]));
+  const byId = new Map(
+    components.map((component) => [component.id, component]),
+  );
   const roots = selected.filter((id) => {
     let parent = byId.get(id)?.parentId ?? null;
     while (parent) {
@@ -240,9 +241,12 @@ export function reparentPrefabComponents(
     }
     return true;
   });
-  const parentId = !around || targetIsRoot
-    ? (targetIsRoot ? null : targetId)
-    : (byId.get(targetId!)?.parentId ?? null);
+  const parentId =
+    !around || targetIsRoot
+      ? targetIsRoot
+        ? null
+        : targetId
+      : (byId.get(targetId!)?.parentId ?? null);
   if (parentId && roots.includes(parentId)) return components;
   for (const id of roots) {
     if (parentId === id) return components;
@@ -430,6 +434,7 @@ export function prefabPreviewLoadKey(
 /** Preview: Prefab Root at the origin plus one actor per component. */
 export function previewSceneFor(
   components: SerializedComponent[],
+  physicsWorld: PhysicsWorldKind = "3d",
 ): SerializedScene {
   const base = createDefaultScene();
   return {
@@ -437,6 +442,7 @@ export function previewSceneFor(
     name: "Prefab preview",
     settings: {
       ...base.settings,
+      physicsWorld,
       environmentColor: createDefaultSceneSettings().environmentColor,
     },
     actors: [

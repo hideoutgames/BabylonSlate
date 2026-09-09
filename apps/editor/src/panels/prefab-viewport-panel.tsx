@@ -49,6 +49,7 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
+import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 
 /**
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
@@ -101,6 +102,11 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       classParentLookup(listed),
     ).includes("SceneLayerActor");
   }, [assetRegistry, documentId, openDocuments]);
+  const prefabPhysicsWorld = overlayPrefab
+    ? "2d"
+    : physicsWorldFromOpenDocuments(openDocuments);
+  const prefabPhysicsWorldRef = useRef(prefabPhysicsWorld);
+  prefabPhysicsWorldRef.current = prefabPhysicsWorld;
   const {
     gizmoTool,
     snapEnabled,
@@ -261,6 +267,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
   const dropLoadKey = JSON.stringify([
     previewLoadKey,
+    prefabPhysicsWorld,
     materialLibraryKey,
     textureLodKey,
   ]);
@@ -290,14 +297,16 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   };
 
   useEffect(() => {
-    engineRef.current?.loadScene(previewSceneFor(componentsRef.current));
-  }, [previewLoadKey, sharedEngine]);
+    engineRef.current?.loadScene(
+      previewSceneFor(componentsRef.current, prefabPhysicsWorld),
+    );
+  }, [previewLoadKey, sharedEngine, prefabPhysicsWorld]);
 
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle) return;
     setDropReady(null);
-    const scene = previewSceneFor(componentsRef.current);
+    const scene = previewSceneFor(componentsRef.current, prefabPhysicsWorld);
     let cancelled = false;
     void (async () => {
       try {
@@ -369,6 +378,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     materialLibraryKey,
     textureLodKey,
     dropLoadKey,
+    prefabPhysicsWorld,
     sharedEngine,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
@@ -453,14 +463,14 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     if (!handle?.editor) return;
     const selectedActors = prefabSelectedActorIds(selectedId);
     handle.editor.setSelectedActors(selectedActors);
-    const scene = previewSceneFor(components);
+    const scene = previewSceneFor(components, prefabPhysicsWorld);
     handle.editor.syncSelectionDebug({
       sceneData: scene,
       selectedActorIds: selectedActors,
       selectedComponentIds:
         selectedId && selectedId !== PREFAB_ROOT_ID ? [selectedId] : undefined,
     });
-  }, [components, selectedId]);
+  }, [components, selectedId, prefabPhysicsWorld]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -479,22 +489,23 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       visuals: () => {
         const sync = engineRef.current?.editor?.sync;
         if (!sync) return [];
-        return previewSceneFor(componentsRef.current).actors.flatMap(
-          (actor) => {
-            const visual = sync.visualMeshesForActor(actor.id)[0];
-            if (!visual) return [];
-            visual.computeWorldMatrix(true);
-            const position = visual.getAbsolutePosition();
-            return [
-              {
-                ...materialViewportTestSnapshot(visual),
-                actorId: actor.id,
-                position: [position.x, position.y, position.z],
-                materialName: visual.material?.name ?? null,
-              },
-            ];
-          },
-        );
+        return previewSceneFor(
+          componentsRef.current,
+          prefabPhysicsWorldRef.current,
+        ).actors.flatMap((actor) => {
+          const visual = sync.visualMeshesForActor(actor.id)[0];
+          if (!visual) return [];
+          visual.computeWorldMatrix(true);
+          const position = visual.getAbsolutePosition();
+          return [
+            {
+              ...materialViewportTestSnapshot(visual),
+              actorId: actor.id,
+              position: [position.x, position.y, position.z],
+              materialName: visual.material?.name ?? null,
+            },
+          ];
+        });
       },
     };
     return () => {
