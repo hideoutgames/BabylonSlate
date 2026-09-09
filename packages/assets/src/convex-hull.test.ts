@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { convexHull3d, GENERATED_COLLISION_MAX_POINTS } from "./convex-hull";
+import {
+  convexHull3d,
+  convexHullMesh,
+  GENERATED_COLLISION_MAX_POINTS,
+} from "./convex-hull";
 
 function cubeCorners(): Array<{ x: number; y: number; z: number }> {
   const h = 0.5;
@@ -16,6 +20,25 @@ function cubeCorners(): Array<{ x: number; y: number; z: number }> {
 }
 
 describe("convexHull3d", () => {
+  it("exports closed outward triangle geometry for collision queries", () => {
+    const { vertices, indices } = convexHullMesh([
+      ...cubeCorners(),
+      { x: 0, y: 0, z: 0 },
+    ]);
+    let volume = 0;
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = vertices[indices[i]!]!;
+      const b = vertices[indices[i + 1]!]!;
+      const c = vertices[indices[i + 2]!]!;
+      volume +=
+        (a.x * (b.y * c.z - b.z * c.y) +
+          a.y * (b.z * c.x - b.x * c.z) +
+          a.z * (b.x * c.y - b.y * c.x)) /
+        6;
+    }
+    expect(volume).toBeCloseTo(1);
+    expect(convexHullMesh([{ x: 0, y: 0, z: 0 }]).indices).toEqual([]);
+  });
   it("keeps the eight cube corners and drops interior points", () => {
     const hull = convexHull3d([
       ...cubeCorners(),

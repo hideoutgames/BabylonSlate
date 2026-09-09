@@ -19,6 +19,8 @@ import type { SerializedScene } from "@babylonslate/core";
 import { isSceneWorkspaceKind } from "@babylonslate/core";
 import type { GizmoTool, ViewportShadingMode } from "@babylonslate/render";
 import {
+  ArrowDownToLineIcon,
+  MagnetIcon,
   MoveIcon,
   RotateCwIcon,
   ScalingIcon,
@@ -29,6 +31,7 @@ import { useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
+import { IconActionButton } from "./icon-action-button";
 import {
   patchEngineViewportPrefs,
   useEditorViewportPrefs,
@@ -49,11 +52,15 @@ export function ViewportToolbar({
   showDragSelect = true,
   showViewportModeToggle = true,
   showGizmoTools = true,
+  onDrop,
+  dropDisabled = true,
 }: {
   testIdPrefix?: string;
   showDragSelect?: boolean;
   showViewportModeToggle?: boolean;
   showGizmoTools?: boolean;
+  onDrop?: () => void;
+  dropDisabled?: boolean;
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
@@ -193,15 +200,6 @@ export function ViewportToolbar({
     },
     {
       type: "checkbox",
-      id: "snap",
-      label: "Snap",
-      checked: snapEnabled,
-      closeOnClick: false,
-      testId: `${testIdPrefix}gizmo-snap-toggle`,
-      onCheckedChange: toggleSnap,
-    },
-    {
-      type: "checkbox",
       id: "show-grid",
       label: "Show Grid",
       checked: gridVisible,
@@ -314,28 +312,28 @@ export function ViewportToolbar({
           })}
         </ToggleGroup>
       ) : null}
-      {showGizmoTools ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                variant="outline"
-                size="sm"
-                pressed={snapEnabled}
-                onPressedChange={toggleSnap}
-                aria-label={`Snap ${snapIncrement}`}
-                data-testid={`${testIdPrefix}viewport-snap`}
-              >
-                Snap <span className="tabular-nums">{snapIncrement}</span>
-              </Toggle>
-            }
-          />
-          <TooltipContent>
-            Snap {TOOLS.find((tool) => tool.id === gizmoTool)?.label} To{" "}
-            {snapIncrement}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toggle
+              variant="outline"
+              size="sm"
+              className="pointer-coarse:min-h-[var(--touch-target,44px)] pointer-coarse:min-w-[var(--touch-target,44px)]"
+              aria-label="Snap Grid"
+              pressed={snapEnabled}
+              onPressedChange={toggleSnap}
+              data-testid={`${testIdPrefix}gizmo-snap-toggle`}
+            >
+              <MagnetIcon />
+              <span className="tabular-nums">{snapIncrement}</span>
+            </Toggle>
+          }
+        />
+        <TooltipContent>
+          Snap {TOOLS.find((tool) => tool.id === gizmoTool)?.label} To{" "}
+          {snapIncrement}
+        </TooltipContent>
+      </Tooltip>
       {showDragSelect ? (
         <Tooltip>
           <TooltipTrigger
@@ -354,6 +352,19 @@ export function ViewportToolbar({
           />
           <TooltipContent>Drag Select</TooltipContent>
         </Tooltip>
+      ) : null}
+      {onDrop ? (
+        <IconActionButton
+          type="button"
+          size="sm"
+          className="pointer-coarse:min-h-[var(--touch-target,44px)] pointer-coarse:min-w-[var(--touch-target,44px)]"
+          label="Drop"
+          disabled={dropDisabled}
+          onClick={onDrop}
+          data-testid={`${testIdPrefix}viewport-drop`}
+        >
+          <ArrowDownToLineIcon />
+        </IconActionButton>
       ) : null}
       <NestedMenu
         items={settingsItems}
