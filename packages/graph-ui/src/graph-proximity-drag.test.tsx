@@ -124,6 +124,10 @@ function renderDragGraph(
       view.container.querySelectorAll<SVGPathElement>(
         ".graph-proximity-preview",
       ),
+    setGraph(next: GraphDocument) {
+      graph = next;
+      view.rerender(editor());
+    },
     setProps(next: Partial<GraphEditorProps>) {
       currentProps = { ...currentProps, ...next };
       view.rerender(editor());
@@ -165,6 +169,41 @@ function renderDragGraph(
 }
 
 describe("GraphEditor proximity dragging", () => {
+  it("keeps discovering nearby pins after the host refreshes a drag that started out of range", () => {
+    const graph = renderDragGraph(undefined, { commitPositionsOnDragEnd: false });
+    graph.start();
+    graph.move({ x: 10, y: 0 });
+    const earlierPosition = graph.emitted.at(-1)!;
+    graph.move({ x: 20, y: 0 });
+    expect(graph.previews()).toHaveLength(0);
+
+    // A host render can arrive after the pointer has already advanced again.
+    graph.setGraph(earlierPosition);
+    graph.move();
+    expect(graph.previews()).toHaveLength(1);
+    graph.move({ x: -1000, y: 0 });
+    expect(graph.previews()).toHaveLength(0);
+    graph.move();
+    expect(graph.previews()).toHaveLength(1);
+    graph.stop();
+    expect(graph.emitted.at(-1)?.edges).toHaveLength(1);
+  });
+
+  it("requires a fresh preview after a host refresh before connecting on release", () => {
+    const graph = renderDragGraph();
+    graph.start();
+    graph.move();
+    expect(graph.previews()).toHaveLength(1);
+
+    const refreshed = graphWithFreePins();
+    refreshed.nodes[0]!.position = { x: 130, y: 0 };
+    refreshed.nodes[1]!.data.title = "Refreshed Target";
+    graph.setGraph(refreshed);
+    expect(graph.previews()).toHaveLength(0);
+    graph.stop();
+    expect(graph.emitted).toEqual([]);
+  });
+
   it("previews without saving, clears when moving away, and commits the final position on release", () => {
     const graph = renderDragGraph(undefined, {
       defaultEdgeOptions: { type: "smoothstep" },
