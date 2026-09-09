@@ -685,7 +685,9 @@ function GraphEditorCanvas({
       lastEmitted: lastEmittedRef.current,
     });
     if (!next) return;
-    proximityDragRef.current = false;
+    // Host refreshes can arrive during a drag. Discard the old suggestions,
+    // but let the next movement discover pins against the refreshed graph.
+    proximityPathsRef.current = [];
     setProximityPaths([]);
     lastEmittedRef.current = initialGraph;
     setNodes(

@@ -181,6 +181,10 @@ describe("GraphEditor proximity dragging", () => {
     graph.setGraph(earlierPosition);
     graph.move();
     expect(graph.previews()).toHaveLength(1);
+    graph.move({ x: -1000, y: 0 });
+    expect(graph.previews()).toHaveLength(0);
+    graph.move();
+    expect(graph.previews()).toHaveLength(1);
     graph.stop();
     expect(graph.emitted.at(-1)?.edges).toHaveLength(1);
   });
