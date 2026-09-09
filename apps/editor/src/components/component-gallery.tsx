@@ -353,12 +353,12 @@ function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
           <Toggle
             variant={groundLocked ? "outline" : "default"}
             size={touch ? "touch" : "sm"}
+            className="px-0"
             aria-label={`${groundLocked ? "Unlock" : "Lock"} Ground`}
             pressed={groundLocked}
             onPressedChange={setGroundLocked}
           >
             {groundLocked ? <LockIcon /> : <UnlockIcon />}
-            {groundLocked ? "Locked" : null}
           </Toggle>
         ) : undefined,
     });

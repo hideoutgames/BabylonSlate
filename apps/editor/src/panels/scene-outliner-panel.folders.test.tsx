@@ -267,7 +267,7 @@ describe("Scene Outliner lock icons", () => {
     expect(screen.getByTestId("outliner-lock-open").getAttribute("aria-pressed")).toBe("false");
     expect(lockIconName("shut")).toBe("lock");
     expect(screen.getByTestId("outliner-lock-shut").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Unlock Shut" }).textContent).toContain("Locked");
+    expect(screen.getByRole("button", { name: "Unlock Shut" }).textContent).not.toContain("Locked");
     expect(screen.getByTestId("outliner-lock-open").textContent).not.toContain("Locked");
   });
 

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -67,6 +68,33 @@ export interface TreeViewNode {
   /** Optional type cue, rendered between the disclosure and the label. */
   icon?: ReactNode;
   muted?: boolean;
+}
+
+type TreeGuideSegment = "full" | "end" | null;
+
+/** Resolve sibling continuations before windowing so off-screen rows still join correctly. */
+export function treeGuideSegments(
+  nodes: readonly Pick<TreeViewNode, "depth">[],
+): TreeGuideSegment[][] {
+  const nextAtDepth: number[] = [];
+  const hasNextSibling: boolean[] = [];
+  for (let index = nodes.length - 1; index >= 0; index--) {
+    const depth = nodes[index]!.depth;
+    nextAtDepth.length = depth + 1;
+    hasNextSibling[index] = nextAtDepth[depth] !== undefined;
+    nextAtDepth[depth] = index;
+  }
+  const ancestorContinues: boolean[] = [];
+  return nodes.map((node, index) => {
+    const segments = Array.from({ length: node.depth }, (_, level): TreeGuideSegment =>
+      level === node.depth - 1
+        ? hasNextSibling[index] ? "full" : "end"
+        : ancestorContinues[level + 1] ? "full" : null,
+    );
+    ancestorContinues.length = node.depth + 1;
+    ancestorContinues[node.depth] = hasNextSibling[index]!;
+    return segments;
+  });
 }
 
 export interface TreeViewProps {
@@ -172,6 +200,7 @@ export function TreeView({
     overscan: WINDOWED_SLICE_OVERSCAN,
   });
   const visible = nodes.slice(firstIndex, lastIndex);
+  const guides = useMemo(() => treeGuideSegments(nodes), [nodes]);
 
   const measure = useCallback((element: HTMLDivElement | null) => {
     containerRef.current = element;
@@ -447,7 +476,7 @@ export function TreeView({
   return (
     <div
       ref={measure}
-      className="@container/tree h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y text-foreground"
+      className="h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y text-foreground"
       data-testid={testId}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       onPointerMove={onPointerMove}
@@ -497,21 +526,24 @@ export function TreeView({
                   onContextMenu(node.id, event.clientX, event.clientY);
                 }}
               >
-                {Array.from({ length: node.depth }, (_, level) => (
+                {guides[firstIndex + index]!.map((segment, level) => segment ? (
                   <span
                     key={level}
                     aria-hidden
-                    className="pointer-events-none absolute inset-y-0 w-px bg-border/70"
-                    style={{ left: level * 16 + (rowHeight >= 44 ? 30 : 18) }}
+                    className="pointer-events-none absolute top-0 w-px bg-border/70"
+                    style={{
+                      left: level * 16 + (rowHeight >= 44 ? 30 : 18),
+                      height: segment === "end" ? "50%" : "100%",
+                    }}
                   />
-                ))}
+                ) : null)}
                 {!node.hasChildren && node.depth > 0 ? (
                   <span
                     aria-hidden
                     className="pointer-events-none absolute top-1/2 h-px bg-border/70"
                     style={{
                       left: (node.depth - 1) * 16 + (rowHeight >= 44 ? 30 : 18),
-                      width: rowHeight >= 44 ? 36 : 24,
+                      width: 8,
                     }}
                   />
                 ) : null}
