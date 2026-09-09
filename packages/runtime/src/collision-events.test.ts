@@ -125,7 +125,12 @@ function attachKinematicBox(
 }
 
 describe("runtime collision events", () => {
-  it.each([-2, 0])("dispatches Havok begin and end overlap from dynamic start X=%s", async (startX) => {
+  it.each([
+    { name: "single collider", startX: -2, mesh: false, leadingCollider: false },
+    { name: "compound body entering", startX: -2, mesh: true, leadingCollider: false },
+    { name: "compound body already intersecting", startX: 0, mesh: true, leadingCollider: false },
+    { name: "trigger after a blocking collider", startX: -2, mesh: false, leadingCollider: true },
+  ])("dispatches one Havok begin and end overlap for $name", async ({ startX, mesh, leadingCollider }) => {
     const registry = createDefaultNodeRegistry();
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -142,12 +147,23 @@ describe("runtime collision events", () => {
       ]);
       const sensor = runtime.spawnScriptedActor({ classId: "Sensor" })!;
       const moving = runtime.spawnScriptedActor({ classId: "Sensor" })!;
+      if (leadingCollider) {
+        const blocking = runtime.getWorld().createComponent({
+          sourceId: "blocking",
+          classId: "ColliderComponent",
+          variables: { isTrigger: false },
+        });
+        blocking.transform.position.y = 10;
+        sensor.attachComponent(blocking);
+      }
       attachKinematicBox(runtime, sensor, true);
       attachKinematicBox(runtime, moving);
-      moving.attachComponent(runtime.getWorld().createComponent({
-        classId: "MeshComponent",
-        variables: { meshKind: "box", collisionMode: "simple" },
-      }));
+      if (mesh) {
+        moving.attachComponent(runtime.getWorld().createComponent({
+          classId: "MeshComponent",
+          variables: { meshKind: "box", collisionMode: "simple" },
+        }));
+      }
       sensor.components.find((component) => component.classId === "RigidBodyComponent")!
         .setVariable("motionType", "static");
       moving.components.find((component) => component.classId === "RigidBodyComponent")!
