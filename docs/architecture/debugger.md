@@ -1,4 +1,4 @@
-﻿# Debugger and console (P8)
+# Debugger and console (P8)
 
 Shared surface for the command system, Play/export console, stats HUD, and trace recorder (engineplan §9). Implementation: `@babylonslate/debugger` (headless registry + parser + recorder). HUD/console UI lives in the editor Play overlay; this package must not import React or Babylon.
 
@@ -133,4 +133,3 @@ Project Settings **Export Game** preset: **Bundle Debugger** (off for release). 
 - **Changes:** compares world snapshots with the previous retained frame, matching actors/components by GUID and showing Added, Removed and Changed values. Entity array reordering alone is not a change; tick/delta metadata is excluded. Select a row for full before/after values. The first frame or missing/unreadable snapshots cannot be compared.
 - **Log:** includes the selected frame and up to 29 preceding recorded frames (30 total), with an explicit tick range. Search covers message, category, severity, print key and tick; severity filtering distinguishes logs and prints. Selecting a row navigates to its frame and reveals the full selectable/copyable message. Current-tick rows have an orange start edge.
 - Each Trace document owns inspection/search/zoom state, including when a dock closes and reopens. Snapshot supports arrows, Home/End and Enter/Space. Touch targets adapt without enlarging desktop controls. The file format is unchanged; input details and behaviour-tree mappings remain limited to fields actually recorded.
-
