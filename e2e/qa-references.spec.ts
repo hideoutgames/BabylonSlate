@@ -74,8 +74,12 @@ test("H9: a long References list keeps Close inside the viewport", async ({ page
     const body = page.getByTestId("content-browser-delete-body");
     await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
     const cancel = page.getByTestId("content-browser-delete-cancel");
-    const bounds = await cancel.boundingBox();
-    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    await expect(async () => {
+      const bounds = await cancel.boundingBox();
+      expect(bounds!.y).toBeGreaterThanOrEqual(0);
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    }).toPass();
+    await test.info().attach(`delete-references-${viewport.width}`, { body: await deletion.screenshot(), contentType: "image/png" });
   }
   await page.getByTestId("content-browser-delete-cancel").click();
 });
