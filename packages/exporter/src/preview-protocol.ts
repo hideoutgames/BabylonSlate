@@ -7,10 +7,14 @@ export const PREVIEW_DIAGNOSTICS_MESSAGE = "babylonslate-preview-diagnostics";
 /** Player → editor: boot failed, so the overlay can explain the black canvas. */
 export const PREVIEW_ERROR_MESSAGE = "babylonslate-preview-error";
 export const PREVIEW_STOP_MESSAGE = "babylonslate-preview-stop";
-export const PREVIEW_CONSOLE_REQUEST_MESSAGE = "babylonslate-preview-console-request";
-export const PREVIEW_CONSOLE_RESULT_MESSAGE = "babylonslate-preview-console-result";
-export const PREVIEW_CONSOLE_EVENT_MESSAGE = "babylonslate-preview-console-event";
-export const PREVIEW_CONSOLE_CATALOG_MESSAGE = "babylonslate-preview-console-catalog";
+export const PREVIEW_CONSOLE_REQUEST_MESSAGE =
+  "babylonslate-preview-console-request";
+export const PREVIEW_CONSOLE_RESULT_MESSAGE =
+  "babylonslate-preview-console-result";
+export const PREVIEW_CONSOLE_EVENT_MESSAGE =
+  "babylonslate-preview-console-event";
+export const PREVIEW_CONSOLE_CATALOG_MESSAGE =
+  "babylonslate-preview-console-catalog";
 
 export type PreviewConsoleRequest = {
   type: typeof PREVIEW_CONSOLE_REQUEST_MESSAGE;
@@ -18,10 +22,16 @@ export type PreviewConsoleRequest = {
   line: string;
 };
 
-export function isPreviewConsoleRequest(value: unknown): value is PreviewConsoleRequest {
+export function isPreviewConsoleRequest(
+  value: unknown,
+): value is PreviewConsoleRequest {
   if (!value || typeof value !== "object") return false;
   const request = value as Partial<PreviewConsoleRequest>;
-  return request.type === PREVIEW_CONSOLE_REQUEST_MESSAGE && Number.isSafeInteger(request.requestId) && typeof request.line === "string";
+  return (
+    request.type === PREVIEW_CONSOLE_REQUEST_MESSAGE &&
+    Number.isSafeInteger(request.requestId) &&
+    typeof request.line === "string"
+  );
 }
 
 export type PreviewPackMessage = {
@@ -64,10 +74,16 @@ export type PreviewDiagnosticsMessage = {
   }>;
 };
 
-export function isPreviewPackMessage(value: unknown): value is PreviewPackMessage {
+export function isPreviewPackMessage(
+  value: unknown,
+): value is PreviewPackMessage {
   if (!value || typeof value !== "object") return false;
   const record = value as { type?: unknown; files?: unknown };
-  return record.type === PREVIEW_PACK_MESSAGE && !!record.files && typeof record.files === "object";
+  return (
+    record.type === PREVIEW_PACK_MESSAGE &&
+    !!record.files &&
+    typeof record.files === "object"
+  );
 }
 
 export function isPreviewDiagnosticsMessage(

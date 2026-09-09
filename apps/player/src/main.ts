@@ -87,8 +87,19 @@ async function launchLoaded(
     game,
     onConsoleEvent: (command) => {
       if (window.parent === window || !previewMode()) return;
-      if (["log", "print", "diagnostic", "setBehaviourTreeDebug", "behaviourTreeSnapshot"].includes(command.type)) {
-        window.parent.postMessage({ type: PREVIEW_CONSOLE_EVENT_MESSAGE, command }, previewHostOrigin);
+      if (
+        [
+          "log",
+          "print",
+          "diagnostic",
+          "setBehaviourTreeDebug",
+          "behaviourTreeSnapshot",
+        ].includes(command.type)
+      ) {
+        window.parent.postMessage(
+          { type: PREVIEW_CONSOLE_EVENT_MESSAGE, command },
+          previewHostOrigin,
+        );
       }
     },
     onStats: (stats) => {
@@ -137,12 +148,22 @@ async function launchLoaded(
     };
   }
   if (window.parent !== window) {
-    window.parent.postMessage({
-      type: PREVIEW_CONSOLE_CATALOG_MESSAGE,
-      commands: game.scripts.flatMap((script) => script.command ? [script.command] : []),
-      scenes: [...game.scenes.entries()].flatMap(([guid, scene]) => [guid, scene.name]),
-      actors: [...game.scenes.values()].flatMap((scene) => scene.actors.flatMap((actor) => [actor.id, actor.name])),
-    }, previewHostOrigin);
+    window.parent.postMessage(
+      {
+        type: PREVIEW_CONSOLE_CATALOG_MESSAGE,
+        commands: game.scripts.flatMap((script) =>
+          script.command ? [script.command] : [],
+        ),
+        scenes: [...game.scenes.entries()].flatMap(([guid, scene]) => [
+          guid,
+          scene.name,
+        ]),
+        actors: [...game.scenes.values()].flatMap((scene) =>
+          scene.actors.flatMap((actor) => [actor.id, actor.name]),
+        ),
+      },
+      previewHostOrigin,
+    );
     window.parent.postMessage(
       {
         type: PREVIEW_READY_MESSAGE,
@@ -152,11 +173,19 @@ async function launchLoaded(
     );
   }
   window.addEventListener("message", (event) => {
-    if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) return;
-    if (previewMode() && event.data?.type === PREVIEW_CONSOLE_REQUEST_MESSAGE && isPreviewConsoleRequest(event.data)) {
+    if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin))
+      return;
+    if (
+      previewMode() &&
+      event.data?.type === PREVIEW_CONSOLE_REQUEST_MESSAGE &&
+      isPreviewConsoleRequest(event.data)
+    ) {
       const { requestId, line } = event.data;
       void session.executeConsoleCommand(line).then((result) => {
-        window.parent.postMessage({ type: PREVIEW_CONSOLE_RESULT_MESSAGE, requestId, ...result }, previewHostOrigin);
+        window.parent.postMessage(
+          { type: PREVIEW_CONSOLE_RESULT_MESSAGE, requestId, ...result },
+          previewHostOrigin,
+        );
       });
       return;
     }
@@ -170,7 +199,10 @@ async function launchLoaded(
       stopAudioOverlays();
       if (window.parent !== window && result.diagnostics.length > 0) {
         window.parent.postMessage(
-          { type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics: result.diagnostics },
+          {
+            type: PREVIEW_DIAGNOSTICS_MESSAGE,
+            diagnostics: result.diagnostics,
+          },
           previewHostOrigin,
         );
       }
@@ -187,14 +219,21 @@ function bootFailure(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   rootEl().dataset.error = message;
   if (window.parent !== window) {
-    window.parent.postMessage({ type: PREVIEW_ERROR_MESSAGE, message }, previewHostOrigin);
+    window.parent.postMessage(
+      { type: PREVIEW_ERROR_MESSAGE, message },
+      previewHostOrigin,
+    );
   }
 }
 
 if (previewMode()) {
   let launched = false;
   window.addEventListener("message", (event) => {
-    const pack = previewPackFromExpectedHostMessage(event, window.parent, previewHostOrigin);
+    const pack = previewPackFromExpectedHostMessage(
+      event,
+      window.parent,
+      previewHostOrigin,
+    );
     if (!pack) return;
     // The host may resend the pack until it sees the player boot; ignore repeats.
     if (launched) return;
@@ -204,7 +243,10 @@ if (previewMode()) {
   // Ask only once the listener above exists. Waiting for the parent's iframe
   // `load` event alone raced module evaluation and silently dropped the pack.
   if (window.parent !== window) {
-    window.parent.postMessage({ type: PREVIEW_REQUEST_PACK_MESSAGE }, previewHostOrigin);
+    window.parent.postMessage(
+      { type: PREVIEW_REQUEST_PACK_MESSAGE },
+      previewHostOrigin,
+    );
   }
 } else {
   void launchFromHttp().catch(bootFailure);

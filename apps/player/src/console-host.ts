@@ -11,11 +11,18 @@ export function createPlayerConsoleHost(options: {
   let stopped = false;
   return {
     execute(line: string): Promise<Result> {
-      if (stopped) return Promise.resolve({ success: false, output: "Play session stopped" });
+      if (stopped)
+        return Promise.resolve({
+          success: false,
+          output: "Play session stopped",
+        });
       const execute = options.execute();
       if (execute) {
-        try { return Promise.resolve(execute(line)); }
-        catch (error) { return Promise.resolve({ success: false, output: String(error) }); }
+        try {
+          return Promise.resolve(execute(line));
+        } catch (error) {
+          return Promise.resolve({ success: false, output: String(error) });
+        }
       }
       return new Promise((resolve) => {
         pending.push(resolve);
@@ -23,11 +30,16 @@ export function createPlayerConsoleHost(options: {
       });
     },
     receive(command: Pick<CommandMessage, "type"> & Record<string, unknown>) {
-      if (command.type === "consoleResult") pending.shift()?.({ success: command.success === true, output: String(command.output ?? "") });
+      if (command.type === "consoleResult")
+        pending.shift()?.({
+          success: command.success === true,
+          output: String(command.output ?? ""),
+        });
     },
     dispose() {
       stopped = true;
-      for (const resolve of pending.splice(0)) resolve({ success: false, output: "Play session stopped" });
+      for (const resolve of pending.splice(0))
+        resolve({ success: false, output: "Play session stopped" });
     },
   };
 }

@@ -10,21 +10,66 @@ afterEach(() => {
 describe("PreviewBuildOverlay", () => {
   it("opens a console, retains play warnings, and executes in the expected player frame", async () => {
     const iframeRef = createRef<HTMLIFrameElement>();
-    const view = render(<PreviewBuildOverlay src="/player/index.html?preview=1" iframeRef={iframeRef} onClose={() => undefined} />);
+    const view = render(
+      <PreviewBuildOverlay
+        src="/player/index.html?preview=1"
+        iframeRef={iframeRef}
+        onClose={() => undefined}
+      />,
+    );
     const frame = iframeRef.current!.contentWindow!;
     const post = vi.spyOn(frame, "postMessage");
-    const receive = (data: unknown, source: Window = frame) => window.dispatchEvent(new MessageEvent("message", { data, source, origin: window.location.origin }));
-    receive({ type: "babylonslate-preview-console-event", command: { type: "log", severity: "warning", message: "Agent cannot reach goal" } }, window);
-    receive({ type: "babylonslate-preview-console-event", command: { type: "log", severity: "warning", message: "Path is partial" } });
+    const receive = (data: unknown, source: Window = frame) =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data,
+          source,
+          origin: window.location.origin,
+        }),
+      );
+    receive(
+      {
+        type: "babylonslate-preview-console-event",
+        command: {
+          type: "log",
+          severity: "warning",
+          message: "Agent cannot reach goal",
+        },
+      },
+      window,
+    );
+    receive({
+      type: "babylonslate-preview-console-event",
+      command: { type: "log", severity: "warning", message: "Path is partial" },
+    });
     fireEvent.click(view.getByRole("button", { name: "Console" }));
     expect(view.queryByText("Agent cannot reach goal")).toBeNull();
     await waitFor(() => expect(view.getByText("Path is partial")).toBeTruthy());
-    fireEvent.change(view.getByRole("combobox", { name: "Console Command" }), { target: { value: "showpathfinding on" } });
+    fireEvent.change(view.getByRole("combobox", { name: "Console Command" }), {
+      target: { value: "showpathfinding on" },
+    });
     fireEvent.click(view.getByRole("button", { name: "Run" }));
-    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "babylonslate-preview-console-request", line: "showpathfinding on" }), window.location.origin));
-    const request = post.mock.calls.find(([value]) => value.type === "babylonslate-preview-console-request")![0];
-    receive({ type: "babylonslate-preview-console-result", requestId: request.requestId, success: true, output: "Path Overlay Enabled" });
-    await waitFor(() => expect(view.getByText("Path Overlay Enabled")).toBeTruthy());
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "babylonslate-preview-console-request",
+          line: "showpathfinding on",
+        }),
+        window.location.origin,
+      ),
+    );
+    const request = post.mock.calls.find(
+      ([value]) => value.type === "babylonslate-preview-console-request",
+    )![0];
+    receive({
+      type: "babylonslate-preview-console-result",
+      requestId: request.requestId,
+      success: true,
+      output: "Path Overlay Enabled",
+    });
+    await waitFor(() =>
+      expect(view.getByText("Path Overlay Enabled")).toBeTruthy(),
+    );
   });
   it("labels Stop on a 44px target above the player iframe", () => {
     const view = render(
@@ -63,7 +108,9 @@ describe("PreviewBuildOverlay", () => {
     const container = error.parentElement;
     expect(container?.className).toContain("safe-overlay-chrome");
     expect(container?.className).toContain("top-16");
-    expect(container?.style.getPropertyValue("--safe-overlay-pad")).toBe("1rem");
+    expect(container?.style.getPropertyValue("--safe-overlay-pad")).toBe(
+      "1rem",
+    );
   });
 
   it("invokes onClose from Stop so Preview Build can leave the editor", () => {
