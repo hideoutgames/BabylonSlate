@@ -12,17 +12,16 @@ import {
 import { freemem, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import {
+  DEFAULT_RESOURCE_CAPACITY,
+  readLocalResourceConfig,
+} from "./local-resource-config.mjs";
 
 export const admissionDirectory = join(
   tmpdir(),
   "babylonslate-test-admission-v1",
 );
-export const capacity = {
-  workers: 3,
-  browsers: 1,
-  memoryGiB: 6,
-  reserveGiB: 4,
-};
+export const capacity = DEFAULT_RESOURCE_CAPACITY;
 export const workloads = {
   tooling: { workers: 1, browsers: 0, memoryGiB: 0.75 },
   unit: { workers: 1, browsers: 0, memoryGiB: 1.5 },
@@ -59,6 +58,12 @@ function alive(pid) {
   } catch (error) {
     return error.code === "EPERM";
   }
+}
+
+function isHeavy(request) {
+  return (
+    request.workers >= 2 || request.memoryGiB >= 2 || request.browsers > 0
+  );
 }
 
 async function readJson(path) {
@@ -135,7 +140,10 @@ async function locked(directory, check, operation) {
 /** Per-user admission shared by every worktree. Limits are reservations, not OS quotas. */
 export async function acquireResources(request, options = {}) {
   const directory = options.directory ?? admissionDirectory;
-  const limits = options.capacity ?? capacity;
+  const config = options.capacity
+    ? { capacity: options.capacity, maxHeavy: 3, maxBypasses: 3 }
+    : await readLocalResourceConfig(options.env ?? process.env);
+  const limits = config.capacity;
   for (const key of ["workers", "browsers", "memoryGiB"]) {
     if (
       !Number.isFinite(request[key]) ||
@@ -156,12 +164,18 @@ export async function acquireResources(request, options = {}) {
   const token = randomUUID();
   let ticket;
   await locked(directory, check, async () => {
-    // Sequence allocation is inside the same lock as admission: FIFO even within one millisecond.
+    // Sequence allocation shares the admission lock: stable age even within one millisecond.
     const counterPath = join(directory, "sequence.json");
     const sequence = ((await readJson(counterPath))?.value ?? 0) + 1;
     await publish(counterPath, { value: sequence });
     ticket = join(queue, `${String(sequence).padStart(16, "0")}-${token}.json`);
-    await publish(ticket, { pid: process.pid, token, request, active: false });
+    await publish(ticket, {
+      pid: process.pid,
+      token,
+      request,
+      active: false,
+      bypasses: 0,
+    });
   });
   let announced = false;
   try {
@@ -180,23 +194,41 @@ export async function acquireResources(request, options = {}) {
           }
           rows.push({ ...row, path });
         }
-        if (rows.find((row) => !row.active)?.path !== ticket) return false;
         const active = rows.filter((row) => row.active);
+        const waiting = rows.filter((row) => !row.active);
+        const position = waiting.findIndex((row) => row.path === ticket);
+        if (position < 0) return false;
+        const keys = ["workers", "browsers", "memoryGiB"];
+        const used = Object.fromEntries(
+          keys.map((key) => [
+            key,
+            active.reduce((sum, row) => sum + row.request[key], 0),
+          ]),
+        );
+        const heavyCount = active.filter((row) => isHeavy(row.request)).length;
+        const freeMemory = (options.freeMemory ?? freemem)();
+        const fits = (candidate) =>
+          keys.every((key) => used[key] + candidate[key] <= limits[key]) &&
+          (!isHeavy(candidate) || heavyCount < config.maxHeavy) &&
+          freeMemory >= (limits.reserveGiB + candidate.memoryGiB) * 1024 ** 3;
+        if (!fits(request)) return false;
+        const older = waiting.slice(0, position);
         if (
-          ["workers", "browsers", "memoryGiB"].some(
-            (key) =>
-              active.reduce(
-                (sum, row) => sum + row.request[key],
-                request[key],
-              ) > limits[key],
-          )
+          older.length &&
+          (isHeavy(request) ||
+            older.some(
+              (row) =>
+                fits(row.request) ||
+                (row.bypasses ?? 0) >= config.maxBypasses,
+            ))
         )
           return false;
-        if (
-          (options.freeMemory ?? freemem)() <
-          (limits.reserveGiB + request.memoryGiB) * 1024 ** 3
-        )
-          return false;
+        // Only light work may use otherwise idle capacity. Charge every older
+        // ticket before admission so independent processes share starvation protection.
+        for (const row of older) {
+          const { path, ...value } = row;
+          await publish(path, { ...value, bypasses: (row.bypasses ?? 0) + 1 });
+        }
         await publish(ticket, {
           pid: process.pid,
           token,

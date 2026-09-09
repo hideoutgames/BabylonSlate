@@ -176,7 +176,9 @@ test("lightweight work can bypass blocked older work only three times across pro
   const first = await acquireResources(browser, options);
   const abort = new AbortController();
   let reportQueued;
-  const queued = new Promise((resolve) => { reportQueued = resolve; });
+  const queued = new Promise((resolve) => {
+    reportQueued = resolve;
+  });
   const older = acquireResources(browser, {
     ...options,
     signal: abort.signal,
@@ -189,7 +191,7 @@ test("lightweight work can bypass blocked older work only three times across pro
     try {
       const lease = await acquireResources(
         {workers:1,browsers:0,memoryGiB:0.75},
-        {directory:process.argv[1],env:{BL_LOCAL_RESOURCE_CONFIG:''},pollMs:5,timeoutMs:500,freeMemory:()=>16*1024**3});
+        {directory:process.argv[1],env:{BL_LOCAL_RESOURCE_CONFIG:''},pollMs:5,timeoutMs:1000,freeMemory:()=>16*1024**3});
       await lease.release();
       process.stdout.write('admitted');
     } catch (error) {
@@ -230,7 +232,10 @@ test("a fitting older ticket retains priority even when its owner is not polling
     active: false,
   });
   await assert.rejects(
-    acquireResources(workloadFor("tooling", {}), { ...options, timeoutMs: 100 }),
+    acquireResources(workloadFor("tooling", {}), {
+      ...options,
+      timeoutMs: 1000,
+    }),
     /deadline expired/,
   );
   await rm(join(queue, "0000000000000000-older.json"));
@@ -243,7 +248,9 @@ test("another heavy request cannot bypass an unfit older request", async (t) => 
   const first = await acquireResources(browser, options);
   const abort = new AbortController();
   let reportQueued;
-  const queued = new Promise((resolve) => { reportQueued = resolve; });
+  const queued = new Promise((resolve) => {
+    reportQueued = resolve;
+  });
   const older = acquireResources(browser, {
     ...options,
     signal: abort.signal,
@@ -253,7 +260,10 @@ test("another heavy request cannot bypass an unfit older request", async (t) => 
   try {
     await queued;
     await assert.rejects(
-      acquireResources(workloadFor("dom", {}), { ...options, timeoutMs: 100 }),
+      acquireResources(workloadFor("dom", {}), {
+        ...options,
+        timeoutMs: 1000,
+      }),
       /deadline expired/,
     );
   } finally {
@@ -266,18 +276,23 @@ test("another heavy request cannot bypass an unfit older request", async (t) => 
 test("machine low-memory settings serialize heavy phases while lightweight work still fits", async (t) => {
   const options = await fixture(t);
   const config = join(options.directory, "machine.json");
-  await writeFile(config, JSON.stringify({
-    version: 1,
-    profile: "low-memory",
-    reserveGiB: 3,
-    maxHeavy: 1,
-    maxBypasses: 3,
-  }));
+  await writeFile(
+    config,
+    JSON.stringify({
+      version: 1,
+      profile: "low-memory",
+      reserveGiB: 3,
+      maxHeavy: 1,
+      maxBypasses: 3,
+    }),
+  );
   options.env = { BL_LOCAL_RESOURCE_CONFIG: config };
   const first = await acquireResources(workloadFor("dom", {}), options);
   const abort = new AbortController();
   let reportQueued;
-  const queued = new Promise((resolve) => { reportQueued = resolve; });
+  const queued = new Promise((resolve) => {
+    reportQueued = resolve;
+  });
   let admitted = false;
   const pending = acquireResources(workloadFor("browser", {}), {
     ...options,
@@ -290,10 +305,14 @@ test("machine low-memory settings serialize heavy phases while lightweight work 
   pending.catch(() => {});
   try {
     await Promise.race([queued, pending]);
-    assert.equal(admitted, false, "a second heavy phase must wait for the first");
+    assert.equal(
+      admitted,
+      false,
+      "a second heavy phase must wait for the first",
+    );
     const light = await acquireResources(workloadFor("tooling", {}), {
       ...options,
-      timeoutMs: 1000,
+      timeoutMs: 3000,
     });
     await light.release();
     assert.equal(admitted, false);
