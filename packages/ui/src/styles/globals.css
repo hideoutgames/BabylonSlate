@@ -419,7 +419,11 @@
 .editor-dialog-delete {
   height: auto;
   width: fit-content;
-  min-width: min(44rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
+  min-width: min(32rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
+}
+
+.editor-dialog-delete[data-has-references="true"] {
+  min-width: min(52rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
 }
 
 .settings-dialog [data-slot="field-group"] {

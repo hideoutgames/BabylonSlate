@@ -2277,27 +2277,32 @@ export function ContentBrowserWorkspace({
           variant="destructive"
           className="editor-dialog-large editor-dialog-delete flex flex-col gap-0 overflow-hidden p-0"
           data-testid="content-browser-delete-dialog"
+          data-has-references={deleteInboundRefs.length > 0}
         >
-          <AlertDialogHeader className="shrink-0 border-b p-4">
-            <AlertDialogMedia data-testid="content-browser-delete-media">
-              <OctagonAlertIcon />
+          <AlertDialogHeader className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
+            <AlertDialogMedia className="mb-0 size-8 shrink-0" data-testid="content-browser-delete-media">
+              <OctagonAlertIcon className="size-4" />
             </AlertDialogMedia>
-            <AlertDialogTitle>
-              {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Permanently removes the selected items. This cannot be undone.
-            </AlertDialogDescription>
+            <div className="flex min-w-0 flex-col gap-1">
+              <AlertDialogTitle>
+                {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {deleteInboundRefs.length > 0
+                  ? "Deleting these items will break the references below. This cannot be undone."
+                  : "Permanently removes the selected items. This cannot be undone."}
+              </AlertDialogDescription>
+            </div>
           </AlertDialogHeader>
-          <div className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y p-4"
+          <div className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
             tabIndex={0} role="region" aria-label="Assets And References"
             data-testid="content-browser-delete-body">
-            <div className="grid min-w-0 gap-5 md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]">
-              <section className="min-w-0" aria-label="Selected For Deletion">
-                <h3 className="mb-2 text-sm font-medium">Selected ({deleteListNames.length})</h3>
-                <ul className="flex flex-col divide-y rounded-md border" data-testid="content-browser-delete-list">
+            <div className={cn("grid min-w-0", deleteInboundRefs.length > 0 && "md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]")}>
+              <section className="min-w-0 px-4 py-3" aria-label="Selected For Deletion">
+                <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Selected <span className="tabular-nums">{deleteListNames.length}</span></h3>
+                <ul className="mt-1 flex flex-col divide-y" data-testid="content-browser-delete-list">
                   {deleteListNames.map((name) => (
-                    <li key={name} className="min-w-0 px-3 py-2 text-sm break-words">
+                    <li key={name} className="min-w-0 py-2 text-sm break-words">
                       <SelectableText>{name}</SelectableText>
                     </li>
                   ))}
@@ -2306,27 +2311,27 @@ export function ContentBrowserWorkspace({
                   <p key={line} className="mt-2 text-sm font-medium text-destructive"
                     data-testid="content-browser-delete-last-warning">{line}</p>
                 ))}
+                {deleteInboundRefs.length === 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">No inbound references.</p>
+                )}
               </section>
-              <section className="min-w-0" aria-label="Referenced By">
-                <h3 className="mb-2 text-sm font-medium">Referenced By ({deleteInboundRefs.length})</h3>
-                {deleteInboundRefs.length > 0 ? (
-                  <>
-                    <p className="mb-3 text-sm text-muted-foreground">These assets will have missing references.</p>
-                    <ul className="flex min-w-0 flex-col divide-y rounded-md border">
-                      {deleteInboundRefs.map((ref) => (
-                        <li key={ref.guid} className="flex min-w-0 items-start gap-3 p-3">
-                          <TypeVisualIcon visual={resolveTypeVisual({ assetType: ref.type })} />
-                          <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-                            <SelectableText className="font-medium break-words">{ref.name}</SelectableText>
-                            <SelectableText className="text-xs text-muted-foreground break-all">{ref.path}</SelectableText>
-                            <span className="text-xs text-muted-foreground break-words">Uses {ref.targets.join(", ")}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : <p className="text-sm text-muted-foreground">No inbound references.</p>}
-              </section>
+              {deleteInboundRefs.length > 0 && (
+                <section className="min-w-0 border-t bg-muted/20 px-4 py-3 md:border-t-0 md:border-l" aria-label="Referenced By">
+                  <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Referenced By <span className="tabular-nums">{deleteInboundRefs.length}</span></h3>
+                  <ul className="mt-1 flex min-w-0 flex-col divide-y">
+                    {deleteInboundRefs.map((ref) => (
+                      <li key={ref.guid} className="flex min-w-0 items-start gap-2 py-2">
+                        <TypeVisualIcon className="mt-0.5" visual={resolveTypeVisual({ assetType: ref.type })} />
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
+                          <SelectableText className="font-medium break-words">{ref.name}</SelectableText>
+                          <SelectableText className="text-xs text-muted-foreground break-all">{ref.path}</SelectableText>
+                          <span className="mt-1 text-xs break-words"><span className="text-muted-foreground">Uses </span>{ref.targets.join(", ")}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
             </div>
           </div>
           <AlertDialogFooter className="m-0 shrink-0">
