@@ -871,4 +871,59 @@ describe("formatGraphNodes", () => {
     expectNoOverlaps(next);
     expect(formatGraphNodes(next, edges, ["a", "c"])).toEqual(next);
   });
+
+  it("keeps a shortcut merge stable after its longer path becomes aligned", () => {
+    const nodes = [node("root", 0, 0), node("z", 0, 10), node("a", 0, 100)];
+    const edges = [execEdge("root", "z"), execEdge("root", "a"), execEdge("z", "a")];
+    const next = formatGraphNodes(nodes, edges, ["root"]);
+    expect(pos(next, "z").y).toBe(pos(next, "a").y);
+    expect(formatGraphNodes(next, edges, ["root"])).toEqual(next);
+  });
+
+  it("formats selected roots that converge using the full length of both paths", () => {
+    const nodes = [
+      node("first", 10, 20),
+      node("second", 10, 300),
+      node("long0", 0, 400),
+      node("long1", 0, 500),
+      node("merge", 0, 0),
+      node("after", 0, 100),
+    ];
+    const edges = [
+      execEdge("first", "merge"),
+      execEdge("second", "long0"),
+      execEdge("long0", "long1"),
+      execEdge("long1", "merge"),
+      execEdge("merge", "after"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["second", "first"]);
+    expect(pos(next, "first")).toEqual({ x: 10, y: 20 });
+    for (const edge of edges) {
+      expect(pos(next, edge.source).x + NODE_W + FORMAT_GAP_X)
+        .toBeLessThanOrEqual(pos(next, edge.target).x);
+    }
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["first", "second"])).toEqual(next);
+  });
+
+  it("honors both selected pure and execution walks without moving shared nodes twice", () => {
+    const nodes = [
+      node("pure", 0, 0, dataOutPins),
+      node("consumer", 100, 100, execWithValueIn),
+      node("after", 0, 999),
+      node("otherConsumer", 0, -200, dataInPins),
+    ];
+    const edges = [
+      dataEdge("pure", "consumer"),
+      dataEdge("pure", "otherConsumer"),
+      execEdge("consumer", "after"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["pure", "consumer"]);
+    expect(pos(next, "consumer")).toEqual({ x: 100, y: 100 });
+    expect(pos(next, "after")).toEqual({ x: 100 + EXEC_STEP, y: 100 });
+    expect(pos(next, "otherConsumer").x).toBeGreaterThan(pos(next, "pure").x);
+    expect(pos(next, "otherConsumer")).not.toEqual(pos(nodes, "otherConsumer"));
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["consumer", "pure"])).toEqual(next);
+  });
 });

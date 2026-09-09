@@ -202,7 +202,7 @@ describe("GraphEditor proximity dragging", () => {
     ).toEqual({ x: 260, y: 0 });
   });
 
-  it.each(["Escape", "pointercancel"])(
+  it.each(["Escape", "pointercancel", "secondTouch"])(
     "%s cancels suggestions for the rest of the gesture",
     (event) => {
       const graph = renderDragGraph();
@@ -211,6 +211,10 @@ describe("GraphEditor proximity dragging", () => {
       expect(graph.previews()).toHaveLength(1);
       if (event === "Escape") {
         fireEvent.keyDown(document, { key: "Escape" });
+      } else if (event === "secondTouch") {
+        fireEvent.touchStart(document, {
+          touches: [{ identifier: 1 }, { identifier: 2 }],
+        });
       } else {
         fireEvent(document, new Event("pointercancel", { bubbles: true }));
       }

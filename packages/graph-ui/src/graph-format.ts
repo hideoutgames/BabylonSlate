@@ -44,10 +44,15 @@ function nodeSize(node: FormatNode): { width: number; height: number } {
   };
 }
 
-function compareNodes(graph: GraphIndex, a: string, b: string): number {
-  const left = graph.byId.get(a)!;
-  const right = graph.byId.get(b)!;
-  return left.position.y - right.position.y || a.localeCompare(b);
+function compareNodes(
+  graph: GraphIndex,
+  a: string,
+  b: string,
+  positions?: ReadonlyMap<string, Position>,
+): number {
+  const left = positions?.get(a) ?? graph.byId.get(a)!.position;
+  const right = positions?.get(b) ?? graph.byId.get(b)!.position;
+  return left.y - right.y || left.x - right.x || a.localeCompare(b);
 }
 
 function indexGraph(
@@ -146,54 +151,63 @@ export function collectThenChain(
 }
 
 type LayoutTree = {
+  roots: string[];
   order: string[];
   children: Map<string, string[]>;
   ranks: Map<string, number>;
 };
 
 function layoutTree(
-  startId: string,
+  startIds: readonly string[],
   successors: (id: string) => readonly string[],
 ): LayoutTree {
-  const order = [startId];
-  const visited = new Set(order);
-  const active = new Set(order);
+  const roots: string[] = [];
+  const order: string[] = [];
+  const visited = new Set<string>();
+  const active = new Set<string>();
   const children = new Map<string, string[]>();
   const forward = new Map<string, string[]>();
   const finished: string[] = [];
-  const stack = [{ id: startId, targets: successors(startId), next: 0 }];
-  while (stack.length > 0) {
-    const frame = stack[stack.length - 1]!;
-    const target = frame.targets[frame.next++];
-    if (target === undefined) {
-      active.delete(frame.id);
-      finished.push(frame.id);
-      stack.pop();
-      continue;
+  for (const startId of startIds) {
+    if (visited.has(startId)) continue;
+    roots.push(startId);
+    order.push(startId);
+    visited.add(startId);
+    active.add(startId);
+    const stack = [{ id: startId, targets: successors(startId), next: 0 }];
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1]!;
+      const target = frame.targets[frame.next++];
+      if (target === undefined) {
+        active.delete(frame.id);
+        finished.push(frame.id);
+        stack.pop();
+        continue;
+      }
+      // A loop's return wire must remain a return wire. Ignore only DFS back
+      // edges when computing ranks; retain every other predecessor of a merge.
+      if (active.has(target)) continue;
+      const links = forward.get(frame.id) ?? [];
+      links.push(target);
+      forward.set(frame.id, links);
+      if (visited.has(target)) continue;
+      const owned = children.get(frame.id) ?? [];
+      owned.push(target);
+      children.set(frame.id, owned);
+      visited.add(target);
+      active.add(target);
+      order.push(target);
+      stack.push({ id: target, targets: successors(target), next: 0 });
     }
-    // A loop's return wire must remain a return wire. Ignore only DFS back
-    // edges when computing ranks; retain every other predecessor of a merge.
-    if (active.has(target)) continue;
-    const links = forward.get(frame.id) ?? [];
-    links.push(target);
-    forward.set(frame.id, links);
-    if (visited.has(target)) continue;
-    const owned = children.get(frame.id) ?? [];
-    owned.push(target);
-    children.set(frame.id, owned);
-    visited.add(target);
-    active.add(target);
-    order.push(target);
-    stack.push({ id: target, targets: successors(target), next: 0 });
   }
-  const ranks = new Map<string, number>([[startId, 0]]);
+  const ranks = new Map<string, number>(roots.map((id) => [id, 0]));
   for (let index = finished.length - 1; index >= 0; index--) {
     const id = finished[index]!;
     for (const target of forward.get(id) ?? []) {
       ranks.set(target, Math.max(ranks.get(target) ?? 0, ranks.get(id)! + 1));
     }
   }
-  return { order, children, ranks };
+  return { roots, order, children, ranks };
 }
 
 function treeHeights(
@@ -227,7 +241,12 @@ function treeRows(
   diagonal: boolean,
 ): Map<string, number> {
   const heights = treeHeights(tree, graph, diagonal);
-  const rows = new Map<string, number>([[tree.order[0]!, 0]]);
+  const rows = new Map<string, number>();
+  let rootY = 0;
+  for (const root of tree.roots) {
+    rows.set(root, rootY);
+    rootY += heights.get(root)! + FORMAT_GAP_Y;
+  }
   for (const id of tree.order) {
     let y =
       rows.get(id)! +
@@ -274,7 +293,7 @@ function parameterBlock(
   members: ReadonlySet<string>,
   graph: GraphIndex,
 ): ParameterBlock {
-  const tree = layoutTree(owner, (id) =>
+  const tree = layoutTree([owner], (id) =>
     (graph.dataInputs.get(id) ?? []).filter((source) => members.has(source)),
   );
   const diagonalHeight = treeHeights(tree, graph, true).get(owner)!;
@@ -330,7 +349,7 @@ function clearVerticalOffset(
       ) {
         continue;
       }
-      const to = blocker.y + blocker.height + FORMAT_GAP_Y - mover.y;
+      const to = blocker.y + blocker.height - mover.y;
       if (to <= 0) continue;
       intervals.push({ from: blocker.y - mover.y - mover.height, to });
     }
@@ -338,22 +357,27 @@ function clearVerticalOffset(
   intervals.sort((a, b) => a.from - b.from);
   let offset = 0;
   for (const interval of intervals) {
-    if (interval.from < offset && interval.to > offset) offset = interval.to;
+    if (interval.from < offset && interval.to > offset)
+      offset = interval.to + FORMAT_GAP_Y;
   }
   return offset;
 }
 
 function layoutChain(
-  startId: string,
+  startIds: readonly string[],
   graph: GraphIndex,
   placed: Map<string, Position>,
 ): void {
+  const startId = startIds[0]!;
   const start = graph.byId.get(startId)!;
+  const origin = placed.get(startId) ?? start.position;
   const walk = chainWalkKind(startId, graph);
-  const tree = layoutTree(startId, (id) =>
-    [...(graph.outgoing[walk].get(id) ?? [])]
-      .filter((target) => !placed.has(target))
-      .sort((a, b) => compareNodes(graph, a, b)),
+  const tree = layoutTree(startIds, (id) =>
+    [...(graph.outgoing[walk].get(id) ?? [])].sort(
+      (a, b) =>
+        Number(!placed.has(a)) - Number(!placed.has(b)) ||
+        compareNodes(graph, a, b, placed),
+    ),
   );
   const owners = claimDataInputs(tree, graph, new Set(placed.keys()));
   const blocks = new Map<string, ParameterBlock>();
@@ -362,6 +386,7 @@ function layoutChain(
   }
   const widths: number[] = [];
   const inputWidths: number[] = [];
+  const fixedColumns: number[] = [];
   for (const id of tree.order) {
     const rank = tree.ranks.get(id)!;
     widths[rank] = Math.max(
@@ -369,14 +394,19 @@ function layoutChain(
       nodeSize(graph.byId.get(id)!).width,
     );
     inputWidths[rank] = Math.max(inputWidths[rank] ?? 0, blocks.get(id)!.left);
+    const fixed = placed.get(id);
+    if (fixed)
+      fixedColumns[rank] = Math.max(fixedColumns[rank] ?? -Infinity, fixed.x);
   }
-  const columns = [start.position.x];
+  const columns = [origin.x];
   for (let rank = 1; rank < widths.length; rank++) {
-    columns[rank] =
+    columns[rank] = Math.max(
       columns[rank - 1]! +
-      widths[rank - 1]! +
-      FORMAT_GAP_X +
-      inputWidths[rank]!;
+        widths[rank - 1]! +
+        FORMAT_GAP_X +
+        inputWidths[rank]!,
+      fixedColumns[rank] ?? -Infinity,
+    );
   }
   const diagonal =
     walk === "data" &&
@@ -385,9 +415,9 @@ function layoutChain(
   const positions = new Map<string, Position>();
   const blockers: Box[] = [];
   for (const id of tree.order) {
-    const position = {
+    const position = placed.get(id) ?? {
       x: columns[tree.ranks.get(id)!]!,
-      y: start.position.y + rows.get(id)!,
+      y: origin.y + rows.get(id)!,
     };
     positions.set(id, position);
     blockers.push(boxAt(graph, id, position));
@@ -411,11 +441,12 @@ function layoutChain(
       blockers.push(boxAt(graph, id, position));
     }
   }
+  const moving = [...positions].filter(([id]) => !placed.has(id));
   const offset = clearVerticalOffset(
-    blockers,
+    moving.map(([id, position]) => boxAt(graph, id, position)),
     [...placed].map(([id, position]) => boxAt(graph, id, position)),
   );
-  for (const [id, position] of positions) {
+  for (const [id, position] of moving) {
     placed.set(id, { x: position.x, y: position.y + offset });
   }
 }
@@ -430,6 +461,8 @@ function formatChainRoots(
       const left = graph.byId.get(a)!;
       const right = graph.byId.get(b)!;
       return (
+        Number(chainWalkKind(a, graph) === "data") -
+          Number(chainWalkKind(b, graph) === "data") ||
         left.position.y - right.position.y ||
         left.position.x - right.position.x ||
         a.localeCompare(b)
@@ -443,6 +476,7 @@ function formatChainRoots(
       !selected.some(
         (other, otherIndex) =>
           other !== id &&
+          chainWalkKind(other, graph) === chainWalkKind(id, graph) &&
           chains.get(other)!.has(id) &&
           (!chains.get(id)!.has(other) || otherIndex < index),
       ),
@@ -459,8 +493,30 @@ export function formatGraphNodes(
   const roots = formatChainRoots(selectedIds, graph);
   if (roots.length === 0) return nodes;
   const positions = new Map<string, Position>();
+  const remaining = new Set(roots);
+  const chains = new Map(
+    roots.map((root) => [root, new Set(collectChain(root, graph))]),
+  );
   for (const root of roots) {
-    if (!positions.has(root)) layoutChain(root, graph, positions);
+    if (
+      !remaining.delete(root) ||
+      [...chains.get(root)!].every((id) => positions.has(id))
+    )
+      continue;
+    const group = [root];
+    for (let index = 0; index < group.length; index++) {
+      const chain = chains.get(group[index]!)!;
+      for (const other of remaining) {
+        if (chainWalkKind(other, graph) !== chainWalkKind(root, graph))
+          continue;
+        if (![...chains.get(other)!].some((id) => chain.has(id))) continue;
+        remaining.delete(other);
+        group.push(other);
+      }
+    }
+    // Selected roots which meet at a join share ranks and lanes. Disconnected
+    // roots remain separate blocks, anchored at their own original positions.
+    layoutChain(group, graph, positions);
   }
   return nodes.map((node) => {
     const position = positions.get(node.id);

@@ -926,17 +926,14 @@ function GraphEditorCanvas({
         if (!internal) continue;
         const position = moving.get(node.id)?.position ?? node.position;
         const bounds = internal.internals.handleBounds;
+        const nodePins = hasSerializedPins(node.data) ? node.data.__pins : [];
         for (const [direction, handles] of [
           ["out", bounds?.source],
           ["in", bounds?.target],
         ] as const) {
           for (const handle of handles ?? []) {
             if (!handle.id) continue;
-            const pin = pinOnNode(
-              graphStateRef.current.nodes,
-              node.id,
-              handle.id,
-            );
+            const pin = nodePins.find((entry) => entry.id === handle.id);
             if (!pin || pin.direction !== direction) continue;
             // Node assistance joins facing pins; custom top-down tree handles
             // and overlapping state-transition plates retain their own gestures.
@@ -1086,6 +1083,9 @@ function GraphEditorCanvas({
     const onVisibilityChange = () => {
       if (document.hidden) cancelProximityConnections();
     };
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length > 1) cancelProximityConnections();
+    };
     window.addEventListener("blur", cancelProximityConnections);
     document.addEventListener(
       "pointercancel",
@@ -1093,6 +1093,7 @@ function GraphEditorCanvas({
       true,
     );
     document.addEventListener("touchcancel", cancelProximityConnections, true);
+    document.addEventListener("touchstart", onTouchStart, true);
     document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
@@ -1107,6 +1108,7 @@ function GraphEditorCanvas({
         cancelProximityConnections,
         true,
       );
+      document.removeEventListener("touchstart", onTouchStart, true);
       document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
