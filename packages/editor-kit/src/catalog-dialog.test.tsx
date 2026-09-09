@@ -27,7 +27,9 @@ describe("CatalogDialog", () => {
           onSearchChange={() => {}}
           data-testid="catalog"
         >
-          <p>{active === "general" ? "General Preferences" : "Input Preferences"}</p>
+          <p>
+            {active === "general" ? "General Preferences" : "Input Preferences"}
+          </p>
         </CatalogDialog>
       );
     }
@@ -40,8 +42,12 @@ describe("CatalogDialog", () => {
     fireEvent.click(inputCategory);
     expect(picker.textContent).toContain("Input");
     expect(getByText("Input Preferences")).toBeTruthy();
-    expect(getByTestId("catalog-category-input").getAttribute("aria-current")).toBe("true");
-    expect(getByTestId("catalog-category-general").getAttribute("aria-current")).toBeNull();
+    expect(
+      getByTestId("catalog-category-input").getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      getByTestId("catalog-category-general").getAttribute("aria-current"),
+    ).toBeNull();
   });
 
   it("renders categories and search", () => {
@@ -74,7 +80,9 @@ describe("CatalogDialog", () => {
     expect(onSearchChange).toHaveBeenCalledWith("input");
     fireEvent.click(getByTestId("catalog-category-input"));
     expect(onCategoryChange).toHaveBeenCalledWith("input");
-    expect(getByPlaceholderText("Search").getAttribute("data-autofocus-search")).toBeNull();
+    expect(
+      getByPlaceholderText("Search").getAttribute("data-autofocus-search"),
+    ).toBeNull();
     expect(getByTestId("catalog-body")).toBeTruthy();
     expect(document.activeElement).not.toBe(getByPlaceholderText("Search"));
   });
@@ -117,9 +125,9 @@ describe("CatalogDialog", () => {
       </CatalogDialog>,
     );
 
-    expect(getByPlaceholderText("Search").getAttribute("data-autofocus-search")).toBe(
-      "true",
-    );
+    expect(
+      getByPlaceholderText("Search").getAttribute("data-autofocus-search"),
+    ).toBe("true");
   });
 
   it("renders grouped category headings", () => {
@@ -151,11 +159,11 @@ describe("CatalogDialog", () => {
     expect(getByText("Session")).toBeTruthy();
     expect(getByTestId("catalog-category-general")).toBeTruthy();
     expect(getByTestId("catalog-category-close")).toBeTruthy();
-    expect(getByTestId("catalog-category-general").className).toContain(
-      "border-l-primary",
-    );
-    expect(getByTestId("catalog-category-input").className).toContain(
-      "border-l-transparent",
-    );
+    expect(
+      getByTestId("catalog-category-general").getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      getByTestId("catalog-category-input").hasAttribute("aria-current"),
+    ).toBe(false);
   });
 });

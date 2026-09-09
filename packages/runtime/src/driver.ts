@@ -55,6 +55,7 @@ import {
   normalizeInputMappings,
   decodeInputEvents,
   type InputMappings,
+  type InputBindingControls,
   type RawInputEvent,
   type ResolvedInputTick,
 } from "@babylonslate/input";
@@ -203,6 +204,7 @@ export interface RuntimeDriverOptions {
 }
 
 export interface RuntimeDriver {
+  readonly inputBindings: InputBindingControls;
   start(): void;
   stop(): void;
   pause(): void;
@@ -663,6 +665,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      inputBindings: this.resolver.bindings,
       interfaceRegistry: this.world.interfaceRegistry,
       classRegistry: registry,
       checkInfiniteLoop: () => this.loopGuard.check(),
@@ -3675,6 +3678,8 @@ class InProcessRuntime implements RuntimeDriver {
   setInputMappings(mappings: InputMappings): void {
     this.resolver.setMappings(normalizeInputMappings(mappings));
   }
+
+  get inputBindings(): InputBindingControls { return this.resolver.bindings; }
 
   getResolvedInput(): ResolvedInputTick {
     return this.resolvedInput;

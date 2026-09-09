@@ -49,7 +49,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@babylonslate/ui/components/select";
-import { cn } from "@babylonslate/ui/lib/utils";
 import { Trash2Icon } from "lucide-react";
 import {
   GraphEditor,
@@ -369,14 +368,9 @@ function AnimGraphVariablesList({
               <Button
                 key={state.id}
                 type="button"
-                variant="ghost"
+                variant={selectedId === state.id ? "secondary" : "ghost"}
                 size="sm"
-                className={cn(
-                  "w-full justify-start rounded-none border-l-2",
-                  selectedId === state.id
-                    ? "border-l-primary bg-primary/20"
-                    : "border-l-transparent",
-                )}
+                className="w-full justify-start"
                 aria-pressed={selectedId === state.id}
                 data-testid={`anim-graph-state-${state.id}`}
                 onClick={() => setSelectedId(state.id)}

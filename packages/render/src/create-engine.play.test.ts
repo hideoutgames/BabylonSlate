@@ -224,6 +224,36 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
   });
 
+  it("lights an isolated prefab preview through PBR and Unlit mode changes", () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      previewLighting: true,
+    });
+    handles.push(handle);
+    const data = createDefaultScene();
+    data.actors = [
+      createActor("prefab", "Prefab", {
+        components: [createMeshComponent("mesh", "box")],
+      }),
+    ];
+    handle.loadScene(data);
+    expect(
+      handle.scene.lights.some((light) => light.isEnabled() && light.intensity > 0),
+    ).toBe(true);
+    const lights = [...handle.scene.lights];
+    handle.editor!.setViewportShadingMode("unlit");
+    expect(handle.scene.lightsEnabled).toBe(false);
+    expect((handle.scene.defaultMaterial as PBRMaterial).unlit).toBe(true);
+    handle.loadScene(data);
+    handle.editor!.setViewportShadingMode("pbr");
+    expect(handle.scene.lightsEnabled).toBe(true);
+    expect((handle.scene.defaultMaterial as PBRMaterial).unlit).toBe(false);
+    expect(handle.scene.lights).toEqual(lights);
+    expect(data.actors).toHaveLength(1);
+  });
+
   it("registerView clears the overlay canvas before copying", () => {
     const engine = sharedEngine();
     const registerView = vi.spyOn(engine, "registerView");

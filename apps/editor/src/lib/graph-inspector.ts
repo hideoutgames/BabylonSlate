@@ -243,13 +243,29 @@ export function pinDefaultPropertyRows(
         });
         break;
       case "string": {
+        const inputKind = entries.find((item) => item.name === "Mapping Kind")?.value;
+        const fixedOptions = entry.name === "Mapping Kind"
+          ? [{ value: "action", label: "Action" }, { value: "axis", label: "Axis" }]
+          : entry.name === "Input Device"
+            ? [{ value: "key", label: "Keyboard" }, { value: "mouseButton", label: "Mouse Button" }, { value: "pointer", label: "Pointer" }, { value: "gamepadButton", label: "Gamepad Button" }, { value: "gamepadAxis", label: "Gamepad Axis" }, { value: "touch", label: "Touch" }]
+            : undefined;
+        const current = pinDefaultAsString(entry.value);
+        if (fixedOptions) {
+          rows.push({ kind: "enum", id: entry.pinId, label: entry.name, value: current, defaultValue: pinDefaultAsString(typeDefault), options: fixedOptions, onChange: (value) => onPatch({ [key]: value }) });
+          break;
+        }
         const mapping =
-          entry.name === "action"
+          entry.name === "Mapping"
+            ? inputKind === "axis"
+              ? mappingNames?.axisNames
+              : inputKind === "action"
+                ? mappingNames?.actionNames
+                : [...(mappingNames?.actionNames ?? []), ...(mappingNames?.axisNames ?? [])]
+          : entry.name === "action"
             ? mappingNames?.actionNames
             : entry.name === "axis"
               ? mappingNames?.axisNames
               : undefined;
-        const current = pinDefaultAsString(entry.value);
         if (mapping && mapping.length > 0) {
           const options = mapping.includes(current)
             ? mapping

@@ -180,6 +180,17 @@ describe("inspectorLiteralPinDefaults", () => {
 });
 
 describe("pinDefaultPropertyRows", () => {
+  it("offers input binding kinds, devices and the selected mapping names", () => {
+    const rows = pinDefaultPropertyRows([
+      { pinId: "kind", name: "Mapping Kind", type: STRING, value: "axis" },
+      { pinId: "mapping", name: "Mapping", type: STRING, value: "Move" },
+      { pinId: "device", name: "Input Device", type: STRING, value: "key" },
+    ], () => {}, { actionNames: ["Jump"], axisNames: ["Move", "Look"] });
+    expect(rows[0]).toMatchObject({ kind: "enum", options: [{ value: "action", label: "Action" }, { value: "axis", label: "Axis" }] });
+    expect(rows[1]).toMatchObject({ kind: "enum", options: [{ value: "Move", label: "Move" }, { value: "Look", label: "Look" }] });
+    expect(rows[2]).toMatchObject({ kind: "enum", options: expect.arrayContaining([{ value: "key", label: "Keyboard" }]) });
+  });
+
   it("maps applicable pin defaults onto property-grid rows and writes default: keys", () => {
     const onPatch = vi.fn();
     const rows = pinDefaultPropertyRows(

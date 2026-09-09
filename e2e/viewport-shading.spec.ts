@@ -79,6 +79,12 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
     .poll(() => greenPixels(preview), { timeout: 20_000 })
     .toBeGreaterThan(500);
   await preview.screenshot({ path: testInfo.outputPath("model-unlit.png") });
+  await page.getByTestId("model-preview-shading").click();
+  await page.getByTestId("model-preview-shading-pbr").click();
+  await expect
+    .poll(() => greenPixels(preview), { timeout: 20_000 })
+    .toBeGreaterThan(500);
+  await preview.screenshot({ path: testInfo.outputPath("model-pbr.png") });
   await saveAllIfEnabled(page);
 
   const mesh = createMeshComponent("unlit-model-mesh", "box");
@@ -111,6 +117,26 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
   await setShading(page, "unlit");
   await expect.poll(() => greenPixels(viewport)).toBeGreaterThan(500);
 
+  // A surface first compiled without lights must use newly authored lighting
+  // when switching back to PBR, including the scene's frozen material path.
+  scene.actors.push(
+    createActor("key-light", "Key Light", {
+      components: [
+        {
+          id: "key-light-component",
+          classId: "HemisphericFillLightComponent",
+          properties: { color: [1, 1, 1], intensity: 1 },
+        },
+      ],
+    }),
+  );
+  await setPreviewScene(page, scene);
+  await setShading(page, "pbr");
+  await expect
+    .poll(() => greenPixels(viewport), { timeout: 20_000 })
+    .toBeGreaterThan(500);
+  await viewport.screenshot({ path: testInfo.outputPath("scene-pbr.png") });
+
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await expect(page.getByTestId("graph-panel")).toBeVisible({
     timeout: 15_000,
@@ -138,7 +164,7 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
     .poll(() => greenPixels(prefab), { timeout: 20_000 })
     .toBeGreaterThan(500);
   await prefab.screenshot({ path: testInfo.outputPath("prefab-unlit.png") });
-  const unlitPixels = await greenPixels(prefab);
   await setShading(page, "pbr", "prefab-");
-  await expect.poll(() => greenPixels(prefab)).toBeLessThan(unlitPixels / 4);
+  await expect.poll(() => greenPixels(prefab)).toBeGreaterThan(500);
+  await prefab.screenshot({ path: testInfo.outputPath("prefab-pbr.png") });
 });

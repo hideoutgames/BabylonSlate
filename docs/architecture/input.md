@@ -63,7 +63,7 @@ Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolv
 
 ## Project Settings
 
-**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` — Action/Axis `Card`s with a muted header, a **Bindings** group, per-binding device Select, searchable `BindingCodePicker`, explicit Ctrl/Shift/Alt/Meta toggles, and contextual axis extras. Device rows use `TypeColorMark` plus a 2px start-edge pin-token bar (key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`). Actions/Axes legends reuse bool/vector pin colors. Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-x` / `dpad-y` / `Jump`). Persists through `updateProjectSettings({ input })` + `normalizeInputMappings(..., { allowIncomplete: true })`. Runtime still uses the default stripper. No JSON textarea and no listen-to-bind.
+**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` with a searchable action/axis overview, binding summaries, and one selected mapping's details. Each binding uses a device Select and searchable `BindingCodePicker`; modifiers and axis tuning stay in optional detail controls with full labels and `NumberField` inputs. Names reject empty/duplicate values. Plain borders and whole-row selection replace colored edge bars and type marks. Desktop remains compact; touch uses larger targets and a responsive detail layout. Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-x` / `dpad-y` / `Jump`). Persists through `updateProjectSettings({ input })` + `normalizeInputMappings(..., { allowIncomplete: true })`. Runtime still strips incomplete bindings. Authoring uses structured pickers; runtime graphs can listen for a player's replacement keyboard key.
 
 Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchDPad shares the analog-stick path with defaults `dpad-x` / `dpad-y`.
 
@@ -76,6 +76,24 @@ Keyboard gameplay capture belongs to the focused Play/player canvas. Starting a 
 Per engineplan §11.1: input is tested through **synthetic event streams** replayed by the deterministic harness and `InputResolver` unit tests — not by driving a browser. P4 raw capture tests remain separate from mapping resolution. Runtime tests also cover live gamepad events stamped with a host wall-clock tick (the Play worker skew) so `GetAxis2D("Move")` cannot silently stay at `{x:0,y:0}`. E2e: `e2e/p5-scripting.spec.ts` injects a synthetic pad and asserts a compiled Tick → GetAxis2D → Print overlay.
 
 ## Scripting nodes (`@babylonslate/scripting-nodes`)
+
+### Runtime rebinding
+
+Project Settings owns the game's default mappings. Rebinding creates session-local overrides by mapping kind (`action` / `axis`), name, and zero-based binding index: index `0` is the first binding in that mapping's Project Settings list. Changing one keyboard slot leaves gamepad/touch alternatives and axis direction, dead zone, scale, and sensitivity intact. Rebinding never rewrites `project.json`; separate Input assets are unnecessary for these project-wide defaults.
+
+| Node | Behaviour |
+| --- | --- |
+| Get Input Binding | Read the current device, code, human label, modifiers, and whether the slot exists. |
+| Set Input Binding | Replace one slot's device/code/modifiers; return Success. |
+| Begin Input Rebind | Listen for a fresh keyboard key, including held Ctrl/Shift/Alt/Meta. Standalone modifiers (such as Shift for Sprint) complete on release; chords complete on the other key's press. Return whether listening started. |
+| Get Input Rebind Status | Read `idle`, `listening`, `completed`, or `cancelled`, plus boolean status pins. |
+| Cancel Input Rebind | Cancel active listening without changing the binding. Escape also cancels. |
+| Reset Input Mapping / Reset All Input Bindings | Restore the project's authored defaults for one mapping or every mapping. |
+| Export Input Bindings / Import Input Bindings | Serialize/restore a versioned JSON string of player overrides. Import returns Success and rejects invalid data without partially applying it. |
+
+For a rebinding menu, call Begin Input Rebind for the selected row, show a listening prompt, then use Get Input Rebind Status on Tick to refresh its label after completion/cancellation. Keys already held when listening starts do not complete capture. Captured keys are consumed until released, so confirming a new binding cannot also trigger gameplay. Capture is keyboard-only; Set Input Binding supports the other device codes from the authoring catalog. Conflicting bindings are allowed, matching existing multiple-action mappings; games can compare Get Input Binding results if their UI requires exclusivity.
+
+The `RuntimeDriver.inputBindings` service is exposed to compiled graphs during Begin Play as well as Tick, including worker Play and the exported player. Existing raw capture forwards arbitrary keyboard codes from the focused game canvas. Overrides survive scene changes within a session. Export the string into the game's own save/profile storage and import it when that profile loads; exporting alone does not persist data across sessions and does not introduce a SaveGame node or automatic browser storage. Keep saves scoped to the game/profile. Overrides store the complete authored binding identity, including modifiers, axis component and tuning. Renaming a mapping or removing/reordering/changing binding slots makes an old profile stale; import rejects it atomically so games can retain their new authored defaults.
 
 | Node | Behaviour |
 | --- | --- |

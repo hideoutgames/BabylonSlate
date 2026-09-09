@@ -77,6 +77,7 @@ for (const preview of [false, true]) {
     await expect(
       page.getByTestId("input-action-0-binding-0-code"),
     ).toContainText("H");
+    await page.getByTestId("input-action-2-select").click();
     await expect(page.getByTestId("input-action-2-name")).toHaveValue("Fire");
     await page
       .getByTestId("settings-modal")
