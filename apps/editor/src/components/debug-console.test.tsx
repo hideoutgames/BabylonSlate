@@ -119,6 +119,34 @@ describe("DebugConsole", () => {
     ).toBe("renderquality high");
   });
 
+  it("does not reset suggestion scrolling when live context refreshes", () => {
+    const props = {
+      open: true,
+      onOpenChange: () => {},
+      commands: createCommandRegistry().list(),
+      onExecute: () => ({ success: true, output: "" }),
+    };
+    const view = render(
+      <DebugConsole
+        {...props}
+        completionContext={{ scenes: ["North", "South"] }}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("debug-console-input"), {
+      target: { value: "changescene " },
+    });
+    const scrollIntoView = vi.fn();
+    const activeOption = screen.getByRole("option", { selected: true });
+    Object.assign(activeOption, { scrollIntoView });
+    view.rerender(
+      <DebugConsole
+        {...props}
+        completionContext={{ scenes: ["North", "South"] }}
+      />,
+    );
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
   it("retains command history and restores a draft after browsing history", async () => {
     render(
       <DebugConsole
