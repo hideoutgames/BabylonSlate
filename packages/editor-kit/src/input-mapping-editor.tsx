@@ -22,7 +22,6 @@ import {
   FieldLabel,
   FieldGroup,
   FieldError,
-  FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import {
@@ -48,7 +47,7 @@ import {
 import { SearchInput } from "./search-input";
 import { formatBindingLabel } from "./format-binding-label";
 import { BindingCodePicker } from "./binding-code-picker";
-import { NumericDragField } from "./numeric-drag-field";
+import { NumberField, type NumberFieldProps } from "./number-field";
 
 export const DEFAULT_TOUCH_CONTROL_IDS = [
   "joystick-x",
@@ -288,7 +287,7 @@ function ActionBindingRow({
   const [optionsOpen, setOptionsOpen] = useState(false);
   return (
     <div
-      className="flex flex-col gap-2 rounded-md border border-border p-2 even:bg-muted/40"
+      className="flex flex-col gap-2 rounded-md border border-border p-2 even:bg-list-stripe"
       data-testid={id}
       data-device={binding.device}
     >
@@ -356,6 +355,32 @@ function ActionBindingRow({
   );
 }
 
+function AxisNumber({
+  label,
+  "data-testid": testId,
+  ...props
+}: NumberFieldProps & { label: string; "data-testid": string }) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={testId}>{label}</FieldLabel>
+      <NumberField {...props} id={testId} data-testid={testId} />
+    </Field>
+  );
+}
+
+function axisBindingSummary(binding: AxisBinding, kind: "1d" | "2d"): string {
+  const parts = [
+    formatBindingLabel(binding.device, binding.code, binding.modifiers),
+  ];
+  if (kind === "2d") parts.push((binding.component ?? "x").toUpperCase());
+  if (!isAnalogBinding(binding.device, binding.code)) {
+    const value = binding.digitalValue ?? 1;
+    parts.push(`Held ${value > 0 ? "+" : ""}${value}`);
+  }
+  if (binding.invert) parts.push("Inverted");
+  return parts.join(" ? ");
+}
+
 function AxisBindingRow({
   id,
   binding,
@@ -381,7 +406,7 @@ function AxisBindingRow({
   const [optionsOpen, setOptionsOpen] = useState(false);
   return (
     <div
-      className="flex flex-col gap-2 rounded-md border border-border p-2 even:bg-muted/40"
+      className="flex flex-col gap-2 rounded-md border border-border p-2 even:bg-list-stripe"
       data-testid={id}
       data-device={binding.device}
     >
@@ -429,7 +454,7 @@ function AxisBindingRow({
       </div>
       <p className="text-sm text-muted-foreground">
         {binding.code
-          ? formatBindingLabel(binding.device, binding.code, binding.modifiers)
+          ? axisBindingSummary(binding, kind)
           : "Choose a control to finish this binding."}
       </p>
       {optionsOpen ? (
@@ -485,40 +510,36 @@ function AxisBindingRow({
             </Field>
           </div>
           {analog ? (
-            <div className="grid grid-cols-1 gap-2 @sm/input:grid-cols-3">
-              <NumericDragField
+            <FieldGroup className="grid grid-cols-1 gap-2 @sm/input:grid-cols-3">
+              <AxisNumber
                 label="Dead Zone"
                 value={binding.deadZone ?? 0}
                 min={0}
                 max={1}
-                sensitivity={0.005}
                 onChange={(deadZone) => onChange({ ...binding, deadZone })}
                 data-testid={`${id}-dead-zone`}
               />
-              <NumericDragField
+              <AxisNumber
                 label="Scale"
                 value={binding.scale ?? 1}
-                sensitivity={0.01}
                 onChange={(scale) => onChange({ ...binding, scale })}
                 data-testid={`${id}-scale`}
               />
-              <NumericDragField
+              <AxisNumber
                 label="Sensitivity"
                 value={binding.sensitivity ?? 1}
-                sensitivity={0.01}
                 onChange={(sensitivity) =>
                   onChange({ ...binding, sensitivity })
                 }
                 data-testid={`${id}-sensitivity`}
               />
-            </div>
+            </FieldGroup>
           ) : (
-            <NumericDragField
+            <AxisNumber
               label="Value When Held"
               value={binding.digitalValue ?? 1}
               min={-1}
               max={1}
-              sensitivity={0.01}
               onChange={(digitalValue) =>
                 onChange({ ...binding, digitalValue })
               }
@@ -755,7 +776,7 @@ export function InputMappingEditor({
               </EmptyHeader>
             </Empty>
           ) : null}
-          <FieldSet>
+          <>
             <div className="flex flex-col gap-3">
               {value.actions.map((action, index) => {
                 if (selected.kind !== "action" || selected.index !== index)
@@ -764,13 +785,9 @@ export function InputMappingEditor({
                 return (
                   <Card key={actionId} size="sm" data-testid={actionId}>
                     <CardHeader className="border-b border-border">
-                      <CardTitle>
-                        {selected.kind === "action" ? "Action" : "Axis"}
-                      </CardTitle>
+                      <CardTitle>Action</CardTitle>
                       <CardDescription>
-                        {selected.kind === "action"
-                          ? "Any bound control can trigger this action."
-                          : "Combine controls into a 1D value or a 2D direction."}
+                        Any bound control can trigger this action.
                       </CardDescription>
                       <div className="flex flex-wrap items-end gap-2">
                         <MappingNameField
@@ -875,9 +892,9 @@ export function InputMappingEditor({
                 );
               })}
             </div>
-          </FieldSet>
+          </>
 
-          <FieldSet>
+          <>
             <div className="flex flex-col gap-3">
               {value.axes.map((axis, index) => {
                 if (selected.kind !== "axis" || selected.index !== index)
@@ -887,13 +904,9 @@ export function InputMappingEditor({
                 return (
                   <Card key={axisId} size="sm" data-testid={axisId}>
                     <CardHeader className="border-b border-border">
-                      <CardTitle>
-                        {selected.kind === "action" ? "Action" : "Axis"}
-                      </CardTitle>
+                      <CardTitle>Axis</CardTitle>
                       <CardDescription>
-                        {selected.kind === "action"
-                          ? "Any bound control can trigger this action."
-                          : "Combine controls into a 1D value or a 2D direction."}
+                        Combine controls into a 1D value or a 2D direction.
                       </CardDescription>
                       <div className="flex flex-wrap items-end gap-2">
                         <MappingNameField
@@ -911,6 +924,7 @@ export function InputMappingEditor({
                           <ToggleGroup
                             variant="outline"
                             size="sm"
+                            className="pointer-coarse:[&>button]:min-h-11 pointer-coarse:[&>button]:min-w-11"
                             spacing={1}
                             value={[kind]}
                             onValueChange={(next) => {
@@ -1027,7 +1041,7 @@ export function InputMappingEditor({
                 );
               })}
             </div>
-          </FieldSet>
+          </>
         </div>
       </div>
     </div>
