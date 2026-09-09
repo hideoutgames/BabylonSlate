@@ -32,21 +32,9 @@ describe("tilemapChunkVertexData", () => {
       worldTileWidth: 1,
       worldTileHeight: 1,
     });
-    const overlap = 1 / 16;
     const inset = 0.5 / 16;
     expect(data.positions).toEqual([
-      -overlap,
-      -overlap,
-      0,
-      1 + overlap,
-      -overlap,
-      0,
-      1 + overlap,
-      1 + overlap,
-      0,
-      -overlap,
-      1 + overlap,
-      0,
+      0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0,
     ]);
     expect(data.uvs).toEqual([
       inset,
@@ -59,6 +47,26 @@ describe("tilemapChunkVertexData", () => {
       1 - inset,
     ]);
     expect(data.indices).toEqual([0, 1, 2, 0, 2, 3]);
+  });
+
+  it("joins neighboring chunks at exact grid boundaries without stretching tiles", () => {
+    const tileset = normalizeTilesetPayload({
+      atlasWidth: 16, atlasHeight: 16, tileWidth: 16, tileHeight: 16,
+    });
+    const left = tilemapChunkVertexData({
+      tiles: [0, 1, 0, 0], chunkSize: 2, chunkX: 4, chunkY: 0,
+      tileset, worldTileWidth: 0.16, worldTileHeight: 0.16,
+    });
+    const right = tilemapChunkVertexData({
+      tiles: [1, 0, 0, 0], chunkSize: 2, chunkX: 5, chunkY: 0,
+      tileset, worldTileWidth: 0.16, worldTileHeight: 0.16,
+    });
+    expect(left.positions[0]).toBe(1.44);
+    expect(left.positions[3]).toBe(1.6);
+    expect(right.positions[0]).toBe(1.6);
+    expect(right.positions[3]).toBe(1.76);
+    expect(left.positions[7]).toBe(0.16);
+    expect(right.positions[7]).toBe(0.16);
   });
 
   it("is golden-stable for a two-tile chunk with margin and spacing", () => {
@@ -128,9 +136,8 @@ describe("tilemapChunkVertexData", () => {
     });
     expect(staticData.positions).toHaveLength(12);
     expect(animatedData.positions).toHaveLength(12);
-    const overlap = 1 / 16;
-    expect(staticData.positions[0]).toBe(-overlap);
-    expect(animatedData.positions[0]).toBe(1 - overlap);
+    expect(staticData.positions[0]).toBe(0);
+    expect(animatedData.positions[0]).toBe(1);
   });
 
   it("draws only GIDs that belong to the requested atlas", () => {
@@ -176,34 +183,11 @@ describe("tilemapChunkVertexData", () => {
       resolveGid,
       atlasGuid: "deco",
     });
-    const overlap = 1 / 16;
     expect(groundDraw.positions).toEqual([
-      -overlap,
-      -overlap,
-      0,
-      1 + overlap,
-      -overlap,
-      0,
-      1 + overlap,
-      1 + overlap,
-      0,
-      -overlap,
-      1 + overlap,
-      0,
+      0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0,
     ]);
     expect(decoDraw.positions).toEqual([
-      1 - overlap,
-      -overlap,
-      0,
-      2 + overlap,
-      -overlap,
-      0,
-      2 + overlap,
-      1 + overlap,
-      0,
-      1 - overlap,
-      1 + overlap,
-      0,
+      1, 0, 0, 2, 0, 0, 2, 1, 0, 1, 1, 0,
     ]);
   });
 });
