@@ -43,7 +43,8 @@ describe("player console host", () => {
 
   it("executes commands through the runtime and keeps worker responses paired with requests", async () => {
     const controls: unknown[] = [];
-    const execute = undefined;
+    let execute:
+      ((line: string) => { success: boolean; output: string }) | undefined = undefined;
     const host = createPlayerConsoleHost({
       execute: () => execute,
       post: (control) => controls.push(control),
