@@ -16,6 +16,13 @@ const FILE_MANIFEST = ".test-build-files.json";
 const BUILD_MARKER = ".test-build.json";
 
 function* environmentReferences(value) {
+  // A nested reference in the key itself can construct a new inherited name.
+  // Defaults may nest, but dynamic keys cannot be safely fingerprinted here.
+  for (const match of value.matchAll(/\$\{([^{}]*?)(?=\$\{)/g))
+    if (!/(:\+|\+|:-|-)/.test(match[1]))
+      throw new Error(
+        "Constructed dotenv keys are unsupported for test builds; use literal variable names.",
+      );
   // Match the key prefix before a Vite expansion operator. Matching an entire
   // braced expression would lose its outer key when the fallback is nested.
   for (const match of value.matchAll(
