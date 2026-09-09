@@ -19,7 +19,11 @@ import {
 const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
   const loadAssetThumbnail = vi.fn(async () => new Uint8Array([1, 2, 3]));
   const docs = {
-    projectDocument: { settings: { pluginOverrides: {} } },
+    projectDocument: { settings: {
+      pluginOverrides: {},
+      gameInstanceClass: null as string | null,
+      editorUtilityObjects: [] as string[],
+    } },
     assetRegistry: null as unknown,
     registryVersion: 1,
     refreshAssetRegistry: vi.fn(),
@@ -156,6 +160,8 @@ afterEach(async () => {
   layout.phone = false;
   docs.openDocument.mockClear();
   docs.openDocuments = [];
+  docs.projectDocument.settings.gameInstanceClass = null;
+  docs.projectDocument.settings.editorUtilityObjects = [];
   docs.loadAssetDocument.mockReset().mockResolvedValue({});
   if (clientWidthDescriptor) {
     Object.defineProperty(
@@ -246,6 +252,24 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
     expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
   });
+
+  it.each(["gameInstanceClass", "editorUtilityObjects"] as const)(
+    "blocks a Class assigned in Project Settings %s",
+    async (setting) => {
+      const { actorClass } = classAndScene();
+      if (setting === "gameInstanceClass") docs.projectDocument.settings.gameInstanceClass = "Hero";
+      else docs.projectDocument.settings.editorUtilityObjects = ["Hero"];
+      installRegistry([actorClass]);
+      render(<ContentBrowserWorkspace />);
+      fireEvent.click(screen.getByTestId(`content-item-${actorClass.path}`));
+      fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
+      });
+      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+    },
+  );
 });
 
 describe("ContentBrowserWorkspace grid window", () => {
