@@ -155,7 +155,11 @@ describe("runtime input bindings", () => {
       version: 1,
       overrides: [],
     });
-    expect(next.resolve([key("Space")]).actions.Jump?.pressed).toBe(true);
+    expect(next.resolve([key("Space")]).actions.Jump).toEqual({
+      pressed: true,
+      released: true,
+      held: true,
+    });
     const changedDefaults = createDefaultInputMappings();
     changedDefaults.actions[0]!.bindings.reverse();
     const updatedGame = new InputResolver(changedDefaults);

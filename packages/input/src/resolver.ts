@@ -231,6 +231,9 @@ export class InputResolver {
       }
     };
 
+    // A mapping change can release an action before the first new event arrives.
+    // Observe that boundary so a fresh press of the replacement key keeps its edge.
+    sampleActions();
     for (const event of events) {
       if (!this.bindings.accepts(event)) continue;
       switch (event.kind) {
