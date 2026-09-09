@@ -97,6 +97,48 @@ describe("Move To Blackboard Key", () => {
     expect(runtime.getWorld().findActor("guard")!.transform.position.x).toBeLessThan(-6.2);
   });
 
+  it.each([
+    { kind: "actor", reference: "target", minimumX: 3.2 },
+    { kind: "component", reference: 'ctx.getComponentById(target, "point")', minimumX: 4.2 },
+  ])("uses a live $kind target spawned by its service in the same tick", async ({ reference, minimumX }) => {
+    const { runtime, commands } = await setup(null);
+    await runtime.loadScripts([
+      {
+        assetGuid: "spawned-target", classId: "SpawnedTarget", parentClassId: "Actor",
+        source: "", anchors: [], entryPoints: [],
+        components: [{
+          id: "point", classId: "MeshComponent", properties: {},
+          transform: { position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        }],
+      },
+      {
+        assetGuid: "spawn-service", classId: "SpawnTargetService", parentClassId: "BTService",
+        anchors: [], entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }],
+        source: `export function onBtTick(ctx) {
+          if (ctx.getBlackboard("target")) return;
+          const target = ctx.spawnActor("SpawnedTarget", { position: { x: 4, y: 0, z: 0 } });
+          ctx.setBlackboard("target", ${reference});
+        }`,
+      },
+    ]);
+    runtime.registerBehaviourTree("tree", {
+      name: "Spawn And Follow", rootId: "move", blackboardGuid: "board",
+      nodes: [{
+        id: "move", kind: "task", classId: "BTTask_MoveToBlackboardKey",
+        children: [], decorators: [], properties: { key: "target", acceptRadius: 0.7 },
+        services: [{
+          id: "spawn", classId: "SpawnTargetService", intervalMs: 0,
+          randomDeviationMs: 0, properties: {},
+        }],
+      }],
+    });
+    runtime.tick();
+    expect(runtime.getWorld().getActors().some((actor) => actor.classId === "SpawnedTarget")).toBe(true);
+    expect(commands.filter((command) => command.type === "btState").at(-1)).toMatchObject({ status: "running" });
+    for (let i = 0; i < 120; i += 1) runtime.tick();
+    expect(runtime.getWorld().findActor("guard")!.transform.position.x).toBeGreaterThan(minimumX);
+  });
+
   it("follows a live component reference in world space and records safe reference telemetry", async () => {
     const { runtime, commands } = await setup(null);
     const target = runtime.getWorld().findActor("target")!;

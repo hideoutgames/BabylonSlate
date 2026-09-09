@@ -319,7 +319,9 @@ describe("BehaviourTreeEditor", () => {
     expect(screen.queryByRole("option", { name: "Hp" })).toBeNull();
     expect(screen.getByRole("option", { name: "Actor" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Target" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("option", { name: "Position" }));
+    const option = screen.getByRole("option", { name: "Position" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
     await waitFor(() => {
       expect(lastCommit().nodes.find((node) => node.id === added.id)?.properties).toEqual({
         key: "position",

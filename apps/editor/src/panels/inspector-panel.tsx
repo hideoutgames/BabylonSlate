@@ -935,6 +935,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     reparentClassDocument,
     projectDocument,
     assetRegistry,
+    registryVersion,
     animEditorMode,
   } = useDocuments();
   const { focusDiagnostic } = useValidation();
@@ -968,8 +969,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   );
   const parentClass = indexed?.header.parentClass ?? null;
   const parentOf = useMemo(
-    () => classParentLookup(assetRegistry?.list() ?? []),
-    [assetRegistry, openDocuments],
+    () => {
+      void registryVersion;
+      return classParentLookup(assetRegistry?.list() ?? []);
+    },
+    [assetRegistry, registryVersion],
   );
   const editorGraph = isEditorGraphHost({
     parentClass,
@@ -1038,11 +1042,14 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       : undefined;
 
   const typeCatalog = useMemo(
-    () => collectGraphTypeAssets({
-      assets: assetRegistry?.list() ?? [],
-      openDocuments,
-    }),
-    [assetRegistry, openDocuments],
+    () => {
+      void registryVersion;
+      return collectGraphTypeAssets({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+      });
+    },
+    [assetRegistry, openDocuments, registryVersion],
   );
   const typeSchemas = useMemo(
     () => typeSchemasFromGraphAssets(typeCatalog),
