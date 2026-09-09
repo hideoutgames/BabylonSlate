@@ -70,7 +70,7 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 `--primary` is ink in both schemes: light `oklch(0.145 0 0)`, dark `oklch(0.985 0 0)`.
 
-Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` supplies a slightly darker alternate background in both themes for catalog and picker rows. Add Node assigns stripes by item order before virtualization, excluding category headers.
+Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` is a faint black tint (2.5% light / 3.5% dark) so alternate catalog and picker rows subtly follow their containing surface instead of forming high-contrast bands. Add Node assigns stripes by item order before virtualization, excluding category headers.
 
 ## Action and status tokens
 
