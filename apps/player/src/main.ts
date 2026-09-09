@@ -86,6 +86,7 @@ async function launchLoaded(
     canvas,
     game,
     onConsoleEvent: (command) => {
+      hud.applyCommand(command);
       if (window.parent === window || !previewMode()) return;
       if (
         [
@@ -94,6 +95,7 @@ async function launchLoaded(
           "diagnostic",
           "setBehaviourTreeDebug",
           "behaviourTreeSnapshot",
+          "trace",
         ].includes(command.type)
       ) {
         window.parent.postMessage(

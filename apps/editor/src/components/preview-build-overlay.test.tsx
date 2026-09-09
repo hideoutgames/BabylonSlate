@@ -10,10 +10,12 @@ afterEach(() => {
 describe("PreviewBuildOverlay", () => {
   it("opens a console, retains play warnings, and executes in the expected player frame", async () => {
     const iframeRef = createRef<HTMLIFrameElement>();
+    const onTrace = vi.fn();
     const view = render(
       <PreviewBuildOverlay
         src="/player/index.html?preview=1"
         iframeRef={iframeRef}
+        onTrace={onTrace}
         onClose={() => undefined}
       />,
     );
@@ -70,6 +72,11 @@ describe("PreviewBuildOverlay", () => {
     await waitFor(() =>
       expect(view.getByText("Path Overlay Enabled")).toBeTruthy(),
     );
+    const trace = { version: 1, frames: [], logs: [] };
+    receive({ type: "babylonslate-preview-console-event", command: { type: "trace", payload: trace } });
+    fireEvent.click(view.getByRole("button", { name: "Close" }));
+    fireEvent.click(view.getByRole("button", { name: "Stop" }));
+    expect(onTrace).toHaveBeenCalledWith(trace);
   });
   it("labels Stop on a 44px target above the player iframe", () => {
     const view = render(

@@ -1,4 +1,4 @@
-import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
+import type { ControlMessage } from "@babylonslate/bridge";
 
 type Result = { success: boolean; output: string };
 
@@ -29,7 +29,7 @@ export function createPlayerConsoleHost(options: {
         options.post({ type: "console", line });
       });
     },
-    receive(command: Pick<CommandMessage, "type"> & Record<string, unknown>) {
+    receive(command: { type: string } & Record<string, unknown>) {
       if (command.type === "consoleResult")
         pending.shift()?.({
           success: command.success === true,
