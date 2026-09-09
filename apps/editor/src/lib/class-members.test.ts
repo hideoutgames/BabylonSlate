@@ -161,6 +161,7 @@ describe("addClassMember", () => {
     graph = addCallEventNode(graph, { name: "On Hit" }, {
       idFactory: () => "foreign", classId: "Other", implicitSelf: false,
     });
+    graph.functionGraphs = { "fn-1": { nodes: [], edges: [] } };
     graph = addCallEventNode(graph, { name: "On Hit" }, {
       idFactory: () => "function-call", functionId: "fn-1",
     });

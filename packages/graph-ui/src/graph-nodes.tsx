@@ -6,7 +6,12 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
-import { ContextMenuOverlay, humanizePropertyLabel, PinShapeGlyph, useContextMenu } from "@babylonslate/editor-kit";
+import {
+  ContextMenuOverlay,
+  humanizePropertyLabel,
+  PinShapeGlyph,
+  useContextMenu,
+} from "@babylonslate/editor-kit";
 import { isDevelopmentOnlyNode } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
@@ -403,26 +408,26 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
         menu.bind.onContextMenu(event);
       }}
     >
-    <BlueprintNodeShell
-      nodeId={id}
-      title={title}
-      role={role}
-      selected={selected}
-      data={data}
-    >
-      <div className="flex flex-col py-1">
-        {rows.map((row, index) => (
-          <PinRow
-            key={row.in?.id ?? row.out?.id ?? `row-${index}`}
-            nodeId={id}
-            data={data}
-            incoming={row.in}
-            outgoing={row.out}
-          />
-        ))}
-      </div>
-    </BlueprintNodeShell>
-    <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} />
+      <BlueprintNodeShell
+        nodeId={id}
+        title={title}
+        role={role}
+        selected={selected}
+        data={data}
+      >
+        <div className="flex flex-col py-1">
+          {rows.map((row, index) => (
+            <PinRow
+              key={row.in?.id ?? row.out?.id ?? `row-${index}`}
+              nodeId={id}
+              data={data}
+              incoming={row.in}
+              outgoing={row.out}
+            />
+          ))}
+        </div>
+      </BlueprintNodeShell>
+      <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} />
     </div>
   );
 }
