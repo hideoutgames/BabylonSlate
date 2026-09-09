@@ -225,9 +225,9 @@ describe("editor Drop", () => {
   it("supports small invertible colliders and parent transforms", () => {
     const support = createActor("support", "Support", {
       transform: { ...identitySerializedTransform(), scale: [0.001, 0.001, 0.001] },
-      components: [{ id: "shape", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 1000 } } }],
+      components: [{ id: "shape", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 1 } } }],
     });
-    expect(setup([box("selected", [0, 10, 0]), support]).drop(["selected"])[0]?.position[1]).toBeCloseTo(1.75);
+    expect(setup([box("selected", [0, 10, 0]), support]).drop(["selected"])[0]?.position[1]).toBeCloseTo(0.751);
     const parent = createActor("parent", "Parent", { components: [],
       transform: { ...identitySerializedTransform(), position: [0, 10, 0], scale: [0.001, 0.001, 0.001] } });
     const child = { ...box("child", [0, 0, 0]), parentId: "parent" };
