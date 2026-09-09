@@ -23,6 +23,8 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+import { Button } from "@babylonslate/ui/components/button";
+import type { CommandResult } from "@babylonslate/debugger";
 import {
   flattenInspectTree,
   nextInspectSelection,
@@ -38,6 +40,7 @@ export type DebugInspectDialogProps = {
   onOpenChange: (open: boolean) => void;
   snapshot: DebugInspectSnapshot;
   onSelectedIdChange?: (id: string | null) => void;
+  onExecute?: (line: string) => Promise<CommandResult>;
 };
 
 function inspectTypeVisual(
@@ -56,17 +59,20 @@ function inspectTypeVisual(
   return resolveTypeVisual({ classId: node.classId, family: "class" });
 }
 
-/** Read-only Play overlay inspector: actor tree plus live variables. */
+/** Play inspector: live values and session-only actor debug actions. */
 export function DebugInspectDialog({
   open,
   onOpenChange,
   snapshot,
   onSelectedIdChange,
+  onExecute,
 }: DebugInspectDialogProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+  const [actionResult, setActionResult] = useState<string | null>(null);
 
   const parentIds = useMemo(() => {
     const ids = new Set<string>();
@@ -110,6 +116,21 @@ export function DebugInspectDialog({
 
   const effectiveId = nextInspectSelection(selectedId, snapshot.nodes);
   const selected = snapshot.nodes.find((node) => node.id === effectiveId) ?? null;
+  const selectedHasCamera = selected?.kind === "actor" && snapshot.nodes.some(
+    (node) => node.parentId === selected.id && node.kind === "component" && node.classId === "CameraComponent",
+  );
+  const executeAction = async (command: "possess" | "destroyactor") => {
+    if (!onExecute || selected?.kind !== "actor" || actionPending) return;
+    setActionPending(true);
+    try {
+      const result = await onExecute(`${command} "${selected.id}"`);
+      setActionResult(result.output);
+    } catch (error) {
+      setActionResult(error instanceof Error ? error.message : "Action Failed");
+    } finally {
+      setActionPending(false);
+    }
+  };
 
   useEffect(() => {
     onSelectedIdChange?.(effectiveId);
@@ -168,6 +189,20 @@ export function DebugInspectDialog({
           <ScrollArea className="min-h-0 flex-1">
             {selected ? (
               <div className="flex flex-col gap-4 p-4" data-testid="debug-inspect-details">
+                {onExecute && selected.kind === "actor" ? (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedHasCamera ? (
+                      <Button size="sm" variant="outline" disabled={actionPending}
+                        onClick={() => void executeAction("possess")}>
+                        Use Camera
+                      </Button>
+                    ) : null}
+                    <Button size="sm" variant="outline" disabled={actionPending}
+                      onClick={() => void executeAction("destroyactor")}>
+                      Destroy Actor
+                    </Button>
+                  </div>
+                ) : null}
                 <PropertyGrid
                   orientation="horizontal"
                   rows={playInspectIdentityRows(selected)}
@@ -198,6 +233,11 @@ export function DebugInspectDialog({
             )}
           </ScrollArea>
         </div>
+        {actionResult ? (
+          <p role="status" className="shrink-0 border-t px-4 py-2 text-sm text-muted-foreground">
+            <SelectableText>{actionResult}</SelectableText>
+          </p>
+        ) : null}
       </DialogContent>
     </Dialog>
   );
