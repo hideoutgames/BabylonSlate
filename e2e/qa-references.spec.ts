@@ -65,6 +65,19 @@ test("H9: a long References list keeps Close inside the viewport", async ({ page
   }
   await close.click();
   await expect(dialog).toHaveCount(0);
+  await target.click();
+  await page.getByTestId("content-browser-delete-selected").click();
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const deletion = page.getByTestId("content-browser-delete-dialog");
+    await expect(deletion.getByRole("button", { name: "Replace Mannequin", exact: true })).toBeVisible();
+    const body = page.getByTestId("content-browser-delete-body");
+    await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    const cancel = page.getByTestId("content-browser-delete-cancel");
+    const bounds = await cancel.boundingBox();
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+  }
+  await page.getByTestId("content-browser-delete-cancel").click();
 });
 
 test("H17: referenced Class deletion confirms twice and clears open scene usages", async ({

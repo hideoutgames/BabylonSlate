@@ -1787,7 +1787,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (asset && deletingGuids.has(asset.header.guid)) return [];
       const walked = replaceClassAssetReferences(doc.content, replacements);
       if (!walked.changed) return [];
-      if (asset && registry?.getRoot(asset.rootId)?.readOnly) {
+      if ((asset && registry?.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
         throw new Error(`${doc.ref.path} is read-only and still references a selected Class.`);
       }
       return [{ doc, content: walked.value }];

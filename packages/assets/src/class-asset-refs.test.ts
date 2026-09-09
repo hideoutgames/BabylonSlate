@@ -59,4 +59,17 @@ describe("Class reference replacement", () => {
     expect(cleared.nodes[0]!.pins[0]!.type.classId).toBe("BObject");
     expect(cleared.nodes[0]!.properties["default:classId"]).toBeNull();
   });
+
+  it("rewrites Class arrays, map keys and values, and custom pin defaults without touching text entries", () => {
+    const value = { members: [
+      { container: "array", typeId: "class", defaultValue: ["Hero", "Keep"] },
+      { container: "map", keyTypeId: "class", typeId: "string", defaultValue: [{ key: "Hero", value: "Hero" }] },
+      { container: "map", keyTypeId: "string", typeId: "class", defaultValue: [{ key: "Hero", value: "Hero" }] },
+    ], nodes: [{ pins: [{ id: "custom", type: { kind: "classRef", classId: "Actor" } }], properties: { "default:custom": "Hero" } }] };
+    const result = replaceClassAssetReferences(value, [{ ...hero, replacement }]).value;
+    expect(result.members.map((member) => member.defaultValue)).toEqual([
+      ["NPC", "Keep"], [{ key: "NPC", value: "Hero" }], [{ key: "Hero", value: "NPC" }],
+    ]);
+    expect(result.nodes[0]!.properties["default:custom"]).toBe("NPC");
+  });
 });

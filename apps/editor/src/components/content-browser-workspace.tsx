@@ -34,6 +34,7 @@ import {
   useContextMenu,
   AssetPicker,
   ClassPicker,
+  PickerIdentity,
   type TypeVisual,
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
@@ -1179,7 +1180,9 @@ export function ContentBrowserWorkspace({
   const deletedClasses = useMemo(() => referenceAssets.filter((asset) => deletingClassGuids.has(asset.header.guid)), [referenceAssets, deletingClassGuids]);
   const classReplacements = useMemo(() => deletedClasses.map((asset) => {
     const replacement = referenceAssets.find((candidate) => candidate.header.guid === classReplacementChoices[asset.header.guid]);
-    return { ...classAssetReference(asset), replacement: replacement ? classAssetReference(replacement) : null };
+    const selectedGuid = classReplacementChoices[asset.header.guid];
+    return { ...classAssetReference(asset), replacement: replacement ? classAssetReference(replacement)
+      : selectedGuid ? { guid: selectedGuid, classId: "" } : null };
   }), [deletedClasses, referenceAssets, classReplacementChoices]);
   const pickerSource = deletedClasses.find((asset) => asset.header.guid === replacementPicker);
   const pickerCandidates = pickerSource ? classDeletionCandidates(pickerSource, referenceAssets, deletingGuids) : [];
@@ -2443,8 +2446,9 @@ export function ContentBrowserWorkspace({
               <Field key={asset.header.guid} className="border-b px-4 py-3">
                 <FieldLabel htmlFor={`replace-class-${asset.header.guid}`}>Replace {resolveAssetName(asset.header.guid)}</FieldLabel>
                 <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
-                  className="justify-start" onClick={() => setReplacementPicker(asset.header.guid)}>
-                  {classReplacementChoices[asset.header.guid] ? resolveAssetName(classReplacementChoices[asset.header.guid]!) : "None"}
+                  className="min-h-[var(--touch-target,28px)] justify-start" onClick={() => setReplacementPicker(asset.header.guid)}>
+                  {classReplacementChoices[asset.header.guid]
+                    ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} /> : "None"}
                 </Button>
                 <p className="text-xs text-muted-foreground">Applies to every usage in {deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).map((ref) => ref.name).join(", ")}.</p>
               </Field>
