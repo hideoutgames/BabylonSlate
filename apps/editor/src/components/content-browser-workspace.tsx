@@ -111,6 +111,7 @@ import {
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
   buildNewAssetResult,
+  classIdFromClassAsset,
   classParentLookup,
   collectFolderGuidsFromTrees,
   contentBrowserContextActions,
@@ -1136,14 +1137,27 @@ export function ContentBrowserWorkspace({
         refs.set(inbound, targets);
       }
     }
-    return [...refs].map(([guid, targets]) => {
+    const rows = [...refs].map(([guid, targets]) => {
       const asset = assetRegistry.getByGuid(guid);
       return { guid, name: resolveAssetName(guid), path: asset?.path ?? guid,
         type: asset?.header.type, targets: targets.map(resolveAssetName),
         blocksClassDelete: targets.some((target) => deletingClassGuids.has(target)) };
-    }).sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
+    });
+    const projectClasses = new Set([
+      projectDocument?.settings.gameInstanceClass,
+      ...(projectDocument?.settings.editorUtilityObjects ?? []),
+    ]);
+    const projectTargets = referenceAssets.filter((asset) =>
+      deletingClassGuids.has(asset.header.guid) && projectClasses.has(classIdFromClassAsset(asset)),
+    );
+    if (projectTargets.length > 0) rows.push({
+      guid: "project-settings", name: "Project Settings", path: "project.json", type: undefined,
+      targets: projectTargets.map((asset) => resolveAssetName(asset.header.guid)),
+      blocksClassDelete: true,
+    });
+    return rows.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
   }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName,
-    deletingGuids, deletingClassGuids, deleteReferenceScan, deleteReferenceScanCurrent]);
+    deletingGuids, deletingClassGuids, deleteReferenceScan, deleteReferenceScanCurrent, projectDocument]);
   const hasReferencedClass = deleteInboundRefs.some((ref) => ref.blocksClassDelete);
   const deleteBlocked = hasReferencedClass || checkingDeleteReferences || deleteReferenceCheckFailed;
 
@@ -2353,7 +2367,7 @@ export function ContentBrowserWorkspace({
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {hasReferencedClass
-                  ? "Classes still referenced by remaining assets cannot be deleted. Remove their references and save those assets first."
+                  ? "Classes still referenced by remaining assets or Project Settings cannot be deleted. Remove their references and save first."
                   : checkingDeleteReferences ? "Checking Class references before deletion."
                   : deleteReferenceCheckFailed ? "Class references could not be checked. Reopen the affected assets and try again."
                   : deleteInboundRefs.length > 0
