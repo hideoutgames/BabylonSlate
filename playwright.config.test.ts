@@ -93,7 +93,6 @@ describe("Playwright iPad project filter", () => {
     );
     for (const file of [
       "p2-accept.spec.ts",
-      "p4-play.spec.ts",
       "p5-scripting.spec.ts",
       "p9-content.spec.ts",
       "editor-smoke.spec.ts",
@@ -104,6 +103,14 @@ describe("Playwright iPad project filter", () => {
     ]) {
       expect(ipadFiles, `${file} is desktop-only`).not.toContain(file);
     }
+
+    expect(landscape.filter((test) => test.file === "p4-play.spec.ts")).toEqual([
+      expect.objectContaining({
+        title: expect.stringMatching(
+          /framecap changes rendered FPS while simulation keeps ticking$/,
+        ),
+      }),
+    ]);
 
     const ipadTitles = landscape.map((test) => test.title);
     expect(ipadTitles).toEqual(

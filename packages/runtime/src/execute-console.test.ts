@@ -4,6 +4,23 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("RuntimeDriver.executeConsoleCommand", () => {
+  it.each([0, -1])("reports the effective fallback cap for framecap %s", (cap) => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      expect(runtime.executeConsoleCommand(`framecap ${cap}`).output).toBe("framecap 60");
+      expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 60");
+      expect(commands).toContainEqual({ type: "setFrameCap", fps: 60 });
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("runs changescene through the command registry", () => {
     let loaded: string | undefined;
     const runtime = createInProcessRuntime({

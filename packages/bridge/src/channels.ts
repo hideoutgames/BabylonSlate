@@ -76,6 +76,8 @@ export type ScriptBundleEntry = {
 export type ControlMessage =
   | {
       type: "load";
+      /** Initial session render cap, shared with the renderer for console readback. */
+      frameCap?: number;
       project?: { name: string; version: string };
       sceneAssetGuid: string;
       /** Authored project mappings; omitted legacy loads use defaults. */

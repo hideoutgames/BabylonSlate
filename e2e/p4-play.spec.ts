@@ -8,8 +8,41 @@ import {
   previewPhysicsScene,
 } from "./preview-scene-fixture";
 import { expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 
 test.describe("P4 Play overlay and session report", () => {
+  test("framecap changes rendered FPS while simulation keeps ticking", { tag: IPAD_TEST_TAG }, async ({ page }) => {
+    test.setTimeout(120_000);
+    await openTestProject(page);
+    await openMainScene(page);
+    await clickPlayAndWaitForOverlay(page);
+    await page.getByTestId("play-stats-toggle").click();
+    const fps = page.getByTestId("play-fps");
+    const tick = () => page.evaluate(() => {
+      const host = globalThis as unknown as {
+        __babylonslatePlayTest?: { tickIndex: () => number };
+      };
+      return host.__babylonslatePlayTest?.tickIndex() ?? 0;
+    });
+
+    for (const cap of [30, 15, 60]) {
+      await page.getByTestId("play-console-open").click();
+      await page.getByTestId("debug-console-input").fill(`framecap ${cap}`);
+      await page.getByTestId("debug-console-submit").click();
+      await expect(page.getByTestId("debug-console-transcript")).toContainText(`framecap ${cap}`);
+      await page.getByTestId("debug-console").getByRole("button", { name: "Close" }).click();
+      // Allow the previous one-second sample to expire; heavy hosts may render
+      // below the cap, but a 60 Hz input pump must not masquerade as capped FPS.
+      await expect.poll(async () => {
+        const value = Number(await fps.getAttribute("data-fps"));
+        return value > 0 && value <= cap + 3;
+      }, { timeout: 15_000 }).toBe(true);
+      const before = await tick();
+      await expect.poll(tick, { timeout: 10_000 }).toBeGreaterThan(before + 60);
+    }
+    await page.getByTestId("play-overlay-close").click();
+  });
+
   test("Play rolls all eight legacy duplicated spheres down an angled cube", async ({ page }) => {
     test.setTimeout(120_000);
     await openTestProject(page);
