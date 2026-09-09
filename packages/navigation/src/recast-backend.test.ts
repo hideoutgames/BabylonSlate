@@ -106,7 +106,9 @@ describe("recast generate / import round-trip", () => {
     nav.setAgentTarget(id, { x: 4, y: 0, z: 4 });
     for (let i = 0; i < 30; i += 1) nav.stepCrowd(1 / 60);
     const debug = nav.agentDebugState?.(id);
-    expect(debug).toMatchObject({ radius: 0.4, height: 1.8, state: "moving" });
+    expect(debug).toMatchObject({ state: "moving" });
+    expect(debug?.radius).toBeCloseTo(0.4);
+    expect(debug?.height).toBeCloseTo(1.8);
     expect(debug?.position.x).toBeGreaterThan(-4);
     expect(debug?.target?.x).toBeCloseTo(4);
     expect(debug?.path.length).toBeGreaterThan(0);

@@ -47,6 +47,7 @@ describe("runtime behaviour tree evaluation", () => {
     expect(snapshot).toMatchObject({ trees: [{ actorGuid: "guard", actorName: "Guard", treeGuid: "tree-1", treeName: "Guard Logic", status: "success" }] });
     expect(snapshot?.type === "behaviourTreeSnapshot" && snapshot.trees[0]?.nodes.length).toBeGreaterThan(0);
     runtime.getWorld().destroyActor("guard");
+    runtime.getWorld().flushPending();
     runtime.executeConsoleCommand("behaviourtreedebug on");
     expect(commands.filter((command) => command.type === "behaviourTreeSnapshot").at(-1)).toEqual({ type: "behaviourTreeSnapshot", trees: [] });
     runtime.executeConsoleCommand("behaviourtreedebug off");
