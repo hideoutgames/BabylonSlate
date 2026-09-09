@@ -93,9 +93,13 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
   await openMainScene(page);
   await setPreviewScene(page, scene);
   const viewport = page.getByTestId("viewport-canvas");
-  await expect(viewport).toHaveAttribute("data-scene-ready", "true", {
-    timeout: 30_000,
-  });
+  await expect(page.getByTestId("viewport-panel")).toHaveAttribute(
+    "data-scene-ready",
+    "true",
+    {
+      timeout: 30_000,
+    },
+  );
   await expect.poll(() => greenPixels(viewport)).toBeLessThan(100);
   await setShading(page, "unlit");
   await expect
