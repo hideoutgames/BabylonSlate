@@ -47,6 +47,7 @@ import {
 import { playerSpawnListForScripts } from "./spawn-list";
 import { packedFontCssStacks } from "./fonts";
 import { createPlayerConsoleHost } from "./console-host";
+import { createPlayerPauseState } from "./console-pause";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -336,6 +337,7 @@ export function startPlayer(options: {
   let raf = 0;
   let halted = false;
   let lifecyclePaused = false;
+  const pauseState = createPlayerPauseState();
   let detachLifecycle = () => {};
   let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
   let hudStats: PlayerHudStats | undefined;
@@ -368,6 +370,12 @@ export function startPlayer(options: {
   const materialsWarmed = { current: false };
   let hostSceneGuid: string | null = startup;
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    if (command.type === "sessionPaused") {
+      const paused = pauseState.setConsolePaused(command.paused === true);
+      handle.setPaused(paused);
+      pauseGate?.setPaused(paused);
+      worker?.postControl({ type: "setPaused", paused });
+    }
     consoleHost.receive(command);
     options.onConsoleEvent?.(command);
     if (command.type === "snapshotLayout" && runtime)
@@ -557,9 +565,10 @@ export function startPlayer(options: {
     detachLifecycle = attachLifecyclePause((paused) => {
       const wasPaused = lifecyclePaused;
       lifecyclePaused = paused;
-      handle.setPaused(paused);
-      pauseGate?.setPaused(paused);
-      worker?.postControl({ type: "setPaused", paused });
+      const effectivePaused = pauseState.setLifecyclePaused(paused);
+      handle.setPaused(effectivePaused);
+      pauseGate?.setPaused(effectivePaused);
+      worker?.postControl({ type: "setPaused", paused: effectivePaused });
       if (paused) {
         cancelAnimationFrame(raf);
       } else if (wasPaused) {

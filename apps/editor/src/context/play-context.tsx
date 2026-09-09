@@ -1486,6 +1486,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             error={previewError}
             onClose={closePreview}
             onLoad={sendPreviewPack}
+            onTrace={(trace) => void openRecordedTrace(trace)}
           />
         ) : null}
         <PreviewSessionReport

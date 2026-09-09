@@ -13,6 +13,7 @@ import {
 import {
   createUserCommand,
   type ConsoleCompletionContext,
+  type TracePayload,
 } from "@babylonslate/debugger";
 import { playConsoleCommands } from "../lib/play-console";
 import {
@@ -34,6 +35,7 @@ export type PreviewBuildOverlayProps = {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   onClose: () => void;
   onLoad?: () => void;
+  onTrace?: (trace: TracePayload) => void;
   /** Boot failure reported by the player, so the black canvas is explained. */
   error?: string | null;
 };
@@ -43,6 +45,7 @@ export function PreviewBuildOverlay({
   iframeRef,
   onClose,
   onLoad,
+  onTrace,
   error = null,
 }: PreviewBuildOverlayProps) {
   const [consoleOpen, setConsoleOpen] = useState(false);
@@ -54,6 +57,9 @@ export function PreviewBuildOverlay({
   >([]);
   const [context, setContext] = useState<ConsoleCompletionContext>({});
   const sequence = useRef(0);
+  const lastTrace = useRef<TracePayload | null>(null);
+  const ready = useRef(false);
+  const [stopping, setStopping] = useState(false);
   const pending = useRef(
     new Map<
       number,
@@ -101,6 +107,12 @@ export function PreviewBuildOverlay({
         origin,
       );
     });
+  const finish = () => {
+    const close = () => { if (lastTrace.current) onTrace?.(lastTrace.current); onClose(); };
+    if (!ready.current || error) { close(); return; }
+    setStopping(true);
+    void execute("snapshot stop").finally(close);
+  };
   useEffect(() => {
     const requests = pending.current;
     const receive = (event: MessageEvent) => {
@@ -124,6 +136,7 @@ export function PreviewBuildOverlay({
         });
       }
       if (data?.type === PREVIEW_CONSOLE_CATALOG_MESSAGE) {
+        ready.current = true;
         setUserCommands(data.commands ?? []);
         setContext({ scenes: data.scenes ?? [], actors: data.actors ?? [] });
       }
@@ -147,6 +160,7 @@ export function PreviewBuildOverlay({
         if (command.enabled) setConsoleOpen(false);
       }
       if (command?.type === "behaviourTreeSnapshot") setTrees(command.trees);
+      if (command?.type === "trace") lastTrace.current = command.payload as TracePayload;
     };
     window.addEventListener("message", receive);
     return () => {
@@ -201,7 +215,8 @@ export function PreviewBuildOverlay({
           className="pointer-events-auto"
           aria-label="Stop"
           data-testid="preview-build-close"
-          onClick={onClose}
+          disabled={stopping}
+          onClick={finish}
         >
           <XIcon data-icon="inline-start" />
           Stop
