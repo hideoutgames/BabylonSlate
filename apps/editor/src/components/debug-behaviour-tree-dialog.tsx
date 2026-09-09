@@ -184,7 +184,7 @@ export function DebugBehaviourTreeDialog({
                         </dt>
                         <dd className="whitespace-pre-wrap break-all font-mono text-muted-foreground">
                           <SelectableText>
-                              {JSON.stringify(sanitizeInspectValue(value), null, 2)}
+                            {JSON.stringify(sanitizeInspectValue(value), null, 2)}
                           </SelectableText>
                         </dd>
                       </div>

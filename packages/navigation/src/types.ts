@@ -45,6 +45,8 @@ export type NavigationBackend = {
   agentVelocity(id: string): NavPoint | null;
   /** Actual crowd state and corridor corners; never a fresh path query. */
   agentDebugState(id: string): NavAgentDebugState | null;
+  /** Correct a physically resolved pose without clearing the path or velocity. */
+  syncAgentPosition(id: string, position: NavPoint): boolean;
   setAgentTarget(id: string, target: NavPoint): boolean;
   stepCrowd(dtSeconds: number): void;
 };

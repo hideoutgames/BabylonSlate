@@ -1,4 +1,5 @@
 import { builtinClassId } from "./builtins";
+import type { PinType } from "@babylonslate/scripting";
 import type { BtNodeKind } from "./types";
 
 export type BtCatalogKind = BtNodeKind | "decorator" | "service";
@@ -28,6 +29,7 @@ export type BtPropertyField = {
   min?: number;
   max?: number;
   assetType?: string;
+  blackboardKeyKinds?: readonly PinType["kind"][];
 };
 
 export const BT_COMPARE_OPS: Array<{ value: string; label: string }> = [
@@ -48,6 +50,7 @@ const TITLES: Record<string, string> = {
   "bt.task.wait": "Wait",
   "bt.task.setBlackboard": "Set Blackboard",
   "bt.task.moveTo": "Move To",
+  "bt.task.moveToBlackboardKey": "Move To Blackboard Key",
   "bt.task.rotateToFace": "Rotate To Face",
   "bt.task.playAnimation": "Play Animation",
   "bt.task.playSound": "Play Sound",
@@ -105,6 +108,7 @@ export const BT_TASK_CATALOG: BtCatalogEntry[] = [
   entry("bt.task.wait", "Tasks", "task"),
   entry("bt.task.setBlackboard", "Tasks", "task"),
   entry("bt.task.moveTo", "Tasks", "task"),
+  entry("bt.task.moveToBlackboardKey", "Tasks", "task"),
   entry("bt.task.rotateToFace", "Tasks", "task"),
   entry("bt.task.playAnimation", "Tasks", "task"),
   entry("bt.task.playSound", "Tasks", "task"),
@@ -150,6 +154,13 @@ export function propertyFieldsForClassId(
     case "bt.task.moveTo":
       return [
         field("destination", "Destination", "vector3", "destination"),
+        field("acceptRadius", "Accept Radius", "number", "acceptRadius", { min: 0 }),
+      ];
+    case "bt.task.moveToBlackboardKey":
+      return [
+        field("key", "Blackboard Key", "blackboardKey", "key", {
+          blackboardKeyKinds: ["vec2", "vec3", "objectRef", "actorRef"],
+        }),
         field("acceptRadius", "Accept Radius", "number", "acceptRadius", { min: 0 }),
       ];
     case "bt.task.rotateToFace":
@@ -202,6 +213,8 @@ export function defaultPropertiesForClassId(classId: string): Record<string, unk
       return { key: "", value: true };
     case "bt.task.moveTo":
       return { destination: { x: 0, y: 0, z: 0 }, acceptRadius: 0.5 };
+    case "bt.task.moveToBlackboardKey":
+      return { key: "", acceptRadius: 0.5 };
     case "bt.task.rotateToFace":
       return { target: { x: 0, y: 0, z: 1 } };
     case "bt.task.playAnimation":

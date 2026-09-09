@@ -119,6 +119,29 @@ describe("recast generate / import round-trip", () => {
     expect(nav.agentDebugState?.(id)).toBeNull();
   });
 
+  it("correcting a crowd pose preserves its destination and acceleration", () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(bytes);
+    const id = nav.addAgent({ x: -4, y: 0, z: 0 }, { maxSpeed: 3, maxAcceleration: 6 });
+    expect(nav.setAgentTarget(id, { x: 4, y: 0, z: 0 })).toBe(true);
+    let position = { x: -4, y: 0, z: 0 };
+    for (let i = 0; i < 60; i += 1) {
+      expect(nav.syncAgentPosition(id, position)).toBe(true);
+      nav.stepCrowd(1 / 60);
+      const velocity = nav.agentVelocity(id)!;
+      // A physical body can lag behind the simulated crowd after contact.
+      position = { x: position.x + velocity.x / 120, y: 0, z: 0 };
+    }
+    expect(position.x).toBeGreaterThan(-3);
+    expect(nav.agentVelocity(id)!.x).toBeGreaterThan(2.5);
+    nav.stopAgent(id);
+    for (let i = 0; i < 60; i += 1) {
+      nav.syncAgentPosition(id, position);
+      nav.stepCrowd(1 / 60);
+    }
+    expect(nav.agentVelocity(id)!.x).toBeCloseTo(0, 3);
+  });
+
   it("records whether crowd steps are byte-identical across two backends", () => {
     const run = () => {
       const nav = createNavigationBackend();

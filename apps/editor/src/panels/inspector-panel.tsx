@@ -104,16 +104,19 @@ import {
 } from "../lib/graph-inspector";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
-import { classIdForGraphPath } from "../services/script-compiler";
 import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 import {
   commitLogicGraph,
+  collectClassGraphsForPalette,
   collectGraphTypeAssets,
+  collectScriptInterfacesForPalette,
   serializedGraphFromDocument,
   typeAssetPickerEntries,
   typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
+import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
+import { classIdForGraphPath } from "../services/script-compiler";
 
 function memberPinRows(
   pins: GraphClassMember["pins"],
@@ -933,6 +936,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     reparentClassDocument,
     projectDocument,
     assetRegistry,
+    registryVersion,
+    animEditorMode,
   } = useDocuments();
   const { focusDiagnostic } = useValidation();
   const { focusedNodeId } = usePlay();
@@ -965,34 +970,48 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     (asset) => asset.path === doc?.ref.path,
   );
   const parentClass = indexed?.header.parentClass ?? null;
-  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
+  const parentOf = useMemo(
+    () => {
+      void registryVersion;
+      return classParentLookup(assetRegistry?.list() ?? []);
+    },
+    [assetRegistry, registryVersion],
+  );
   const editorGraph = isEditorGraphHost({
     parentClass,
     parentOf,
     assetType: indexed?.header.type,
   });
-  const parsedAnim =
-    doc?.ref.kind === "anim-graph"
-      ? parseAnimGraphDocument(doc.content)
-      : null;
-  const openRuleId = animEditing?.openTransitionId ?? null;
+  const parsedAnim = useMemo(
+    () =>
+      doc?.ref.kind === "anim-graph"
+        ? parseAnimGraphDocument(doc.content)
+        : null,
+    [doc?.content, doc?.ref.kind],
+  );
+  const openRuleId = animEditorMode === "stateMachine"
+    ? animEditing?.openTransitionId ?? null
+    : null;
   const ruleTransition =
     openRuleId && parsedAnim
       ? (parsedAnim.transitions.find((row) => row.id === openRuleId) ?? null)
       : null;
-  const graph = ruleTransition && parsedAnim
-    ? {
-        ...decorateTransitionRuleGraph(
-          ruleTransition.ruleGraph,
-          !findReverseTransition(
-            parsedAnim.transitions,
-            ruleTransition.fromStateId,
-            ruleTransition.toStateId,
+  const graph = useMemo(
+    () => ruleTransition && parsedAnim
+      ? {
+          ...decorateTransitionRuleGraph(
+            ruleTransition.ruleGraph,
+            !findReverseTransition(
+              parsedAnim.transitions,
+              ruleTransition.fromStateId,
+              ruleTransition.toStateId,
+            ),
           ),
-        ),
-        members: animGraphMembersFromVariables(parsedAnim.variables),
-      }
-    : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content);
+          members: animGraphMembersFromVariables(parsedAnim.variables),
+        }
+      : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
+    [doc?.content, doc?.ref.kind, parsedAnim, ruleTransition],
+  );
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
     if (ruleTransition && parsedAnim) {
@@ -1024,7 +1043,22 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       ? (graph.members ?? []).find((member) => member.id === selectedMemberId)
       : undefined;
 
-  const selectedNode = useMemo(() => {
+  const typeCatalog = useMemo(
+    () => {
+      void registryVersion;
+      return collectGraphTypeAssets({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+      });
+    },
+    [assetRegistry, openDocuments, registryVersion],
+  );
+  const typeSchemas = useMemo(
+    () => typeSchemasFromGraphAssets(typeCatalog),
+    [typeCatalog],
+  );
+  const typeAssets = typeAssetPickerEntries(typeCatalog);
+  const selectedSerializedNode = useMemo(() => {
     if (!inspectGraph || selectedMember) return null;
     const id = resolveInspectorNodeId(
       selectedNodeIds,
@@ -1032,7 +1066,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       focusedNodeId,
     );
     if (!id) return null;
-    return inspectGraph.nodes.find((n) => n.id === id) ?? null;
+    return inspectGraph.nodes.find((node) => node.id === id) ?? null;
   }, [
     focusDiagnostic?.nodeId,
     focusedNodeId,
@@ -1040,6 +1074,45 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedMember,
     selectedNodeIds,
   ]);
+  const needsPinHydration = Boolean(selectedSerializedNode && (
+    !Array.isArray(selectedSerializedNode.data.__pins) ||
+    selectedSerializedNode.data.__pins.length === 0
+  ));
+  // Reuse editor metadata when present. Loaded graphs without pins share one
+  // hydrated view across selection changes; edits still persist the raw graph.
+  const hydratedInspectGraph = useMemo(() => {
+    if (!needsPinHydration || !inspectGraph) return null;
+    return hydrateSerializedGraphForEditor(inspectGraph, undefined, {
+      parentOf,
+      structs: typeSchemas.structs,
+      enums: typeSchemas.enums,
+      classId: doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined,
+      otherClassGraphs: collectClassGraphsForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+        classIdForPath: classIdForGraphPath,
+      }),
+      functionGraphs: graph?.functionGraphs,
+      scriptInterfaces: collectScriptInterfacesForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+      }),
+    });
+  }, [
+    assetRegistry,
+    doc?.ref.path,
+    graph?.functionGraphs,
+    inspectGraph,
+    needsPinHydration,
+    openDocuments,
+    parentOf,
+    typeSchemas,
+  ]);
+  const selectedNode = hydratedInspectGraph
+    ? hydratedInspectGraph.nodes.find(
+        (node) => node.id === selectedSerializedNode?.id,
+      ) ?? null
+    : selectedSerializedNode;
 
   const interfaceAssets = (assetRegistry?.list() ?? [])
     .filter((asset) => asset.header.type === "ScriptInterface")
@@ -1055,12 +1128,6 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     type: asset.header.type,
     path: asset.path,
   }));
-  const typeCatalog = collectGraphTypeAssets({
-    assets: assetRegistry?.list() ?? [],
-    openDocuments,
-  });
-  const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
-  const typeAssets = typeAssetPickerEntries(typeCatalog);
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
