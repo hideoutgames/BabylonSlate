@@ -1,5 +1,5 @@
 /**
- * Bindable device codes for Project Settings Input pickers.
+ * Bindable device codes for input asset and native Input Control pickers.
  * Labels are the same strings the editor shows on a closed binding.
  */
 
@@ -182,7 +182,11 @@ const CATALOG_BY_DEVICE: Record<InputDevice, BindingCatalogEntry[]> = {
   pointer: POINTER_CATALOG,
   gamepadButton: GAMEPAD_BUTTON_CATALOG,
   gamepadAxis: GAMEPAD_AXIS_CATALOG,
-  touch: [],
+  touch: Object.entries(TOUCH_LABELS).map(([code, label]) => ({
+    code,
+    label,
+    group: "Touch",
+  })),
 };
 
 function catalogLookup(): Map<string, BindingCatalogEntry> {
@@ -218,7 +222,7 @@ function fallbackKeyLabel(code: string): string {
   return code;
 }
 
-/** Codes the Input picker lists for a device. Touch ids come from the editor. */
+/** Codes the Input picker lists for a device. Editors may add custom touch ids. */
 export function bindingCodesForDevice(
   device: InputDevice,
 ): BindingCatalogEntry[] {
@@ -228,11 +232,7 @@ export function bindingCodesForDevice(
 /** Human label for a stored device code, with fallbacks for unknown codes. */
 export function bindingCodeLabel(device: InputDevice, code: string): string {
   const known = CATALOG_LOOKUP.get(`${device}:${code}`);
-  if (
-    known &&
-    device !== "gamepadButton" &&
-    device !== "gamepadAxis"
-  ) {
+  if (known && device !== "gamepadButton" && device !== "gamepadAxis") {
     return known.label;
   }
   switch (device) {

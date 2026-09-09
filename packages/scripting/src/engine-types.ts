@@ -1,3 +1,4 @@
+import { INPUT_DEVICES } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
@@ -35,6 +36,12 @@ export type EngineStruct = {
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
   {
+    id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
+    name: "Collision Channel",
+    members: COLLISION_CHANNEL_MEMBERS.map((name, value) => ({ name, value })),
+  },
+
+  {
     id: "engine:InputRebindStatus",
     name: "Input Rebind Status",
     members: ["idle", "listening", "completed", "cancelled"].map(
@@ -44,24 +51,24 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
   {
     id: ENGINE_INPUT_DEVICE_ENUM_ID,
     name: "Input Device",
-    members: [
-      "key",
-      "mouseButton",
-      "pointer",
-      "gamepadButton",
-      "gamepadAxis",
-      "touch",
-    ].map((name, value) => ({ name, value })),
-  },
-  {
-    id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
-    name: "Collision Channel",
-    members: COLLISION_CHANNEL_MEMBERS.map((name, value) => ({ name, value })),
+    members: INPUT_DEVICES.map((name, value) => ({ name, value })),
   },
 ];
 
 /** Engine user-style structs. Pin-kind math types stay first-class. */
 export const ENGINE_STRUCTS: readonly EngineStruct[] = [
+  {
+    id: ENGINE_HIT_RESULT_STRUCT_ID,
+    name: "Hit Result",
+    fields: [
+      { name: "Hit", typeId: "bool" },
+      { name: "Location", typeId: "vec3" },
+      { name: "Normal", typeId: "vec3" },
+      { name: "Actor", typeId: "actor" },
+      { name: "Distance", typeId: "float" },
+    ],
+  },
+
   {
     id: ENGINE_INPUT_TYPE_STRUCT_ID,
     name: "Input Type",
@@ -102,17 +109,6 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
         typeId: "struct",
         typeClassId: ENGINE_INPUT_CONTROL_STRUCT_ID,
       },
-    ],
-  },
-  {
-    id: ENGINE_HIT_RESULT_STRUCT_ID,
-    name: "Hit Result",
-    fields: [
-      { name: "Hit", typeId: "bool" },
-      { name: "Location", typeId: "vec3" },
-      { name: "Normal", typeId: "vec3" },
-      { name: "Actor", typeId: "actor" },
-      { name: "Distance", typeId: "float" },
     ],
   },
 ];

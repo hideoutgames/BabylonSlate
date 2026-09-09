@@ -100,3 +100,19 @@ it("invalidates compiled graph signatures when an input asset changes dimensions
     graphCompileSignature([], [{ ...catalog[0]!, name: "Movement" }]),
   );
 });
+
+it("offers known touch controls as native Input Control defaults without raw string fields", () => {
+  const rows = variableDefaultPropertyRows(
+    "struct",
+    { Device: "touch" },
+    () => {},
+    { typeClassId: "engine:InputControl" },
+  );
+  const controls = rows.find((row) => row.id.endsWith(":code"));
+  if (controls?.kind !== "enum") throw new Error("Expected control dropdown");
+  expect(controls.options).toContainEqual({ value: "Jump", label: "Jump" });
+  expect(controls.options).toContainEqual({
+    value: "joystick-x",
+    label: "Joystick X",
+  });
+});
