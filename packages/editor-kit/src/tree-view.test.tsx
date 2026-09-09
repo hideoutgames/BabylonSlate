@@ -23,6 +23,31 @@ describe("TreeView", () => {
     cleanup();
   });
 
+  it("keeps keyboard navigation available after clicking a disclosure", () => {
+    const onSelect = vi.fn();
+    render(<TreeView nodes={nodes} onSelect={onSelect} onToggleExpanded={() => {}} data-testid="tree" />);
+    const disclosure = screen.getByRole("button", { name: "Collapse Root" });
+    disclosure.focus();
+    fireEvent.click(disclosure);
+    expect(document.activeElement).toBe(screen.getByTestId("tree"));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(onSelect).toHaveBeenLastCalledWith("child");
+  });
+
+  it("selects through a value preview while keeping trailing actions separate", () => {
+    const onSelect = vi.fn();
+    render(<TreeView nodes={[{ ...nodes[1]!, preview: <span data-testid="preview">75</span>, trailing: <button type="button">Action</button> }]} onSelect={onSelect} />);
+    const preview = screen.getByTestId("preview");
+    dispatchPointerEvent(preview, "pointerdown");
+    dispatchPointerEvent(preview, "pointerup");
+    expect(onSelect).toHaveBeenLastCalledWith("child");
+    onSelect.mockClear();
+    const action = screen.getByRole("button", { name: "Action" });
+    dispatchPointerEvent(action, "pointerdown");
+    dispatchPointerEvent(action, "pointerup");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("navigates, selects and collapses from one keyboard focus target", () => {
     const onSelect = vi.fn();
     const onToggleExpanded = vi.fn();

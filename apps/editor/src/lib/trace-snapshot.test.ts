@@ -17,6 +17,12 @@ const frame: TraceFrame = {
 };
 
 describe("recorded snapshot values", () => {
+  it("treats prototype-named JSON keys as ordinary recorded fields", () => {
+    const value = JSON.parse('{"__proto__":7,"constructor":null,"toString":false}') as unknown;
+    const rows = flattenTraceSnapshot(traceSnapshotRoots(frame, { status: "ready", value }), new Set(), "");
+    expect(rows.slice(0, 3).map((row) => typeof row.label)).toEqual(["string", "string", "string"]);
+    expect(compareTraceSnapshots({}, value).map((entry) => [entry.kind, entry.before, entry.after])).toEqual([["Added", undefined, 7], ["Added", undefined, null], ["Added", undefined, false]]);
+  });
   it("distinguishes absent, malformed and valid null snapshots", () => {
     expect(parseTraceSnapshot(undefined)).toEqual({ status: "missing" });
     expect(parseTraceSnapshot("legacy text")).toEqual({ status: "invalid" });

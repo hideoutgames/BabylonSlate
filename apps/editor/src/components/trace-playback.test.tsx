@@ -75,6 +75,18 @@ const payload: TracePayload = {
 describe("TracePlayback", () => {
   afterEach(cleanup);
 
+  it("expands and collapses the selected actor with the keyboard", () => {
+    render(<TracePlayback payload={payload} />);
+    const tree = screen.getByRole("tree", { name: "Snapshot" });
+    fireEvent.keyDown(tree, { key: "Home" });
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    fireEvent.keyDown(tree, { key: "ArrowRight" });
+    expect(within(tree).getAllByRole("treeitem").some((row) => row.textContent?.startsWith("Identity"))).toBe(true);
+    fireEvent.keyDown(tree, { key: "ArrowLeft" });
+    expect(within(tree).getAllByRole("treeitem").some((row) => row.textContent?.startsWith("Identity"))).toBe(false);
+  });
+
   it("shows the recorded tick and rejects fractional frame selection", () => {
     render(<TracePlayback payload={payload} />);
     expect(screen.getByTestId("trace-frame-summary").textContent).toContain(
