@@ -21,6 +21,7 @@ const DEFAULT_TOUCH_IDS = [
 export type BindingCodePickerProps = {
   device: InputDevice;
   code: string;
+  size?: "sm" | "touch";
   onChange: (code: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -90,6 +91,7 @@ function catalogItems(
 export function BindingCodePicker({
   device,
   code,
+  size = "touch",
   onChange,
   open,
   onOpenChange,
@@ -100,9 +102,7 @@ export function BindingCodePicker({
     () => catalogItems(device, touchControlIds),
     [device, touchControlIds],
   );
-  const label = code
-    ? formatBindingLabel(device, code)
-    : emptyPrompt(device);
+  const label = code ? formatBindingLabel(device, code) : emptyPrompt(device);
 
   return (
     <SearchDropdown
@@ -118,8 +118,9 @@ export function BindingCodePicker({
       <Button
         type="button"
         variant="outline"
-        size="touch"
+        size={size}
         className="justify-start"
+        id={testId}
         data-testid={testId}
         aria-label={pickerTitle(device)}
       >

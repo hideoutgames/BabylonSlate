@@ -753,6 +753,8 @@ export function PlayOverlay({
         open={nextPlayInspectorOpen(inspectorOpen, overlayInspector)}
         onOpenChange={setInspectorOpen}
         snapshot={inspectSnapshot}
+        onExecute={(line) => sessionRef.current?.executeConsoleCommand(line)
+          ?? Promise.resolve({ success: false, output: "Not Playing" })}
         onSelectedIdChange={(id) => {
           inspectSelectionRef.current = id;
         }}

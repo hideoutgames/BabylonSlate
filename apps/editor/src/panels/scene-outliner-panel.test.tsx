@@ -22,6 +22,13 @@ afterEach(() => {
 });
 
 describe("flattenOutliner type icons", () => {
+  it("distinguishes existing duplicate actor names in the tree and search", () => {
+    const scene = sceneWith({ actors: [createActor("cam-a", "Camera"), createActor("cam-b", "Camera")] });
+    for (const search of ["", "camera"]) {
+      expect(flattenOutliner(scene, { collapsed: new Set(), search }).map((node) => node.label))
+        .toEqual(["Camera (cam-a)", "Camera (cam-b)"]);
+    }
+  });
   it("uses the mesh glyph for an engine Actor with a MeshComponent", () => {
     const scene = sceneWith({
       actors: [

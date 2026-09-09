@@ -69,6 +69,7 @@ import {
 } from "../lib/place-actors";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { prefabComponentsFromGraph } from "../lib/prefab-preview";
+import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 import {
   actorRowId,
   applyOutlinerDropMoves,
@@ -116,6 +117,7 @@ export function flattenOutliner(
     <FolderIcon data-testid={`outliner-folder-icon-${folder.id}`} />
   );
 
+  const names = sceneActorDisplayNames(scene);
   const needle = options.search.trim().toLowerCase();
   const childrenOf = new Map<string | null, SerializedActor[]>();
   for (const actor of scene.actors) {
@@ -164,7 +166,7 @@ export function flattenOutliner(
       const path = folderPath(actor.folderId);
       rows.push({
         id: actorRowId(actor.id),
-        label: path ? `${path} / ${actor.name}` : actor.name,
+        label: path ? `${path} / ${names.get(actor.id)!}` : names.get(actor.id)!,
         depth: 0,
         hasChildren: false,
         expanded: false,
@@ -184,7 +186,7 @@ export function flattenOutliner(
       const expanded = !options.collapsed.has(rowId);
       rows.push({
         id: rowId,
-        label: actor.name,
+        label: names.get(actor.id)!,
         depth,
         hasChildren: children.length > 0,
         expanded,
@@ -221,7 +223,7 @@ export function flattenOutliner(
         const actorExpanded = !options.collapsed.has(actorRow);
         rows.push({
           id: actorRow,
-          label: actor.name,
+          label: names.get(actor.id)!,
           depth: depth + 1,
           hasChildren: children.length > 0,
           expanded: actorExpanded,
@@ -240,7 +242,7 @@ export function flattenOutliner(
     const expanded = !options.collapsed.has(rowId);
     rows.push({
       id: rowId,
-      label: actor.name,
+      label: names.get(actor.id)!,
       depth: 0,
       hasChildren: children.length > 0,
       expanded,

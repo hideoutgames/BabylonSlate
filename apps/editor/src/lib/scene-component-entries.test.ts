@@ -6,6 +6,17 @@ import {
 } from "./scene-component-entries";
 
 describe("sceneComponentEntries", () => {
+  it("distinguishes existing same-name cameras using stable actor identities", () => {
+    const scene = createDefaultScene();
+    scene.actors = ["cam-a", "cam-b"].map((id) => createActor(id, "Camera", {
+      components: [{ id: "camera", classId: "CameraComponent", properties: {} }],
+    }));
+    expect(sceneComponentEntries(scene).map((entry) => entry.actorName)).toEqual([
+      "Camera (cam-a)", "Camera (cam-b)",
+    ]);
+    expect(sceneComponentDisplayLabel(scene, "cam-b", "camera")).toBe("Camera (cam-b)");
+    expect(scene.actors.map((actor) => actor.name)).toEqual(["Camera", "Camera"]);
+  });
   const scene = {
     ...createDefaultScene(),
     actors: [

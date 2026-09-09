@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
@@ -54,6 +54,33 @@ function tapRow(id: string): void {
 }
 
 describe("DebugInspectDialog", () => {
+  it("offers session actor destruction and camera possession only for valid selections", async () => {
+    const execute = vi.fn().mockResolvedValue({ success: true, output: "ok" });
+    const live = { ...snapshot, nodes: [...snapshot.nodes, {
+      id: "camera", kind: "component" as const, label: "Camera", classId: "CameraComponent",
+      parentId: "hero", variables: {},
+    }] };
+    render(<DebugInspectDialog open onOpenChange={() => {}} snapshot={live} onExecute={execute} />);
+    tapRow("gi");
+    expect(screen.queryByRole("button", { name: "Destroy Actor" })).toBeNull();
+    tapRow("hero");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Use Camera" })); });
+    expect(execute).toHaveBeenLastCalledWith('possess "hero"');
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Destroy Actor" })); });
+    expect(execute).toHaveBeenLastCalledWith('destroyactor "hero"');
+    tapRow("mesh");
+    expect(screen.queryByRole("button", { name: "Destroy Actor" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Use Camera" })).toBeNull();
+  });
+
+  it("shows a rejected runtime action without pretending the actor was removed", async () => {
+    render(<DebugInspectDialog open onOpenChange={() => {}} snapshot={snapshot}
+      onExecute={async () => ({ success: false, output: "Actor is no longer available" })} />);
+    tapRow("hero");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Destroy Actor" })); });
+    expect(screen.getByRole("status").textContent).toContain("Actor is no longer available");
+    expect(screen.getByTestId("tree-row-hero")).toBeTruthy();
+  });
   afterEach(() => {
     cleanup();
   });

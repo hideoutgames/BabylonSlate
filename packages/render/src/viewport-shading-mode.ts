@@ -155,6 +155,12 @@ export class ViewportShadingOverlay {
     this.scene.blockMaterialDirtyMechanism = false;
     try {
       material.markDirty(true);
+      if (material instanceof NodeMaterial && material.isFrozen) {
+        // A frozen NodeMaterial can mark the old hot-swapped effect ready
+        // while its replacement is compiling, then never revisit the switch.
+        // Drop that fallback so readiness follows the requested shader.
+        material.resetDrawCache();
+      }
     } finally {
       this.scene.blockMaterialDirtyMechanism = blocked;
     }

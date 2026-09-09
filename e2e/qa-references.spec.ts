@@ -67,7 +67,7 @@ test("H9: a long References list keeps Close inside the viewport", async ({ page
   await expect(dialog).toHaveCount(0);
 });
 
-test("H17: Delete names the open scene that uses a placed class", async ({
+test("H17: Delete blocks a Class used by the open scene", async ({
   page,
 }) => {
   await openTestProject(page);
@@ -83,6 +83,7 @@ test("H17: Delete names the open scene that uses a placed class", async ({
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(/^main$/i)).toBeVisible();
   await expect(dialog.getByText("No inbound references.")).toHaveCount(0);
+  await expect(page.getByTestId("content-browser-delete-confirm")).toBeDisabled();
   await page.getByTestId("content-browser-delete-cancel").click();
   await expect(tile).toBeVisible();
 });
