@@ -598,7 +598,7 @@ export function TreeView({
               <div
                 key={node.id}
                 id={rowId(node.id)}
-                aria-label={node.label}
+                aria-labelledby={`${rowId(node.id)}-label${node.preview ? ` ${rowId(node.id)}-preview` : ""}`}
                 aria-posinset={hierarchy[index]?.position}
                 aria-setsize={hierarchy[index]?.size}
                 role="treeitem"
@@ -711,6 +711,7 @@ export function TreeView({
                   </span>
                 ) : null}
                 <span
+                  id={`${rowId(node.id)}-label`}
                   className={cn(
                     "relative min-w-0 flex-1 truncate",
                     selected ? "font-medium" : "font-normal",
@@ -720,7 +721,7 @@ export function TreeView({
                   {node.label}
                 </span>
                 {node.preview ? (
-                  <span className="min-w-0 shrink">{node.preview}</span>
+                  <span id={`${rowId(node.id)}-preview`} className="min-w-0 shrink">{node.preview}</span>
                 ) : null}
                 {node.trailing ? (
                   <div
