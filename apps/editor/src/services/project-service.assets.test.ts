@@ -85,6 +85,24 @@ describe("project documents as .babasset", () => {
     expect(service.guidForPath(sourcePath)).toBe(sourceGuid);
   });
 
+  it("stops Class replacement when a referrer cannot be read, preserving its bytes and the source", async () => {
+    const { service, storage } = await scaffolded();
+    const sourcePath = "assets/Hero.class.babasset";
+    const childPath = "assets/Child.class.babasset";
+    await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
+    await service.saveDocument("graph", childPath, { nodes: [], edges: [] }, { parentClass: "Hero" });
+    const sourceGuid = service.guidForPath(sourcePath)!;
+    const sourceBytes = await storage.readBinary(sourcePath);
+    const damaged = new Uint8Array([1, 2, 3]);
+    await storage.writeBinary(childPath, damaged);
+    await expect(service.replaceClassReferencesBeforeDelete([
+      { guid: sourceGuid, classId: "Hero", replacement: null },
+    ], new Set([sourceGuid]))).rejects.toThrow();
+    expect(await storage.readBinary(childPath)).toEqual(damaged);
+    expect(await storage.readBinary(sourcePath)).toEqual(sourceBytes);
+    expect(service.guidForPath(sourcePath)).toBe(sourceGuid);
+  });
+
   it("refuses to save unnamed or duplicate material parameters and keeps the saved asset intact", async () => {
     const { storage, service } = await scaffolded();
     const path = "assets/Named.material.babasset";

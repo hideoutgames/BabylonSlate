@@ -1053,7 +1053,7 @@ export class ProjectService {
       const kind = documentKindForAssetType(asset.header.type);
       if (!kind || kind === "trace") continue;
       await onProgress?.(asset.path);
-      const content = await this.loadDocument(kind, asset.path);
+      const content = await this.loadDocument(kind, asset.path, { strict: true });
       const walked = replaceClassAssetReferences(content, replacements);
       const header = replaceClassAssetReferences({
         parentClass: asset.header.parentClass ?? null,
@@ -1260,6 +1260,7 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
+    options: { strict?: boolean } = {},
   ): Promise<
     | SerializedScene
     | SerializedSceneLayer
@@ -1280,7 +1281,7 @@ export class ProjectService {
       ? assetTypeForDocumentKind(kind)
       : "Class";
     const raw = isAssetDocumentPath(path)
-      ? await this.readAssetDocument(path, fallbackType)
+      ? await this.readAssetDocument(path, fallbackType, options.strict)
       : await this.readLegacyJsonDocument(path, fallbackType);
 
     const migrated = loadPayloadWithMigration(this.migrations, {
@@ -1314,6 +1315,7 @@ export class ProjectService {
   private async readAssetDocument(
     path: string,
     fallbackType: string,
+    strict = false,
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
     try {
       const decoded = await decodeAssetDocument(
@@ -1327,7 +1329,7 @@ export class ProjectService {
         payload: decoded.payload,
       };
     } catch (error) {
-      if (fallbackType === "Class") {
+      if (fallbackType === "Class" && !strict) {
         return {
           type: "Class",
           version: this.migrations.currentVersion("Class"),
