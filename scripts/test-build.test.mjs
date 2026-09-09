@@ -300,6 +300,31 @@ test("recursively expanded inherited env values cannot share a different effecti
   assert.equal(await compilations(second), 1);
 });
 
+for (const location of ["env file", "inherited value"]) {
+  test(`constructed dotenv keys in an ${location} fail before compilation without exposing values`, async (t) => {
+    const f = await fixture(t);
+    const directory = await f.worktree("constructed");
+    const expression = "${${FIXTURE_LOOKUP}}";
+    await writeFile(
+      join(directory, "apps/editor/.env.production.local"),
+      `VITE_ENDPOINT=${location === "env file" ? expression : "${FIXTURE_UPSTREAM}"}\n`,
+    );
+    const result = await f.run(directory, {
+      FIXTURE_UPSTREAM: expression,
+      FIXTURE_LOOKUP: "FIXTURE_PRIVATE_ORIGIN",
+      FIXTURE_PRIVATE_ORIGIN: "private-sensitive-origin",
+    });
+    assert.match(result.error ?? "", /literal (?:dotenv )?variable names/i);
+    assert.equal(JSON.stringify(result).includes(expression), false);
+    assert.equal(
+      JSON.stringify(result).includes("private-sensitive-origin"),
+      false,
+    );
+    assert.equal(await compilations(directory), 0);
+    assert.equal((await publishedArtifacts(f.cache)).length, 0);
+  });
+}
+
 test("different ignored installed lockfiles do not share compiled output", async (t) => {
   const f = await fixture(t);
   const first = await f.worktree("first");
