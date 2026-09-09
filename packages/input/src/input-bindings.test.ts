@@ -24,7 +24,7 @@ describe("runtime input bindings", () => {
     const resolver = new InputResolver(createDefaultInputMappings());
     expect(resolver.bindings?.setBinding("axis", "Move", 0, "key", "ArrowLeft")).toBe(true);
     expect(resolver.resolve([key("ArrowLeft")]).axes2D.Move).toEqual({ x: -1, y: 0 });
-    expect(resolver.bindings.getBinding("axis", "Move", 0)?.label).toBe("Arrow Left");
+    expect(resolver.bindings.getBinding("axis", "Move", 0)?.label).toBe("Left");
     expect(resolver.bindings.setBinding("axis", "Move", -1, "key", "KeyJ")).toBe(false);
     expect(resolver.bindings.setBinding("action", "Missing", 0, "key", "KeyJ")).toBe(false);
     expect(resolver.bindings.setBinding("action", "Jump", 0, "mouseButton", "")).toBe(false);
