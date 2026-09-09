@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   TREE_DROP_EDGE_PX,
   TREE_ROW_HEIGHT,
@@ -44,6 +44,76 @@ describe("tree guide endpoints", () => {
 describe("TreeView", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("keeps the last keyboard destination mounted and visible in a windowed tree", () => {
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(56);
+    try {
+      const longTree = Array.from({ length: 100 }, (_, index) => ({
+        id: `item-${index}`,
+        label: `Item ${index}`,
+        depth: index === 0 ? 0 : 1,
+        hasChildren: index === 0,
+        expanded: index === 0,
+      }));
+      const onSelect = vi.fn();
+      render(<TreeView nodes={longTree} onSelect={onSelect} aria-label="Long Tree" />);
+      const tree = screen.getByRole("tree", { name: "Long Tree" });
+      tree.focus();
+      fireEvent.keyDown(tree, { key: "End" });
+      expect(onSelect).toHaveBeenLastCalledWith("item-99");
+      expect(document.getElementById(tree.getAttribute("aria-activedescendant")!))
+        .toBe(screen.getByRole("treeitem", { name: "Item 99" }));
+      expect(tree.scrollTop).toBe(100 * TREE_ROW_HEIGHT - 56);
+      expect(screen.getAllByRole("treeitem").length).toBeLessThan(15);
+    } finally {
+      height.mockRestore();
+    }
+  });
+
+  it("keeps keyboard navigation available after clicking a disclosure", () => {
+    const onSelect = vi.fn();
+    render(<TreeView nodes={nodes} onSelect={onSelect} onToggleExpanded={() => {}} data-testid="tree" />);
+    const disclosure = screen.getByRole("button", { name: "Collapse Root" });
+    disclosure.focus();
+    fireEvent.click(disclosure);
+    expect(document.activeElement).toBe(screen.getByTestId("tree"));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(onSelect).toHaveBeenLastCalledWith("child");
+  });
+
+  it("selects through a value preview while keeping trailing actions separate", () => {
+    const onSelect = vi.fn();
+    render(<TreeView nodes={[{ ...nodes[1]!, preview: <span data-testid="preview">75</span>, trailing: <button type="button">Action</button> }]} onSelect={onSelect} />);
+    const preview = screen.getByTestId("preview");
+    dispatchPointerEvent(preview, "pointerdown");
+    dispatchPointerEvent(preview, "pointerup");
+    expect(onSelect).toHaveBeenLastCalledWith("child");
+    onSelect.mockClear();
+    const action = screen.getByRole("button", { name: "Action" });
+    dispatchPointerEvent(action, "pointerdown");
+    dispatchPointerEvent(action, "pointerup");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("navigates, selects and collapses from one keyboard focus target", () => {
+    const onSelect = vi.fn();
+    const onToggleExpanded = vi.fn();
+    render(<TreeView nodes={nodes} onSelect={onSelect} onToggleExpanded={onToggleExpanded} data-testid="keyboard-tree" />);
+    const tree = screen.getByTestId("keyboard-tree");
+    tree.focus();
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    expect(onSelect).toHaveBeenLastCalledWith("child");
+    expect(tree.getAttribute("role")).toBe("tree");
+    const active = document.getElementById(tree.getAttribute("aria-activedescendant") ?? "");
+    expect(active?.textContent).toContain("Child");
+    expect(active?.getAttribute("aria-level")).toBe("2");
+    fireEvent.keyDown(tree, { key: "ArrowLeft" });
+    expect(onSelect).toHaveBeenLastCalledWith("root");
+    fireEvent.keyDown(tree, { key: "ArrowLeft" });
+    expect(onToggleExpanded).toHaveBeenLastCalledWith("root");
+    fireEvent.keyDown(tree, { key: "End" });
+    expect(onSelect).toHaveBeenLastCalledWith("other");
   });
 
   it("uses compact chrome-row height", () => {
