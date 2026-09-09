@@ -24,6 +24,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
       pluginOverrides: {},
       gameInstanceClass: null as string | null,
       editorUtilityObjects: [] as string[],
+      startupSceneGuid: "",
     } },
     assetRegistry: null as unknown,
     registryVersion: 1,
@@ -166,6 +167,7 @@ afterEach(async () => {
   docs.openDocuments = [];
   docs.projectDocument.settings.gameInstanceClass = null;
   docs.projectDocument.settings.editorUtilityObjects = [];
+  docs.projectDocument.settings.startupSceneGuid = "";
   docs.loadAssetDocument.mockReset().mockResolvedValue({});
   docs.replaceClassReferencesBeforeDelete.mockReset().mockResolvedValue(undefined);
   if (clientWidthDescriptor) {
@@ -310,6 +312,18 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     ], new Set(["hero"]), expect.any(Function));
     expect(deleteAsset).not.toHaveBeenCalled();
     expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
+  });
+
+  it("also confirms twice when the deleted asset is the project startup scene", () => {
+    const { scene } = classAndScene();
+    docs.projectDocument.settings.startupSceneGuid = scene.header.guid;
+    installRegistry([scene]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${scene.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
   });
 });
 

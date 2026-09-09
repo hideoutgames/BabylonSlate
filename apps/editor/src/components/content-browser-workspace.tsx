@@ -1164,14 +1164,20 @@ export function ContentBrowserWorkspace({
       projectDocument?.settings.gameInstanceClass,
       ...(projectDocument?.settings.editorUtilityObjects ?? []),
     ]);
+    const projectAssetGuids = new Set([
+      projectDocument?.settings.startupSceneGuid,
+      projectDocument?.settings.audio?.audioMixerGuid,
+      projectDocument?.settings.fonts?.defaultFontGuid,
+    ]);
     const projectTargets = referenceAssets.filter((asset) =>
-      deletingClassGuids.has(asset.header.guid) && projectClasses.has(classIdFromClassAsset(asset)),
+      deletingGuids.has(asset.header.guid) && (projectAssetGuids.has(asset.header.guid) ||
+        (deletingClassGuids.has(asset.header.guid) && projectClasses.has(classIdFromClassAsset(asset)))),
     );
     if (projectTargets.length > 0) rows.push({
       guid: "project-settings", name: "Project Settings", path: "project.json", type: undefined,
       targets: projectTargets.map((asset) => resolveAssetName(asset.header.guid)),
       targetGuids: projectTargets.map((asset) => asset.header.guid),
-      blocksClassDelete: true,
+      blocksClassDelete: projectTargets.some((asset) => deletingClassGuids.has(asset.header.guid)),
     });
     return rows.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
   }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName,
