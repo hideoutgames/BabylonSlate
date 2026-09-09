@@ -142,7 +142,7 @@ describe("Scene Outliner folders", () => {
 
     expect(applySceneChange).not.toHaveBeenCalled();
     expect(screen.getByRole("alertdialog")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Folder Only", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Folder Only" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
 
     const next = lastScene();
@@ -159,7 +159,7 @@ describe("Scene Outliner folders", () => {
     });
     fireEvent.click(screen.getByTestId(`outliner-menu-${folderRowId("f1")}`));
     fireEvent.click(screen.getByTestId("outliner-delete-folder-f1"));
-    fireEvent.click(screen.getByRole("button", { name: "Cancel", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(applySceneChange).not.toHaveBeenCalled();
     expect(screen.getByTestId(`tree-row-${actorRowId("lamp")}`)).toBeTruthy();
   });
@@ -189,7 +189,7 @@ describe("Scene Outliner folders", () => {
       const view = renderOutliner(before);
       fireEvent.click(screen.getByTestId(`outliner-menu-${folderRowId("inner")}`));
       fireEvent.click(screen.getByTestId("outliner-delete-folder-inner"));
-      fireEvent.click(screen.getByRole("button", { name: choice, exact: true }));
+      fireEvent.click(screen.getByRole("button", { name: choice }));
       view.rerender(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
       const deleted = harness.scene!;
       expect(applySceneChange).toHaveBeenCalledTimes(1);
