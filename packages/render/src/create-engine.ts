@@ -499,7 +499,7 @@ export interface EditorTools {
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
   /** Pure collision query; the caller commits the resulting authored transforms. */
-  dropSelectedActors: (actorIds: readonly string[]) => EditorDropTransform[];
+  dropSelectedActors: (actorIds: readonly string[], maxDistance?: number) => EditorDropTransform[];
   /** Frustum / light debug + 1 Hz camera preview for the current selection. */
   syncSelectionDebug: (options: {
     sceneData: SerializedScene | null;
@@ -1313,10 +1313,10 @@ export function createEngine(
         }
       },
       selectedActorTransforms,
-      dropSelectedActors: (selectedActorIds) => {
+      dropSelectedActors: (selectedActorIds, maxDistance) => {
         const sceneData = editorSync.serializedScene();
         return sceneData ? calculateEditorDropTransforms({
-          sceneData, selectedActorIds, meshForActor: (id) => editorSync.meshForActor(id),
+          sceneData, selectedActorIds, maxDistance, meshForActor: (id) => editorSync.meshForActor(id),
           assets: { modelBytes: binding.modelBytes, modelPayloads: binding.modelPayloads,
             spritePayloads: binding.spritePayloads, tilemaps: binding.tilemaps, tilesets: binding.tilesets,
             pixelsPerUnit: binding.pixelsPerUnit },
@@ -1532,7 +1532,7 @@ export function createEngine(
   const unsubscribeEditorDrop = engineCommandBus.subscribe((command) => {
     if (command.type !== "editor.drop" || !editor || !options.editorViewportId || command.viewportId !== options.editorViewportId) return;
     engineCommandBus.dispatch({ type: "editor.drop.result", viewportId: command.viewportId,
-      requestId: command.requestId, transforms: editor.dropSelectedActors(command.actorIds) });
+      requestId: command.requestId, transforms: editor.dropSelectedActors(command.actorIds, command.maxDistance) });
   });
 
   return {

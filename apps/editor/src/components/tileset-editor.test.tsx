@@ -83,6 +83,12 @@ function TilesetHarness({
 }
 
 describe("TilesetEditor", () => {
+  it("identifies a missing tileset texture without a loading dead end", () => {
+    render(<TilesetPreview payload={twoTilePayload({ textureGuid: "missing" })} />);
+    expect(screen.getByText("Missing Texture")).toBeTruthy();
+    expect(screen.queryByText(/Loading texture/i)).toBeNull();
+  });
+
   it("waits for confirmation before applying both tile dimensions", () => {
     const onChange = vi.fn();
     render(<TilesetHarness initial={twoTilePayload()} onChange={onChange} />);

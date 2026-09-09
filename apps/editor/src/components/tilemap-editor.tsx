@@ -12,6 +12,7 @@ import {
   StampIcon,
 } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -128,7 +129,7 @@ export function TilemapDetailsPanel(_props: IDockviewPanelProps) {
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
-    <PanelFrame data-testid="tilemap-details-panel" title="Details">
+    <PanelFrame data-testid="tilemap-details-panel">
       <TilemapDetails
         payload={payload}
         onChange={(next) => {
@@ -814,15 +815,17 @@ export function TilemapPaint({
           {TOOLS.map((entry) => {
             const Icon = entry.icon;
             return (
-              <ToggleGroupItem
-                key={entry.id}
+              <Tooltip key={entry.id}>
+              <TooltipTrigger render={<ToggleGroupItem
                 value={entry.id}
                 aria-label={entry.label}
                 data-testid={`tilemap-tool-${entry.id}`}
               >
                 <Icon />
                 {entry.id === "move" ? <span>{entry.label}</span> : null}
-              </ToggleGroupItem>
+              </ToggleGroupItem>} />
+              <TooltipContent>{entry.label}</TooltipContent>
+              </Tooltip>
             );
           })}
         </ToggleGroup>

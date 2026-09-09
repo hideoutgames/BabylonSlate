@@ -54,10 +54,11 @@ function setup(
   return {
     sync,
     sceneData,
-    drop: (selectedActorIds: readonly string[]) =>
+    drop: (selectedActorIds: readonly string[], maxDistance?: number) =>
       calculateEditorDropTransforms({
         sceneData,
         selectedActorIds,
+        maxDistance,
         meshForActor: (id) => sync.meshForActor(id),
         assets,
       }),
@@ -65,6 +66,13 @@ function setup(
 }
 
 describe("editor Drop", () => {
+  it("uses a configurable strict limit, including distances above the default", () => {
+    const { drop } = setup([box("selected", [0, 20_000, 0]), box("floor", [0, 0, 0])]);
+    expect(drop(["selected"])).toEqual([]);
+    expect(drop(["selected"], 19_998.5)).toEqual([]);
+    expect(drop(["selected"], 19_998.6)[0]?.position).toEqual([0, 1.5, 0]);
+    for (const limit of [0, -1, Infinity, NaN]) expect(drop(["selected"], limit)).toEqual([]);
+  });
   it("lands each object's bottom on its nearest collision surface without mutating the viewport", () => {
     const { drop, sync, sceneData } = setup([
       box("left", [0, 10, 0]),

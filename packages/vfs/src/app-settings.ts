@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalizeProjectAppearance } from "@babylonslate/core";
+import { DEFAULT_EDITOR_DROP_DISTANCE, normalizeProjectAppearance } from "@babylonslate/core";
 
 export const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
@@ -69,6 +69,7 @@ export const engineSettingsSchema = z.object({
     .default({ theme: "system", coarsePointerTargetScale: 1 }),
   undoHistoryLength: z.number().int().positive().default(50),
   viewportFrameCap: z.number().positive().default(30),
+  viewportDropDistance: z.number().finite().positive().default(DEFAULT_EDITOR_DROP_DISTANCE),
   hardwareScalingLevel: z.number().positive().default(1),
   modelImportDefaultScale: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;

@@ -3,8 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { SpriteEditor, SpritePreview } from "./sprite-editor";
 
+const readAssetChunk = vi.hoisted(() =>
+  vi.fn<() => Promise<Uint8Array | null>>(async () => null),
+);
+
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
+    readAssetChunk,
     assetRegistry: {
       list: () => [
         {
@@ -22,9 +27,31 @@ vi.mock("../context/document-context", () => ({
 
 afterEach(() => {
   cleanup();
+  readAssetChunk.mockReset();
 });
 
 describe("SpriteEditor", () => {
+  it("retries an unreadable texture without reopening the document", async () => {
+    readAssetChunk.mockResolvedValueOnce(null).mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:recovered-texture");
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    try {
+      const { container } = render(<SpritePreview payload={{ ...createDefaultSpritePayload(), textureGuid: "tex-1" } as unknown as Record<string, unknown>} />);
+      expect(await screen.findByText("Texture Preview Failed")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:recovered-texture"));
+      expect(screen.queryByText("Texture Preview Failed")).toBeNull();
+    } finally {
+      cleanup();
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+    }
+  });
+  it("identifies a missing texture rather than asking the author to keep waiting", () => {
+    render(<SpritePreview payload={{ ...createDefaultSpritePayload(), textureGuid: "missing" } as unknown as Record<string, unknown>} />);
+    expect(screen.getByText("Missing Texture")).toBeTruthy();
+    expect(screen.queryByText(/Loading texture/i)).toBeNull();
+  });
   it("lets the author pick a Texture asset", async () => {
     const payload = createDefaultSpritePayload();
     const onChange = vi.fn();

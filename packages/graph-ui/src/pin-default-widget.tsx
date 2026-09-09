@@ -26,6 +26,7 @@ export function PinDefaultPreviewWidget({
 }) {
   if (preview.kind === "bool") {
     return (
+      <span className="pointer-events-none inline-flex shrink-0 items-center gap-1.5 select-none">
       <span
         data-pin-default="bool"
         data-checked={preview.checked ? "true" : "false"}
@@ -37,6 +38,8 @@ export function PinDefaultPreviewWidget({
         aria-hidden="true"
       >
         {preview.checked ? <CheckMark /> : null}
+      </span>
+      <span className="text-sm text-foreground">{preview.checked ? "On" : "Off"}</span>
       </span>
     );
   }

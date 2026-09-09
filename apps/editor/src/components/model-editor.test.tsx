@@ -137,10 +137,13 @@ describe("ModelEditor", () => {
 
 describe("ModelPreview", () => {
   it("shows Empty copy when the source is not a loadable glTF mesh", () => {
-    render(<ModelPreview payload={{ materialSlots: [], clipNames: [] }} />);
+    const { rerender } = render(<ModelPreview payload={{ materialSlots: [], clipNames: [] }} />);
     expect(screen.getByTestId("model-preview")).toBeTruthy();
     expect(screen.getByText("No Mesh")).toBeTruthy();
     expect(screen.queryByTestId("model-preview-shading")).toBeNull();
+    rerender(<ModelPreview payload={{ materialSlots: [], clipNames: [] }} sourceBytes={new Uint8Array([111, 98, 106])} />);
+    expect(screen.getByText("Preview Unavailable")).toBeTruthy();
+    expect(screen.queryByText("No Mesh")).toBeNull();
   });
 
   it("shows Failed to Load Mesh when the glTF source cannot instantiate", async () => {

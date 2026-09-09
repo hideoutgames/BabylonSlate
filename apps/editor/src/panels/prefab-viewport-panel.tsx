@@ -123,6 +123,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const {
     flySpeed,
     gridSize,
+    dropDistance,
     editorTextureLodEnabled,
     editorTextureLodQuality,
   } = useEditorViewportPrefs();
@@ -287,7 +288,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   const dropSelection = () => {
     if (dropDisabled) return;
-    const transforms = requestEditorDrop(dropViewportId, dropActorIds);
+    const transforms = requestEditorDrop(dropViewportId, dropActorIds, dropDistance);
     if (transforms.length === 0) return;
     commitComponentTransforms(
       transforms.map(({ actorId, position, rotation, scale }) => ({

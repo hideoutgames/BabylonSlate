@@ -160,7 +160,7 @@ test.describe("P17 particles", () => {
     const particleCard = page
       .locator("[data-testid^='component-card-']")
       .filter({
-        hasText: "ParticleComponent",
+        has: page.getByRole("button", { name: /^Particle(?: \(|$)/ }),
       });
     await expect(particleCard).toBeVisible();
     await particleCard
@@ -227,7 +227,7 @@ test.describe("P17 particles", () => {
     const particleCard = page
       .locator("[data-testid^='component-card-']")
       .filter({
-        hasText: "ParticleComponent",
+        has: page.getByRole("button", { name: /^Particle(?: \(|$)/ }),
       });
     await expect(particleCard).toBeVisible();
     await particleCard

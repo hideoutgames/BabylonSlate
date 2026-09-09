@@ -223,7 +223,7 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("my-class-panel")).toBeVisible();
   });
 
-  test("Add Node catalog does not focus search", async ({ page }) => {
+  test(`Add Node catalog focuses desktop search and preserves touch body focus ${IPAD_TEST_TAG}`, async ({ page }) => {
     await openTestProject(page);
     await page
       .locator('[data-asset-path="assets/main.class.babasset"]')
@@ -236,7 +236,14 @@ test.describe("Editor density and IA", () => {
     await pane.click();
     await pane.click();
     await expect(page.getByTestId("node-palette")).toBeVisible();
-    await expect(page.getByTestId("node-palette-search")).not.toBeFocused();
+    const coarsePointer = await page.evaluate(() =>
+      matchMedia("(pointer: coarse)").matches,
+    );
+    if (coarsePointer) {
+      await expect(page.getByTestId("node-palette-search")).not.toBeFocused();
+    } else {
+      await expect(page.getByTestId("node-palette-search")).toBeFocused();
+    }
     await expect(page.getByTestId("node-palette-body")).toBeVisible();
   });
 

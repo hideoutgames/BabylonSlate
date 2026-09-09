@@ -91,6 +91,14 @@ function tokenValue(block: string, name: string): string {
   return match?.[1]?.trim() ?? "";
 }
 
+function resolvedTokenValue(block: string, name: string, seen = new Set<string>()): string {
+  if (seen.has(name)) return "";
+  seen.add(name);
+  const value = tokenValue(block, name);
+  const alias = value.match(/^var\((--[\w-]+)\)$/)?.[1];
+  return alias ? resolvedTokenValue(block, alias, seen) : value;
+}
+
 function oklchLightness(value: string): number {
   const match = value.match(/oklch\(\s*([0-9.]+)/i);
   return match ? Number(match[1]) : Number.NaN;
@@ -111,6 +119,35 @@ function circularHueDistance(a: number, b: number): number {
   return Math.min(diff, 360 - diff);
 }
 
+/** OKLCH to linear sRGB luminance, so unreadable palette pairs fail the audit. */
+function luminance(value: string): number {
+  const lightness = oklchLightness(value);
+  const chroma = oklchChroma(value);
+  const radians = (oklchHue(value) * Math.PI) / 180;
+  const a = chroma * Math.cos(radians);
+  const b = chroma * Math.sin(radians);
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const clamp = (channel: number) => Math.max(0, Math.min(1, channel));
+  return (
+    0.2126 * clamp(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s) +
+    0.7152 * clamp(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s) +
+    0.0722 * clamp(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)
+  );
+}
+
+function contrast(block: string, foreground: string, background: string): number {
+  const resolve = (name: string): string => {
+    const value = tokenValue(block, name);
+    const alias = value.match(/^var\((--[\w-]+)\)$/);
+    return alias ? resolve(alias[1]!) : value;
+  };
+  const first = luminance(resolve(foreground));
+  const second = luminance(resolve(background));
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+
 describe("authored shell stylesheets", () => {
   it.each(Object.entries(AUTHORED_STYLESHEETS))(
     "%s draws every radius from the token scale",
@@ -128,7 +165,7 @@ describe("authored shell stylesheets", () => {
   });
 });
 
-describe("Minimal Neutral theme tokens", () => {
+describe("Graphite theme tokens", () => {
   const root = cssBlock(globalsCss, ":root");
   const dark = cssBlock(globalsCss, ".dark");
 
@@ -137,9 +174,15 @@ describe("Minimal Neutral theme tokens", () => {
     expect(oklchChroma(tokenValue(dark, "--primary"))).toBeLessThan(0.01);
   });
 
-  it("uses Neutral light and dark backgrounds", () => {
-    expect(tokenValue(root, "--background")).toBe("oklch(1 0 0)");
-    expect(tokenValue(dark, "--background")).toBe("oklch(0.145 0 0)");
+  it.each([":root", ".dark"])("keeps secondary text and keyboard focus readable in %s", (scheme) => {
+    const block = cssBlock(globalsCss, scheme);
+    for (const surface of ["--background", "--sidebar", "--card", "--popover", "--muted", "--accent", "--control", "--panel-header"]) {
+      expect(contrast(block, "--foreground", surface), `text on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(block, "--muted-foreground", surface), `secondary text on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(block, "--ring", surface), `focus on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+    expect(contrast(block, "--primary-foreground", "--primary")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(block, "--play-foreground", "--play")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("points the chrome tab accent at foreground", () => {
@@ -268,10 +311,10 @@ describe("Minimal Neutral theme tokens", () => {
   });
 
   it("keeps dark field and panel boundaries visible against modal surfaces", () => {
-    const surface = oklchLightness(tokenValue(dark, "--popover")) ** 3;
+    const surface = oklchLightness(resolvedTokenValue(dark, "--popover")) ** 3;
     for (const name of ["--border", "--input", "--sidebar-border"]) {
       // Achromatic OKLCH lightness cubed is relative luminance.
-      const boundary = oklchLightness(tokenValue(dark, name)) ** 3;
+      const boundary = oklchLightness(resolvedTokenValue(dark, name)) ** 3;
       expect((boundary + 0.05) / (surface + 0.05), name).toBeGreaterThanOrEqual(
         1.5,
       );
@@ -302,10 +345,10 @@ describe("compact dock tab strips", () => {
 describe("dockview theme contrast", () => {
   const theme = cssBlock(dockviewCss, ".dockview-theme-babylonslate");
 
-  it("paints tab strips with card chrome and tab labels with foreground tokens", () => {
+  it("paints tab strips with panel-header chrome and tab labels with foreground tokens", () => {
     expect(
       tokenValue(theme, "--dv-tabs-and-actions-container-background-color"),
-    ).toBe("var(--card)");
+    ).toBe("var(--panel-header)");
     expect(tokenValue(theme, "--dv-activegroup-visiblepanel-tab-color")).toBe(
       "var(--foreground)",
     );

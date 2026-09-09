@@ -446,7 +446,15 @@ export function HomepageCreateDialog({
                     <details className="homepage-project-options">
                       <summary>Options</summary>
                       <FieldGroup>
-                        {hostPlatform !== "web" && (
+                        {hostPlatform === "web" ? (
+                          <Field>
+                            <FieldLabel>Location</FieldLabel>
+                            <FieldDescription>
+                              Stored in this browser on this device. Export a
+                              project backup to keep a separate copy.
+                            </FieldDescription>
+                          </Field>
+                        ) : (
                           <Field>
                             <FieldLabel>Location</FieldLabel>
                             <ToggleGroup

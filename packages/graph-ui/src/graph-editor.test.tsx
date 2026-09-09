@@ -1825,19 +1825,36 @@ describe("GraphEditor", () => {
     expect(lastGraph.nodes[0]?.data.title).toBe("Log");
   });
 
-  it("does not autofocus palette search on open", () => {
-    const { getByPlaceholderText, getByTestId, container } = render(
-      <GraphEditor
-        initialGraph={{ nodes: [], edges: [] }}
-        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
-      />,
-    );
+  it.each([
+    { pointer: "desktop", coarse: false },
+    { pointer: "touch", coarse: true },
+  ])("focuses the appropriate palette control for $pointer input", async ({ coarse }) => {
+    const previousMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn((query: string) => ({
+      matches: query === "(pointer: coarse)" && coarse,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    }));
+    try {
+      const { getByPlaceholderText, getByTestId, container } = render(
+        <GraphEditor
+          initialGraph={{ nodes: [], edges: [] }}
+          paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+        />,
+      );
 
-    openPalette(container);
-    const search = getByPlaceholderText("Search nodes");
-    expect(search.getAttribute("data-autofocus-search")).toBeNull();
-    expect(document.activeElement).not.toBe(search);
-    expect(getByTestId("node-palette-body")).toBeTruthy();
+      openPalette(container);
+      const search = getByPlaceholderText("Search nodes");
+      const body = getByTestId("node-palette-body");
+      await waitFor(() => expect(document.activeElement).toBe(coarse ? body : search));
+    } finally {
+      window.matchMedia = previousMatchMedia;
+    }
   });
 
   it("embeds palette pins into added nodes so handles appear", () => {
@@ -2058,8 +2075,9 @@ describe("GraphEditor", () => {
     expect(label?.className).toMatch(/whitespace-nowrap/);
     expect(label?.className).toMatch(/shrink-0/);
     expect(label?.className).not.toMatch(/max-w-\[18rem\]/);
-    expect(handle?.nextElementSibling).toBe(preview);
-    expect(preview?.nextElementSibling).toBe(label);
+    expect(preview?.parentElement?.textContent).toBe("On");
+    expect(handle?.compareDocumentPosition(preview!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(preview?.compareDocumentPosition(label!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("shows constraint type names on unconnected object and asset inputs", () => {
@@ -2710,6 +2728,8 @@ describe("GraphEditor", () => {
       <GraphEditor initialGraph={{ nodes: [], edges: [] }} />,
     );
     expect(container.querySelector(".react-flow")?.className).toMatch(/\bdark\b/);
+    const background = container.querySelector<SVGElement>(".react-flow__background");
+    expect(background?.style.getPropertyValue("--xy-background-color-props")).toBe("var(--graph-canvas)");
   });
 
   it("renders an Add node toolbar button", () => {

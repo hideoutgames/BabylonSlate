@@ -11,6 +11,7 @@ import {
 } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
   Field,
   FieldDescription,
@@ -110,6 +111,8 @@ function FontEditor({
   const font = normalizeFontPayload(payload, "Custom Font");
   const [sample, setSample] = useState("The quick brown fox");
   const [fontsReady, setFontsReady] = useState(false);
+  const [fontError, setFontError] = useState<string | null>(null);
+  const [fontAttempt, setFontAttempt] = useState(0);
   const [fallbackPick, setFallbackPick] = useState<number | "new" | null>(null);
   const [msdfError, setMsdfError] = useState<string | null>(null);
   const [msdfConfirm, setMsdfConfirm] = useState<{
@@ -172,16 +175,18 @@ function FontEditor({
     globalFallback: projectDocument?.settings.fonts.globalFallback ?? "sans-serif",
     familyForGuid,
   });
+  const fontGuid = assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ?? path;
   useEffect(() => {
     let cancelled = false;
+    setFontsReady(false);
+    setFontError(null);
     const registry = new FontRegistry();
     void (async () => {
       const bytes = await readAssetChunk(path, "source");
+      if (cancelled) return;
       if (bytes && bytes.byteLength > 0) {
-        const guid = assetRegistry?.list().find((asset) => asset.path === path)
-          ?.header.guid ?? path;
-        await registry.register({
-          guid,
+        const registered = await registry.register({
+          guid: fontGuid,
           family: font.family,
           bytes: bytes.buffer.slice(
             bytes.byteOffset,
@@ -190,14 +195,20 @@ function FontEditor({
           weight: font.weight,
           style: font.style,
         });
+        if (!registered) throw new Error(registry.getWarnings()[0]?.message ?? "This font could not be loaded.");
+      } else {
+        throw new Error("The source font is missing. Import its source file to preview this family.");
       }
       if (!cancelled) setFontsReady(true);
-    })();
+    })().catch((error: unknown) => {
+      if (!cancelled) setFontError(error instanceof Error ? error.message : "This font could not be loaded.");
+    });
     return () => {
       cancelled = true;
     };
   }, [
-    assetRegistry,
+    fontAttempt,
+    fontGuid,
     font.family,
     font.style,
     font.weight,
@@ -249,6 +260,16 @@ function FontEditor({
         >
           <SelectableText>{sample}</SelectableText>
         </p>
+        {fontError ? (
+          <Alert className="m-3">
+            <AlertTitle>Font Preview Unavailable</AlertTitle>
+            <AlertDescription>
+              <SelectableText>{fontError} The sample uses a fallback font.</SelectableText>
+              <Button type="button" variant="outline" size="sm" onClick={() => setFontAttempt((attempt) => attempt + 1)}>Retry</Button>
+            </AlertDescription>
+          </Alert>
+        ) : !fontsReady ? <p role="status" className="px-3 text-xs text-muted-foreground">Loading Font…</p> : null}
+        {fontsReady ? (
         <p
           className="px-3 text-xs text-muted-foreground"
           data-testid="font-fallback-glyphs"
@@ -257,6 +278,7 @@ function FontEditor({
             ? `Fallback glyphs: ${flagged.join(" ")}`
             : "No fallback glyphs detected"}
         </p>
+        ) : null}
         <div className="p-3">
           <NamedListEditor
             values={font.fallbackGuids}
