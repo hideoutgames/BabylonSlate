@@ -11,7 +11,7 @@ const identity = {
 };
 
 describe("debugColliderFromDesc", () => {
-  it("maps boxes, spheres, circles, and polylines and skips triangle meshes", () => {
+  it("maps the simulation shape and closes polygon outlines", () => {
     expect(
       debugColliderFromDesc(
         {
@@ -72,6 +72,7 @@ describe("debugColliderFromDesc", () => {
       { x: 1, y: 2, z: 3 },
       { x: 2, y: 2, z: 3 },
       { x: 1, y: 3, z: 3 },
+      { x: 1, y: 2, z: 3 },
     ]);
     expect(
       debugColliderFromDesc(
@@ -109,7 +110,7 @@ describe("debugColliderFromDesc", () => {
         identity,
       ),
     ).toMatchObject({
-      shape: "capsule",
+      shape: "capsule2d",
       radius: 0.4,
       halfHeight: 0.8,
     });
@@ -128,8 +129,9 @@ describe("debugColliderFromDesc", () => {
         identity,
       ),
     ).toMatchObject({
-      shape: "box",
-      halfExtents: { x: 0.5, y: 1, z: 0.5 },
+      shape: "cylinder",
+      radius: 0.5,
+      height: 2,
     });
     expect(
       debugColliderFromDesc(
@@ -198,6 +200,30 @@ describe("debugColliderFromDesc", () => {
         () => null,
       ),
     ).toEqual([]);
+  });
+
+  it("retains triangle geometry and pose for mesh collision debugging", () => {
+    const listed = debugColliderFromDesc({
+      id: "triangle", bodyId: "body",
+      shape: { kind: "mesh", vertices: [{ x: 0, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }, { x: 0, y: 3, z: 0 }], indices: [0, 1, 2] },
+      friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 1,
+    }, identity);
+    expect(listed).toMatchObject({
+      shape: "mesh", position: { x: 1, y: 2, z: 3 },
+      points: [{ x: 0, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }, { x: 0, y: 3, z: 0 }], indices: [0, 1, 2],
+    });
+  });
+
+  it("closes looped chains while retaining open chains", () => {
+    const desc = {
+      id: "chain", bodyId: "body",
+      shape: { kind: "chain" as const, points: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }] },
+      friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 1,
+    };
+    expect(debugColliderFromDesc(desc, identity)?.points).toHaveLength(3);
+    expect(debugColliderFromDesc({ ...desc, shape: { ...desc.shape, loop: true } }, identity)?.points).toEqual([
+      { x: 1, y: 2, z: 3 }, { x: 3, y: 2, z: 3 }, { x: 3, y: 4, z: 3 }, { x: 1, y: 2, z: 3 },
+    ]);
   });
 });
 

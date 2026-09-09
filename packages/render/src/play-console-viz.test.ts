@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MeshBuilder, StandardMaterial } from "@babylonjs/core";
+import { Mesh, MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   applyPlayShowBounds,
@@ -97,6 +97,72 @@ describe("play console visualization", () => {
     overlay.sync([]);
     expect(scene.getMeshByName("playConsoleViz:capsule")).toBeNull();
     overlay.dispose();
+    engine.dispose();
+  });
+
+  it("preserves cylinder, planar capsule, and triangle mesh collider geometry", () => {
+    const { engine, scene } = createTestEngine();
+    const overlay = createPlayCollisionOverlay(scene);
+    const pose = { position: { x: 3, y: 4, z: 5 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+    overlay.sync([
+      { id: "cylinder", shape: "cylinder", ...pose, radius: 2, height: 6 },
+      { id: "capsule2d", shape: "capsule2d", ...pose, radius: 1, halfHeight: 2 },
+      { id: "triangle", shape: "mesh", ...pose, points: [{ x: 0, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }, { x: 0, y: 3, z: 0 }], indices: [0, 1, 2] },
+    ]);
+    const cylinder = scene.getMeshByName("playConsoleViz:cylinder");
+    expect(cylinder).not.toBeNull();
+    expect(cylinder!.getBoundingInfo().boundingBox.extendSize.asArray()).toEqual([2, 3, 2]);
+    const capsule = scene.getMeshByName("playConsoleViz:capsule2d");
+    expect(capsule).not.toBeNull();
+    expect(capsule!.getBoundingInfo().boundingBox.extendSize.z).toBe(0);
+    expect(capsule!.getBoundingInfo().boundingBox.extendSize.y).toBeCloseTo(3);
+    expect(capsule!.position.asArray()).toEqual([3, 4, 5]);
+    const triangle = scene.getMeshByName("playConsoleViz:triangle");
+    expect(triangle).not.toBeNull();
+    expect(triangle!.getVerticesData(VertexBuffer.PositionKind)).toEqual([0, 0, 0, 2, 0, 0, 0, 3, 0]);
+    expect(triangle!.getIndices()).toEqual([0, 1, 2]);
+    expect(triangle!.position.asArray()).toEqual([3, 4, 5]);
+    overlay.dispose();
+    expect(scene.getMeshByName("playConsoleViz:triangle")).toBeNull();
+    engine.dispose();
+  });
+
+  it("draws active navigation, reuses labels, and clears independent toggles", () => {
+    const { engine, scene } = createTestEngine();
+    const viz = createPlayConsoleViz(scene);
+    const agent = {
+      actorGuid: "guard", actorName: "Guard", position: { x: 1, y: 0, z: 2 },
+      velocity: { x: 1, y: 0, z: 0 }, radius: 0.5, height: 2,
+      target: { x: 4, y: 0, z: 3 },
+      path: [{ x: 1, y: 0, z: 2 }, { x: 2, y: 0, z: 3 }, { x: 4, y: 0, z: 3 }], state: "walking",
+    };
+    viz.applyCommand({ type: "setShowPathfinding", enabled: true });
+    viz.applyCommand({ type: "setShowNavAgent", enabled: true });
+    expect(viz.applyCommand({ type: "debugNavigation", agents: [agent], world: "3d" })).toBe(true);
+    expect(scene.getMeshByName("playConsoleViz:nav:guard:path")).not.toBeNull();
+    expect(scene.getMeshByName("playConsoleViz:nav:guard:markers")).not.toBeNull();
+    const bounds = scene.getMeshByName("playConsoleViz:nav:guard:bounds");
+    expect(bounds!.position.asArray()).toEqual([1, 1, 2]);
+    const label = scene.getMeshByName("playConsoleViz:nav:guard:label");
+    expect(label!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(label!.metadata.label).toContain("Guard");
+    expect(label!.metadata.label).toContain("walking");
+    expect(label!.isPickable).toBe(false);
+    viz.applyCommand({ type: "debugNavigation", agents: [{ ...agent, position: { x: 2, y: 0, z: 2 } }], world: "3d" });
+    expect(scene.getMeshByName("playConsoleViz:nav:guard:label")!.uniqueId).toBe(label!.uniqueId);
+    expect(label!.position.x).toBe(2);
+    viz.applyCommand({ type: "setShowPathfinding", enabled: false });
+    expect(scene.getMeshByName("playConsoleViz:nav:guard:path")).not.toBeNull();
+    viz.applyCommand({ type: "setShowNavAgent", enabled: false });
+    expect(scene.meshes.filter((mesh) => mesh.name.startsWith("playConsoleViz:nav:"))).toHaveLength(0);
+    viz.applyCommand({ type: "setShowPathfinding", enabled: true });
+    viz.applyCommand({ type: "debugNavigation", agents: [agent], world: "2d" });
+    expect(scene.getMeshByName("playConsoleViz:nav:guard:path")).not.toBeNull();
+    expect(scene.getMeshByName("playConsoleViz:nav:guard:bounds")).toBeNull();
+    viz.applyCommand({ type: "debugNavigation", agents: [], world: "2d" });
+    expect(scene.getMeshByName("playConsoleViz:nav:guard:path")).toBeNull();
+    viz.dispose();
+    expect(scene.materials.filter((material) => material.name.startsWith("playConsoleViz:"))).toHaveLength(0);
     engine.dispose();
   });
 
