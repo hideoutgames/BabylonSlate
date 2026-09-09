@@ -57,6 +57,15 @@ describe("EngineSettingsForm graph", () => {
 });
 
 describe("EngineSettingsForm viewport", () => {
+  it("edits the Drop distance through the viewport settings", () => {
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="viewport" />);
+    const field = view.getByLabelText("Drop Distance");
+    expect(field).toHaveProperty("value", "10000");
+    fireEvent.change(field, { target: { value: "25000.5" } });
+    fireEvent.blur(field);
+    expect(onChange).toHaveBeenCalledWith({ viewportDropDistance: 25000.5 });
+  });
   it("defaults post-processing on and reports a toggle", () => {
     const onChange = vi.fn();
     const { getByTestId } = render(

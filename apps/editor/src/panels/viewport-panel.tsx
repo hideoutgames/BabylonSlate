@@ -110,7 +110,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     viewportShadingMode,
     collisionsVisible,
   } = useSceneEditing();
-  const { flySpeed, editorTextureLodEnabled, editorTextureLodQuality } =
+  const { flySpeed, dropDistance, editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
@@ -270,7 +270,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const actorIds = current.actors
       .filter((actor) => !actor.locked && selectedActorIds.includes(actor.id))
       .map((actor) => actor.id);
-    const transforms = requestEditorDrop(dropViewportId, actorIds);
+    const transforms = requestEditorDrop(dropViewportId, actorIds, dropDistance);
     if (transforms.length === 0) return;
     const byId = new Map(transforms.map((transform) => [transform.actorId, transform]));
     void applySceneChange(documentId, {

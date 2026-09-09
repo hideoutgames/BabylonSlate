@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, err } from "@babylonslate/core";
 import { FakeLockProvider } from "@babylonslate/source-control";
 import { MemorySecretStore } from "@babylonslate/vfs";
 import {
@@ -24,6 +24,66 @@ describe("formatLockAge", () => {
 });
 
 describe("SourceControlService", () => {
+  it("ignores an old unlock failure after switching projects", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    fake.addTheirs("assets/hero.scene.babasset", "Ada");
+    const config = { settings: enabled, projectGuid: "first", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake };
+    await service.configure(config);
+    service.pausePolling();
+    try {
+      await service.refresh();
+      const lock = service.locks[0]!;
+      let finish!: (value: Awaited<ReturnType<typeof fake.unlock>>) => void;
+      vi.spyOn(fake, "unlock").mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+      const pending = service.forceUnlock(lock.id);
+      await service.configure({ ...config, projectGuid: "second", fake: new FakeLockProvider() });
+      service.pausePolling();
+      finish(err({ kind: "http", status: 403, message: "Old project token rejected" }));
+      await pending;
+      expect(service.operationError).toBeNull();
+      expect(service.locks).toHaveLength(0);
+    } finally { service.dispose(); }
+  });
+  it("explains a rejected unlock without removing the cached lock", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    fake.addTheirs("assets/hero.scene.babasset", "Ada");
+    await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+    service.pausePolling();
+    try {
+      await service.refresh();
+      const lock = service.lockForPath("assets/hero.scene.babasset")!;
+      const unlock = vi.spyOn(fake, "unlock").mockResolvedValueOnce(err({ kind: "http", status: 403, message: "No permission to unlock" }));
+      await service.forceUnlock(lock.id);
+      expect(service.operationError).toBe("No permission to unlock");
+      expect(service.lockForPath(lock.path)).toEqual(lock);
+      unlock.mockRestore();
+      await service.forceUnlock(lock.id);
+      expect(service.operationError).toBeNull();
+      expect(service.lockForPath(lock.path)).toBeUndefined();
+    } finally { service.dispose(); }
+  });
+  it("reports a failed refresh, preserves cached locks, and clears the error after retry", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    fake.addTheirs("assets/hero.scene.babasset", "Ada");
+    await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+    service.pausePolling();
+    try {
+      await service.refresh();
+      expect(service.refreshState.status).toBe("ready");
+      const lastSuccess = service.refreshState.lastSuccessAt;
+      const verify = vi.spyOn(fake, "verify").mockResolvedValueOnce(err({ kind: "http", status: 401, message: "Token expired" }));
+      await service.refresh();
+      expect(service.refreshState).toEqual({ status: "error", error: "Token expired", lastSuccessAt: lastSuccess });
+      expect(service.locks).toHaveLength(1);
+      await service.refresh();
+      expect(service.refreshState.status).toBe("ready");
+      expect(service.refreshState.error).toBeNull();
+      verify.mockRestore();
+    } finally { service.dispose(); }
+  });
   it("does nothing when source control is disabled", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();

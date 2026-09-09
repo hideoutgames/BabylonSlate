@@ -799,7 +799,7 @@ export function EditorChromeBar({
                 void requestPlay({ injectFixtureThrow: inject });
               }}
             >
-              <PlayIcon data-icon="inline-start" />
+              <PlayIcon data-icon="inline-start" fill="currentColor" />
               {phone && previewBuild
                 ? "Build"
                 : playChromeLaunchLabel(previewBuild)}

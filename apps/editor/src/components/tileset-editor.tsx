@@ -25,6 +25,7 @@ import {
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-status";
 import { useOptionalTilesetEditing } from "../context/tileset-editing-context";
 
 export function TilesetPreviewPanel(_props: IDockviewPanelProps) {
@@ -52,7 +53,7 @@ export function TilesetDetailsPanel(_props: IDockviewPanelProps) {
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
-    <PanelFrame data-testid="tileset-details-panel" title="Details">
+    <PanelFrame data-testid="tileset-details-panel">
       <TilesetEditor
         payload={payload}
         onChange={(next) => {
@@ -84,30 +85,10 @@ export function TilesetPreview({
   );
   const selectedId = selectedIds[0] ?? 1;
   const [previewTool, setPreviewTool] = useState<AtlasTileGridTool>("move");
-  const { assetRegistry, readAssetChunk } = useDocuments();
-  const [url, setUrl] = useState<string | null>(null);
-  const texture = (assetRegistry?.list() ?? []).find(
-    (asset) => asset.header.guid === tileset.textureGuid,
-  );
+  const preview = useTexturePreview(tileset.textureGuid);
+  const { url } = preview;
   const selected =
     tileset.tiles.find((tile) => tile.id === selectedId) ?? tileset.tiles[0];
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setUrl(null);
-    if (!texture || !readAssetChunk) return;
-    void (async () => {
-      const bytes = await readAssetChunk(texture.path, "pixels");
-      if (!bytes || cancelled || bytes.byteLength === 0) return;
-      objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
-      if (!cancelled) setUrl(objectUrl);
-    })();
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [readAssetChunk, texture]);
 
   const commit = (next: TilesetPayload) => {
     onChange?.(ensureTilesetTiles(next) as unknown as Record<string, unknown>);
@@ -126,7 +107,7 @@ export function TilesetPreview({
   const collisionValue = collisionEnum(selected?.collision);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col" onErrorCapture={preview.fail}>
       <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
         <ToggleGroup
           variant="outline"
@@ -189,7 +170,7 @@ export function TilesetPreview({
         selectedIds={selectedIds}
         panZoom
         tool={previewTool}
-        emptyLabel={tileset.textureGuid ? "Loading texture…" : "No Texture"}
+        emptyLabel={preview.status === "failed" ? "" : preview.status === "missing" ? "Missing Texture" : preview.status === "empty" ? "No Texture" : "Loading Texture…"}
         data-testid="tileset-preview"
         onSelect={(id) => {
           if (editing) editing.setSelectedTileId(id);
@@ -222,6 +203,7 @@ export function TilesetPreview({
           );
         }}
       />
+      {preview.status === "failed" ? <TexturePreviewStatus preview={preview} /> : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -22,10 +22,12 @@ import {
 import { normalizeInputMappings } from "@babylonslate/input";
 import {
   Empty,
+  EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Input } from "@babylonslate/ui/components/input";
 import {
@@ -75,6 +77,7 @@ import {
 } from "./engine-settings-form";
 import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
 import { ProjectPluginsSettings } from "./project-plugins-settings";
+import { ENGINE_SETTING_FIELDS, PROJECT_SETTING_FIELDS } from "../lib/settings-search";
 
 export type SettingsScope = "project" | "engine";
 
@@ -283,6 +286,8 @@ export function SettingsModal({
     prefillSourceControlFromGit,
   } = useDocuments();
   const [search, setSearch] = useState("");
+  const settingsBodyRef = useRef<HTMLDivElement>(null);
+  const [pendingFocus, setPendingFocus] = useState<{ targetId?: string } | null>(null);
   const [tokenDraft, setTokenDraft] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [mixerPickerOpen, setMixerPickerOpen] = useState(false);
@@ -290,6 +295,9 @@ export function SettingsModal({
   const [gameInstancePickerOpen, setGameInstancePickerOpen] = useState(false);
   const [exportGameError, setExportGameError] = useState<string | null>(null);
   const [exportGameBusy, setExportGameBusy] = useState(false);
+  const [exportProjectBusy, setExportProjectBusy] = useState(false);
+  const [exportProjectError, setExportProjectError] = useState<string | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [disableSourceControlOpen, setDisableSourceControlOpen] =
     useState(false);
   const [utilityPick, setUtilityPick] = useState<"new" | number | null>(null);
@@ -302,6 +310,7 @@ export function SettingsModal({
   );
 
   useEffect(() => {
+    setPendingFocus(null);
     if (!open) return;
     setSearch("");
     setActiveCategoryId(scope === "engine" ? "appearance" : "general");
@@ -335,13 +344,41 @@ export function SettingsModal({
     }));
   }, [scope, showSourceControl]);
 
-  const categories = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return source.filter((category) => {
-      if (category.id === "sourceControl" && !showSourceControl) return false;
-      return matchesSearch(category.label, category.keywords, needle);
+  const searching = search.trim().length > 0;
+  const searchResults = useMemo(() => {
+    const words = search.trim().toLowerCase().split(/\s+/);
+    const available = source.filter((category) => category.id !== "sourceControl" || showSourceControl);
+    const settingFields = scope === "engine" ? ENGINE_SETTING_FIELDS : PROJECT_SETTING_FIELDS;
+    return available.flatMap((category) => {
+      const matches = settingFields.filter((field) =>
+        field.categoryId === category.id &&
+        words.every((word) => `${category.label} ${field.label}`.toLowerCase().includes(word)),
+      );
+      if (matches.length) return matches;
+      return words.every((word) => matchesSearch(category.label, category.keywords, word))
+        ? [{ categoryId: category.id, label: category.label, targetId: undefined }]
+        : [];
     });
-  }, [search, source, showSourceControl]);
+  }, [scope, search, source, showSourceControl]);
+  const categories = useMemo(() => source.filter((category) =>
+    (category.id !== "sourceControl" || showSourceControl) &&
+    (!searching || searchResults.some((result) => result.categoryId === category.id)),
+  ), [source, showSourceControl, searching, searchResults]);
+
+  useEffect(() => {
+    if (!open || !pendingFocus || searching) return;
+    const frame = requestAnimationFrame(() => {
+      const target = pendingFocus.targetId ? document.getElementById(pendingFocus.targetId) : null;
+      const control = target?.matches("input, button, select, textarea, [tabindex]")
+        ? target
+        : target?.querySelector<HTMLElement>("input, button, select, textarea, [tabindex]");
+      const element = control && !control.matches(":disabled") ? control : settingsBodyRef.current;
+      (target ?? element)?.scrollIntoView?.({ block: "nearest" });
+      element?.focus({ preventScroll: true });
+      setPendingFocus(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, pendingFocus, searching, activeCategoryId]);
 
   useEffect(() => {
     if (!categories.some((category) => category.id === activeCategoryId)) {
@@ -350,23 +387,35 @@ export function SettingsModal({
   }, [activeCategoryId, categories, source]);
 
   const handleExport = async () => {
-    if (!projectDocument) return;
-    const bytes = await exportProject();
-    const blob = new Blob([bytes.buffer as ArrayBuffer], {
-      type: "application/zip",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = projectArchiveDownloadName(projectDocument.metadata.name);
-    anchor.click();
-    URL.revokeObjectURL(url);
+    if (!projectDocument || exportProjectBusy) return;
+    setExportProjectBusy(true);
+    setExportProjectError(null);
+    setExportNotice(null);
+    try {
+      const bytes = await exportProject();
+      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = projectArchiveDownloadName(projectDocument.metadata.name);
+        anchor.click();
+        setExportNotice("Project backup prepared. Check your downloads.");
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      setExportProjectError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setExportProjectBusy(false);
+    }
   };
 
   const handleExportGame = async () => {
     if (!projectDocument) return;
     setExportGameBusy(true);
     setExportGameError(null);
+    setExportNotice(null);
     try {
       const result = await exportGameArtifact();
       if (isErr(result)) {
@@ -383,6 +432,7 @@ export function SettingsModal({
       anchor.download = `${projectDocument.metadata.name.replace(/\s+/g, "_")}.zip`;
       anchor.click();
       URL.revokeObjectURL(url);
+      setExportNotice("Game export prepared. Check your downloads.");
     } catch (error) {
       console.error("[editor] Export Game failed", error);
       setExportGameError(exportGameFailureMessage(error));
@@ -413,7 +463,10 @@ export function SettingsModal({
       categories={categories}
       groups={groups}
       activeCategoryId={activeCategoryId}
-      onCategoryChange={setActiveCategoryId}
+      onCategoryChange={(id) => {
+        setActiveCategoryId(id);
+        setSearch("");
+      }}
       search={search}
       onSearchChange={setSearch}
       searchPlaceholder="Search settings"
@@ -424,20 +477,43 @@ export function SettingsModal({
               size="sm"
               variant="outline"
               onClick={() => onOpenChange(false)}
-    >
+            >
               Done
             </Button>
           </div>
         }
       >
-        {categories.length === 0 ? (
+      {searching ? (
+        searchResults.length === 0 ? (
           <Empty>
             <EmptyHeader>
               <EmptyTitle>No Matching Settings</EmptyTitle>
+              <EmptyDescription>Try another name or clear the search to browse categories.</EmptyDescription>
             </EmptyHeader>
+            <Button variant="outline" size="sm" onClick={() => setSearch("")}>Clear Search</Button>
           </Empty>
-        ) : null}
-        {scope === "engine" && categories.length > 0 ? (
+        ) : (
+          <div className="flex flex-col gap-1" aria-label="Matching Settings">
+            {searchResults.map((result) => (
+              <Button
+                key={`${result.categoryId}:${result.label}`}
+                variant="ghost"
+                size="sm"
+                className="h-auto min-h-[var(--chrome-row,28px)] justify-between gap-3 py-1 text-left"
+                onClick={() => {
+                  setActiveCategoryId(result.categoryId);
+                  setSearch("");
+                  setPendingFocus({ targetId: result.targetId });
+                }}
+              >
+                <span className="min-w-0 truncate" title={result.label}>{result.label}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{source.find((category) => category.id === result.categoryId)?.label}</span>
+              </Button>
+            ))}
+          </div>
+        )
+      ) : <div ref={settingsBodyRef} tabIndex={-1} className="outline-none">
+      {scope === "engine" ? (
         <EngineSettingsForm
           settings={engineSettings}
           onChange={saveEngine}
@@ -708,6 +784,7 @@ export function SettingsModal({
                     className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                   onClick={() => setFontPickerOpen(true)}
                   data-testid="settings-default-font"
+                  id="settings-default-font"
                 >
                   {selectedPickerIdentity(
                     assetRowIdentity(
@@ -794,6 +871,7 @@ export function SettingsModal({
                     className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                   onClick={() => setMixerPickerOpen(true)}
                   data-testid="settings-audio-mixer"
+                  id="settings-audio-mixer"
                 >
                   {selectedPickerIdentity(
                     assetRowIdentity(
@@ -1039,6 +1117,7 @@ export function SettingsModal({
               variant="outline"
                 className="min-h-[var(--chrome-row,28px)] w-fit"
               data-testid="retry-texture-encoding"
+              id="retry-texture-encoding"
               onClick={() => void retryFailedTextureEncoding()}
             >
               Retry Encoding
@@ -1068,6 +1147,7 @@ export function SettingsModal({
                     className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                   onClick={() => setScenePickerOpen(true)}
                   data-testid="settings-startup-scene"
+                  id="settings-startup-scene"
                 >
                   {selectedPickerIdentity(
                     assetRowIdentity(
@@ -1103,6 +1183,7 @@ export function SettingsModal({
                   className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                 onClick={() => setGameInstancePickerOpen(true)}
                 data-testid="settings-game-instance"
+                id="settings-game-instance"
               >
                 {selectedPickerIdentity(
                   classRowIdentity(
@@ -1219,10 +1300,11 @@ export function SettingsModal({
             <Button
                 className="min-h-[var(--chrome-row,28px)] w-fit"
               data-testid="export-game"
+              id="export-game"
               disabled={exportGameBusy}
               onClick={() => void handleExportGame()}
             >
-              Export Game
+              {exportGameBusy ? "Exporting Game…" : "Export Game"}
             </Button>
             <Field>
                 <FieldDescription>Editable project backup.</FieldDescription>
@@ -1230,10 +1312,19 @@ export function SettingsModal({
             <Button
                 className="min-h-[var(--chrome-row,28px)] w-fit"
               data-testid="export-project"
+              id="export-project"
+              disabled={exportProjectBusy}
               onClick={() => void handleExport()}
             >
-              Export Project
+              {exportProjectBusy ? "Exporting Project…" : "Export Project"}
             </Button>
+            {exportProjectError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Project Export Failed</AlertTitle>
+                <AlertDescription>{exportProjectError}</AlertDescription>
+              </Alert>
+            ) : null}
+            {exportNotice ? <p role="status" className="text-sm text-muted-foreground">{exportNotice}</p> : null}
           </FieldSet>
         </FieldGroup>
       ) : null}
@@ -1431,7 +1522,8 @@ export function SettingsModal({
             <Button
               variant="outline"
               data-testid="close-project"
-                className="min-h-[var(--chrome-row,28px)] w-fit"
+              id="close-project"
+              className="min-h-[var(--chrome-row,28px)] w-fit"
               onClick={() => {
                 onOpenChange(false);
                 onCloseProject();
@@ -1443,6 +1535,7 @@ export function SettingsModal({
           </FieldSet>
         </FieldGroup>
       ) : null}
+      </div>}
     </CatalogDialog>
       {scope === "project" ? (
         <AssetPicker

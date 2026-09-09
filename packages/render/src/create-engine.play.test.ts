@@ -181,6 +181,10 @@ describe("Play createEngine view", () => {
     const prefab = make("prefab-viewport", 3);
     expect(requestEditorDrop("scene-viewport", ["selected"])[0]?.position).toEqual([0, 1.5, 0]);
     expect(requestEditorDrop("prefab-viewport", ["selected"])[0]?.position).toEqual([0, 4.5, 0]);
+    expect(requestEditorDrop("scene-viewport", ["selected"], 8.5)).toEqual([]);
+    expect(requestEditorDrop("scene-viewport", ["selected"], 8.6)[0]?.position).toEqual([0, 1.5, 0]);
+    expect(requestEditorDrop("prefab-viewport", ["selected"], 5.5)).toEqual([]);
+    expect(requestEditorDrop("prefab-viewport", ["selected"], 5.6)[0]?.position).toEqual([0, 4.5, 0]);
     expect(scene.editor!.sync.meshForActor("selected")!.position.y).toBe(10);
     prefab.dispose(); handles.pop();
     expect(requestEditorDrop("prefab-viewport", ["selected"])).toEqual([]);

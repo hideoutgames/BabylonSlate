@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
@@ -111,6 +111,23 @@ afterEach(() => {
 });
 
 describe("CompilerResultsPanel", () => {
+  it("reveals and copies the complete selected diagnostic while retaining navigation", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    try {
+      render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+      fireEvent.click(screen.getByTestId("compiler-result-row"));
+      const details = within(screen.getByRole("region", { name: "Diagnostic Details" }));
+      expect(details.getByText(/RigidBodyComponent needs a ColliderComponent on the same actor/)).toBeTruthy();
+      fireEvent.click(details.getByRole("button", { name: "Copy" }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining(pairingWarning.message)));
+      expect(selectActor).toHaveBeenCalledWith("hero");
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
   it("selects the actor when a physics pairing warning is tapped", () => {
     render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("compiler-result-row"));

@@ -132,10 +132,11 @@ export function ModelPreview({
       <div className="flex h-full flex-col p-3" data-testid="model-preview">
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>No Mesh</EmptyTitle>
+            <EmptyTitle>{sourceBytes?.byteLength ? "Preview Unavailable" : "No Mesh"}</EmptyTitle>
             <EmptyDescription>
-              OBJ and STL stay on this empty state. A glTF source loads in the
-              Preview panel.
+              {sourceBytes?.byteLength
+                ? "Preview supports glTF and GLB models. Import a model in one of those formats to preview it here."
+                : "Import a model to see its mesh in Preview."}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

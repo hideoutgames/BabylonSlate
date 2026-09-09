@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MessageDetails } from "./message-details";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
@@ -604,6 +605,8 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { diagnostics } = useBehaviourTreeDocument();
   const { focusNode } = useBehaviourTreeEditing();
+  const [selectedDiagnostic, setSelectedDiagnostic] = useState<(typeof diagnostics)[number] | null>(null);
+  const selected = selectedDiagnostic && diagnostics.some((row) => row.code === selectedDiagnostic.code && row.message === selectedDiagnostic.message && row.nodeId === selectedDiagnostic.nodeId) ? selectedDiagnostic : null;
 
   return (
     <PanelFrame className="flex-1" data-testid="behaviour-tree-compiler-results">
@@ -615,7 +618,7 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
           </EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="h-full p-2">
+        <ScrollArea className="min-h-0 flex-1 p-2">
           <WindowedList
             itemCount={diagnostics.length}
             rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -629,6 +632,7 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
                   size="touch"
                   className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
                   onClick={() => {
+                    setSelectedDiagnostic(row);
                     if (row.nodeId) focusNode(row.nodeId);
                   }}
                   data-testid={`behaviour-tree-diagnostic-${row.code}`}
@@ -644,6 +648,7 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
           </WindowedList>
         </ScrollArea>
       )}
+      {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}`} onClose={() => setSelectedDiagnostic(null)} /> : null}
     </PanelFrame>
   );
 }

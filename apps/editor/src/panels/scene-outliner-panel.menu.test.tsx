@@ -24,6 +24,7 @@ const applySceneChange = vi.hoisted(() =>
   ),
 );
 const openDocument = vi.hoisted(() => vi.fn());
+const frameActor = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
   phone: false,
   scene: null as SerializedScene | null,
@@ -42,6 +43,14 @@ vi.mock("../context/document-workspace-context", () => ({
     documentId: "scene:assets/Main.scene.babasset",
   }),
 }));
+
+vi.mock("../context/scene-editing-context", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../context/scene-editing-context")>();
+  return {
+    ...actual,
+    useSceneEditing: () => ({ ...actual.useSceneEditing(), frameActor }),
+  };
+});
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
@@ -69,6 +78,7 @@ afterEach(() => {
   cleanup();
   applySceneChange.mockClear();
   openDocument.mockClear();
+  frameActor.mockClear();
   harness.assets = [];
   harness.phone = false;
 });
@@ -114,6 +124,20 @@ describe("SceneOutlinerPanel menus", () => {
     ).toEqual(["false", "false"]);
     expect(applySceneChange).not.toHaveBeenCalled();
   });
+  it("frames the actor from its row menu and exposes visibility state", () => {
+    harness.scene = createDefaultScene();
+    harness.scene.actors = [createActor("actor-1", "Cube", { visible: false })];
+    render(<SceneEditingProvider><SceneOutlinerPanel {...({} as IDockviewPanelProps)} /></SceneEditingProvider>);
+    expect(
+      screen
+        .getByTestId("outliner-visibility-actor-1")
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Frame Selection" }));
+    expect(frameActor).toHaveBeenCalledWith("actor-1");
+  });
+
   it("keeps phone row targets separate and restores compact row placement on iPad", () => {
     const scene = createDefaultScene();
     scene.actors = [

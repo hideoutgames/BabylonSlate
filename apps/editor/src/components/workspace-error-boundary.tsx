@@ -5,6 +5,7 @@ import {
   AlertTitle,
 } from "@babylonslate/ui/components/alert";
 import { SelectableText } from "@babylonslate/editor-kit";
+import { Button } from "@babylonslate/ui/components/button";
 
 interface WorkspaceErrorBoundaryProps {
   children: ReactNode;
@@ -40,6 +41,14 @@ export class WorkspaceErrorBoundary extends Component<
           <AlertTitle>Couldn&apos;t Open Document</AlertTitle>
           <AlertDescription>
             <SelectableText>{error.message}</SelectableText>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => this.setState({ error: null })}
+            >
+              Retry
+            </Button>
           </AlertDescription>
         </Alert>
       );

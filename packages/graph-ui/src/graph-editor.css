@@ -1,7 +1,7 @@
 .graph-editor-canvas {
-  /* Match top chrome bar (--card) for stronger contrast vs nodes. */
-  background: var(--card);
-  --xy-background-color: var(--card);
+  /* Separate the working canvas from nodes without changing hit geometry. */
+  background: var(--graph-canvas);
+  --xy-background-color: var(--graph-canvas);
   --xy-background-pattern-color: var(--border);
   --xy-background-pattern-dots-color: var(--border);
   --xy-edge-stroke-width: var(--graph-edge-data);
@@ -12,7 +12,7 @@
   --xy-controls-button-color: var(--foreground);
   --xy-controls-button-border-color: var(--border);
   --xy-node-border: var(--border);
-  --xy-node-background-color: var(--card);
+  --xy-node-background-color: var(--graph-node);
 }
 
 .graph-editor-canvas .react-flow__node {
@@ -71,20 +71,20 @@
   min-width: 200px;
   min-height: 88px;
   padding: 14px 28px;
-  border-radius: 8px;
-  background: #2a2a2a;
-  border: 1px solid #6a6a6a;
-  color: #f0f0f0;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 45%);
+  border-radius: var(--radius-lg);
+  background: var(--graph-node);
+  border: 1px solid var(--input);
+  color: var(--foreground);
+  box-shadow: var(--surface-shadow);
 }
 
 .anim-state-node-selected {
-  border-color: #f5c542;
-  box-shadow: 0 0 0 1px #f5c542;
+  border-color: var(--graph-state-selected);
+  box-shadow: 0 0 0 1px var(--graph-state-selected);
 }
 
 .anim-state-node-entry {
-  border-color: #7ad07a;
+  border-color: var(--graph-state-entry);
 }
 
 .anim-state-node-title {
@@ -98,7 +98,7 @@
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #7ad07a;
+  color: var(--graph-state-entry);
   text-align: center;
 }
 
@@ -188,7 +188,7 @@
   top: 50%;
   width: 8px;
   height: 8px;
-  background: #c8c8c8;
+  background: var(--muted-foreground);
   pointer-events: none;
   transform: translate(-50%, -50%) rotate(45deg);
 }
@@ -198,8 +198,8 @@
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  border: 1px solid #1a1a1a;
-  background: #d8d8d8;
+  border: 1px solid var(--primary-foreground);
+  background: var(--primary);
   pointer-events: all;
   cursor: pointer;
 }
@@ -210,16 +210,16 @@
   inset: 5px 4px 5px 6px;
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
-  border-left: 6px solid #1a1a1a;
+  border-left: 6px solid var(--primary-foreground);
 }
 
 .anim-transition-badge-both::after {
   inset: 6px;
   border: 0;
-  border-left: 2px solid #1a1a1a;
-  border-right: 2px solid #1a1a1a;
+  border-left: 2px solid var(--primary-foreground);
+  border-right: 2px solid var(--primary-foreground);
 }
 
 .anim-transition-badge-selected {
-  background: #f5c542;
+  background: var(--graph-state-selected);
 }

@@ -266,6 +266,7 @@ export {
   type TypeVisualQuery,
 } from "./type-visuals";
 export { TypeColorMark } from "./type-color-mark";
+export { FolderBreadcrumbs, type FolderBreadcrumbsProps } from "./folder-breadcrumbs";
 export {
   PinShapeGlyph,
   pinShapeForContainer,

@@ -18,6 +18,7 @@ import {
   ClassPicker,
   SceneComponentPicker,
   ContextMenuOverlay,
+  FolderBreadcrumbs,
   InputMappingEditor,
   NamedListEditor,
   EntryListEditor,
@@ -1074,6 +1075,7 @@ function GalleryDangerDialog() {
 }
 
 export function ComponentGallery() {
+  const [folderPath, setFolderPath] = useState("Content/Characters/Hero");
   return (
     <div
       className="flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground"
@@ -1082,7 +1084,7 @@ export function ComponentGallery() {
       <header className="border-b border-border px-6 py-4">
         <h1 className="text-xl font-semibold">Component Gallery</h1>
         <p className="text-sm text-muted-foreground">
-          Dev-only audit surface for Neutral chrome tokens and editor-kit composites.
+          Dev-only audit surface for Graphite chrome tokens and editor-kit composites.
           Open with{" "}
           <SelectableText className="font-mono text-xs">
             ?test=1&amp;gallery=1
@@ -1182,6 +1184,11 @@ export function ComponentGallery() {
               </PanelFrame>
             </div>
             <GalleryComposites />
+            <FolderBreadcrumbs
+              root={{ path: "Content", label: "Content" }}
+              path={folderPath}
+              onNavigate={setFolderPath}
+            />
           </section>
 
           <Separator />
