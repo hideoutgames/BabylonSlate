@@ -81,19 +81,25 @@ describe("ProjectService lifecycle", () => {
 });
 
 describe("project round-trip", () => {
-  it("H13: saves and reloads replacement bindings and explicitly empty mappings", async () => {
+  it("H13: saves and reloads replacement and explicitly empty asset bindings", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("InputRoundTrip");
     const service = new ProjectService(storage);
     const { document, layouts } = await service.loadCurrentProject();
-    for (const input of [
-      { actions: [{ name: "Fire", bindings: [{ device: "key", code: "KeyF" }] }, { name: "Jump", bindings: [{ device: "key", code: "KeyH" }] }], axes: [] },
-      { actions: [], axes: [] },
+    const asset = service.registry!.list().find((entry) => entry.header.type === "InputAction" && entry.header.name === "Jump")!;
+    expect(asset).toBeDefined();
+    const payload = await service.loadDocument("input-action", asset.path);
+    for (const bindings of [
+      [{ id: "primary", device: "key", code: "KeyF" }, { id: "alternate", device: "key", code: "KeyH" }],
+      [],
     ]) {
-      document.settings.input = input;
+      await service.saveDocument("input-action", asset.path, { ...payload, bindings });
       await service.saveProject(document, layouts);
-      const reloaded = await new ProjectService(storage).loadCurrentProject();
-      expect(reloaded.document.settings.input).toEqual(input);
+      const reloaded = new ProjectService(storage);
+      const loaded = await reloaded.loadCurrentProject();
+      expect(loaded.document.settings.input).toEqual({ actions: [], axes: [] });
+      const restored = await reloaded.loadDocument("input-action", asset.path);
+      expect(restored?.bindings).toEqual(bindings);
     }
   });
   it("creates and saves a new project", async () => {
