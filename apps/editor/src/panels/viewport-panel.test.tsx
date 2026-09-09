@@ -1,5 +1,6 @@
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
@@ -211,6 +212,7 @@ function renderViewport() {
 describe("ViewportPanel engine", () => {
   afterEach(() => {
     cleanup();
+    receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000 });
     createEngineMock.mockClear();
     handle.editor.setGridSettings.mockClear();
     play.registerSharedEngine.mockClear();
@@ -244,6 +246,7 @@ describe("ViewportPanel engine", () => {
     selection.actorIds = [a.id, b.id, miss.id];
     const stop = engineCommandBus.subscribe((command) => {
       if (command.type !== "editor.drop") return;
+      expect(command.maxDistance).toBe(25_000.5);
       expect(command.viewportId).toBe(createEngineMock.mock.calls.at(-1)?.[1]?.editorViewportId);
       expect(command.actorIds).toEqual([a.id, b.id, miss.id]);
       engineCommandBus.dispatch({
@@ -259,6 +262,7 @@ describe("ViewportPanel engine", () => {
     try {
       renderViewport();
       await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+      act(() => receiveActiveAppSettingsUpdate({ viewportDropDistance: 25_000.5 }));
       fireEvent.click(screen.getByRole("button", { name: "Drop" }));
       expect(documents.applySceneChange).toHaveBeenCalledTimes(1);
       const next = documents.applySceneChange.mock.calls[0]![1];
