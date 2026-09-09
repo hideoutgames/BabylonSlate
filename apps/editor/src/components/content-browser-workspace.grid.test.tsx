@@ -25,6 +25,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
       pluginOverrides: {},
       gameInstanceClass: null as string | null,
       editorUtilityObjects: [] as string[],
+      startupSceneGuid: "",
     } },
     assetRegistry: null as unknown,
     registryVersion: 1,
@@ -33,6 +34,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     openDocument: vi.fn(),
     closeDocumentsForPaths: vi.fn(),
     repairAfterAssetDelete: vi.fn(async () => {}),
+    replaceClassReferencesBeforeDelete: vi.fn(async () => {}),
     openDocuments: [] as unknown[],
     setActiveDocument: vi.fn(),
     tabOrder: [] as string[],
@@ -166,7 +168,9 @@ afterEach(async () => {
   docs.openDocuments = [];
   docs.projectDocument.settings.gameInstanceClass = null;
   docs.projectDocument.settings.editorUtilityObjects = [];
+  docs.projectDocument.settings.startupSceneGuid = "";
   docs.loadAssetDocument.mockReset().mockResolvedValue({});
+  docs.replaceClassReferencesBeforeDelete.mockReset().mockResolvedValue(undefined);
   if (clientWidthDescriptor) {
     Object.defineProperty(
       HTMLElement.prototype,
@@ -198,7 +202,7 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     docs.thumbnailsEnabled = false;
   });
 
-  it("blocks a Class used by an unsaved open scene without changing either asset", async () => {
+  it("requires a second confirmation for unsaved Class usages and preserves both assets on Back", async () => {
     const { actorClass, scene } = classAndScene();
     const content = { actors: [{ classId: "Hero", components: [] }] };
     docs.openDocuments = [{ ref: { path: scene.path }, content }];
@@ -208,15 +212,19 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
 
     await waitFor(() => {
-      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
       expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
     });
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation").textContent).toContain("Hero → None");
+    expect(docs.replaceClassReferencesBeforeDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByTestId("content-browser-delete-cancel"));
     expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
     expect(content.actors).toEqual([{ classId: "Hero", components: [] }]);
   });
 
-  it("blocks a folder containing a Class referenced by a closed legacy scene", async () => {
+  it("requires a second confirmation for a folder containing a Class used by a closed legacy scene", async () => {
     const { actorClass, scene } = classAndScene("assets/Actors");
     docs.loadAssetDocument.mockResolvedValue({ actors: [{ classId: "Hero" }] });
     installRegistry([actorClass, scene], ["Actors"]);
@@ -227,7 +235,9 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     await waitFor(() => {
       expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
     });
-    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
   });
 
   it("allows deleting a folder when its Class referrers are also selected for deletion", async () => {
@@ -258,7 +268,7 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
   });
 
   it.each(["gameInstanceClass", "editorUtilityObjects"] as const)(
-    "blocks a Class assigned in Project Settings %s",
+    "requires a second confirmation for a Class assigned in Project Settings %s",
     async (setting) => {
       const { actorClass } = classAndScene();
       if (setting === "gameInstanceClass") docs.projectDocument.settings.gameInstanceClass = "Hero";
@@ -271,9 +281,51 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
       await waitFor(() => {
         expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
       });
-      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+      await waitFor(() => expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+      expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
     },
   );
+
+  it("chooses one replacement for two usages and stops deletion if updating references fails", async () => {
+    const { actorClass, scene } = classAndScene();
+    const replacement = { ...actorClass, path: "assets/NPC.class.babasset", header: { ...actorClass.header, guid: "npc", name: "NPC" } };
+    docs.openDocuments = [{ ref: { path: scene.path }, content: { actors: [
+      { id: "one", classId: "Hero", components: [] }, { id: "two", classId: "Hero", components: [] },
+    ] } }];
+    installRegistry([actorClass, replacement, scene]);
+    const deleteAsset = vi.fn();
+    Object.assign(docs.assetRegistry as object, { deleteAsset });
+    docs.replaceClassReferencesBeforeDelete.mockRejectedValue(new Error("Reference write failed"));
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${actorClass.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Replace Hero" })).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Replace Hero" }));
+    fireEvent.click(await screen.findByTestId("search-item-npc"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation").textContent).toContain("Hero → NPC");
+    expect(deleteAsset).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("content-browser-delete-references-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" }).textContent).toContain("Reference write failed"));
+    expect(docs.replaceClassReferencesBeforeDelete).toHaveBeenCalledWith([
+      { guid: "hero", classId: "Hero", replacement: { guid: "npc", classId: "NPC" } },
+    ], new Set(["hero"]), expect.any(Function));
+    expect(deleteAsset).not.toHaveBeenCalled();
+    expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
+  });
+
+  it("also confirms twice when the deleted asset is the project startup scene", () => {
+    const { scene } = classAndScene();
+    docs.projectDocument.settings.startupSceneGuid = scene.header.guid;
+    installRegistry([scene]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${scene.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
+  });
 });
 
 describe("ContentBrowserWorkspace grid window", () => {

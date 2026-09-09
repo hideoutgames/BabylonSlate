@@ -34,10 +34,13 @@ import {
   resolveTypeVisual,
   useContextMenu,
   AssetPicker,
+  ClassPicker,
+  PickerIdentity,
   type TypeVisual,
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import { classAssetReference, classDeletionCandidates, validateClassDeletionReplacements } from "../lib/class-deletion";
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
 import {
   documentKindForAssetType,
@@ -221,6 +224,7 @@ export function ContentBrowserWorkspace({
     openDocument,
     closeDocumentsForPaths,
     repairAfterAssetDelete,
+    replaceClassReferencesBeforeDelete,
     openDocuments,
     setActiveDocument,
     tabOrder,
@@ -265,6 +269,14 @@ export function ContentBrowserWorkspace({
   );
   const userToggledFoldersRef = useRef(new Set<string>());
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [classReplacementChoices, setClassReplacementChoices] = useState<Record<string, string | null>>({});
+  const [replacementPicker, setReplacementPicker] = useState<string | null>(null);
+  const [confirmReferencedDelete, setConfirmReferencedDelete] = useState(false);
+  useEffect(() => {
+    setClassReplacementChoices({});
+    setReplacementPicker(null);
+    setConfirmReferencedDelete(false);
+  }, [deleteTarget]);
   const [newAssetOpen, setNewAssetOpen] = useState(false);
   const [newAssetType, setNewAssetType] =
     useState<CreatableAssetType>("Scene");
@@ -1111,10 +1123,9 @@ export function ContentBrowserWorkspace({
       // payloads before allowing a Class (or its containing folder) to disappear.
       for (const asset of referenceAssets) {
         if (deletingGuids.has(asset.header.guid)) continue;
-        if (!["Scene", "SceneLayer", "Class", "Graph"].includes(asset.header.type)) continue;
         if (openDocuments.some((doc) => doc.ref.path === asset.path)) continue;
         const kind = documentKindForAssetType(asset.header.type);
-        if (!kind) continue;
+        if (!kind || kind === "trace") continue;
         try {
           const content = await loadAssetDocument(kind, asset.path);
           if (cancelled) return;
@@ -1155,26 +1166,42 @@ export function ContentBrowserWorkspace({
     const rows = [...refs].map(([guid, targets]) => {
       const asset = assetRegistry.getByGuid(guid);
       return { guid, name: resolveAssetName(guid), path: asset?.path ?? guid,
-        type: asset?.header.type, targets: targets.map(resolveAssetName),
+        type: asset?.header.type, targets: targets.map(resolveAssetName), targetGuids: targets,
         blocksClassDelete: targets.some((target) => deletingClassGuids.has(target)) };
     });
     const projectClasses = new Set([
       projectDocument?.settings.gameInstanceClass,
       ...(projectDocument?.settings.editorUtilityObjects ?? []),
     ]);
+    const projectAssetGuids = new Set([
+      projectDocument?.settings.startupSceneGuid,
+      projectDocument?.settings.audio?.audioMixerGuid,
+      projectDocument?.settings.fonts?.defaultFontGuid,
+    ]);
     const projectTargets = referenceAssets.filter((asset) =>
-      deletingClassGuids.has(asset.header.guid) && projectClasses.has(classIdFromClassAsset(asset)),
+      deletingGuids.has(asset.header.guid) && (projectAssetGuids.has(asset.header.guid) ||
+        (deletingClassGuids.has(asset.header.guid) && projectClasses.has(classIdFromClassAsset(asset)))),
     );
     if (projectTargets.length > 0) rows.push({
       guid: "project-settings", name: "Project Settings", path: "project.json", type: undefined,
       targets: projectTargets.map((asset) => resolveAssetName(asset.header.guid)),
-      blocksClassDelete: true,
+      targetGuids: projectTargets.map((asset) => asset.header.guid),
+      blocksClassDelete: projectTargets.some((asset) => deletingClassGuids.has(asset.header.guid)),
     });
     return rows.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
   }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName,
     deletingGuids, deletingClassGuids, deleteReferenceScan, deleteReferenceScanCurrent, projectDocument]);
   const hasReferencedClass = deleteInboundRefs.some((ref) => ref.blocksClassDelete);
-  const deleteBlocked = hasReferencedClass || checkingDeleteReferences || deleteReferenceCheckFailed;
+  const deletedClasses = useMemo(() => referenceAssets.filter((asset) => deletingClassGuids.has(asset.header.guid)), [referenceAssets, deletingClassGuids]);
+  const classReplacements = useMemo(() => deletedClasses.map((asset) => {
+    const replacement = referenceAssets.find((candidate) => candidate.header.guid === classReplacementChoices[asset.header.guid]);
+    const selectedGuid = classReplacementChoices[asset.header.guid];
+    return { ...classAssetReference(asset), replacement: replacement ? classAssetReference(replacement)
+      : selectedGuid ? { guid: selectedGuid, classId: "" } : null };
+  }), [deletedClasses, referenceAssets, classReplacementChoices]);
+  const pickerSource = deletedClasses.find((asset) => asset.header.guid === replacementPicker);
+  const pickerCandidates = pickerSource ? classDeletionCandidates(pickerSource, referenceAssets, deletingGuids) : [];
+  const deleteBlocked = checkingDeleteReferences || deleteReferenceCheckFailed;
 
   const deleteListNames = useMemo(() => {
     if (!deleteTarget) return [];
@@ -1229,7 +1256,7 @@ export function ContentBrowserWorkspace({
         paths.add(path);
       }
     }
-    if (refuseTheirsAssetPaths([...paths])) return;
+    if (refuseTheirsAssetPaths([...paths, ...deleteInboundRefs.filter((ref) => ref.blocksClassDelete && ref.guid !== "project-settings").map((ref) => ref.path)])) return;
     const oursToRelease = oursLockPaths([...paths], (path) =>
       sourceControl.lockStateForPath(path),
     );
@@ -1253,6 +1280,11 @@ export function ContentBrowserWorkspace({
     setOperationError(null);
     try {
       await reportProgress("Preparing Deletion");
+      if (classReplacements.length > 0) {
+        validateClassDeletionReplacements(classReplacements, referenceAssets, deletingGuids);
+        await replaceClassReferencesBeforeDelete(classReplacements, deletingGuids, (name) =>
+          reportProgress(`Updating Class References: ${name}`));
+      }
       closeDocumentsForPaths(paths);
       try {
         for (const path of folders) {
@@ -1313,6 +1345,11 @@ export function ContentBrowserWorkspace({
     closeDocumentsForPaths,
     deleteTarget,
     deleteBlocked,
+    deleteInboundRefs,
+    classReplacements,
+    referenceAssets,
+    deletingGuids,
+    replaceClassReferencesBeforeDelete,
     repairAfterAssetDelete,
     refuseTheirsAssetPaths,
     sourceControl,
@@ -2484,7 +2521,7 @@ export function ContentBrowserWorkspace({
       />
 
       <AlertDialog
-        open={deleteTarget !== null}
+        open={deleteTarget !== null && !confirmReferencedDelete && !replacementPicker}
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
@@ -2504,10 +2541,9 @@ export function ContentBrowserWorkspace({
                 {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {hasReferencedClass
-                  ? "Classes still referenced by remaining assets or Project Settings cannot be deleted. Remove their references and save first."
-                  : checkingDeleteReferences ? "Checking Class references before deletion."
+                {checkingDeleteReferences ? "Checking Class references before deletion."
                   : deleteReferenceCheckFailed ? "Class references could not be checked. Reopen the affected assets and try again."
+                  : hasReferencedClass ? "Choose one replacement for all usages of each Class. None clears its references and keeps placed instances with their engine base Class. You will confirm these changes next."
                   : deleteInboundRefs.length > 0
                   ? "Deleting these items will break the references below. This cannot be undone."
                   : "Permanently removes the selected items. This cannot be undone."}
@@ -2517,6 +2553,17 @@ export function ContentBrowserWorkspace({
           <div className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
             tabIndex={0} role="region" aria-label="Assets And References"
             data-testid="content-browser-delete-body">
+            {deletedClasses.filter((asset) => deleteInboundRefs.some((ref) => ref.targetGuids.includes(asset.header.guid))).map((asset) => (
+              <Field key={asset.header.guid} className="border-b px-4 py-3">
+                <FieldLabel htmlFor={`replace-class-${asset.header.guid}`}>Replace {resolveAssetName(asset.header.guid)}</FieldLabel>
+                <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
+                  className="min-h-[var(--touch-target,28px)] justify-start" onClick={() => setReplacementPicker(asset.header.guid)}>
+                  {classReplacementChoices[asset.header.guid]
+                    ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} /> : "None"}
+                </Button>
+                <p className="text-xs text-muted-foreground">Applies to every usage in {deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length} assets or settings listed below.</p>
+              </Field>
+            ))}
             <div className={cn("grid min-w-0", deleteInboundRefs.length > 0 && "md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]")}>
               <section className="min-w-0 px-4 py-3" aria-label="Selected For Deletion">
                 <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Selected <span className="tabular-nums">{deleteListNames.length}</span></h3>
@@ -2571,10 +2618,41 @@ export function ContentBrowserWorkspace({
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {
                 event.preventDefault();
-                void confirmDelete();
+                if (deleteInboundRefs.length > 0) setConfirmReferencedDelete(true);
+                else void confirmDelete();
               }}
             >
               {busy ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <ClassPicker open={replacementPicker !== null} onOpenChange={(open) => { if (!open) setReplacementPicker(null); }}
+        title="Replacement Class" classes={pickerCandidates.map((asset) => ({ id: asset.header.guid,
+          name: classIdFromClassAsset(asset), description: asset.path }))}
+        onPick={(guid) => {
+          if (replacementPicker) setClassReplacementChoices((current) => ({ ...current, [replacementPicker]: guid }));
+          setReplacementPicker(null);
+        }} />
+      <AlertDialog open={confirmReferencedDelete && deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setConfirmReferencedDelete(false); }}>
+        <AlertDialogContent variant="destructive" data-testid="content-browser-delete-references-confirmation">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Referenced Assets?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the selected assets and changes their references in {deleteInboundRefs.length} remaining assets or settings. This cannot be undone.
+              None clears Class references; placed actors and components keep their data with a base Class, and child Classes fall back to BObject. Other deleted asset references are cleared.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ul className="max-h-60 overflow-y-auto overscroll-y-contain text-sm">
+            {classReplacements.map((entry) => <li key={entry.guid}>{resolveAssetName(entry.guid)} → {entry.replacement ? resolveAssetName(entry.replacement.guid) : "None"}</li>)}
+          </ul>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Back</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={busy || deleteBlocked}
+              data-testid="content-browser-delete-references-confirm" onClick={(event) => { event.preventDefault(); void confirmDelete(); }}>
+              Delete And Update References
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

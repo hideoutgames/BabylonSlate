@@ -55,6 +55,8 @@ import {
   exportProjectZip,
   fallbackParentClass,
   clearDeletedAssetRefs,
+  replaceClassAssetReferences,
+  type ClassAssetReplacement,
   isAssetDocumentPath,
   isTracePath,
   loadPayloadWithMigration,
@@ -93,6 +95,7 @@ import {
   type PluginImportPlan,
 } from "@babylonslate/assets";
 import { onEncodeQueuePause } from "./encode-queue-pause";
+import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
@@ -1029,6 +1032,45 @@ export class ProjectService {
     return registry;
   }
 
+  /** Validate all referrers before writing replacements; never delete a Class here. */
+  async replaceClassReferencesBeforeDelete(
+    replacements: readonly ClassAssetReplacement[],
+    deletingGuids: ReadonlySet<string>,
+    onProgress?: (path: string) => Promise<void>,
+  ): Promise<void> {
+    const registry = this.assetRegistry;
+    if (!registry) throw new Error("The asset registry is unavailable.");
+    const assets = registry.list();
+    validateClassDeletionReplacements(replacements, assets, deletingGuids);
+    const plans: Array<{
+      kind: Exclude<DocumentKind, "content-browser">;
+      path: string;
+      content: Awaited<ReturnType<ProjectService["loadDocument"]>>;
+      parentClass: string | null;
+    }> = [];
+    for (const asset of assets) {
+      if (deletingGuids.has(asset.header.guid)) continue;
+      const kind = documentKindForAssetType(asset.header.type);
+      if (!kind || kind === "trace") continue;
+      await onProgress?.(asset.path);
+      const content = await this.loadDocument(kind, asset.path, { strict: true });
+      const walked = replaceClassAssetReferences(content, replacements);
+      const header = replaceClassAssetReferences({
+        parentClass: asset.header.parentClass ?? null,
+        dependencies: asset.header.dependencies,
+      }, replacements);
+      if (!walked.changed && !header.changed) continue;
+      if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) {
+        throw new Error(`${asset.path} is read-only and still references a selected Class.`);
+      }
+      plans.push({ kind, path: asset.path, content: walked.value, parentClass: header.value.parentClass });
+    }
+    for (const plan of plans) {
+      await onProgress?.(plan.path);
+      await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
+    }
+  }
+
   /**
    * Set remaining writable assets' references to deleted guids to None.
    * Does not delete files — call after `deleteAsset` / `deleteFolder`.
@@ -1218,6 +1260,7 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
+    options: { strict?: boolean } = {},
   ): Promise<
     | SerializedScene
     | SerializedSceneLayer
@@ -1238,7 +1281,7 @@ export class ProjectService {
       ? assetTypeForDocumentKind(kind)
       : "Class";
     const raw = isAssetDocumentPath(path)
-      ? await this.readAssetDocument(path, fallbackType)
+      ? await this.readAssetDocument(path, fallbackType, options.strict)
       : await this.readLegacyJsonDocument(path, fallbackType);
 
     const migrated = loadPayloadWithMigration(this.migrations, {
@@ -1272,6 +1315,7 @@ export class ProjectService {
   private async readAssetDocument(
     path: string,
     fallbackType: string,
+    strict = false,
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
     try {
       const decoded = await decodeAssetDocument(
@@ -1285,7 +1329,7 @@ export class ProjectService {
         payload: decoded.payload,
       };
     } catch (error) {
-      if (fallbackType === "Class") {
+      if (fallbackType === "Class" && !strict) {
         return {
           type: "Class",
           version: this.migrations.currentVersion("Class"),

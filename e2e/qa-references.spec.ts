@@ -65,13 +65,34 @@ test("H9: a long References list keeps Close inside the viewport", async ({ page
   }
   await close.click();
   await expect(dialog).toHaveCount(0);
+  await target.click();
+  await page.getByTestId("content-browser-delete-selected").click();
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const deletion = page.getByTestId("content-browser-delete-dialog");
+    await expect(deletion.getByRole("button", { name: "Replace Mannequin", exact: true })).toBeVisible();
+    const body = page.getByTestId("content-browser-delete-body");
+    await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    const cancel = page.getByTestId("content-browser-delete-cancel");
+    await expect(async () => {
+      const bounds = await cancel.boundingBox();
+      expect(bounds!.y).toBeGreaterThanOrEqual(0);
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    }).toPass();
+    await test.info().attach(`delete-references-${viewport.width}`, { body: await deletion.screenshot(), contentType: "image/png" });
+  }
+  await page.getByTestId("content-browser-delete-cancel").click();
 });
 
-test("H17: Delete blocks a Class used by the open scene", async ({
+test("H17: referenced Class deletion confirms twice and clears open scene usages", async ({
   page,
 }) => {
   await openTestProject(page);
   await openMainScene(page);
+  await page.evaluate(async (scene) => {
+    await (globalThis as unknown as { __babylonslateTest: { setActiveSceneContent(value: SerializedScene): Promise<boolean> } })
+      .__babylonslateTest.setActiveSceneContent(scene);
+  }, { ...createDefaultScene(), actors: [createActor("one", "First", { classId: "Mannequin" }), createActor("two", "Second", { classId: "Mannequin" })] });
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   const tile = page.locator(
@@ -83,9 +104,25 @@ test("H17: Delete blocks a Class used by the open scene", async ({
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(/^main$/i)).toBeVisible();
   await expect(dialog.getByText("No inbound references.")).toHaveCount(0);
-  await expect(page.getByTestId("content-browser-delete-confirm")).toBeDisabled();
-  await page.getByTestId("content-browser-delete-cancel").click();
+  await expect(page.getByTestId("content-browser-delete-confirm")).toBeEnabled();
+  await page.getByTestId("content-browser-delete-confirm").click();
+  const confirmation = page.getByTestId("content-browser-delete-references-confirmation");
+  await expect(confirmation).toContainText("Mannequin → None");
+  await confirmation.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(dialog).toBeVisible();
   await expect(tile).toBeVisible();
+  await page.getByTestId("content-browser-delete-confirm").click();
+  await page.getByTestId("content-browser-delete-references-confirm").click();
+  await expect(page.getByRole("dialog", { name: "Deleting Assets", exact: true })).toHaveCount(0, { timeout: 30_000 });
+  await expect(tile).toHaveCount(0);
+  await page.getByTestId("save-all-project").click();
+  await expect(page.getByTestId("save-all-project")).toBeDisabled();
+  const actors = await page.evaluate(async () => {
+    const bytes = await (globalThis as unknown as { __babylonslateTest: { readAssetChunk(path: string, chunk: string): Promise<Uint8Array> } })
+      .__babylonslateTest.readAssetChunk("assets/main.scene.babasset", "document");
+    return (JSON.parse(new TextDecoder().decode(bytes)) as SerializedScene).actors;
+  });
+  expect(actors.map((actor) => [actor.id, actor.classId])).toEqual([["one", "Actor"], ["two", "Actor"]]);
 });
 
 test("H17: Delete includes a material assignment before Save", async ({
