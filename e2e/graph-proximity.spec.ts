@@ -78,7 +78,17 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
 
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await page.mouse.move(near.x, near.y, { steps: 10 });
+  // A sustained drag lets the document host echo intermediate position frames
+  // before the node enters connection range, as it does during a long move.
+  for (let step = 1; step <= 30; step++) {
+    await page.mouse.move(
+      start.x + (near.x - start.x) * step / 30,
+      start.y + (near.y - start.y) * step / 30,
+    );
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    }));
+  }
   await expect(preview).toHaveCount(1);
   await expect(preview).toHaveCSS("opacity", "0.5");
   await expect(preview).toHaveCSS("pointer-events", "none");
