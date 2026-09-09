@@ -11,7 +11,7 @@ const alertDialogContentVariants = cva(
     variants: {
       variant: {
         default: "ring-foreground/10 data-[size=default]:sm:max-w-sm",
-        destructive: "ring-destructive sm:max-w-md",
+        destructive: "ring-destructive/30 sm:max-w-md",
       },
     },
     defaultVariants: {
@@ -83,7 +83,7 @@ function AlertDialogHeader({
     <div
       data-slot="alert-dialog-header"
       className={cn(
-        "grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[slot=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[slot=alert-dialog-media]:gap-x-4 sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-left sm:group-data-[size=default]/alert-dialog-content:has-data-[slot=alert-dialog-media]:grid-rows-[auto_1fr]",
+        "grid grid-rows-[auto_1fr] place-items-start gap-1.5 text-left has-data-[slot=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[slot=alert-dialog-media]:gap-x-4 sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-left sm:group-data-[size=default]/alert-dialog-content:has-data-[slot=alert-dialog-media]:grid-rows-[auto_1fr]",
         className
       )}
       {...props}
@@ -99,7 +99,7 @@ function AlertDialogFooter({
     <div
       data-slot="alert-dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 sm:flex-row sm:justify-end",
+        "-mx-4 -mb-4 flex flex-wrap justify-end gap-2 rounded-b-xl border-t px-4 py-3",
         className
       )}
       {...props}
@@ -115,7 +115,7 @@ function AlertDialogMedia({
     <div
       data-slot="alert-dialog-media"
       className={cn(
-        "mb-2 inline-flex size-10 items-center justify-center rounded-md bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 group-data-[variant=destructive]/alert-dialog-content:bg-destructive group-data-[variant=destructive]/alert-dialog-content:text-destructive-foreground *:[svg:not([class*='size-'])]:size-6",
+        "mb-2 inline-flex size-10 items-center justify-center rounded-md bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 group-data-[variant=destructive]/alert-dialog-content:bg-destructive/10 group-data-[variant=destructive]/alert-dialog-content:text-destructive *:[svg:not([class*='size-'])]:size-6",
         className
       )}
       {...props}

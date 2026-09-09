@@ -67,6 +67,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
+import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import {
   Progress,
@@ -1066,18 +1067,21 @@ export function ContentBrowserWorkspace({
 
   const deleteInboundRefs = useMemo(() => {
     if (!deleteTarget || !assetRegistry) return [];
-    const refs = new Set<string>();
-    for (const guid of deleteTarget.guids) {
+    const refs = new Map<string, string[]>();
+    const deleting = new Set(deleteTarget.guids);
+    for (const guid of deleting) {
       for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments).inbound) {
-        if (!deleteTarget.guids.includes(inbound)) {
-          refs.add(inbound);
-        }
+        if (deleting.has(inbound)) continue;
+        const targets = refs.get(inbound) ?? [];
+        targets.push(resolveAssetName(guid));
+        refs.set(inbound, targets);
       }
     }
-    return [...refs].map((guid) => ({
-      guid,
-      name: resolveAssetName(guid),
-    }));
+    return [...refs].map(([guid, targets]) => {
+      const asset = assetRegistry.getByGuid(guid);
+      return { guid, name: resolveAssetName(guid), path: asset?.path ?? guid,
+        type: asset?.header.type, targets };
+    }).sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
   }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName]);
 
   const deleteListNames = useMemo(() => {
@@ -2271,63 +2275,66 @@ export function ContentBrowserWorkspace({
       >
         <AlertDialogContent
           variant="destructive"
+          className="editor-dialog-large editor-dialog-delete flex flex-col gap-0 overflow-hidden p-0"
           data-testid="content-browser-delete-dialog"
+          data-has-references={deleteInboundRefs.length > 0}
         >
-          <AlertDialogHeader>
-            <AlertDialogMedia data-testid="content-browser-delete-media">
-              <OctagonAlertIcon />
+          <AlertDialogHeader className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
+            <AlertDialogMedia className="mb-0 size-8 shrink-0" data-testid="content-browser-delete-media">
+              <OctagonAlertIcon className="size-4" />
             </AlertDialogMedia>
-            <AlertDialogTitle>
-              {deleteTarget?.kind === "folder"
-                ? "Delete folder?"
-                : deleteTarget?.kind === "selection"
-                  ? "Delete items?"
-                  : "Delete assets?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget?.kind === "folder"
-                ? `Folder ${deleteTarget.path} and its assets will be removed permanently. This action is not undoable.`
-                : deleteTarget?.kind === "selection"
-                  ? "The selected folders and assets will be removed permanently. This action is not undoable."
-                  : "The following assets will be removed permanently. This action is not undoable."}
-            </AlertDialogDescription>
+            <div className="flex min-w-0 flex-col gap-1">
+              <AlertDialogTitle>
+                {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {deleteInboundRefs.length > 0
+                  ? "Deleting these items will break the references below. This cannot be undone."
+                  : "Permanently removes the selected items. This cannot be undone."}
+              </AlertDialogDescription>
+            </div>
           </AlertDialogHeader>
-          <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-            <ul
-              className="list-disc pl-5"
-              data-testid="content-browser-delete-list"
-            >
-              {deleteListNames.map((name) => (
-                <li key={name}>
-                  <SelectableText>{name}</SelectableText>
-                </li>
-              ))}
-            </ul>
-            {deleteLastSceneClassLines.map((line) => (
-              <p
-                key={line}
-                className="font-medium text-foreground"
-                data-testid="content-browser-delete-last-warning"
-              >
-                {line}
-              </p>
-            ))}
-            {deleteInboundRefs.length > 0 ? (
-              <>
-                <p>Referenced By:</p>
-                <ul className="list-disc pl-5">
-                  {deleteInboundRefs.map((ref) => (
-                    <li key={ref.guid}>
-                      <SelectableText>{ref.name}</SelectableText>
+          <div className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+            tabIndex={0} role="region" aria-label="Assets And References"
+            data-testid="content-browser-delete-body">
+            <div className={cn("grid min-w-0", deleteInboundRefs.length > 0 && "md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]")}>
+              <section className="min-w-0 px-4 py-3" aria-label="Selected For Deletion">
+                <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Selected <span className="tabular-nums">{deleteListNames.length}</span></h3>
+                <ul className="mt-1 flex flex-col divide-y" data-testid="content-browser-delete-list">
+                  {deleteListNames.map((name) => (
+                    <li key={name} className="min-w-0 py-2 text-sm break-words">
+                      <SelectableText>{name}</SelectableText>
                     </li>
                   ))}
                 </ul>
-              </>
-            ) : (
-              <p>No inbound references.</p>
-            )}
+                {deleteLastSceneClassLines.map((line) => (
+                  <p key={line} className="mt-2 text-sm font-medium text-destructive"
+                    data-testid="content-browser-delete-last-warning">{line}</p>
+                ))}
+                {deleteInboundRefs.length === 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">No inbound references.</p>
+                )}
+              </section>
+              {deleteInboundRefs.length > 0 && (
+                <section className="min-w-0 border-t bg-muted/20 px-4 py-3 md:border-t-0 md:border-l" aria-label="Referenced By">
+                  <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Referenced By <span className="tabular-nums">{deleteInboundRefs.length}</span></h3>
+                  <ul className="mt-1 flex min-w-0 flex-col divide-y">
+                    {deleteInboundRefs.map((ref) => (
+                      <li key={ref.guid} className="flex min-w-0 items-start gap-2 py-2">
+                        <TypeVisualIcon className="mt-0.5" visual={resolveTypeVisual({ assetType: ref.type })} />
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
+                          <SelectableText className="font-medium break-words">{ref.name}</SelectableText>
+                          <SelectableText className="text-xs text-muted-foreground break-all">{ref.path}</SelectableText>
+                          <span className="mt-1 text-xs break-words"><span className="text-muted-foreground">Uses </span>{ref.targets.join(", ")}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
           </div>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="m-0 shrink-0">
             <AlertDialogCancel
               disabled={busy}
               size="touch"
@@ -2368,17 +2375,16 @@ export function ContentBrowserWorkspace({
                   ? "Rename Folder"
                   : "Rename Asset"}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {nameDialog?.kind === "folder"
-                ? "Create a folder under the current selection."
-                : nameDialog?.kind === "rename-folder"
-                  ? "Rename the folder. Nested assets keep their guids."
-                  : "Rename the asset file. References by guid stay intact."}
-            </AlertDialogDescription>
           </AlertDialogHeader>
+          <Field>
+            <FieldLabel htmlFor="content-browser-name-input">Name</FieldLabel>
           <Input
+              id="content-browser-name-input"
             className="min-h-[var(--touch-target,44px)]"
             data-testid="content-browser-name-input"
+              aria-describedby={
+                nameDialogTaken ? "content-browser-name-error" : undefined
+              }
             aria-invalid={nameDialogTaken || undefined}
             value={nameDialog?.value ?? ""}
             onChange={(event) =>
@@ -2391,10 +2397,13 @@ export function ContentBrowserWorkspace({
             <p
               className="text-sm text-destructive"
               data-testid="content-browser-name-taken"
+                id="content-browser-name-error"
+                role="alert"
             >
               That name is already used in this folder.
             </p>
           ) : null}
+          </Field>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -2405,7 +2414,7 @@ export function ContentBrowserWorkspace({
                 void confirmNameDialog();
               }}
             >
-              Confirm
+              {nameDialog?.kind === "folder" ? "Create" : "Rename"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

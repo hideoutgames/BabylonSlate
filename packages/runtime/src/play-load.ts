@@ -19,6 +19,7 @@ export function runtimeOptionsFromLoadControl(
 ): Pick<
   RuntimeDriverOptions,
   | "seed"
+  | "project"
   | "inputMappings"
   | "physicsWorld"
   | "gravity"
@@ -56,6 +57,7 @@ export function runtimeOptionsFromLoadControl(
   }
   return {
     seed: msg.seed ?? 1,
+    ...(msg.project ? { project: msg.project } : {}),
     ...(msg.inputMappings !== undefined ? { inputMappings: normalizeInputMappings(msg.inputMappings) } : {}),
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",
     gravity: msg.gravity ?? [0, -9.81, 0],

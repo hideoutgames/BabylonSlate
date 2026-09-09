@@ -50,6 +50,8 @@ export function EditorUtilityRuntime() {
   const { appendLog } = usePlay();
   const appendLogRef = useRef(appendLog);
   appendLogRef.current = appendLog;
+  const metadataRef = useRef(projectDocument?.metadata);
+  metadataRef.current = projectDocument?.metadata;
   const hostRef = useRef<ScriptHost | null>(null);
   const startedRef = useRef(false);
   const openDocumentsRef = useRef(openDocuments);
@@ -74,9 +76,11 @@ export function EditorUtilityRuntime() {
       return;
     }
     let cancelled = false;
-    const host = new ScriptHost(
-      editorHostServices((line) => appendLogRef.current(line)),
-    );
+    const host = new ScriptHost({
+      ...editorHostServices((line) => appendLogRef.current(line)),
+      getProjectName: () => metadataRef.current?.name ?? "",
+      getProjectVersion: () => metadataRef.current?.version ?? "",
+    });
     hostRef.current = host;
     void collectScriptsRef.current().then(async (scripts) => {
       if (cancelled) return;

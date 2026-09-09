@@ -66,6 +66,8 @@ export type GameAssetIndexEntry = {
 };
 
 export type GameManifest = {
+  /** Authored build identity; absent in legacy builds. */
+  project?: { name: string; version: string };
   inputMappings?: ProjectInputSettings;
   startupSceneGuid: string;
   gameInstanceClass?: string;
@@ -93,6 +95,7 @@ export type GameManifest = {
 };
 
 export type ExportGameOptions = {
+  project?: { name: string; version: string };
   inputMappings?: ProjectInputSettings;
   mode?: ExportMode;
   bundleDebugger: boolean;

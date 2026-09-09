@@ -3,8 +3,10 @@ import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { cn } from "@babylonslate/ui/lib/utils";
 
-export interface SearchInputProps
-  extends Omit<ComponentProps<"input">, "onChange" | "value"> {
+export interface SearchInputProps extends Omit<
+  ComponentProps<"input">,
+  "onChange" | "value"
+> {
   value: string;
   onChange: (value: string) => void;
   "data-testid"?: string;
@@ -17,7 +19,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
     ref,
   ) {
     return (
-      <div className="relative min-w-0 flex-1">
+      <div className="editor-search-input relative min-w-0 flex-1">
         <Input
           {...props}
           ref={ref}
@@ -43,4 +45,3 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
     );
   },
 );
-

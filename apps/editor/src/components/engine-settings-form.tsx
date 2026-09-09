@@ -181,7 +181,7 @@ export function EngineSettingsForm({
       {categoryId === "appearance" ? (
         <FieldSet>
           <FieldLegend>Appearance</FieldLegend>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-theme">Theme</FieldLabel>
             <Select
               value={settings.appearance.theme}
@@ -196,7 +196,7 @@ export function EngineSettingsForm({
             >
               <SelectTrigger
                 id="setting-theme"
-                className="min-h-[var(--touch-target,44px)] w-full"
+                className="min-h-[var(--chrome-row,28px)] w-full"
                 data-testid="setting-theme"
               >
                 <SelectValue />
@@ -213,20 +213,16 @@ export function EngineSettingsForm({
                 </SelectItem>
               </SelectContent>
             </Select>
-            <FieldDescription>
-              Light, Dark, or match this device. Applies to the main menu,
-              loading screens, and editor chrome.
-            </FieldDescription>
           </Field>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-pointer-scale">
-              Coarse pointer target scale
+              Touch Target Scale
             </FieldLabel>
             <NumberField
               id="setting-pointer-scale"
               min={1}
               step={0.1}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-pointer-scale"
               value={settings.appearance.coarsePointerTargetScale}
               onChange={(coarsePointerTargetScale) =>
@@ -238,11 +234,6 @@ export function EngineSettingsForm({
                 })
               }
             />
-            <FieldDescription>
-              Multiplier for touch hit targets on this device. Graph pins and
-              other `--touch-target` controls stay at 44px; chrome uses
-              `--chrome-row`.
-            </FieldDescription>
           </Field>
         </FieldSet>
       ) : null}
@@ -250,15 +241,15 @@ export function EngineSettingsForm({
       {categoryId === "undo" ? (
         <FieldSet>
           <FieldLegend>Undo</FieldLegend>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-undo-length">
-              Undo history length
+              Undo History Length
             </FieldLabel>
             <NumberField
               id="setting-undo-length"
               min={1}
               step={1}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-undo-length"
               value={settings.undoHistoryLength}
               onChange={(undoHistoryLength) =>
@@ -266,7 +257,7 @@ export function EngineSettingsForm({
               }
             />
             <FieldDescription>
-              Per-document stack cap. Oldest entries drop first.
+              Maximum undo steps per document.
             </FieldDescription>
           </Field>
         </FieldSet>
@@ -275,51 +266,45 @@ export function EngineSettingsForm({
       {categoryId === "viewport" ? (
         <FieldSet>
           <FieldLegend>Viewport</FieldLegend>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-frame-cap">
-              Viewport frame cap
+              Viewport Frame Cap (FPS)
             </FieldLabel>
             <NumberField
               id="setting-frame-cap"
               min={1}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-frame-cap"
               value={settings.viewportFrameCap}
               onChange={(viewportFrameCap) =>
                 void onChange({ viewportFrameCap })
               }
             />
-            <FieldDescription>
-              Caps scene and Prefab Preview while they are visible. Hidden tabs
-              and open modals freeze rendering.
-            </FieldDescription>
           </Field>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-fly-speed">Camera Speed</FieldLabel>
             <NumberField
               id="setting-fly-speed"
               min={0.0001}
               step={0.5}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-fly-speed"
               value={settings.viewportFlySpeed}
               onChange={(viewportFlySpeed) =>
                 void onChange({ viewportFlySpeed })
               }
             />
-            <FieldDescription>
-              Editor WASD and joystick fly speed in world units per second.
-            </FieldDescription>
+            <FieldDescription>World units per second.</FieldDescription>
           </Field>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-hardware-scale">
-              Hardware scaling level
+              Hardware Scaling Level
             </FieldLabel>
             <NumberField
               id="setting-hardware-scale"
               min={0.25}
               step={0.25}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-hardware-scale"
               value={settings.hardwareScalingLevel}
               onChange={(hardwareScalingLevel) =>
@@ -327,19 +312,16 @@ export function EngineSettingsForm({
               }
             />
             <FieldDescription>
-              Editor viewport resolution scale. 1 is native; higher values
-              render at a lower internal resolution.
+              1 is native resolution. Higher values reduce resolution.
             </FieldDescription>
           </Field>
-          <Field orientation="horizontal">
+          <Field orientation="horizontal" className="settings-field">
             <FieldContent>
               <FieldLabel htmlFor="setting-post-processing">
-                Post-processing
+                Post-Processing
               </FieldLabel>
               <FieldDescription>
-                Applies authored scene stacks in the editor viewport and Play
-                preview. Off does not change the scene document or exported
-                games.
+                Editor and Play preview only; exported games are unchanged.
               </FieldDescription>
             </FieldContent>
             <Switch
@@ -357,34 +339,30 @@ export function EngineSettingsForm({
       {categoryId === "assets" ? (
         <FieldSet>
           <FieldLegend>Assets</FieldLegend>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-model-import-scale">
               Model Import Default Scale
             </FieldLabel>
             <NumberField
               id="setting-model-import-scale"
               min={0.0001}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-model-import-scale"
               value={settings.modelImportDefaultScale}
               onChange={(modelImportDefaultScale) =>
                 void onChange({ modelImportDefaultScale })
               }
             />
-            <FieldDescription>
-              Multiplier stamped onto newly imported Models. Does not change
-              models already in the project or scene scale.
-            </FieldDescription>
+            <FieldDescription>Applies to new imports only.</FieldDescription>
           </Field>
-          <Field orientation="horizontal">
+          <Field orientation="horizontal" className="settings-field">
             <FieldContent>
               <FieldLabel htmlFor="setting-editor-texture-lod">
                 Editor Texture LOD
               </FieldLabel>
               <FieldDescription>
-                Reduces large GPU textures in the editor and overlay Play. Small
-                maps stay full size. Packed games use each Texture&apos;s
-                Downsample setting.
+                Reduces texture resolution in the editor and Play preview.
+                Export quality is unchanged.
               </FieldDescription>
             </FieldContent>
             <Switch
@@ -397,36 +375,46 @@ export function EngineSettingsForm({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="setting-editor-texture-lod-quality">
+            <FieldLabel id="setting-editor-texture-lod-quality-label" htmlFor="setting-editor-texture-lod-quality">
               Editor Texture Quality
             </FieldLabel>
-            <Slider
-              id="setting-editor-texture-lod-quality"
-              data-testid="setting-editor-texture-lod-quality"
-              min={25}
+            <div className="flex min-w-0 items-center gap-3">
+              <Slider
+                id="setting-editor-texture-lod-quality"
+                aria-labelledby="setting-editor-texture-lod-quality-label"
+                className="min-w-0 flex-1"
+                data-testid="setting-editor-texture-lod-quality"
+                min={25}
+                max={100}
+                step={5}
+                value={[Math.round(settings.editorTextureLodQuality * 100)]}
+                disabled={!settings.editorTextureLodEnabled}
+                onValueChange={(value) => {
+                  const percent = Array.isArray(value) ? value[0] : value;
+                  if (typeof percent !== "number") return;
+                  void onChange({ editorTextureLodQuality: percent / 100 });
+                }}
+              />
+              <NumberField
+                aria-label="Editor Texture Quality (%)"
+                className="w-20 shrink-0"
+                min={25}
               max={100}
               step={5}
-              value={[Math.round(settings.editorTextureLodQuality * 100)]}
-              disabled={!settings.editorTextureLodEnabled}
-              onValueChange={(value) => {
-                const percent = Array.isArray(value) ? value[0] : value;
-                if (typeof percent !== "number") return;
-                void onChange({ editorTextureLodQuality: percent / 100 });
-              }}
-            />
-            <FieldDescription>
-              Percent of each texture&apos;s source size while LOD is on.
-              Default 50%.
-            </FieldDescription>
+                value={Math.round(settings.editorTextureLodQuality * 100)}
+                disabled={!settings.editorTextureLodEnabled}
+                onChange={percent => void onChange({ editorTextureLodQuality: percent / 100 })}
+              />
+            </div>
+            <FieldDescription>Percentage of source size.</FieldDescription>
           </Field>
-          <Field orientation="horizontal">
+          <Field orientation="horizontal" className="settings-field">
             <FieldContent>
               <FieldLabel htmlFor="setting-texture-budget">
                 Texture Memory Budget
               </FieldLabel>
               <FieldDescription>
-                Evicts unused GPU textures toward 80% of the budget. 512 MB is
-                an iPad suggestion; the default is 2 GB.
+                Releases unused textures when memory use reaches the budget.
               </FieldDescription>
             </FieldContent>
             <Switch
@@ -438,7 +426,7 @@ export function EngineSettingsForm({
               }
             />
           </Field>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-texture-budget-mb">
               Texture Budget (MB)
             </FieldLabel>
@@ -447,7 +435,7 @@ export function EngineSettingsForm({
               min={256}
               max={8192}
               step={64}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-texture-budget-mb"
               value={Math.round(settings.textureByteCeiling / (1024 * 1024))}
               disabled={!settings.textureBudgetEnabled}
@@ -458,14 +446,13 @@ export function EngineSettingsForm({
               }
             />
           </Field>
-          <Field orientation="horizontal">
+          <Field orientation="horizontal" className="settings-field">
             <FieldContent>
               <FieldLabel htmlFor="setting-audio-budget">
                 Audio Memory Budget
               </FieldLabel>
               <FieldDescription>
-                Evicts unused decoded clips. 64 MB is an iPad suggestion; the
-                default is 256 MB. Audio document Preview is not this cache.
+                Releases unused audio clips when memory use reaches the budget.
               </FieldDescription>
             </FieldContent>
             <Switch
@@ -477,7 +464,7 @@ export function EngineSettingsForm({
               }
             />
           </Field>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-audio-budget-mb">
               Audio Budget (MB)
             </FieldLabel>
@@ -486,7 +473,7 @@ export function EngineSettingsForm({
               min={32}
               max={2048}
               step={16}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-audio-budget-mb"
               value={Math.round(settings.audioByteCeiling / (1024 * 1024))}
               disabled={!settings.audioBudgetEnabled}
@@ -497,7 +484,7 @@ export function EngineSettingsForm({
               }
             />
           </Field>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-audio-max-voices">
               Max Concurrent Voices
             </FieldLabel>
@@ -506,13 +493,13 @@ export function EngineSettingsForm({
               min={8}
               max={128}
               step={1}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-audio-max-voices"
               value={settings.audioMaxVoices}
               onChange={(audioMaxVoices) => void onChange({ audioMaxVoices })}
             />
             <FieldDescription>
-              Oldest playing voice stops when the cap is exceeded. Default 32.
+              Stops the oldest voice when the limit is reached.
             </FieldDescription>
           </Field>
         </FieldSet>
@@ -521,9 +508,9 @@ export function EngineSettingsForm({
       {categoryId === "thumbnails" ? (
         <FieldSet>
           <FieldLegend>Thumbnails</FieldLegend>
-          <Field orientation="horizontal">
+          <Field orientation="horizontal" className="settings-field">
             <FieldLabel htmlFor="setting-thumbnails">
-              Generate thumbnails
+              Generate Thumbnails
             </FieldLabel>
             <Switch
               id="setting-thumbnails"
@@ -540,16 +527,16 @@ export function EngineSettingsForm({
       {categoryId === "graph" ? (
         <FieldSet>
           <FieldLegend>Graph</FieldLegend>
-          <Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-graph-default-zoom">
-              Graph default zoom
+              Graph Default Zoom
             </FieldLabel>
             <NumberField
               id="setting-graph-default-zoom"
               min={0.1}
               max={1.5}
               step={0.05}
-              className="min-h-[var(--touch-target,44px)]"
+              className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-graph-default-zoom"
               value={settings.graphDefaultZoom}
               onChange={(graphDefaultZoom) =>
@@ -557,13 +544,17 @@ export function EngineSettingsForm({
               }
             />
             <FieldDescription>
-              Opening zoom for node graphs. Fit-view will not zoom in past this
-              value. Applies when a graph panel opens.
+              Initial zoom and maximum zoom when fitting a graph.
             </FieldDescription>
           </Field>
         </FieldSet>
       ) : null}
 
+      {categoryId === "focus" ? (
+        <FieldDescription>
+          Keep these windows visible in Focus when they are open.
+        </FieldDescription>
+      ) : null}
       {categoryId === "focus"
         ? FOCUS_KEEP_SETTING_ROWS.map((row) => (
             <FocusKeepPanelList
@@ -622,12 +613,6 @@ function FocusKeepPanelList({
   return (
     <FieldSet>
       <FieldLegend>{label}</FieldLegend>
-      <Field>
-        <FieldDescription>
-          Dock tabs that stay visible in Focus if they are already open. Closed
-          tabs are not opened.
-        </FieldDescription>
-      </Field>
       {ids.map((id) => {
         const title = focusKeepTitle(kind, id, options);
         return (
@@ -659,13 +644,13 @@ function FocusKeepPanelList({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="min-h-[var(--touch-target,44px)] w-full"
+                  className="min-h-[var(--chrome-row,28px)] w-full"
                   data-testid={`focus-keep-${keepKey}-add`}
                 />
               }
             >
               <PlusIcon data-icon="inline-start" />
-              Add tab to keep
+              Add Window
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-44">
               <DropdownMenuGroup>

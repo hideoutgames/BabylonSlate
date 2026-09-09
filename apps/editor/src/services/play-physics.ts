@@ -164,6 +164,7 @@ export function resolvePreviewStartupGuid(options: {
 }
 
 export function playLoadControl(options: {
+  project?: { name: string; version: string };
   inputMappings?: ProjectInputSettings;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
@@ -192,6 +193,7 @@ export function playLoadControl(options: {
   });
   return {
     type: "load",
+    ...(options.project ? { project: options.project } : {}),
     inputMappings: options.inputMappings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,

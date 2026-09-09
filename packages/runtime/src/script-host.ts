@@ -64,6 +64,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  getProjectName?(): string;
+  getProjectVersion?(): string;
   /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
   interfaceRegistry?: InterfaceRegistry;
   /** Live-object `ctx.isA` uses ClassRegistry ancestry, not string equality. */
@@ -340,6 +342,8 @@ export interface ScriptContext {
   spawnActor(classId: string, transform?: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
   getSceneLoadingProgress(): number;
+  getProjectName(): string;
+  getProjectVersion(): string;
   getSceneReference(): Scene | null;
   getAnimGraphVariable(target: unknown, name: string): unknown;
   setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
@@ -1070,6 +1074,8 @@ export class ScriptHost {
         services.spawnActor?.(String(classId), transform) ?? null,
       getSceneLoadingProgress: () =>
         clamp01(services.getSceneLoadingProgress?.() ?? 1),
+      getProjectName: () => services.getProjectName?.() ?? "",
+      getProjectVersion: () => services.getProjectVersion?.() ?? "",
       getSceneReference: () => {
         const scene = services.getSceneReference?.() ?? null;
         return scene && !scene.destroyed ? scene : null;

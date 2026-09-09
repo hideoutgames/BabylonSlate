@@ -407,6 +407,65 @@
   overscroll-behavior: contain;
 }
 
+/* Shared working size: leave the surrounding editor visible on every device. */
+.editor-dialog-large {
+  --dialog-edge: clamp(0.5rem, 1vw, 1rem);
+  width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge));
+  height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge));
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
+}
+
+.editor-dialog-delete {
+  height: auto;
+  width: fit-content;
+  min-width: min(32rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
+}
+
+.editor-dialog-delete[data-has-references="true"] {
+  min-width: min(52rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
+}
+
+.settings-dialog [data-slot="field-group"] {
+  max-width: 64rem;
+}
+
+.settings-dialog [data-slot="field-set"] {
+  gap: 1rem;
+}
+
+.settings-dialog .settings-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 40%);
+  align-items: center;
+  gap: 0.375rem 1rem;
+}
+
+.settings-dialog .settings-field > [data-slot="field-description"] {
+  grid-column: 1 / -1;
+}
+
+.settings-dialog .settings-field:has(> [role="switch"]) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.settings-dialog .settings-field > [role="switch"] {
+  justify-self: end;
+  margin-inline: 0.75rem;
+}
+
+@media (pointer: coarse) {
+  .settings-dialog .settings-field:has(> [role="switch"]) {
+    min-height: var(--touch-target, 44px);
+  }
+}
+
+@media (max-width: 480px) {
+  .settings-dialog .settings-field:not(:has(> [role="switch"])) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .editor-sheet {
   max-height: 100dvh;
   padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
@@ -414,7 +473,10 @@
 }
 
 .editor-menu {
-  max-width: min(var(--available-width, 100vw), calc(100vw - var(--safe-left) - var(--safe-right) - 1rem));
+  max-width: min(
+    var(--available-width, 100vw),
+    calc(100vw - var(--safe-left) - var(--safe-right) - 1rem)
+  );
   overscroll-behavior: contain;
 }
 
@@ -423,6 +485,23 @@
 }
 
 @media (pointer: coarse) {
+  .editor-dialog
+    :is(
+      [data-slot="button"],
+      [data-slot="input"],
+      [data-slot="select-trigger"]
+    ) {
+    min-height: var(--touch-target);
+    min-width: var(--touch-target);
+  }
+
+  .editor-dialog :is([data-slot="input"], [data-slot="textarea"]) {
+    font-size: 1rem;
+  }
+
+  .editor-dialog .editor-search-input [data-slot="input"] {
+    padding-right: calc(var(--touch-target) + 0.5rem);
+  }
   :is(
     [data-slot="dropdown-menu-item"],
     [data-slot="dropdown-menu-checkbox-item"],
@@ -437,7 +516,12 @@
 
 /* Matches the editor phone layout, including phones held in landscape. */
 @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
-  :is(.editor-dialog, .phone-dockview) :is([data-slot="input"], [data-slot="select-trigger"], [data-slot="textarea"]) {
+  :is(.editor-dialog, .phone-dockview)
+    :is(
+      [data-slot="input"],
+      [data-slot="select-trigger"],
+      [data-slot="textarea"]
+    ) {
     min-height: var(--touch-target);
   }
 
@@ -452,9 +536,9 @@
     min-width: var(--touch-target);
   }
 
-  .editor-dialog {
-    max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 1rem);
-    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 1rem);
+  .editor-dialog:not(.editor-dialog-large) {
+    max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2rem);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2rem);
   }
 
   .catalog-category-picker {
@@ -463,10 +547,6 @@
 
   .catalog-sidebar {
     display: none;
-  }
-
-  .catalog-dialog {
-    height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 1rem);
   }
 }
 

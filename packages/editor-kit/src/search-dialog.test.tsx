@@ -23,6 +23,8 @@ function stubScrollViewportHeight(height: number): () => void {
   return () => {
     if (descriptor) {
       Object.defineProperty(HTMLElement.prototype, "clientHeight", descriptor);
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
     }
   };
 }
@@ -72,6 +74,60 @@ describe("groupSearchItems", () => {
 describe("SearchDialog", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("selects a filtered result using arrows and Enter without moving focus out of search", () => {
+    const onSelect = vi.fn();
+    render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick"
+        items={items}
+        onSelect={onSelect}
+        data-testid="picker"
+      />,
+    );
+    const query = screen.getByTestId("picker-query");
+    query.focus();
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(query);
+    fireEvent.change(query, { target: { value: "Alpha" } });
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("a");
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a keyboard-active result mounted beyond the virtual list's first page", () => {
+    const restore = stubScrollViewportHeight(132);
+    try {
+      const onSelect = vi.fn();
+      render(
+        <SearchDialog
+          open
+          onOpenChange={() => {}}
+          title="Pick"
+          items={Array.from({ length: 100 }, (_, index) => ({
+            id: `item-${index}`,
+            label: `Item ${index}`,
+          }))}
+          onSelect={onSelect}
+          data-testid="picker"
+        />,
+      );
+      const body = screen.getByTestId("picker-body");
+      fireEvent.keyDown(body, { key: "End" });
+      const active = document.getElementById(
+        body.getAttribute("aria-activedescendant")!,
+      );
+      expect(active?.textContent).toContain("Item 99");
+      fireEvent.keyDown(body, { key: "Enter" });
+      expect(onSelect).toHaveBeenCalledWith("item-99");
+    } finally {
+      restore();
+    }
   });
 
   it("opens as a centered dialog, not a bottom sheet", () => {

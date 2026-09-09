@@ -30,9 +30,7 @@ export function PlayPreviewSettingsFields({
           data-testid="setting-play-follow-system"
         />
       </Field>
-      <FieldDescription>
-        Fill the Play overlay. Turn off to letterbox a fixed aspect ratio.
-      </FieldDescription>
+      <FieldDescription>Off uses a fixed aspect ratio.</FieldDescription>
       <Field>
         <FieldLabel htmlFor="setting-play-aspect-width">
           Aspect Ratio
@@ -43,7 +41,7 @@ export function PlayPreviewSettingsFields({
             min={1}
             step={1}
             disabled={aspectDisabled}
-            className="min-h-[var(--touch-target,44px)]"
+            className="min-h-[var(--chrome-row,28px)]"
             value={settings.aspectWidth}
             onChange={(aspectWidth) => onChange({ ...settings, aspectWidth })}
             data-testid="setting-play-aspect-width"
@@ -55,18 +53,13 @@ export function PlayPreviewSettingsFields({
             min={1}
             step={1}
             disabled={aspectDisabled}
-            className="min-h-[var(--touch-target,44px)]"
+            className="min-h-[var(--chrome-row,28px)]"
             value={settings.aspectHeight}
-            onChange={(aspectHeight) =>
-              onChange({ ...settings, aspectHeight })
-            }
+            onChange={(aspectHeight) => onChange({ ...settings, aspectHeight })}
             data-testid="setting-play-aspect-height"
             aria-label="Aspect Height"
           />
         </div>
-        <FieldDescription>
-          Letterboxes Play Preview. Unused overlay space is black.
-        </FieldDescription>
       </Field>
     </>
   );

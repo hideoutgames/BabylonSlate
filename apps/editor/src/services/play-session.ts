@@ -422,6 +422,7 @@ export function startPlaySession(options: {
   /** Authored scene instantiated in the worker instead of demo actors. */
   sceneAssetGuid?: string;
   scene?: SerializedScene;
+  project?: { name: string; version: string };
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
@@ -742,6 +743,7 @@ export function startPlaySession(options: {
     scene: options.scene,
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
+    project: options.project,
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
     sceneLayers: options.sceneLayers,

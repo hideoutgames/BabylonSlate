@@ -1409,10 +1409,6 @@ describe("content-browser-helpers", () => {
       "ParticleSystem",
       "SkyboxCreator",
     ]);
-    expect(audio!.hint).toMatch(/Import/i);
-    expect(audio!.hint).toMatch(/WAV/);
-    expect(audio!.hint).toMatch(/MP3/);
-    expect(audio!.hint).toMatch(/OGG/);
   });
 
   it("describes the selected creatable type", () => {

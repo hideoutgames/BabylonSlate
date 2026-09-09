@@ -134,6 +134,7 @@ import {
 export type TransportMode = "in-process" | "sab" | "transferable";
 
 export interface RuntimeDriverOptions {
+  project?: { name: string; version: string };
   seed: number;
   dt?: number;
   maxActors?: number;
@@ -802,6 +803,8 @@ class InProcessRuntime implements RuntimeDriver {
         if (!Number.isFinite(value)) return 0;
         return Math.min(1, Math.max(0, value));
       },
+      getProjectName: () => options.project?.name ?? "",
+      getProjectVersion: () => options.project?.version ?? "",
       setWorldGravity: (gravity) => {
         this.setWorldGravity(gravity);
       },

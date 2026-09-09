@@ -61,7 +61,8 @@ function categorySections(
   }
   const byId = new Map(categories.map((category) => [category.id, category]));
   const used = new Set<string>();
-  const sections: Array<{ label: string | null; items: CatalogCategory[] }> = [];
+  const sections: Array<{ label: string | null; items: CatalogCategory[] }> =
+    [];
   for (const group of groups) {
     const items = group.ids.flatMap((id) => {
       const category = byId.get(id);
@@ -108,13 +109,17 @@ export function CatalogDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid={testId}
-        initialFocus={autoFocusSearch ? searchRef : bodyRef}
+        initialFocus={(interaction) =>
+          autoFocusSearch || interaction === "keyboard"
+            ? searchRef.current
+            : bodyRef.current
+        }
         className={cn(
-          "catalog-dialog flex h-[min(90dvh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
+          "catalog-dialog editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
           className,
         )}
       >
-        <DialogHeader className="shrink-0 border-b px-4 py-3 pr-14">
+        <DialogHeader className="min-h-14 shrink-0 border-b px-4 py-3 pr-14">
           <DialogTitle>{title}</DialogTitle>
           {description ? (
             <DialogDescription>{description}</DialogDescription>
@@ -141,12 +146,18 @@ export function CatalogDialog({
             <SelectContent align="start">
               {sections.map((section, index) => (
                 <SelectGroup key={section.label ?? `ungrouped-${index}`}>
-                  {section.label ? <SelectLabel>{section.label}</SelectLabel> : null}
+                  {section.label ? (
+                    <SelectLabel>{section.label}</SelectLabel>
+                  ) : null}
                   {section.items.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
-                      <span className="min-w-0 flex-1 truncate">{category.label}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {category.label}
+                      </span>
                       {typeof category.count === "number" ? (
-                        <span className="text-muted-foreground">{category.count}</span>
+                        <span className="text-muted-foreground">
+                          {category.count}
+                        </span>
                       ) : null}
                     </SelectItem>
                   ))}
@@ -156,7 +167,7 @@ export function CatalogDialog({
           </Select>
         </div>
         <div
-          className="shrink-0 border-b px-4 py-3"
+          className="shrink-0 border-b px-4 py-2"
           onKeyDown={(event) => {
             // Keep Escape free so the CatalogDialog can dismiss; block other
             // keystrokes from leaking into the graph behind the modal.
@@ -170,6 +181,7 @@ export function CatalogDialog({
         >
           <SearchInput
             ref={searchRef}
+            aria-label={searchPlaceholder}
             value={search}
             onChange={onSearchChange}
             placeholder={searchPlaceholder}
@@ -182,15 +194,18 @@ export function CatalogDialog({
         <div className="flex min-h-0 flex-1">
           <nav
             aria-label="Categories"
-            className="catalog-sidebar flex w-44 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain border-r bg-sidebar p-2 sm:w-52"
+            className="catalog-sidebar flex w-44 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain border-r bg-sidebar p-2"
             data-testid={testId ? `${testId}-categories` : undefined}
           >
             {sections.map((section, index) => (
-              <div key={section.label ?? `ungrouped-${index}`} className="flex flex-col gap-1">
+              <div
+                key={section.label ?? `ungrouped-${index}`}
+                className="flex flex-col gap-1"
+              >
                 {section.label ? (
                   <>
                     {index > 0 ? <Separator className="my-1" /> : null}
-                    <p className="px-2 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="px-2 pt-1 text-xs font-medium text-muted-foreground">
                       {section.label}
                     </p>
                   </>
