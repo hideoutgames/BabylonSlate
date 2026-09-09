@@ -326,6 +326,109 @@ test("machine low-memory settings serialize heavy phases while lightweight work 
   assert.deepEqual(await readdir(join(options.directory, "queue")), []);
 });
 
+for (const scenario of [
+  {
+    name: "original headroom",
+    initial: { profile: "standard" },
+    updated: { profile: "low-memory" },
+    freeGiB: 5,
+    older: "build",
+    first: null,
+    allowLight: true,
+  },
+  {
+    name: "original heavy-phase limit",
+    initial: { profile: "low-memory" },
+    updated: { profile: "standard" },
+    freeGiB: 16,
+    older: "browser",
+    first: "dom",
+    allowLight: true,
+  },
+  {
+    name: "original zero-bypass protection",
+    initial: { profile: "low-memory", maxBypasses: 0 },
+    updated: { profile: "low-memory", maxBypasses: 3 },
+    freeGiB: 16,
+    older: "browser",
+    first: "browser",
+    allowLight: false,
+  },
+]) {
+  test(`an older waiter keeps its ${scenario.name} when later callers change configuration`, async (t) => {
+    const options = await fixture(t);
+    const config = join(options.directory, "machine.json");
+    await writeFile(
+      config,
+      JSON.stringify({ version: 1, ...scenario.initial }),
+    );
+    options.env = { BL_LOCAL_RESOURCE_CONFIG: config };
+    options.freeMemory = () => scenario.freeGiB * 1024 ** 3;
+    const first = scenario.first
+      ? await acquireResources(workloadFor(scenario.first, {}), options)
+      : null;
+    const abort = new AbortController();
+    let reportQueued;
+    const queued = new Promise((resolve) => {
+      reportQueued = resolve;
+    });
+    const older = acquireResources(workloadFor(scenario.older, {}), {
+      ...options,
+      signal: abort.signal,
+      onQueued: reportQueued,
+    });
+    older.catch(() => {});
+    let light;
+    try {
+      await queued;
+      await writeFile(
+        config,
+        JSON.stringify({ version: 1, ...scenario.updated }),
+      );
+      const pending = acquireResources(workloadFor("tooling", {}), {
+        ...options,
+        timeoutMs: scenario.allowLight ? 3000 : 1000,
+      }).then((lease) => {
+        light = lease;
+        return lease;
+      });
+      if (scenario.allowLight) {
+        await pending;
+      } else {
+        await assert.rejects(pending, /deadline expired/);
+      }
+    } finally {
+      abort.abort();
+      await light?.release();
+      await first?.release();
+      await (await older.catch(() => null))?.release();
+    }
+    assert.deepEqual(await readdir(join(options.directory, "queue")), []);
+  });
+}
+
+test("legacy waiting tickets use standard headroom rather than a newer caller's capacity", async (t) => {
+  const options = await fixture(t);
+  const queue = join(options.directory, "queue");
+  await mkdir(queue, { recursive: true });
+  const older = join(queue, "0000000000000000-older.json");
+  await publish(older, {
+    pid: process.pid,
+    token: "older",
+    request: workloadFor("build", {}),
+    active: false,
+  });
+  const light = await acquireResources(workloadFor("tooling", {}), {
+    ...options,
+    capacity: { workers: 3, browsers: 1, memoryGiB: 6, reserveGiB: 3 },
+    freeMemory: () => 5 * 1024 ** 3,
+    timeoutMs: 3000,
+  });
+  await light.release();
+  await rm(older);
+  assert.deepEqual(await readdir(queue), []);
+});
+
 test("a queued browser cannot exceed the browser cap and cancellation releases its ticket", async (t) => {
   const options = await fixture(t);
   const browser = { ...small, browsers: 1 };

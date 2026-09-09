@@ -276,6 +276,52 @@ test("ignored app env files and their inherited expansion variables invalidate r
   }
 });
 
+test("recursively expanded inherited env values cannot share a different effective build", async (t) => {
+  const f = await fixture(t);
+  const first = await f.worktree("first");
+  const second = await f.worktree("second");
+  for (const directory of [first, second])
+    await writeFile(
+      join(directory, "apps/editor/.env.production.local"),
+      "VITE_ENDPOINT=${FIXTURE_UPSTREAM}\n",
+    );
+  const built = await f.run(first, {
+    FIXTURE_UPSTREAM: "${FIXTURE_ORIGIN}",
+    FIXTURE_ORIGIN: "first-origin",
+  });
+  const changed = await f.run(second, {
+    FIXTURE_UPSTREAM: "${FIXTURE_ORIGIN}",
+    FIXTURE_ORIGIN: "second-origin",
+  });
+  assert.equal(built.error, undefined);
+  assert.equal(changed.error, undefined);
+  assert.notEqual(changed.identity.key, built.identity.key);
+  assert.equal(await compilations(second), 1);
+});
+
+test("different ignored installed lockfiles do not share compiled output", async (t) => {
+  const f = await fixture(t);
+  const first = await f.worktree("first");
+  const second = await f.worktree("second");
+  for (const [directory, version] of [
+    [first, "1.0.0"],
+    [second, "2.0.0"],
+  ]) {
+    await writeFile(join(directory, ".git/info/exclude"), "node_modules/\n");
+    await mkdir(join(directory, "node_modules/.pnpm"), { recursive: true });
+    await writeFile(
+      join(directory, "node_modules/.pnpm/lock.yaml"),
+      `fixture: ${version}\n`,
+    );
+  }
+  const built = await f.run(first);
+  const changed = await f.run(second);
+  assert.equal(built.error, undefined);
+  assert.equal(changed.error, undefined);
+  assert.notEqual(changed.identity.key, built.identity.key);
+  assert.equal(await compilations(second), 1);
+});
+
 test("corrupt shared chunks are ignored without replacing an artifact another browser may use", async (t) => {
   const f = await fixture(t);
   const first = await f.worktree("first");
