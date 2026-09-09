@@ -286,6 +286,32 @@ describe("ViewportPanel engine", () => {
     expect((screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("disables Drop while changed scene models are loading", async () => {
+    const actor = createActor("a", "Box");
+    const document = {
+      id: "scene:S",
+      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...createDefaultScene(), actors: [actor] },
+    };
+    documents.openDocuments = [document];
+    selection.actorIds = [actor.id];
+    const view = renderViewport();
+    const button = () => screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement;
+    await waitFor(() => expect(button().disabled).toBe(false));
+    let finishModels!: () => void;
+    handle.whenEditorModelsReady.mockReturnValueOnce(new Promise<void>((resolve) => { finishModels = resolve; }));
+    documents.openDocuments = [{ ...document, content: { ...document.content, actors: [{ ...actor, name: "Updated Box" }] } }];
+    view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    try {
+      expect(button().disabled).toBe(true);
+      fireEvent.click(button());
+      expect(documents.applySceneChange).not.toHaveBeenCalled();
+    } finally {
+      finishModels();
+    }
+    await waitFor(() => expect(button().disabled).toBe(false));
+  });
+
   it("does not recreate the Engine when applySceneChange identity changes", () => {
     const { rerender } = renderViewport();
     expect(createEngineMock).toHaveBeenCalledTimes(1);
