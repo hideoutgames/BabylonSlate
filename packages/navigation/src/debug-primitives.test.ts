@@ -29,4 +29,13 @@ describe("navMeshDebugPrimitives", () => {
     const tris = primitives.find((primitive) => primitive.type === "tris");
     expect(tris?.vertices.length).toBeGreaterThan(2);
   });
+
+  it("draws BSNT tile-cache navmeshes repeatedly when dynamic obstacles are enabled", async () => {
+    const tiled = await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } });
+    for (let i = 0; i < 3; i += 1) {
+      const primitives = navMeshDebugPrimitives(tiled);
+      const tris = primitives.find((primitive) => primitive.type === "tris");
+      expect(tris?.vertices.length).toBeGreaterThan(2);
+    }
+  });
 });
