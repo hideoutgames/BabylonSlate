@@ -172,8 +172,8 @@ function boxOf(entry: FormatNode): {
   return {
     x: entry.position.x,
     y: entry.position.y,
-    width: entry.width ?? NODE_W,
-    height: entry.height ?? NODE_H,
+    width: entry.width ?? entry.measured?.width ?? NODE_W,
+    height: entry.height ?? entry.measured?.height ?? NODE_H,
   };
 }
 
@@ -666,5 +666,264 @@ describe("formatGraphNodes", () => {
     expect(pos(next, "a")).toEqual({ x: 0, y: 0 });
     expect(pos(next, "b").y).toBeGreaterThanOrEqual(NODE_H + FORMAT_GAP_Y);
     expectNoOverlaps(next);
+  });
+
+  it("places an asymmetric merge after every incoming execution path", () => {
+    const nodes = [
+      node("branch", 10, 20, branchPins),
+      node("merge", 0, 0),
+      node("after", 0, 400),
+      ...Array.from({ length: 8 }, (_, index) =>
+        node(`long${index}`, 0, 100 + index * 10),
+      ),
+    ];
+    const edges = [
+      execEdge("branch", "merge", "true"),
+      execEdge("branch", "long0", "false"),
+      ...Array.from({ length: 7 }, (_, index) =>
+        execEdge(`long${index}`, `long${index + 1}`),
+      ),
+      execEdge("long7", "merge"),
+      execEdge("merge", "after"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["branch"]);
+    expect(pos(next, "branch")).toEqual({ x: 10, y: 20 });
+    for (const edge of edges) {
+      expect(pos(next, edge.target).x).toBeGreaterThanOrEqual(
+        pos(next, edge.source).x + NODE_W + FORMAT_GAP_X,
+      );
+    }
+    expect(pos(next, "after").y).toBe(pos(next, "merge").y);
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["branch"])).toEqual(next);
+  });
+
+  it("keeps nested execution branches on continuous rows despite scrambled node positions", () => {
+    const nodes = [
+      node("root", 0, 0, branchPins),
+      node("upper", 0, 10, branchPins),
+      node("lower", 0, 20),
+      node("upperFirst", 0, 200),
+      node("upperSecond", 0, 300),
+      node("upperFirstEnd", 0, 900),
+      node("upperSecondEnd", 0, 0),
+      node("lowerEnd", 0, -50),
+    ];
+    const edges = [
+      execEdge("root", "upper", "true"),
+      execEdge("root", "lower", "false"),
+      execEdge("upper", "upperFirst", "true"),
+      execEdge("upper", "upperSecond", "false"),
+      execEdge("upperFirst", "upperFirstEnd"),
+      execEdge("upperSecond", "upperSecondEnd"),
+      execEdge("lower", "lowerEnd"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["root"]);
+    expect(pos(next, "upperFirstEnd").y).toBe(pos(next, "upperFirst").y);
+    expect(pos(next, "upperSecondEnd").y).toBe(pos(next, "upperSecond").y);
+    expect(pos(next, "lowerEnd").y).toBe(pos(next, "lower").y);
+    expect(pos(next, "lower").y).toBeGreaterThanOrEqual(
+      pos(next, "upperSecondEnd").y + NODE_H + FORMAT_GAP_Y,
+    );
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, [...edges].reverse(), ["root"])).toEqual(next);
+  });
+
+  it("compacts a deep pure input tree into left-side rows and reserves space ahead of execution", () => {
+    const nodes = [
+      node("start", 10, 20),
+      node("consumer", 30, 40, execWithValueIn),
+      ...Array.from({ length: 12 }, (_, index) =>
+        node(`pure${index}`, index * 20, index * 100, dataThruPins),
+      ),
+      {
+        id: "wide",
+        position: { x: 0, y: 0 },
+        measured: { width: 250, height: 140 },
+        pins: dataOutPins,
+      },
+      node("unrelated", 9999, 9999),
+    ];
+    const edges = [
+      execEdge("start", "consumer"),
+      dataEdge("pure0", "consumer"),
+      ...Array.from({ length: 11 }, (_, index) =>
+        dataEdge(`pure${index + 1}`, `pure${index}`, "in"),
+      ),
+      dataEdge("wide", "pure11", "in"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["start"]);
+    const parameters = next.filter((entry) => entry.id.startsWith("pure") || entry.id === "wide");
+    expect(new Set(parameters.map((entry) => entry.position.y)).size).toBe(1);
+    expect(pos(next, "wide").x).toBeGreaterThanOrEqual(
+      pos(next, "start").x + NODE_W + FORMAT_GAP_X,
+    );
+    for (const edge of edges.slice(1)) {
+      const source = next.find((entry) => entry.id === edge.source)!;
+      expect(source.position.x + boxOf(source).width + FORMAT_GAP_X)
+        .toBeLessThanOrEqual(pos(next, edge.target).x);
+    }
+    expect(pos(next, "consumer").y).toBe(pos(next, "start").y);
+    expect(next.find((entry) => entry.id === "unrelated")).toBe(nodes[nodes.length - 1]);
+    expect(pos(nodes, "consumer")).toEqual({ x: 30, y: 40 });
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["start"])).toEqual(next);
+  });
+
+  it("keeps dense branch parameter groups separate without displacing execution rows", () => {
+    const nodes = [node("root", 0, 0)];
+    const edges: FormatEdge[] = [];
+    for (let index = 0; index < 72; index++) {
+      nodes.push(
+        node(`consumer${index}`, 0, index, twoDataInPins),
+        node(`first${index}`, 0, 0, dataOutPins),
+        node(`second${index}`, 0, 0, dataOutPins),
+      );
+      edges.push(
+        execEdge("root", `consumer${index}`),
+        dataEdge(`first${index}`, `consumer${index}`, "first"),
+        dataEdge(`second${index}`, `consumer${index}`, "second"),
+      );
+    }
+    const next = formatGraphNodes(nodes, edges, ["root"]);
+    for (let index = 0; index < 72; index++) {
+      expect(pos(next, `consumer${index}`).y).toBe(index * HANG_Y);
+      expect(pos(next, `second${index}`).y - pos(next, `first${index}`).y).toBe(HANG_Y);
+    }
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["root"])).toEqual(next);
+  });
+
+  it("places a shared pure dependency before both its direct and indirect consumers", () => {
+    const nodes = [
+      node("consumer", 500, 50, twoDataInPins),
+      node("shared", 0, 0, dataOutPins),
+      node("derived", 0, 100, dataThruPins),
+    ];
+    const edges = [
+      dataEdge("shared", "consumer", "first"),
+      dataEdge("derived", "consumer", "second"),
+      dataEdge("shared", "derived", "in"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["consumer"]);
+    expect(pos(next, "shared").x + NODE_W + FORMAT_GAP_X).toBeLessThanOrEqual(
+      pos(next, "derived").x,
+    );
+    expect(pos(next, "derived").x + NODE_W + FORMAT_GAP_X).toBeLessThanOrEqual(
+      pos(next, "consumer").x,
+    );
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["consumer"])).toEqual(next);
+  });
+
+  it("compacts a long selected pure chain while keeping a data merge after every predecessor", () => {
+    const nodes = [
+      ...Array.from({ length: 9 }, (_, index) =>
+        node(`pure${index}`, 0, index * 100, dataThruPins),
+      ),
+      node("merge", 0, -100, dataThruPins),
+    ];
+    const edges = [
+      ...Array.from({ length: 8 }, (_, index) =>
+        dataEdge(`pure${index}`, `pure${index + 1}`, "in"),
+      ),
+      dataEdge("pure0", "merge", "in"),
+      dataEdge("pure8", "merge", "in"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["pure0"]);
+    for (const edge of edges) {
+      expect(pos(next, edge.source).x + NODE_W + FORMAT_GAP_X)
+        .toBeLessThanOrEqual(pos(next, edge.target).x);
+    }
+    expect(new Set(next.map((entry) => entry.position.y)).size).toBeLessThanOrEqual(2);
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["pure0"])).toEqual(next);
+  });
+
+  it("formats a selected execution cycle once instead of discarding all selected roots", () => {
+    const nodes = [node("a", 0, 0), node("b", 0, 0), node("c", 0, 0)];
+    const edges = [execEdge("a", "b"), execEdge("b", "c"), execEdge("c", "a")];
+    const next = formatGraphNodes(nodes, edges, ["b", "a"]);
+    expect(pos(next, "a")).toEqual({ x: 0, y: 0 });
+    expect(pos(next, "b").x).toBeGreaterThan(pos(next, "a").x);
+    expect(pos(next, "c").x).toBeGreaterThan(pos(next, "b").x);
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["b", "a"])).toEqual(next);
+  });
+
+  it("keeps a shared parameter with the first independently selected chain", () => {
+    const nodes = [
+      node("a", 10, 20),
+      node("b", 0, 0, execWithValueIn),
+      node("c", 10, 400),
+      node("d", 0, 0, execWithValueIn),
+      node("shared", 0, 800, dataOutPins),
+    ];
+    const edges = [
+      execEdge("a", "b"),
+      execEdge("c", "d"),
+      dataEdge("shared", "b"),
+      dataEdge("shared", "d"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["c", "a"]);
+    expect(pos(next, "shared")).toEqual({ x: 10, y: 20 + HANG_Y });
+    expect(pos(next, "c")).toEqual({ x: 10, y: 400 });
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["a", "c"])).toEqual(next);
+  });
+
+  it("keeps a shortcut merge stable after its longer path becomes aligned", () => {
+    const nodes = [node("root", 0, 0), node("z", 0, 10), node("a", 0, 100)];
+    const edges = [execEdge("root", "z"), execEdge("root", "a"), execEdge("z", "a")];
+    const next = formatGraphNodes(nodes, edges, ["root"]);
+    expect(pos(next, "z").y).toBe(pos(next, "a").y);
+    expect(formatGraphNodes(next, edges, ["root"])).toEqual(next);
+  });
+
+  it("formats selected roots that converge using the full length of both paths", () => {
+    const nodes = [
+      node("first", 10, 20),
+      node("second", 10, 300),
+      node("long0", 0, 400),
+      node("long1", 0, 500),
+      node("merge", 0, 0),
+      node("after", 0, 100),
+    ];
+    const edges = [
+      execEdge("first", "merge"),
+      execEdge("second", "long0"),
+      execEdge("long0", "long1"),
+      execEdge("long1", "merge"),
+      execEdge("merge", "after"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["second", "first"]);
+    expect(pos(next, "first")).toEqual({ x: 10, y: 20 });
+    for (const edge of edges) {
+      expect(pos(next, edge.source).x + NODE_W + FORMAT_GAP_X)
+        .toBeLessThanOrEqual(pos(next, edge.target).x);
+    }
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["first", "second"])).toEqual(next);
+  });
+
+  it("honors both selected pure and execution walks without moving shared nodes twice", () => {
+    const nodes = [
+      node("pure", 0, 0, dataOutPins),
+      node("consumer", 100, 100, execWithValueIn),
+      node("after", 0, 999),
+      node("otherConsumer", 0, -200, dataInPins),
+    ];
+    const edges = [
+      dataEdge("pure", "consumer"),
+      dataEdge("pure", "otherConsumer"),
+      execEdge("consumer", "after"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["pure", "consumer"]);
+    expect(pos(next, "consumer")).toEqual({ x: 100, y: 100 });
+    expect(pos(next, "after")).toEqual({ x: 100 + EXEC_STEP, y: 100 });
+    expect(pos(next, "otherConsumer").x).toBeGreaterThan(pos(next, "pure").x);
+    expect(pos(next, "otherConsumer")).not.toEqual(pos(nodes, "otherConsumer"));
+    expectNoOverlaps(next);
+    expect(formatGraphNodes(next, edges, ["consumer", "pure"])).toEqual(next);
   });
 });

@@ -3,10 +3,13 @@ import {
   BackgroundVariant,
   ConnectionMode,
   Controls,
+  Position,
   ReactFlow,
   ReactFlowProvider,
+  ViewportPortal,
   applyEdgeChanges,
   applyNodeChanges,
+  getBezierPath,
   useReactFlow,
   useStore,
   useStoreApi,
@@ -19,6 +22,7 @@ import {
   type NodeChange,
   type NodeTypes,
   type OnConnectStartParams,
+  type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./graph-editor.css";
@@ -91,6 +95,7 @@ import {
   screenCentersForSafePins,
   type ConnectEndMode,
   type PinCompatibilityRule,
+  type OrientedConnection,
   shouldOpenAddNodeOnConnectEnd,
   shouldCancelConnectOnSecondaryPointer,
   shouldCancelConnectionOnSecondaryPointer,
@@ -104,6 +109,7 @@ import {
   type GraphViewport,
 } from "./graph-viewport";
 import { formatGraphNodes } from "./graph-format";
+import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   selectVisibleGraphElements,
@@ -597,6 +603,13 @@ function GraphEditorCanvas({
   const storeApi = useStoreApi();
   const graphStateRef = useRef({ nodes, edges });
   graphStateRef.current = { nodes, edges };
+  const proximityDragRef = useRef(false);
+  const [proximityPaths, setProximityPaths] = useState<Array<{
+    connection: OrientedConnection;
+    path: string;
+  }>>([]);
+  const proximityPathsRef = useRef(proximityPaths);
+  proximityPathsRef.current = proximityPaths;
   const pinDisplayTypes = useMemo(
     () => displayPinTypesForGraph(nodes, edges),
     [edges, nodes],
@@ -672,6 +685,8 @@ function GraphEditorCanvas({
       lastEmitted: lastEmittedRef.current,
     });
     if (!next) return;
+    proximityDragRef.current = false;
+    setProximityPaths([]);
     lastEmittedRef.current = initialGraph;
     setNodes(
       next.nodes.map((node) => {
@@ -897,6 +912,317 @@ function GraphEditorCanvas({
       });
     },
     [canConnect, normalizeConnection, pinCompatibility],
+  );
+
+  const collectProximityConnections = useCallback(
+    (dragged: CanvasNode[]) => {
+      if (readOnly || !nodesDraggable || !proximityDragRef.current) return [];
+      const moving = new Map(dragged.map((node) => [node.id, node]));
+      const pins: ProximityPin[] = [];
+      const store = storeApi.getState();
+      for (const node of graphStateRef.current.nodes) {
+        if (isDisabledNode(node)) continue;
+        const internal = store.nodeLookup.get(node.id);
+        if (!internal) continue;
+        const position = moving.get(node.id)?.position ?? node.position;
+        const bounds = internal.internals.handleBounds;
+        const nodePins = hasSerializedPins(node.data) ? node.data.__pins : [];
+        for (const [direction, handles] of [
+          ["out", bounds?.source],
+          ["in", bounds?.target],
+        ] as const) {
+          for (const handle of handles ?? []) {
+            if (!handle.id) continue;
+            const pin = nodePins.find((entry) => entry.id === handle.id);
+            if (!pin || pin.direction !== direction) continue;
+            // Node assistance joins facing pins; custom top-down tree handles
+            // and overlapping state-transition plates retain their own gestures.
+            if (
+              handle.position !==
+              (direction === "out" ? Position.Right : Position.Left)
+            )
+              continue;
+            const opposite =
+              direction === "out" ? bounds?.target : bounds?.source;
+            if (opposite?.some((other) => other.position === handle.position))
+              continue;
+            pins.push({
+              nodeId: node.id,
+              pinId: handle.id,
+              direction,
+              x: position.x + handle.x + handle.width / 2,
+              y: position.y + handle.y + handle.height / 2,
+            });
+          }
+        }
+      }
+      const connections = findProximityConnections({
+        pins,
+        edges: graphStateRef.current.edges,
+        movingNodeIds: new Set(moving.keys()),
+        maxDistance: 96 / store.transform[2],
+        resolveConnection: (connection) =>
+          finalizeOrientedConnection(
+            connection,
+            (nodeId, pinId) =>
+              pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
+            normalizeConnection
+              ? (oriented) => {
+                  const normalized = normalizeConnection(oriented);
+                  return normalized?.sourceHandle && normalized.targetHandle
+                    ? {
+                        ...normalized,
+                        sourceHandle: normalized.sourceHandle,
+                        targetHandle: normalized.targetHandle,
+                      }
+                    : null;
+                }
+              : undefined,
+          ),
+        isValidConnection: (connection) => {
+          // Assistance never invokes host replacement policies on existing wires.
+          if (
+            graphStateRef.current.edges.some(
+              (edge) =>
+                (replaceIncomingOnConnect &&
+                  edge.target === connection.target) ||
+                (uniqueDirectedPairOnConnect &&
+                  edge.source === connection.source &&
+                  edge.target === connection.target),
+            )
+          )
+            return false;
+          return isValidConnection(connection);
+        },
+      });
+      // Resolve the whole proposed batch, so two unused pins in one wildcard
+      // group cannot preview mutually incompatible types.
+      const savedDisplayTypes = pinDisplayTypesRef.current;
+      let proposedEdges = graphStateRef.current.edges;
+      const accepted: OrientedConnection[] = [];
+      try {
+        for (const connection of connections) {
+          pinDisplayTypesRef.current = displayPinTypesForGraph(
+            graphStateRef.current.nodes,
+            proposedEdges,
+          );
+          if (!isValidConnection(connection)) continue;
+          if (
+            proposedEdges.some(
+              (edge) =>
+                (replaceIncomingOnConnect &&
+                  edge.target === connection.target) ||
+                (uniqueDirectedPairOnConnect &&
+                  edge.source === connection.source &&
+                  edge.target === connection.target),
+            )
+          )
+            continue;
+          proposedEdges = [
+            ...proposedEdges,
+            {
+              ...connection,
+              id: createEdgeId(
+                connection.source,
+                connection.sourceHandle,
+                connection.target,
+                connection.targetHandle,
+              ),
+            },
+          ];
+          accepted.push(connection);
+        }
+      } finally {
+        pinDisplayTypesRef.current = savedDisplayTypes;
+      }
+      return accepted.map((connection) => {
+        const source = pins.find(
+          (pin) =>
+            pin.nodeId === connection.source &&
+            pin.pinId === connection.sourceHandle,
+        )!;
+        const target = pins.find(
+          (pin) =>
+            pin.nodeId === connection.target &&
+            pin.pinId === connection.targetHandle,
+        )!;
+        return {
+          connection,
+          path: getBezierPath({
+            sourceX: source.x,
+            sourceY: source.y,
+            sourcePosition: Position.Right,
+            targetX: target.x,
+            targetY: target.y,
+            targetPosition: Position.Left,
+          })[0],
+        };
+      });
+    },
+    [
+      isValidConnection,
+      nodesDraggable,
+      normalizeConnection,
+      readOnly,
+      replaceIncomingOnConnect,
+      storeApi,
+      uniqueDirectedPairOnConnect,
+    ],
+  );
+
+  const cancelProximityConnections = useCallback(() => {
+    proximityDragRef.current = false;
+    proximityPathsRef.current = [];
+    setProximityPaths([]);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelProximityConnections();
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) cancelProximityConnections();
+    };
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length > 1) cancelProximityConnections();
+    };
+    window.addEventListener("blur", cancelProximityConnections);
+    document.addEventListener(
+      "pointercancel",
+      cancelProximityConnections,
+      true,
+    );
+    document.addEventListener("touchcancel", cancelProximityConnections, true);
+    document.addEventListener("touchstart", onTouchStart, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", cancelProximityConnections);
+      document.removeEventListener(
+        "pointercancel",
+        cancelProximityConnections,
+        true,
+      );
+      document.removeEventListener(
+        "touchcancel",
+        cancelProximityConnections,
+        true,
+      );
+      document.removeEventListener("touchstart", onTouchStart, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [cancelProximityConnections]);
+
+  useEffect(() => {
+    if (readOnly || !nodesDraggable) cancelProximityConnections();
+  }, [cancelProximityConnections, nodesDraggable, readOnly]);
+
+  const handleNodeDrag: OnNodeDrag<CanvasNode> = useCallback(
+    (_event, node, dragged) => {
+      const paths = collectProximityConnections(
+        dragged.length ? dragged : [node],
+      );
+      proximityPathsRef.current = paths;
+      setProximityPaths(paths);
+    },
+    [collectProximityConnections],
+  );
+
+  const handleNodeDragStop: OnNodeDrag<CanvasNode> = useCallback(
+    (_event, node, dragged) => {
+      const moving = dragged.length ? dragged : [node];
+      const previewed = new Set(
+        proximityPathsRef.current.map(({ connection }) =>
+          createEdgeId(
+            connection.source,
+            connection.sourceHandle,
+            connection.target,
+            connection.targetHandle,
+          ),
+        ),
+      );
+      const candidates = collectProximityConnections(moving).filter(
+        ({ connection }) =>
+          previewed.has(
+            createEdgeId(
+              connection.source,
+              connection.sourceHandle,
+              connection.target,
+              connection.targetHandle,
+            ),
+          ),
+      );
+      cancelProximityConnections();
+      if (!candidates.length) return;
+      const positions = new Map(
+        moving.map((entry) => [entry.id, entry.position]),
+      );
+      const nextNodes = graphStateRef.current.nodes.map((entry) =>
+        positions.has(entry.id)
+          ? { ...entry, position: positions.get(entry.id)! }
+          : entry,
+      );
+      let nextEdges = graphStateRef.current.edges;
+      const previousEdges = nextEdges;
+      for (const { connection } of candidates) {
+        // Earlier accepted pins may resolve wildcard groups for later suggestions.
+        pinDisplayTypesRef.current = displayPinTypesForGraph(
+          nextNodes,
+          nextEdges,
+        );
+        if (!isValidConnection(connection)) continue;
+        if (
+          nextEdges.some(
+            (edge) =>
+              edgeTouchesPin(
+                edge,
+                connection.source,
+                connection.sourceHandle,
+              ) ||
+              edgeTouchesPin(
+                edge,
+                connection.target,
+                connection.targetHandle,
+              ) ||
+              (replaceIncomingOnConnect && edge.target === connection.target) ||
+              (uniqueDirectedPairOnConnect &&
+                edge.source === connection.source &&
+                edge.target === connection.target),
+          )
+        )
+          continue;
+        nextEdges = [
+          ...nextEdges,
+          {
+            ...connection,
+            id: createEdgeId(
+              connection.source,
+              connection.sourceHandle,
+              connection.target,
+              connection.targetHandle,
+            ),
+            ...(defaultEdgeOptions.type
+              ? { type: defaultEdgeOptions.type }
+              : {}),
+          },
+        ];
+      }
+      if (nextEdges === previousEdges) return;
+      graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      emitChange(nextNodes, nextEdges);
+    },
+    [
+      cancelProximityConnections,
+      collectProximityConnections,
+      defaultEdgeOptions.type,
+      emitChange,
+      isValidConnection,
+      replaceIncomingOnConnect,
+      uniqueDirectedPairOnConnect,
+    ],
   );
 
   const onPinTap = useCallback(
@@ -1921,6 +2247,9 @@ function GraphEditorCanvas({
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}
           onNodesChange={handleNodesChange}
+          onNodeDragStart={() => { proximityDragRef.current = !readOnly && nodesDraggable; }}
+          onNodeDrag={handleNodeDrag}
+          onNodeDragStop={handleNodeDragStop}
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}
           onConnectStart={handleConnectStart}
@@ -1957,6 +2286,19 @@ function GraphEditorCanvas({
           zoomOnDoubleClick={graphViewport.zoomOnDoubleClick}
           proOptions={{ hideAttribution: true }}
         >
+          <ViewportPortal>
+            <svg aria-hidden="true" width="1" height="1" style={{ position: "absolute", overflow: "visible", pointerEvents: "none" }}>
+              {proximityPaths.map(({ connection, path }) => (
+                <path
+                  key={createEdgeId(connection.source, connection.sourceHandle, connection.target, connection.targetHandle)}
+                  className="graph-proximity-preview"
+                  d={path}
+                  fill="none"
+                  style={{ stroke: "var(--muted-foreground)", strokeWidth: 2, opacity: 0.5, pointerEvents: "none" }}
+                />
+              ))}
+            </svg>
+          </ViewportPortal>
           <Background
             variant={BackgroundVariant.Dots}
             gap={20}

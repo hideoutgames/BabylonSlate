@@ -7,6 +7,10 @@ import {
 export const FORMAT_GAP_X = 80;
 export const FORMAT_GAP_Y = 40;
 
+// Small parameter trees retain their compact diagonal shape. Taller trees use
+// horizontal rows so another pure operation does not add another full row.
+const HELIX_MAX_HEIGHT = 320;
+
 export type FormatNode = {
   id: string;
   position: { x: number; y: number };
@@ -23,6 +27,16 @@ export type FormatEdge = {
   targetHandle?: string;
 };
 
+type Position = { x: number; y: number };
+type Box = Position & { width: number; height: number };
+type ChainWalk = "exec" | "data";
+type GraphIndex = {
+  byId: Map<string, FormatNode>;
+  outgoing: Record<ChainWalk, Map<string, string[]>>;
+  dataInputs: Map<string, string[]>;
+  incomingExec: Set<string>;
+};
+
 function nodeSize(node: FormatNode): { width: number; height: number } {
   return {
     width: node.width ?? node.measured?.width ?? MARQUEE_FALLBACK_WIDTH,
@@ -30,82 +44,102 @@ function nodeSize(node: FormatNode): { width: number; height: number } {
   };
 }
 
-function sourcePin(
-  nodes: readonly FormatNode[],
-  edge: FormatEdge,
-): SerializedPin | undefined {
-  const source = nodes.find((node) => node.id === edge.source);
-  return source?.pins?.find((pin) => pin.id === edge.sourceHandle);
+function compareNodes(
+  graph: GraphIndex,
+  a: string,
+  b: string,
+  positions?: ReadonlyMap<string, Position>,
+): number {
+  const left = positions?.get(a) ?? graph.byId.get(a)!.position;
+  const right = positions?.get(b) ?? graph.byId.get(b)!.position;
+  return left.y - right.y || left.x - right.x || a.localeCompare(b);
 }
 
-function isExecOutEdge(
-  edge: FormatEdge,
-  nodes: readonly FormatNode[],
-): boolean {
-  const pin = sourcePin(nodes, edge);
-  if (pin) return pin.kind === "exec" && pin.direction === "out";
-  const handle = edge.sourceHandle ?? "";
-  return (
-    handle === "execOut" ||
-    handle === "then" ||
-    handle === "true" ||
-    handle === "false" ||
-    handle.startsWith("then")
-  );
-}
-
-function isDataOutEdge(
-  edge: FormatEdge,
-  nodes: readonly FormatNode[],
-): boolean {
-  const pin = sourcePin(nodes, edge);
-  if (pin) return pin.kind === "data" && pin.direction === "out";
-  return Boolean(edge.sourceHandle) && !isExecOutEdge(edge, nodes);
-}
-
-type ChainWalk = "exec" | "data";
-
-function isImpureNode(
-  node: FormatNode | undefined,
-  nodeId: string,
+function indexGraph(
   nodes: readonly FormatNode[],
   edges: readonly FormatEdge[],
-): boolean {
-  if (node?.pins?.some((pin) => pin.kind === "exec")) return true;
-  if (node?.pins && node.pins.length > 0) return false;
-  return edges.some(
-    (edge) => edge.source === nodeId && isExecOutEdge(edge, nodes),
-  );
-}
-
-function chainWalkKind(
-  startId: string,
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
-): ChainWalk {
-  const start = nodes.find((node) => node.id === startId);
-  return isImpureNode(start, startId, nodes, edges) ? "exec" : "data";
-}
-
-function chainSuccessors(
-  nodeId: string,
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
-  walk: ChainWalk,
-): string[] {
-  const targets: string[] = [];
-  const seen = new Set<string>();
+): GraphIndex {
+  const graph: GraphIndex = {
+    byId: new Map(nodes.map((node) => [node.id, node])),
+    outgoing: { exec: new Map(), data: new Map() },
+    dataInputs: new Map(),
+    incomingExec: new Set(),
+  };
+  const incomingData = new Map<string, Map<string, number>>();
   for (const edge of edges) {
-    if (edge.source !== nodeId) continue;
-    const include =
-      walk === "exec"
-        ? isExecOutEdge(edge, nodes)
-        : isDataOutEdge(edge, nodes);
-    if (!include || seen.has(edge.target)) continue;
-    seen.add(edge.target);
-    targets.push(edge.target);
+    const source = graph.byId.get(edge.source);
+    const target = graph.byId.get(edge.target);
+    if (!source || !target) continue;
+    const pin = source.pins?.find((entry) => entry.id === edge.sourceHandle);
+    const handle = edge.sourceHandle ?? "";
+    const fallbackExec =
+      handle === "execOut" ||
+      handle === "then" ||
+      handle === "true" ||
+      handle === "false" ||
+      handle.startsWith("then");
+    const kind = pin
+      ? pin.direction === "out"
+        ? pin.kind
+        : undefined
+      : fallbackExec
+        ? "exec"
+        : handle
+          ? "data"
+          : undefined;
+    if (kind !== "exec" && kind !== "data") continue;
+    const targets = graph.outgoing[kind].get(source.id) ?? [];
+    if (!targets.includes(target.id)) targets.push(target.id);
+    graph.outgoing[kind].set(source.id, targets);
+    if (kind === "exec") {
+      graph.incomingExec.add(target.id);
+    } else {
+      const pins =
+        target.pins?.filter(
+          (entry) => entry.kind === "data" && entry.direction === "in",
+        ) ?? [];
+      const pinIndex = pins.findIndex(
+        (entry) => entry.id === edge.targetHandle,
+      );
+      const order = pinIndex < 0 ? Number.MAX_SAFE_INTEGER : pinIndex;
+      const sources = incomingData.get(target.id) ?? new Map<string, number>();
+      sources.set(source.id, Math.min(sources.get(source.id) ?? order, order));
+      incomingData.set(target.id, sources);
+    }
   }
-  return targets;
+  for (const [id, sources] of incomingData) {
+    graph.dataInputs.set(
+      id,
+      [...sources.keys()].sort(
+        (a, b) =>
+          sources.get(a)! - sources.get(b)! || compareNodes(graph, a, b),
+      ),
+    );
+  }
+  return graph;
+}
+
+function chainWalkKind(startId: string, graph: GraphIndex): ChainWalk {
+  const node = graph.byId.get(startId);
+  if (node?.pins?.length) {
+    return node.pins.some((pin) => pin.kind === "exec") ? "exec" : "data";
+  }
+  return graph.outgoing.exec.has(startId) ? "exec" : "data";
+}
+
+function collectChain(startId: string, graph: GraphIndex): string[] {
+  if (!graph.byId.has(startId)) return [];
+  const outgoing = graph.outgoing[chainWalkKind(startId, graph)];
+  const order = [startId];
+  const visited = new Set(order);
+  for (let index = 0; index < order.length; index++) {
+    for (const target of outgoing.get(order[index]!) ?? []) {
+      if (visited.has(target)) continue;
+      visited.add(target);
+      order.push(target);
+    }
+  }
+  return order;
 }
 
 export function collectThenChain(
@@ -113,416 +147,340 @@ export function collectThenChain(
   nodes: readonly FormatNode[],
   edges: readonly FormatEdge[],
 ): string[] {
-  if (!nodes.some((node) => node.id === startId)) return [];
-  const walk = chainWalkKind(startId, nodes, edges);
-  const visited = new Set<string>();
+  return collectChain(startId, indexGraph(nodes, edges));
+}
+
+type LayoutTree = {
+  roots: string[];
+  order: string[];
+  children: Map<string, string[]>;
+  ranks: Map<string, number>;
+};
+
+function layoutTree(
+  startIds: readonly string[],
+  successors: (id: string) => readonly string[],
+): LayoutTree {
+  const roots: string[] = [];
   const order: string[] = [];
-  const queue = [startId];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    if (visited.has(id)) continue;
-    visited.add(id);
-    order.push(id);
-    for (const target of chainSuccessors(id, nodes, edges, walk)) {
-      if (!visited.has(target)) queue.push(target);
-    }
-  }
-  return order;
-}
-
-function thenChainLayers(
-  startId: string,
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
-): string[][] {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const walk = chainWalkKind(startId, nodes, edges);
-  const visited = new Set<string>([startId]);
-  const layers: string[][] = [];
-  let current = [startId];
-  while (current.length > 0) {
-    layers.push(current);
-    const next: string[] = [];
-    for (const id of current) {
-      for (const target of chainSuccessors(id, nodes, edges, walk)) {
-        if (visited.has(target) || !byId.has(target)) continue;
-        visited.add(target);
-        next.push(target);
-      }
-    }
-    next.sort((a, b) => {
-      const ay = byId.get(a)?.position.y ?? 0;
-      const by = byId.get(b)?.position.y ?? 0;
-      if (ay !== by) return ay - by;
-      return a.localeCompare(b);
-    });
-    current = next;
-  }
-  return layers;
-}
-
-function hasIncomingExec(
-  nodeId: string,
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
-): boolean {
-  return edges.some(
-    (edge) => edge.target === nodeId && isExecOutEdge(edge, nodes),
-  );
-}
-
-function dataInPinOrder(node: FormatNode | undefined): string[] {
-  return (
-    node?.pins
-      ?.filter((pin) => pin.kind === "data" && pin.direction === "in")
-      .map((pin) => pin.id) ?? []
-  );
-}
-
-function dataInSources(
-  nodeId: string,
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
-): string[] {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const pinOrder = dataInPinOrder(byId.get(nodeId));
-  const best = new Map<string, { pinIndex: number; y: number }>();
-  for (const edge of edges) {
-    if (edge.target !== nodeId || !isDataOutEdge(edge, nodes)) continue;
-    const source = byId.get(edge.source);
-    if (!source) continue;
-    const pinIndex = edge.targetHandle
-      ? pinOrder.indexOf(edge.targetHandle)
-      : -1;
-    const resolved = pinIndex === -1 ? Number.MAX_SAFE_INTEGER : pinIndex;
-    const prev = best.get(edge.source);
-    if (!prev || resolved < prev.pinIndex) {
-      best.set(edge.source, { pinIndex: resolved, y: source.position.y });
-    }
-  }
-  return [...best.entries()]
-    .sort((a, b) => {
-      if (a[1].pinIndex !== b[1].pinIndex) return a[1].pinIndex - b[1].pinIndex;
-      if (a[1].y !== b[1].y) return a[1].y - b[1].y;
-      return a[0].localeCompare(b[0]);
-    })
-    .map(([id]) => id);
-}
-
-function claimDataInputTrees(
-  chainIds: ReadonlySet<string>,
-  chainOrder: readonly string[],
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
-): Map<string, string[]> {
+  const visited = new Set<string>();
+  const active = new Set<string>();
   const children = new Map<string, string[]>();
-  const claimed = new Set<string>();
-
-  const claimFrom = (nodeId: string, walking: Set<string>): void => {
-    if (walking.has(nodeId)) return;
-    walking.add(nodeId);
-    const owned: string[] = [];
-    for (const sourceId of dataInSources(nodeId, nodes, edges)) {
-      if (chainIds.has(sourceId) || claimed.has(sourceId)) continue;
-      if (hasIncomingExec(sourceId, nodes, edges)) continue;
-      claimed.add(sourceId);
-      owned.push(sourceId);
-      claimFrom(sourceId, walking);
+  const forward = new Map<string, string[]>();
+  const finished: string[] = [];
+  for (const startId of startIds) {
+    if (visited.has(startId)) continue;
+    roots.push(startId);
+    order.push(startId);
+    visited.add(startId);
+    active.add(startId);
+    const stack = [{ id: startId, targets: successors(startId), next: 0 }];
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1]!;
+      const target = frame.targets[frame.next++];
+      if (target === undefined) {
+        active.delete(frame.id);
+        finished.push(frame.id);
+        stack.pop();
+        continue;
+      }
+      // A loop's return wire must remain a return wire. Ignore only DFS back
+      // edges when computing ranks; retain every other predecessor of a merge.
+      if (active.has(target)) continue;
+      const links = forward.get(frame.id) ?? [];
+      links.push(target);
+      forward.set(frame.id, links);
+      if (visited.has(target)) continue;
+      const owned = children.get(frame.id) ?? [];
+      owned.push(target);
+      children.set(frame.id, owned);
+      visited.add(target);
+      active.add(target);
+      order.push(target);
+      stack.push({ id: target, targets: successors(target), next: 0 });
     }
-    children.set(nodeId, owned);
-  };
-
-  for (const id of chainOrder) {
-    claimFrom(id, new Set());
   }
-  return children;
-}
-
-function withPositions(
-  nodes: FormatNode[],
-  positions: Map<string, { x: number; y: number }>,
-): FormatNode[] {
-  return nodes.map((node) => {
-    const position = positions.get(node.id);
-    if (!position) return node;
-    if (position.x === node.position.x && position.y === node.position.y) {
-      return node;
+  const ranks = new Map<string, number>(roots.map((id) => [id, 0]));
+  for (let index = finished.length - 1; index >= 0; index--) {
+    const id = finished[index]!;
+    for (const target of forward.get(id) ?? []) {
+      ranks.set(target, Math.max(ranks.get(target) ?? 0, ranks.get(id)! + 1));
     }
-    return { ...node, position };
-  });
+  }
+  return { roots, order, children, ranks };
 }
 
-function hangingSubtreeSize(
-  nodeId: string,
-  byId: Map<string, FormatNode>,
-  children: Map<string, string[]>,
-  cache: Map<string, { width: number; height: number }>,
-): { width: number; height: number } {
-  const cached = cache.get(nodeId);
-  if (cached) return cached;
-  const node = byId.get(nodeId);
-  if (!node) {
-    const empty = { width: 0, height: 0 };
-    cache.set(nodeId, empty);
-    return empty;
-  }
-  const size = nodeSize(node);
-  const kids = children.get(nodeId) ?? [];
-  if (kids.length === 0) {
-    cache.set(nodeId, size);
-    return size;
-  }
-  let kidsWidth = 0;
-  let kidsHeight = 0;
-  for (let i = 0; i < kids.length; i++) {
-    const kid = hangingSubtreeSize(kids[i]!, byId, children, cache);
-    kidsWidth = Math.max(kidsWidth, kid.width);
-    if (i > 0) kidsHeight += FORMAT_GAP_Y;
-    kidsHeight += kid.height;
-  }
-  const measured = {
-    width: size.width + FORMAT_GAP_X + kidsWidth,
-    height: size.height + FORMAT_GAP_Y + kidsHeight,
-  };
-  cache.set(nodeId, measured);
-  return measured;
-}
-
-function placeNodeWithInputs(
-  nodeId: string,
-  x: number,
-  y: number,
-  byId: Map<string, FormatNode>,
-  children: Map<string, string[]>,
-  cache: Map<string, { width: number; height: number }>,
-  positions: Map<string, { x: number; y: number }>,
-): void {
-  positions.set(nodeId, { x, y });
-  const node = byId.get(nodeId);
-  if (!node) return;
-  const size = nodeSize(node);
-  const kids = children.get(nodeId) ?? [];
-  let childY = y + size.height + FORMAT_GAP_Y;
-  for (const kidId of kids) {
-    const kid = byId.get(kidId);
-    if (!kid) continue;
-    const kidSize = nodeSize(kid);
-    placeNodeWithInputs(
-      kidId,
-      x - FORMAT_GAP_X - kidSize.width,
-      childY,
-      byId,
-      children,
-      cache,
-      positions,
+function treeHeights(
+  tree: LayoutTree,
+  graph: GraphIndex,
+  diagonal: boolean,
+): Map<string, number> {
+  const heights = new Map<string, number>();
+  for (let index = tree.order.length - 1; index >= 0; index--) {
+    const id = tree.order[index]!;
+    const height = nodeSize(graph.byId.get(id)!).height;
+    const children = tree.children.get(id) ?? [];
+    const childHeight =
+      children.reduce(
+        (total, child) => total + heights.get(child)! + FORMAT_GAP_Y,
+        0,
+      ) - (children.length > 0 ? FORMAT_GAP_Y : 0);
+    heights.set(
+      id,
+      diagonal && children.length > 0
+        ? height + FORMAT_GAP_Y + childHeight
+        : Math.max(height, childHeight),
     );
-    childY += hangingSubtreeSize(kidId, byId, children, cache).height + FORMAT_GAP_Y;
   }
+  return heights;
 }
 
-function layoutThenChain(
-  nodes: FormatNode[],
-  edges: readonly FormatEdge[],
-  startId: string,
-): FormatNode[] {
-  const start = nodes.find((node) => node.id === startId);
-  if (!start) return nodes;
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const walk = chainWalkKind(startId, nodes, edges);
-  const layers = thenChainLayers(startId, nodes, edges);
-  const chainOrder = layers.flat();
-  const chainIds = new Set(chainOrder);
-  const children = claimDataInputTrees(chainIds, chainOrder, nodes, edges);
-  const cache = new Map<string, { width: number; height: number }>();
-  const positions = new Map<string, { x: number; y: number }>();
-  const startSize = nodeSize(start);
-  let x = start.position.x;
-  for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
-    const layer = layers[layerIndex]!;
-    let layerWidth = 0;
-    for (const id of layer) {
-      const node = byId.get(id);
-      if (node) layerWidth = Math.max(layerWidth, nodeSize(node).width);
-    }
+function treeRows(
+  tree: LayoutTree,
+  graph: GraphIndex,
+  diagonal: boolean,
+): Map<string, number> {
+  const heights = treeHeights(tree, graph, diagonal);
+  const rows = new Map<string, number>();
+  let rootY = 0;
+  for (const root of tree.roots) {
+    rows.set(root, rootY);
+    rootY += heights.get(root)! + FORMAT_GAP_Y;
+  }
+  for (const id of tree.order) {
     let y =
-      walk === "data"
-        ? start.position.y + layerIndex * (startSize.height + FORMAT_GAP_Y)
-        : start.position.y;
-    for (const id of layer) {
-      const node = byId.get(id);
-      if (!node) continue;
-      placeNodeWithInputs(id, x, y, byId, children, cache, positions);
-      y += nodeSize(node).height + FORMAT_GAP_Y;
+      rows.get(id)! +
+      (diagonal ? nodeSize(graph.byId.get(id)!).height + FORMAT_GAP_Y : 0);
+    for (const child of tree.children.get(id) ?? []) {
+      rows.set(child, y);
+      y += heights.get(child)! + FORMAT_GAP_Y;
     }
-    x += layerWidth + FORMAT_GAP_X;
   }
-  return withPositions(nodes, positions);
+  return rows;
 }
 
-function formatMemberIds(
-  startId: string,
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
-): Set<string> {
-  const layers = thenChainLayers(startId, nodes, edges);
-  const chainOrder = layers.flat();
-  const children = claimDataInputTrees(
-    new Set(chainOrder),
-    chainOrder,
-    nodes,
-    edges,
+function claimDataInputs(
+  chain: LayoutTree,
+  graph: GraphIndex,
+  previouslyPlaced: ReadonlySet<string>,
+): Map<string, Set<string>> {
+  const claimed = new Set([...chain.order, ...previouslyPlaced]);
+  const owners = new Map<string, Set<string>>();
+  // Prefer the earliest execution consumer, even if DFS visited its merge
+  // before a shorter branch. Shared parameters are moved exactly once.
+  const chainOrder = [...chain.order].sort(
+    (a, b) => chain.ranks.get(a)! - chain.ranks.get(b)!,
   );
-  const ids = new Set(chainOrder);
-  for (const [parent, kids] of children) {
-    ids.add(parent);
-    for (const kid of kids) ids.add(kid);
+  for (const owner of chainOrder) {
+    const inputs = new Set<string>();
+    const stack = [...(graph.dataInputs.get(owner) ?? [])].reverse();
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (claimed.has(id) || graph.incomingExec.has(id)) continue;
+      claimed.add(id);
+      inputs.add(id);
+      stack.push(...[...(graph.dataInputs.get(id) ?? [])].reverse());
+    }
+    owners.set(owner, inputs);
   }
-  return ids;
+  return owners;
+}
+
+type ParameterBlock = { positions: Map<string, Position>; left: number };
+
+function parameterBlock(
+  owner: string,
+  members: ReadonlySet<string>,
+  graph: GraphIndex,
+): ParameterBlock {
+  const tree = layoutTree([owner], (id) =>
+    (graph.dataInputs.get(id) ?? []).filter((source) => members.has(source)),
+  );
+  const diagonalHeight = treeHeights(tree, graph, true).get(owner)!;
+  const diagonal = diagonalHeight <= HELIX_MAX_HEIGHT;
+  const rows = treeRows(tree, graph, diagonal);
+  // Inputs always begin below their execution consumer, including when the
+  // rest of a large parameter block switches to left-side rows.
+  if (!diagonal) {
+    const top = nodeSize(graph.byId.get(owner)!).height + FORMAT_GAP_Y;
+    for (const id of members) rows.set(id, rows.get(id)! + top);
+  }
+  const widths: number[] = [];
+  for (const id of members) {
+    const rank = tree.ranks.get(id)!;
+    widths[rank] = Math.max(
+      widths[rank] ?? 0,
+      nodeSize(graph.byId.get(id)!).width,
+    );
+  }
+  const columns = [0];
+  for (let rank = 1; rank < widths.length; rank++) {
+    columns[rank] = columns[rank - 1]! - FORMAT_GAP_X - widths[rank]!;
+  }
+  const positions = new Map<string, Position>();
+  let left = 0;
+  for (const id of members) {
+    const rank = tree.ranks.get(id)!;
+    const x =
+      columns[rank]! + widths[rank]! - nodeSize(graph.byId.get(id)!).width;
+    positions.set(id, { x, y: rows.get(id)! });
+    if (!diagonal) left = Math.max(left, -x);
+  }
+  return { positions, left };
+}
+
+function boxAt(graph: GraphIndex, id: string, position: Position): Box {
+  return { ...position, ...nodeSize(graph.byId.get(id)!) };
+}
+
+function clearVerticalOffset(
+  moving: readonly Box[],
+  blockers: readonly Box[],
+): number {
+  // Each horizontally intersecting pair excludes one interval of Y offsets.
+  // Sweeping these intervals gives a clear position without a pass limit and
+  // moves entire trees together instead of tearing individual nodes off them.
+  const intervals: { from: number; to: number }[] = [];
+  for (const mover of moving) {
+    for (const blocker of blockers) {
+      if (
+        mover.x >= blocker.x + blocker.width ||
+        mover.x + mover.width <= blocker.x
+      ) {
+        continue;
+      }
+      const to = blocker.y + blocker.height - mover.y;
+      if (to <= 0) continue;
+      intervals.push({ from: blocker.y - mover.y - mover.height, to });
+    }
+  }
+  intervals.sort((a, b) => a.from - b.from);
+  let offset = 0;
+  for (const interval of intervals) {
+    if (interval.from < offset && interval.to > offset)
+      offset = interval.to + FORMAT_GAP_Y;
+  }
+  return offset;
+}
+
+function layoutChain(
+  startIds: readonly string[],
+  graph: GraphIndex,
+  placed: Map<string, Position>,
+): void {
+  const startId = startIds[0]!;
+  const start = graph.byId.get(startId)!;
+  const origin = placed.get(startId) ?? start.position;
+  const walk = chainWalkKind(startId, graph);
+  const tree = layoutTree(startIds, (id) =>
+    [...(graph.outgoing[walk].get(id) ?? [])].sort(
+      (a, b) =>
+        Number(!placed.has(a)) - Number(!placed.has(b)) ||
+        compareNodes(graph, a, b, placed),
+    ),
+  );
+  const owners = claimDataInputs(tree, graph, new Set(placed.keys()));
+  const blocks = new Map<string, ParameterBlock>();
+  for (const [owner, members] of owners) {
+    blocks.set(owner, parameterBlock(owner, members, graph));
+  }
+  const widths: number[] = [];
+  const inputWidths: number[] = [];
+  const fixedColumns: number[] = [];
+  for (const id of tree.order) {
+    const rank = tree.ranks.get(id)!;
+    widths[rank] = Math.max(
+      widths[rank] ?? 0,
+      nodeSize(graph.byId.get(id)!).width,
+    );
+    inputWidths[rank] = Math.max(inputWidths[rank] ?? 0, blocks.get(id)!.left);
+    const fixed = placed.get(id);
+    if (fixed)
+      fixedColumns[rank] = Math.max(fixedColumns[rank] ?? -Infinity, fixed.x);
+  }
+  const columns = [origin.x];
+  for (let rank = 1; rank < widths.length; rank++) {
+    columns[rank] = Math.max(
+      columns[rank - 1]! +
+        widths[rank - 1]! +
+        FORMAT_GAP_X +
+        inputWidths[rank]!,
+      fixedColumns[rank] ?? -Infinity,
+    );
+  }
+  const diagonal =
+    walk === "data" &&
+    treeHeights(tree, graph, true).get(startId)! <= HELIX_MAX_HEIGHT;
+  const rows = treeRows(tree, graph, diagonal);
+  const positions = new Map<string, Position>();
+  const blockers: Box[] = [];
+  for (const id of tree.order) {
+    const position = placed.get(id) ?? {
+      x: columns[tree.ranks.get(id)!]!,
+      y: origin.y + rows.get(id)!,
+    };
+    positions.set(id, position);
+    blockers.push(boxAt(graph, id, position));
+  }
+  const chainOrder = [...tree.order].sort(
+    (a, b) => tree.ranks.get(a)! - tree.ranks.get(b)!,
+  );
+  for (const owner of chainOrder) {
+    const anchor = positions.get(owner)!;
+    const inputs = [...blocks.get(owner)!.positions].map(([id, relative]) => ({
+      id,
+      position: { x: anchor.x + relative.x, y: anchor.y + relative.y },
+    }));
+    const offset = clearVerticalOffset(
+      inputs.map(({ id, position }) => boxAt(graph, id, position)),
+      blockers,
+    );
+    for (const { id, position } of inputs) {
+      position.y += offset;
+      positions.set(id, position);
+      blockers.push(boxAt(graph, id, position));
+    }
+  }
+  const moving = [...positions].filter(([id]) => !placed.has(id));
+  const offset = clearVerticalOffset(
+    moving.map(([id, position]) => boxAt(graph, id, position)),
+    [...placed].map(([id, position]) => boxAt(graph, id, position)),
+  );
+  for (const [id, position] of moving) {
+    placed.set(id, { x: position.x, y: position.y + offset });
+  }
 }
 
 function formatChainRoots(
   selectedIds: readonly string[],
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
+  graph: GraphIndex,
 ): string[] {
-  const selected = selectedIds.filter((id) =>
-    nodes.some((node) => node.id === id),
-  );
-  const contained = new Set<string>();
-  for (const id of selected) {
-    const chain = collectThenChain(id, nodes, edges);
-    for (const other of selected) {
-      if (other !== id && chain.includes(other)) contained.add(other);
-    }
-  }
-  return selected
-    .filter((id) => !contained.has(id))
+  const selected = [...new Set(selectedIds)]
+    .filter((id) => graph.byId.has(id))
     .sort((a, b) => {
-      const nodeA = nodes.find((node) => node.id === a);
-      const nodeB = nodes.find((node) => node.id === b);
-      const ay = nodeA?.position.y ?? 0;
-      const by = nodeB?.position.y ?? 0;
-      if (ay !== by) return ay - by;
-      const ax = nodeA?.position.x ?? 0;
-      const bx = nodeB?.position.x ?? 0;
-      if (ax !== bx) return ax - bx;
-      return a.localeCompare(b);
+      const left = graph.byId.get(a)!;
+      const right = graph.byId.get(b)!;
+      return (
+        Number(chainWalkKind(a, graph) === "data") -
+          Number(chainWalkKind(b, graph) === "data") ||
+        left.position.y - right.position.y ||
+        left.position.x - right.position.x ||
+        a.localeCompare(b)
+      );
     });
-}
-
-function nodeBox(node: FormatNode): {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-} {
-  const size = nodeSize(node);
-  return {
-    x: node.position.x,
-    y: node.position.y,
-    width: size.width,
-    height: size.height,
-  };
-}
-
-function boxesOverlap(
-  a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number },
-): boolean {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
+  const chains = new Map(
+    selected.map((id) => [id, new Set(collectChain(id, graph))]),
   );
-}
-
-function translateIds(
-  nodes: FormatNode[],
-  ids: ReadonlySet<string>,
-  dx: number,
-  dy: number,
-): FormatNode[] {
-  if (dx === 0 && dy === 0) return nodes;
-  const positions = new Map<string, { x: number; y: number }>();
-  for (const node of nodes) {
-    if (!ids.has(node.id)) continue;
-    positions.set(node.id, {
-      x: node.position.x + dx,
-      y: node.position.y + dy,
-    });
-  }
-  return withPositions(nodes, positions);
-}
-
-function lowerOverlappingNode(a: FormatNode, b: FormatNode): FormatNode {
-  if (a.position.y !== b.position.y) {
-    return a.position.y > b.position.y ? a : b;
-  }
-  if (a.position.x !== b.position.x) {
-    return a.position.x > b.position.x ? a : b;
-  }
-  return a.id.localeCompare(b.id) > 0 ? a : b;
-}
-
-function nudgeOverlappingMembers(
-  nodes: FormatNode[],
-  ids: ReadonlySet<string>,
-): FormatNode[] {
-  if (ids.size < 2) return nodes;
-  let current = nodes;
-  for (let pass = 0; pass < 32; pass++) {
-    const members = current.filter((node) => ids.has(node.id));
-    let extra = 0;
-    let movingId: string | undefined;
-    for (let i = 0; i < members.length; i++) {
-      for (let j = i + 1; j < members.length; j++) {
-        const a = members[i]!;
-        const b = members[j]!;
-        if (!boxesOverlap(nodeBox(a), nodeBox(b))) continue;
-        const lower = lowerOverlappingNode(a, b);
-        const upper = lower.id === a.id ? b : a;
-        const upperBox = nodeBox(upper);
-        const needed =
-          upperBox.y + upperBox.height + FORMAT_GAP_Y - lower.position.y;
-        if (needed > extra) {
-          extra = needed;
-          movingId = lower.id;
-        }
-      }
-    }
-    if (extra <= 0 || !movingId) break;
-    current = translateIds(current, new Set([movingId]), 0, extra);
-  }
-  return current;
-}
-
-function shiftChainClearOf(
-  nodes: FormatNode[],
-  movingIds: ReadonlySet<string>,
-  blockerIds: ReadonlySet<string>,
-): FormatNode[] {
-  if (movingIds.size === 0 || blockerIds.size === 0) return nodes;
-  let current = nodes;
-  for (let pass = 0; pass < 32; pass++) {
-    let extra = 0;
-    const moving = current.filter((node) => movingIds.has(node.id));
-    const blockers = current.filter((node) => blockerIds.has(node.id));
-    for (const mover of moving) {
-      const moverBox = nodeBox(mover);
-      for (const blocker of blockers) {
-        const blockerBox = nodeBox(blocker);
-        if (!boxesOverlap(moverBox, blockerBox)) continue;
-        extra = Math.max(
-          extra,
-          blockerBox.y + blockerBox.height + FORMAT_GAP_Y - moverBox.y,
-        );
-      }
-    }
-    if (extra <= 0) break;
-    current = translateIds(current, movingIds, 0, extra);
-  }
-  return current;
+  return selected.filter(
+    (id, index) =>
+      !selected.some(
+        (other, otherIndex) =>
+          other !== id &&
+          chainWalkKind(other, graph) === chainWalkKind(id, graph) &&
+          chains.get(other)!.has(id) &&
+          (!chains.get(id)!.has(other) || otherIndex < index),
+      ),
+  );
 }
 
 export function formatGraphNodes(
@@ -531,17 +489,42 @@ export function formatGraphNodes(
   selectedIds: readonly string[],
 ): FormatNode[] {
   if (selectedIds.length === 0) return nodes;
-  const roots = formatChainRoots(selectedIds, nodes, edges);
+  const graph = indexGraph(nodes, edges);
+  const roots = formatChainRoots(selectedIds, graph);
   if (roots.length === 0) return nodes;
-  let current = nodes;
-  const placed = new Set<string>();
+  const positions = new Map<string, Position>();
+  const remaining = new Set(roots);
+  const chains = new Map(
+    roots.map((root) => [root, new Set(collectChain(root, graph))]),
+  );
   for (const root of roots) {
-    current = layoutThenChain(current, edges, root);
-    const members = formatMemberIds(root, current, edges);
-    current = nudgeOverlappingMembers(current, members);
-    current = shiftChainClearOf(current, members, placed);
-    current = nudgeOverlappingMembers(current, members);
-    for (const id of members) placed.add(id);
+    if (
+      !remaining.delete(root) ||
+      [...chains.get(root)!].every((id) => positions.has(id))
+    )
+      continue;
+    const group = [root];
+    for (let index = 0; index < group.length; index++) {
+      const chain = chains.get(group[index]!)!;
+      for (const other of remaining) {
+        if (chainWalkKind(other, graph) !== chainWalkKind(root, graph))
+          continue;
+        if (![...chains.get(other)!].some((id) => chain.has(id))) continue;
+        remaining.delete(other);
+        group.push(other);
+      }
+    }
+    // Selected roots which meet at a join share ranks and lanes. Disconnected
+    // roots remain separate blocks, anchored at their own original positions.
+    layoutChain(group, graph, positions);
   }
-  return current;
+  return nodes.map((node) => {
+    const position = positions.get(node.id);
+    if (
+      !position ||
+      (position.x === node.position.x && position.y === node.position.y)
+    )
+      return node;
+    return { ...node, position };
+  });
 }
