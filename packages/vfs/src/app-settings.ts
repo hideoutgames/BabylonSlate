@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeProjectAppearance } from "@babylonslate/core";
 
 export const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
@@ -56,6 +57,7 @@ export const engineSettingsSchema = z.object({
         lastOpenedAt: z.string(),
         createdAt: z.string().optional(),
         bookmark: z.string().nullable().optional(),
+        appearance: z.unknown().transform(normalizeProjectAppearance).optional(),
       }),
     )
     .default([]),

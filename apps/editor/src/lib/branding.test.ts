@@ -11,8 +11,8 @@ import {
 } from "./branding";
 
 describe("branding", () => {
-  it("names the product BabylonSlate", () => {
-    expect(BRAND_NAME).toBe("BabylonSlate");
+  it("names the product Slate", () => {
+    expect(BRAND_NAME).toBe("Slate");
   });
 
   it("prefixes public asset paths with the Vite base", () => {

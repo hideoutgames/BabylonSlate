@@ -35,5 +35,5 @@ async function capacitorNativeHttp(
       : data == null
         ? ""
         : JSON.stringify(data);
-  return { status: response.status, bodyText };
+  return { status: response.status, bodyText, headers: response.headers };
 }

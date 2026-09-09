@@ -8,6 +8,8 @@ export interface NativeHttpRequest {
 export interface NativeHttpResponse {
   status: number;
   bodyText: string;
+  /** Available on native transports, including rotated authentication headers. */
+  headers?: Record<string, string>;
 }
 
 export type NativeHttp = (

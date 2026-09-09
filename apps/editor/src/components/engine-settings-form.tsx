@@ -1,3 +1,4 @@
+import { TemplateLibrarySettings } from "./template-library-settings";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import type { EngineSettings } from "@babylonslate/vfs";
@@ -13,7 +14,6 @@ import {
   FieldLegend,
   FieldSet,
 } from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
 import {
   Select,
   SelectContent,
@@ -576,34 +576,7 @@ export function EngineSettingsForm({
           ))
         : null}
 
-      {categoryId === "templates" ? (
-        <FieldSet>
-          <FieldLegend>Templates</FieldLegend>
-          <Field className="settings-field">
-            <FieldLabel htmlFor="setting-templates-folder">
-              Templates Folder
-            </FieldLabel>
-            <Input
-              id="setting-templates-folder"
-              type="text"
-              className="min-h-[var(--chrome-row,28px)]"
-              data-testid="setting-templates-folder"
-              placeholder="Not available on web"
-              value={settings.templatesFolder ?? ""}
-              onChange={(event) =>
-                void onChange({
-                  templatesFolder: event.target.value
-                    ? event.target.value
-                    : null,
-                })
-              }
-            />
-            <FieldDescription>
-              Folder containing Homepage templates.
-            </FieldDescription>
-          </Field>
-        </FieldSet>
-      ) : null}
+      {categoryId === "templates" ? <TemplateLibrarySettings /> : null}
     </FieldGroup>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { PROJECT_FILE } from "@babylonslate/core";
+import { createEmptyProject, PROJECT_FILE } from "@babylonslate/core";
 import { WebStorageAdapter } from "@babylonslate/vfs";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "@babylonslate/assets";
@@ -177,6 +177,91 @@ describe("project round-trip", () => {
     const reopened = await service.openListedProject(handle);
     expect(reopened.document.metadata.name).toBe("Pretty Name");
     expect(storage.getCurrentFolder()?.name).toBe("RenameMe.babproject");
+  });
+
+  it("persists the selected project badge through creation and reopening", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    const created = await service.createEmptyProject("Badge Game", {
+      kind: "2d",
+      appearance: { icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA" },
+    });
+    expect(created.document.metadata.appearance).toEqual({
+      icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA",
+    });
+    const handle = storage.getCurrentFolder()!;
+    await service.closeProject();
+    const reopened = await service.openListedProject(handle);
+    expect(reopened.document.metadata.appearance).toEqual({
+      icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA",
+    });
+  });
+
+  it("edits project identity without changing the folder or its assets", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Original", { kind: "2d" });
+    await storage.writeBinary("assets/keep.bin", new Uint8Array([3, 1, 4]));
+    const handle = storage.getCurrentFolder()!;
+    await service.closeProject();
+
+    await service.updateListedProject(handle, {
+      name: "  New Name  ",
+      appearance: { icon: "mountain", color: "coral" },
+    });
+
+    expect(storage.getCurrentFolder()).toBeNull();
+    const reopened = await service.openListedProject(handle);
+    expect(reopened.document.metadata.name).toBe("New Name");
+    expect(reopened.document.metadata.appearance).toEqual({ icon: "mountain", color: "coral" });
+    expect(storage.getCurrentFolder()?.name).toBe("Original");
+    expect(await storage.readBinary("assets/keep.bin")).toEqual(new Uint8Array([3, 1, 4]));
+    await service.closeProject();
+    await service.renameListedProjectDisplayName(handle, "Renamed Again");
+    expect((await service.openListedProject(handle)).document.metadata.appearance)
+      .toEqual({ icon: "mountain", color: "coral" });
+  });
+
+  it("uses the selected badge for a template while preserving template settings and assets", async () => {
+    const source = new ProjectService(new MemoryStorageAdapter("documents"));
+    await source.createEmptyProject("Template", { kind: "2d" });
+    const files = await source.readTree();
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+
+    const created = await service.createFromTemplate({
+      name: "From Template",
+      templateFiles: files,
+      appearance: { icon: "gamepad", color: "mint" },
+    });
+
+    expect(created.document.metadata.name).toBe("From Template");
+    expect(created.document.metadata.appearance).toEqual({ icon: "gamepad", color: "mint" });
+    expect(created.document.settings.twoD).toEqual(
+      (await source.loadCurrentProject()).document.settings.twoD,
+    );
+    const asset = files.find((file) => file.path.endsWith(".babasset"))!;
+    expect(await storage.readBinary(asset.path)).toEqual(asset.data);
+  });
+
+  it("keeps legacy template metadata complete when a badge is selected", async () => {
+    const legacy = createEmptyProject("Legacy");
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    const created = await service.createFromTemplate({
+      name: "New Project",
+      appearance: { icon: "box", color: "mint" },
+      templateFiles: [{
+        path: PROJECT_FILE,
+        data: new TextEncoder().encode(JSON.stringify({
+          name: "Legacy", guid: "old", kind: "project", version: 1,
+          settings: legacy.settings, scenes: [], graphs: [],
+        })),
+      }],
+    });
+    expect(created.document.metadata.name).toBe("New Project");
+    expect(created.document.metadata.createdAt).toBeTruthy();
+    expect(created.document.metadata.appearance).toEqual({ icon: "box", color: "mint" });
   });
 
   it("deleteListedProject removes OPFS files so the same name is empty", async () => {

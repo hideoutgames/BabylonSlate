@@ -81,14 +81,19 @@ const PREVIEW_MESH_LABEL: Record<MaterialPreviewMesh, string> = {
   custom: "Custom",
 };
 
-const PREVIEW_MESH_ICON: Record<MaterialPreviewMesh, LucideIcon> = {
-  cube: BoxIcon,
-  sphere: CircleIcon,
-  cylinder: CylinderIcon,
-  cone: ConeIcon,
-  plane: SquareIcon,
-  custom: BoxSelectIcon,
-};
+function previewMeshIcon(mesh: MaterialPreviewMesh): LucideIcon {
+  // Resolve live imports when rendering; lazy production chunks can initialize
+  // shared icons after this module, so a module-level map can capture undefined.
+  const icons: Record<MaterialPreviewMesh, LucideIcon> = {
+    cube: BoxIcon,
+    sphere: CircleIcon,
+    cylinder: CylinderIcon,
+    cone: ConeIcon,
+    plane: SquareIcon,
+    custom: BoxSelectIcon,
+  };
+  return icons[mesh];
+}
 
 type MaterialGraphDocument = MaterialDocument | MaterialFunctionDocument;
 
@@ -518,7 +523,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
               data-testid="material-preview-mesh"
             >
               {MATERIAL_PREVIEW_MESHES.map((mesh) => {
-                const Icon = PREVIEW_MESH_ICON[mesh];
+                const Icon = previewMeshIcon(mesh);
                 return (
                   <ToggleGroupItem
                     key={mesh}

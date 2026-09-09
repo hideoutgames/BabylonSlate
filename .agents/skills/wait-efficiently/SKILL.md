@@ -12,9 +12,7 @@ Use the repository helper to keep process monitoring, CLI polling, and full logs
 From the repository root:
 
 ```sh
-pnpm --silent agent:wait local --script verify:local
-pnpm --silent agent:wait local --script test -- --project node packages/core
-pnpm --silent agent:wait local --script typecheck
+pnpm --silent agent:wait local --script test -- packages/core/src/project.test.ts
 pnpm --silent agent:wait ci --pr 123
 pnpm --silent agent:wait slot --pr 123
 ```
@@ -23,10 +21,10 @@ The default deadline is two hours; set `--timeout-seconds 10800` before the argu
 
 ## Choose the smallest required command
 
-- During development, wait on the focused regression command that proves the changed behavior. Do not repeatedly run the PR preflight after every edit.
-- Before opening a PR, wait once on the clean committed head with `local --script verify:local`. Its path-aware selector runs owner typechecks, changed-file lint, related tests, and a docs build only when applicable; instruction/prose metadata may need only its built-in diff check.
-- When intentionally changing an exported type or another public cross-package API, also wait on `local --script typecheck` so consumers are checked before CI.
-- `local --script verify` is an explicit full diagnostic, not the routine delivery gate. Do not launch local coverage or browser suites merely because tooling, instructions, or a workflow changed. Required GitHub CI independently runs the full workspace typecheck, coverage, consumer regressions, and all browser partitions.
+- Run explicit test files/cases for the changed behavior and directly affected consumers. Inspect the package script first so a filter is not rejected or silently ignored. On PowerShell, quote the separator as `'--'` when invoking `pnpm.ps1`.
+- Before opening/updating a PR, use that targeted set and relevant scoped lint/typechecks. Do not automatically invoke cumulative `verify:local`, full `verify`, coverage, an unfiltered editor/browser suite, or workspace-wide typechecking. These require an explicit user request, even for public API, lockfile, infrastructure or CI repairs.
+- Instruction/prose-only edits need diff/link checks, not application tests or a docs build. After a repair, rerun only affected checks and retain justified results for unchanged behavior.
+- Required GitHub CI still runs its configured exhaustive checks. Do not change CI gates to match local scope.
 - Keep the default shared profile while agents overlap. Three one-worker phases can be admitted when aggregate memory and host headroom allow; Node tooling uses a 0.75 GiB reservation, while Node unit tests, focused tests, owner typechecks, and docs builds use 1.5 GiB. Heavy application builds retain two slots and 2.5 GiB. `BL_TEST_PROFILE=fast` is for one active agent and must not be used to crowd out shared work.
 
 ## Retain the session
@@ -39,8 +37,8 @@ The default deadline is two hours; set `--timeout-seconds 10800` before the argu
 
 ## Act on the terminal result
 
-- `success` with exit code 0 means this operation passed. For PR eligibility, additionally require `deliveryEligible: true` in `result.json`, a matching current commit, and a clean unchanged working tree. Filters, dirty source, and later edits cannot certify a PR head.
+- `success` with exit code 0 means only the selected operation passed. Record its command, scope and revision, and confirm it still covers the current change. Targeted checks intentionally do not produce the cumulative preflight certificate (`deliveryEligible: true`); that flag is not required for targeted PR delivery. If the user explicitly requests cumulative verification, its certificate still requires a clean unchanged head. Never reuse a result after relevant source/configuration changes.
 - `failure`, `cancellation`, `timeout`, and `stale` never satisfy a gate. Read only bounded failure output or the necessary portion of the saved log when action is needed. Full logs are local artifacts; do not paste them into public PRs.
 - A free slot is an observation, not a reservation: recheck capacity immediately before marking ready. The helper never opens, readies, or merges a PR.
 - CI success covers the captured head's latest pull-request Verify run and all nine jobs. Still check other required checks, reviews, mergeability, and the current PR head immediately before merge.
-- Continue fix → commit → local verification with `pnpm verify:local` → push → CI → merge as required by the delivery workflow. Do not automatically rerun tests or retry failed workflows without investigating the result.
+- Continue fix → commit → targeted verification of the repair → push → CI → merge as required by the delivery workflow. Do not automatically rerun tests or retry failed workflows without investigating the result.

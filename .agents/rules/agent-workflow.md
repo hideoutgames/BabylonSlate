@@ -2,8 +2,12 @@
 
 ## Verification
 
-- Run focused regression tests during development, then pass the `pnpm verify:local` preflight before opening any PR, including a draft. Fetch main and resolve routine merge conflicts before running local verification. An attempted, failed, or unavailable run does not satisfy this gate.
-- Use GitHub CI for the full workspace typecheck, exhaustive unit coverage, consumer regressions, and browser suites. Do not automatically run full local verification for infrastructure, instruction, or CI-repair changes. `pnpm verify` remains an explicit opt-in diagnostic; reproduce CI failures with the smallest relevant test selection. Run an extra full `pnpm typecheck` locally when intentionally changing exported types or another public cross-package API.
+- Run only targeted local tests: name explicit files or cases protecting the changed behavior, plus directly affected consumers when there is a concrete regression risk. Use scoped lint/typechecks where relevant. Pass that selected set before opening or updating a PR, including drafts.
+- Do not automatically run unfiltered `pnpm test`, `test:editor-unit`, coverage, all browser tests, `pnpm verify`, `pnpm verify:local`, or workspace-wide typechecks. Broader local verification requires an explicit user request. A PR request, a failing CI job, a lockfile/infrastructure change, or an exported API change does not authorize it; reproduce the specific failure or check the directly affected consumers instead.
+- Before running a command, inspect scripts/selectors to ensure its effective scope matches the selected files. A command called a preflight or related-test runner can still expand to broad checks; use explicit filters or direct scoped commands instead. Do not alter CI or weaken assertions to reduce local work.
+- For instruction-only/prose-only edits, inspect the diff and changed links; do not run application tests or rebuild the docs site solely for text changes. A docs configuration change may justify its specific contract tests.
+- After a repair, rerun only tests and static checks affected by that repair or a diagnosed failure. Preserve earlier results for unchanged behavior; do not repeat the cumulative branch checks after every commit. Record each command, scope, result and revision, and explain why any reused result still applies. Never count failed/skipped/pending results as passing or reuse results invalidated by relevant code, dependencies, or configuration changes.
+- Required GitHub CI still owns exhaustive tests, coverage, full consumer/workspace checking and browser suites. Local targeted success does not certify those CI gates.
 - Add or update meaningful tests for new behavior in `packages/*`; reuse existing coverage when it already verifies the requirement.
 - Fix local failures before opening a PR. If verification cannot run, repair the local setup where possible; otherwise report the concrete blocker and do not open a PR.
 - For local tests, Verify CI, and slot waits, read and apply [wait-efficiently](../skills/wait-efficiently/SKILL.md). Launch one foreground `pnpm --silent agent:wait` helper, retain its session, and keep polling/full logs out of the conversation. Default to start/end reporting except for host-required updates. A timeout, cancellation, stale result, or changed source is not a pass.
@@ -45,7 +49,7 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 - Do not add tests for documentation-only, formatting-only, or other reversible, low-impact changes without a meaningful behavioral risk. Explain why existing coverage or a focused check is sufficient when no new test is needed.
 - Keep tests deterministic and proportionate to the risk. Preserve required coverage gates, but satisfy them with meaningful cases rather than filler assertions or weakened thresholds.
 - See [docs/architecture/testing.md](../../docs/architecture/testing.md) for the Vitest projects, per-package coverage gates, and known environment limits.
-- `pnpm verify:local` always runs `git diff --check`, then selects owner-package typechecks, changed-file lint, and related unit, tooling, or distribution tests against the merge base with main. Related tests include exact changed files, same-directory siblings, and explicit covering contracts for entrypoints without sibling tests. Actual `docs/**` and `apps/docs/**` changes build the docs site; agent instructions, compatibility adapters, pull-request metadata, and other non-site prose start no test/build process. Verify-workflow and browser-harness changes run their focused policy contracts, while browser specs stay CI-only. Root build configuration and truly unknown paths conservatively select all workspace typechecks and root tooling contracts. The preflight never launches coverage or browsers and deliberately defers transitive-consumer typing to CI. It records source identity and rejects dirty or changed revisions for delivery. Local phase caches never certify CI; the full workspace typecheck, all retained tests, coverage thresholds, and seven browser shards remain mandatory for merge.
+- `pnpm verify:local` remains available as an opt-in cumulative diagnostic. Its current selector can expand root build or lockfile changes into workspace typechecks and tooling contracts, so it is not a mandatory agent delivery gate. Its delivery certificate applies only to that command; targeted delivery uses the selected-check record above. Required CI and source/head checks still govern merge.
 
 ## shadcn/ui
 
@@ -81,7 +85,7 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. See [no-a
 - Commit before running verification when there are uncommitted changes.
 - End every agent turn that modified files with committed and pushed changes on the feature branch.
 - Use clear, descriptive commit messages in complete sentences.
-- Before a PR is ready, push after every commit with `git push -u origin <branch>`. For fixes to a ready PR, commit, pass local `pnpm verify:local`, then push the verified batch so each push starts one CI run.
+- Before a PR is ready, push after every commit with `git push -u origin <branch>`. For fixes to a ready PR, commit, pass checks targeted to the repair, then push the verified batch so each push starts one CI run.
 - New feature branch naming: `agent/<descriptive-name>-<suffix>` (e.g. `agent/fix-viewport-80c9`). Continue on an existing user or host-created feature branch; do not rename historical branches.
 
 ## Pull request descriptions
@@ -111,7 +115,7 @@ Distribution is a separate operation governed by [distribution.md](distribution.
 ### Merge gates (all required)
 
 - Assigned task is complete (not exploratory or blocked on user input).
-- `pnpm verify:local` passes locally for the current PR head.
+- Targeted local checks cover the current PR changes, with passing results and justified reuse of unaffected checks; prose-only changes have diff/link review.
 - The latest PR Verify run (`.github/workflows/verify.yml`) for that head succeeds: `static`, `unit`, and all seven `e2e` shards. All other required checks pass; draft skips, missing checks, pending, cancelled, or superseded runs are not a pass.
 - No unresolved merge conflicts.
 - User has **not** explicitly asked to hold the PR open, keep it draft, or skip merge.
@@ -128,9 +132,9 @@ Distribution is a separate operation governed by [distribution.md](distribution.
 
 ### Workflow
 
-1. Finish the changes, commit, and pass local `pnpm verify:local`. Only then open a **draft** PR targeting `main` using an authorized GitHub integration or authenticated CLI. For an existing PR, reuse it and verify the updated head locally before making it ready.
+1. Finish the changes, commit, and pass the selected targeted checks (or diff/link review for prose-only edits). Only then open a **draft** PR targeting `main` using an authorized GitHub integration or authenticated CLI. For an existing PR, reuse it and verify the updated head locally before making it ready.
 2. Mark ready **once** when a Verify slot is free. If both slots are occupied, keep the PR draft and periodically recheck until one opens; do not hand the queue back to the user. Follow [github-actions-pr-cadence.md](github-actions-pr-cadence.md).
 3. Wait for CI on the current PR head with `pnpm --silent agent:wait ci --pr <number>` and retain the host session. The helper observes the latest pull-request Verify run, watches at 60-second intervals, and rechecks its identity and PR head before returning. Inspect other required checks with `gh pr checks <number>` after completion. Report start and completion, plus any host-required updates; do not end the task merely because CI is pending.
-4. If CI fails, inspect the failed job logs (`gh run view <run-id> --log-failed`), reproduce the failure locally where possible, fix its cause, and rerun the relevant tests plus local `pnpm verify:local`. Commit and push the verified fixes, then monitor the new head. Repeat until CI passes. Retry an unchanged run only when evidence shows a transient infrastructure failure; do not rerun indefinitely, weaken checks, or remove failing coverage to obtain green CI.
-5. Immediately before merging, refresh the PR head, checks, and mergeability. If the head changed, verify that revision. Resolve routine merge conflicts, rerun local verification, push, and wait for fresh CI. Stop only for a concrete blocker or an explicit user hold.
+4. If CI fails, inspect the failed job logs (`gh run view <run-id> --log-failed`), reproduce the failure locally where possible, fix its cause, and rerun only the tests/static checks affected by the repair. Commit and push the verified fixes, then monitor the new head. Repeat until CI passes. Retry an unchanged run only when evidence shows a transient infrastructure failure; do not rerun indefinitely, weaken checks, or remove failing coverage to obtain green CI.
+5. Immediately before merging, refresh the PR head, checks, and mergeability. If the head changed, check the new delta and invalidate only affected local results. Resolve routine merge conflicts, run targeted checks for the resolution, push, and wait for fresh CI. Stop only for a concrete blocker or an explicit user hold.
 6. **Merge automatically** when all gates pass. With GitHub CLI, use `gh pr merge <number> --merge --match-head-commit <verified-sha>` to guard against a changed head. Prefer merge commits when the PR contains multiple logical commits, unless the user specifies otherwise. Confirm GitHub reports the PR as merged before reporting completion.

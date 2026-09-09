@@ -4,10 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <title>editor</title>
+    <title>Slate</title>
     <!-- COOP/COEP via coi-serviceworker so SharedArrayBuffer may activate on Pages. -->
     <script src="/coi-serviceworker.js"></script>
     <script>
@@ -35,7 +38,305 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <style>
+        body:has(#slate-boot) {
+          background: #0c0e12;
+        }
+        body:has(#slate-boot[data-scheme="light"]) {
+          background: #eeeff2;
+        }
+        #slate-boot {
+          position: fixed;
+          inset: 0;
+          z-index: 1000;
+          display: grid;
+          place-items: center;
+          padding: 24px;
+          background: #000;
+          color: #eef0f6;
+          will-change: opacity;
+          opacity: 1;
+          transition: opacity 650ms cubic-bezier(0.22, 0.61, 0.36, 1);
+          font:
+            400 13px system-ui,
+            sans-serif;
+        }
+        #slate-boot[data-scheme="light"] {
+          background: #000;
+          color: #1a1e2a;
+        }
+        #slate-boot[data-leaving="true"] {
+          opacity: 0;
+          pointer-events: none;
+        }
+        .slate-splash-card {
+          width: min(680px, 100%);
+          overflow: hidden;
+          border-radius: 20px;
+          border: 1px solid #a6b4e022;
+          background: #151820;
+          box-shadow:
+            0 40px 120px #0008,
+            0 8px 24px #0005;
+        }
+        .slate-splash-art {
+          height: 270px;
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(ellipse at 78% 45%, #555b8d55, transparent 65%),
+            linear-gradient(135deg, #141824, #1e2333 62%, #171b28);
+        }
+        .slate-splash-art::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background-image: radial-gradient(#c4cff414 0.7px, transparent 0.8px);
+          background-size: 7px 7px;
+          mask-image: linear-gradient(100deg, transparent, #000);
+          pointer-events: none;
+        }
+        .slate-splash-brand {
+          position: absolute;
+          top: 28px;
+          left: 30px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #f1f3fa;
+          font-size: 21px;
+          font-weight: 600;
+          letter-spacing: -0.8px;
+        }
+        .slate-splash-brand img {
+          width: 25px;
+          height: 32px;
+          object-fit: contain;
+        }
+        .slate-splash-caption {
+          position: absolute;
+          bottom: 28px;
+          left: 30px;
+          color: #b5bfd2;
+          font-size: 12px;
+          letter-spacing: 0.02em;
+        }
+        .slate-splash-planes {
+          position: absolute;
+          width: 280px;
+          height: 310px;
+          right: 36px;
+          top: -24px;
+          transform: rotate(-25deg);
+        }
+        .slate-splash-planes i {
+          position: absolute;
+          width: 180px;
+          height: 240px;
+          top: 40px;
+          left: 20px;
+          border-radius: 30px;
+          border: 1px solid #b6c5fa66;
+          background: linear-gradient(
+            130deg,
+            #8d9aba55,
+            #30374e 38%,
+            #161c2a 82%
+          );
+          box-shadow:
+            12px 18px 30px #070b1770,
+            inset 0 1px 0 #dce4ff80;
+          will-change: transform;
+          animation: slate-splash-drift 5s ease-in-out infinite alternate;
+        }
+        .slate-splash-planes i:nth-child(2) {
+          left: 64px;
+          top: 68px;
+          opacity: 0.8;
+          animation-delay: -1.6s;
+        }
+        .slate-splash-planes i:nth-child(3) {
+          left: 108px;
+          top: 96px;
+          background: linear-gradient(
+            125deg,
+            #b7c2e8,
+            #79839f 37%,
+            #434d67 72%,
+            #262f46
+          );
+          animation-delay: -3.2s;
+        }
+        .slate-splash-planes i::after {
+          content: "";
+          position: absolute;
+          inset: 24px;
+          border: 1px solid #c9d5ff24;
+          border-radius: 18px;
+        }
+        .slate-splash-info {
+          padding: 26px 30px 28px;
+        }
+        .slate-splash-heading {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 20px;
+          margin-bottom: 26px;
+        }
+        .slate-loading-label {
+          font-size: 20px;
+          font-weight: 500;
+          letter-spacing: -0.5px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .slate-splash-version {
+          color: #949eaf;
+          font-size: 11px;
+          white-space: nowrap;
+        }
+        .slate-splash-status {
+          color: #aab2c2;
+          font-size: 12px;
+          margin-bottom: 12px;
+        }
+        .slate-loading-track {
+          display: block;
+          height: 2px;
+          width: 100%;
+          overflow: hidden;
+          background: #a9b5d01a;
+          border-radius: 2px;
+        }
+        .slate-loading-track > span {
+          display: block;
+          width: 40%;
+          height: 100%;
+          background: linear-gradient(90deg, transparent, #c3ccec, transparent);
+          will-change: transform;
+          animation: slate-load-travel 1.8s ease-in-out infinite;
+        }
+        .slate-loading-track[data-ready="true"] > span {
+          width: 100%;
+          background: #c3ccec;
+          animation: none;
+        }
+        #slate-boot[data-scheme="light"] .slate-splash-card {
+          background: #f9fafc;
+          border-color: #fff9;
+          box-shadow:
+            0 40px 100px #222a4140,
+            0 8px 24px #222a4120;
+        }
+        #slate-boot[data-scheme="light"] .slate-splash-version,
+        #slate-boot[data-scheme="light"] .slate-splash-status {
+          color: #657086;
+        }
+        #slate-boot[data-scheme="light"] .slate-loading-track {
+          background: #dfe3ed;
+        }
+        #slate-boot[data-scheme="light"] .slate-loading-track > span {
+          background: #6a789d;
+        }
+        @keyframes slate-load-travel {
+          from {
+            transform: translateX(-110%);
+          }
+          to {
+            transform: translateX(350%);
+          }
+        }
+        @keyframes slate-splash-drift {
+          to {
+            transform: translate3d(0, -10px, 0);
+          }
+        }
+        @media (max-width: 520px) {
+          #slate-boot {
+            padding: 20px;
+          }
+          .slate-splash-art {
+            height: 230px;
+          }
+          .slate-splash-planes {
+            right: -105px;
+            opacity: 0.65;
+          }
+          .slate-splash-brand {
+            left: 22px;
+            top: 24px;
+          }
+          .slate-splash-caption {
+            left: 22px;
+          }
+          .slate-splash-info {
+            padding: 24px 22px;
+          }
+          .slate-splash-heading {
+            align-items: start;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 22px;
+          }
+          .slate-loading-label {
+            max-width: 100%;
+          }
+        }
+        @media (max-height: 520px) {
+          .slate-splash-art {
+            height: 140px;
+          }
+          .slate-splash-caption {
+            display: none;
+          }
+          .slate-splash-info {
+            padding: 16px 24px;
+          }
+          .slate-splash-heading {
+            margin-bottom: 16px;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          #slate-boot,
+          #slate-boot * {
+            animation: none;
+            transition: none;
+          }
+        }
+      </style>
+      <div id="slate-boot" role="status" aria-label="Loading Slate">
+        <section class="slate-splash-card">
+          <div class="slate-splash-art" aria-hidden="true">
+            <div class="slate-splash-brand">
+              <img src="/branding/SlateIconLight.png" alt="" /><span
+                >Slate</span
+              >
+            </div>
+            <div class="slate-splash-planes"><i></i><i></i><i></i></div>
+            <span class="slate-splash-caption"
+              >A blank slate to create with.</span
+            >
+          </div>
+          <div class="slate-splash-info">
+            <div class="slate-splash-heading">
+              <span class="slate-loading-label">Slate</span
+              ><span class="slate-splash-version">__SLATE_BUILD_LABEL__</span>
+            </div>
+            <div class="slate-splash-status">Loading application</div>
+            <span class="slate-loading-track" aria-hidden="true"
+              ><span></span
+            ></span>
+          </div>
+        </section>
+      </div>
+      <script>
+        document.getElementById("slate-boot").dataset.scheme =
+          document.documentElement.classList.contains("dark") ? "dark" : "light";
+      </script>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

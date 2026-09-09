@@ -7,6 +7,7 @@ export * from "./text3d";
 export * from "./text2d";
 export * from "./rich-text";
 export * from "./project";
+export * from "./project-appearance";
 export * from "./document";
 export * from "./editor-only";
 export * from "./engine-version";

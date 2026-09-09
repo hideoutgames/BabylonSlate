@@ -13,7 +13,7 @@ describe("BrandLogo", () => {
     const { getByTestId } = render(<BrandLogo />);
     const logo = getByTestId("brand-logo");
     expect(logo.tagName).toBe("IMG");
-    expect(logo.getAttribute("alt")).toBe("BabylonSlate");
+    expect(logo.getAttribute("alt")).toBe("Slate");
     expect(logo.getAttribute("src")).toBe(brandLogoSrc("light"));
     expect(logo.className).toContain("dark:hidden");
     expect(logo.className).toContain("h-8");
