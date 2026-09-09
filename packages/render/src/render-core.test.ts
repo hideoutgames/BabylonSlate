@@ -156,6 +156,18 @@ describe("render scheduler", () => {
     }
   });
 
+  it("does not catch up when a cap change lands on a fractional deadline", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.acquireContinuous("play");
+    scheduler.setFrameCap(30);
+    scheduler.noteRendered(58 * (1000 / 60));
+    scheduler.setFrameCap(60);
+    expect(scheduler.shouldRender(1000)).toBe(true);
+    scheduler.noteRendered(1000);
+    expect(scheduler.shouldRender(1001)).toBe(false);
+    expect(scheduler.shouldRender(1017)).toBe(true);
+  });
+
   it("skips renders when clean and renders when dirty", () => {
     const scheduler = new RenderScheduler();
     expect(scheduler.shouldRender()).toBe(false);

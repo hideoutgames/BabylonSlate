@@ -25,6 +25,7 @@ export class RenderScheduler {
   private obstructed = false;
   private resizing = false;
   private frameCap = Number.POSITIVE_INFINITY;
+  private lastRenderAt: number | null = null;
   private nextRenderAt: number | null = null;
   private renderedFrames = 0;
   private invalidations = 0;
@@ -58,7 +59,10 @@ export class RenderScheduler {
   }
 
   setPaused(value: boolean): void {
-    if (value !== this.paused) this.nextRenderAt = null;
+    if (value !== this.paused) {
+      this.lastRenderAt = null;
+      this.nextRenderAt = null;
+    }
     this.paused = value;
   }
 
@@ -76,7 +80,10 @@ export class RenderScheduler {
 
   setFrameCap(fps: number): void {
     const cap = fps > 0 ? fps : 60;
-    if (cap !== this.frameCap) this.nextRenderAt = null;
+    if (cap !== this.frameCap) {
+      this.nextRenderAt =
+        this.lastRenderAt === null ? null : this.lastRenderAt + 1000 / cap;
+    }
     this.frameCap = cap;
   }
 
@@ -100,12 +107,14 @@ export class RenderScheduler {
     this.rollStats();
     this.dirty = false;
     const minDelta = 1000 / this.frameCap;
+    const tolerance = Math.min(1, minDelta * 0.05);
     // Preserve the cadence when a callback is slightly late. After a long
     // suspension, rebase instead of accumulating catch-up frames.
     this.nextRenderAt =
-      this.nextRenderAt !== null && now - this.nextRenderAt < minDelta
+      this.nextRenderAt !== null && now - this.nextRenderAt < minDelta - tolerance
         ? this.nextRenderAt + minDelta
         : now + minDelta;
+    this.lastRenderAt = now;
     this.renderedFrames += 1;
     this.renderedThisSecond += 1;
   }
