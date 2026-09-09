@@ -129,3 +129,7 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | **NineSlicePreview** ([`nine-slice-preview.tsx`](../../apps/editor/src/components/nine-slice-preview.tsx)) | Read-only still frame of a 2D Panel Texture (or first Material Texture Sample) on a checkerboard, with dashed `--pin-transform` margin lines and orange intersection dots on the `object-contain` image box. Margins stay on PropertyGrid 0–1 sliders (`0.5` = 50% of the source edge; values above 1 stay legacy pixels). `data-testid="panel-nine-slice-preview"`. | Scene Details and Prefab Inspector `2DPanelComponent`. |
 
 Not kit (single call site): `BrandLogo` (docs / wordmark), `BrandIcon` (landing header and native account screen), `JsBodyEditor` (Inspector Execute JavaScript body).
+
+### Input asset editors
+
+Input Action and Input Axis documents use the standard DockView document shell with Bindings and Details panels. `InputBindingsPanel` composes `PanelFrame`, `SearchDropdown`, `BindingCodePicker`, and compact Buttons; `InputBindingDetailsPanel` uses `PropertyGrid`. Shared document selection lives in `InputAssetEditingProvider`. Input authoring is reached through Content Browser ? Input, not Project Settings. See [input assets and events](input.md).

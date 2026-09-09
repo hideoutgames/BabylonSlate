@@ -20,6 +20,8 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "behaviour-tree": ["behaviour-tree-graph"],
   audio: ["audio-preview"],
   "audio-mixer": ["audio-mixer-details"],
+  "input-action": ["input-bindings"],
+  "input-axis": ["input-bindings"],
   "audio-channel": ["audio-channel-details"],
   "sound-attenuation": ["sound-attenuation-details"],
   "particle-emitter": ["particle-emitter-preview"],
@@ -168,6 +170,8 @@ export const engineSettingsSchema = z.object({
       "audio-mixer": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["audio-mixer"],
       ),
+      "input-action": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["input-action"]),
+      "input-axis": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["input-axis"]),
       "audio-channel": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["audio-channel"],
       ),

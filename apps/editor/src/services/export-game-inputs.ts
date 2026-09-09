@@ -19,6 +19,7 @@ import {
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
 const JSON_TYPES = new Set([
+  "InputAction", "InputAxis",
   "Scene",
   "Class",
   "Graph",

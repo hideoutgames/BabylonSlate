@@ -177,6 +177,7 @@ function catalogTypeId(node: {
 }
 
 function shouldRegeneratePins(typeId: string): boolean {
+  if (typeId === "input.event") return true;
   return (
     typeId === "flow.event.call" ||
     typeId === "flow.event.callParent" ||
@@ -443,6 +444,7 @@ function hydratedNodeTitle(
     typeof properties.title === "string" &&
     (typeId === "flow.event.call" ||
       typeId === "flow.event.callParent" ||
+      typeId === "input.event" ||
       typeId === "struct.make" ||
       typeId === "struct.break" ||
       isEnumCatalogType(typeId))
@@ -452,7 +454,17 @@ function hydratedNodeTitle(
   return authoredTitle ?? defTitle;
 }
 
+function refreshInputEvent(typeId: string, data: Record<string, unknown>, options?: HydrateGraphOptions) {
+  if (typeId !== "input.event") return;
+  const input = data["default:input"] as { Asset?: string } | undefined;
+  const asset = options?.inputAssets?.find((entry) => entry.guid === input?.Asset);
+  if (asset) { data.valueType = asset.valueType; data["default:input"] = { Name: asset.name, Asset: asset.guid }; data.title = `Event ${asset.name}`; }
+}
+
+export type InputPaletteAsset = { guid: string; name: string; type: string; valueType: string };
+
 export type HydrateGraphOptions = {
+  inputAssets?: readonly InputPaletteAsset[];
   parentOf?: (id: string) => string | null | undefined;
   structs?: TypeSchemas["structs"];
   enums?: TypeSchemas["enums"];
@@ -542,6 +554,7 @@ export function hydrateSerializedGraphForEditor(
   const nodes = graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
       const typeIdHint = catalogTypeId({ type: node.type, data: rawData });
+      refreshInputEvent(typeIdHint, rawData, options);
       if (hasNonEmptyPins(rawData) && !shouldRegeneratePins(typeIdHint)) {
         return {
           ...node,
@@ -562,6 +575,7 @@ export function hydrateSerializedGraphForEditor(
       delete properties.__pins;
       delete properties.__nodeType;
       delete properties.title;
+      refreshInputEvent(typeId, properties, options);
 
       if (typeId === "logMessage") {
         typeId = "debug.log";
@@ -886,6 +900,7 @@ export function createDefaultLogicGraphSerialized(
 }
 
 export type ScriptPaletteOptions = ClassEventOptions & {
+  inputAssets?: readonly InputPaletteAsset[];
   classId?: string;
   graph?: SerializedGraph;
   otherClassGraphs?: Record<string, SerializedGraph>;
@@ -1577,7 +1592,7 @@ function structPaletteNodes(
       structGuid: structure.guid,
       fields: structure.fields,
     };
-    rows.push({
+    if (!["engine:InputType", "engine:InputControl", "engine:InputBinding"].includes(structure.guid)) rows.push({
       id: `struct.make:${structure.guid}`,
       nodeType: "struct.make",
       title: `Make ${structure.name}`,
@@ -1779,6 +1794,7 @@ export function scriptPaletteInjectorKey(
     scriptInterfaces: options?.scriptInterfaces ?? [],
     structures: options?.structures ?? [],
     enums: options?.enums ?? [],
+    inputAssets: options?.inputAssets ?? [],
     scenes: (options?.sceneDocuments ?? []).map((scene) => [
       scene.guid,
       scene.name,
@@ -1797,6 +1813,7 @@ function scriptPaletteCatalogNodes(
   return nodeRegistry
     .list()
     .filter((def) => {
+      if (["input.event", "input.onAction", "input.isActionHeld", "input.getAxis", "input.getAxis2D", "input.getBinding", "input.setBinding", "input.beginRebind", "input.resetBindings", "input.getRebindStatus"].includes(def.id)) return false;
       if (def.editorOnly && !isEditorGraphHost(options ?? {})) {
         return false;
       }
@@ -1841,6 +1858,16 @@ function scriptPaletteCatalogNodes(
     });
 }
 
+function inputEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
+  const def = nodeRegistry.get("input.event");
+  if (!def || options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick")) return [];
+  return (options?.inputAssets ?? []).map((asset) => {
+    const title = `Event ${asset.name}`;
+    const defaultData = { "default:input": { Name: asset.name, Asset: asset.guid }, valueType: asset.valueType, title };
+    return { id: `input.event:${asset.guid}`, nodeType: "input.event", title, category: asset.type === "InputAction" ? "Input/Actions" : "Input/Axes", pins: def.pins(defaultData), defaultData };
+  });
+}
+
 function scriptPaletteInjectorNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
@@ -1849,6 +1876,7 @@ function scriptPaletteInjectorNodes(
     return variableAccessPaletteNodes(nodeRegistry, options);
   }
   return [
+    ...inputEventPaletteNodes(nodeRegistry, options),
     ...callCustomEventPaletteNodes(nodeRegistry, options),
     ...callFunctionPaletteNodes(nodeRegistry, options),
     ...callInterfacePaletteNodes(nodeRegistry, options),
@@ -1918,6 +1946,7 @@ export function materializeLogicGraph(
     if (typeId === "flow.switchString") {
       properties.cases = normalizeStringSwitchCases(properties.cases).cases;
     }
+    refreshInputEvent(typeId, properties, options);
     const regenerate = shouldRegeneratePins(typeId);
     const def = registry.get(typeId);
     if (data?.__pins && !regenerate) {

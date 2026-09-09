@@ -24,6 +24,8 @@ import {
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
+  createInputAssetPayload,
+  isInputAssetType,
   createDefaultSceneLayer,
   isLegacyMaterialAssetType,
 } from "@babylonslate/core";
@@ -216,6 +218,8 @@ export const CREATABLE_ASSET_TYPES = [
   "AudioMixer",
   "AudioChannel",
   "SoundAttenuation",
+  "InputAction",
+  "InputAxis",
   "ParticleEmitter",
   "ParticleSystem",
   "SkyboxCreator",
@@ -232,6 +236,7 @@ export type CreatableAssetTypeGroup = {
 /** Catalog groups for the New Asset type-card grid. */
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   { id: "world", label: "World", types: ["Scene", "SceneLayer"] },
+  { id: "input", label: "Input", types: ["InputAction", "InputAxis"] },
   {
     id: "scripting",
     label: "Scripting",
@@ -265,6 +270,8 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
 ];
 
 const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
+  InputAction: "A button action, such as Jump, Interact, or Fire. Add controls, then use its event in a graph.",
+  InputAxis: "A number or 2D direction, such as Move, Look, or Throttle. Combine keys, sticks, and touch controls.",
   Scene: "A 3D or 2D world document.",
   SceneLayer: "An unlit 2D overlay that draws on top of world scenes.",
   Class: "A class with a parent and a logic graph.",
@@ -1591,6 +1598,10 @@ export function buildNewAssetResult(options: {
     };
   }
 
+  if (isInputAssetType(type)) {
+    return documentAsset(type, name, guid, createInputAssetPayload(type) as unknown as Record<string, unknown>);
+  }
+
   if (type === "AudioMixer") {
     return documentAsset(
       type,
@@ -1663,6 +1674,8 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   BehaviourTree: ".bt.babasset",
   Blackboard: ".blackboard.babasset",
   AudioMixer: ".mixer.babasset",
+  InputAction: ".inputaction.babasset",
+  InputAxis: ".inputaxis.babasset",
   AudioChannel: ".channel.babasset",
   SoundAttenuation: ".atten.babasset",
   ParticleEmitter: ".emitter.babasset",
@@ -1713,7 +1726,17 @@ export function assetHeaderDependencies(
   classes: readonly ClassAssetRef[] = [],
   parentClass?: string | null,
 ): string[] {
+  const inputRefs: string[] = [];
+  const visitInputRefs = (value: unknown): void => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) { value.forEach(visitInputRefs); return; }
+    const row = value as Record<string, unknown>;
+    if (typeof row.Name === "string" && typeof row.Asset === "string" && row.Asset) inputRefs.push(row.Asset);
+    Object.values(row).forEach(visitInputRefs);
+  };
+  visitInputRefs(payload);
   const unique = new Set<string>([
+    ...inputRefs,
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),

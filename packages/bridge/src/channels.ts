@@ -81,7 +81,8 @@ export type ControlMessage =
       project?: { name: string; version: string };
       sceneAssetGuid: string;
       /** Authored project mappings; omitted legacy loads use defaults. */
-      inputMappings?: ProjectInputSettings;
+      inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
+  inputMappings?: ProjectInputSettings;
       /** Authored scene document. When present, Play instantiates these actors. */
       scene?: SerializedScene;
       seed?: number;

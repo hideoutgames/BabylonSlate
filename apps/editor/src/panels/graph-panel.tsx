@@ -1,3 +1,4 @@
+import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
@@ -182,6 +183,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     }
     return names;
   }, [typeSchemas]);
+  const inputAssets = useMemo(() => inputAssetCatalog(assetRegistry?.list() ?? [], openDocuments), [assetRegistry, openDocuments]);
   const graph = useMemo(() => {
     const slice =
       activeFunctionId && graphContent?.functionGraphs?.[activeFunctionId]
@@ -205,6 +207,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       registry,
       {
         parentOf,
+        inputAssets,
         structs: typeSchemas.structs,
         enums: typeSchemas.enums,
         classId,
@@ -223,6 +226,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     parentOf,
     scriptInterfaces,
     typeSchemas,
+    inputAssets,
   ]);
 
   const assetGuid = doc?.ref.path ?? documentId;
@@ -271,7 +275,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
             parentGraphs: otherClassGraphs,
           }),
           enums: typeSchemas.enums,
-          structs: typeSchemas.structs,
+          inputAssets,
+        structs: typeSchemas.structs,
           materialDomains: materialDomainsFromAssets(
             assetRegistry?.list() ?? [],
             openDocuments,
@@ -314,6 +319,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   ]);
 
   const paletteInput = {
+    inputAssets,
     parentClass,
     parentOf,
     classId,

@@ -21,6 +21,7 @@ export function runtimeOptionsFromLoadControl(
   | "seed"
   | "frameCap"
   | "project"
+  | "inputAssets"
   | "inputMappings"
   | "physicsWorld"
   | "gravity"
@@ -60,6 +61,7 @@ export function runtimeOptionsFromLoadControl(
     seed: msg.seed ?? 1,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     ...(msg.project ? { project: msg.project } : {}),
+    ...(msg.inputAssets !== undefined ? { inputAssets: msg.inputAssets } : {}),
     ...(msg.inputMappings !== undefined ? { inputMappings: normalizeInputMappings(msg.inputMappings) } : {}),
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",
     gravity: msg.gravity ?? [0, -9.81, 0],

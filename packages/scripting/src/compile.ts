@@ -62,6 +62,7 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "anim.event.initialize": "onInitializeAnimation",
   "anim.event.update": "onUpdateAnimation",
   // Input event entries gate internally; they run on the tick like Event Tick.
+  "input.event": "onTick",
   "input.onAction": "onTick",
   "input.onGamepadConnected": "onTick",
   "input.onGamepadDisconnected": "onTick",
@@ -818,6 +819,27 @@ export function compileGraph(
         def.structuredFlow &&
         emitFlowSwitch(node, def.structuredFlow, visited)
       ) {
+        break;
+      }
+
+      if (node.typeId === "input.event") {
+        const ctx = makeCtx(node);
+        const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
+        const snapshot = `__input_${jsIdent(node.id)}`;
+        emitBody(`  const ${snapshot} = ctx.getInputState?.(${ctx.input("input")});`, anchor);
+        for (const p of node.pins.filter((p) => p.kind === "data" && p.direction === "out")) {
+          emitBody(`  let ${ctx.output(p.id)} = ${snapshot}?.${p.id} ?? ${defaultValueLiteral(p.type)};`, anchor);
+        }
+        // A release/repress in one tick finishes the old hold before starting anew.
+        const phases = `__phases_${jsIdent(node.id)}`;
+        emitBody(`  const ${phases} = ${snapshot}?.held ? ["released", "started", "held"] : ["started", "released"];`, anchor);
+        emitBody(`  for (const __phase of ${phases}) {`, anchor);
+        for (const phase of ["started", "held", "released"]) {
+          emitBody(`    if (__phase === "${phase}" && ${snapshot}?.${phase}) {`, anchor);
+          emitAlong(execSuccessorEdges(graph, node.id, phase[0]!.toUpperCase() + phase.slice(1)), new Set(visited));
+          emitBody("    }", anchor);
+        }
+        emitBody("  }", anchor);
         break;
       }
 

@@ -21,3 +21,4 @@ export * from "./map-default";
 export * from "./material-parameter-assets";
 export * from "./play-preview-aspect";
 export * from "./nine-slice";
+export * from "./input-assets";

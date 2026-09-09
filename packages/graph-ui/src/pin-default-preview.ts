@@ -153,6 +153,10 @@ export function pinDefaultPreview(
 ): PinDefaultPreview | null {
   if (connected) return null;
   if (pin.direction !== "in" || pin.kind !== "data") return null;
+  if (pin.type.kind === "structRef" && pin.type.guid === "engine:InputType") {
+    const input = readPreviewValue(pin, properties) as { Name?: string } | undefined;
+    return { kind: "structRef", text: input?.Name || "Choose Input" };
+  }
   const constraint = pinConstraintPreview(pin, pinTypeNames);
   if (constraint) return constraint;
   const type = asLiteralPinType(pin);

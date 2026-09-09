@@ -95,6 +95,7 @@ function walk(
   }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
+    if (typeof record.Name === "string" && typeof record.Asset === "string" && deletedGuids.has(record.Asset)) return { ...record, Name: "", Asset: "" };
     let changed = false;
     const next: Record<string, unknown> = {};
     for (const [childKey, entry] of Object.entries(record)) {

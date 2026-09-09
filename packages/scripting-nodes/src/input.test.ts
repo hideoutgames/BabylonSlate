@@ -166,3 +166,29 @@ describe("input nodes", () => {
     expect(logs).toEqual(["42"]);
   });
 });
+
+
+describe("asset input event compilation", () => {
+  it("dispatches independent phase chains and typed values without polling strings", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = { id: "input-events", kind: "event", nodes: [
+      node(registry, "input", "input.event", { "default:input": { Name: "Jump", Asset: "jump" }, valueType: "button" }),
+      ...["started", "held", "released"].map((phase) => node(registry, phase, "debug.log", { message: phase })),
+    ], edges: ["started", "held", "released"].map((phase) => edge(phase, "input", phase, phase, "execIn")) };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const mod = loadModule(compiled.source);
+    const logs: string[] = [];
+    let snapshot = { started: true, held: true, released: false, value: true, heldSeconds: 0, lastHeldSeconds: 0 };
+    const ctx = { getInputState: (input: { Asset: string }) => { expect(input.Asset).toBe("jump"); return snapshot; }, formatValue: String, log: (_s: string, _c: string, message: string) => logs.push(message) };
+    (mod.onTick as (ctx: unknown) => void)(ctx);
+    expect(logs).toEqual(["started", "held"]);
+    logs.length = 0;
+    snapshot = { ...snapshot, held: false, released: true, value: false };
+    (mod.onTick as (ctx: unknown) => void)(ctx);
+    expect(logs).toEqual(["started", "released"]);
+    logs.length = 0;
+    snapshot = { ...snapshot, held: true, value: true };
+    (mod.onTick as (ctx: unknown) => void)(ctx);
+    expect(logs).toEqual(["released", "started", "held"]);
+  });
+});

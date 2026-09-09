@@ -573,3 +573,9 @@
     transition: none;
   }
 }
+
+@media (pointer: coarse) {
+  .input-asset-editor button, .input-asset-editor input, .input-asset-editor [role="combobox"] {
+    min-height: 44px;
+  }
+}

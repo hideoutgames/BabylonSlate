@@ -1,3 +1,4 @@
+import { bindingCodesForDevice, type InputDevice } from "@babylonslate/input";
 import type {
   ParameterRow,
   ParameterValueType,
@@ -118,6 +119,29 @@ type PinDefaultMapping = NonNullable<
   Parameters<typeof pinDefaultPropertyRows>[2]
 >;
 
+function inputControlRows(value: unknown, onChange: (value: Record<string, unknown>) => void, label: string): PropertyRow[] {
+  const control = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const devices = [{ value: "key", label: "Keyboard" }, { value: "mouseButton", label: "Mouse Button" }, { value: "pointer", label: "Pointer Button" }, { value: "gamepadButton", label: "Gamepad Button" }, { value: "gamepadAxis", label: "Gamepad Axis" }, { value: "touch", label: "Touch Control" }];
+  const device = devices.some((entry) => entry.value === control.Device) ? control.Device as InputDevice : "key";
+  const codes = bindingCodesForDevice(device);
+  const code = typeof control.Code === "string" ? control.Code : "";
+  return [
+    { id: `${label}:device`, kind: "enum", label: `${label} Device`, value: device, options: devices, onChange: (Device) => onChange({ ...control, Device, Code: "" }) },
+    { id: `${label}:code`, kind: "enum", label: `${label} Control`, value: code, options: [{ value: "", label: "Choose Control" }, ...codes.map((entry) => ({ value: entry.code, label: entry.label })), ...(code && !codes.some((entry) => entry.code === code) ? [{ value: code, label: code }] : [])], onChange: (Code) => onChange({ ...control, Device: device, Code }) },
+    ...(["Shift", "Ctrl", "Alt", "Meta"] as const).map((modifier): PropertyRow => ({ id: `${label}:${modifier}`, kind: "boolean", label: `${label} ${modifier}`, value: control[modifier] === true, onChange: (next) => onChange({ ...control, Device: device, [modifier]: next }) })),
+  ];
+}
+
+function inputTypeRow(value: unknown, onChange: (value: Record<string, unknown>) => void, assets: PinDefaultMapping["assetEntries"], label: string): PropertyRow {
+  const input = value && typeof value === "object" ? value as { Asset?: string } : {};
+  const available = (assets ?? []).filter((asset) => asset.type === "InputAction" || asset.type === "InputAxis");
+  const current = input.Asset ?? "";
+  return { id: `${label}:input`, kind: "enum", label: label || "Input", value: current,
+    options: [{ value: "", label: "Choose Input" }, ...available.map((asset) => ({ value: asset.id, label: `${asset.name} ? ${asset.type === "InputAction" ? "Action" : "Axis"}` })), ...(current && !available.some((asset) => asset.id === current) ? [{ value: current, label: "Missing Input Asset" }] : [])],
+    onChange: (guid) => onChange({ Name: available.find((asset) => asset.id === guid)?.name ?? "", Asset: guid }),
+  };
+}
+
 function flattenStructFieldRows(
   fields: ReadonlyArray<{
     name: string;
@@ -140,6 +164,14 @@ function flattenStructFieldRows(
       ? `${labelPrefix} ${humanizePropertyLabel(field.name)}`
       : humanizePropertyLabel(field.name);
     const fieldValue = instance[field.name];
+    if (type.kind === "structRef" && type.guid === "engine:InputControl") {
+      rows.push(...inputControlRows(fieldValue, (next) => onChange({ ...instance, [field.name]: next }), label));
+      continue;
+    }
+    if (type.kind === "structRef" && type.guid === "engine:InputType") {
+      rows.push(inputTypeRow(fieldValue, (next) => onChange({ ...instance, [field.name]: next }), mapping?.assetEntries, label));
+      continue;
+    }
     if (type.kind === "structRef") {
       const nested = type.guid ? schemas?.structs[type.guid] : undefined;
       if (nested) {
@@ -436,6 +468,15 @@ export function pinDefaultPropertyRows(
         break;
       }
       case "structRef": {
+        if (entry.type.guid === "engine:InputBinding") break;
+        if (entry.type.guid === "engine:InputControl") {
+          rows.push(...inputControlRows(entry.value, (next) => onPatch({ [pinDefaultPropertyKey(entry.pinId)]: next }), entry.name));
+          break;
+        }
+        if (entry.type.guid === "engine:InputType") {
+          rows.push(inputTypeRow(entry.value, (next) => onPatch({ [pinDefaultPropertyKey(entry.pinId)]: next }), mappingNames?.assetEntries, entry.name));
+          break;
+        }
         const schema = entry.type.guid
           ? mappingNames?.schemas?.structs[entry.type.guid]
           : undefined;
@@ -496,6 +537,9 @@ export function variableDefaultPropertyRows(
     classEntries: options?.classEntries,
     onPickClass: options?.onPickClass,
   };
+  if (type.kind === "structRef" && type.guid === "engine:InputBinding") return [];
+  if (type.kind === "structRef" && type.guid === "engine:InputControl") return inputControlRows(value, onChange, label);
+  if (type.kind === "structRef" && type.guid === "engine:InputType") return [inputTypeRow(value, onChange, options?.assetEntries, label)];
   if (type.kind === "structRef") {
     const schema = type.guid ? options?.schemas?.structs[type.guid] : undefined;
     if (!schema) return [];

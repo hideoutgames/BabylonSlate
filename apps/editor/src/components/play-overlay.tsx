@@ -83,6 +83,7 @@ export interface PlayOverlayProps {
   frameCap?: number;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
+  inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
@@ -160,6 +161,7 @@ export function PlayOverlay({
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   infiniteLoopDetection,
   loopCount,
+  inputAssets,
   inputMappings,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -340,6 +342,7 @@ export function PlayOverlay({
   const initialPauseOnPlayRef = useRef(pauseOnPlay);
   const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
   const initialLoopCountRef = useRef(loopCount);
+  const initialInputAssetsRef = useRef(inputAssets);
   const initialInputMappingsRef = useRef(inputMappings);
   const initialPlayPreviewRef = useRef(playPreview);
   const initialRenderRef = useRef(render);
@@ -419,6 +422,7 @@ export function PlayOverlay({
       frameCap: initialFrameCapRef.current,
       infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
       loopCount: initialLoopCountRef.current,
+      inputAssets: initialInputAssetsRef.current,
       inputMappings: initialInputMappingsRef.current,
       animGraphs: animGraphsRef.current,
       behaviourTrees: behaviourTreesRef.current,

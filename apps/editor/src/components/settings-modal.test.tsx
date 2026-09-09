@@ -173,38 +173,10 @@ describe("SettingsModal project authoring", () => {
     fireEvent.change(version, { target: { value: "2.4.0-beta.3" } });
     expect(updateProjectVersion).toHaveBeenCalledWith("2.4.0-beta.3");
   });
-  it("edits input mappings with the structured editor instead of JSON", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-input"));
-    expect(screen.getByTestId("settings-input-mapping")).toBeTruthy();
-    expect(screen.queryByTestId("settings-input-actions")).toBeNull();
-    expect(screen.getByTestId("input-action-0-name")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("input-action-add"));
-    expect(updateProjectSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: expect.objectContaining({
-          actions: expect.arrayContaining([
-            expect.objectContaining({ name: "New Action" }),
-          ]),
-        }),
-      }),
-    );
-  });
-
-  it("keeps an added Key binding after settings remount", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-input"));
-    fireEvent.click(screen.getByTestId("input-action-0-add-binding"));
-    cleanup();
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-input"));
-    expect(screen.getByTestId("input-action-0-binding-3-code")).toBeTruthy();
+  it("keeps input authoring in assets rather than Project Settings", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    expect(screen.queryByTestId("settings-modal-category-input")).toBeNull();
+    expect(screen.queryByTestId("settings-input-mapping")).toBeNull();
   });
 
   it("picks the default font from Font assets instead of a guid field", async () => {

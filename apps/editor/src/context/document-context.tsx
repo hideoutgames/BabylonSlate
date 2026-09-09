@@ -1,3 +1,5 @@
+import { inputAssetCatalog } from "../lib/input-asset-catalog";
+import { isInputAssetType, normalizeInputAssetPayload, type InputAssetDefinition } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
 import { captureAdaptiveDockviewLayout, isPhoneDockLayout } from "../shell/phone-dock-layout";
 import {
@@ -548,6 +550,7 @@ interface DocumentContextValue {
     extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, import("@babylonslate/assets").ModelPayload>>;
   /** Mixer/channel/attenuation/Audio metadata for Play; source bytes load on first playSound. */
+  collectPlayInputAssets: () => Promise<InputAssetDefinition[]>;
   collectPlayAudio: () => Promise<{
     library: import("../lib/play-audio").PlayAudioLibrary;
     loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;
@@ -1442,6 +1445,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         // Warm the codegen cache for open graphs only. Do not record Play
         // bundles — Play still runs collectPlayPreviewScripts for the full set.
         compileGraphDocuments(graphs, {
+          inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
           cache: graphCompileCacheRef.current,
           enums: typeSchemas.enums,
           structs: typeSchemas.structs,
@@ -2423,6 +2427,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
     const typeSchemas = collectGraphTypeSchemas();
     return compileGraphDocuments(selected, {
+      inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
       cache: graphCompileCacheRef.current,
       enums: typeSchemas.enums,
       structs: typeSchemas.structs,
@@ -2456,6 +2461,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const typeSchemas = collectGraphTypeSchemas();
     const bundles = [
       ...compileGraphDocuments(documents, {
+      inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
         cache: graphCompileCacheRef.current,
@@ -2518,6 +2524,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     );
     const bundles = [
       ...compileGraphDocuments(documents, {
+      inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
         cache: graphCompileCacheRef.current,
@@ -2557,6 +2564,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "model"
         | "skeleton"
         | "animation"
+        | "input-action"
+        | "input-axis"
         | "audio"
         | "scene-layer"
         | "asset-settings",
@@ -2989,6 +2998,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [loadPlayAssetContent, projectService],
   );
+
+  const collectPlayInputAssets = useCallback(async (): Promise<InputAssetDefinition[]> => {
+    const inputs: InputAssetDefinition[] = [];
+    for (const asset of projectService.registry?.list() ?? []) {
+      if (!isInputAssetType(asset.header.type)) continue;
+      const content = await loadPlayAssetContent(asset.header.type === "InputAction" ? "input-action" : "input-axis", asset.path);
+      if (!content) throw new Error(`Unable to load input asset ${asset.header.name}`);
+      inputs.push({ ...normalizeInputAssetPayload(asset.header.type, content), guid: asset.header.guid, name: asset.header.name, type: asset.header.type });
+    }
+    return inputs;
+  }, [loadPlayAssetContent, projectService]);
 
   const collectPlayAudio = useCallback(async () => {
     const assets = projectService.registry?.list() ?? [];
@@ -4081,6 +4101,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayFontCssStacks,
       collectPlayModelBytes,
       collectPlayModelPayloads,
+      collectPlayInputAssets,
       collectPlayAudio,
       collectPlayParticles,
       collectPlayMaterialLibrary,
@@ -4144,6 +4165,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayFontCssStacks,
       collectPlayModelBytes,
       collectPlayModelPayloads,
+      collectPlayInputAssets,
       collectPlayAudio,
       collectPlayParticles,
       collectPlayMaterialLibrary,

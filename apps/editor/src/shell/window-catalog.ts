@@ -19,6 +19,8 @@ export type DockviewDocumentKind =
   | "anim-graph"
   | "behaviour-tree"
   | "audio"
+  | "input-action"
+  | "input-axis"
   | "audio-mixer"
   | "audio-channel"
   | "sound-attenuation"
@@ -48,6 +50,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "anim-graph",
   "behaviour-tree",
   "audio",
+  "input-action",
+  "input-axis",
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
@@ -100,6 +104,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "anim-graph": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
   audio: "audio-preview",
+  "input-action": "input-bindings",
+  "input-axis": "input-bindings",
   "audio-mixer": "audio-mixer-details",
   "audio-channel": "audio-channel-details",
   "sound-attenuation": "sound-attenuation-details",
@@ -824,6 +830,11 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const INPUT_WINDOWS: DockWindowDefinition[] = [
+  { id: "input-bindings", component: "input-bindings", title: "Bindings" },
+  { id: "input-details", component: "input-details", title: "Details", defaultPosition: { referencePanelId: "input-bindings", direction: "right", initialWidth: 300 } },
+];
+
 export function listDockWindows(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
@@ -831,6 +842,7 @@ export function listDockWindows(
   if (kind === "scene" || kind === "scene-layer") {
     return withOptionalLocks(kind, SCENE_WINDOWS, options);
   }
+  if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
   if (kind === "structure") {
     return withOptionalLocks(kind, STRUCTURE_WINDOWS, options);
