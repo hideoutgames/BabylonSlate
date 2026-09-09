@@ -29,7 +29,7 @@ function aiScene(properties: Record<string, unknown>): SerializedScene {
 }
 
 describe("runtime behaviour tree evaluation", () => {
-  it("does not give a newly spawned tree the completed state of a despawned actor", () => {
+  it("does not give a newly spawned tree the completed state of a despawned actor", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1, seedDemoActors: false,
@@ -37,12 +37,17 @@ describe("runtime behaviour tree evaluation", () => {
       behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard Logic") },
       onCommand: (command) => commands.push(command),
     });
+    await runtime.loadScripts([{
+      assetGuid: "replacement-script", classId: "Replacement", parentClassId: "Actor",
+      source: "export function onTick() {}", anchors: [],
+      entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
+    }]);
     runtime.start();
     runtime.realizePlayWorld();
     runtime.tick();
     runtime.getWorld().destroyActor("guard");
     runtime.tick();
-    const replacement = runtime.spawnScriptedActor({ classId: "Actor", variables: { name: "Replacement" } });
+    const replacement = runtime.spawnScriptedActor({ classId: "Replacement", variables: { name: "Replacement" } });
     expect(replacement).not.toBeNull();
     replacement!.attachComponent(runtime.getWorld().createComponent({
       classId: "BehaviourTreeComponent", variables: { treeGuid: "tree-1" },
