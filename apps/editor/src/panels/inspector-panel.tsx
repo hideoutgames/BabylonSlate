@@ -104,7 +104,6 @@ import {
 } from "../lib/graph-inspector";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
-import { classIdForGraphPath } from "../services/script-compiler";
 import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 import {
