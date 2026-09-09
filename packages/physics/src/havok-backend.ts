@@ -128,6 +128,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly down = new Vector3(0, -1, 0);
   private disposed = false;
   private pendingContacts: PhysicsContactEvent[] = [];
+  private readonly activeTriggerPairs = new Map<string, {
+    actorAId: string;
+    actorBId: string;
+    contacts: number;
+  }>();
 
   private constructor(engine: NullEngine, scene: Scene, plugin: HavokPlugin) {
     this.engine = engine;
@@ -172,6 +177,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     this.bodies.clear();
     this.bodyIdByPhysicsBody.clear();
+    this.activeTriggerPairs.clear();
     this.scene.disablePhysicsEngine();
     this.scene.dispose();
     this.engine.dispose();
@@ -198,6 +204,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   destroyBody(bodyId: string): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;
+    for (const [key, pair] of this.activeTriggerPairs) {
+      if (pair.actorAId === record.desc.actorId || pair.actorBId === record.desc.actorId) {
+        this.activeTriggerPairs.delete(key);
+      }
+    }
     for (const [id, collider] of [...this.colliders]) {
       if (collider.desc.bodyId === bodyId) this.colliders.delete(id);
     }
@@ -589,6 +600,24 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       colliderAId = colliderBId;
       colliderBId = swapCollider;
       normal = { x: -normal.x, y: -normal.y, z: -normal.z };
+    }
+    if (kind === "overlapBegin" || kind === "overlapEnd") {
+      // Havok reports each overlapping child-shape pair. Keep the actor overlap
+      // alive until its final shape leaves, including events on later ticks.
+      const pairKey = JSON.stringify([a, b]);
+      const pair = this.activeTriggerPairs.get(pairKey);
+      if (kind === "overlapBegin") {
+        if (pair) {
+          pair.contacts += 1;
+          return;
+        }
+        this.activeTriggerPairs.set(pairKey, { actorAId: a, actorBId: b, contacts: 1 });
+      } else {
+        if (!pair) return;
+        pair.contacts -= 1;
+        if (pair.contacts > 0) return;
+        this.activeTriggerPairs.delete(pairKey);
+      }
     }
     const key = `${kind}|${a}|${b}`;
     if (
