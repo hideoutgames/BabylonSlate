@@ -107,9 +107,20 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   await saveAllIfEnabled(page);
   expect((await readSavedGraph(page)).edges).toEqual([]);
 
-  await page.mouse.move(start.x, start.y);
+  const secondStart = await center(title);
+  const secondSource = await center(
+    editor.locator('[data-id="spawn"] [data-handleid="execOut"]'),
+  );
+  const secondTarget = await center(
+    editor.locator('[data-id="destroy"] [data-handleid="execIn"]'),
+  );
+  await page.mouse.move(secondStart.x, secondStart.y);
   await page.mouse.down();
-  await page.mouse.move(near.x, near.y, { steps: 10 });
+  await page.mouse.move(
+    secondStart.x + secondSource.x + 50 - secondTarget.x,
+    secondStart.y + secondSource.y - secondTarget.y,
+    { steps: 30 },
+  );
   await expect(preview).toHaveCount(2);
   await expect(edges).toHaveCount(0);
   await page.mouse.up();
