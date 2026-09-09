@@ -59,7 +59,7 @@ Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` va
 
 ## Placement
 
-`TilemapComponent` is in Add Component (Rendering) and Search. Properties: `assetGuid`, sorting layer / order.
+**Place Actors > Rendering > Tilemap** creates an actor with `TilemapComponent`. Project Tilemap assets also appear in Place Actors and bind their asset automatically, in both Scenes and Scene Layers. `TilemapComponent` remains in Add Component (Rendering) and Search. Properties: `assetGuid`, sorting layer / order.
 
 ## Authoring
 
@@ -80,9 +80,10 @@ Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 ### Tilemap
 
 - **Tilesets** is a `NamedListEditor` (`Add Tileset` opens `AssetPicker`). Rows use `PickerIdentity`. Empty copy: “Add a Tileset to start painting.” Several tilesets share one GID space on the map — not one tileset per layer.
-- **Palette** loads each listed tileset with `loadAssetDocument` (closed tabs included) plus Texture `pixels`. Thumbs are cropped with `tilesetTileRect` and nearest-neighbor, grouped by tileset name. Tap sets the paint GID. `SearchInput` filters large sets. The Paint toolbar shows a 44px selected-tile thumb (`data-gid` / `data-tile`), not a text Palette dropdown.
+- **Palette** loads each listed tileset with `loadAssetDocument` (closed tabs included) plus Texture `pixels`. Thumbs are cropped with `tilesetTileRect` and nearest-neighbor, grouped by tileset name. Tap sets the paint GID. The compact search bar keeps Clear inside the field; the tile list scrolls in the remaining panel height. The Paint toolbar shows a 44px selected-tile thumb (`data-gid` / `data-tile`), not a text Palette dropdown.
 - **Paint** fills `PanelFrame` (`ResizeObserver` backing store, `devicePixelRatio`). Blit with `imageSmoothingEnabled = false` and draw the grid **only inside** the map rectangle (full cell, no gutters) with a high-contrast bounds stroke; outside stays the dark canvas. Empty in-bounds cells stay empty. Default tool is **Move** (`HandIcon`, `data-tool="move"`); switch to Brush to paint. One-finger drag pans in Move. Other tools (brush/eraser/rect/bucket/stamp/picker) still one-finger paint. Two-finger pinch zooms about the midpoint and translation pans in every tool; a second finger drops an in-progress paint stroke (reverts it) so pinch does not leave a stray tile. Wheel zooms about the cursor. Cell size is clamped 8–96 CSS px (default 32). `data-cell-size` / `data-zoom` / `data-pan-x` / `data-pan-y` / `data-paint-source` (`atlas` \| `hsl`) are for Playwright. No tilesets → `Empty` instead of a blank square.
 - Details **Map** group: Map Width / Map Height (`property-mapWidth` / `property-mapHeight`) with Tile Width/Height.
+- **Layers** rows have **Hide / Show** eye buttons. The Paint canvas composites all visible layers in list order; the paint-layer picker only chooses where edits go. Visibility uses the saved layer setting (also respected in Scenes and Play), preserves tiles, and participates in undo/redo. Two-finger translation follows the fingers in both axes, using the same +Y-up pan coordinates as Move.
 - **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
 
 Stamp places a 2×2 of the selected GID. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
