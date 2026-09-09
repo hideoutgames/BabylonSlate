@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   TREE_DROP_EDGE_PX,
   TREE_ROW_HEIGHT,
@@ -21,6 +21,26 @@ const nodes: TreeViewNode[] = [
 describe("TreeView", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("navigates, selects and collapses from one keyboard focus target", () => {
+    const onSelect = vi.fn();
+    const onToggleExpanded = vi.fn();
+    render(<TreeView nodes={nodes} onSelect={onSelect} onToggleExpanded={onToggleExpanded} data-testid="keyboard-tree" />);
+    const tree = screen.getByTestId("keyboard-tree");
+    tree.focus();
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    expect(onSelect).toHaveBeenLastCalledWith("child");
+    expect(tree.getAttribute("role")).toBe("tree");
+    const active = document.getElementById(tree.getAttribute("aria-activedescendant") ?? "");
+    expect(active?.textContent).toContain("Child");
+    expect(active?.getAttribute("aria-level")).toBe("2");
+    fireEvent.keyDown(tree, { key: "ArrowLeft" });
+    expect(onSelect).toHaveBeenLastCalledWith("root");
+    fireEvent.keyDown(tree, { key: "ArrowLeft" });
+    expect(onToggleExpanded).toHaveBeenLastCalledWith("root");
+    fireEvent.keyDown(tree, { key: "End" });
+    expect(onSelect).toHaveBeenLastCalledWith("other");
   });
 
   it("uses compact chrome-row height", () => {

@@ -1,66 +1,104 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+﻿import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { TracePayload } from "@babylonslate/debugger";
 import { TracePlayback } from "./trace-playback";
 
+const actor = (guid: string, health: number) => ({
+  guid, classId: "PlayerCharacter", spawnIndex: 0,
+  transform: { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+  variables: { name: guid, health, samples: [1, 2, 3, 4, 5, 6], target: null, enabled: false },
+  components: [],
+});
 const payload: TracePayload = {
-  seed: 7,
-  dt: 1 / 60,
+  seed: 7, dt: 1 / 60,
   frames: [
-    {
-      tickIndex: 1,
-      scriptMs: 1,
-      physicsMs: 0.5,
-      logs: [{ severity: "log", category: "game", message: "first" }],
-      prints: [{ message: "print-a", key: "a" }],
-      snapshotText: "tick=1",
+    { tickIndex: 501, scriptMs: 1, physicsMs: 0.5,
+      logs: [{ severity: "warn", category: "combat", message: "first warning" }],
+      prints: [{ message: "print-a", key: "health" }],
+      snapshotText: JSON.stringify({ tickIndex: 501, dt: 1 / 60, gameInstance: null, actors: [actor("player", 100), actor("removed", 10)] }),
     },
-    {
-      tickIndex: 2,
-      scriptMs: 1.2,
-      physicsMs: 0.4,
-      logs: [{ severity: "log", category: "game", message: "second" }],
-      prints: [],
-      snapshotText: "tick=2",
+    { tickIndex: 502, scriptMs: 12, physicsMs: 2,
+      logs: [{ severity: "error", category: "combat", message: "second error" }], prints: [],
+      snapshotText: JSON.stringify({ tickIndex: 502, dt: 1 / 60, gameInstance: null, actors: [actor("added", 20), actor("player", 75)] }),
+      inputEvents: [{ type: "key", code: "Space", down: true, tick: 502 }],
+      bt: [{ slotId: 2, status: "running", btNodeId: "chase", lastResults: {}, blackboard: { target: "player" }, stack: [], nodeMemory: {} }],
     },
   ],
 };
 
 describe("TracePlayback", () => {
-  afterEach(() => {
-    cleanup();
+  afterEach(cleanup);
+
+  it("shows the recorded tick and rejects fractional frame selection", () => {
+    render(<TracePlayback payload={payload} />);
+    expect(screen.getByTestId("trace-frame-summary").textContent).toContain("Tick 502");
+    expect(screen.getByTestId("trace-frame-summary").textContent).toContain("14.00 ms");
+    expect(screen.getByTestId("trace-playback-graph-bar-1").getAttribute("aria-current")).toBe("true");
+    fireEvent.change(screen.getByTestId("trace-playback-frame"), { target: { value: "0.5" } });
+    fireEvent.blur(screen.getByTestId("trace-playback-frame"));
+    expect((screen.getByTestId("trace-playback-frame") as HTMLInputElement).value).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "Previous Frame", exact: true }));
+    expect(screen.getByTestId("trace-frame-summary").textContent).toContain("Tick 501");
+    expect(screen.getByTestId("trace-playback-graph-bar-0").getAttribute("aria-current")).toBe("true");
   });
 
-  it("shows seed and scrubs to a recorded snapshot", () => {
+  it("searches nested values and preserves selection across reordered actors", () => {
     render(<TracePlayback payload={payload} />);
-    expect(screen.getByTestId("trace-playback-seed").textContent).toContain("7");
-    expect(screen.getByTestId("trace-playback-scrubber")).toBeTruthy();
-    expect(screen.getByTestId("trace-playback-graph-bar-0")).toBeTruthy();
-    expect(screen.getByTestId("trace-playback-graph-bar-1")).toBeTruthy();
-    expect(screen.getByTestId("trace-playback-snapshot").textContent).toContain(
-      "tick=2",
-    );
-    expect(screen.getByTestId("trace-playback-log").textContent).toContain(
-      "first",
-    );
-    expect(screen.getByTestId("trace-playback-log").textContent).toContain(
-      "print-a",
-    );
-    expect(screen.getByTestId("trace-playback-log").textContent).toContain(
-      "second",
-    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Snapshot" }), { target: { value: "health" } });
+    const tree = screen.getByRole("tree", { name: "Snapshot" });
+    expect(tree.textContent).toContain("PlayerCharacter");
+    const health = within(tree).getAllByRole("treeitem").find((row) => row.textContent?.includes("Health") && row.textContent.includes("75"))!;
+    fireEvent.pointerDown(health, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(health, { pointerId: 1, clientX: 10, clientY: 10 });
+    expect(screen.getByTestId("trace-value-detail").textContent).toContain("75");
     fireEvent.click(screen.getByTestId("trace-playback-graph-bar-0"));
-    expect(screen.getByTestId("trace-playback-snapshot").textContent).toContain(
-      "tick=1",
-    );
-    fireEvent.change(screen.getByTestId("trace-playback-frame"), {
-      target: { value: "0" },
-    });
-    expect(screen.getByTestId("trace-playback-snapshot").textContent).toContain(
-      "tick=1",
-    );
-    expect(screen.getByTestId("trace-playback-log").textContent).toContain(
-      "first",
-    );
+    expect(screen.getByTestId("trace-value-detail").textContent).toContain("100");
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Snapshot" }), { target: { value: "samples" } });
+    expect(tree.textContent).toContain("6 Items");
+    expect(tree.textContent).toContain("[5]");
+  });
+
+  it("compares actor identities and exposes additions, removals and changed values", () => {
+    render(<TracePlayback payload={payload} />);
+    fireEvent.click(screen.getByRole("button", { name: "Changes", exact: true }));
+    const changes = screen.getByTestId("trace-snapshot-changes");
+    expect(changes.textContent).toContain("Added");
+    expect(changes.textContent).toContain("Removed");
+    expect(changes.textContent).toContain("Health");
+    expect(changes.textContent).toContain("100");
+    expect(changes.textContent).toContain("75");
+    fireEvent.click(screen.getByTestId("trace-playback-graph-bar-0"));
+    expect(screen.getByText("No Previous Recorded Frame")).toBeTruthy();
+  });
+
+  it("shows recorded inputs and behaviour trees even without a world snapshot", () => {
+    render(<TracePlayback payload={{ ...payload, frames: [{ ...payload.frames[1]!, snapshotText: undefined }] }} />);
+    expect(screen.getByText("No Snapshot Recorded")).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Snapshot" }), { target: { value: "Space" } });
+    expect(screen.getByRole("tree", { name: "Snapshot" }).textContent).toContain("Space");
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Snapshot" }), { target: { value: "chase" } });
+    expect(screen.getByRole("tree", { name: "Snapshot" }).textContent).toContain("chase");
+  });
+
+  it("retains legacy text and reports empty recordings", () => {
+    const { rerender } = render(<TracePlayback payload={{ ...payload, frames: [{ ...payload.frames[0]!, snapshotText: "tick=501" }] }} />);
+    expect(screen.getByText("Snapshot Could Not Be Parsed")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Raw Snapshot", exact: true }));
+    expect(screen.getByTestId("trace-snapshot-raw").textContent).toBe("tick=501");
+    rerender(<TracePlayback payload={{ ...payload, frames: [] }} />);
+    expect(screen.getAllByText("No Recorded Frames").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Next Frame", exact: true }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("filters log metadata, reveals full messages and navigates to their frame", () => {
+    render(<TracePlayback payload={payload} />);
+    expect(screen.getByTestId("trace-log-scope").textContent).toContain("30");
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Log" }), { target: { value: "warn" } });
+    const log = screen.getByTestId("trace-playback-log");
+    expect(log.textContent).toContain("first warning");
+    expect(log.textContent).not.toContain("second error");
+    fireEvent.click(within(log).getByRole("button"));
+    expect(screen.getByTestId("trace-log-detail").textContent).toContain("combat");
+    expect(screen.getByTestId("trace-frame-summary").textContent).toContain("Tick 501");
   });
 });
