@@ -351,7 +351,8 @@ describe("Play createEngine view", () => {
       now += 4;
     });
     for (const [second, cap] of [30, 60, 15, 30].entries()) {
-      handle.applyCommand({ type: "setFrameCap", fps: cap });
+      // The first second must use the configured cap before any console setter.
+      if (second > 0) handle.applyCommand({ type: "setFrameCap", fps: cap });
       const before = renders;
       for (let frame = 0; frame < 60; frame += 1) {
         now = second * 1000 + frame * (1000 / 60);
