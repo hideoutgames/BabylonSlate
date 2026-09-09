@@ -17,6 +17,15 @@ const frame: TraceFrame = {
 };
 
 describe("recorded snapshot values", () => {
+  it("does not interpret ordinary variables named rotation or actors as engine fields", () => {
+    const actors = [{ guid: "one", classId: "Reference" }, { guid: "two", classId: "Reference" }];
+    const before = { actors: [{ guid: "owner", classId: "Actor", variables: { rotation: [1, 2], actors } }] };
+    const after = { actors: [{ guid: "owner", classId: "Actor", variables: { rotation: [1, 2], actors: [...actors].reverse() } }] };
+    const rows = flattenTraceSnapshot(traceSnapshotRoots(frame, { status: "ready", value: before }), new Set(), "rotation");
+    expect(rows.some((row) => row.label === "Rotation (Quaternion)")).toBe(false);
+    expect(rows.some((row) => row.label === "[0]" && row.value === 1)).toBe(true);
+    expect(compareTraceSnapshots(before, after)).toHaveLength(2);
+  });
   it("treats prototype-named JSON keys as ordinary recorded fields", () => {
     const value = JSON.parse('{"__proto__":7,"constructor":null,"toString":false}') as unknown;
     const rows = flattenTraceSnapshot(traceSnapshotRoots(frame, { status: "ready", value }), new Set(), "");
