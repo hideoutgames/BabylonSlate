@@ -44,6 +44,7 @@ describe("DebugConsole", () => {
     const root = screen.getByTestId("debug-console");
     expect(root.getAttribute("data-slot")).toBe("sheet-content");
     expect(root.getAttribute("data-side")).toBe("bottom");
+    expect(document.querySelector('[data-slot="sheet-overlay"]')).toBeNull();
 
     fireEvent.change(screen.getByTestId("debug-console-input"), {
       target: { value: "ch" },
