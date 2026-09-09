@@ -227,7 +227,6 @@ export type CreatableAssetTypeGroup = {
   id: string;
   label: string;
   types: readonly CreatableAssetType[];
-  hint?: string;
 };
 
 /** Catalog groups for the New Asset type-card grid. */
@@ -247,7 +246,6 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
     id: "animation",
     label: "Animation",
     types: ["AnimationGraph", "SpriteAnimation"],
-    hint: "Animation Graph is the state machine; Sprite Animation is a 2D clip (also under 2D).",
   },
   {
     id: "rendering",
@@ -258,7 +256,6 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
     id: "audio",
     label: "Audio",
     types: ["AudioMixer", "AudioChannel", "SoundAttenuation"],
-    hint: "Sounds are Import (WAV / MP3 / OGG), not created here.",
   },
   {
     id: "ai",

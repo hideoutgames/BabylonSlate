@@ -239,12 +239,12 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("tells authors that sounds come from Import, not New Asset", () => {
+  it("shows Audio and Animation categories without descriptions", () => {
     renderDialog();
-    const hint = screen.getByTestId("new-asset-group-hint-audio");
-    expect(hint.textContent).toMatch(/Import/);
-    expect(hint.textContent).toMatch(/WAV/);
-    expect(hint.textContent).toMatch(/MP3/);
-    expect(hint.textContent).toMatch(/OGG/);
+    const choices = screen.getByRole("radiogroup", { name: "Asset Type" });
+    expect(choices.textContent).toContain("Audio");
+    expect(choices.textContent).toContain("Animation");
+    expect(choices.textContent).not.toContain("Sounds are Import");
+    expect(choices.textContent).not.toContain("Animation Graph is the state machine");
   });
 });
