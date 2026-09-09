@@ -379,30 +379,32 @@ export function EngineSettingsForm({
               Editor Texture Quality
             </FieldLabel>
             <div className="flex min-w-0 items-center gap-3">
-            <Slider
-              id="setting-editor-texture-lod-quality"
-              aria-labelledby="setting-editor-texture-lod-quality-label"
-              className="min-w-0 flex-1"
-              data-testid="setting-editor-texture-lod-quality"
-              min={25}
+              <Slider
+                id="setting-editor-texture-lod-quality"
+                aria-labelledby="setting-editor-texture-lod-quality-label"
+                className="min-w-0 flex-1"
+                data-testid="setting-editor-texture-lod-quality"
+                min={25}
+                max={100}
+                step={5}
+                value={[Math.round(settings.editorTextureLodQuality * 100)]}
+                disabled={!settings.editorTextureLodEnabled}
+                onValueChange={(value) => {
+                  const percent = Array.isArray(value) ? value[0] : value;
+                  if (typeof percent !== "number") return;
+                  void onChange({ editorTextureLodQuality: percent / 100 });
+                }}
+              />
+              <NumberField
+                aria-label="Editor Texture Quality (%)"
+                className="w-20 shrink-0"
+                min={25}
               max={100}
               step={5}
-              value={[Math.round(settings.editorTextureLodQuality * 100)]}
-              disabled={!settings.editorTextureLodEnabled}
-              onValueChange={(value) => {
-                const percent = Array.isArray(value) ? value[0] : value;
-                if (typeof percent !== "number") return;
-                void onChange({ editorTextureLodQuality: percent / 100 });
-              }}
-            />
-            <NumberField
-              aria-label="Editor Texture Quality (%)"
-              className="w-20 shrink-0"
-              min={25} max={100} step={5}
-              value={Math.round(settings.editorTextureLodQuality * 100)}
-              disabled={!settings.editorTextureLodEnabled}
-              onChange={percent => void onChange({ editorTextureLodQuality: percent / 100 })}
-            />
+                value={Math.round(settings.editorTextureLodQuality * 100)}
+                disabled={!settings.editorTextureLodEnabled}
+                onChange={percent => void onChange({ editorTextureLodQuality: percent / 100 })}
+              />
             </div>
             <FieldDescription>Percentage of source size.</FieldDescription>
           </Field>

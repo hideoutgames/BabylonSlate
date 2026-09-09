@@ -45,7 +45,7 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 - Project and Engine Settings keep their immediate-save behavior. Done closes the dialog; it does not apply a draft. Scalar controls align with their labels and stack on narrow phones; lists retain the full content width.
 - General includes editable Project Version (`metadata.version`) alongside project behavior; it omits static project-name and touch-target readouts. Settings copy explains consequences only; implementation details and repeated label descriptions are omitted. Focus explains retained windows once, and unmatched settings searches show an empty state.
 - Delete confirms grow with their content up to the large-dialog bounds. Selected items and incoming references share a contained touch-scroll region; reference rows show type, asset path, and affected targets. Headers and Cancel/Delete remain visible.
-- Shared sliders use Base UI `data-orientation` selectors for track sizing. Settings retain the shared Switch width and reserve its expanded touch area; they never override the track width.
+- Shared sliders retain Base UI track sizing and provide named range inputs with 44px thumb hit areas. Settings retain the shared Switch width and reserve its expanded touch area; they never override the track width.
 - Picker navigation supports arrows and Enter with the active result kept visible and mounted. Touch opening avoids text autofocus; keyboard opening starts in search. Existing Base UI dismissal and return-focus semantics remain in place.
 
 ## Design philosophy
