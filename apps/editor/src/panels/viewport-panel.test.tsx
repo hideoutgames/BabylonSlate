@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { syncEditorPlayState } from "@babylonslate/render";
-import { createDefaultScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
-const { createEngineMock, play, documents, handle } = vi.hoisted(() => {
+const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() => {
   const handle = {
     engine: {
       onContextRestoredObservable: { add: vi.fn() },
@@ -56,7 +56,7 @@ const { createEngineMock, play, documents, handle } = vi.hoisted(() => {
   const createEngineMock = vi.fn<
     (
       canvas?: unknown,
-      options?: { overlayTransformBox?: boolean; sharedEngine?: unknown },
+      options?: { overlayTransformBox?: boolean; sharedEngine?: unknown; editorViewportId?: string },
     ) => typeof handle
   >();
   createEngineMock.mockReturnValue(handle);
@@ -64,6 +64,7 @@ const { createEngineMock, play, documents, handle } = vi.hoisted(() => {
   return {
     createEngineMock,
     handle,
+    selection: { actorIds: [] as string[] },
     documents: {
       assetRegistry: null as Pick<AssetRegistry, "list"> | null,
       applySceneChange: vi.fn(async () => true),
@@ -147,7 +148,7 @@ vi.mock("../context/document-context", () => ({
 vi.mock("../context/scene-editing-context", () => ({
   FALLBACK_PLACE_POSITION: [0, 0, 0],
   useSceneEditing: () => ({
-    selectedActorIds: [] as string[],
+    selectedActorIds: selection.actorIds,
     selectActor: vi.fn(),
     setSelectedActorIds: vi.fn(),
     gizmoTool: "translate",
@@ -170,7 +171,9 @@ vi.mock("../context/scene-editing-context", () => ({
 }));
 
 vi.mock("../components/viewport-toolbar", () => ({
-  ViewportToolbar: () => null,
+  ViewportToolbar: ({ onDrop, dropDisabled }: { onDrop?: () => void; dropDisabled?: boolean }) => (
+    <button type="button" onClick={onDrop} disabled={dropDisabled}>Drop</button>
+  ),
 }));
 
 vi.mock("../components/viewport-joystick", () => ({
@@ -215,6 +218,8 @@ describe("ViewportPanel engine", () => {
     play.preparing = false;
     documents.openDocuments = [];
     documents.assetRegistry = null;
+    selection.actorIds = [];
+    documents.applySceneChange.mockClear();
     handle.loadScene.mockClear();
     handle.setMeshAssets.mockClear();
     handle.setMaterialDocuments.mockClear();
@@ -224,6 +229,61 @@ describe("ViewportPanel engine", () => {
       textureGuids: [],
     });
     documents.collectPlayTextureBytes.mockReset().mockResolvedValue(new Map());
+  });
+
+  it("drops the selected actors in one scene edit and leaves no-hit actors untouched", async () => {
+    const a = createActor("a", "Box A");
+    const b = createActor("b", "Box B");
+    const miss = createActor("miss", "No Surface");
+    const scene = { ...createDefaultScene(), actors: [a, b, miss] };
+    documents.openDocuments = [{
+      id: "scene:S",
+      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: scene,
+    }];
+    selection.actorIds = [a.id, b.id, miss.id];
+    const stop = engineCommandBus.subscribe((command) => {
+      if (command.type !== "editor.drop") return;
+      expect(command.viewportId).toBe(createEngineMock.mock.calls.at(-1)?.[1]?.editorViewportId);
+      expect(command.actorIds).toEqual([a.id, b.id, miss.id]);
+      engineCommandBus.dispatch({
+        type: "editor.drop.result",
+        viewportId: command.viewportId,
+        requestId: command.requestId,
+        transforms: [
+          { actorId: a.id, ...a.transform, position: [0, -3, 0] },
+          { actorId: b.id, ...b.transform, position: [0, -8, 0] },
+        ],
+      });
+    });
+    try {
+      renderViewport();
+      await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+      fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+      expect(documents.applySceneChange).toHaveBeenCalledTimes(1);
+      const next = documents.applySceneChange.mock.calls[0]?.[1];
+      expect(next.actors.map((actor: typeof a) => actor.transform.position)).toEqual([[0, -3, 0], [0, -8, 0], [0, 0, 0]]);
+      expect(next.actors[2]).toBe(miss);
+    } finally {
+      stop();
+    }
+  });
+
+  it("does not dirty the scene when Drop has no surface or editing is unavailable", async () => {
+    const actor = createActor("a", "Box");
+    documents.openDocuments = [{
+      id: "scene:S",
+      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...createDefaultScene(), actors: [actor] },
+    }];
+    selection.actorIds = [actor.id];
+    const view = renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+    expect(documents.applySceneChange).not.toHaveBeenCalled();
+    play.playing = true;
+    view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    expect((screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("does not recreate the Engine when applySceneChange identity changes", () => {
