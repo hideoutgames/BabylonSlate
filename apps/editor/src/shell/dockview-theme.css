@@ -88,9 +88,5 @@
 
 .dockview-theme-babylonslate .dv-active-tab {
   color: var(--foreground);
-  box-shadow: inset 0 -1px 0 var(--border);
-}
-
-.dockview-theme-babylonslate .dv-active-group .dv-active-tab {
-  box-shadow: inset 0 -2px 0 var(--chrome-tab-accent);
+  background: var(--accent);
 }

@@ -214,12 +214,7 @@ export function ContentBrowserNewAssetDialog({
                                   aria-checked={selected}
                                   data-selected={selected ? "true" : "false"}
                                   data-testid={`new-asset-type-${item}`}
-                                className={cn(
-                                  "h-auto w-full justify-start border-l-2 py-2",
-                                  selected
-                                    ? "border-l-primary"
-                                    : "border-l-transparent",
-                                )}
+                                className="h-auto w-full justify-start py-2"
                                   onClick={() => onTypeChange(item)}
                                 >
                                 <TypeVisualIcon visual={visual} />
@@ -341,13 +336,10 @@ export function ContentBrowserNewAssetDialog({
                               size={phone ? "touch" : "default"}
                               disabled={!row.selectable}
                               className={cn(
-                                "h-auto w-full justify-start border-l-2",
+                                "h-auto w-full justify-start",
                                 phone
                                   ? "min-h-11"
                                   : "min-h-[var(--chrome-row,28px)]",
-                                selected
-                                  ? "border-l-primary"
-                                  : "border-l-transparent",
                               )}
                               style={{ paddingLeft: 8 + row.depth * 12 }}
                               role="radio"

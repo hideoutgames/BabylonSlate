@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  HemisphericLight,
   Mesh,
   MeshBuilder,
   PBRMaterial,
   PBRMetallicRoughnessBlock,
   RawTexture,
   StandardMaterial,
+  Vector3,
+  type Effect,
   type Scene,
 } from "@babylonjs/core";
 import {
@@ -99,6 +102,82 @@ describe("isViewportShadingTarget", () => {
 });
 
 describe("ViewportShadingOverlay", () => {
+  it.each(["pbr", "unlit"] as const)(
+    "finishes an asynchronous %s shader switch on a frozen surface",
+    async (nextMode) => {
+      const { engine, scene } = createTestEngine();
+      try {
+        new HemisphericLight("key", Vector3.Up(), scene);
+        const mesh = MeshBuilder.CreateBox("actor", {}, scene);
+        const material = compiledPbr(scene);
+        material.allowShaderHotSwapping = true;
+        mesh.material = material;
+        const overlay = new ViewportShadingOverlay(scene);
+        overlay.setMode(nextMode === "pbr" ? "unlit" : "pbr");
+        material.freeze();
+        await shaderDefines(scene, mesh);
+
+        // NullEngine has no parallel GPU compiler. Delay only effect readiness
+        // while retaining the real material, shader generation and draw cache.
+        let ready = false;
+        const delayed = new WeakSet<Effect>();
+        const createEffect = engine.createEffect.bind(engine);
+        vi.spyOn(engine, "createEffect").mockImplementation((...args) => {
+          const effect = createEffect(...args);
+          if (!delayed.has(effect)) {
+            delayed.add(effect);
+            const isReady = effect.isReady.bind(effect);
+            vi.spyOn(effect, "isReady").mockImplementation(() => ready && isReady());
+          }
+          return effect;
+        });
+        scene.blockMaterialDirtyMechanism = true;
+        overlay.setMode(nextMode);
+        scene.incrementRenderId();
+        material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
+        ready = true;
+
+        const defines = await shaderDefines(scene, mesh);
+        if (nextMode === "unlit") expect(defines).toContain("#define UNLIT");
+        else {
+          expect(defines).not.toContain("#define UNLIT");
+          expect(defines).toContain("#define LIGHT0");
+        }
+        expect(material.isFrozen).toBe(true);
+        expect(material.allowShaderHotSwapping).toBe(true);
+        expect(scene.blockMaterialDirtyMechanism).toBe(true);
+      } finally {
+        engine.dispose();
+      }
+    },
+  );
+
+  it("restores lighting for a frozen surface first compiled in Unlit", async () => {
+    const { engine, scene } = createTestEngine();
+    try {
+      new HemisphericLight("key", Vector3.Up(), scene);
+      const overlay = new ViewportShadingOverlay(scene);
+      overlay.setMode("unlit");
+      const mesh = MeshBuilder.CreateBox("actor", {}, scene);
+      const material = compiledPbr(scene);
+      mesh.material = material;
+      material.freeze();
+      scene.blockMaterialDirtyMechanism = true;
+      overlay.apply();
+      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      overlay.setMode("pbr");
+      const defines = await shaderDefines(scene, mesh);
+      expect(defines).not.toContain("#define UNLIT");
+      expect(defines).toContain("#define LIGHT0");
+      expect(mesh.subMeshes[0]!.effect!.fragmentSourceCode).toContain(
+        "vLightData0",
+      );
+      expect(material.isFrozen).toBe(true);
+    } finally {
+      engine.dispose();
+    }
+  });
+
   it.each(["compiled", "native"] as const)(
     "refreshes the frozen %s PBR shader through Unlit and restores shading",
     async (kind) => {

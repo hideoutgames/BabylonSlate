@@ -231,10 +231,7 @@ export function CatalogDialog({
                       type="button"
                       size="sm"
                       variant={active ? "secondary" : "ghost"}
-                      className={cn(
-                        "justify-between rounded-md border-l-2",
-                        active ? "border-l-primary" : "border-l-transparent",
-                      )}
+                      className="justify-between rounded-md"
                       onClick={() => onCategoryChange(category.id)}
                       aria-current={active ? "true" : undefined}
                       data-testid={
@@ -302,7 +299,7 @@ export function CatalogItemButton({
     <Button
       type="button"
       variant="outline"
-      className="h-auto min-h-[var(--chrome-row,28px)] w-full justify-start gap-2 touch-manipulation"
+      className="h-auto min-h-[var(--chrome-row,28px)] w-full justify-start gap-2 even:bg-list-stripe touch-manipulation"
       data-testid={testId}
       onClick={onClick}
     >

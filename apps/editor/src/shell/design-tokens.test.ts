@@ -301,6 +301,17 @@ describe("Graphite theme tokens", () => {
       oklchLightness(tokenValue(dark, "--popover")),
     );
   });
+
+  it("keeps dark field and panel boundaries visible against modal surfaces", () => {
+    const surface = oklchLightness(tokenValue(dark, "--popover")) ** 3;
+    for (const name of ["--border", "--input", "--sidebar-border"]) {
+      // Achromatic OKLCH lightness cubed is relative luminance.
+      const boundary = oklchLightness(tokenValue(dark, name)) ** 3;
+      expect((boundary + 0.05) / (surface + 0.05), name).toBeGreaterThanOrEqual(
+        1.5,
+      );
+    }
+  });
 });
 
 describe("compact dock tab strips", () => {
@@ -385,4 +396,3 @@ describe("document tab strip", () => {
     );
   });
 });
-

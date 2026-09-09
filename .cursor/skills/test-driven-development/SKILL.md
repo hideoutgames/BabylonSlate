@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Use when implementing any feature or bugfix, before writing implementation code
+description: Use when implementing features or bug fixes to select focused tests that protect production behavior and plausible functionality regressions.
 ---
 
 # Compatibility entry point

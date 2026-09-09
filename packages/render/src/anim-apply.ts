@@ -13,7 +13,9 @@ import type { SnapshotSceneBinding } from "./snapshot-apply";
  * lets Babylon auto-advance a gameplay-relevant clip (engineplan §2.3).
  */
 export interface SeekableAnimationGroup {
+  from?: number;
   pause(): void;
+  reset?(): void;
   goToFrame(frame: number): void;
   setWeightForAllAnimatables?(weight: number): void;
 }
@@ -29,7 +31,7 @@ export function seekGameplayAnimation(
   const t = Number.isFinite(normalisedTime)
     ? Math.min(1, Math.max(0, normalisedTime))
     : 0;
-  group.goToFrame(t * span);
+  group.goToFrame((group.from ?? 0) + t * span);
   group.setWeightForAllAnimatables?.(weight);
 }
 
@@ -128,6 +130,7 @@ export interface MissingAnimClip {
 
 export interface SceneAnimHost {
   animationGroups: NamedSeekableGroup[];
+  getAnimationGroups?(slotId: number): readonly NamedSeekableGroup[];
   getAnimationGroup?(
     slotId: number,
     clipName: string,
@@ -236,11 +239,18 @@ export function applyAnimStateToScene(
   command: AnimStateCommand,
 ): void {
   const layers = animStateLayers(command);
-  if (layers.length === 0) return;
   const spriteLayers = layers.filter((layer) => layer.clipKind === "sprite");
   const animationLayers = layers.filter((layer) => layer.clipKind !== "sprite");
-  for (const layer of animationLayers) {
-    const group = resolveAnimationGroup(scene, command.slotId, layer);
+  const resolved = animationLayers.map((layer) => ({
+    layer,
+    group: resolveAnimationGroup(scene, command.slotId, layer),
+  }));
+  const activeGroups = new Set(resolved.map(({ group }) => group));
+  for (const group of scene.getAnimationGroups?.(command.slotId) ?? []) {
+    // Restore channels absent from the incoming clip before its pose is applied.
+    if (!activeGroups.has(group)) group.reset?.();
+  }
+  for (const { layer, group } of resolved) {
     if (!group) {
       scene.onMissingClip?.({
         slotId: command.slotId,
@@ -274,6 +284,7 @@ export function sceneAnimHostFromBinding(
 ): SceneAnimHost {
   return {
     animationGroups: options.animationGroups,
+    getAnimationGroups: (slotId) => binding.slotAnimationGroups?.get(slotId) ?? [],
     getAnimationGroup: (slotId, clipName, clipAssetGuid) => {
       const groups = binding.slotAnimationGroups?.get(slotId) ?? [];
       return groups.find((group) =>

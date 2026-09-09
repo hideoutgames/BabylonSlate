@@ -2,7 +2,7 @@
 
 Canonical tokens live in [`packages/ui/src/styles/globals.css`](../../packages/ui/src/styles/globals.css). Tailwind v4 maps them via `@theme inline`; components use semantic utilities (`bg-background`, `text-primary`, `bg-node-event`, `text-axis-x`, …) — not raw hex in app code.
 
-Engine Settings **Appearance → Theme** (`system` | `light` | `dark`) is shared by the launcher and editor. The launcher toggle saves an explicit light or dark choice to the same `appearance.theme` setting; choosing System in Engine Settings makes both follow the OS. `EditorThemeProvider` resolves the preference and toggles `html.dark`, which switches Neutral chrome surfaces. Default is **system**. A boot script in `apps/editor/index.html` reads `localStorage["babylonslate:engine-settings"]` plus `prefers-color-scheme`; the initial splash inherits that resolved scheme. Native settings hydrate after load (a brief flash is acceptable).
+Engine Settings **Appearance → Theme** (`system` | `light` | `dark`) is shared by the launcher and editor. The launcher toggle saves an explicit light or dark choice to the same `appearance.theme` setting; choosing System in Engine Settings makes both follow the OS. `EditorThemeProvider` resolves the preference and toggles `html.dark`, which switches Graphite chrome surfaces. Default is **system**. A boot script in `apps/editor/index.html` reads `localStorage["babylonslate:engine-settings"]` plus `prefers-color-scheme`; the initial splash inherits that resolved scheme. Native settings hydrate after load (a brief flash is acceptable).
 
 ## Source scanning
 
@@ -52,7 +52,7 @@ Chrome uses **Soft Graphite**: warm stone light surfaces and soft charcoal dark 
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
 
-- **Primary is ink** (near-neutral). Buttons, focus rings, and selection bars follow Graphite. Active tabs use `--chrome-tab-accent` → `var(--foreground)`; the active dock group has the stronger indicator.
+- **Primary is ink** (near-neutral). Buttons and focus rings follow Graphite. Selected navigation/tree rows and active tabs use a whole-surface fill; do not add curved edge stripes or inset underline highlights.
 - **Layered surfaces** differentiate chrome, side panels, and canvases.
 - **Saturated pin/node and `--asset-*` colors are type cues** — not whole toolbars.
 - **Axis and status accents** stay chromatic: X/Y/Z, Play (`--play`), destructive actions.
@@ -63,13 +63,13 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 | --- | --- | --- | --- |
 | App frame | `--background` | `oklch(0.938 0.005 85)` | `oklch(0.23 0.003 75)` |
 | Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.963 0.004 85)` | `oklch(0.275 0.003 75)` |
-| Raised cards / active tabs | `--card` | `oklch(0.972 0.003 85)` | `oklch(0.30 0.003 75)` |
+| Raised cards | `--card` | `oklch(0.972 0.003 85)` | `oklch(0.30 0.003 75)` |
 | Panel toolbars / section headers | `--panel-header` | `oklch(0.953 0.005 85)` | `oklch(0.264 0.003 75)` |
 | Menus / dialogs / floating tools | `--popover` | `oklch(0.978 0.003 85)` | `oklch(0.315 0.003 75)` |
 | Inputs / outline actions | `--control` | `oklch(0.978 0.003 85)` | `oklch(0.252 0.003 75)` |
 | Hover / selection wash | `--accent` | `oklch(0.898 0.006 85)` | `oklch(0.35 0.004 75)` |
 
-`--primary` is ink in both schemes: light `oklch(0.30 0.006 70)`, dark `oklch(0.92 0.003 85)`. The compact dimensions stay unchanged; `--radius` is 8px. Home opens without entrance/stagger animations or moving hover targets.
+`--primary` is ink in both schemes: light `oklch(0.30 0.006 70)`, dark `oklch(0.92 0.003 85)`. The compact dimensions stay unchanged; `--radius` is 8px.
 
 Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared card adjustment cannot flatten the workbench. Graph hosts retain their existing dark default and explicit light override. Animation states use the same surface system with `--graph-state-selected` and `--graph-state-entry`. Pin/handle geometry, functional preview mattes, and transparency checkerboards are unchanged.
 
@@ -89,12 +89,14 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 - Compiler Results, Output Log, and Trace Log keep compact rows and show the selected message in a scrollable, selectable details area with Copy. Log rows reserve 44px for coarse pointers and 28px on desktop.
 - Long Play preparation explains the current wait after ten seconds. Trace charts scale bars to the largest frame or the tick budget and identify the selected frame and duration. Boolean graph defaults show On/Off beside the swatch.
 
+Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` supplies a slightly darker alternate background in both themes for catalog and picker rows. Add Node assigns stripes by item order before virtualization, excluding category headers.
+
 ## Action and status tokens
 
 | Role | Token | Notes |
 | --- | --- | --- |
 | Default actions / ink chrome | `--primary` | Near-neutral ink |
-| Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
+| Focus / docking indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; docking targets use foreground ink |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
 | Success | `--success`, `--success-foreground` | Positive status and axis Y |
 | Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes; Play and Debug share a flush neutral enclosure matching the Play button height and corner radius, with an inset outline beneath the controls |
@@ -199,7 +201,7 @@ Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`,
 
 ## Other extension tokens
 
-Trace inspection uses `--trace-selected` (vibrant orange in both schemes), `--trace-script` and `--trace-physics`. Orange selection and the full-height cursor remain independent of destructive budget markers. These tokens do not recolor the neutral focus ring or primary controls.
+Trace inspection uses `--trace-selected` (vibrant orange in both schemes), `--trace-script` and `--trace-physics`. Orange selection and the full-height cursor remain independent of destructive budget markers. Current-tick log entries use a subtle orange whole-row fill without an edge stripe. These tokens do not recolor the neutral focus ring or primary controls.
 
 | Token | Purpose |
 | --- | --- |
@@ -236,7 +238,9 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 | `Button variant="destructive"` | Solid filled `--destructive` confirm on a danger `AlertDialog` — asset, folder, and plugin delete. Not a 10% tint. |
 | `AlertDialogContent variant="destructive"` | Irreversible file-destroying confirms: red ring, red media well, red title, `sm:max-w-md` |
 | `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses **accent fill + primary border** + `aria-pressed` (not a near-invisible secondary wash) |
-| Catalog / folder / outliner selected | `variant="secondary"` (where applicable) plus a 2px start-edge **primary** bar (`border-l-2 border-l-primary`) |
+| Catalog / folder / outliner selected | Whole-row `secondary` / `accent` fill with accessible selected/current state; no start-edge bar |
+
+Dialog footer actions, including AlertDialog Save / Discard / Cancel, share the same 44px minimum on coarse pointers and preserve compact desktop sizing.
 
 **Touch sizes** on `Button` / `Toggle`: `touch` and `touch-icon` map to `min-h/min-w: var(--touch-target, 44px)`. Prefer these over repeating `min-h-11` at call sites. Docked panels omit `PanelFrame` titles when Dockview already shows the tab name; keep a toolbar-only row when actions are present. `PanelFrame` uses `--sidebar`; headers use `--card`.
 

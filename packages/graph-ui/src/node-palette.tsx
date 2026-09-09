@@ -34,7 +34,7 @@ export interface NodePaletteProps {
 
 type PaletteRow =
   | { kind: "header"; key: string; category: string }
-  | { kind: "item"; key: string; node: PaletteNode };
+  | { kind: "item"; key: string; node: PaletteNode; striped: boolean };
 
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   const needle = query.trim().toLowerCase();
@@ -49,12 +49,19 @@ function flattenPaletteRows(
   omitHeaders: boolean,
 ): PaletteRow[] {
   const rows: PaletteRow[] = [];
+  let itemIndex = 0;
   for (const [category, nodes] of grouped) {
     if (!omitHeaders) {
       rows.push({ kind: "header", key: `header:${category}`, category });
     }
     for (const node of nodes) {
-      rows.push({ kind: "item", key: node.id, node });
+      rows.push({
+        kind: "item",
+        key: node.id,
+        node,
+        striped: itemIndex % 2 === 1,
+      });
+      itemIndex += 1;
     }
   }
   return rows;
@@ -107,7 +114,9 @@ function PaletteWindowedList({
               className={cn(
                 buttonVariants({ variant: "ghost", size: "touch" }),
                 "h-full w-full min-h-0 justify-start gap-2 overflow-hidden touch-pan-y",
-                node.id === activeId && "bg-accent",
+                node.id === activeId
+                  ? "bg-accent text-accent-foreground"
+                  : row.striped && "bg-list-stripe",
               )}
               data-testid={`node-palette-item-${node.id}`}
               onClick={commit}

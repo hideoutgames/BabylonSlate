@@ -277,6 +277,7 @@ function wrapGroup(
     start?(loop?: boolean): void;
     play?(loop?: boolean): void;
     pause(): void;
+    reset(): void;
     stop(): void;
     goToFrame(frame: number): void;
     setWeightForAllAnimatables?(weight: number): void;
@@ -293,13 +294,23 @@ function wrapGroup(
   }
   group.pause();
   group.setWeightForAllAnimatables?.(0);
+  let active = false;
   return {
     name: group.name,
     from: group.from,
     to: group.to,
     clipAssetGuid,
     pause: () => group.pause(),
-    goToFrame: (frame) => group.goToFrame(frame),
+    reset: () => {
+      if (!active) return;
+      group.reset();
+      group.setWeightForAllAnimatables?.(0);
+      active = false;
+    },
+    goToFrame: (frame) => {
+      active = true;
+      group.goToFrame(frame);
+    },
     setWeightForAllAnimatables: (weight) =>
       group.setWeightForAllAnimatables?.(weight),
     dispose: () => group.dispose(),

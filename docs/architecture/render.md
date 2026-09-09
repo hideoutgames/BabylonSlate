@@ -75,6 +75,10 @@ Per-Scene GLB containers (`glb-anim.ts`) account GPU vertex+index bytes (`accoun
 
 Light/material additions, removals, and effective enabled-state changes trigger a batched update before rendering or shader prewarm. Unchanged frames only compare collection lengths and the Scene lighting flag. Updates refresh frozen material readiness without removing the editor's freeze policy; opening a small scene does not compile a large fixed light budget.
 
+World Prefab Preview opts into `CreateEngineOptions.previewLighting`, using the same session-only key/fill lights as Material and Model Preview. PBR shading therefore remains visible without adding Light components to the prefab. Unlit shows the authored base color and textures; returning to PBR restores lighting, including frozen surface shaders. Preview lights survive prefab refreshes and are disposed with their Scene. Scene viewport and Play keep authored lighting; overlay prefabs remain unlit.
+
+Viewport shading changes also discard frozen NodeMaterial draw caches. Otherwise an asynchronous GPU compilation can retain the previous shader through hot swapping and then freeze that fallback indefinitely. The material, textures, authored flags, freeze policy, and hot-swap preference remain intact.
+
 ## Engine default material
 
 Meshes with no authored surface Material (`MeshComponent.materialGuid` empty, no glTF construction material) render the engine default, not Babylon’s white `StandardMaterial`. `installEngineDefaultMaterial` (`packages/render/src/default-material.ts`) sets `scene.defaultMaterial` to a lit `PBRMaterial` matching a new user Material (opaque, not two-sided, `metallic` 0, `roughness` 0.5) with a UV-tiled 2×2 grey checker albedo (0.8 / ~0.65, wrap, nearest, 8 tiles). Installed from `setupDefaultViewport` (editor, Play, Prefab, player), `createTestEngine`, and Material Preview. Primitives keep `mesh.material === null` so Details still shows **None**. Model slot Default/None still restores the glTF construction material. Sprites, tilemaps, skybox, 3D text, colliders, billboards, and pivot markers keep their own materials. Particle / post-process **None** is unchanged.
@@ -148,6 +152,8 @@ Root-only object clips, two independent animated meshes, and static meshes creat
 Helpers live in `@babylonslate/render` (`node-rig.ts`) because `@babylonslate/assets` cannot import Babylon. Bone previews skip loader/import wrappers and the hidden `materialPreviewMesh` placeholder. Skeleton / Animation previews attach to `previewRigRoot` (first glTF child of that placeholder). Content Browser Retarget probes via `animationRetargetHasMatches(engine, …)` which owns a throwaway Scene. Editor previews reuse `attachMaterialPreviewGestures` and `aimPreviewCameraAtMesh`.
 
 Skeleton assets show bones only. Animation **Show Bones** hides the model and displays the same cyan bone connectors and white joints while the clip keeps looping; switching it off restores the original mesh visibility. `attachSkeletonPreview` keeps source nodes enabled for animation, updates debug geometry in world space each render, and releases its geometry/materials and restores visibility on disposal. Rigs with no bones keep their original model visibility.
+
+Gameplay AnimationGraph state changes seek each paused clip within its authored `from`–`to` frame range. A clip whose first key is after frame zero advances normally; normalized time zero selects that first key. Departing clips restore their original animated channels before the incoming pose is applied, so returning from Walk to Idle does not retain a hip offset that Idle never animates. This reset is scoped to the owning actor's clips and keeps live animatables paused. Jump To State uses the wired AnimationGraphComponent and resolves the selected state's Animation asset and clip name before rendering (see [Animation Graph runtime](anim-graph.md#runtime)).
 
 See [asset-registry.md](asset-registry.md) and [anim-graph.md](anim-graph.md).
 

@@ -38,6 +38,7 @@ import {
 } from "./editor-place";
 import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { createPreviewLighting } from "./preview-lighting";
 import {
   ViewportShadingOverlay,
   type ViewportShadingMode,
@@ -299,6 +300,8 @@ export interface CreateEngineOptions {
   maxActors?: number;
   /** Attach the editor camera, gizmos, grid, selection and scene sync. */
   editor?: boolean;
+  /** Session-only studio lights for isolated editor asset previews. */
+  previewLighting?: boolean;
   viewportMode?: ViewportMode;
   /** Actor id under an explicit tap, or null when the tap missed. */
   onPickActor?: (
@@ -658,6 +661,9 @@ export function createEngine(
     configureEditorRenderingGroups(scene);
   } else {
     scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
+  }
+  if (options.editor && !options.playMode && options.previewLighting) {
+    createPreviewLighting(scene);
   }
   if (presentRtt) {
     // RTT clear targets the preview buffer, not Scene/Play's framebuffer.

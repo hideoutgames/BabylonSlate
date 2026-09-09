@@ -516,10 +516,10 @@ describe("TreeView", () => {
     expect(screen.getByText("No actors")).toBeTruthy();
   });
 
-  it("marks the selected row with a primary edge", () => {
+  it("marks the selected row with an accent fill", () => {
     render(<TreeView nodes={nodes} selectedId="child" data-testid="tree" />);
     expect(screen.getByTestId("tree-row-child").className).toContain(
-      "border-l-primary",
+      "bg-accent",
     );
   });
 

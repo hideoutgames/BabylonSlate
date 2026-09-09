@@ -10,7 +10,7 @@ const alertDialogContentVariants = cva(
   {
     variants: {
       variant: {
-        default: "ring-foreground/10 data-[size=default]:sm:max-w-sm",
+        default: "ring-border data-[size=default]:sm:max-w-sm",
         destructive: "ring-destructive/30 sm:max-w-md",
       },
     },
@@ -99,7 +99,7 @@ function AlertDialogFooter({
     <div
       data-slot="alert-dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-wrap justify-end gap-2 rounded-b-xl border-t px-4 py-3",
+        "-mx-4 -mb-4 flex flex-wrap items-center justify-end gap-2 rounded-b-xl border-t px-4 py-3",
         className
       )}
       {...props}

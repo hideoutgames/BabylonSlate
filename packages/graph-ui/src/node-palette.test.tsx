@@ -133,16 +133,16 @@ describe("NodePalette", () => {
     const { getByTestId, rerender } = render(<NodePalette open {...props} />);
 
     fireEvent.click(getByTestId("node-palette-category-Debug"));
-    expect(getByTestId("node-palette-category-Debug").className).toContain(
-      "border-l-primary",
-    );
+    expect(
+      getByTestId("node-palette-category-Debug").getAttribute("aria-current"),
+    ).toBe("true");
 
     rerender(<NodePalette open={false} {...props} />);
     rerender(<NodePalette open {...props} />);
 
-    expect(getByTestId("node-palette-category-all").className).toContain(
-      "border-l-primary",
-    );
+    expect(
+      getByTestId("node-palette-category-all").getAttribute("aria-current"),
+    ).toBe("true");
   });
 
   it("lists only compatible opposite pins when Context Sensitive is on", () => {
@@ -295,6 +295,38 @@ describe("NodePalette", () => {
       document.querySelector('[data-testid="node-palette-category-all"]')
         ?.textContent,
     ).toContain("1000");
+  });
+
+  it("alternates node rows across category headers and keeps stripes stable when scrolling", () => {
+    stubPaletteBodyHeight(440);
+    const nodes = manyNodes(100);
+    nodes[0] = { ...nodes[0]!, category: "A" };
+    const { getByTestId } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={nodes}
+        onAddNode={() => {}}
+      />,
+    );
+    expect(
+      getByTestId("node-palette-item-n0").classList.contains("bg-list-stripe"),
+    ).toBe(false);
+    expect(
+      getByTestId("node-palette-item-n1").classList.contains("bg-list-stripe"),
+    ).toBe(true);
+    expect(
+      getByTestId("node-palette-item-n2").classList.contains("bg-list-stripe"),
+    ).toBe(false);
+    fireEvent.scroll(getByTestId("node-palette-body"), {
+      target: { scrollTop: 880 },
+    });
+    expect(
+      getByTestId("node-palette-item-n19").classList.contains("bg-list-stripe"),
+    ).toBe(true);
+    expect(
+      getByTestId("node-palette-item-n20").classList.contains("bg-list-stripe"),
+    ).toBe(false);
   });
 
   it("search finds the last item without mounting the full palette", () => {
