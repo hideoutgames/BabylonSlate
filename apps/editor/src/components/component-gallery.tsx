@@ -472,7 +472,7 @@ function GalleryComposites() {
       <div className="h-40 overflow-hidden rounded-lg border border-border">
         <PanelFrame title="Tree view" data-testid="gallery-tree-view">
           <TreeView
-            nodes={GALLERY_TREE_NODES}
+            aria-label=" Component Gallery Tree\n            nodes={GALLERY_TREE_NODES}
             selectedId={selectedId}
             onSelect={setSelectedId}
             data-testid="gallery-tree"

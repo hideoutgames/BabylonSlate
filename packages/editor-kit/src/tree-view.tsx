@@ -90,11 +90,7 @@ export interface TreeViewProps {
   /** Drop a row onto a client point outside the tree (graph canvas spawn). */
   onExternalDrop?: (id: string, clientX: number, clientY: number) => void;
   /** Fired while an external drag is armed (for graph drop hints). */
-  onExternalDragMove?: (
-    id: string,
-    clientX: number,
-    clientY: number,
-  ) => void;
+  onExternalDragMove?: (id: string, clientX: number, clientY: number) => void;
   onExternalDragEnd?: () => void;
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
@@ -163,10 +159,14 @@ export function TreeView({
   const [viewportHeight, setViewportHeight] = useState(0);
   const [dropHint, setDropHint] = useState<DropHint | undefined>(undefined);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const activeIndex = Math.max(0, nodes.findIndex((node) => node.id === (activeId ?? selectedId)));
+  const activeIndex = Math.max(
+    0,
+    nodes.findIndex((node) => node.id === (activeId ?? selectedId)),
+  );
   const activeNode = nodes[activeIndex];
   const selectedSet = new Set(
-    selectedIds ?? (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
+    selectedIds ??
+      (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
   );
 
   // jsdom and first paint report a zero-height client rect; render everything
@@ -178,7 +178,10 @@ export function TreeView({
     viewportHeight,
     overscan: WINDOWED_SLICE_OVERSCAN,
   });
-  const visibleIndexes = Array.from({ length: Math.max(0, lastIndex - firstIndex) }, (_, i) => firstIndex + i);
+  const visibleIndexes = Array.from(
+    { length: Math.max(0, lastIndex - firstIndex) },
+    (_, i) => firstIndex + i,
+  );
   if (activeNode && !visibleIndexes.includes(activeIndex)) {
     visibleIndexes.push(activeIndex);
     visibleIndexes.sort((a, b) => a - b);
@@ -187,14 +190,22 @@ export function TreeView({
   useEffect(() => {
     const element = containerRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setViewportHeight(element.clientHeight));
+    const observer = new ResizeObserver(() =>
+      setViewportHeight(element.clientHeight),
+    );
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
     const element = containerRef.current;
-    if (!element || document.activeElement !== element || !activeNode || viewportHeight <= 0) return;
+    if (
+      !element ||
+      document.activeElement !== element ||
+      !activeNode ||
+      viewportHeight <= 0
+    )
+      return;
     const top = activeIndex * rowHeight;
     if (top < element.scrollTop) element.scrollTop = top;
     else if (top + rowHeight > element.scrollTop + viewportHeight) {
@@ -249,10 +260,7 @@ export function TreeView({
     const drag = dragRef.current;
     if (drag?.longPressTimer) clearTimeout(drag.longPressTimer);
     if (drag?.dragArmTimer) clearTimeout(drag.dragArmTimer);
-    if (
-      drag &&
-      containerRef.current?.hasPointerCapture?.(drag.pointerId)
-    ) {
+    if (drag && containerRef.current?.hasPointerCapture?.(drag.pointerId)) {
       try {
         containerRef.current.releasePointerCapture(drag.pointerId);
       } catch {
@@ -480,7 +488,9 @@ export function TreeView({
       role="tree"
       aria-label={accessibleName}
       aria-multiselectable={selectedIds ? true : undefined}
-      aria-activedescendant={activeNode ? `${treeId}-${activeIndex}` : undefined}
+      aria-activedescendant={
+        activeNode ? `${treeId}-${activeIndex}` : undefined
+      }
       tabIndex={0}
       className="group/tree h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
       data-testid={testId}
@@ -488,31 +498,51 @@ export function TreeView({
         if (event.target !== event.currentTarget || !activeNode) return;
         let nextIndex = activeIndex;
         switch (event.key) {
-          case "ArrowDown": nextIndex = Math.min(nodes.length - 1, activeIndex + 1); break;
-          case "ArrowUp": nextIndex = Math.max(0, activeIndex - 1); break;
-          case "Home": nextIndex = 0; break;
-          case "End": nextIndex = nodes.length - 1; break;
+          case "ArrowDown":
+            nextIndex = Math.min(nodes.length - 1, activeIndex + 1);
+            break;
+          case "ArrowUp":
+            nextIndex = Math.max(0, activeIndex - 1);
+            break;
+          case "Home":
+            nextIndex = 0;
+            break;
+          case "End":
+            nextIndex = nodes.length - 1;
+            break;
           case "ArrowRight":
-            if (activeNode.hasChildren && !activeNode.expanded) onToggleExpanded?.(activeNode.id);
-            else if (nodes[activeIndex + 1]?.depth > activeNode.depth) nextIndex++;
+            if (activeNode.hasChildren && !activeNode.expanded)
+              onToggleExpanded?.(activeNode.id);
+            else if (nodes[activeIndex + 1]?.depth > activeNode.depth)
+              nextIndex++;
             break;
           case "ArrowLeft":
-            if (activeNode.hasChildren && activeNode.expanded) onToggleExpanded?.(activeNode.id);
+            if (activeNode.hasChildren && activeNode.expanded)
+              onToggleExpanded?.(activeNode.id);
             else {
               for (let i = activeIndex - 1; i >= 0; i--) {
-                if (nodes[i]!.depth < activeNode.depth) { nextIndex = i; break; }
+                if (nodes[i]!.depth < activeNode.depth) {
+                  nextIndex = i;
+                  break;
+                }
               }
             }
             break;
-          case "Enter": onActivate?.(activeNode.id); break;
-          case " ": break;
-          default: return;
+          case "Enter":
+            onActivate?.(activeNode.id);
+            break;
+          case " ":
+            break;
+          default:
+            return;
         }
         event.preventDefault();
         const next = nodes[nextIndex]!;
         setActiveId(next.id);
-        if (event.ctrlKey || event.metaKey) onSelect?.(next.id, { additive: true });
-        else if (event.shiftKey && nextIndex !== activeIndex) onSelect?.(next.id, { range: true });
+        if (event.ctrlKey || event.metaKey)
+          onSelect?.(next.id, { additive: true });
+        else if (event.shiftKey && nextIndex !== activeIndex)
+          onSelect?.(next.id, { range: true });
         else onSelect?.(next.id);
       }}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
@@ -553,7 +583,8 @@ export function TreeView({
                     ? "border-l-primary bg-primary/20 font-medium"
                     : "border-l-transparent hover:bg-accent/50",
                   dropInto ? "outline outline-1 outline-ring" : "",
-                  index === activeIndex && "group-focus-visible/tree:outline group-focus-visible/tree:outline-1 group-focus-visible/tree:outline-inset group-focus-visible/tree:outline-ring",
+                  index === activeIndex &&
+                    "group-focus-visible/tree:outline group-focus-visible/tree:outline-1 group-focus-visible/tree:outline-inset group-focus-visible/tree:outline-ring",
                 )}
                 style={{
                   top,
@@ -562,7 +593,8 @@ export function TreeView({
                 }}
                 onPointerDown={(event) => {
                   setActiveId(node.id);
-                  if (event.pointerType === "mouse") containerRef.current?.focus({ preventScroll: true });
+                  if (event.pointerType === "mouse")
+                    containerRef.current?.focus({ preventScroll: true });
                   onPointerDown(event, node.id);
                 }}
                 onContextMenu={(event) => {
@@ -607,7 +639,10 @@ export function TreeView({
                   </button>
                 ) : (
                   <span
-                    className={cn("shrink-0", rowHeight >= 44 ? "size-11" : "size-4")}
+                    className={cn(
+                      "shrink-0",
+                      rowHeight >= 44 ? "size-11" : "size-4",
+                    )}
                     aria-hidden
                   />
                 )}
