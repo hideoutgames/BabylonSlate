@@ -60,11 +60,13 @@ Compiled graphs call `ctx.findPathTo` / `ctx.moveTo` / `ctx.stopMovement` / `ctx
 
 `BTTask_MoveTo` without a task host still succeeds (package stub). The runtime host requests `setNavAgentTarget` and returns `running` until the agent is inside `acceptRadius` (default 0.75). Aborting a running MoveTo calls `stopNavAgent` so the crowd does not keep the aborted target.
 
-## Honest residuals
+## Play console inspection
 
 Play and Preview Build console commands `shownav` / `shownavdebug` toggle the baked navmesh overlay; `showpathfinding on/off` shows active crowd corridor corners and destinations. `shownavagent on/off` adds agent bounds, velocity, names and current movement state, including each agent's active path. Both default to `on` when omitted. The runtime emits `debugNavigation` at up to 5 Hz while requested, with immediate updates for commands and removals; disabling both or stopping clears the overlay. Positions, targets, velocities and path corners are remapped into 2D scene XY when applicable.
 
 `NavigationBackend.agentDebugState(id)` returns detached live crowd position, velocity, radius, height, target, corridor path and request state, or `null` for a missing agent. Paths come from Recast's active crowd corners, so debug drawing does not issue a second path query. Stop Movement clears the path; an arrived agent has no active path. These debug commands are stripped from exports without a bundled debugger.
+
+## Honest residuals
 
 - Auto-bake-on-save default **off**. Closing the Scene tab unregisters the bake collector (no painted meshes until a Scene remounts). Closing the Viewport panel on a mounted scene also unregisters collect.
 - Geometry collect runs on the painted modal frame and retries a few extra frames if the first collect is empty (Viewport meshes can lag the Save click). It is not chunked across frames; the blocking modal still covers that stall.

@@ -104,10 +104,11 @@ function statCommand(
     tier: "debug",
     category: "engine",
     description: name,
-    parameters: [],
-    run(_args, host) {
-      host.setStat?.(stat, true);
-      return ok(`${name} on`);
+    parameters: [FLAG],
+    run(args, host) {
+      const enabled = Boolean(args.enabled);
+      host.setStat?.(stat, enabled);
+      return ok(`${name} ${enabled ? "on" : "off"}`);
     },
   };
 }

@@ -2747,7 +2747,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emit({ type: "setShowFps", enabled: Boolean(enabled) });
       },
       setStat: (name, enabled) => {
-        this.emit({ type: "setShowFps", enabled: true });
+        if (enabled) this.emit({ type: "setShowFps", enabled: true });
         this.emit({ type: "setStat", name, enabled: Boolean(enabled) });
       },
       setShowCollision: (enabled) => {
