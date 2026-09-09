@@ -35,6 +35,7 @@ const {
   collectPlayModelPayloads,
   prefabDocs,
   commitComponentTransforms,
+  viewportState,
 } = vi.hoisted(() => {
   const disposeFn = vi.fn();
   const handle = {
@@ -86,6 +87,7 @@ const {
     handle,
     createEngineMock,
     commitComponentTransforms: vi.fn(),
+    viewportState: { mode: "3d" as "3d" | "2d" },
     collectPlayMaterialLibrary: vi.fn(async () => ({
       documents: new Map(),
       functions: new Map(),
@@ -130,6 +132,7 @@ const {
       openDocuments: [] as Array<{
         id: string;
         ref: { kind: string; path: string; label: string };
+        content?: unknown;
       }>,
       assetRegistry: null as {
         list: () => Array<{
@@ -205,7 +208,7 @@ vi.mock("../context/scene-editing-context", () => ({
   useSceneEditing: () => ({
     gizmoTool: "translate",
     snapEnabled: false,
-    viewportMode: "3d",
+    viewportMode: viewportState.mode,
     joystickEnabled: false,
     gridVisible: true,
     saveEditorCameraPose: vi.fn(),
@@ -254,6 +257,7 @@ describe("PrefabViewportPanel engine", () => {
     collectPlayMaterialLibrary.mockClear();
     prefabState.components = [createMeshComponent("prefab-mesh", "box")];
     prefabState.selectedIds = [];
+    viewportState.mode = "3d";
     prefabDocs.openDocuments = [];
     prefabDocs.assetRegistry = null;
     play.ensureSharedEngine.mockClear();
@@ -417,6 +421,25 @@ describe("PrefabViewportPanel engine", () => {
     expect(createEngineMock).toHaveBeenCalledWith(
       expect.any(HTMLCanvasElement),
       expect.objectContaining({ overlayTransformBox: true }),
+    );
+    expect(handle.loadScene).toHaveBeenLastCalledWith(
+      expect.objectContaining({ settings: expect.objectContaining({ physicsWorld: "2d" }) }),
+    );
+  });
+
+  it.each([
+    { physicsWorld: "2d", cameraMode: "3d" },
+    { physicsWorld: "3d", cameraMode: "2d" },
+  ] as const)("uses the open scene's $physicsWorld physics in a $cameraMode Prefab camera", ({ physicsWorld, cameraMode }) => {
+    viewportState.mode = cameraMode;
+    prefabDocs.openDocuments = [{
+      id: "scene:assets/World.scene.babasset",
+      ref: { kind: "scene", path: "assets/World.scene.babasset", label: "World" },
+      content: { settings: { physicsWorld } },
+    }];
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    expect(handle.loadScene).toHaveBeenLastCalledWith(
+      expect.objectContaining({ settings: expect.objectContaining({ physicsWorld }) }),
     );
   });
 
