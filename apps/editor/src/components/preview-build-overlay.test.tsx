@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import { createRef } from "react";
 import { PreviewBuildOverlay } from "./preview-build-overlay";
 
@@ -8,6 +14,74 @@ afterEach(() => {
 });
 
 describe("PreviewBuildOverlay", () => {
+  it("keeps winning command metadata and live actor context without clearing the catalog", () => {
+    const iframeRef = createRef<HTMLIFrameElement>();
+    const view = render(
+      <PreviewBuildOverlay
+        src="/player/index.html?preview=1"
+        iframeRef={iframeRef}
+        onClose={() => {}}
+      />,
+    );
+    const frame = iframeRef.current!.contentWindow!;
+    const post = vi.spyOn(frame, "postMessage");
+    const receive = (data: unknown) =>
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: frame,
+            origin: window.location.origin,
+            data,
+          }),
+        ),
+      );
+    receive({
+      type: "babylonslate-preview-console-catalog",
+      commands: [
+        {
+          name: "heal",
+          description: "Old Heal",
+          parameters: [],
+          category: "game",
+        },
+        {
+          name: "heal",
+          description: "Winning Heal",
+          parameters: [
+            { name: "mode", type: "enum", enumValues: ["full", "partial"] },
+          ],
+          category: "game",
+        },
+      ],
+      scenes: ["Hub"],
+      actors: ["Old Guard"],
+    });
+    fireEvent.click(view.getByRole("button", { name: "Console" }));
+    expect(post).toHaveBeenCalledWith(
+      { type: "babylonslate-preview-console-context" },
+      window.location.origin,
+    );
+    const input = view.getByRole("combobox", { name: /Console Command/i });
+    fireEvent.change(input, { target: { value: "help pa" } });
+    expect(view.getByRole("option", { name: /pause/ })).toBeTruthy();
+    fireEvent.change(input, { target: { value: "heal" } });
+    expect(view.getAllByRole("option", { name: /heal/ })).toHaveLength(1);
+    expect(view.getByRole("option", { name: /heal/ }).textContent).toContain(
+      "Winning Heal",
+    );
+    receive({
+      type: "babylonslate-preview-console-catalog",
+      actors: ["New Scout"],
+    });
+    fireEvent.change(input, { target: { value: "inspect " } });
+    expect(view.getByRole("option", { name: "New Scout" })).toBeTruthy();
+    expect(view.queryByRole("option", { name: "Old Guard" })).toBeNull();
+    fireEvent.change(input, { target: { value: "heal " } });
+    expect(view.getByRole("option", { name: "full" })).toBeTruthy();
+    fireEvent.change(input, { target: { value: "changescene " } });
+    expect(view.getByRole("option", { name: "Hub" })).toBeTruthy();
+  });
+
   it("opens a console, retains play warnings, and executes in the expected player frame", async () => {
     const iframeRef = createRef<HTMLIFrameElement>();
     const onTrace = vi.fn();
@@ -73,7 +147,10 @@ describe("PreviewBuildOverlay", () => {
       expect(view.getByText("Path Overlay Enabled")).toBeTruthy(),
     );
     const trace = { version: 1, frames: [], logs: [] };
-    receive({ type: "babylonslate-preview-console-event", command: { type: "trace", payload: trace } });
+    receive({
+      type: "babylonslate-preview-console-event",
+      command: { type: "trace", payload: trace },
+    });
     fireEvent.click(view.getByRole("button", { name: "Close" }));
     fireEvent.click(view.getByRole("button", { name: "Stop" }));
     expect(onTrace).toHaveBeenCalledWith(trace);
