@@ -1291,7 +1291,10 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   transform: none;
 }
 @media (hover: hover) and (pointer: fine) {
-  .homepage-project-card[data-layout="list"]:hover .homepage-project-badge {
+  .homepage-project-card[data-layout="list"]:not(
+      [data-touch-input="true"]
+    ):hover
+    .homepage-project-badge {
     transform: translateY(-2px);
   }
 }
