@@ -8,7 +8,7 @@ import {
   type World,
 } from "@babylonslate/object-model";
 import type { NavPoint } from "@babylonslate/navigation";
-import { actorWorldTransforms, composeParentChildTransform } from "./actor-world-transform";
+import { actorWorldTransform, composeParentChildTransform } from "./actor-world-transform";
 
 /** Keep live objects inside the evaluator; only transport/trace copies use references. */
 export function snapshotBlackboard(values: BlackboardValues): BlackboardValues {
@@ -17,35 +17,49 @@ export function snapshotBlackboard(values: BlackboardValues): BlackboardValues {
   );
 }
 
-export function blackboardTargetPosition(value: unknown, world: World): NavPoint | null {
+export function blackboardTargetPosition(
+  value: unknown,
+  world: World,
+  actorsByGuid: ReadonlyMap<string, Actor> = new Map(world.getActors().map((actor) => [actor.guid, actor])),
+): NavPoint | null {
   if (!value || typeof value !== "object") return null;
   if (value instanceof BObject && value.destroyed) return null;
-  const row = value as { guid?: unknown; classId?: unknown; x?: unknown; y?: unknown; z?: unknown };
+  const row = value as { guid?: unknown };
   if (typeof row.guid !== "string") return finitePosition(value);
 
-  const actors = world.getActors().filter((actor) => !actor.destroyed);
-  const target = actors.find((actor) => actor.guid === row.guid)
-    ?? actors.flatMap((actor) => actor.components).find((component) => component.guid === row.guid);
+  let target = value instanceof BObject
+    ? value
+    : actorsByGuid.get(row.guid);
+  if (!target) {
+    for (const actor of actorsByGuid.values()) {
+      target = actor.components.find((component) => component.guid === row.guid);
+      if (target) break;
+    }
+  }
   if (!target || target.destroyed) return null;
-  if (value instanceof BObject && value !== target) return null;
-  const actorTransforms = actorWorldTransforms(actors);
-  if (target instanceof Actor) return finitePosition(actorTransforms.get(target.guid)?.position);
-  if (!(target instanceof ActorComponent) || !target.owner) return null;
-
-  const ownerTransform = actorTransforms.get(target.owner.guid);
+  const owner = target instanceof Actor ? target : target instanceof ActorComponent ? target.owner : null;
+  if (!owner || owner.destroyed || owner.world !== world || actorsByGuid.get(owner.guid) !== owner) return null;
+  const ownerTransform = actorWorldTransform(owner, actorsByGuid);
   if (!ownerTransform) return null;
-  let local: Transform = target.transform;
+  if (target instanceof Actor) return finitePosition(ownerTransform.position);
+  if (!(target instanceof ActorComponent) || !owner.components.includes(target)) return null;
+
+  const chain: Transform[] = [target.transform];
   let parentId = target.parentId;
   const visited = new Set([target.guid]);
   while (parentId) {
     if (visited.has(parentId)) return null;
     visited.add(parentId);
-    const parent = target.owner.components.find((component) => component.guid === parentId);
+    const parent = owner.components.find((component) => component.guid === parentId);
     if (!parent || parent.destroyed) return null;
-    local = composeParentChildTransform(parent.transform, local);
+    chain.push(parent.transform);
     parentId = parent.parentId;
   }
-  return finitePosition(composeParentChildTransform(ownerTransform, local).position);
+  let transform = ownerTransform;
+  for (let index = chain.length - 1; index >= 0; index -= 1) {
+    transform = composeParentChildTransform(transform, chain[index]!);
+  }
+  return finitePosition(transform.position);
 }
 
 function finitePosition(value: unknown): NavPoint | null {

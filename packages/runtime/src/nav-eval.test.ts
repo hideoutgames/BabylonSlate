@@ -154,7 +154,7 @@ describe("runtime navmesh import and crowd", () => {
 
   it("an idle NavAgent preserves dynamic gravity and the physics world pose", async () => {
     const runtime = createInProcessRuntime({
-      seedDemoActors: false, playScene: physicalAgentScene({ y: 2 }),
+      seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 2 }),
       preferSoftwarePhysics: true,
     });
     try {
@@ -180,7 +180,7 @@ describe("runtime navmesh import and crowd", () => {
 
   it("NavAgent leaves an authored zero-gravity body floating", async () => {
     const runtime = createInProcessRuntime({
-      seedDemoActors: false, playScene: physicalAgentScene({ y: 2, gravityScale: 0 }),
+      seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 2, gravityScale: 0 }),
       preferSoftwarePhysics: true,
     });
     try {
@@ -197,7 +197,7 @@ describe("runtime navmesh import and crowd", () => {
   it.each(["software", "havok"] as const)("%s: an airborne BT owner falls then navigates with its collider and parent offset", async (backend) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seedDemoActors: false, playScene: physicalAgentScene({ y: 6, moveTo: true }),
+      seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 6, moveTo: true }),
       preferSoftwarePhysics: backend === "software",
       behaviourTrees: { "move-tree": physicalMoveTree },
       onCommand: (command) => commands.push(command),
@@ -227,7 +227,7 @@ describe("runtime navmesh import and crowd", () => {
 
   it("stopping dynamic navigation stops horizontal steering while an upward impulse still falls", async () => {
     const runtime = createInProcessRuntime({
-      seedDemoActors: false, playScene: physicalAgentScene({ y: 0 }),
+      seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 0 }),
       preferSoftwarePhysics: true,
     });
     try {

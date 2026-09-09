@@ -309,13 +309,14 @@ describe("BehaviourTreeEditor", () => {
     }));
     fireEvent.click(screen.getByTestId("graph-add-node"));
     fireEvent.click(await screen.findByTestId("node-palette-item-bt.task.moveToBlackboardKey"));
+    await waitFor(() => expect(screen.queryByTestId("node-palette")).toBeNull());
     const added = lastCommit().nodes.find((node) => node.classId === "bt.task.moveToBlackboardKey")!;
     expect(added).toBeDefined();
     fireEvent.click(screen.getByTestId(`bt-node-${added.id}`));
     fireEvent.click(screen.getByTestId("property-key"));
+    expect(await screen.findByRole("option", { name: "position2d", exact: true })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "alert", exact: true })).toBeNull();
     expect(screen.queryByRole("option", { name: "hp", exact: true })).toBeNull();
-    expect(screen.getByRole("option", { name: "position2d", exact: true })).toBeTruthy();
     expect(screen.getByRole("option", { name: "actor", exact: true })).toBeTruthy();
     expect(screen.getByRole("option", { name: "target", exact: true })).toBeTruthy();
     fireEvent.click(screen.getByRole("option", { name: "position", exact: true }));

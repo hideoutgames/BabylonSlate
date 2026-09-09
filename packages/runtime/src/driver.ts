@@ -116,7 +116,7 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorParentGuid, actorWorldTransforms } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransform, actorWorldTransforms } from "./actor-world-transform";
 import { blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
@@ -430,6 +430,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly navYawByActor = new Map<string, number>();
   private readonly navTargetByActor = new Map<string, NavPoint>();
   private readonly navSteeredActors = new Set<string>();
+  private navFrameActors: ReadonlyMap<string, Actor> | null = null;
   private readonly audioAssetGuids = new Set<string>();
   private readonly animClipCatalog = new Map<string, AnimClipCatalogEntry>();
   private readonly btPlayAnimOwnedSlots = new Set<number>();
@@ -1776,8 +1777,8 @@ class InProcessRuntime implements RuntimeDriver {
     if (!actor || actor.destroyed || !actor.components.some(
       (component) => component.classId === "NavAgentComponent" && !component.destroyed,
     )) return false;
-    const destination = this.toNav(target);
-    if (!this.nav.closestPoint(destination)) return false;
+    const destination = this.nav.closestPoint(this.toNav(target));
+    if (!destination) return false;
     if (!this.navAgentByActor.has(actorGuid)) {
       this.registerNavAgent(actor);
     }
@@ -1866,17 +1867,23 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private navActorWorldPosition(actor: Actor): NavPoint {
-    return actorWorldTransforms(this.world.getActors()).get(actor.guid)?.position ?? actor.transform.position;
+    const actors = this.navFrameActors ?? new Map(this.world.getActors().map((entry) => [entry.guid, entry]));
+    return actorWorldTransform(actor, actors)?.position ?? actor.transform.position;
   }
 
-  private registerNavAgents(): void {
+  private registerNavAgents(
+    transforms = actorWorldTransforms(this.world.getActors()),
+  ): void {
     if (!this.nav) return;
     for (const actor of this.world.getActors()) {
-      this.registerNavAgent(actor);
+      this.registerNavAgent(actor, transforms);
     }
   }
 
-  private registerNavAgent(actor: Actor): void {
+  private registerNavAgent(
+    actor: Actor,
+    transforms?: ReadonlyMap<string, Transform>,
+  ): void {
     if (!this.nav || actor.destroyed) return;
     if (this.navAgentByActor.has(actor.guid)) return;
     const component = actor.components.find(
@@ -1886,7 +1893,7 @@ class InProcessRuntime implements RuntimeDriver {
     const params = parseNavAgentParams(
       Object.fromEntries(component.variables),
     );
-    const world = this.toNav(this.navActorWorldPosition(actor));
+    const world = this.toNav(transforms?.get(actor.guid)?.position ?? this.navActorWorldPosition(actor));
     const position = this.isDynamicNavActor(actor) ? this.nav.closestPoint(world) : world;
     if (!position) return;
     const id = this.nav.addAgent(position, params);
@@ -2000,8 +2007,8 @@ class InProcessRuntime implements RuntimeDriver {
   private tickCrowd(): void {
     if (!this.nav) return;
     this.syncNavCostVolumes();
-    this.registerNavAgents();
     const worldTransforms = actorWorldTransforms(this.world.getActors());
+    this.registerNavAgents(worldTransforms);
     const physicalAgents = new Set<string>();
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);
@@ -2273,7 +2280,9 @@ class InProcessRuntime implements RuntimeDriver {
     }
     if (builtinClassId(node.classId) === "bt.task.moveToBlackboardKey") {
       const key = typeof node.properties?.key === "string" ? node.properties.key : "";
-      return this.tickMoveTo(actor, node, memory, blackboardTargetPosition(blackboard[key], this.world));
+      return this.tickMoveTo(actor, node, memory, blackboardTargetPosition(
+        blackboard[key], this.world, this.navFrameActors ?? undefined,
+      ));
     }
     if (builtinClassId(node.classId) === "bt.task.rotateToFace") {
       return this.tickRotateToFace(actor, node);
@@ -2321,7 +2330,11 @@ class InProcessRuntime implements RuntimeDriver {
       this.stopNavAgent(actor.guid);
       return "failure";
     }
-    const target = this.toNav(dest);
+    const target = this.nav?.closestPoint(this.toNav(dest));
+    if (!target) {
+      this.stopNavAgent(actor.guid);
+      return "failure";
+    }
     const previous = navPointFromUnknown(memory.__moveDestination);
     if (memory.__moveRequested !== true || !previous ||
       previous.x !== dest.x || previous.y !== dest.y || previous.z !== dest.z) {
@@ -3638,8 +3651,13 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.advanceDelays();
     this.tickAnimGraphs();
-    this.tickBehaviourTrees();
-    this.tickCrowd();
+    this.navFrameActors = new Map(this.world.getActors().map((actor) => [actor.guid, actor]));
+    try {
+      this.tickBehaviourTrees();
+      this.tickCrowd();
+    } finally {
+      this.navFrameActors = null;
+    }
     this.closePhaseTiming();
 
     this._lastScriptMs = this.phaseScriptMs;

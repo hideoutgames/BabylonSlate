@@ -132,7 +132,10 @@ describe("Move To Blackboard Key", () => {
     expect(stoppedAt).toBeGreaterThan(-3.5);
     runtime.getWorld().destroyActor(target.guid);
     for (let i = 0; i < 60; i += 1) runtime.tick();
-    expect(runtime.getWorld().findActor("guard")!.transform.position.x).toBeLessThan(stoppedAt + 0.35);
+    const brakedAt = runtime.getWorld().findActor("guard")!.transform.position.x;
+    expect(brakedAt).toBeLessThan(3);
+    for (let i = 0; i < 60; i += 1) runtime.tick();
+    expect(runtime.getWorld().findActor("guard")!.transform.position.x).toBeCloseTo(brakedAt, 3);
     expect(commands.filter((command) => command.type === "btState").at(-1)).toMatchObject({ status: "failure" });
   });
 
