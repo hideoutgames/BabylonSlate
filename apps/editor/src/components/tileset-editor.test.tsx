@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -170,20 +171,22 @@ describe("TilesetPreview", () => {
     const first = screen.getByTestId("tileset-preview-cell-1");
     first.parentElement!.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 96, height: 64 }) as DOMRect;
-    dispatchPointerEvent(first, "pointerdown", {
-      pointerId: 1,
-      clientX: 4,
-      clientY: 4,
-    });
-    dispatchPointerEvent(surface, "pointermove", {
-      pointerId: 1,
-      clientX: 52,
-      clientY: 52,
-    });
-    dispatchPointerEvent(surface, "pointerup", {
-      pointerId: 1,
-      clientX: 52,
-      clientY: 52,
+    act(() => {
+      dispatchPointerEvent(first, "pointerdown", {
+        pointerId: 1,
+        clientX: 4,
+        clientY: 4,
+      });
+      dispatchPointerEvent(surface, "pointermove", {
+        pointerId: 1,
+        clientX: 52,
+        clientY: 52,
+      });
+      dispatchPointerEvent(surface, "pointerup", {
+        pointerId: 1,
+        clientX: 52,
+        clientY: 52,
+      });
     });
     fireEvent.click(screen.getByTestId("tileset-preview-cell-5"));
     for (const id of [1, 2, 4, 5]) {
