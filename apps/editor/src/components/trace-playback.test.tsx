@@ -101,4 +101,19 @@ describe("TracePlayback", () => {
     expect(screen.getByTestId("trace-log-detail").textContent).toContain("combat");
     expect(screen.getByTestId("trace-frame-summary").textContent).toContain("Tick 501");
   });
+
+  it("bounds graph bars for long recordings and zooms to exact frames without clipping spikes", () => {
+    const frames = Array.from({ length: 500 }, (_, i) => ({ ...payload.frames[0]!, tickIndex: 1000 + i, scriptMs: i === 250 ? 50 : 1, logs: [], prints: [] }));
+    render(<TracePlayback payload={{ ...payload, frames }} />);
+    const graph = screen.getByTestId("trace-playback-graph");
+    expect(within(graph).getAllByRole("button").length).toBeLessThanOrEqual(200);
+    expect(screen.getByTestId("trace-budget-line")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Previous Over Budget" }));
+    expect(screen.getByTestId("trace-frame-summary").textContent).toContain("Tick 1250");
+    expect(screen.getByTestId("trace-frame-summary").textContent).toContain("50.50 ms");
+    fireEvent.click(screen.getByRole("button", { name: "Zoom In" }));
+    expect(screen.getByTestId("trace-visible-range").textContent).not.toContain("0–499");
+    fireEvent.click(screen.getByRole("button", { name: "Show All Frames" }));
+    expect(screen.getByTestId("trace-visible-range").textContent).toContain("0–499");
+  });
 });
