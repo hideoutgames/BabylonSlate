@@ -278,8 +278,10 @@ describe("TilemapPaint", () => {
     ] as const) {
       dispatchPointerEvent(canvas, type, { pointerId, clientX, clientY });
     }
-    expect(Number(canvas.getAttribute("data-pan-x"))).toBeCloseTo(20);
-    expect(Number(canvas.getAttribute("data-pan-y"))).toBeCloseTo(-30);
+    await waitFor(() => {
+      expect(Number(canvas.getAttribute("data-pan-x"))).toBeCloseTo(20);
+      expect(Number(canvas.getAttribute("data-pan-y"))).toBeCloseTo(-30);
+    });
     expect(Number(canvas.getAttribute("data-cell-size"))).toBe(32);
     expect(onChange).not.toHaveBeenCalled();
   });
