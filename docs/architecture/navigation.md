@@ -58,6 +58,12 @@ Bake modal phases:
 
 Compiled graphs call `ctx.findPathTo` / `ctx.moveTo` / `ctx.stopMovement` / `ctx.isPathValid` / `ctx.getClosestNavigablePoint` / `ctx.getRandomPointInRadius` / `ctx.addObstacle` / `ctx.removeObstacle`. `scripting-nodes` must not import `@babylonslate/navigation`.
 
+**Move To Blackboard Key** uses the same navigation path as Move To, resolving a Vector or spatial Object/Actor Reference from the linked Blackboard. It follows changes to that value and stops when the target becomes invalid or the task is aborted.
+
+### Dynamic rigid bodies
+
+A dynamic RigidBody remains responsible for the actor's position. NavAgent steering preserves gravity-axis velocity and synchronizes the crowd with the physics result instead of overwriting the actor with the navmesh height. Idle agents still fall, collider offsets remain intact, and stopping navigation does not cancel a fall. An airborne movement request is retained while the actor reaches the navmesh; arrival is checked against the actual actor position. Existing static/kinematic motion settings and `gravityScale` are preserved.
+
 `BTTask_MoveTo` without a task host still succeeds (package stub). The runtime host requests `setNavAgentTarget` and returns `running` until the agent is inside `acceptRadius` (default 0.75). Aborting a running MoveTo calls `stopNavAgent` so the crowd does not keep the aborted target.
 
 ## Honest residuals

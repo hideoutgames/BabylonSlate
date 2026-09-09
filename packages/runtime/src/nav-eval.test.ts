@@ -94,12 +94,155 @@ function patrolScene(): SerializedScene {
   };
 }
 
+function physicalAgentScene(options: {
+  y: number;
+  gravityScale?: number;
+  moveTo?: boolean;
+}): SerializedScene {
+  return {
+    name: "Physical navigation",
+    viewportMode: "3d",
+    settings: createDefaultSceneSettings(),
+    folders: [],
+    actors: [
+      createActor("floor", "Floor", {
+        transform: { position: [0, -0.5, 0], rotation: [0, 0, 0, 1], scale: [20, 1, 20] },
+        components: [{ id: "floor-body", classId: "BlockingVolumeComponent", properties: {} }],
+      }),
+      createActor("parent", "Parent", {
+        transform: { position: [2, 0, 1], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      }),
+      createActor("agent", "Agent", {
+        parentId: "parent",
+        transform: { position: [-6, options.y, -5], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        components: [
+          { id: "nav", classId: "NavAgentComponent", properties: { radius: 0.5, height: 2, maxSpeed: 3.5 } },
+          { id: "body", classId: "RigidBodyComponent", properties: { motionType: "dynamic", gravityScale: options.gravityScale ?? 1 } },
+          {
+            id: "collider",
+            classId: "ColliderComponent",
+            properties: { shape: { kind: "sphere", radius: 0.5 }, friction: 0 },
+            transform: { position: [0, 0.5, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+          },
+          ...(options.moveTo ? [{ id: "bt", classId: "BehaviourTreeComponent", properties: { treeGuid: "move-tree" } }] : []),
+        ],
+      }),
+    ],
+  };
+}
+
+const physicalMoveTree = {
+  name: "Move",
+  rootId: "move",
+  blackboardGuid: null,
+  nodes: [{
+    id: "move", kind: "task" as const, classId: "BTTask_MoveTo",
+    children: [], decorators: [], services: [],
+    properties: { destination: { x: 4, y: 0, z: 4 }, acceptRadius: 0.75 },
+  }],
+};
+
 describe("runtime navmesh import and crowd", () => {
   let bytes: Uint8Array;
 
   beforeAll(async () => {
     await initNavigation();
     bytes = await generateNavMesh(groundPrism());
+  });
+
+  it("an idle NavAgent preserves dynamic gravity and the physics world pose", async () => {
+    const runtime = createInProcessRuntime({
+      seedDemoActors: false, playScene: physicalAgentScene({ y: 2 }),
+      preferSoftwarePhysics: true,
+    });
+    try {
+      await runtime.loadNavMesh(bytes);
+      runtime.start();
+      runtime.realizePlayWorld();
+      runtime.tick();
+      const actor = runtime.getWorld().findActor("agent")!;
+      const body = runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:agent")!;
+      expect(actor.transform.position.y).toBeGreaterThan(1.9);
+      expect(actor.transform.position.y).toBeLessThan(2);
+      expect(body.position).toEqual({
+        x: actor.transform.position.x + 2,
+        y: actor.transform.position.y,
+        z: actor.transform.position.z + 1,
+      });
+      for (let i = 0; i < 120; i += 1) runtime.tick();
+      expect(actor.transform.position.y).toBeCloseTo(0, 1);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("NavAgent leaves an authored zero-gravity body floating", async () => {
+    const runtime = createInProcessRuntime({
+      seedDemoActors: false, playScene: physicalAgentScene({ y: 2, gravityScale: 0 }),
+      preferSoftwarePhysics: true,
+    });
+    try {
+      await runtime.loadNavMesh(bytes);
+      runtime.start();
+      runtime.realizePlayWorld();
+      for (let i = 0; i < 30; i += 1) runtime.tick();
+      expect(runtime.getWorld().findActor("agent")!.transform.position.y).toBe(2);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it.each(["software", "havok"] as const)("%s: an airborne BT owner falls then navigates with its collider and parent offset", async (backend) => {
+    const runtime = createInProcessRuntime({
+      seedDemoActors: false, playScene: physicalAgentScene({ y: 6, moveTo: true }),
+      preferSoftwarePhysics: backend === "software",
+      behaviourTrees: { "move-tree": physicalMoveTree },
+    });
+    try {
+      await runtime.loadPhysics();
+      await runtime.loadNavMesh(bytes);
+      runtime.start();
+      runtime.realizePlayWorld();
+      for (let i = 0; i < 30; i += 1) runtime.tick();
+      const actor = runtime.getWorld().findActor("agent")!;
+      expect(actor.transform.position.y).toBeLessThan(5.5);
+      expect(actor.transform.position.y).toBeGreaterThan(3);
+      for (let i = 0; i < 330; i += 1) runtime.tick();
+      const body = runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:agent")!;
+      expect(Math.hypot(body.position.x - 4, body.position.z - 4)).toBeLessThan(1);
+      expect(body.position.y).toBeCloseTo(0, 1);
+      expect(body.position.x).toBeCloseTo(actor.transform.position.x + 2, 5);
+      expect(body.position.y).toBeCloseTo(actor.transform.position.y, 5);
+      expect(body.position.z).toBeCloseTo(actor.transform.position.z + 1, 5);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("stopping dynamic navigation stops horizontal steering while an upward impulse still falls", async () => {
+    const runtime = createInProcessRuntime({
+      seedDemoActors: false, playScene: physicalAgentScene({ y: 0 }),
+      preferSoftwarePhysics: true,
+    });
+    try {
+      await runtime.loadNavMesh(bytes);
+      runtime.start();
+      runtime.realizePlayWorld();
+      expect(runtime.setNavAgentTarget("agent", { x: 4, y: 0, z: 4 })).toBe(true);
+      for (let i = 0; i < 60; i += 1) runtime.tick();
+      const actor = runtime.getWorld().findActor("agent")!;
+      expect(actor.transform.position.x).toBeGreaterThan(-5.5);
+      runtime.stopNavAgent("agent");
+      const stoppedX = actor.transform.position.x;
+      runtime.getPhysicsSync()!.addImpulse("agent", { x: 0, y: 5, z: 0 });
+      for (let i = 0; i < 15; i += 1) runtime.tick();
+      expect(actor.transform.position.y).toBeGreaterThan(0.5);
+      expect(actor.transform.position.x).toBeCloseTo(stoppedX, 2);
+      for (let i = 0; i < 90; i += 1) runtime.tick();
+      expect(actor.transform.position.y).toBeCloseTo(0, 1);
+    } finally {
+      runtime.stop();
+    }
   });
 
   it("imports baked bytes without generating and copies the agent pose into the snapshot", async () => {

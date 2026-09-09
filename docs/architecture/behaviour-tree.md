@@ -33,6 +33,8 @@ Default document: a `selector` root with one `sequence` child and one `bt.task.s
 
 Separate asset. Keys use the scripting pin type system (`PinType` JSON). The evaluator holds a `Map` of name → value; missing keys are unset. Built-in decorator `bt.decorator.blackboardIsSet` / task `bt.task.setBlackboard` exercise the store without class graphs.
 
+Runtime seeds defaults from the tree's linked Blackboard unless `BehaviourTreeComponent.blackboardGuid` supplies an override. Spatial Object/Actor Reference values stay live during evaluation; debug output serializes reference identities without traversing their World or owner.
+
 ## Evaluator
 
 Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
@@ -69,6 +71,7 @@ Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 
 | Task | Details | Runtime |
 | --- | --- | --- |
+| Move To Blackboard Key | `key` picker limited to Vector (`vec2` / `vec3`) and Object/Actor Reference keys, plus `acceptRadius`. | Reads the key each tick. Vectors supply a world destination; live spatial references supply their composed world position. Target changes update the route. Unset, invalid, destroyed, or nonspatial values fail and stop movement; abort also stops movement. |
 | Rotate To Face | `target` vector3 (default `{ x: 0, y: 0, z: 1 }`) | Yaw only (3D Y euler, 2D Z). Missing/non-finite target → `failure`. Instant `success`. Crowd agents also write `navYawByActor` so `tickCrowd` does not restore the old yaw. |
 | Play Animation | `clipKind` Animation / Sprite; `clipAssetGuid` picker (`Animation` or `Sprite Animation`). No `durationMs` field — duration comes from the clip catalog. Animation `clipName` fills from the asset payload (hidden like Anim Graph). | Resolves `{ clipName, durationMs, clipKind }` from the Play clip catalog. Emits `animState` (`stateId: "bt.playAnimation"`, one layer, `normalisedTime = min(1, elapsed/durationMs)`). `running` until finished, then `success`. Missing/unknown guid → `failure`. Skips `tickAnimGraphs` emit for that slot while owned. Sprite calls `setActorSpriteClip`. Abort clears ownership (pose stays on last seek). One play-through; looping Animation assets are not a BT loop. Play collect walks trees for Sprite Animation guids and a worker clip catalog (same path as graphs). |
 | Play Sound | `audioAssetGuid` (`Audio`) + `volume` `0..1`. No Loop pin — Audio asset `loop` applies. | Same `playSound` command as graphs (`emitterActorGuid`, **omit `loop`**). Stable `voiceId` `bt:${actor.guid}:${node.id}` so retrigger stops the previous voice. Succeeds when playback is accepted (one emit per activate). Abort emits `stopSound` for that id. |
