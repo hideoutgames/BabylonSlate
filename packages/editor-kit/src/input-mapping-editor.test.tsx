@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { normalizeInputMappings, type InputMappings } from "@babylonslate/input";
+import {
+  normalizeInputMappings,
+  type InputMappings,
+} from "@babylonslate/input";
 import { InputMappingEditor } from "./input-mapping-editor";
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -34,9 +40,7 @@ const jumpOnly: InputMappings = {
     {
       name: "Look",
       kind: "1d",
-      bindings: [
-        { device: "gamepadAxis", code: "0:2", deadZone: 0.15 },
-      ],
+      bindings: [{ device: "gamepadAxis", code: "0:2", deadZone: 0.15 }],
     },
   ],
 };
@@ -46,20 +50,30 @@ describe("InputMappingEditor", () => {
     render(<InputMappingEditor value={jumpOnly} onChange={() => {}} />);
     expect(screen.getByTestId("input-action-0-name")).toBeTruthy();
     expect(screen.queryByTestId("input-axis-0-name")).toBeNull();
-    expect(screen.getByTestId("input-action-0-select").textContent).toContain("Space");
+    expect(screen.getByTestId("input-action-0-select").textContent).toContain(
+      "Space",
+    );
     fireEvent.change(screen.getByRole("textbox", { name: "Search Mappings" }), {
       target: { value: "Look" },
     });
     expect(screen.queryByTestId("input-action-0-select")).toBeNull();
     fireEvent.click(screen.getByTestId("input-axis-0-select"));
-    expect(screen.getByTestId("input-axis-0-name")).toHaveProperty("value", "Look");
+    expect(screen.getByTestId("input-axis-0-name")).toHaveProperty(
+      "value",
+      "Look",
+    );
     expect(screen.queryByTestId("input-action-0-name")).toBeNull();
   });
 
   it("keeps name drafts focused and rejects empty or duplicate names before saving", () => {
     const onChange = vi.fn();
-    const value = { ...jumpOnly, actions: [...jumpOnly.actions, { name: "Fire", bindings: [] }] };
-    const { rerender } = render(<InputMappingEditor value={value} onChange={onChange} />);
+    const value = {
+      ...jumpOnly,
+      actions: [...jumpOnly.actions, { name: "Fire", bindings: [] }],
+    };
+    const { rerender } = render(
+      <InputMappingEditor value={value} onChange={onChange} />,
+    );
     const name = screen.getByTestId("input-action-0-name");
     name.focus();
     fireEvent.change(name, { target: { value: "Fire" } });
@@ -73,19 +87,32 @@ describe("InputMappingEditor", () => {
     fireEvent.change(name, { target: { value: "Leap" } });
     fireEvent.keyDown(name, { key: "Enter" });
     expect(onChange.mock.calls[0]![0].actions[0].name).toBe("Leap");
-    rerender(<InputMappingEditor value={onChange.mock.calls[0]![0]} onChange={onChange} />);
+    rerender(
+      <InputMappingEditor
+        value={onChange.mock.calls[0]![0]}
+        onChange={onChange}
+      />,
+    );
     expect(screen.getByTestId("input-action-0-name")).toBe(name);
   });
 
   it("creates distinct mapping names and selects the new mapping", () => {
     const onChange = vi.fn();
-    const value = { ...jumpOnly, actions: [...jumpOnly.actions, { name: "New Action", bindings: [] }] };
-    const { rerender } = render(<InputMappingEditor value={value} onChange={onChange} />);
+    const value = {
+      ...jumpOnly,
+      actions: [...jumpOnly.actions, { name: "New Action", bindings: [] }],
+    };
+    const { rerender } = render(
+      <InputMappingEditor value={value} onChange={onChange} />,
+    );
     fireEvent.click(screen.getByTestId("input-action-add"));
     const next = onChange.mock.calls[0]![0];
     expect(next.actions[2].name).toBe("New Action 2");
     rerender(<InputMappingEditor value={next} onChange={onChange} />);
-    expect(screen.getByTestId("input-action-2-name")).toHaveProperty("value", "New Action 2");
+    expect(screen.getByTestId("input-action-2-name")).toHaveProperty(
+      "value",
+      "New Action 2",
+    );
   });
 
   it("renames an action", () => {
@@ -127,7 +154,9 @@ describe("InputMappingEditor", () => {
     onChange.mockClear();
     render(<InputMappingEditor value={withBinding} onChange={onChange} />);
     fireEvent.click(screen.getByTestId("input-action-0-binding-1-code"));
-    expect(screen.getByTestId("input-action-0-binding-1-code-menu")).toBeTruthy();
+    expect(
+      screen.getByTestId("input-action-0-binding-1-code-menu"),
+    ).toBeTruthy();
     screen.getByTestId("search-item-KeyW").click();
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -208,7 +237,9 @@ describe("InputMappingEditor", () => {
   it("toggles keyboard modifiers on a binding", () => {
     const onChange = vi.fn();
     render(<InputMappingEditor value={jumpOnly} onChange={onChange} />);
-    expect(screen.queryByTestId("input-action-0-binding-0-mod-shift")).toBeNull();
+    expect(
+      screen.queryByTestId("input-action-0-binding-0-mod-shift"),
+    ).toBeNull();
     fireEvent.click(screen.getByTestId("input-action-0-binding-0-options"));
     fireEvent.click(screen.getByTestId("input-action-0-binding-0-mod-shift"));
     expect(onChange).toHaveBeenCalledWith(
@@ -239,10 +270,14 @@ describe("InputMappingEditor", () => {
     render(<InputMappingEditor value={value} onChange={() => {}} />);
     fireEvent.click(screen.getByTestId("input-axis-0-binding-0-options"));
     fireEvent.click(screen.getByTestId("input-axis-0-binding-1-options"));
-    expect(screen.getByTestId("input-axis-0-binding-0-digital-value")).toBeTruthy();
+    expect(
+      screen.getByTestId("input-axis-0-binding-0-digital-value"),
+    ).toBeTruthy();
     expect(screen.queryByTestId("input-axis-0-binding-0-dead-zone")).toBeNull();
     expect(screen.getByTestId("input-axis-0-binding-1-dead-zone")).toBeTruthy();
-    expect(screen.queryByTestId("input-axis-0-binding-1-digital-value")).toBeNull();
+    expect(
+      screen.queryByTestId("input-axis-0-binding-1-digital-value"),
+    ).toBeNull();
   });
 
   it("reorders bindings without changing their codes", () => {
@@ -262,9 +297,11 @@ describe("InputMappingEditor", () => {
     render(<InputMappingEditor value={value} onChange={onChange} />);
     const up = screen.getByTestId("input-action-0-binding-1-move-up");
     fireEvent.click(up);
-    expect(onChange.mock.calls[0]![0].actions[0].bindings.map((b: { code: string }) => b.code)).toEqual(
-      ["KeyJ", "Space"],
-    );
+    expect(
+      onChange.mock.calls[0]![0].actions[0].bindings.map(
+        (b: { code: string }) => b.code,
+      ),
+    ).toEqual(["KeyJ", "Space"]);
   });
 
   it("removes an action", () => {
