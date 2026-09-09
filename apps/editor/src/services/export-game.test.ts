@@ -81,7 +81,10 @@ describe("collectAndExportGame", () => {
     if (!isOk(result)) return;
     const scripts = parseScriptRegistry(new TextDecoder().decode(result.value.files.get("scripts.js")));
     expect(scripts.map((script) => script.classId).sort()).toEqual(["SpawnChild", "main"]);
-    expect(scripts.find((script) => script.classId === "SpawnChild")?.components).toEqual([mesh, childCollider]);
+    expect(scripts.find((script) => script.classId === "SpawnChild")?.components).toEqual([
+      { ...mesh, inheritedFrom: "main" },
+      childCollider,
+    ]);
   });
 
   it("uses startup reachability for boot and a stable shared-asset policy", async () => {
