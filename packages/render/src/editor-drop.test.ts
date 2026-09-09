@@ -11,6 +11,8 @@ import {
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { calculateEditorDropTransforms } from "./editor-drop";
+import type { MeshAssetContext } from "./mesh-assets";
+import type { ColliderShape } from "@babylonslate/physics";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => {
@@ -27,10 +29,11 @@ function box(id: string, position: [number, number, number]): SerializedActor {
   });
 }
 
-function setup(actors: SerializedActor[]) {
+function setup(actors: SerializedActor[], assets?: MeshAssetContext, world: "3d" | "2d" = "3d") {
   const handle = createTestEngine();
   handles.push(handle);
   const sceneData: SerializedScene = { ...createDefaultScene(), actors };
+  sceneData.settings.physicsWorld = world;
   const sync = new EditorSceneSync(handle.scene);
   sync.apply(sceneData);
   return {
@@ -41,6 +44,7 @@ function setup(actors: SerializedActor[]) {
         sceneData,
         selectedActorIds,
         meshForActor: (id) => sync.meshForActor(id),
+        assets,
       }),
   };
 }
@@ -126,6 +130,7 @@ describe("editor Drop", () => {
     const child = { ...box("child", [0, 0, 0]), parentId: "parent" };
     const { drop } = setup([parent, child, box("floor", [0, 0, 0])]);
     const result = drop(["child"])[0]!;
+    expect(result).toBeDefined();
     expect(result.position[0]).toBeCloseTo(-3.875);
     expect(result.position[1]).toBeCloseTo(0);
     expect(result.rotation).toEqual(child.transform.rotation);
@@ -133,5 +138,56 @@ describe("editor Drop", () => {
     const rotated = new Vector3(...result.position).scale(2);
     rotated.rotateByQuaternionToRef(new Quaternion(...parent.transform.rotation), rotated);
     expect(rotated.y + 10).toBeCloseTo(2.25);
+  });
+
+  it.each<{ shape: ColliderShape; x: number; y: number }>([
+    { shape: { kind: "sphere", radius: 2 }, x: 1, y: Math.sqrt(3) + 0.75 },
+    { shape: { kind: "capsule", radius: 1, halfHeight: 2 }, x: 0.5, y: 2 + Math.sqrt(0.75) + 0.75 },
+    { shape: { kind: "cylinder", radius: 2, height: 4 }, x: 1, y: 2.75 },
+    { shape: { kind: "mesh", vertices: [
+      { x: -2, y: 0, z: -2 }, { x: 2, y: 0, z: -2 }, { x: 0, y: 2, z: 2 },
+    ], indices: [0, 1, 2] }, x: 0, y: 1.75 },
+    { shape: { kind: "convex", points: [
+      { x: -2, y: 0, z: -2 }, { x: 2, y: 0, z: -2 }, { x: -2, y: 0, z: 2 },
+      { x: 2, y: 0, z: 2 }, { x: -2, y: 2, z: -2 }, { x: -2, y: 2, z: 2 },
+    ] }, x: 0, y: 1.75 },
+  ])("hits configured $shape.kind geometry rather than its bounding box", ({ shape, x, y }) => {
+    const surface = createActor("support", "Support", { components: [
+      { id: "shape", classId: "ColliderComponent", properties: { shape } },
+    ] });
+    const result = setup([box("selected", [x, 10, 0]), surface]).drop(["selected"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.position[1]).toBeCloseTo(y);
+  });
+
+  it("uses authored model simple hull transforms and Blocking Volumes as surfaces", () => {
+    const model = createActor("model", "Model", { components: [{
+      ...createMeshComponent("model-mesh", "box"),
+      properties: { assetGuid: "model-guid", collisionMode: "simple" },
+    }] });
+    const volume = createActor("volume", "Volume", {
+      transform: { position: [4, 2, 0], rotation: [0, 0, 0, 1], scale: [2, 4, 2] },
+      components: [{ id: "volume-shape", classId: "BlockingVolumeComponent", properties: {} }],
+    });
+    const { drop } = setup([box("left", [0, 10, 0]), box("right", [4, 10, 0]), model, volume], {
+      modelPayloads: new Map([["model-guid", {
+        materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1,
+        simpleColliders: [{ id: "hull", name: "Hull", kind: "sphere", radius: 1,
+          position: [0, 5, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] }],
+      }]]),
+    });
+    expect(drop(["left", "right"]).map((entry) => entry.position)).toEqual([
+      [0, 7.75, 0], [4, 4.75, 0],
+    ]);
+  });
+
+  it("uses 2D authored chains and ignores render-only mesh surfaces in a 2D physics world", () => {
+    const support = createActor("support", "Support", { components: [{
+      id: "chain", classId: "ColliderComponent", properties: {
+        shape: { kind: "chain", points: [{ x: -2, y: 1 }, { x: 2, y: 3 }] },
+      },
+    }] });
+    const { drop } = setup([box("selected", [0, 10, 0]), box("visual", [0, 6, 0]), support], undefined, "2d");
+    expect(drop(["selected"])[0]?.position).toEqual([0, 2.75, 0]);
   });
 });
