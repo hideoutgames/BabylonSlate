@@ -3412,6 +3412,10 @@ class InProcessRuntime implements RuntimeDriver {
 
   private releaseSlot(actorGuid: string, slotId: number): void {
     this.slotByGuid.delete(actorGuid);
+    if (this.possessedCameraSlotId === slotId) {
+      this.possessedCameraSlotId = null;
+      this.cameraPossessedByScript = false;
+    }
     this.freeSlots.push(slotId);
   }
 
