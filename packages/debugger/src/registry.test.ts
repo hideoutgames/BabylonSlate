@@ -90,6 +90,25 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
 }
 
 describe("createCommandRegistry", () => {
+  it("runs the physics/navigation/AI flags and strips them from release registries", () => {
+    const host = recordingHost();
+    host.setShowPathfinding = (enabled) => host.calls.push(`path:${enabled}`);
+    host.setShowNavAgent = (enabled) => host.calls.push(`agent:${enabled}`);
+    host.setBehaviourTreeDebug = (enabled) => host.calls.push(`tree:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const name of ["debugphysics", "shownavdebug", "showpathfinding", "shownavagent", "behaviourtreedebug"]) {
+      expect(debug.execute(`${name} on`, host).success).toBe(true);
+      expect(debug.execute(`${name} off`, host).success).toBe(true);
+      expect(debug.execute(`${name} maybe`, host).success).toBe(false);
+      expect(release.execute(`${name} on`, host).success).toBe(false);
+    }
+    expect(host.calls).toEqual([
+      "showcollision:true", "showcollision:false", "shownav:true", "shownav:false",
+      "path:true", "path:false", "agent:true", "agent:false", "tree:true", "tree:false",
+    ]);
+  });
+
   it("runs core commands in every registry", () => {
     const host = recordingHost();
     const registry = createCommandRegistry({ includeDebug: false });
