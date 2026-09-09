@@ -129,8 +129,10 @@ export class RenderScheduler {
     const now = nowMs();
     const elapsed = now - this.lastSecond;
     if (elapsed >= 1000) {
-      this.renderedFps = Math.round(this.renderedThisSecond * 1000 / elapsed);
-      this.invalidationsPerSecond = Math.round(this.invalidationsThisSecond * 1000 / elapsed);
+      this.renderedFps = Math.round((this.renderedThisSecond * 1000) / elapsed);
+      this.invalidationsPerSecond = Math.round(
+        (this.invalidationsThisSecond * 1000) / elapsed,
+      );
       this.renderedThisSecond = 0;
       this.invalidationsThisSecond = 0;
       this.lastSecond = now;

@@ -460,7 +460,9 @@ export function startPlayer(options: {
       }
     }
     if (now - fpsWindowStart >= 1000) {
-      emitHudStats(applyPlayerFpsSample(hudStats, handle.scheduler.stats().renderedFps));
+      emitHudStats(
+        applyPlayerFpsSample(hudStats, handle.scheduler.stats().renderedFps),
+      );
       fpsWindowStart = now;
     }
     raf = requestAnimationFrame(pump);

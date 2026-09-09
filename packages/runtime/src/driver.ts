@@ -2641,7 +2641,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       getResolutionScale: () => this.resolutionScale,
       setFrameCap: (fps) => {
-        this.frameCap = Number(fps);
+        this.frameCap = fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
         this.emit({ type: "setFrameCap", fps: this.frameCap });
       },
       getFrameCap: () => this.frameCap,

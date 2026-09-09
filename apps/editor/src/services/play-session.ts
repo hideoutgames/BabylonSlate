@@ -914,7 +914,9 @@ export function startPlaySession(options: {
     }
     // Worker pumps itself; host only feeds input + applies snapshots via onSnapshot.
     if (now - fpsWindowStart >= 1000) {
-      emitHudStats(applyPlayFpsSample(hudStats, handle.scheduler.stats().renderedFps));
+      emitHudStats(
+        applyPlayFpsSample(hudStats, handle.scheduler.stats().renderedFps),
+      );
       fpsWindowStart = now;
     }
     raf = requestAnimationFrame(pump);
