@@ -1,4 +1,36 @@
 /* Launcher-only tokens and motion. This stylesheet unmounts with Home. */
+.homepage-project-card[data-touch-pressed="true"],
+.homepage-template-card[data-touch-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--ring);
+  transition-duration: 0ms;
+}
+
+.homepage-theme
+  [data-slot="button"]:not(.homepage-card-open):not(:disabled):active,
+.homepage-theme [data-slot="toggle-group-item"]:not(:disabled):active {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  transition-duration: 0ms;
+}
+
+.homepage-template-card,
+.homepage-theme [data-slot="button"],
+.homepage-theme [data-slot="toggle-group-item"],
+.homepage-project-options summary {
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+@media (any-pointer: coarse) {
+  .homepage-theme [role^="menuitem"] {
+    min-height: 44px;
+  }
+  .homepage-composer-form [data-slot="input"] {
+    font-size: 16px;
+  }
+}
+
 .homepage-theme,
 [data-testid="homepage-project-menu"] {
   color-scheme: dark;
@@ -505,10 +537,14 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
 }
 /* A compact two-step studio. The gallery, not form copy, chooses the template. */
 .homepage-composer {
+  top: calc(
+    var(--homepage-visible-top, 0px) + var(--homepage-visible-height, 100dvh) /
+      2
+  );
   width: min(1120px, calc(100vw - 48px));
-  height: min(780px, 88dvh);
+  height: min(780px, calc(var(--homepage-visible-height, 100dvh) * 0.88));
   max-width: none;
-  max-height: calc(100dvh - 32px);
+  max-height: calc(var(--homepage-visible-height, 100dvh) - 32px);
   padding: 0;
   gap: 0;
   display: flex;
@@ -878,18 +914,18 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   }
 }
 @media (hover: hover) and (pointer: fine) {
-  .homepage-project-card:hover,
-  .homepage-template-card:hover {
+  .homepage-project-card:not([data-touch-input="true"]):hover,
+  .homepage-template-card:not([data-touch-input="true"]):hover {
     transform: translateY(-10px);
     border-color: color-mix(in srgb, var(--ring) 55%, var(--border));
     box-shadow: 0 30px 50px -25px var(--launcher-shadow);
   }
-  .homepage-project-card:hover
+  .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-badge:not([data-has-image="true"]) {
     transform: rotate(0) translateY(-12px);
   }
 }
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   .homepage-theme [data-slot="button"],
   .homepage-theme [data-slot="toggle-group-item"] {
     min-height: 48px;
@@ -973,8 +1009,8 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   }
   .homepage-composer {
     width: 100vw;
-    height: 100dvh;
-    max-height: 100dvh;
+    height: var(--homepage-visible-height, 100dvh);
+    max-height: var(--homepage-visible-height, 100dvh);
     border: 0;
     border-radius: 0;
   }
@@ -1178,8 +1214,11 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
 .homepage-project-badge img {
   image-rendering: auto;
 }
-.homepage-project-card:hover .homepage-project-badge {
-  transform: translateY(-10px);
+@media (hover: hover) and (pointer: fine) {
+  .homepage-project-card:not([data-touch-input="true"]):hover
+    .homepage-project-badge {
+    transform: translateY(-10px);
+  }
 }
 .homepage-gallery[data-layout="small"] .homepage-gallery-page {
   padding: 16px 20px;
@@ -1364,7 +1403,7 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   max-height: 100%;
 }
 @media (hover: hover) and (pointer: fine) {
-  .homepage-template-card:hover {
+  .homepage-template-card:not([data-touch-input="true"]):hover {
     transform: translateY(-4px);
   }
 }
@@ -1397,7 +1436,7 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   width: 36px;
   min-width: 36px;
 }
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   .homepage-composer-color-row .homepage-color-choice {
     width: 44px;
     min-width: 44px;
@@ -1477,7 +1516,7 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   min-height: 40px;
   border-radius: 8px;
 }
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   .homepage-profile-menu [role="menuitem"] {
     min-height: 48px;
   }

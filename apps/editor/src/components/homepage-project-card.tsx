@@ -74,6 +74,7 @@ export function HomepageProjectCard({
       data-color={project.appearance?.color ?? "stone"}
       data-testid={`open-listed-project-${project.name}`}
       {...bind}
+      onPointerEnter={touch.onPointerEnter}
       onPointerDown={(event) => {
         if (touch.onPointerDown(event)) bind.onPointerDown(event);
       }}

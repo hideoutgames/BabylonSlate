@@ -23,7 +23,12 @@ export function TemplateCardWell({
   return (
     <div data-testid={testId} className={cn("homepage-card-well", className)}>
       {imageUrl ? (
-        <img src={imageUrl} alt="" className="size-full object-cover" />
+        <img
+          src={imageUrl}
+          alt=""
+          draggable={false}
+          className="size-full object-cover"
+        />
       ) : (
         children
       )}
@@ -78,6 +83,7 @@ export function TemplatePickCard({
         className,
       )}
       onPointerDown={touch.onPointerDown}
+      onPointerEnter={touch.onPointerEnter}
       onClick={(event) => {
         if (touch.shouldActivate(event)) activate();
       }}

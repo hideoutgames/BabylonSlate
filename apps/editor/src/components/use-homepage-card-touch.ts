@@ -25,8 +25,12 @@ export function useHomepageCardTouch(enabled: boolean) {
     release.current?.();
     blocked.current = !enabled;
     if (!enabled) return false;
-    if (event.pointerType === "mouse") return true;
     const target = event.currentTarget;
+    if (event.pointerType === "mouse") {
+      delete target.dataset.touchInput;
+      return true;
+    }
+    target.dataset.touchInput = "true";
     if (!event.isPrimary || target.closest('[data-scrolling="true"]')) {
       blocked.current = true;
       return false;
@@ -86,6 +90,10 @@ export function useHomepageCardTouch(enabled: boolean) {
 
   return {
     onPointerDown,
+    onPointerEnter: (event: PointerEvent<HTMLElement>) => {
+      if (event.pointerType === "mouse")
+        delete event.currentTarget.dataset.touchInput;
+    },
     // Keep keyboard/assistive activation independent of the previous touch.
     shouldActivate: (event: MouseEvent) =>
       enabled && (event.detail === 0 || !blocked.current),

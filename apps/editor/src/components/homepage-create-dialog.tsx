@@ -49,7 +49,7 @@ import {
 function hasTouchInput() {
   return (
     isCoarsePointerEnvironment() ||
-    window.matchMedia("(any-pointer: coarse)").matches
+    Boolean(window.matchMedia?.("(any-pointer: coarse)").matches)
   );
 }
 
@@ -129,6 +129,35 @@ export function HomepageCreateDialog({
   const importRequest = useRef<AbortController | null>(null);
   const [imageIssue, setImageIssue] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const viewport = window.visualViewport;
+    const resize = () => {
+      // The software keyboard changes the visible viewport on iOS without
+      // changing dvh. Preserve the layout when the user deliberately zooms.
+      if (viewport && viewport.scale !== 1) return;
+      const element = popup.current;
+      const height = viewport?.height ?? window.innerHeight;
+      if (!element || height <= 0) return;
+      element.style.setProperty("--homepage-visible-height", `${height}px`);
+      element.style.setProperty(
+        "--homepage-visible-top",
+        `${viewport?.offsetTop ?? 0}px`,
+      );
+    };
+    resize();
+    const frame = requestAnimationFrame(resize);
+    viewport?.addEventListener("resize", resize);
+    viewport?.addEventListener("scroll", resize);
+    window.addEventListener("resize", resize);
+    return () => {
+      cancelAnimationFrame(frame);
+      viewport?.removeEventListener("resize", resize);
+      viewport?.removeEventListener("scroll", resize);
+      window.removeEventListener("resize", resize);
+    };
+  }, [open]);
 
   useEffect(() => {
     setImageBusy(false);
