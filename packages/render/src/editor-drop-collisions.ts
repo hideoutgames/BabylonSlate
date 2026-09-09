@@ -236,10 +236,35 @@ export function collisionSurfaces(
           modelPayload,
           complexMesh: complexMeshes.get(guid),
         })) {
+          // Match runtime composeMeshColliderLocal before actor scale baking:
+          // a rotated component's collider offset stays in component local space.
+          const local = composePose(
+            collision,
+            composePose(component.transform ?? identitySerializedTransform()),
+          );
+          const parent = component.parentId
+            ? componentWorldFor(component.parentId)
+            : actorWorld;
           add(
             actor.id,
             collision.shape as ColliderShape,
-            composePose(collision, world),
+            composePose(
+              {
+                position: [
+                  local.position.x,
+                  local.position.y,
+                  local.position.z,
+                ],
+                rotation: [
+                  local.rotation.x,
+                  local.rotation.y,
+                  local.rotation.z,
+                  local.rotation.w,
+                ],
+                scale: [local.scale.x, local.scale.y, local.scale.z],
+              },
+              parent,
+            ),
           );
         }
       } else if (
