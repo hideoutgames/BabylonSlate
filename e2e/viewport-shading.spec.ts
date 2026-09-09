@@ -112,6 +112,9 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
   await expect.poll(() => greenPixels(viewport)).toBeGreaterThan(500);
 
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await expect(page.getByTestId("graph-panel")).toBeVisible({
+    timeout: 15_000,
+  });
   expect(
     await page.evaluate(
       async (components) => {
