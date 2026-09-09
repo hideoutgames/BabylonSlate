@@ -4,6 +4,49 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("RuntimeDriver.executeConsoleCommand", () => {
+  it("possesses a live camera and destroys it while paused through debug commands", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
+    runtime.start();
+    const world = runtime.getWorld();
+    const actor = world.createActor({ guid: "cam", classId: "Actor", variables: { name: "Camera" } });
+    actor.addComponent(world.createComponent({ classId: "CameraComponent", guid: "cam-component" }));
+    world.spawnActorNow(actor);
+    runtime.tick();
+    runtime.pause();
+    commands.length = 0;
+    expect(runtime.executeConsoleCommand('possess "cam"').success).toBe(true);
+    expect(commands).toContainEqual({ type: "setFreeCam", enabled: false });
+    expect(commands).toContainEqual({ type: "possessCamera", slotId: 0 });
+    expect(runtime.executeConsoleCommand('destroyactor "cam"').success).toBe(true);
+    expect(runtime.inspectWorld().nodes.some((node) => node.id === "cam")).toBe(false);
+    expect(commands).toContainEqual({ type: "despawn", slotId: 0, actorGuid: "cam" });
+    expect(runtime.executeConsoleCommand('destroyactor "cam"').success).toBe(false);
+    runtime.stop();
+  });
+
+  it("rejects ambiguous names and actors without cameras", () => {
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    runtime.start();
+    for (const guid of ["a", "b"]) {
+      const actor = runtime.getWorld().createActor({ guid, classId: "Actor", variables: { name: "Camera" } });
+      runtime.getWorld().spawnActorNow(actor);
+    }
+    runtime.tick();
+    expect(runtime.executeConsoleCommand('destroyactor "Camera"').success).toBe(false);
+    expect(runtime.executeConsoleCommand('possess "a"').success).toBe(false);
+    expect(runtime.getWorld().getActors()).toHaveLength(2);
+    runtime.stop();
+  });
+
+  it("does not expose actor mutation commands without the debugger", () => {
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      preferSoftwarePhysics: true, includeDebugger: false });
+    expect(runtime.executeConsoleCommand("possess cam").success).toBe(false);
+    expect(runtime.executeConsoleCommand("destroyactor cam").success).toBe(false);
+    runtime.stop();
+  });
   it("runs changescene through the command registry", () => {
     let loaded: string | undefined;
     const runtime = createInProcessRuntime({
