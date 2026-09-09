@@ -274,6 +274,7 @@ export function DebugConsole({
       <SheetContent
         side="bottom"
         showCloseButton={false}
+        showOverlay={false}
         className="w-full gap-0 overflow-hidden rounded-none shadow-none data-[side=bottom]:h-[min(58dvh,38rem)]"
         data-testid="debug-console"
         initialFocus={(interaction) =>
