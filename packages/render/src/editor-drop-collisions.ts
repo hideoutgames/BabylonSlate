@@ -5,12 +5,12 @@ import {
   tilemapCollisionChains,
 } from "@babylonslate/assets";
 import { identitySerializedTransform, type SerializedScene, type SerializedTransform } from "@babylonslate/core";
-import { parseColliderProperties, type ColliderShape } from "@babylonslate/physics";
+import { parseColliderProperties, scaleColliderShape, type ColliderShape } from "@babylonslate/physics";
 import type { MeshAssetContext } from "./mesh-assets";
 
 const EPS = 1e-8;
 export type DropBounds = { min: Vector3; max: Vector3 };
-type TriangleShape = { kind: "mesh"; vertices: Vector3[]; indices: readonly number[] };
+type TriangleShape = { kind: "mesh"; vertices: Vector3[]; indices: readonly number[]; convex: boolean };
 type QueryShape = Exclude<ColliderShape, { kind: "convex" | "mesh" }> | TriangleShape;
 export type DropSurface = { actorId: string; shape: QueryShape; world: Matrix; inverse: Matrix };
 
@@ -25,14 +25,28 @@ export function collisionSurfaces(sceneData: SerializedScene, actorWorlds: Reado
   const complexMeshes = new Map<string, ReturnType<typeof extractGltfCollisionMesh>>();
   const add = (actorId: string, shape: ColliderShape, world: Matrix) => {
     if (Math.abs(world.determinant()) < EPS) return;
-    const triangles = shape.kind === "convex" ? convexHullMesh(shape.points) : shape.kind === "mesh" ? shape : null;
+    const scale = new Vector3(), rotation = new Quaternion(), position = new Vector3();
+    if (!world.decompose(scale, rotation, position)) return;
+    // Physics bakes dimensions (sphere=max axis, capsule/cylinder=max XZ),
+    // rather than allowing inverse TRS to turn round shapes into ellipsoids.
+    const baked = scaleColliderShape(shape, scale);
+    const pose = Matrix.Compose(Vector3.One(), rotation, position);
+    const triangles = baked.kind === "convex" ? convexHullMesh(baked.points) : baked.kind === "mesh" ? baked : null;
     const prepared: QueryShape = triangles
-      ? { kind: "mesh", vertices: triangles.vertices.map((v) => new Vector3(v.x, v.y, v.z)), indices: triangles.indices }
-      : shape as QueryShape;
-    surfaces.push({ actorId, shape: prepared, world, inverse: Matrix.Invert(world) });
+      ? { kind: "mesh", vertices: triangles.vertices.map((v) => new Vector3(v.x, v.y, v.z)), indices: triangles.indices, convex: baked.kind === "convex" }
+      : baked as QueryShape;
+    surfaces.push({ actorId, shape: prepared, world: pose, inverse: Matrix.Invert(pose) });
   };
   for (const actor of sceneData.actors) {
     const actorWorld = actorWorlds.get(actor.id)!;
+    const spriteComponent = actor.components.find((component) => component.classId === "SpriteComponent");
+    const spriteGuid = spriteComponent?.properties.assetGuid;
+    const sprite = typeof spriteGuid === "string" ? assets?.spritePayloads?.get(spriteGuid) : undefined;
+    const spriteFrame = sprite ? spriteClipFrameAt(sprite, typeof spriteComponent?.properties.clipName === "string" ? spriteComponent.properties.clipName : "", 0) : null;
+    const spriteCollision = worldKind === "2d" && sprite && spriteFrame
+      ? spriteCollisionToBox2d({ collision: spriteFrame.collision ?? DEFAULT_SPRITE_COLLISION,
+        pivot: spriteFrame.pivot, pixelWidth: spriteFrame.width ?? 100, pixelHeight: spriteFrame.height ?? 100,
+        pixelsPerUnit: sprite.pixelsPerUnit || assets?.pixelsPerUnit || 100 }) : null;
     const components = new Map(actor.components.map((component) => [component.id, component]));
     const componentWorlds = new Map<string, Matrix>();
     const visiting = new Set<string>();
@@ -53,7 +67,14 @@ export function collisionSurfaces(sceneData: SerializedScene, actorWorlds: Reado
       const properties = component.properties;
       if (component.classId === "ColliderComponent") {
         const collider = parseColliderProperties(properties, worldKind);
-        if (!collider.isTrigger) add(actor.id, collider.shape, world);
+        if (collider.isTrigger) continue;
+        if (collider.shape.kind === "box2d" && spriteCollision) {
+          const local = component.transform ?? identitySerializedTransform();
+          const shifted = transformMatrix({ ...local, position: [local.position[0] + spriteCollision.translation.x,
+            local.position[1] + spriteCollision.translation.y, local.position[2]] });
+          const parent = component.parentId ? componentWorldFor(component.parentId) : actorWorld;
+          add(actor.id, { kind: "box2d", halfExtents: spriteCollision.halfExtents }, shifted.multiply(parent));
+        } else add(actor.id, collider.shape, world);
       } else if (component.classId === "BlockingVolumeComponent") {
         add(actor.id, worldKind === "2d"
           ? { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } }
@@ -67,17 +88,6 @@ export function collisionSurfaces(sceneData: SerializedScene, actorWorlds: Reado
         }
         for (const collision of resolveMeshCollisions(properties, { modelPayload, complexMesh: complexMeshes.get(guid) })) {
           add(actor.id, collision.shape as ColliderShape, transformMatrix(collision).multiply(world));
-        }
-      } else if (worldKind === "2d" && component.classId === "SpriteComponent") {
-        const guid = typeof properties.assetGuid === "string" ? properties.assetGuid : "";
-        const payload = assets?.spritePayloads?.get(guid);
-        const frame = payload ? spriteClipFrameAt(payload, typeof properties.clipName === "string" ? properties.clipName : "", 0) : null;
-        if (payload && frame) {
-          const mapped = spriteCollisionToBox2d({ collision: frame.collision ?? DEFAULT_SPRITE_COLLISION,
-            pivot: frame.pivot, pixelWidth: frame.width ?? 100, pixelHeight: frame.height ?? 100,
-            pixelsPerUnit: payload.pixelsPerUnit || assets?.pixelsPerUnit || 100 });
-          add(actor.id, { kind: "box2d", halfExtents: mapped.halfExtents },
-            Matrix.Translation(mapped.translation.x, mapped.translation.y, 0).multiply(world));
         }
       } else if (worldKind === "2d" && component.classId === "TilemapComponent") {
         const guid = typeof properties.assetGuid === "string" ? properties.assetGuid : "";
@@ -195,6 +205,14 @@ function shapeHit(shape: QueryShape, origin: Vector3, direction: Vector3): numbe
         ...sphereHits(origin, direction, shape.radius, -shape.halfHeight, true)]);
     }
     case "mesh": {
+      if (shape.convex && shape.indices.length > 0) {
+        let inside = true;
+        for (let index = 0; index + 2 < shape.indices.length; index += 3) {
+          const a = shape.vertices[shape.indices[index]!]!, b = shape.vertices[shape.indices[index + 1]!]!, c = shape.vertices[shape.indices[index + 2]!]!;
+          if (Vector3.Dot(Vector3.Cross(b.subtract(a), c.subtract(a)), origin.subtract(a)) > EPS) { inside = false; break; }
+        }
+        if (inside) return 0;
+      }
       const ray = new Ray(origin, direction, 10_000);
       let closest: number | null = null;
       for (let index = 0; index + 2 < shape.indices.length; index += 3) {

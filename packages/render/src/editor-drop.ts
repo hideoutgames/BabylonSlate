@@ -1,4 +1,4 @@
-import { Matrix, Mesh, Quaternion, Vector3 } from "@babylonjs/core";
+import { LinesMesh, Matrix, Mesh, Quaternion, Vector3, type Node } from "@babylonjs/core";
 import type { SerializedScene, SerializedTransform } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isColliderVisualTree } from "./collider-visual";
@@ -9,7 +9,7 @@ export type EditorDropTransform = SerializedTransform & { actorId: string };
 const MAX_DISTANCE = 10_000;
 const EPS = 1e-8;
 
-export function dropTransformMatrix(transform: SerializedTransform): Matrix {
+function dropTransformMatrix(transform: SerializedTransform): Matrix {
   return Matrix.Compose(new Vector3(...transform.scale), new Quaternion(...transform.rotation), new Vector3(...transform.position));
 }
 
@@ -55,7 +55,7 @@ export function calculateEditorDropTransforms(options: {
   }
   const targets = surfaces.filter((surface) => !moving.has(surface.actorId));
   const actorRoots = new Set(sceneData.actors.map((actor) => meshForActor(actor.id)).filter((root) => root !== null));
-  const destinations = new Map<string, Vector3>();
+  const displacements = new Map<string, number>();
   for (const actor of sceneData.actors) {
     if (!selected.has(actor.id)) continue;
     const worldPosition = worldFor(actor.id).getTranslation();
@@ -69,40 +69,32 @@ export function calculateEditorDropTransforms(options: {
       const hit = surfaceHit(surface, origin);
       if (hit !== null && hit >= 0 && hit < distance) distance = hit;
     }
-    const destination = worldPosition.clone();
-    if (distance > EPS && distance < MAX_DISTANCE) destination.y -= distance;
-    destinations.set(actor.id, destination);
+    displacements.set(actor.id, distance > EPS && distance < MAX_DISTANCE ? -distance : 0);
   }
   // A selected no-hit child retains its world pose even if its parent drops.
-  const finalWorlds = new Map<string, Matrix>();
+  const finalDisplacements = new Map<string, number>();
   const finalResolving = new Set<string>();
-  const finalWorldFor = (id: string): Matrix => {
-    const cached = finalWorlds.get(id);
-    if (cached) return cached;
+  const displacementFor = (id: string): number => {
+    const cached = finalDisplacements.get(id);
+    if (cached !== undefined) return cached;
     const actor = actors.get(id);
-    if (!actor || finalResolving.has(id)) return Matrix.Identity();
+    if (!actor || finalResolving.has(id)) return 0;
     finalResolving.add(id);
-    const destination = destinations.get(id);
-    let world: Matrix;
-    if (destination) {
-      world = worldFor(id).clone();
-      world.setTranslation(destination);
-    } else {
-      const local = dropTransformMatrix(actor.transform);
-      world = actor.parentId ? local.multiply(finalWorldFor(actor.parentId)) : local;
-    }
+    const displacement = displacements.get(id) ?? (actor.parentId ? displacementFor(actor.parentId) : 0);
     finalResolving.delete(id);
-    finalWorlds.set(id, world);
-    return world;
+    finalDisplacements.set(id, displacement);
+    return displacement;
   };
   const changes: EditorDropTransform[] = [];
   for (const actor of sceneData.actors) {
-    const destination = destinations.get(actor.id);
-    if (!destination) continue;
-    const parentWorld = actor.parentId ? finalWorldFor(actor.parentId) : Matrix.Identity();
+    const displacement = displacements.get(actor.id);
+    if (displacement === undefined) continue;
+    const relativeDisplacement = displacement - (actor.parentId ? displacementFor(actor.parentId) : 0);
+    if (Math.abs(relativeDisplacement) <= EPS) continue;
+    const parentWorld = actor.parentId ? worldFor(actor.parentId) : Matrix.Identity();
     if (Math.abs(parentWorld.determinant()) < EPS) continue;
-    const local = Vector3.TransformCoordinates(destination, Matrix.Invert(parentWorld));
-    if (local.subtract(new Vector3(...actor.transform.position)).lengthSquared() <= EPS * EPS) continue;
+    const localDelta = Vector3.TransformNormal(new Vector3(0, relativeDisplacement, 0), Matrix.Invert(parentWorld));
+    const local = new Vector3(...actor.transform.position).add(localDelta);
     changes.push({ actorId: actor.id, position: [local.x, local.y, local.z],
       rotation: [...actor.transform.rotation], scale: [...actor.transform.scale] });
   }
@@ -113,9 +105,9 @@ function sourceBounds(root: Mesh | null, actorRoots: ReadonlySet<Mesh>): DropBou
   if (!root) return null;
   let bounds: DropBounds | null = null;
   for (const mesh of [root, ...root.getChildMeshes()]) {
-    let owner = mesh;
-    while (owner.parent instanceof Mesh && !actorRoots.has(owner as Mesh)) owner = owner.parent;
-    if (owner !== root || mesh.getTotalVertices() === 0 || isColliderVisualTree(mesh)) continue;
+    let owner: Node = mesh;
+    while (owner.parent && !actorRoots.has(owner as Mesh)) owner = owner.parent;
+    if (owner !== root || mesh instanceof LinesMesh || mesh.getTotalVertices() === 0 || isColliderVisualTree(mesh)) continue;
     const meta = mesh.metadata as { editorPickProxy?: boolean; editorBillboard?: string; editorVolume?: boolean } | null;
     if (meta?.editorPickProxy || meta?.editorBillboard || meta?.editorVolume || mesh.visibility === 0 || mesh.infiniteDistance) continue;
     mesh.computeWorldMatrix(true);
