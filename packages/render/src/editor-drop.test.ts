@@ -13,6 +13,7 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { calculateEditorDropTransforms } from "./editor-drop";
 import type { MeshAssetContext } from "./mesh-assets";
 import type { ColliderShape } from "@babylonslate/physics";
+import { createDefaultSpritePayload, emptyChunkTiles, normalizeTilemapPayload, normalizeTilesetPayload } from "@babylonslate/assets";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => {
@@ -189,5 +190,50 @@ describe("editor Drop", () => {
     }] });
     const { drop } = setup([box("selected", [0, 10, 0]), box("visual", [0, 6, 0]), support], undefined, "2d");
     expect(drop(["selected"])[0]?.position).toEqual([0, 2.75, 0]);
+  });
+
+  it("matches runtime sphere radius baking under nonuniform scale", () => {
+    const surface = createActor("support", "Support", {
+      transform: { ...identitySerializedTransform(), scale: [2, 1, 1] },
+      components: [{ id: "shape", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 1 } } }],
+    });
+    expect(setup([box("selected", [0, 10, 0]), surface]).drop(["selected"])[0]?.position).toEqual([0, 2.75, 0]);
+  });
+
+  it("does not drop downward through a collider that already encloses the object's bottom", () => {
+    const enclosing = createActor("enclosing", "Enclosing", { components: [{ id: "shape", classId: "ColliderComponent", properties: {
+      shape: { kind: "convex", points: [-2, 2].flatMap((x) => [-2, 2].flatMap((y) => [-2, 2].map((z) => ({ x, y, z })))) },
+    } }] });
+    expect(setup([box("selected", [0, 1, 0]), enclosing, box("floor", [0, -5, 0])]).drop(["selected"])).toEqual([]);
+  });
+
+  it("excludes the prefab pivot helper and safely skips singular parent transforms", () => {
+    const helper = createActor("prefab-root", "Prefab Root", { components: [createMeshComponent("marker", "pivot")] });
+    const parent = createActor("flat-parent", "Parent", { components: [], transform: { ...identitySerializedTransform(), scale: [0, 1, 1] } });
+    const child = { ...box("child", [4, 10, 0]), parentId: "flat-parent" };
+    expect(setup([box("selected", [0, 10, 0]), helper, parent, child]).drop(["selected", "child"])).toEqual([]);
+  });
+
+  it("requires a non-trigger box2d collider for Sprite AABB collision", () => {
+    const sprite = createDefaultSpritePayload();
+    const surface = createActor("sprite", "Sprite", { components: [{ id: "sprite-visual", classId: "SpriteComponent", properties: { assetGuid: "sprite-guid" } }] });
+    const assets = { spritePayloads: new Map([["sprite-guid", sprite]]) };
+    expect(setup([box("selected", [0, 10, 0]), surface], assets, "2d").drop(["selected"])).toEqual([]);
+    surface.components.push({ id: "shape", classId: "ColliderComponent", properties: { isTrigger: true, shape: { kind: "box2d" } } });
+    expect(setup([box("selected", [0, 10, 0]), surface], assets, "2d").drop(["selected"])).toEqual([]);
+    surface.components[1]!.properties.isTrigger = false;
+    surface.components[1]!.transform = { ...identitySerializedTransform(), position: [0, 2, 0] };
+    expect(setup([box("selected", [0, 10, 0]), surface], assets, "2d").drop(["selected"])[0]?.position).toEqual([0, 3.25, 0]);
+  });
+
+  it("drops onto authored tilemap collision chains", () => {
+    const tiles = emptyChunkTiles(2); tiles[0] = 1;
+    const tilemap = normalizeTilemapPayload({ tilesetGuid: "set", tileWidth: 100, tileHeight: 100, chunkSize: 2,
+      layers: [{ id: "ground", name: "Ground", collision: true, chunks: [{ cx: 0, cy: 0, tiles }] }] });
+    const surface = createActor("tiles", "Tiles", { components: [{ id: "tilemap", classId: "TilemapComponent", properties: { assetGuid: "map" } }] });
+    const result = setup([box("selected", [0.5, 10, 0]), surface], {
+      tilemaps: new Map([["map", tilemap]]), tilesets: new Map([["set", normalizeTilesetPayload({ tiles: [{ id: 1, collision: "full" }] })]]),
+    }, "2d").drop(["selected"]);
+    expect(result[0]?.position).toEqual([0.5, 1.75, 0]);
   });
 });
