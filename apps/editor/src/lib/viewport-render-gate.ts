@@ -32,6 +32,7 @@ export function dispatchEngineSettingsChanged(settings: {
   audioByteCeiling?: number;
   audioMaxVoices?: number;
   viewportFlySpeed?: number;
+  viewportDropDistance?: number;
   viewportGridSize?: number;
   modelImportDefaultScale?: number;
 }): void {

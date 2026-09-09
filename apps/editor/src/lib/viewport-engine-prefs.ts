@@ -5,6 +5,7 @@ import {
 
 export function useEditorViewportPrefs(): {
   flySpeed: number;
+  dropDistance: number;
   gridSize: number;
   editorTextureLodEnabled: boolean;
   editorTextureLodQuality: number;
@@ -13,6 +14,7 @@ export function useEditorViewportPrefs(): {
 
   return {
     flySpeed: settings.viewportFlySpeed,
+    dropDistance: settings.viewportDropDistance,
     gridSize: settings.viewportGridSize,
     editorTextureLodEnabled: settings.editorTextureLodEnabled,
     editorTextureLodQuality: settings.editorTextureLodQuality,
