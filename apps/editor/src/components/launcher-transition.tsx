@@ -24,11 +24,17 @@ type Transition = {
   settled: boolean;
   leaving: boolean;
 };
-const TransitionContext = createContext({
-  begin: (_label: string) => {},
-  ready: (_target: Target) => {},
+const TransitionContext = createContext<{
+  begin: (label: string) => void;
+  ready: (target: Target) => void;
+  settle: () => void;
+  reportHomeLoading: (status: string) => void;
+  active: boolean;
+}>({
+  begin: () => {},
+  ready: () => {},
   settle: () => {},
-  reportHomeLoading: (_status: string) => {},
+  reportHomeLoading: () => {},
   active: false,
 });
 export const useLauncherTransition = () => useContext(TransitionContext);

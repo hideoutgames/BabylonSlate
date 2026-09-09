@@ -156,7 +156,7 @@ describe("Slate project browser", () => {
         target: { value: "Orbit" },
       });
       fireEvent.click(
-        screen.getByRole("button", { name: "Rocket", exact: true }),
+        screen.getByRole("button", { name: "Rocket" }),
       );
       fireEvent.click(screen.getByTestId("create-project-submit"));
       await waitFor(() =>

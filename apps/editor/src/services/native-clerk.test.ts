@@ -61,8 +61,8 @@ describe("NativeClerkClient", () => {
     const accountSecrets = new MemorySecretStore();
     await accountSecrets.set(`slate-clerk-client:${key}`, "desktop-client");
     const legacyRead = vi.fn();
-    const http = vi.fn(async (_request: NativeHttpRequest) =>
-      response(client, "desktop-rotated"),
+    const http = vi.fn<(request: NativeHttpRequest) => Promise<NativeHttpResponse>>(
+      async () => response(client, "desktop-rotated"),
     );
     vi.stubGlobal("babylonslate", {
       userData: {
