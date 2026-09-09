@@ -63,25 +63,28 @@ function Composer({
 }
 
 describe("Project Composer", () => {
-  it("focuses the popup on touch devices so opening it does not summon the keyboard", async () => {
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query === "(pointer: coarse)",
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-    }));
-    render(<Composer />);
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        screen.getByTestId("create-project-dialog"),
-      ),
-    );
-    expect(document.activeElement).not.toBe(
-      screen.getByTestId("create-project-name"),
-    );
-  });
+  it.each(["(pointer: coarse)", "(any-pointer: coarse)"])(
+    "focuses the popup on touch devices (%s) so opening it does not summon the keyboard",
+    async (touchQuery) => {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: query === touchQuery,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+      }));
+      render(<Composer />);
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByTestId("create-project-dialog"),
+        ),
+      );
+      expect(document.activeElement).not.toBe(
+        screen.getByTestId("create-project-name"),
+      );
+    },
+  );
 
   it("restores focus to project actions after editing from its context menu", async () => {
     function ContextEdit() {
