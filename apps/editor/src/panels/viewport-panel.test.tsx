@@ -4,7 +4,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { syncEditorPlayState } from "@babylonslate/render";
-import { createActor, createDefaultScene, engineCommandBus } from "@babylonslate/core";
+import { createActor, createDefaultScene, engineCommandBus, type SerializedScene } from "@babylonslate/core";
 import { encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
@@ -67,7 +67,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     selection: { actorIds: [] as string[] },
     documents: {
       assetRegistry: null as Pick<AssetRegistry, "list"> | null,
-      applySceneChange: vi.fn(async () => true),
+      applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
       openDocuments: [] as Array<{
         id: string;
         ref: { kind: string; path: string; label: string };
@@ -261,7 +261,7 @@ describe("ViewportPanel engine", () => {
       await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
       fireEvent.click(screen.getByRole("button", { name: "Drop" }));
       expect(documents.applySceneChange).toHaveBeenCalledTimes(1);
-      const next = documents.applySceneChange.mock.calls[0]?.[1];
+      const next = documents.applySceneChange.mock.calls[0]![1];
       expect(next.actors.map((actor: typeof a) => actor.transform.position)).toEqual([[0, -3, 0], [0, -8, 0], [0, 0, 0]]);
       expect(next.actors[2]).toBe(miss);
     } finally {

@@ -1,6 +1,6 @@
 import type { Engine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
 import {
   applyGizmoMultiSelectDrag,
@@ -17,7 +17,7 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { type SerializedScene, isSceneWorkspaceKind } from "@babylonslate/core";
+import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import {
   materialViewportTestSnapshot,
@@ -62,6 +62,7 @@ import {
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
+  const dropViewportId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -255,6 +256,27 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const commitGizmoTransformRef = useRef(commitGizmoTransform);
   commitGizmoTransformRef.current = commitGizmoTransform;
 
+  const dropDisabled = !sceneReady || playing || preparing || !scene?.actors.some(
+    (actor) => !actor.locked && selectedActorIds.includes(actor.id),
+  );
+  const dropSelection = () => {
+    const current = sceneRef.current;
+    if (dropDisabled || !current) return;
+    const actorIds = current.actors
+      .filter((actor) => !actor.locked && selectedActorIds.includes(actor.id))
+      .map((actor) => actor.id);
+    const transforms = requestEditorDrop(dropViewportId, actorIds);
+    if (transforms.length === 0) return;
+    const byId = new Map(transforms.map((transform) => [transform.actorId, transform]));
+    void applySceneChange(documentId, {
+      ...current,
+      actors: current.actors.map((actor) => {
+        const transform = byId.get(actor.id);
+        return transform ? applyLiveGizmoToActor(actor, transform) : actor;
+      }),
+    });
+  };
+
   useEffect(() => {
     setSharedEngine(ensureSharedEngine());
   }, [ensureSharedEngine, sharedEngineGeneration]);
@@ -267,6 +289,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
     const handle = createEngine(canvas, {
       editor: true,
+      editorViewportId: dropViewportId,
       sharedEngine,
       viewportMode,
       overlayTransformBox,
@@ -370,6 +393,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     // Remount when overlay vs world manipulator kind is known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    dropViewportId,
     registerSharedEngine,
     registerScheduler,
     sharedEngine,
@@ -763,6 +787,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           data-testid="viewport-panel-frame"
         >
           <ViewportToolbar
+            onDrop={dropSelection}
+            dropDisabled={dropDisabled}
             showViewportModeToggle={doc?.ref.kind !== "scene-layer"}
             showGizmoTools={!overlayTransformBox}
           />
