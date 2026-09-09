@@ -155,6 +155,50 @@ describe("useContextMenu", () => {
     expect(state()).toBe("closed");
   });
 
+  it("cancels a pending hold when another finger touches outside the target", async () => {
+    vi.useFakeTimers();
+    const { target, state } = renderHost();
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    await advancePastLongPress(200);
+    dispatchPointerEvent(document.body, "pointerdown", {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 2,
+      isPrimary: false,
+    });
+    await advancePastLongPress();
+    expect(state()).toBe("closed");
+  });
+
+  it("cancels a pending hold when the window loses focus", async () => {
+    vi.useFakeTimers();
+    const { target, state } = renderHost();
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    fireEvent(window, new Event("blur"));
+    await advancePastLongPress();
+    expect(state()).toBe("closed");
+  });
+
+  it("cancels a pending hold when pointer capture is lost", async () => {
+    vi.useFakeTimers();
+    const { target, state } = renderHost();
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    const event = new Event("lostpointercapture", { bubbles: true });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    fireEvent(target, event);
+    await advancePastLongPress();
+    expect(state()).toBe("closed");
+  });
+
+  it("cancels a held pointer released outside the original target", async () => {
+    vi.useFakeTimers();
+    const { target, state } = renderHost();
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    dispatchPointerEvent(document.body, "pointerup", ORIGIN);
+    await advancePastLongPress();
+    expect(state()).toBe("closed");
+  });
+
   it("cancels a pending hold when project actions become disabled", async () => {
     vi.useFakeTimers();
     const { target, state, rerender } = renderHost();
@@ -230,6 +274,20 @@ describe("useContextMenu", () => {
       document.dispatchEvent(new Event("scroll"));
     });
     expect(queryByTestId("context-menu-panel")).toBeNull();
+  });
+
+  it("keeps an overflowing menu open while its own items scroll", () => {
+    const onSelect = vi.fn();
+    const { target, getByTestId, state } = renderHost([
+      { id: "a", label: "Action", onSelect },
+    ]);
+    fireEvent.contextMenu(target);
+    const panel = getByTestId("context-menu-panel");
+    fireEvent.scroll(panel, { target: { scrollTop: 80 } });
+    expect(state()).toBe("open");
+    fireEvent.click(getByTestId("context-menu-item-a"));
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(state()).toBe("closed");
   });
 
   it("does nothing when there are no items", () => {

@@ -602,7 +602,7 @@ export function Homepage({
             >
               <FolderOpenIcon />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent className="homepage-theme" align="end">
               <DropdownMenuItem
                 onClick={() =>
                   void run(() => launch(() => onOpenExternal("folder")))

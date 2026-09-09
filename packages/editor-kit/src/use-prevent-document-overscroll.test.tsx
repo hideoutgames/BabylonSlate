@@ -58,6 +58,80 @@ describe("usePreventDocumentOverscroll", () => {
     add.mockRestore();
   });
 
+  it.each(["x", "y"])(
+    "allows a %s scroll to reverse immediately after an outward drag at its edge",
+    (axis) => {
+      const { getByTestId } = render(<Host />);
+      const shell = getByTestId("shell");
+      shell.style.overflowX = "auto";
+      shell.style.overflowY = "auto";
+      Object.defineProperties(shell, {
+        clientWidth: { value: 100 },
+        clientHeight: { value: 100 },
+        scrollWidth: { value: axis === "x" ? 300 : 100 },
+        scrollHeight: { value: axis === "y" ? 300 : 100 },
+      });
+      const touch = (position: number) => [
+        {
+          clientX: axis === "x" ? position : 0,
+          clientY: axis === "y" ? position : 0,
+        } as Touch,
+      ];
+      shell.dispatchEvent(
+        new TouchEvent("touchstart", { bubbles: true, touches: touch(40) }),
+      );
+      const outward = new TouchEvent("touchmove", {
+        bubbles: true,
+        cancelable: true,
+        touches: touch(70),
+      });
+      shell.dispatchEvent(outward);
+      expect(outward.defaultPrevented).toBe(true);
+
+      // The finger is still past its starting point, but now moves inward.
+      const inward = new TouchEvent("touchmove", {
+        bubbles: true,
+        cancelable: true,
+        touches: touch(60),
+      });
+      shell.dispatchEvent(inward);
+      expect(inward.defaultPrevented).toBe(false);
+    },
+  );
+
+  it("leaves an interrupted multi-touch gesture alone until a new contact starts", () => {
+    const { getByTestId } = render(<Host />);
+    const shell = getByTestId("shell");
+    shell.dispatchEvent(
+      new TouchEvent("touchstart", {
+        bubbles: true,
+        touches: [{ clientX: 0, clientY: 0 } as Touch],
+      }),
+    );
+    shell.dispatchEvent(
+      new TouchEvent("touchstart", {
+        bubbles: true,
+        touches: [
+          { clientX: 0, clientY: 0 } as Touch,
+          { clientX: 20, clientY: 20 } as Touch,
+        ],
+      }),
+    );
+    shell.dispatchEvent(
+      new TouchEvent("touchend", {
+        bubbles: true,
+        touches: [{ clientX: 0, clientY: 0 } as Touch],
+      }),
+    );
+    const remainingFingerMove = new TouchEvent("touchmove", {
+      bubbles: true,
+      cancelable: true,
+      touches: [{ clientX: 0, clientY: 20 } as Touch],
+    });
+    shell.dispatchEvent(remainingFingerMove);
+    expect(remainingFingerMove.defaultPrevented).toBe(false);
+  });
+
   it("does nothing when disabled", () => {
     render(<Host enabled={false} />);
     const shell = document.querySelector("[data-testid='shell']")!;

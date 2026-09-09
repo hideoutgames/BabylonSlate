@@ -31,7 +31,7 @@ export const workloads = {
   dom: { workers: 1, browsers: 0, memoryGiB: 2 },
   coverage: { workers: 1, browsers: 0, memoryGiB: 3 },
   docs: { workers: 1, browsers: 0, memoryGiB: 1.5 },
-  build: { workers: 2, browsers: 0, memoryGiB: 2.5 },
+  build: { workers: 2, browsers: 0, memoryGiB: 2 },
   browser: { workers: 1, browsers: 1, memoryGiB: 2 },
 };
 

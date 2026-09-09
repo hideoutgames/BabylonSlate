@@ -63,25 +63,63 @@ function Composer({
 }
 
 describe("Project Composer", () => {
-  it("focuses the popup on touch devices so opening it does not summon the keyboard", async () => {
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query === "(pointer: coarse)",
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-    }));
+  it("fits the visible viewport during keyboard resizing without losing the draft", async () => {
+    const viewport = Object.assign(new EventTarget(), {
+      height: 844,
+      offsetTop: 0,
+      scale: 1,
+    });
+    vi.stubGlobal("visualViewport", viewport);
     render(<Composer />);
+    const dialog = screen.getByTestId("create-project-dialog");
+    const name = screen.getByTestId("create-project-name") as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "Orbit" } });
+    act(() => {
+      viewport.height = 440;
+      viewport.offsetTop = 12;
+      viewport.dispatchEvent(new Event("resize"));
+    });
     await waitFor(() =>
-      expect(document.activeElement).toBe(
-        screen.getByTestId("create-project-dialog"),
+      expect(dialog.style.getPropertyValue("--homepage-visible-height")).toBe(
+        "440px",
       ),
     );
-    expect(document.activeElement).not.toBe(
-      screen.getByTestId("create-project-name"),
+    expect(dialog.style.getPropertyValue("--homepage-visible-top")).toBe(
+      "12px",
+    );
+    expect(name.value).toBe("Orbit");
+    // Pinch zoom must not squeeze the form into the magnified viewport.
+    act(() => {
+      viewport.scale = 2;
+      viewport.height = 220;
+      viewport.dispatchEvent(new Event("resize"));
+    });
+    expect(dialog.style.getPropertyValue("--homepage-visible-height")).toBe(
+      "440px",
     );
   });
+  it.each(["(pointer: coarse)", "(any-pointer: coarse)"])(
+    "focuses the popup on touch devices (%s) so opening it does not summon the keyboard",
+    async (touchQuery) => {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: query === touchQuery,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+      }));
+      render(<Composer />);
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByTestId("create-project-dialog"),
+        ),
+      );
+      expect(document.activeElement).not.toBe(
+        screen.getByTestId("create-project-name"),
+      );
+    },
+  );
 
   it("restores focus to project actions after editing from its context menu", async () => {
     function ContextEdit() {
