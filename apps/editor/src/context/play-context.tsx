@@ -1415,6 +1415,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             physics={playPhysics}
             sceneAssetGuid={playSceneGuid}
             scene={playScene?.scene}
+            project={projectDocument?.metadata}
             gameInstanceClass={resolveGameInstanceClass(
               projectDocument?.settings,
               playScene?.scene,

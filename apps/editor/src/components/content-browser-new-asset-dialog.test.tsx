@@ -73,7 +73,7 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(onCreate).toHaveBeenCalledOnce();
   });
 
-  it("selects one type card at a time", () => {
+  it("selects one type at a time", () => {
     const { onTypeChange } = renderDialog();
     const scene = screen.getByTestId("new-asset-type-Scene");
     const klass = screen.getByTestId("new-asset-type-Class");
@@ -118,13 +118,24 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(onParentClassChange).toHaveBeenCalledWith("Actor");
   });
 
-  it("matches Project Settings CatalogDialog shell size", () => {
-    renderDialog();
-    const dialog = screen.getByTestId("content-browser-new-asset-dialog");
-    expect(dialog.className).toContain("h-[min(90vh,52rem)]");
-    expect(dialog.className).toContain("w-[min(96vw,64rem)]");
-    expect(dialog.className).not.toContain("h-[min(85vh,40rem)]");
-    expect(dialog.className).not.toContain("w-[min(96vw,56rem)]");
+  it.each([
+    { name: "Hero", nameTaken: false, busy: false, calls: 1 },
+    { name: "", nameTaken: false, busy: false, calls: 0 },
+    { name: "Hero", nameTaken: true, busy: false, calls: 0 },
+    { name: "Hero", nameTaken: false, busy: true, calls: 0 },
+  ])("validates keyboard creation: %j", ({ calls, ...props }) => {
+    const { onCreate } = renderDialog(props);
+    fireEvent.keyDown(screen.getByTestId("new-asset-name"), { key: "Enter" });
+    expect(onCreate).toHaveBeenCalledTimes(calls);
+  });
+
+  it("navigates type choices with arrow keys", () => {
+    const { onTypeChange } = renderDialog();
+    const scene = screen.getByTestId("new-asset-type-Scene");
+    scene.focus();
+    fireEvent.keyDown(scene, { key: "ArrowDown" });
+    expect(onTypeChange).toHaveBeenCalledWith("SceneLayer");
+    expect(document.activeElement).toBe(screen.getByTestId("new-asset-type-SceneLayer"));
   });
 
   it("uses the Actor icon for Actor subclasses and nested user classes", () => {
@@ -228,12 +239,12 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("tells authors that sounds come from Import, not New Asset", () => {
+  it("shows Audio and Animation categories without descriptions", () => {
     renderDialog();
-    const hint = screen.getByTestId("new-asset-group-hint-audio");
-    expect(hint.textContent).toMatch(/Import/);
-    expect(hint.textContent).toMatch(/WAV/);
-    expect(hint.textContent).toMatch(/MP3/);
-    expect(hint.textContent).toMatch(/OGG/);
+    const choices = screen.getByRole("radiogroup", { name: "Asset Type" });
+    expect(choices.textContent).toContain("Audio");
+    expect(choices.textContent).toContain("Animation");
+    expect(choices.textContent).not.toContain("Sounds are Import");
+    expect(choices.textContent).not.toContain("Animation Graph is the state machine");
   });
 });

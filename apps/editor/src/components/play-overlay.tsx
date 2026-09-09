@@ -75,6 +75,7 @@ export interface PlayOverlayProps {
   physics?: PlayPhysicsSettings;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
+  project?: { name: string; version: string };
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
@@ -152,6 +153,7 @@ export function PlayOverlay({
   physics,
   sceneAssetGuid,
   scene,
+  project,
   gameInstanceClass,
   scenes,
   sceneLayers,
@@ -321,6 +323,7 @@ export function PlayOverlay({
   const sceneRef = useRef({
     sceneAssetGuid,
     scene,
+    project,
     gameInstanceClass,
     scenes,
     sceneLayers,
@@ -328,6 +331,7 @@ export function PlayOverlay({
   sceneRef.current = {
     sceneAssetGuid,
     scene,
+    project,
     gameInstanceClass,
     scenes,
     sceneLayers,
@@ -408,6 +412,7 @@ export function PlayOverlay({
       physics: physicsRef.current,
       sceneAssetGuid: sceneRef.current.sceneAssetGuid,
       scene: sceneRef.current.scene,
+      project: sceneRef.current.project,
       gameInstanceClass: sceneRef.current.gameInstanceClass,
       scenes: sceneRef.current.scenes,
       sceneLayers: sceneRef.current.sceneLayers,

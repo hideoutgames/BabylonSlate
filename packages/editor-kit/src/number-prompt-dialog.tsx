@@ -57,16 +57,14 @@ export function NumberPromptDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description ? (
             <AlertDialogDescription>{description}</AlertDialogDescription>
-          ) : (
-            <AlertDialogDescription>{label}</AlertDialogDescription>
-          )}
+          ) : null}
         </AlertDialogHeader>
         <Field>
           <FieldLabel htmlFor="number-prompt-input">{label}</FieldLabel>
           <NumberField
             id="number-prompt-input"
             min={min}
-            className="min-h-[var(--touch-target,44px)]"
+            className="min-h-[var(--chrome-row,28px)]"
             data-testid="number-prompt-input"
             value={value}
             onChange={setValue}

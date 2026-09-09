@@ -10,7 +10,7 @@ describe("alertDialogContentVariants", () => {
     const tokens = classTokens(
       alertDialogContentVariants({ variant: "destructive" }),
     );
-    expect(tokens).toContain("ring-destructive");
+    expect(tokens).toContain("ring-destructive/30");
     expect(tokens).toContain("sm:max-w-md");
   });
 

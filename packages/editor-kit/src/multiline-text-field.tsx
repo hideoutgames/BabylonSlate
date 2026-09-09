@@ -79,14 +79,14 @@ export function MultilineTextField({
         }}
       >
         <DialogContent
-          className="flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+          className="editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
           data-testid={testId ? `${testId}-dialog` : undefined}
         >
-          <DialogHeader className="shrink-0 border-b px-4 py-3 pr-14">
+          <DialogHeader className="min-h-14 shrink-0 border-b px-4 py-3 pr-14">
             <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>
-              {description ?? "Edit in a larger field. Suggestions sit above the text."}
-            </DialogDescription>
+            {description ? (
+              <DialogDescription>{description}</DialogDescription>
+            ) : null}
           </DialogHeader>
           <div className="flex min-h-0 flex-1 flex-col p-4">
             {markup ? (
@@ -95,7 +95,10 @@ export function MultilineTextField({
                 value={draft}
                 onChange={setDraft}
                 disabled={disabled}
-                className={cn("min-h-0 flex-1 font-mono text-sm", editorClassName)}
+                className={cn(
+                  "min-h-0 flex-1 font-mono text-sm",
+                  editorClassName,
+                )}
                 data-testid={editorTestId}
               />
             ) : (

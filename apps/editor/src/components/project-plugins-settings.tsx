@@ -169,10 +169,6 @@ export function ProjectPluginsSettings() {
     <FieldGroup data-testid="settings-plugins-panel">
       <FieldSet>
         <FieldLegend>Plugins</FieldLegend>
-        <FieldDescription>
-          Enable engine or project plugins. Disabled plugins unmount from the
-          asset registry.
-        </FieldDescription>
         <Field orientation="horizontal">
           <FieldLabel htmlFor="settings-show-plugin-content">
             Show Plugin Content
@@ -188,8 +184,8 @@ export function ProjectPluginsSettings() {
           />
         </Field>
         <FieldDescription>
-          When on, enabled plugin roots appear in the Content Browser. Asset
-          Picker, Play, and search still see enabled plugin assets when off.
+          Show plugin folders in the Content Browser. Hiding them keeps their
+          assets available.
         </FieldDescription>
         {rows.map(({ plugin, enabled }) => {
           const maturity = maturityBadge(plugin);
@@ -237,7 +233,7 @@ export function ProjectPluginsSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="min-h-[var(--touch-target,44px)]"
+                    className="min-h-[var(--chrome-row,28px)]"
                     data-testid={`settings-plugin-open-${plugin.pluginGuid}`}
                     onClick={() => {
                       const kind = documentKindForAssetType("PluginSettings");
@@ -255,7 +251,7 @@ export function ProjectPluginsSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="min-h-[var(--touch-target,44px)]"
+                    className="min-h-[var(--chrome-row,28px)]"
                     data-testid={`settings-plugin-export-${plugin.pluginGuid}`}
                     onClick={() => void downloadPlugin(plugin)}
                   >
@@ -266,7 +262,7 @@ export function ProjectPluginsSettings() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="min-h-[var(--touch-target,44px)]"
+                      className="min-h-[var(--chrome-row,28px)]"
                       data-testid={`settings-plugin-delete-${plugin.pluginGuid}`}
                       onClick={() => setConfirmDelete(plugin)}
                     >
@@ -282,7 +278,7 @@ export function ProjectPluginsSettings() {
           <Button
             type="button"
             variant="outline"
-            className="min-h-[var(--touch-target,44px)] w-fit"
+            className="min-h-[var(--chrome-row,28px)] w-fit"
             data-testid="settings-plugin-new"
             onClick={() => setNewOpen(true)}
           >
@@ -291,7 +287,7 @@ export function ProjectPluginsSettings() {
           <Button
             type="button"
             variant="outline"
-            className="min-h-[var(--touch-target,44px)] w-fit"
+            className="min-h-[var(--chrome-row,28px)] w-fit"
             data-testid="settings-plugin-import"
             onClick={() => void handleImportClick()}
           >
@@ -308,9 +304,9 @@ export function ProjectPluginsSettings() {
             const file = event.target.files?.[0];
             event.target.value = "";
             if (!file) return;
-            void file.arrayBuffer().then((buffer) =>
-              runImport(new Uint8Array(buffer)),
-            );
+            void file
+              .arrayBuffer()
+              .then((buffer) => runImport(new Uint8Array(buffer)));
           }}
         />
       </FieldSet>
@@ -397,8 +393,8 @@ export function ProjectPluginsSettings() {
             </AlertDialogMedia>
             <AlertDialogTitle>Delete Plugin</AlertDialogTitle>
             <AlertDialogDescription>
-              Permanently delete {confirmDelete?.settings.displayName} from disk.
-              This cannot be undone.
+              Permanently delete {confirmDelete?.settings.displayName} from
+              disk. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -432,8 +428,8 @@ export function ProjectPluginsSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>Plugin Already Installed</AlertDialogTitle>
             <AlertDialogDescription>
-              {importConflict?.displayName} is already in this project at the same
-              version. Keep the existing plugin or replace it.
+              {importConflict?.displayName} is already in this project at the
+              same version. Keep the existing plugin or replace it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

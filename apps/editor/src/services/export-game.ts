@@ -68,6 +68,7 @@ export type ExportPluginDescriptor = {
 };
 
 export type CollectExportGameParams = {
+  project?: { name: string; version: string };
   startupSceneGuid: string | null;
   gameInstanceClass?: string | null;
   audioMixerGuid?: string | null;
@@ -376,6 +377,7 @@ export async function collectAndExportGame(
 
   params.onPhase?.("Writing Pack");
   const packed = await exportGame({
+    project: params.project,
     mode,
     bundleDebugger,
     startupSceneGuid: startup,

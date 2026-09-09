@@ -4,6 +4,10 @@ Shared surface for graph IR, pin types, validation, and JS codegen (engineplan Â
 
 P4 already owns stackâ†’node mapping (`AnchorEntry`, `loadCompiledModule`, Preview session report). P5 fills the compiler that emits those anchors and the editor that navigates to them. ExecuteJavaScript hoist lines carry `bodyLine` so a runtime throw inside the user body maps to the CodeMirror line; tapping a session-report row opens the owning Class (or BehaviourTree) asset if needed. `Log` at Error severity is a session-report row (`runtime.log`), not only Output Log.
 
+## Project getters
+
+The Project node category exposes pure string getters **Get Project Name** (`project.getName`) and **Get Project Version** (`project.getVersion`). They read authored metadata through `ctx.getProjectName()` / `ctx.getProjectVersion()` in Play, worker sessions, and packaged builds. Editor utility hosts read the current project's metadata. Version is set in Project Settings > General and is informational; it does not change execution. See [exported identity](exporter.md#project-identity).
+
 ## Package boundaries
 
 | Package | Owns | Must not import |

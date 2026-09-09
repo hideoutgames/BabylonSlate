@@ -19,6 +19,22 @@ function stubPlayer(): Map<string, Uint8Array> {
 }
 
 describe("exportGame", () => {
+  it.each(["packed", "loose"] as const)("retains project identity in %s release builds", async (mode) => {
+    const result = await exportGame({
+      mode,
+      project: { name: "Orbit Workshop", version: "2.4.0-beta.3" },
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [], assets: [], playerFiles: stubPlayer(),
+    });
+    if (!result.ok) throw new Error("Export failed");
+    const stored = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
+    expect(parseGameManifest(stored).project).toEqual({ name: "Orbit Workshop", version: "2.4.0-beta.3" });
+    const legacy = JSON.parse(stored);
+    delete legacy.project;
+    expect(parseGameManifest(JSON.stringify(legacy)).project).toEqual({ name: "", version: "" });
+  });
   it.each([true, false])("H13: retains authored input in exported manifests with debugger=%s", async (bundleDebugger) => {
     const inputMappings = { actions: [{ name: "Jump", bindings: [{ device: "key", code: "KeyH" }] }], axes: [] };
     const options = { bundleDebugger, startupSceneGuid: "scene-1", customResolution: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputMappings };

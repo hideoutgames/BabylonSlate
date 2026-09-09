@@ -11,7 +11,6 @@ import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -128,9 +127,6 @@ export function ContentBrowserMoveDialog({
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            Choose a destination folder. Currently in {currentFolderPath}.
-          </DialogDescription>
         </DialogHeader>
         <div
           className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"

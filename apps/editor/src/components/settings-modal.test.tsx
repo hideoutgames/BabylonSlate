@@ -12,6 +12,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const {
+  updateProjectVersion,
   updateProjectSettings,
   setShowPluginContent,
   sourceControl,
@@ -22,6 +23,7 @@ const {
 } = vi.hoisted(() => {
   const lastProjectInput = { current: null as unknown };
   return {
+    updateProjectVersion: vi.fn(),
     updateProjectSettings: vi.fn((patch: { input?: unknown }) => {
       if (patch?.input) lastProjectInput.current = patch.input;
     }),
@@ -70,6 +72,7 @@ vi.mock("../context/document-context", async () => {
       zipExportedGame: vi.fn(),
       retryFailedTextureEncoding: vi.fn(),
       updateProjectSettings,
+      updateProjectVersion,
       sourceControl,
       prefillSourceControlFromGit: sourceControl.readGitPrefill,
       assetRegistry: {
@@ -137,6 +140,7 @@ afterEach(() => {
   cleanup();
   lastProjectInput.current = null;
   updateProjectSettings.mockClear();
+  updateProjectVersion.mockClear();
   setShowPluginContent.mockClear();
   sourceControl.saveToken.mockClear();
   sourceControl.clearToken.mockClear();
@@ -148,7 +152,27 @@ afterEach(() => {
   sourceControlEnabled.current = false;
 });
 
+it("hides unrelated settings when search has no matching section", () => {
+  render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+  fireEvent.change(screen.getByTestId("settings-modal-search"), {
+    target: { value: "unmatched-setting" },
+  });
+  expect(screen.queryByTestId("settings-compile-on-save")).toBeNull();
+  expect(screen.getByText("No Matching Settings")).toBeTruthy();
+  fireEvent.change(screen.getByTestId("settings-modal-search"), {
+    target: { value: "autosave" },
+  });
+  expect(screen.getByTestId("settings-autosave-interval")).toBeTruthy();
+});
+
 describe("SettingsModal project authoring", () => {
+  it("edits the authored project version from General", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    const version = screen.getByRole("textbox", { name: "Project Version" });
+    expect((version as HTMLInputElement).value).toBe("1.0.0");
+    fireEvent.change(version, { target: { value: "2.4.0-beta.3" } });
+    expect(updateProjectVersion).toHaveBeenCalledWith("2.4.0-beta.3");
+  });
   it("edits input mappings with the structured editor instead of JSON", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
@@ -453,9 +477,8 @@ describe("SettingsModal project authoring", () => {
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
     const copy = screen.getByTestId("settings-source-control-token-copy");
-    expect(copy.textContent).toMatch(/this project on this device/i);
-    expect(copy.textContent).toMatch(/not written into project files/i);
-    expect(copy.textContent).toMatch(/Clear Token/);
+    expect(copy.textContent).toMatch(/on this device for this project/i);
+    expect(copy.textContent).toMatch(/never included in project files or Git/i);
     expect(copy.textContent).not.toMatch(/This browser only/i);
     expect(copy.textContent).not.toMatch(/Not Saved/);
     expect(screen.queryByText("Not Saved")).toBeNull();
@@ -499,7 +522,7 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("labels the Session category Done instead of Close", () => {
+  it("keeps Close Project available in the Session category", () => {
     render(
       <SettingsModal
         open
@@ -510,7 +533,7 @@ describe("SettingsModal project authoring", () => {
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-project"));
     expect(screen.getByTestId("settings-modal-category-project").textContent).toBe(
-      "Done",
+      "Session",
     );
     expect(screen.getByTestId("close-project").textContent).toMatch(/Close Project/);
   });

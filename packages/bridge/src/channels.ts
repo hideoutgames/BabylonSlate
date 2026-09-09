@@ -76,6 +76,7 @@ export type ScriptBundleEntry = {
 export type ControlMessage =
   | {
       type: "load";
+      project?: { name: string; version: string };
       sceneAssetGuid: string;
       /** Authored project mappings; omitted legacy loads use defaults. */
       inputMappings?: ProjectInputSettings;
