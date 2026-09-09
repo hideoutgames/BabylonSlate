@@ -1,15 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   Mesh,
   MeshBuilder,
   PBRMaterial,
+  PBRMetallicRoughnessBlock,
+  RawTexture,
   StandardMaterial,
+  type Scene,
 } from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
   createMeshComponent,
 } from "@babylonslate/core";
+import {
+  createDefaultMaterialDocument,
+  lowerMaterialDocument,
+} from "@babylonslate/shader-graph";
+import { compileMaterialPlan } from "./material-compiler";
 import { createTestEngine } from "./create-null-engine";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
@@ -17,6 +25,29 @@ import {
   isViewportShadingTarget,
   ViewportShadingOverlay,
 } from "./viewport-shading-mode";
+
+function compiledPbr(scene: Scene) {
+  // NullEngine cannot upload the BRDF lookup; retain real shader compilation.
+  scene.environmentBRDFTexture ??= RawTexture.CreateRGBATexture(
+    new Uint8Array([255, 255, 255, 255]), 1, 1, scene,
+  );
+  vi.spyOn(scene.environmentBRDFTexture, "isReady").mockReturnValue(true);
+  const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+  if (!lowered.ok) throw new Error("Fixture material did not lower");
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "surface" });
+  if (!compiled.ok) throw new Error("Fixture material did not compile");
+  compiled.material.allowShaderHotSwapping = false;
+  return compiled.material;
+}
+
+async function shaderDefines(scene: Scene, mesh: Mesh): Promise<string> {
+  scene.incrementRenderId();
+  const material = mesh.material ?? scene.defaultMaterial;
+  await vi.waitFor(() =>
+    expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true),
+  );
+  return mesh.subMeshes[0]!.effect!.defines;
+}
 
 describe("isViewportShadingTarget", () => {
   it("keeps actor meshes and skips editor chrome", () => {
@@ -54,6 +85,72 @@ describe("isViewportShadingTarget", () => {
 });
 
 describe("ViewportShadingOverlay", () => {
+  it.each(["compiled", "native"] as const)(
+    "refreshes the frozen %s PBR shader through Unlit and restores shading",
+    async (kind) => {
+      const { engine, scene } = createTestEngine();
+      try {
+        // No light-policy transition can mask a missing overlay invalidation.
+        scene.lightsEnabled = false;
+        const mesh = MeshBuilder.CreateBox("actor", {}, scene);
+        const material = kind === "compiled" ? compiledPbr(scene) : new PBRMaterial("native", scene);
+        material.allowShaderHotSwapping = false;
+        mesh.material = material;
+        material.freeze();
+        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+        const overlay = new ViewportShadingOverlay(scene);
+        scene.blockMaterialDirtyMechanism = true;
+        overlay.setMode("unlit");
+        expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+        expect(material.isFrozen).toBe(true);
+        expect(scene.blockMaterialDirtyMechanism).toBe(true);
+        overlay.apply();
+        expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+        overlay.setMode("wireframe");
+        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+        expect(material.wireframe).toBe(true);
+        overlay.setMode("pbr");
+        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+        expect(material.wireframe).toBe(false);
+        expect(material.isFrozen).toBe(true);
+        expect(mesh.material).toBe(material);
+        expect(scene.lightsEnabled).toBe(false);
+      } finally {
+        engine.dispose();
+      }
+    },
+  );
+
+  it("applies Unlit to newly assigned surface graphs and preserves authored unlit blocks", async () => {
+    const { engine, scene } = createTestEngine();
+    try {
+      const overlay = new ViewportShadingOverlay(scene);
+      overlay.setMode("unlit");
+      const mesh = MeshBuilder.CreateBox("late-model", {}, scene);
+      const authored = compiledPbr(scene);
+      const block = authored.attachedBlocks.find(
+        (candidate): candidate is PBRMetallicRoughnessBlock => candidate instanceof PBRMetallicRoughnessBlock,
+      )!;
+      block.unlit = true;
+      mesh.material = authored;
+      overlay.apply();
+      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      overlay.setMode("pbr");
+      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      overlay.setMode("unlit");
+      const replacement = compiledPbr(scene);
+      mesh.material = replacement;
+      overlay.apply();
+      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      overlay.setMode("pbr");
+      expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+      expect(mesh.material).toBe(replacement);
+      expect(block.unlit).toBe(true);
+    } finally {
+      engine.dispose();
+    }
+  });
+
   it("sets wireframe on actor materials and leaves helper chrome alone", () => {
     const { engine, scene } = createTestEngine();
     const mesh = MeshBuilder.CreateBox("actor", { size: 1 }, scene);
