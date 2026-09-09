@@ -130,12 +130,16 @@ export class InputBindingProfile implements InputBindingControls {
     null;
   private status: ReturnType<InputBindingControls["getRebindStatus"]> = "idle";
   private modifierCandidate: string | null = null;
+  private readonly onChange: (mappings: InputMappings) => void;
+  private readonly onCaptureStart: () => void;
 
   constructor(
     mappings: InputMappings,
-    private readonly onChange: (mappings: InputMappings) => void,
-    private readonly onCaptureStart: () => void,
+    onChange: (mappings: InputMappings) => void,
+    onCaptureStart: () => void,
   ) {
+    this.onChange = onChange;
+    this.onCaptureStart = onCaptureStart;
     this.defaults = normalizeInputMappings(mappings);
     this.current = structuredClone(this.defaults);
   }
