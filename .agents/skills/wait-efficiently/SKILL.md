@@ -25,7 +25,7 @@ The default deadline is two hours; set `--timeout-seconds 10800` before the argu
 - Before opening/updating a PR, use that targeted set and relevant scoped lint/typechecks. Do not automatically invoke cumulative `verify:local`, full `verify`, coverage, an unfiltered editor/browser suite, or workspace-wide typechecking. These require an explicit user request, even for public API, lockfile, infrastructure or CI repairs.
 - Instruction/prose-only edits need diff/link checks, not application tests or a docs build. After a repair, rerun only affected checks and retain justified results for unchanged behavior.
 - Required GitHub CI still runs its configured exhaustive checks. Do not change CI gates to match local scope.
-- Keep the default shared profile while agents overlap. Three one-worker phases can be admitted when aggregate memory and host headroom allow; Node tooling uses a 0.75 GiB reservation, while Node unit tests, focused tests, owner typechecks, and docs builds use 1.5 GiB. Heavy application builds retain two slots and 2.5 GiB. `BL_TEST_PROFILE=fast` is for one active agent and must not be used to crowd out shared work.
+- Keep the default shared profile while agents overlap. Three one-worker phases can be admitted when aggregate memory and host headroom allow; Node tooling uses a 0.75 GiB reservation, while Node unit tests, focused tests, owner typechecks, and docs builds use 1.5 GiB. Heavy application builds retain two slots and 2 GiB. `BL_TEST_PROFILE=fast` is for one active agent and must not be used to crowd out shared work.
 
 ## Retain the session
 
