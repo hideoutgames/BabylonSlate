@@ -9,9 +9,11 @@ describe("runtime input bindings", () => {
   it("rebinds one action slot without mutating defaults or other devices", () => {
     const defaults = createDefaultInputMappings();
     const resolver = new InputResolver(defaults);
-    resolver.resolve([key("Space")]);
+    resolver.resolve([key("Space"), key("KeyW")]);
     expect(resolver.bindings?.setBinding("action", "Jump", 0, "key", "KeyJ")).toBe(true);
-    expect(resolver.resolve([]).actions.Jump?.held).toBe(false);
+    const changed = resolver.resolve([]);
+    expect(changed.actions.Jump).toEqual({ pressed: false, released: true, held: false });
+    expect(changed.axes2D.Move).toEqual({ x: 0, y: 1 });
     expect(resolver.resolve([key("Space")]).actions.Jump?.held).toBe(false);
     expect(resolver.resolve([key("KeyJ")]).actions.Jump?.pressed).toBe(true);
     expect(defaults.actions[0]?.bindings[0]?.code).toBe("Space");
