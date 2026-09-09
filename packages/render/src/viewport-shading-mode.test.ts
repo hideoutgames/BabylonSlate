@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  HemisphericLight,
   Mesh,
   MeshBuilder,
   PBRMaterial,
   PBRMetallicRoughnessBlock,
   RawTexture,
   StandardMaterial,
+  Vector3,
   type Scene,
 } from "@babylonjs/core";
 import {
@@ -99,6 +101,30 @@ describe("isViewportShadingTarget", () => {
 });
 
 describe("ViewportShadingOverlay", () => {
+  it("restores lighting for a frozen surface first compiled in Unlit", async () => {
+    const { engine, scene } = createTestEngine();
+    try {
+      new HemisphericLight("key", Vector3.Up(), scene);
+      const overlay = new ViewportShadingOverlay(scene);
+      overlay.setMode("unlit");
+      const mesh = MeshBuilder.CreateBox("actor", {}, scene);
+      const material = compiledPbr(scene);
+      mesh.material = material;
+      material.freeze();
+      scene.blockMaterialDirtyMechanism = true;
+      overlay.apply();
+      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      overlay.setMode("pbr");
+      const defines = await shaderDefines(scene, mesh);
+      expect(defines).not.toContain("#define UNLIT");
+      expect(defines).toContain("#define LIGHT0");
+      expect(mesh.subMeshes[0]!.effect!.fragmentSourceCode).toContain("vLightData0");
+      expect(material.isFrozen).toBe(true);
+    } finally {
+      engine.dispose();
+    }
+  });
+
   it.each(["compiled", "native"] as const)(
     "refreshes the frozen %s PBR shader through Unlit and restores shading",
     async (kind) => {
