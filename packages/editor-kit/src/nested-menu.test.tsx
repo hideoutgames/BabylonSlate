@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { NestedMenu, type NestedMenuItem } from "./nested-menu";
 import { ContextMenuOverlay } from "./context-menu-overlay";
+import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 afterEach(() => {
   cleanup();
@@ -22,6 +23,30 @@ const leaf = (onSelect: () => void = vi.fn()): NestedMenuItem => ({
 });
 
 describe("NestedMenu dropdown", () => {
+  it.each(["mouse", "touch", "pen"] as const)("dismisses on a %s canvas press even when the viewport consumes native events", (pointerType) => {
+    const { getByTestId } = render(
+      <>
+        <NestedMenu
+          items={[leaf()]}
+          trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+          contentTestId="menu-content"
+        />
+        <canvas data-testid="viewport" />
+      </>,
+    );
+    const canvas = getByTestId("viewport");
+    canvas.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    });
+    fireEvent.click(getByTestId("menu-trigger"));
+    expect(getByTestId("menu-content").hasAttribute("data-open")).toBe(true);
+
+    act(() => dispatchPointerEvent(canvas, "pointerdown", { pointerType }));
+
+    expect(getByTestId("menu-content").hasAttribute("data-closed")).toBe(true);
+  });
+
   it("opens a submenu on tap and runs a leaf action", () => {
     const onSelect = vi.fn();
     const { getByTestId } = render(

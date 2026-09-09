@@ -1835,7 +1835,7 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("LineTrace from a compiled graph returns a hit on the same tick", async () => {
+  it("LineTrace from a compiled graph ignores its own collider and draws the hit on the same tick", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
@@ -1846,6 +1846,8 @@ describe("script host runs compiled graphs", () => {
           start: { x: 0, y: 10, z: 0 },
           end: { x: 0, y: -1, z: 0 },
         }),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "ignored", "array.make", { count: 1 }),
         node(registry, "print", "debug.print", {
           key: "hit",
           duration: 1,
@@ -1854,7 +1856,9 @@ describe("script host runs compiled graphs", () => {
       edges: [
         edge("e1", "tick", "execOut", "trace", "execIn"),
         edge("e2", "trace", "execOut", "print", "execIn"),
-        edge("e3", "trace", "hit", "print", "value"),
+        edge("e3", "trace", "distance", "print", "value"),
+        edge("e4", "self", "out", "ignored", "item0"),
+        edge("e5", "ignored", "out", "trace", "actorsToIgnore"),
       ],
     };
     const commands: CommandMessage[] = [];
@@ -1893,14 +1897,44 @@ describe("script host runs compiled graphs", () => {
     await runtime.loadScripts([
       toScript(graph, registry, "Tracer", "tracer-asset"),
     ]);
-    runtime.spawnScriptedActor({ classId: "Tracer" });
+    const tracer = runtime.spawnScriptedActor({
+      classId: "Tracer",
+      transform: {
+        position: { x: 0, y: 5, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    })!;
+    tracer.attachComponent(world.createComponent({
+      classId: "RigidBodyComponent",
+      variables: { motionType: "static", mass: 0, gravityScale: 0 },
+    }));
+    tracer.attachComponent(world.createComponent({
+      classId: "ColliderComponent",
+      variables: {
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+      },
+    }));
     runtime.start();
     runtime.tick();
     runtime.tick();
     const prints = commands.filter((c) => c.type === "print");
     expect(
-      prints.some((c) => String((c as { message: string }).message) === "true"),
+      prints.some((c) => String((c as { message: string }).message) === "9.5"),
     ).toBe(true);
+    expect(runtime.getPhysicsSync()!.lineTrace(
+      { x: 0, y: 10, z: 0 }, { x: 0, y: -1, z: 0 },
+    ).actorId).toBe(tracer.guid);
+    expect(commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "debugDraw", kind: "line",
+        end: { x: 0, y: 0.5, z: 0 }, color: { x: 0, y: 1, z: 0, w: 1 },
+      }),
+      expect.objectContaining({
+        type: "debugDraw", kind: "circle",
+        center: { x: 0, y: 0.5, z: 0 }, color: { x: 1, y: 0, z: 0, w: 1 },
+      }),
+    ]));
     runtime.stop();
   });
 

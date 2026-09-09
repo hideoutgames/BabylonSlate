@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Scene } from "@babylonjs/core";
+import { FreeCamera, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   clampGizmoScreenScale,
@@ -46,6 +46,26 @@ describe("gizmo screen-scale clamp", () => {
 });
 
 describe("gizmo Prefab RTT pointer mapping", () => {
+  it("clears world depth before drawing gizmos into a Prefab render target", () => {
+    const { scene, engine } = createHandle();
+    const camera = new FreeCamera("preview", new Vector3(0, 0, -10), scene);
+    scene.activeCamera = camera;
+    camera.outputRenderTarget = new RenderTargetTexture("prefab", 64, scene);
+    const host = createGizmoHost(scene);
+    const layerScene = host.positionGizmo.gizmoLayer.utilityLayerScene;
+    const clears: Array<{ color: boolean; depth: boolean; stencil: boolean }> = [];
+    const clear = vi.spyOn(engine, "clear").mockImplementation((_color, color, depth, stencil) => {
+      if (camera.getScene() === layerScene) clears.push({ color, depth, stencil: stencil === true });
+    });
+
+    scene.render();
+
+    expect(clears).toContainEqual({ color: false, depth: true, stencil: true });
+    expect(clears.some((entry) => entry.color)).toBe(false);
+    clear.mockRestore();
+    host.dispose();
+  });
+
   it("hitTests in Engine pick space when the canvas size is not the Engine size", () => {
     const { scene, engine } = createHandle();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(800);

@@ -93,7 +93,9 @@ The shared `ParameterListEditor` in `editor-kit` authors those rows (types, opti
 
 Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`), which pauses the render scheduler **and** live AudioV2 voices. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples completed renders per elapsed second; Pause / Console / Inspector stay overlay-Play-only). When Preview Build is on, the chrome launch control reads **Preview**.
 
-**Debug menu** (next to Play) persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Do not reuse unused `showFps` (defaults false).
+**Debug menu** (next to Play) uses the same content-sized, minimum 14rem width as the viewport settings island so labels stay on one line. It persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Do not reuse unused `showFps` (defaults false).
+
+Stats keeps the measured timings and **Over Budget** warning; normal ticks no longer add a **Tick OK** label.
 
 | Group | Item | Default | Notes |
 | --- | --- | --- | --- |

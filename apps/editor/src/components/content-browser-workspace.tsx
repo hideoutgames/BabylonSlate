@@ -266,6 +266,12 @@ export function ContentBrowserWorkspace({
   const [newAssetName, setNewAssetName] = useState("");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [busy, setBusy] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState<{
+    done: number;
+    total: number;
+    currentName: string;
+  } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [nameDialog, setNameDialog] = useState<
     | { kind: "rename"; guid: string; value: string }
     | { kind: "folder"; value: string }
@@ -1120,7 +1126,7 @@ export function ContentBrowserWorkspace({
   }, [allAssets, deleteTarget]);
 
   const confirmDelete = useCallback(async () => {
-    if (!assetRegistry || !deleteTarget) return;
+    if (busy || !assetRegistry || !deleteTarget) return;
     const paths = new Set<string>();
     for (const guid of deleteTarget.guids) {
       const path = assetRegistry.getByGuid(guid)?.path;
@@ -1141,55 +1147,82 @@ export function ContentBrowserWorkspace({
     const oursToRelease = oursLockPaths([...paths], (path) =>
       sourceControl.lockStateForPath(path),
     );
-    const deletedGuids = contentBrowserDeletingGuids({
-      extraGuids: deleteTarget.guids,
-      folderPaths: folders,
-      assets: allAssets,
-    });
-    const deletedClassNames = new Set<string>();
-    for (const guid of deletedGuids) {
-      const asset = assetRegistry.getByGuid(guid);
-      if (
-        asset &&
-        (asset.header.type === "Class" || asset.header.type === "Graph")
-      ) {
-        deletedClassNames.add(asset.header.name);
-      }
-    }
+    const individualGuids = deleteTarget.kind === "folder"
+      ? []
+      : deleteTarget.guids.filter((guid) => {
+          const path = assetRegistry.getByGuid(guid)?.path;
+          return path && !folders.some((folder) => path.startsWith(`${folder}/`));
+        });
+    const total = folders.length + individualGuids.length + 1;
+    let done = 0;
+    const reportProgress = async (currentName: string) => {
+      setDeleteProgress({ done, total, currentName });
+      // Allow React and the browser to paint before the next work slice.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    };
+    const removedGuids = new Set<string>();
     setBusy(true);
+    setDeleteTarget(null);
+    setDeleteProgress({ done, total, currentName: "Preparing Deletion" });
     try {
+      await reportProgress("Preparing Deletion");
       closeDocumentsForPaths(paths);
-      for (const path of folders) {
-        const from = contentBrowserFolderOps(path, browserRoots);
-        if (from.readOnly) continue;
-        await assetRegistry.deleteFolder(from.rootId, from.relative);
-        setSelectedFolderPath((current) =>
-          current === path || current.startsWith(`${path}/`)
-            ? parentFolderPath(path, from.pathPrefix)
-            : current,
-        );
-      }
-      if (deleteTarget.kind !== "folder") {
-        for (const guid of deleteTarget.guids) {
-          if (assetRegistry.getByGuid(guid)) {
-            await assetRegistry.deleteAsset(guid);
+      try {
+        for (const path of folders) {
+          const from = contentBrowserFolderOps(path, browserRoots);
+          if (from.readOnly) continue;
+          await reportProgress(path);
+          await assetRegistry.deleteFolder(from.rootId, from.relative);
+          for (const asset of allAssets) {
+            if (asset.path.startsWith(`${path}/`)) removedGuids.add(asset.header.guid);
           }
+          done += 1;
+          setSelectedFolderPath((current) =>
+            current === path || current.startsWith(`${path}/`)
+              ? parentFolderPath(path, from.pathPrefix)
+              : current,
+          );
+        }
+        for (const guid of individualGuids) {
+          const asset = assetRegistry.getByGuid(guid);
+          if (asset) {
+            await reportProgress(asset.header.name);
+            await assetRegistry.deleteAsset(guid);
+            removedGuids.add(guid);
+          }
+          done += 1;
+        }
+      } finally {
+        // Repair successful removals even if a later file operation fails.
+        if (removedGuids.size > 0 || done > 0) {
+          await reportProgress("Updating References");
+          for (const path of oursToRelease) {
+            if (allAssets.some((asset) => asset.path === path && removedGuids.has(asset.header.guid))) {
+              await sourceControl.releasePath(path);
+            }
+          }
+          const removedClassNames = new Set(allAssets
+            .filter((asset) => removedGuids.has(asset.header.guid) &&
+              (asset.header.type === "Class" || asset.header.type === "Graph"))
+            .map((asset) => asset.header.name));
+          await repairAfterAssetDelete(removedGuids, removedClassNames, (name) =>
+            reportProgress(`Updating References: ${name}`),
+          );
         }
       }
       setSelectedGuids(new Set());
       setSelectedFolderPaths(new Set());
-      setDeleteTarget(null);
-      for (const path of oursToRelease) {
-        await sourceControl.releasePath(path);
-      }
-      await repairAfterAssetDelete(deletedGuids, deletedClassNames);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : String(error));
     } finally {
+      setDeleteProgress(null);
       setBusy(false);
     }
   }, [
     allAssets,
     assetRegistry,
     browserRoots,
+    busy,
     closeDocumentsForPaths,
     deleteTarget,
     repairAfterAssetDelete,
@@ -2497,6 +2530,33 @@ export function ContentBrowserWorkspace({
             <AlertDialogAction onClick={() => setRefsSummary(null)}>
               Close
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={deleteProgress !== null}>
+        <DialogContent showCloseButton={false} data-testid="deleting-overlay">
+          <DialogHeader>
+            <DialogTitle>Deleting Assets</DialogTitle>
+            <DialogDescription>Removing files and updating their references.</DialogDescription>
+          </DialogHeader>
+          {deleteProgress ? (
+            <Progress value={Math.round(100 * deleteProgress.done / deleteProgress.total)}>
+              <ProgressLabel>{deleteProgress.currentName}</ProgressLabel>
+              <ProgressValue />
+            </Progress>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteError !== null} onOpenChange={(open) => { if (!open) setDeleteError(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Failed</AlertDialogTitle>
+            <AlertDialogDescription>{deleteError}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setDeleteError(null)}>Close</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

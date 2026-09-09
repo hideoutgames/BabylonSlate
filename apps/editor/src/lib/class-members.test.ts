@@ -15,6 +15,7 @@ import {
   patchClassMember,
   pruneEventMembersToNodes,
   removeClassMember,
+  renameCustomEvent,
   resolveClassMemberDrop,
 } from "./class-members";
 
@@ -152,6 +153,51 @@ describe("addClassMember", () => {
     expect(graph.nodes[1]?.data.pins).toEqual(pins);
     expect(graph.nodes[1]?.data.name).toBe("On Hit");
     expect(graph.nodes[1]?.data.title).toBe("Call On Hit");
+  });
+
+  it("renames a custom event and its local calls without changing links or foreign bindings", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    graph = addCallEventNode(graph, { name: "On Hit" }, { idFactory: () => "local" });
+    graph = addCallEventNode(graph, { name: "On Hit" }, {
+      idFactory: () => "foreign", classId: "Other", implicitSelf: false,
+    });
+    graph.functionGraphs = { "fn-1": { nodes: [], edges: [] } };
+    graph = addCallEventNode(graph, { name: "On Hit" }, {
+      idFactory: () => "function-call", functionId: "fn-1",
+    });
+    const functionNode = { id: "evt-1", type: "debug.log", position: { x: 0, y: 0 }, data: { title: "Log" } };
+    graph.functionGraphs!["fn-1"]!.nodes.push(functionNode);
+    graph.edges = [{ id: "edge", source: "evt-1", target: "local", sourceHandle: "then", targetHandle: "exec" }];
+    const next = patchClassMember(graph, "evt-1", { name: "onDamage" });
+    expect(next.members?.[0]?.name).toBe("On Damage");
+    expect(next.nodes[0]).toMatchObject({ id: "evt-1", data: { name: "On Damage", title: "Event On Damage" } });
+    expect(next.nodes[1]).toMatchObject({ id: "local", data: { name: "On Damage", title: "Call On Damage" } });
+    expect(next.nodes[2]).toEqual(graph.nodes[2]);
+    expect(next.functionGraphs?.["fn-1"]?.nodes[0]?.data.name).toBe("On Damage");
+    expect(next.functionGraphs?.["fn-1"]?.nodes[1]).toEqual(functionNode);
+    expect(next.edges).toEqual(graph.edges);
+    expect(graph.nodes[0]?.data.name).toBe("On Hit");
+  });
+
+  it("rejects empty, duplicate and inherited custom event renames", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    graph = addClassMember(graph, "event", "On Damage", () => "evt-2");
+    for (const name of [" ", "onDamage"]) {
+      expect(patchClassMember(graph, "evt-1", { name })).toBe(graph);
+    }
+    graph.nodes[0]!.data.eventQualifier = "Inherited";
+    expect(patchClassMember(graph, "evt-1", { name: "Different" })).toBe(graph);
+  });
+
+  it("renames legacy node declarations and explicit calls to their class", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    delete graph.members;
+    graph = addCallEventNode(graph, { name: "On Hit" }, {
+      idFactory: () => "target-call", classId: "Hero", implicitSelf: false,
+    });
+    const next = renameCustomEvent(graph, "evt-1", "On Damage", "Hero");
+    expect(next.nodes.map((node) => node.data.name)).toEqual(["On Damage", "On Damage"]);
+    expect(next.members).toBeUndefined();
   });
 
   it("uses one id for the event member and node so Class tree remove matches", () => {

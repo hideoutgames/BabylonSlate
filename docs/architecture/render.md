@@ -188,6 +188,9 @@ Editor canvases also freeze when zero-size or fully off-screen, or when a blocki
 
 ## Editor tools (P6)
 
+- Capsule collider dashes include upper and lower hemisphere arcs in both vertical planes, in addition to the equator rings and straight sides, so the outline matches the rounded collision shape.
+- Prefab RTT gizmos clear only depth/stencil immediately before the utility-layer draw. The world color remains intact and move/rotate/scale handles stay visible over models, matching the Scene viewport.
+
 Editor viewport attaches these modules from `@babylonslate/render` (Play views omit them):
 
 | Module | Role |

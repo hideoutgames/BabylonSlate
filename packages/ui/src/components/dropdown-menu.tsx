@@ -6,9 +6,42 @@ import { ChevronRightIcon, CheckIcon } from "lucide-react"
 
 function DropdownMenu({
   modal = false,
+  actionsRef,
+  onOpenChange,
+  open,
+  defaultOpen = false,
   ...props
 }: MenuPrimitive.Root.Props) {
-  return <MenuPrimitive.Root data-slot="dropdown-menu" modal={modal} {...props} />
+  const localActions = React.useRef<MenuPrimitive.Root.Actions | null>(null)
+  const actions = actionsRef ?? localActions
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen)
+  const isOpen = open ?? uncontrolledOpen
+
+  React.useEffect(() => {
+    if (!isOpen) return
+    const dismissFromCanvas = (event: PointerEvent) => {
+      // Viewport input can capture or consume native pointer events and prevent
+      // the compatibility click. Close before those handlers run, including touch.
+      if (event.target instanceof HTMLCanvasElement && !event.target.closest('[role="menu"]')) {
+        actions.current?.close()
+      }
+    }
+    document.addEventListener("pointerdown", dismissFromCanvas, true)
+    return () => document.removeEventListener("pointerdown", dismissFromCanvas, true)
+  }, [actions, isOpen])
+
+  return <MenuPrimitive.Root
+    data-slot="dropdown-menu"
+    modal={modal}
+    actionsRef={actions}
+    open={open}
+    defaultOpen={defaultOpen}
+    onOpenChange={(nextOpen, details) => {
+      onOpenChange?.(nextOpen, details)
+      if (!details.isCanceled) setUncontrolledOpen(nextOpen)
+    }}
+    {...props}
+  />
 }
 
 function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {

@@ -107,9 +107,7 @@ export function StatsHud({
           >
             Over Budget
           </Badge>
-        ) : (
-          <span data-testid="stats-hud-within-budget">Tick OK</span>
-        )}
+        ) : null}
         {memoryBytes != null ? (
           <span
             data-testid="stats-hud-memory"

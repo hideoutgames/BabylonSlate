@@ -96,6 +96,8 @@ Compilation applies that resolved view to a temporary graph before code generati
 
 Creating an event commits its node and declaration once, then focuses that node without a second graph edit. Validation recognizes node-declared custom events in older graphs, matching the Add Node palette; calls to absent event names still fail.
 
+Custom event nodes expose **Rename Event** in Details and their right-click / long-press context menu. A rename normalizes the name, rejects empty or duplicate names, and updates the declaration plus matching calls in the current document (including function graphs) as one undoable edit. Node IDs, pins, and wires stay intact. Native events and inherited or component event bindings retain their declared names.
+
 Inspector property rows write literal defaults using the stable pin ID (`default:in`), independently of the Title Case display name (`In`). Legacy display-name defaults remain readable, but a new edit updates the canonical key so an older ID-keyed value cannot mask the edit.
 
 - All `resolvingWildcard` slots on a node share one variable `T` unless the type sets `group` (default `"T"`). Nested `array<T>` / `map<K,V>` walk into those slots.
