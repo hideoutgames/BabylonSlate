@@ -17,7 +17,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.pause();
     const pausedTick = world.clock.tickIndex;
     commands.length = 0;
-    expect(runtime.executeConsoleCommand('possess "cam"').success).toBe(true);
+    expect(runtime.executeConsoleCommand('possess "Camera"').success).toBe(true);
     expect(commands).toContainEqual({ type: "setFreeCam", enabled: false });
     expect(commands).toContainEqual({ type: "possessCamera", slotId: 0 });
     expect(runtime.executeConsoleCommand('destroyactor "cam"').success).toBe(true);
@@ -66,6 +66,9 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.tick();
     expect(runtime.executeConsoleCommand('destroyactor "Camera"').success).toBe(false);
     expect(runtime.executeConsoleCommand('possess "a"').success).toBe(false);
+    expect(runtime.executeConsoleCommand("possess").success).toBe(false);
+    expect(runtime.executeConsoleCommand('destroyactor ""').success).toBe(false);
+    expect(runtime.executeConsoleCommand('destroyactor "missing"').success).toBe(false);
     expect(runtime.getWorld().getActors()).toHaveLength(2);
     runtime.stop();
   });

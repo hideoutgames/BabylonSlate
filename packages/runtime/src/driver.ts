@@ -74,6 +74,7 @@ import {
   DEFAULT_INFINITE_LOOP_COUNT,
   shouldEmitStatsCommand,
   type CommandRegistry,
+  type CommandResult,
   type ConsoleCommandHost,
   type InfiniteLoopGuard,
   type RegisteredCommand,
@@ -364,6 +365,8 @@ class InProcessRuntime implements RuntimeDriver {
   private timeDilation = 1;
   private showCollision = false;
   private running = false;
+  private processingTick = false;
+  private flushingConsoleActors = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
@@ -2677,6 +2680,38 @@ class InProcessRuntime implements RuntimeDriver {
       dumpActors: () => formatDumpActors(this.inspectWorld()),
       inspectActor: (query) =>
         formatInspectActor(this.inspectWorld(), query, null),
+      possessActorCamera: (query) => {
+        const target = this.resolveConsoleActor(query);
+        if (!(target instanceof Actor)) return target;
+        if (!target.components.some((component) =>
+          component.classId === "CameraComponent" && !component.destroyed,
+        ) || !this.slotByGuid.has(target.guid)) {
+          return { success: false, output: `actor '${query}' has no live camera` };
+        }
+        this.emit({ type: "setFreeCam", enabled: false });
+        this.possessCamera(target);
+        return { success: true, output: `possessed ${target.guid}` };
+      },
+      destroyActor: (query) => {
+        const target = this.resolveConsoleActor(query);
+        if (!(target instanceof Actor)) return target;
+        this.emitAudioStops(target);
+        this.emitParticleStops(target);
+        this.world.destroyActor(target.guid);
+        if (!this.processingTick && !this.flushingConsoleActors) {
+          this.flushingConsoleActors = true;
+          try {
+            this.world.flushPending();
+            this.physicsSync.syncFromWorld(this.world);
+            this.overlayPhysicsSync.syncFromWorld(this.world);
+            this.publishSnapshot();
+            this.emitDebugColliders();
+          } finally {
+            this.flushingConsoleActors = false;
+          }
+        }
+        return { success: true, output: `destroyed ${target.guid}` };
+      },
       setFreeCam: (enabled) => {
         this.emit({ type: "setFreeCam", enabled: Boolean(enabled) });
       },
@@ -2710,6 +2745,25 @@ class InProcessRuntime implements RuntimeDriver {
       stopSnapshot: () => {
         this.finalizeTrace();
       },
+    };
+  }
+
+  private resolveConsoleActor(query: string): Actor | CommandResult {
+    const key = query.trim();
+    if (!key) return { success: false, output: "an actor GUID or unique exact name is required" };
+    const actors = this.world.getActors().filter((actor) => !actor.destroyed);
+    const byGuid = actors.find((actor) => actor.guid === key);
+    if (byGuid) return byGuid;
+    const matches = actors.filter((actor) => {
+      const name = actor.getVariable("name");
+      return (typeof name === "string" && name.length > 0 ? name : actor.classId) === key;
+    });
+    if (matches.length === 1) return matches[0]!;
+    return {
+      success: false,
+      output: matches.length > 1
+        ? `actor name '${key}' is ambiguous; use its GUID`
+        : `no live actor matches '${key}'`,
     };
   }
 
@@ -3511,7 +3565,16 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   tick(): void {
-    if (!this.running || this.paused) return;
+    if (!this.running || this.paused || this.processingTick) return;
+    this.processingTick = true;
+    try {
+      this.runTick();
+    } finally {
+      this.processingTick = false;
+    }
+  }
+
+  private runTick(): void {
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
     // Consume every event queued since the last tick. Gating on event.tick

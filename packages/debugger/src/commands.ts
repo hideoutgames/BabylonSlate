@@ -1,4 +1,4 @@
-import { ok } from "./parser";
+import { fail, ok } from "./parser";
 import type {
   CommandParameter,
   ConsoleCommandHost,
@@ -260,6 +260,26 @@ export function builtinCommands(): RegisteredCommand[] {
         return ok(
           host.inspectActor?.(query) ?? "inspect <name|guid>",
         );
+      },
+    },
+    {
+      name: "possess",
+      tier: "debug",
+      category: "engine",
+      description: "Switch to a live camera actor by GUID or unique exact name",
+      parameters: [{ name: "query", type: "string", complete: "actors" }],
+      run(args, host) {
+        return host.possessActorCamera?.(String(args.query)) ?? fail("camera possession is unavailable");
+      },
+    },
+    {
+      name: "destroyactor",
+      tier: "debug",
+      category: "engine",
+      description: "Destroy a live actor by GUID or unique exact name",
+      parameters: [{ name: "query", type: "string", complete: "actors" }],
+      run(args, host) {
+        return host.destroyActor?.(String(args.query)) ?? fail("actor destruction is unavailable");
       },
     },
     {
