@@ -1,12 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useState } from "react";
 import { createDefaultTilesetPayload } from "@babylonslate/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilesetEditor, TilesetPreview } from "./tileset-editor";
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -86,11 +95,13 @@ describe("TilesetEditor", () => {
     expect(screen.queryByTestId("tileset-preview-cell-3")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Tile Size" }));
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
-      tileWidth: 8,
-      tileHeight: 8,
-      tiles: expect.arrayContaining([expect.objectContaining({ id: 8 })]),
-    }));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tileWidth: 8,
+        tileHeight: 8,
+        tiles: expect.arrayContaining([expect.objectContaining({ id: 8 })]),
+      }),
+    );
     expect(screen.getByTestId("tileset-preview-cell-8")).toBeTruthy();
   });
 
@@ -148,28 +159,66 @@ describe("TilesetEditor", () => {
 describe("TilesetPreview", () => {
   it("drags a rectangular selection and edits all selected tiles together", () => {
     const onChange = vi.fn();
-    render(<TilesetHarness initial={twoTilePayload({ atlasWidth: 48, atlasHeight: 32 })} onChange={onChange} />);
+    render(
+      <TilesetHarness
+        initial={twoTilePayload({ atlasWidth: 48, atlasHeight: 32 })}
+        onChange={onChange}
+      />,
+    );
     fireEvent.click(screen.getByTestId("tileset-tool-select"));
     const surface = screen.getByTestId("tileset-preview-surface");
     const first = screen.getByTestId("tileset-preview-cell-1");
     first.parentElement!.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 96, height: 64 }) as DOMRect;
-    dispatchPointerEvent(first, "pointerdown", { pointerId: 1, clientX: 4, clientY: 4 });
-    dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 52, clientY: 52 });
-    dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 52, clientY: 52 });
+    dispatchPointerEvent(first, "pointerdown", {
+      pointerId: 1,
+      clientX: 4,
+      clientY: 4,
+    });
+    dispatchPointerEvent(surface, "pointermove", {
+      pointerId: 1,
+      clientX: 52,
+      clientY: 52,
+    });
+    dispatchPointerEvent(surface, "pointerup", {
+      pointerId: 1,
+      clientX: 52,
+      clientY: 52,
+    });
     fireEvent.click(screen.getByTestId("tileset-preview-cell-5"));
     for (const id of [1, 2, 4, 5]) {
-      expect(screen.getByTestId(`tileset-preview-cell-${id}`).getAttribute("aria-pressed")).toBe("true");
+      expect(
+        screen
+          .getByTestId(`tileset-preview-cell-${id}`)
+          .getAttribute("aria-pressed"),
+      ).toBe("true");
     }
-    expect(screen.getByTestId("tileset-preview-cell-3").getAttribute("aria-pressed")).toBe("false");
+    expect(
+      screen.getByTestId("tileset-preview-cell-3").getAttribute("aria-pressed"),
+    ).toBe("false");
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("tileset-collision-full"));
     fireEvent.click(screen.getByTestId("property-flags-bit-0"));
-    fireEvent.change(screen.getByTestId("property-animation"), { target: { value: "1, 2" } });
-    const tiles = onChange.mock.lastCall![0].tiles as Array<{ id: number; collision: string; flags: number; animation: number[] }>;
-    expect(tiles.filter((tile) => tile.collision === "full").map((tile) => tile.id)).toEqual([1, 2, 4, 5]);
-    expect(tiles.filter((tile) => tile.flags === 1).map((tile) => tile.id)).toEqual([1, 2, 4, 5]);
-    expect(tiles.filter((tile) => tile.animation.length === 2).map((tile) => tile.id)).toEqual([1, 2, 4, 5]);
+    fireEvent.change(screen.getByTestId("property-animation"), {
+      target: { value: "1, 2" },
+    });
+    const tiles = onChange.mock.lastCall![0].tiles as Array<{
+      id: number;
+      collision: string;
+      flags: number;
+      animation: number[];
+    }>;
+    expect(
+      tiles.filter((tile) => tile.collision === "full").map((tile) => tile.id),
+    ).toEqual([1, 2, 4, 5]);
+    expect(
+      tiles.filter((tile) => tile.flags === 1).map((tile) => tile.id),
+    ).toEqual([1, 2, 4, 5]);
+    expect(
+      tiles
+        .filter((tile) => tile.animation.length === 2)
+        .map((tile) => tile.id),
+    ).toEqual([1, 2, 4, 5]);
   });
 
   it("renders a clickable cell for every atlas tile on a 32×16 sheet", () => {
@@ -272,7 +321,9 @@ describe("TilesetPreview", () => {
     const createObjectURL = vi
       .spyOn(URL, "createObjectURL")
       .mockReturnValue("blob:atlas");
-    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
     const onChange = vi.fn();
     render(
       <TilesetEditingProvider>
