@@ -1209,7 +1209,7 @@ export function ContentBrowserWorkspace({
         }
       } finally {
         // Repair successful removals even if a later file operation fails.
-        if (removedGuids.size > 0) {
+        if (removedGuids.size > 0 || done > 0) {
           await reportProgress("Updating References");
           for (const path of oursToRelease) {
             if (allAssets.some((asset) => asset.path === path && removedGuids.has(asset.header.guid))) {

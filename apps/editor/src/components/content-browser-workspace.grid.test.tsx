@@ -237,6 +237,28 @@ describe("ContentBrowserWorkspace grid window", () => {
     ));
   });
 
+  it("repairs only removed Class assets when a later deletion fails", async () => {
+    docs.thumbnailsEnabled = false;
+    const textureAsset = texture(0);
+    const classAsset = texture(1);
+    textureAsset.header.name = "Enemy";
+    classAsset.header.name = "Enemy";
+    classAsset.header.type = "Class";
+    installRegistry([textureAsset, classAsset]);
+    Object.assign(docs.assetRegistry as object, {
+      deleteAsset: async (guid: string) => {
+        if (guid === "tex-1") throw new Error("Class is locked");
+      },
+    });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
+    expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function));
+  });
+
   it("mounts only viewport-near tiles for a large folder", () => {
     docs.thumbnailsEnabled = false;
     stubGridSize(
