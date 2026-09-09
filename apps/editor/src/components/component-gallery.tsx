@@ -1,4 +1,12 @@
-import { OctagonAlertIcon, SaveIcon } from "lucide-react";
+import {
+  EyeIcon,
+  EyeOffIcon,
+  FolderIcon,
+  LockIcon,
+  OctagonAlertIcon,
+  SaveIcon,
+  UnlockIcon,
+} from "lucide-react";
 import { useState } from "react";
 import {
   AssetPicker,
@@ -165,10 +173,221 @@ function GalleryNestedMenus() {
 }
 
 const GALLERY_TREE_NODES: TreeViewNode[] = [
-  { id: "root", label: "Scene Root", depth: 0, hasChildren: true, expanded: true },
-  { id: "player", label: "Player", depth: 1, hasChildren: false, expanded: false },
-  { id: "ground", label: "Ground", depth: 1, hasChildren: false, expanded: false },
+  {
+    id: "root",
+    label: "Scene Root",
+    depth: 0,
+    hasChildren: true,
+    expanded: true,
+    icon: <TypeVisualIcon visual={resolveTypeVisual({ assetType: "Scene" })} />,
+  },
+  {
+    id: "player",
+    label: "Player",
+    depth: 1,
+    hasChildren: true,
+    expanded: true,
+    icon: <TypeVisualIcon visual={resolveTypeVisual({ classId: "Actor" })} />,
+  },
+  {
+    id: "player-mesh",
+    label: "Character Mesh",
+    depth: 2,
+    hasChildren: false,
+    expanded: false,
+    icon: (
+      <TypeVisualIcon
+        visual={resolveTypeVisual({ classId: "MeshComponent" })}
+      />
+    ),
+  },
+  {
+    id: "player-camera",
+    label: "Follow Camera",
+    depth: 2,
+    hasChildren: false,
+    expanded: false,
+    icon: (
+      <TypeVisualIcon
+        visual={resolveTypeVisual({ classId: "CameraComponent" })}
+      />
+    ),
+  },
+  {
+    id: "environment",
+    label: "Environment",
+    depth: 1,
+    hasChildren: true,
+    expanded: true,
+    icon: <FolderIcon />,
+  },
+  {
+    id: "ground",
+    label: "Ground",
+    depth: 2,
+    hasChildren: false,
+    expanded: false,
+    icon: (
+      <TypeVisualIcon
+        visual={resolveTypeVisual({ classId: "MeshComponent" })}
+      />
+    ),
+  },
+  {
+    id: "stone-arch",
+    label: "Stone Arch",
+    depth: 2,
+    hasChildren: false,
+    expanded: false,
+    icon: (
+      <TypeVisualIcon
+        visual={resolveTypeVisual({ classId: "MeshComponent" })}
+      />
+    ),
+  },
+  {
+    id: "props",
+    label: "Props",
+    depth: 2,
+    hasChildren: true,
+    expanded: true,
+    icon: <FolderIcon />,
+  },
+  {
+    id: "crate",
+    label: "Wooden Crate",
+    depth: 3,
+    hasChildren: false,
+    expanded: false,
+    icon: (
+      <TypeVisualIcon
+        visual={resolveTypeVisual({ classId: "MeshComponent" })}
+      />
+    ),
+  },
+  {
+    id: "barrel",
+    label: "Barrel",
+    depth: 3,
+    hasChildren: false,
+    expanded: false,
+    icon: (
+      <TypeVisualIcon
+        visual={resolveTypeVisual({ classId: "MeshComponent" })}
+      />
+    ),
+  },
+  {
+    id: "lighting",
+    label: "Lighting",
+    depth: 1,
+    hasChildren: true,
+    expanded: true,
+    icon: <FolderIcon />,
+  },
+  {
+    id: "sun",
+    label: "Directional Light",
+    depth: 2,
+    hasChildren: false,
+    expanded: false,
+    icon: (
+      <TypeVisualIcon
+        visual={resolveTypeVisual({ classId: "LightComponent" })}
+      />
+    ),
+  },
+  {
+    id: "ambient",
+    label: "Ambient Audio",
+    depth: 2,
+    hasChildren: false,
+    expanded: false,
+    icon: (
+      <TypeVisualIcon
+        visual={resolveTypeVisual({ classId: "AudioComponent" })}
+      />
+    ),
+  },
 ];
+
+function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
+  const [selectedId, setSelectedId] = useState("player");
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [hidden, setHidden] = useState<Set<string>>(new Set(["barrel"]));
+  const [groundLocked, setGroundLocked] = useState(true);
+  const prefix = touch ? "touch-" : "";
+  const nodes: TreeViewNode[] = [];
+  let collapsedDepth: number | null = null;
+
+  for (const node of GALLERY_TREE_NODES) {
+    if (collapsedDepth !== null && node.depth > collapsedDepth) continue;
+    collapsedDepth = null;
+    const expanded = node.hasChildren && !collapsed.has(node.id);
+    if (node.hasChildren && !expanded) collapsedDepth = node.depth;
+    const muted = hidden.has(node.id);
+    nodes.push({
+      ...node,
+      id: `${prefix}${node.id}`,
+      expanded,
+      muted,
+      trailing:
+        node.id === "player" || node.id === "barrel" ? (
+          <Button
+            variant="ghost"
+            size={touch ? "touch-icon" : "icon-sm"}
+            aria-label={`${muted ? "Show" : "Hide"} ${node.label}`}
+            onClick={() =>
+              setHidden((current) => {
+                const next = new Set(current);
+                if (next.has(node.id)) next.delete(node.id);
+                else next.add(node.id);
+                return next;
+              })
+            }
+          >
+            {muted ? <EyeOffIcon /> : <EyeIcon />}
+          </Button>
+        ) : node.id === "ground" ? (
+          <Button
+            variant="ghost"
+            size={touch ? "touch-icon" : "icon-sm"}
+            aria-label={`${groundLocked ? "Unlock" : "Lock"} Ground`}
+            aria-pressed={groundLocked}
+            onClick={() => setGroundLocked((current) => !current)}
+          >
+            {groundLocked ? <LockIcon /> : <UnlockIcon />}
+          </Button>
+        ) : undefined,
+    });
+  }
+
+  return (
+    <div className="h-[25rem] min-w-0 overflow-hidden rounded-lg border border-border">
+      <PanelFrame
+        title={touch ? "Tree View · Touch" : "Tree View · Compact"}
+        data-testid={touch ? "gallery-tree-view-touch" : "gallery-tree-view"}
+      >
+        <TreeView
+          nodes={nodes}
+          rowHeight={touch ? 44 : undefined}
+          selectedId={`${prefix}${selectedId}`}
+          onSelect={(id) => setSelectedId(id.slice(prefix.length))}
+          onToggleExpanded={(id) =>
+            setCollapsed((current) => {
+              const next = new Set(current);
+              const nodeId = id.slice(prefix.length);
+              if (next.has(nodeId)) next.delete(nodeId);
+              else next.add(nodeId);
+              return next;
+            })
+          }
+          data-testid={touch ? "gallery-tree-touch" : "gallery-tree"}
+        />
+      </PanelFrame>
+    </div>
+  );
+}
 
 function GalleryComposites() {
   const [position, setPosition] = useState<[number, number, number]>([0, 1, 0]);
@@ -177,7 +396,6 @@ function GalleryComposites() {
   const [physicsLayer, setPhysicsLayer] = useState(1);
   const [visible, setVisible] = useState(true);
   const [tint, setTint] = useState<[number, number, number]>([1, 0, 0]);
-  const [selectedId, setSelectedId] = useState("player");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
@@ -469,15 +687,9 @@ function GalleryComposites() {
           </div>
         </div>
       </div>
-      <div className="h-40 overflow-hidden rounded-lg border border-border">
-        <PanelFrame title="Tree view" data-testid="gallery-tree-view">
-          <TreeView
-            nodes={GALLERY_TREE_NODES}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            data-testid="gallery-tree"
-          />
-        </PanelFrame>
+      <div className="grid gap-3 lg:grid-cols-2" data-testid="gallery-tree-examples">
+        <GalleryTreeExample />
+        <GalleryTreeExample touch />
       </div>
       <div className="h-40 overflow-hidden rounded-lg border border-border">
         <PanelFrame title="Windowed list" data-testid="gallery-windowed-list">

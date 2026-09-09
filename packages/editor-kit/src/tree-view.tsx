@@ -5,6 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
@@ -446,7 +447,7 @@ export function TreeView({
   return (
     <div
       ref={measure}
-      className="h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+      className="h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y text-foreground"
       data-testid={testId}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       onPointerMove={onPointerMove}
@@ -478,11 +479,11 @@ export function TreeView({
                 data-drop-before={dropBefore ? "true" : undefined}
                 data-drop-after={dropAfter ? "true" : undefined}
                 className={cn(
-                  "absolute right-0 left-0 flex items-center gap-1 border-l-2 px-1 text-sm",
+                  "group/tree-row absolute right-1 left-1 flex items-center gap-1 rounded-sm border-l-2 pr-1 text-[13px] transition-colors motion-reduce:transition-none",
                   selected
-                    ? "border-l-primary bg-primary/20 font-medium"
+                    ? "border-l-primary bg-accent text-accent-foreground"
                     : "border-l-transparent hover:bg-accent/50",
-                  dropInto ? "outline outline-1 outline-ring" : "",
+                  dropInto ? "bg-accent/50 outline outline-1 -outline-offset-1 outline-ring" : "",
                 )}
                 style={{
                   top,
@@ -496,6 +497,14 @@ export function TreeView({
                   onContextMenu(node.id, event.clientX, event.clientY);
                 }}
               >
+                {Array.from({ length: node.depth }, (_, level) => (
+                  <span
+                    key={level}
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 w-px bg-border/70"
+                    style={{ left: level * 16 + (rowHeight >= 44 ? 30 : 18) }}
+                  />
+                ))}
                 {dropBefore ? (
                   <span
                     aria-hidden
@@ -517,8 +526,8 @@ export function TreeView({
                     type="button"
                     aria-label={`${node.expanded ? "Collapse" : "Expand"} ${node.label}`}
                     className={cn(
-                      "flex shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      rowHeight >= 44 ? "size-11" : "size-4",
+                      "relative flex shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none",
+                      rowHeight >= 44 ? "size-11" : "size-5",
                     )}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
@@ -527,22 +536,29 @@ export function TreeView({
                     }}
                     data-testid={`tree-disclosure-${node.id}`}
                   >
-                    {node.expanded ? "▾" : "▸"}
+                    <ChevronRightIcon
+                      aria-hidden
+                      className={cn(
+                        "size-3.5 transition-transform duration-150 motion-reduce:transition-none",
+                        node.expanded && "rotate-90",
+                      )}
+                    />
                   </button>
                 ) : (
                   <span
-                    className={cn("shrink-0", rowHeight >= 44 ? "size-11" : "size-4")}
+                    className={cn("shrink-0", rowHeight >= 44 ? "size-11" : "size-5")}
                     aria-hidden
                   />
                 )}
                 {node.icon ? (
-                  <span className="flex size-4 shrink-0 items-center justify-center text-primary [&_svg]:size-4">
+                  <span className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4">
                     {node.icon}
                   </span>
                 ) : null}
                 <span
                   className={cn(
-                    "min-w-0 flex-1 truncate font-medium",
+                    "relative min-w-0 flex-1 truncate",
+                    selected ? "font-medium" : "font-normal",
                     node.muted ? "text-muted-foreground" : "",
                   )}
                 >
@@ -550,7 +566,7 @@ export function TreeView({
                 </span>
                 {node.trailing ? (
                   <div
-                    className="flex shrink-0 items-center gap-1"
+                    className="relative flex shrink-0 items-center gap-1 text-muted-foreground group-hover/tree-row:text-foreground group-focus-within/tree-row:text-foreground"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
                   >
