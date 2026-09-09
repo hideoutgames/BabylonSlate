@@ -314,12 +314,12 @@ describe("BehaviourTreeEditor", () => {
     expect(added).toBeDefined();
     fireEvent.click(screen.getByTestId(`bt-node-${added.id}`));
     fireEvent.click(screen.getByTestId("property-key"));
-    expect(await screen.findByRole("option", { name: "position2d", exact: true })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: "alert", exact: true })).toBeNull();
-    expect(screen.queryByRole("option", { name: "hp", exact: true })).toBeNull();
-    expect(screen.getByRole("option", { name: "actor", exact: true })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "target", exact: true })).toBeTruthy();
-    fireEvent.click(screen.getByRole("option", { name: "position", exact: true }));
+    expect(await screen.findByRole("option", { name: "Position 2D" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Alert" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Hp" })).toBeNull();
+    expect(screen.getByRole("option", { name: "Actor" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Target" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("option", { name: "Position" }));
     await waitFor(() => {
       expect(lastCommit().nodes.find((node) => node.id === added.id)?.properties).toEqual({
         key: "position",
