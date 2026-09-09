@@ -48,10 +48,12 @@ describe("collectAndExportGame", () => {
     };
     const graphs: Record<string, SerializedGraph> = {
       "class-main": {
-        nodes: source === "Spawn Actor dropdown" ? [
-          { id: "spawn", type: "actor.spawn", position: { x: 0, y: 0 }, data: { "default:classId": "SpawnChild" } },
+        nodes: [
+          ...(source === "Spawn Actor dropdown" ? [
+            { id: "spawn", type: "actor.spawn", position: { x: 0, y: 0 }, data: { "default:classId": "SpawnChild" } },
+          ] : []),
           { id: "print", type: "debug.print", position: { x: 0, y: 100 }, data: { "default:value": "Unused" } },
-        ] : [],
+        ],
         edges: [],
         members: source === "Class variable"
           ? [{ id: "spawn", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnChild", defaultValue: "SpawnChild" }]
