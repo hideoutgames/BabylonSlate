@@ -125,6 +125,44 @@ function attachKinematicBox(
 }
 
 describe("runtime collision events", () => {
+  it("dispatches Havok begin and end overlap when a dynamic actor passes through a trigger", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 4,
+      seedDemoActors: false,
+      physicsWorld: "3d",
+      gravity: [0, 0, 0],
+      dt: 1 / 60,
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([
+        toScript(overlapLogGraph(registry), registry, "Sensor", "sensor-asset"),
+      ]);
+      const sensor = runtime.spawnScriptedActor({ classId: "Sensor" })!;
+      const moving = runtime.spawnScriptedActor({ classId: "Sensor" })!;
+      attachKinematicBox(runtime, sensor, true);
+      attachKinematicBox(runtime, moving);
+      sensor.components.find((component) => component.classId === "RigidBodyComponent")!
+        .setVariable("motionType", "static");
+      moving.components.find((component) => component.classId === "RigidBodyComponent")!
+        .setVariable("motionType", "dynamic");
+      moving.transform.position.x = -2;
+      await runtime.loadPhysics();
+      runtime.getPhysicsSync()!.addImpulse(moving.guid, { x: 3, y: 0, z: 0 });
+      runtime.start();
+      for (let tick = 0; tick < 100; tick++) runtime.tick();
+      expect(commands.filter((command) => command.type === "log" && command.category === "OverlapBegin"))
+        .toHaveLength(2);
+      expect(commands.filter((command) => command.type === "log" && command.category === "OverlapEnd"))
+        .toHaveLength(2);
+      expect(moving.transform.position.x).toBeGreaterThan(2);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("dispatches component-bound onHit for actors sharing a legacy collider ID", async () => {
     const registry = createDefaultNodeRegistry();
     const commands: CommandMessage[] = [];
