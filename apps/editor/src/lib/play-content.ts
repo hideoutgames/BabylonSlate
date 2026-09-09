@@ -1,5 +1,6 @@
 import { parseAnimGraphDocument, resolveAnimGraphClips } from "@babylonslate/anim-graph";
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
@@ -25,6 +26,8 @@ import {
   tilemapTilesetGuids,
 } from "@babylonslate/assets";
 import {
+  createActor,
+  createDefaultSceneSettings,
   isEditorOnlyAsset,
   parseSkyboxFaces,
   sceneLayerToEditorScene,
@@ -47,6 +50,28 @@ export interface PlayContentDocument {
   id: string;
   ref: { kind: string; path: string };
   content: unknown;
+}
+
+/** Read-only dependency input for unplaced prefab assets; never load into a World. */
+export function playPrefabDependencyScene(
+  scripts: readonly Pick<ScriptBundleEntry, "classId" | "components">[],
+): SerializedScene | null {
+  const actors = scripts.flatMap((script, index) =>
+    script.components?.length
+      ? [createActor(`prefab-dependency:${index}`, script.classId, {
+          classId: script.classId,
+          components: script.components,
+        })]
+      : [],
+  );
+  if (actors.length === 0) return null;
+  return {
+    name: "Prefab Dependencies",
+    viewportMode: "3d",
+    settings: createDefaultSceneSettings(),
+    folders: [],
+    actors,
+  };
 }
 
 export function filterPlayScriptDocuments<

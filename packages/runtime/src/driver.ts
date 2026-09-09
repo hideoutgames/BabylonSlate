@@ -3011,15 +3011,18 @@ class InProcessRuntime implements RuntimeDriver {
             ),
           }
         : null;
+      const componentAssetGuid =
+        primary.assetGuid ?? primary.getVariable("assetGuid");
       const assetGuid =
         overlayPanel
           ? overlayPanel.source === "material"
             ? overlayPanel.materialGuid
             : overlayPanel.textureGuid
-          : (primary.assetGuid ??
-            primary.getVariable("assetGuid") ??
-            primary.getVariable("textureGuid") ??
-            primary.getVariable("materialGuid"));
+          : primary.classId === "MeshComponent"
+            ? componentAssetGuid
+            : (componentAssetGuid ??
+              primary.getVariable("textureGuid") ??
+              primary.getVariable("materialGuid"));
       const renderableIds = new Set(renderables.map((component) => component.guid));
       const componentsByGuid = new Map(
         actor.components.map((component) => [component.guid, component]),

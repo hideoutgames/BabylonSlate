@@ -24,6 +24,51 @@ function asset(
 }
 
 describe("collectExportClosure", () => {
+  it("packs Class variable constraints and defaults without scanning ordinary strings", () => {
+    const graph: SerializedGraph = {
+      nodes: [],
+      edges: [],
+      members: [
+        { id: "scalar", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnBase", defaultValue: "SpawnChild" },
+        { id: "array", kind: "variable", name: "Choices", typeId: "class", typeClassId: "Actor", container: "array", defaultValue: ["ArrayChild", { ignored: "Unused" }] },
+        { id: "map", kind: "variable", name: "LocalChoices", functionId: "spawn", typeId: "class", typeClassId: "Actor", container: "map", keyTypeId: "string", defaultValue: [{ key: "Unused", value: "MapChild" }] },
+        { id: "keys", kind: "variable", name: "Names", typeId: "string", container: "map", keyTypeId: "class", keyTypeClassId: "KeyBase", defaultValue: [{ key: "KeyChild", value: "Unused" }] },
+        { id: "ordinary", kind: "variable", name: "Name", typeId: "string", defaultValue: "Unused" },
+      ],
+    };
+    const model = createMeshComponent("prefab-mesh", "model");
+    model.properties.assetGuid = "model-child";
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-main",
+      assets: [
+        asset({ guid: "scene-main", type: "Scene", name: "Main" }),
+        ...[
+          ["class-host", "Host"],
+          ["class-base", "SpawnBase"],
+          ["class-spawn", "SpawnChild"],
+          ["class-array", "ArrayChild"],
+          ["class-map", "MapChild"],
+          ["class-key-base", "KeyBase"],
+          ["class-key", "KeyChild"],
+          ["class-unused", "Unused"],
+        ].map(([guid, name]) => asset({ guid: guid!, name: name!, type: "Class", parentClass: "Actor" })),
+        asset({ guid: "model-child", type: "Model", name: "Child Model" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => "Actor",
+      sceneByGuid: () => ({ ...createDefaultScene(), actors: [createActor("host", "Host", { classId: "Host" })] }),
+      graphByGuid: (guid) => guid === "class-host"
+        ? graph
+        : guid === "class-spawn"
+          ? { nodes: [], edges: [], components: [model] }
+          : null,
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: ["class-array", "class-base", "class-host", "class-key", "class-key-base", "class-map", "class-spawn", "model-child", "scene-main"],
+    });
+  });
+
   it("packs Texture setter literals and typed variable defaults without scanning ordinary strings", () => {
     const graph: SerializedGraph = {
       members: [

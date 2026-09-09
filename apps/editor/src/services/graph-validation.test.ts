@@ -925,6 +925,40 @@ describe("classHierarchyFromParentOf", () => {
 });
 
 describe("scriptPinCompatibility", () => {
+  it.each([
+    { sourceClass: "Hero", targetClass: "Actor", retained: true },
+    { sourceClass: "MaterialObject", targetClass: "Actor", retained: false },
+    { sourceClass: "Actor", targetClass: "Hero", retained: false },
+  ])("retains only assignable Class variable connections from $sourceClass to $targetClass during hydration", ({ sourceClass, targetClass, retained }) => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "class-variable",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: { variableName: "SpawnClass", typeId: "class", typeClassId: sourceClass, implicitSelf: true },
+        },
+        {
+          id: "target",
+          type: targetClass === "Actor" ? "actor.spawn" : "variables.set",
+          position: { x: 300, y: 0 },
+          data: targetClass === "Actor" ? {} : { variableName: "HeroClass", typeId: "class", typeClassId: targetClass, implicitSelf: true },
+        },
+      ],
+      edges: [{
+        id: "class-wire",
+        source: "class-variable",
+        sourceHandle: "value",
+        target: "target",
+        targetHandle: targetClass === "Actor" ? "classId" : "value",
+      }],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      parentOf: (id) => id === "Hero" ? "BaseHero" : id === "BaseHero" ? "Actor" : null,
+    });
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(retained ? ["class-wire"] : []);
+  });
+
   it("allows Actor or component refs into Is Valid Object without a class hierarchy", () => {
     const rule = scriptPinCompatibility();
     const isValidTarget = {

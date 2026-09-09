@@ -48,7 +48,7 @@ interface ContentRoot {
 
 `AccountedPayloadLoader` reads a chunk by locator (inline range or blob store) and increments `accountedPayloadBytes`. Opening a several-hundred-asset project must leave this near zero until something requests a payload. P4 replaces / wraps this with the scene resource cache LRU.
 
-Scene/SceneLayer and Class saves index actor/component class identities and Mesh material/model assignments. Class identities resolve from compile IDs to asset guids using the indexed file paths, not display names. Parent-class references are included on Class saves. Navmesh and audio-reverb chunk saves preserve this dependency collection and refresh the registry. Ordinary IDs, names and string literals are not references.
+Scene/SceneLayer and Class saves index actor/component class identities and Mesh material/model assignments. Class identities resolve from compile IDs to asset guids using the indexed file paths, not display names. Parent-class references and typed Class-variable constraints/defaults are included on Class saves, including function locals, arrays, and both typed sides of maps. Navmesh and audio-reverb chunk saves preserve this dependency collection and refresh the registry. Ordinary IDs, names and string literals are not references.
 
 Show References and Delete combine persisted header dependencies with typed references from open document content, including unsaved assignments. A persisted reference remains listed until its removal is saved. Older, unopened assets with incomplete headers need a resave to refresh them; opening a project does not scan payloads to rebuild headers. This collector covers class and Mesh assignments; it does not claim every component or graph literal reference.
 

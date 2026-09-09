@@ -1297,6 +1297,7 @@ export function createEngine(
       },
       syncSelectionDebug: (options) => {
         debugOverlayInstance.sync(options);
+        editorSync.setCollisionSelection(options);
         scheduler.invalidate("selection");
       },
       setPreviewCanvas: (canvas) => {

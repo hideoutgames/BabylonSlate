@@ -424,7 +424,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.setDrawMeshCollision(collisionsVisible);
-  }, [collisionsVisible, sharedEngine, sharedEngineGeneration]);
+  }, [collisionsVisible, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);
@@ -468,11 +468,15 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     const scene = previewSceneFor(components, prefabPhysicsWorld);
     handle.editor.syncSelectionDebug({
       sceneData: scene,
-      selectedActorIds: selectedActors,
+      selectedActorIds: selectedIds,
       selectedComponentIds:
-        selectedId && selectedId !== PREFAB_ROOT_ID ? [selectedId] : undefined,
+        selectedIds.includes(PREFAB_ROOT_ID)
+          ? components.map((component) => component.id)
+          : selectedIds.length > 0
+            ? selectedIds
+            : undefined,
     });
-  }, [components, selectedId, prefabPhysicsWorld]);
+  }, [components, selectedId, selectedIds, prefabPhysicsWorld, engineEpoch]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

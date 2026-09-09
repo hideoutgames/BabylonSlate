@@ -1,4 +1,5 @@
 import {
+  classIdsFromVariableMembers,
   err,
   isEditorOnlyAsset,
   materialParameterTextureGuidsFromGraph,
@@ -24,6 +25,7 @@ function isReferenceField(key: string): boolean {
   return (
     /Guids?$/.test(key) ||
     key === "classId" ||
+    key === "default:classId" ||
     key === "parentClass" ||
     key === "gameInstanceClass" ||
     key === "scene" ||
@@ -151,9 +153,12 @@ export function collectExportReachability(
           for (const guid of text2dImageGuidsFromScene(scene)) refs.add(guid);
         }
       } else if (asset.type === "Class" || asset.type === "Graph") {
+        const parentClass = asset.parentClass?.trim();
+        if (parentClass) refs.add(parentClass);
         const graph: SerializedGraph | null = input.graphByGuid(asset.guid);
         if (graph) {
           collectTypedRefs(graph, refs);
+          for (const classId of classIdsFromVariableMembers(graph.members ?? [])) refs.add(classId);
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
         }
       }
