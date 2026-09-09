@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type KeyboardEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -33,7 +34,7 @@ import {
 } from "./clamp-overlay-menu";
 
 export type NestedMenuItem =
-    | {
+  | {
       type?: "item";
       id: string;
       label: string;
@@ -173,7 +174,9 @@ function NestedMenuItems({
                     ? "w-auto min-w-48"
                     : "w-max min-w-56 whitespace-nowrap"
                 }
-                data-testid={item.contentTestId ?? `context-menu-sub-${item.id}`}
+                data-testid={
+                  item.contentTestId ?? `context-menu-sub-${item.id}`
+                }
               >
                 <NestedMenuItems items={item.items} size={size} />
               </DropdownMenuSubContent>
@@ -205,11 +208,13 @@ function OverlayMenuItems({
   openSubmenuId,
   onOpenSubmenu,
   onClose,
+  onBeforeSelect,
 }: {
   items: NestedMenuItem[];
   openSubmenuId: string | null;
   onOpenSubmenu: (id: string | null) => void;
   onClose: () => void;
+  onBeforeSelect: () => void;
 }) {
   return (
     <>
@@ -239,6 +244,7 @@ function OverlayMenuItems({
               data-testid={itemTestId(item)}
               onClick={() => {
                 if (item.disabled) return;
+                if (item.closeOnClick) onBeforeSelect();
                 item.onCheckedChange(!item.checked);
                 if (item.closeOnClick) onClose();
               }}
@@ -261,6 +267,7 @@ function OverlayMenuItems({
                   data-testid={itemTestId(option)}
                   onClick={() => {
                     if (item.disabled || option.disabled) return;
+                    if (item.closeOnClick) onBeforeSelect();
                     item.onValueChange(option.value);
                     if (item.closeOnClick) onClose();
                   }}
@@ -305,6 +312,7 @@ function OverlayMenuItems({
             data-testid={itemTestId(item)}
             onClick={() => {
               if (item.disabled) return;
+              onBeforeSelect();
               item.onSelect();
               onClose();
             }}
@@ -324,6 +332,9 @@ function OverlayMenu({
   contentTestId,
   onClose,
   parentWidth,
+  parentPanels,
+  onBack,
+  beforeSelect,
 }: {
   items: NestedMenuItem[];
   x: number;
@@ -331,14 +342,120 @@ function OverlayMenu({
   contentTestId?: string;
   onClose: () => void;
   parentWidth?: number;
+  parentPanels?: Set<HTMLElement>;
+  onBack?: () => void;
+  beforeSelect?: () => void;
 }) {
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
   const [position, setPosition] = useState({ x, y });
   const panelRef = useRef<HTMLDivElement>(null);
+  const ownedPanels = useRef(new Set<HTMLElement>());
+  const returnFocus = useRef<Element | null>(null);
+  const focusPanels = parentPanels ?? ownedPanels.current;
   const openSubmenu = items.find(
     (item) => item.type === "submenu" && item.id === openSubmenuId,
   );
   const [viewport, setViewport] = useState(readOverlayViewport);
+  const prepareSelection =
+    beforeSelect ??
+    (() => {
+      const invoker = returnFocus.current;
+      // Dialogs opened by an action must capture the durable invoker, not a menu
+      // item that disappears in the same render.
+      if (invoker instanceof HTMLElement && invoker.isConnected)
+        invoker.focus({ preventScroll: true });
+    });
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const previousFocus = returnFocus.current ?? document.activeElement;
+    returnFocus.current = previousFocus;
+    focusPanels.add(panel);
+    (enabledOverlayItems(panel)[0] ?? panel).focus({ preventScroll: true });
+    return () => {
+      const activeAtClose = document.activeElement;
+      const ownedFocus = [...focusPanels].some((element) =>
+        element.contains(activeAtClose),
+      );
+      focusPanels.delete(panel);
+      if (
+        parentPanels ||
+        !(previousFocus instanceof HTMLElement) ||
+        (!ownedFocus && activeAtClose !== document.body)
+      )
+        return;
+      // A selected action may have opened a dialog or deliberately moved focus.
+      // Let that destination win after the old menu nodes leave the document.
+      queueMicrotask(() => {
+        if (
+          !focusPanels.has(panel) &&
+          previousFocus.isConnected &&
+          (document.activeElement === document.body ||
+            document.activeElement === activeAtClose)
+        ) {
+          previousFocus.focus({ preventScroll: true });
+        }
+      });
+    };
+  }, [focusPanels, parentPanels]);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      target.closest("input, textarea, select, [contenteditable=true]") ||
+      target.closest('[role="menu"]') !== event.currentTarget
+    )
+      return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key === "Tab") {
+      onClose();
+      return;
+    }
+    if (
+      event.key === "ArrowRight" &&
+      target.getAttribute("aria-haspopup") === "menu"
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (target.getAttribute("aria-expanded") !== "true") target.click();
+      return;
+    }
+    if (event.key === "ArrowLeft" && onBack) {
+      event.preventDefault();
+      event.stopPropagation();
+      onBack();
+      return;
+    }
+    const items = enabledOverlayItems(event.currentTarget);
+    if (!items.length) return;
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number;
+    switch (event.key) {
+      case "ArrowDown":
+        next = (index + 1) % items.length;
+        break;
+      case "ArrowUp":
+        next = (index - 1 + items.length) % items.length;
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = items.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    items[next]?.focus({ preventScroll: true });
+  };
 
   useEffect(() => {
     const refreshViewport = () => {
@@ -399,12 +516,15 @@ function OverlayMenu({
         data-testid={contentTestId}
         style={{ left: position.x, top: position.y }}
         role="menu"
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
       >
         <OverlayMenuItems
           items={items}
           openSubmenuId={openSubmenuId}
           onOpenSubmenu={setOpenSubmenuId}
           onClose={onClose}
+          onBeforeSelect={prepareSelection}
         />
       </div>
       {openSubmenu && openSubmenu.type === "submenu" && submenuOrigin ? (
@@ -413,6 +533,14 @@ function OverlayMenu({
           x={submenuOrigin.x}
           y={submenuOrigin.y}
           parentWidth={192}
+          parentPanels={focusPanels}
+          beforeSelect={prepareSelection}
+          onBack={() => {
+            setOpenSubmenuId(null);
+            panelRef.current
+              ?.querySelector<HTMLButtonElement>('[aria-expanded="true"]')
+              ?.focus({ preventScroll: true });
+          }}
           contentTestId={
             openSubmenu.contentTestId ?? `context-menu-sub-${openSubmenu.id}`
           }
@@ -421,6 +549,12 @@ function OverlayMenu({
       ) : null}
     </>
   );
+}
+
+function enabledOverlayItems(panel: HTMLElement): HTMLButtonElement[] {
+  return Array.from(
+    panel.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]'),
+  ).filter((item) => !item.disabled);
 }
 
 function parseCssPixelToken(name: string): number {

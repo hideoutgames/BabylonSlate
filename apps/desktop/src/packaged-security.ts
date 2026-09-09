@@ -39,6 +39,7 @@ function projectPath(value: unknown, allowRoot = true): void {
 export function validateIpcArguments(channel: string, args: unknown[]): void {
   const counts: Record<string, number> = {
     "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
+    "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
     "lfs:fetch": 1, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:current": 0, "project:release": 0, "project:readBinary": 1,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
@@ -49,10 +50,10 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     text(args[0]);
     const parsed: unknown = JSON.parse(args[0]);
     requireValue(parsed && typeof parsed === "object" && !Array.isArray(parsed));
-  } else if (channel.startsWith("secrets:")) {
+  } else if (channel.startsWith("secrets:") || channel.startsWith("account-secrets:")) {
     text(args[0], 1024);
     requireValue(args[0].length > 0);
-    if (channel === "secrets:set") text(args[1]);
+    if (channel.endsWith(":set")) text(args[1]);
   } else if (channel === "project:openDocuments") {
     text(args[0], 200);
     requireValue(args[0].length > 0 && !/[\\/:<>"|?*]/.test(args[0]) && ![".", ".."].includes(args[0]) && !/[. ]$/.test(args[0]));

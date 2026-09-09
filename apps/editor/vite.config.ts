@@ -17,13 +17,28 @@ const distributionBuild = process.env.BABYLONSLATE_DISTRIBUTION === "true";
 if (distributionBuild && (!existsSync(manifestPath) || process.env.VITE_TEST_MODE === "true")) {
   throw new Error("Distribution requires build metadata and production storage");
 }
+const declaredVersion = JSON.parse(
+  readFileSync(path.join(repoRoot, "release/version.json"), "utf8"),
+).version as string;
+const buildIdentity = distributionBuild
+  ? JSON.parse(readFileSync(manifestPath, "utf8"))
+  : null;
+if (buildIdentity && buildIdentity.applicationVersion !== declaredVersion) {
+  throw new Error("Build metadata and declared application version differ");
+}
+const buildLabel = `${declaredVersion} ${buildIdentity?.channel === "release" ? "Release" : "Development build"}`;
 
 export default defineConfig({
   define: {
-    __BABYLONSLATE_BUILD__: distributionBuild ? readFileSync(manifestPath, "utf8") : "null",
+    __BABYLONSLATE_BUILD__: JSON.stringify(buildIdentity),
+    __BABYLONSLATE_BUILD_LABEL__: JSON.stringify(buildLabel),
   },
   base: process.env.VITE_BASE_PATH ?? "/",
   plugins: [
+    {
+      name: "slate-loading-build-label",
+      transformIndexHtml: (html) => html.replace("__SLATE_BUILD_LABEL__", buildLabel),
+    },
     react(),
     tailwindcss(),
     enginePluginsVitePlugin({

@@ -32,7 +32,7 @@ export const workloads = {
   coverage: { workers: 1, browsers: 0, memoryGiB: 3 },
   docs: { workers: 1, browsers: 0, memoryGiB: 1.5 },
   build: { workers: 2, browsers: 0, memoryGiB: 2.5 },
-  browser: { workers: 1, browsers: 1, memoryGiB: 3 },
+  browser: { workers: 1, browsers: 1, memoryGiB: 2 },
 };
 
 /** Fast mode reserves two worker slots; the browser slot counts admitted commands. */

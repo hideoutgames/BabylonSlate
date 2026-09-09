@@ -8,6 +8,9 @@ export interface PickedImportFile {
 export interface PickImportFilesOptions {
   multiple?: boolean;
   accept?: string;
+  /** Select a directory tree, preserving paths relative to the chosen folder. */
+  directory?: boolean;
+  maxTotalBytes?: number;
 }
 
 /**
@@ -47,9 +50,7 @@ async function tryNativeDocumentPicker(
   return files.map((file) => ({
     name: file.name,
     bytes:
-      file.data instanceof Uint8Array
-        ? file.data
-        : new Uint8Array(file.data),
+      file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data),
   }));
 }
 
@@ -63,6 +64,7 @@ function pickImportFilesViaDom(
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = options.multiple !== false;
+    if (options.directory) input.setAttribute("webkitdirectory", "");
     if (options.accept) input.accept = options.accept;
     input.style.display = "none";
     input.dataset.testid = "vfs-import-picker-input";
@@ -86,10 +88,18 @@ function pickImportFilesViaDom(
           finish([]);
           return;
         }
+        if (
+          options.maxTotalBytes &&
+          Array.from(list).reduce((sum, file) => sum + file.size, 0) >
+            options.maxTotalBytes
+        )
+          throw new Error("Selected files exceed the import size limit.");
         const picked: PickedImportFile[] = [];
         for (const file of Array.from(list)) {
           picked.push({
-            name: file.name,
+            name: options.directory
+              ? file.webkitRelativePath || file.name
+              : file.name,
             bytes: await readFileBytes(file),
           });
         }

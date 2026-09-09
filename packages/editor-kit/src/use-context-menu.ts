@@ -55,7 +55,11 @@ export interface UseContextMenuResult {
   menu: ContextMenuState | null;
   closeMenu: () => void;
   /** Open the menu at viewport coordinates (e.g. after tile long-press). */
-  openMenuAt: (clientX: number, clientY: number, itemsOverride?: ContextMenuItem[]) => void;
+  openMenuAt: (
+    clientX: number,
+    clientY: number,
+    itemsOverride?: ContextMenuItem[],
+  ) => void;
   bind: {
     onContextMenu: (event: ReactMouseEvent) => void;
     onPointerDown: (event: React.PointerEvent) => void;
@@ -83,8 +87,11 @@ function distance(ax: number, ay: number, bx: number, by: number): number {
 export function useContextMenu(
   options: UseContextMenuOptions,
 ): UseContextMenuResult {
-  const { items, enabled = true, longPressMs = CONTEXT_MENU_LONG_PRESS_MS } =
-    options;
+  const {
+    items,
+    enabled = true,
+    longPressMs = CONTEXT_MENU_LONG_PRESS_MS,
+  } = options;
   const pressRef = useRef<PressState | null>(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -123,6 +130,7 @@ export function useContextMenu(
     (event: React.PointerEvent) => {
       if (!enabled || event.pointerType === "mouse") return;
       clearPress();
+      if (!event.isPrimary) return;
       const timerId = setTimeout(() => {
         pressRef.current = null;
         openAt(event.clientX, event.clientY);
@@ -187,6 +195,11 @@ export function useContextMenu(
     return () =>
       document.removeEventListener("scroll", onScroll, { capture: true });
   }, [clearPress, closeMenu, enabled]);
+
+  useEffect(() => {
+    if (!enabled) clearPress();
+    return clearPress;
+  }, [enabled, clearPress]);
 
   return {
     menu,

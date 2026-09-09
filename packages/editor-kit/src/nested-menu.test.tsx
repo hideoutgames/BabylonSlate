@@ -1,6 +1,12 @@
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import { NestedMenu, type NestedMenuItem } from "./nested-menu";
 import { ContextMenuOverlay } from "./context-menu-overlay";
 
@@ -9,7 +15,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const leaf = (onSelect = vi.fn()): NestedMenuItem => ({
+const leaf = (onSelect: () => void = vi.fn()): NestedMenuItem => ({
   id: "duplicate",
   label: "Duplicate",
   onSelect,
@@ -28,7 +34,11 @@ describe("NestedMenu dropdown", () => {
             items: [leaf(onSelect)],
           },
         ]}
-        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        trigger={
+          <button type="button" data-testid="menu-trigger">
+            Open
+          </button>
+        }
         contentTestId="menu-content"
       />,
     );
@@ -41,7 +51,9 @@ describe("NestedMenu dropdown", () => {
 
     fireEvent.click(getByTestId("context-menu-item-duplicate"));
     expect(onSelect).toHaveBeenCalledOnce();
-    expect(getByTestId("menu-content").getAttribute("data-closed")).not.toBeNull();
+    expect(
+      getByTestId("menu-content").getAttribute("data-closed"),
+    ).not.toBeNull();
   });
 
   it("keeps the menu open when a checkbox sets closeOnClick false", () => {
@@ -58,7 +70,11 @@ describe("NestedMenu dropdown", () => {
             onCheckedChange,
           },
         ]}
-        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        trigger={
+          <button type="button" data-testid="menu-trigger">
+            Open
+          </button>
+        }
         contentTestId="menu-content"
       />,
     );
@@ -91,15 +107,19 @@ describe("NestedMenu dropdown", () => {
             ],
           },
         ]}
-        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        trigger={
+          <button type="button" data-testid="menu-trigger">
+            Open
+          </button>
+        }
         contentTestId="menu-content"
       />,
     );
 
     fireEvent.click(getByTestId("menu-trigger"));
-    expect(getByTestId("context-menu-item-pbr").getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(
+      getByTestId("context-menu-item-pbr").getAttribute("aria-checked"),
+    ).toBe("true");
     fireEvent.click(getByTestId("radio-unlit"));
     expect(onValueChange).toHaveBeenCalledWith("unlit");
     expect(getByTestId("menu-content").getAttribute("data-closed")).toBeNull();
@@ -117,7 +137,11 @@ describe("NestedMenu dropdown", () => {
             items: [leaf()],
           },
         ]}
-        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        trigger={
+          <button type="button" data-testid="menu-trigger">
+            Open
+          </button>
+        }
         contentTestId="menu-content"
       />,
     );
@@ -132,7 +156,11 @@ describe("NestedMenu dropdown", () => {
       <NestedMenu
         items={[leaf()]}
         contentClassName="w-max min-w-56 whitespace-nowrap"
-        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        trigger={
+          <button type="button" data-testid="menu-trigger">
+            Open
+          </button>
+        }
         contentTestId="menu-content"
       />,
     );
@@ -147,6 +175,136 @@ describe("NestedMenu dropdown", () => {
 });
 
 describe("NestedMenu context overlay", () => {
+  function KeyboardMenu({ items }: { items: NestedMenuItem[] }) {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button
+          type="button"
+          data-testid="keyboard-trigger"
+          onClick={() => setOpen(true)}
+        >
+          Project Actions
+        </button>
+        <input data-testid="next-control" aria-label="Project Name" />
+        <ContextMenuOverlay
+          menu={open ? { open: true, x: 20, y: 20, items } : null}
+          onClose={() => setOpen(false)}
+        />
+      </>
+    );
+  }
+
+  it("focuses enabled items, navigates by keyboard, and returns focus on Escape", async () => {
+    const view = render(
+      <StrictMode>
+        <KeyboardMenu
+          items={[
+            {
+              id: "disabled",
+              label: "Disabled",
+              disabled: true,
+              onSelect: vi.fn(),
+            },
+            { id: "open", label: "Open", onSelect: vi.fn() },
+            { id: "edit", label: "Edit", onSelect: vi.fn() },
+            { id: "remove", label: "Delete", onSelect: vi.fn() },
+          ]}
+        />
+      </StrictMode>,
+    );
+    const trigger = view.getByTestId("keyboard-trigger");
+    trigger.focus();
+    fireEvent.click(trigger);
+    const first = view.getByTestId("context-menu-item-open");
+    const last = view.getByTestId("context-menu-item-remove");
+    await act(async () => {});
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(
+      view.getByTestId("context-menu-item-edit"),
+    );
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last, { key: "Home" });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "Escape" });
+    expect(view.queryByTestId("context-menu-panel")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("enters and leaves a submenu with arrows and restores the original trigger on Escape", async () => {
+    const view = render(
+      <KeyboardMenu
+        items={[
+          { id: "more", type: "submenu", label: "More", items: [leaf()] },
+        ]}
+      />,
+    );
+    const trigger = view.getByTestId("keyboard-trigger");
+    trigger.focus();
+    fireEvent.click(trigger);
+    const submenuTrigger = view.getByTestId("context-menu-item-more");
+    fireEvent.keyDown(submenuTrigger, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(
+      view.getByTestId("context-menu-item-duplicate"),
+    );
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(view.queryByTestId("context-menu-sub-more")).toBeNull();
+    expect(document.activeElement).toBe(submenuTrigger);
+    fireEvent.keyDown(submenuTrigger, { key: "ArrowRight" });
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(view.queryByTestId("context-menu-panel")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("preserves focus moved by a selected action instead of stealing it back", async () => {
+    const view = render(
+      <KeyboardMenu
+        items={[
+          leaf(() => {
+            (
+              document.querySelector(
+                '[data-testid="next-control"]',
+              ) as HTMLElement
+            ).focus();
+          }),
+        ]}
+      />,
+    );
+    const trigger = view.getByTestId("keyboard-trigger");
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(view.getByTestId("context-menu-item-duplicate"));
+    expect(view.queryByTestId("context-menu-panel")).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(view.getByTestId("next-control")),
+    );
+  });
+
+  it("leaves focus with the next screen when selection removes the original trigger", async () => {
+    function ReplacingScreen() {
+      const [selected, setSelected] = useState(false);
+      return selected ? (
+        <input autoFocus aria-label="New Screen" />
+      ) : (
+        <KeyboardMenu items={[leaf(() => setSelected(true))]} />
+      );
+    }
+    const view = render(<ReplacingScreen />);
+    const trigger = view.getByTestId("keyboard-trigger");
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(view.getByTestId("context-menu-item-duplicate"));
+    await act(async () => {});
+    expect(trigger.isConnected).toBe(false);
+    expect(document.activeElement).toBe(view.getByLabelText("New Screen"));
+  });
+
   it("renders nested items from ContextMenuOverlay and closes after a leaf select", () => {
     const onSelect = vi.fn();
     function OverlayHost() {
@@ -286,8 +444,14 @@ describe("NestedMenu context overlay", () => {
   it("repositions an open root menu and submenu when only the viewport shrinks", async () => {
     const originalWidth = window.innerWidth;
     const originalHeight = window.innerHeight;
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1200 });
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1200,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 800,
+    });
     try {
       render(
         <ContextMenuOverlay
@@ -295,26 +459,51 @@ describe("NestedMenu context overlay", () => {
             open: true,
             x: 900,
             y: 600,
-            items: [{ id: "more", type: "submenu", label: "More", items: [leaf()] }],
+            items: [
+              { id: "more", type: "submenu", label: "More", items: [leaf()] },
+            ],
           }}
           onClose={() => undefined}
         />,
       );
-      const panel = document.querySelector('[data-testid="context-menu-panel"]') as HTMLElement;
-      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({ width: 192, height: 120 } as DOMRect);
-      fireEvent.click(document.querySelector('[data-testid="context-menu-item-more"]')!);
+      const panel = document.querySelector(
+        '[data-testid="context-menu-panel"]',
+      ) as HTMLElement;
+      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+        width: 192,
+        height: 120,
+      } as DOMRect);
+      fireEvent.click(
+        document.querySelector('[data-testid="context-menu-item-more"]')!,
+      );
 
-      Object.defineProperty(window, "innerWidth", { configurable: true, value: 700 });
-      Object.defineProperty(window, "innerHeight", { configurable: true, value: 500 });
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        value: 700,
+      });
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: 500,
+      });
       fireEvent(window, new Event("resize"));
 
       await waitFor(() => expect(panel.style.left).toBe("500px"));
       await waitFor(() => expect(panel.style.top).toBe("372px"));
-      const submenu = document.querySelector('[data-testid="context-menu-sub-more"]') as HTMLElement;
-      await waitFor(() => expect(Number.parseFloat(submenu.style.left)).toBeLessThan(500));
+      const submenu = document.querySelector(
+        '[data-testid="context-menu-sub-more"]',
+      ) as HTMLElement;
+      await waitFor(() =>
+        expect(Number.parseFloat(submenu.style.left)).toBeLessThan(500),
+      );
     } finally {
-      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
-      Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        value: originalWidth,
+      });
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: originalHeight,
+      });
     }
   });
 });

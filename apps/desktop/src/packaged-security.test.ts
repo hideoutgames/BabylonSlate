@@ -23,12 +23,17 @@ describe("packaged renderer boundary", () => {
   });
   it("rejects malformed privileged arguments and filesystem escapes", () => {
     expect(() => validateIpcArguments("settings:write", ["{}"])).not.toThrow();
+    expect(() => validateIpcArguments("account-secrets:get", ["slate-clerk-client:pk_test_example"])).not.toThrow();
+    expect(() => validateIpcArguments("account-secrets:set", ["slate-clerk-client:pk_test_example", "token"])).not.toThrow();
+    expect(() => validateIpcArguments("account-secrets:delete", ["slate-clerk-client:pk_test_example"])).not.toThrow();
     expect(() => validateIpcArguments("project:writeBinary", ["assets/a.bin", new ArrayBuffer(4)])).not.toThrow();
     for (const [channel, args] of [
       ["settings:write", [{}]], ["settings:write", ["not json"]],
       ["project:openDocuments", ["../outside"]], ["project:readBinary", ["../projects-other/key"]],
       ["project:remove", ["."]], ["project:readBinary", ["C:\\secret"]],
       ["project:writeBinary", ["x", "bad"]], ["secrets:set", ["key", {}]],
+      ["account-secrets:set", ["key", {}]], ["account-secrets:get", [""]],
+      ["account-secrets:delete", ["key", "extra"]],
       ["lfs:fetch", [{ url: "file:///secret" }]], ["unknown", []],
     ] as Array<[string, unknown[]]>) expect(() => validateIpcArguments(channel, args)).toThrow();
   });

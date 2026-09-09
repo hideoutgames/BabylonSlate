@@ -7,6 +7,34 @@ import { MemoryAppSettingsStore } from "./memory-app-settings";
 import { WebAppSettingsStore } from "./web-app-settings";
 
 describe("app settings", () => {
+  it("round-trips recent project badges and tolerates legacy recents", async () => {
+    const store = new MemoryAppSettingsStore();
+    await store.update((settings) => {
+      settings.recents = [
+        {
+          id: "new", name: "New", tier: "opfs", lastOpenedAt: "2026-09-09",
+          appearance: { icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA" },
+        },
+        { id: "old", name: "Old", tier: "documents", lastOpenedAt: "2026-09-08" },
+      ];
+    });
+    const loaded = await store.load();
+    expect(loaded.recents[0]?.appearance).toEqual({
+      icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA",
+    });
+    expect(loaded.recents[1]?.appearance).toBeUndefined();
+  });
+
+  it("drops malformed recent badge images without discarding project recents", () => {
+    const settings = engineSettingsSchema.parse({
+      recents: [{
+        id: "game", name: "Game", tier: "opfs", lastOpenedAt: "2026-09-09",
+        appearance: { icon: "box", color: "mint", image: "https://example.com/image.png" },
+      }],
+    });
+    expect(settings.recents[0]?.appearance).toEqual({ icon: "box", color: "mint" });
+  });
+
   it("provides defaults including undo history length 50", () => {
     const settings = defaultEngineSettings();
     expect(settings.undoHistoryLength).toBe(50);

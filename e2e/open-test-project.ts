@@ -2,6 +2,16 @@ import { expect, type Page } from "@playwright/test";
 
 const PROJECT_BOOT_TIMEOUT_MS = 30_000;
 
+/** The editor mounts beneath the splash before it accepts input. */
+export async function waitForEditorInteractive(page: Page): Promise<void> {
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
+    timeout: PROJECT_BOOT_TIMEOUT_MS,
+  });
+  await expect(page.locator(".slate-loading")).toHaveCount(0, {
+    timeout: PROJECT_BOOT_TIMEOUT_MS,
+  });
+}
+
 /** Click the Homepage TestProject row (name with or without `.babproject`). */
 export async function clickListedTestProject(page: Page): Promise<void> {
   const listed = page.getByTestId("open-listed-project-TestProject");
@@ -34,39 +44,28 @@ export async function openTestProject(
   );
   if ((await listed.count()) > 0) {
     await listed.click();
-    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
-      timeout: PROJECT_BOOT_TIMEOUT_MS,
-    });
+    await waitForEditorInteractive(page);
     return;
   }
   if ((await listedLegacy.count()) > 0) {
     await listedLegacy.click();
-    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
-      timeout: PROJECT_BOOT_TIMEOUT_MS,
-    });
+    await waitForEditorInteractive(page);
     return;
   }
   await page.getByTestId("create-project").click();
   await expect(page.getByTestId("create-project-dialog")).toBeVisible();
+  await page.getByTestId("create-project-empty").click();
   await expect(page.getByTestId("create-project-name")).toHaveValue(
     "TestProject",
   );
-  await expect(page.getByTestId("create-project-empty")).toHaveAttribute(
-    "data-selected",
-    "true",
-  );
   await page.getByTestId("create-project-submit").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
-    timeout: PROJECT_BOOT_TIMEOUT_MS,
-  });
+  await waitForEditorInteractive(page);
 }
 
 /** Click the homepage TestProject row after Close / reload, then wait for chrome. */
 export async function openListedTestProject(page: Page): Promise<void> {
   await clickListedTestProject(page);
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
-    timeout: PROJECT_BOOT_TIMEOUT_MS,
-  });
+  await waitForEditorInteractive(page);
 }
 
 /** Submit Create when the name is free; otherwise dismiss and open the listed project. */

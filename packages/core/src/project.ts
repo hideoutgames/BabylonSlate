@@ -1,4 +1,5 @@
 import { lookAtRotation } from "./euler";
+import type { ProjectAppearance } from "./project-appearance";
 import {
   createActor,
   createDefaultSceneSettings,
@@ -26,6 +27,7 @@ export interface ProjectMetadata {
   version: string;
   createdAt: string;
   updatedAt: string;
+  appearance?: ProjectAppearance;
 }
 
 export interface TextureProjectSettings {

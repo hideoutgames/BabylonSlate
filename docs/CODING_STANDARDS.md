@@ -36,6 +36,8 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 - Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`. Form `input` / `textarea` / `contenteditable` restore selection in `globals.css`.
 - Use radius tokens (`rounded-md`, `rounded-lg`) — no hardcoded `border-radius` literals in editor CSS except token definitions.
 
+The standalone project browser is a scoped exception to the editor palette, radius, and density rules: `apps/editor/src/components/homepage.css` may define its own semantic color tokens and expressive dimensions under `.homepage-theme` and its landing-only selectors. Portal content must carry the same scope (the project context menu has its own landing-only selector). Mount this stylesheet as text with the Home route so it leaves the document when the editor opens. This exception does not permit changing global editor tokens, compact controls, spacing, or engine styles. Shared UI components, accessible focus, 44pt touch hit areas, and reduced-motion support still apply. See [landing theming](architecture/theming.md#brand-assets).
+
 ## Display names
 
 User-facing Event names, Details labels, node titles, pin labels, and enum options are **Title Case** with preserved acronyms (`2D Camera Width`, `Event Begin Play`, `Mesh Kind`). Do not sentence-case labels and do not split `2D`/`3D` into `2 d`.

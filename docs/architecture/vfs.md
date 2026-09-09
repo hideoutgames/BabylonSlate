@@ -51,6 +51,8 @@ Global Engine Settings stored **outside** any project:
 
 - `AppSettingsStore.update` queues a latest-read, focused mutation, schema validation, and write transaction across independently created stores. It emits the settings-change event after persistence, preventing concurrent debugger, viewport, appearance, and recent-project updates from overwriting one another.
 - Opening or creating a project persists its recent-project entry before the editor becomes interactive. Reloading during later texture-transcoder setup therefore keeps the project available on Homepage for reopening and journal recovery.
+- Project-browser identity lives in `project.json` metadata: `name` and optional `appearance: { icon, color, image? }`. Icon and color are catalog identifiers; uploaded PNG, JPEG, or WebP images are small data URLs, bounded to 96 KiB of encoded text. Legacy projects without appearance use the default badge. Invalid imported images are discarded without losing project access.
+- Recents cache that metadata so project cards need no folder reads. Opening a project refreshes the cache from its metadata, preserving edited names and badges across reopening. Editing changes metadata and its cache after the project write succeeds; the folder name, handle, templates, and game assets stay unchanged. New projects can choose a badge independently of their template.
 
 | Backend | Platform |
 | --- | --- |
@@ -99,5 +101,13 @@ Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never l
 | Web | `UnavailableSecretStore` (`available: false`) — Source Control UI hidden |
 
 `nativeHttp`: `{ method, url, headers, body? }` → `{ status, bodyText }`. iOS/Android use `CapacitorHttp` (bypasses CORS). Electron uses IPC `lfs:fetch` → `net.fetch`. Web returns `null` (unused). Playwright covers lock UX with `FakeLockProvider` instead.
+
+Native HTTP responses expose optional `headers`, used by the native project-browser account adapter to persist Clerk's rotating client token. The adapter uses the [versioned public Frontend API](https://github.com/clerk/openapi-specs/tree/main/fapi), sends form-encoded email-code requests with `_is_native=1`, and restores access only after Clerk returns an active session. Client credentials stay in iOS Keychain through `SecretStore`; Android uses session memory until a Keystore adapter exists. Electron uses the separate `createAccountSecretStore()` / `accountSecrets` preload bridge: account tokens are OS-encrypted in `account-secrets.json`, or stay in main-process memory when secure encryption is unavailable (including Linux `basic_text`). Existing source-control credential behavior is unchanged. Electron HTTP preserves response headers, omits browser cookies, and rejects redirects. Tokens, verification codes, and raw server diagnostics never enter app settings or user-facing errors. Sign-out revokes the session before removing local credentials, including any older encrypted cache from a memory-only run.
+
+While the native project browser is mounted, window focus and visibility resume trigger a fresh server check. Project actions are hidden during validation or sign-out; failed requests retain credentials and show a retry gate. Pending results and focus listeners cannot outlive the Home route. The editor has no account polling or listeners.
+
+Desktop account-cache writes replace the file atomically. Invalid cache JSON or schema is treated as a missing sign-in; OS decryption failures retain the encrypted cache and report temporary unavailability.
+
+Native account builds require Clerk's Native API and email-code sign-in/sign-up to be enabled. Additional mandatory profile fields, MFA, OAuth, and passkeys need corresponding flows before enabling them for app users; unsupported requirements keep the account form closed. Web authentication uses the optional Clerk React flow; Electron embeds the native email-code flow optionally in Profile. Native integration tests cover transport and session continuity with controlled API responses; real Clerk credentials and physical-device verification remain separate from browser emulation.
 
 `StatusBarStylePort` accepts `"light"` or `"dark"` glyph styles. iOS/Android use the Capacitor Status Bar plugin's `setStyle` only; Web and Electron use a no-op adapter. The editor maps resolved dark chrome to light glyphs and resolved light chrome to dark glyphs. It never hides or overlays the native status bar.

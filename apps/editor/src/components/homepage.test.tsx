@@ -1,10 +1,18 @@
 import type { ComponentProps } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
-import { DEFAULT_RENDER_HEIGHT, DEFAULT_RENDER_WIDTH } from "@babylonslate/core";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
+import { AppSettingsProvider } from "../context/app-settings-context";
+import { EditorThemeProvider } from "../context/theme-context";
 
 const { getHostPlatform } = vi.hoisted(() => ({
   getHostPlatform: vi.fn(() => "web"),
@@ -19,7 +27,28 @@ vi.mock("./settings-modal", () => ({
   SettingsModal: () => null,
 }));
 
+vi.mock("./homepage-empty-art", () => ({ HomepageEmptyArt: () => null }));
+
+beforeEach(() => {
+  localStorage.clear();
+  vi.stubGlobal("matchMedia", (media: string) => ({
+    matches: false,
+    media,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  Object.defineProperty(document, "fonts", {
+    configurable: true,
+    value: { ready: Promise.resolve() },
+  });
+  Object.defineProperty(HTMLImageElement.prototype, "decode", {
+    configurable: true,
+    value: () => Promise.resolve(),
+  });
+});
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   cleanup();
   getHostPlatform.mockReturnValue("web");
 });
@@ -31,23 +60,27 @@ function renderHomepage(
 ) {
   return render(
     <TooltipProvider>
-      <Homepage
-        projects={[]}
-        templates={[]}
-        needsReconnect={false}
-        recoveryAvailable={false}
-        onCreateEmpty={noop}
-        onCreateFromTemplate={noop}
-        onOpenExternal={noop}
-        onOpenProject={noop}
-        onRenameProject={noop}
-        onRemoveFromList={noop}
-        onReconnect={noop}
-        onRecover={noop}
-        onDismissRecovery={() => {}}
-        onSettingsChanged={noop}
-        {...overrides}
-      />
+      <AppSettingsProvider>
+        <EditorThemeProvider>
+          <Homepage
+            projects={[]}
+            templates={[]}
+            needsReconnect={false}
+            recoveryAvailable={false}
+            onCreateEmpty={noop}
+            onCreateFromTemplate={noop}
+            onOpenExternal={noop}
+            onOpenProject={noop}
+            onUpdateProject={noop}
+            onRemoveFromList={noop}
+            onReconnect={noop}
+            onRecover={noop}
+            onDismissRecovery={() => {}}
+            onSettingsChanged={noop}
+            {...overrides}
+          />
+        </EditorThemeProvider>
+      </AppSettingsProvider>
     </TooltipProvider>,
   );
 }
@@ -59,551 +92,271 @@ function listedProject(
   return { id: `${tier}:${name}`, name, tier, label: name };
 }
 
-describe("Homepage branding", () => {
-  it("shows the Slate icon mark and product name, not the wordmark", () => {
-    renderHomepage();
+function createDialog(id = "blank") {
+  fireEvent.click(screen.getByTestId("create-project"));
+  fireEvent.click(screen.getByTestId(`create-project-${id}`));
+}
 
-    expect(screen.getByTestId("brand-icon")).toBeTruthy();
-    expect(screen.queryByTestId("brand-logo")).toBeNull();
-    expect(screen.getByRole("heading", { name: "BabylonSlate" })).toBeTruthy();
+describe("Slate project browser", () => {
+  it("offers Blank, Basic 3D and Basic 2D starting points", () => {
+    renderHomepage();
+    fireEvent.click(screen.getByTestId("create-project"));
+    for (const id of ["blank", "empty", "2d"])
+      expect(screen.getByTestId(`create-project-${id}`)).toBeTruthy();
     expect(screen.getByTestId("engine-settings")).toBeTruthy();
   });
 
-  it("offers a built-in 2D Create Project card next to Empty", async () => {
-    renderHomepage();
-    screen.getByTestId("create-project").click();
-    expect(await screen.findByTestId("create-project-empty")).toBeTruthy();
-    expect(screen.getByTestId("create-project-2d")).toBeTruthy();
-    expect(screen.getByTestId("create-project-width")).toBeTruthy();
-    expect(screen.getByTestId("create-project-height")).toBeTruthy();
-    expect(screen.getByTestId("create-project-black-bars")).toBeTruthy();
-  });
-});
-
-describe("Homepage Start gallery", () => {
-  it("places Open Folder beside Create Project, not in the template gallery", () => {
-    renderHomepage();
-
-    expect(screen.getByTestId("homepage-start")).toBeTruthy();
-    expect(screen.getByTestId("homepage-start-empty")).toBeTruthy();
-    expect(screen.getByTestId("homepage-start-2d")).toBeTruthy();
-
-    const create = screen.getByTestId("create-project");
-    const open = screen.getByTestId("open-project");
-    const actions = create.closest('[data-testid="homepage-start-actions"]');
-    expect(actions).toBeTruthy();
-    expect(actions?.contains(open)).toBe(true);
-    expect(open.textContent).toMatch(/Open Folder/i);
-    expect(open.closest('[data-testid="homepage-start-gallery"]')).toBeNull();
+  it("opens web folder or ZIP imports explicitly", async () => {
+    const onOpenExternal = vi.fn(async () => {});
+    renderHomepage({ onOpenExternal });
+    fireEvent.click(screen.getByTestId("open-project"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import ZIP" }));
+    await waitFor(() => expect(onOpenExternal).toHaveBeenCalledWith("zip"));
   });
 
-  it("scrolls Start templates horizontally in a single row", () => {
-    renderHomepage({
-      templates: [
-        { id: "arena", name: "Arena" },
-        { id: "dungeon", name: "Dungeon" },
-      ],
-    });
-
-    const gallery = screen.getByTestId("homepage-start-gallery");
-    expect(gallery.querySelector('[data-testid="homepage-start-empty"]')).toBeTruthy();
-    expect(gallery.querySelector('[data-testid="homepage-start-2d"]')).toBeTruthy();
-    expect(
-      gallery.querySelector('[data-testid="homepage-start-template-arena"]'),
-    ).toBeTruthy();
-    expect(gallery.className).toMatch(/overflow-x-auto/);
-    expect(gallery.className).toMatch(/overscroll-x-contain/);
-    expect(gallery.className).toMatch(/flex-nowrap/);
-    expect(gallery.className).not.toMatch(/overflow-y-auto/);
-    expect(gallery.className).not.toMatch(/flex-wrap/);
-    expect(gallery.className).not.toMatch(/max-h-/);
-  });
-
-  it("gives Start template cards an image well", () => {
-    renderHomepage();
-
-    expect(
-      screen
-        .getByTestId("homepage-start-empty")
-        .querySelector('[data-testid="template-card-well"]'),
-    ).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("homepage-start-2d")
-        .querySelector('[data-testid="template-card-well"]'),
-    ).toBeTruthy();
-  });
-
-  it("shows discovered templates in the Start gallery", () => {
-    renderHomepage({ templates: [{ id: "arena", name: "Arena" }] });
-
-    expect(screen.getByTestId("homepage-start-template-arena")).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("homepage-start-template-arena")
-        .querySelector('[data-testid="template-card-well"]'),
-    ).toBeTruthy();
-  });
-
-  it("opens Create Project with Empty selected from the Start gallery", async () => {
-    renderHomepage();
-    screen.getByTestId("homepage-start-empty").click();
-
-    expect(await screen.findByTestId("create-project-dialog")).toBeTruthy();
-    expect(
-      screen.getByTestId("create-project-empty").getAttribute("data-selected"),
-    ).toBe("true");
-  });
-
-  it("opens Create Project with 2D selected from the Start gallery", async () => {
-    renderHomepage();
-    screen.getByTestId("homepage-start-2d").click();
-
-    expect(await screen.findByTestId("create-project-dialog")).toBeTruthy();
-    expect(
-      screen.getByTestId("create-project-2d").getAttribute("data-selected"),
-    ).toBe("true");
-  });
-
-  it("opens Create Project with a discovered template selected from the Start gallery", async () => {
-    renderHomepage({ templates: [{ id: "arena", name: "Arena" }] });
-    screen.getByTestId("homepage-start-template-arena").click();
-
-    expect(await screen.findByTestId("create-project-dialog")).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("create-project-template-arena")
-        .getAttribute("data-selected"),
-    ).toBe("true");
-  });
-});
-
-describe("Homepage Create Project copy", () => {
-  it("sells Empty and 2D on web instead of an unavailable templates folder", () => {
-    renderHomepage();
-    const description = screen.getByTestId("create-project-description");
-    expect(description.textContent).toMatch(/Empty/);
-    expect(description.textContent).toMatch(/2D/);
-    expect(description.textContent).not.toMatch(/not available on web/i);
-    expect(description.textContent).not.toMatch(/templates folder/i);
-    expect(description.textContent).not.toMatch(/Engine Settings/);
-    expect(screen.getByTestId("create-project")).toBeTruthy();
-  });
-
-  it("mentions Engine Settings templates only as an optional extra on native", () => {
-    getHostPlatform.mockReturnValue("ios");
-    renderHomepage();
-    const description = screen.getByTestId("create-project-description");
-    expect(description.textContent).toMatch(/Empty/);
-    expect(description.textContent).toMatch(/2D/);
-    expect(description.textContent).toMatch(/Engine Settings/);
-    expect(description.textContent).toMatch(/optional/i);
-    expect(description.textContent).not.toMatch(/not available on web/i);
-  });
-});
-
-describe("Homepage recent project rows", () => {
-  it("renders recent projects as card rows with image wells", () => {
-    renderHomepage({
-      projects: [listedProject("Game.babproject", "opfs")],
-    });
-    const row = screen.getByTestId("open-listed-project-Game.babproject");
-    expect(row.querySelector('[data-testid="project-card-well"]')).toBeTruthy();
-  });
-
-  it("shows Created and Last opened dates on a recent row", () => {
-    renderHomepage({
-      projects: [
-        {
-          ...listedProject("Game.babproject", "opfs"),
-          createdAt: "2026-03-15T12:00:00.000Z",
-          lastOpenedAt: "2026-08-18T12:00:00.000Z",
-        },
-      ],
-    });
-    const row = screen.getByTestId("open-listed-project-Game.babproject");
-    expect(row.textContent).toMatch(/Created/);
-    expect(row.textContent).toMatch(/Last opened/);
-    expect(row.textContent).toContain(
-      new Date("2026-03-15T12:00:00.000Z").toLocaleDateString(),
+  it("locks actions while opening and exposes a recoverable failure", async () => {
+    let rejectOpen!: (error: Error) => void;
+    const onOpenProject = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectOpen = reject;
+        }),
     );
-    expect(row.textContent).toContain(
-      new Date("2026-08-18T12:00:00.000Z").toLocaleDateString(),
-    );
-    expect(row.textContent).not.toMatch(/2026-03-15T12:00:00/);
-  });
-
-  it("omits Created when createdAt is missing", () => {
     renderHomepage({
-      projects: [
-        {
-          ...listedProject("Game.babproject", "opfs"),
-          lastOpenedAt: "2026-08-18T12:00:00.000Z",
-        },
-      ],
-    });
-    const row = screen.getByTestId("open-listed-project-Game.babproject");
-    expect(row.textContent).not.toMatch(/Created/);
-    expect(row.textContent).toMatch(/Last opened/);
-  });
-
-  it("does not show storage API names when every listed project is the same tier", () => {
-    renderHomepage({
-      projects: [
-        listedProject("Game.babproject", "opfs"),
-        listedProject("Other.babproject", "opfs"),
-      ],
-    });
-    const row = screen.getByTestId("open-listed-project-Game.babproject");
-    expect(row.textContent).toMatch(/Game/);
-    expect(row.textContent).not.toMatch(/opfs|idb|documents|external/i);
-    expect(row.textContent).not.toMatch(/On this device/);
-  });
-
-  it("labels a picked folder without storage API names", () => {
-    renderHomepage({
-      projects: [
-        listedProject("Game.babproject", "opfs"),
-        listedProject("Studio.babproject", "external"),
-      ],
-    });
-    const device = screen.getByTestId("open-listed-project-Game.babproject");
-    const folder = screen.getByTestId("open-listed-project-Studio.babproject");
-    expect(device.textContent).toMatch(/On this device/);
-    expect(folder.textContent).toMatch(/Chosen folder/);
-    expect(device.textContent).not.toMatch(/opfs|idb/i);
-    expect(folder.textContent).not.toMatch(/external|idb/i);
-  });
-
-  it("hides Search Filter Sort when there are no recents", () => {
-    renderHomepage();
-    expect(screen.queryByTestId("homepage-project-search")).toBeNull();
-    expect(screen.queryByTestId("homepage-project-filter")).toBeNull();
-    expect(screen.queryByTestId("homepage-project-sort")).toBeNull();
-    expect(screen.getByTestId("no-projects")).toBeTruthy();
-  });
-
-  it("searches, sorts, and vertically scrolls recents", () => {
-    renderHomepage({
-      projects: [
-        {
-          ...listedProject("Zebra.babproject", "opfs"),
-          lastOpenedAt: "2026-08-18T12:00:00.000Z",
-        },
-        {
-          ...listedProject("Alpha.babproject", "opfs"),
-          lastOpenedAt: "2026-01-01T00:00:00.000Z",
-        },
-      ],
-    });
-
-    expect(screen.getByTestId("homepage-project-search")).toBeTruthy();
-    expect(screen.getByTestId("homepage-project-sort")).toBeTruthy();
-    expect(screen.queryByTestId("homepage-project-filter")).toBeNull();
-    expect(screen.getByTestId("project-list").className).toMatch(/overflow-y-auto/);
-    expect(screen.getByTestId("project-list").className).toMatch(
-      /overscroll-y-contain/,
-    );
-    expect(screen.getByTestId("project-list").className).toMatch(/touch-pan-y/);
-
-    const list = screen.getByTestId("project-list");
-    const names = () =>
-      Array.from(
-        list.querySelectorAll("[data-testid^='open-listed-project-']"),
-      ).map((row) => row.getAttribute("data-testid"));
-    expect(names()[0]).toBe("open-listed-project-Zebra.babproject");
-
-    fireEvent.click(screen.getByTestId("homepage-project-sort"));
-    fireEvent.click(screen.getByTestId("homepage-project-sort-name-asc"));
-    expect(names()[0]).toBe("open-listed-project-Alpha.babproject");
-
-    fireEvent.change(screen.getByTestId("homepage-project-search"), {
-      target: { value: "zebra" },
-    });
-    expect(screen.queryByTestId("open-listed-project-Alpha.babproject")).toBeNull();
-    expect(screen.getByTestId("open-listed-project-Zebra.babproject")).toBeTruthy();
-  });
-
-  it("filters mixed locations and shows No matching projects", () => {
-    renderHomepage({
-      projects: [
-        listedProject("Game.babproject", "opfs"),
-        listedProject("Studio.babproject", "external"),
-      ],
-    });
-
-    const filter = screen.getByTestId("homepage-project-filter");
-    expect(filter.textContent).toMatch(/^Filter/);
-    fireEvent.click(filter);
-    fireEvent.click(screen.getByTestId("homepage-project-filter-chosen-folder"));
-    expect(screen.getByTestId("homepage-project-filter").textContent).toMatch(
-      /Filter \(1\)/,
-    );
-    expect(screen.getByTestId("open-listed-project-Studio.babproject")).toBeTruthy();
-    expect(screen.queryByTestId("open-listed-project-Game.babproject")).toBeNull();
-
-    fireEvent.change(screen.getByTestId("homepage-project-search"), {
-      target: { value: "does-not-exist" },
-    });
-    expect(screen.getByTestId("no-matching-projects")).toBeTruthy();
-    expect(screen.getByTestId("homepage-project-search")).toBeTruthy();
-  });
-
-  it("renders recents as Cards, not full-width buttons", () => {
-    renderHomepage({
-      projects: [listedProject("Game.babproject", "opfs")],
-    });
-    const row = screen.getByTestId("open-listed-project-Game.babproject");
-    expect(row.tagName).toBe("DIV");
-    expect(row.getAttribute("data-slot")).toBe("card");
-  });
-
-  it("opens a project from a row tap and not from the remove control", async () => {
-    const onOpenProject = vi.fn(async () => {});
-    renderHomepage({
-      projects: [listedProject("Game.babproject", "opfs")],
+      projects: [listedProject("Game", "opfs")],
       onOpenProject,
     });
-    fireEvent.click(screen.getByTestId("open-listed-project-Game.babproject"));
-    expect(onOpenProject).toHaveBeenCalledTimes(1);
-    await waitFor(() =>
-      expect(
-        (
-          screen.getByTestId(
-            "remove-listed-project-Game.babproject",
-          ) as HTMLButtonElement
-        ).disabled,
-      ).toBe(false),
+    fireEvent.click(screen.getByRole("button", { name: "Open Project Game" }));
+    await waitFor(() => expect(onOpenProject).toHaveBeenCalledOnce());
+    expect(screen.getByTestId("create-project")).toHaveProperty(
+      "disabled",
+      true,
     );
-
-    onOpenProject.mockClear();
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
-    expect(onOpenProject).not.toHaveBeenCalled();
-    expect(await screen.findByTestId("homepage-remove-dialog")).toBeTruthy();
+    expect(screen.getByTestId("engine-settings")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    await act(async () => rejectOpen(new Error("Project unavailable")));
+    expect(screen.getByTestId("homepage-error").textContent).toContain(
+      "Project unavailable",
+    );
+    expect(screen.getByTestId("create-project")).toHaveProperty(
+      "disabled",
+      false,
+    );
   });
 
-  it("confirms Delete for a web OPFS project from the row X", async () => {
-    const onRemoveFromList = vi.fn(async () => {});
+  it.each(["blank", "empty", "2d"])(
+    "creates a named %s project with the selected appearance",
+    async (kind) => {
+      const onCreateEmpty = vi.fn(async () => {});
+      renderHomepage({ onCreateEmpty });
+      createDialog(kind);
+      fireEvent.change(screen.getByTestId("create-project-name"), {
+        target: { value: "Orbit" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Rocket" }),
+      );
+      fireEvent.click(screen.getByTestId("create-project-submit"));
+      await waitFor(() =>
+        expect(onCreateEmpty).toHaveBeenCalledWith(
+          "Orbit",
+          expect.objectContaining({
+            kind,
+            appearance: expect.objectContaining({ icon: "rocket" }),
+          }),
+        ),
+      );
+    },
+  );
+
+  it("searches custom templates and creates from the selected one", async () => {
+    const onCreateFromTemplate = vi.fn(async () => {});
     renderHomepage({
-      projects: [listedProject("Game.babproject", "opfs")],
-      onRemoveFromList,
+      templates: [{ id: "arena", name: "Arena" }],
+      onCreateFromTemplate,
     });
-    expect(
-      screen
-        .getByTestId("remove-listed-project-Game.babproject")
-        .getAttribute("aria-label"),
-    ).toBe("Delete");
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
-    const dialog = await screen.findByTestId("homepage-remove-dialog");
-    expect(dialog.textContent).toMatch(/Delete Project/);
-    expect(dialog.textContent).toMatch(/permanently/i);
-    expect(dialog.textContent).toMatch(/Export Project/);
-    expect(dialog.getAttribute("data-variant")).toBe("destructive");
-    expect(screen.getByTestId("homepage-remove-confirm").textContent).toMatch(
-      /^Delete$/,
+    fireEvent.click(screen.getByTestId("create-project"));
+    fireEvent.change(
+      screen.getAllByTestId("homepage-template-search").at(-1)!,
+      { target: { value: "Arena" } },
     );
-
-    fireEvent.click(screen.getByTestId("homepage-remove-cancel"));
-    expect(onRemoveFromList).not.toHaveBeenCalled();
-    expect(screen.getByTestId("open-listed-project-Game.babproject")).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
-    fireEvent.click(await screen.findByTestId("homepage-remove-confirm"));
-    expect(onRemoveFromList).toHaveBeenCalledTimes(1);
-  });
-
-  it("confirms Remove from list for a native Documents project without deleting files", async () => {
-    getHostPlatform.mockReturnValue("ios");
-    const onRemoveFromList = vi.fn(async () => {});
-    renderHomepage({
-      projects: [listedProject("Game.babproject", "documents")],
-      onRemoveFromList,
-    });
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
-    const dialog = await screen.findByTestId("homepage-remove-dialog");
-    expect(dialog.textContent).toMatch(/Remove from List/);
-    expect(dialog.textContent).toMatch(/files stay|remain on disk|does not delete/i);
-    expect(dialog.getAttribute("data-variant")).not.toBe("destructive");
-    expect(screen.getByTestId("homepage-remove-confirm").textContent).toMatch(
-      /^Remove$/,
-    );
-
-    fireEvent.click(screen.getByTestId("homepage-remove-cancel"));
-    expect(onRemoveFromList).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
-    fireEvent.click(await screen.findByTestId("homepage-remove-confirm"));
-    expect(onRemoveFromList).toHaveBeenCalledTimes(1);
-  });
-
-  it("opens the same remove confirm from the row context menu", async () => {
-    const onRemoveFromList = vi.fn(async () => {});
-    renderHomepage({
-      projects: [listedProject("Game.babproject", "opfs")],
-      onRemoveFromList,
-    });
-    fireEvent.contextMenu(
-      screen.getByTestId("open-listed-project-Game.babproject"),
-    );
-    expect(await screen.findByTestId("homepage-project-menu")).toBeTruthy();
-    expect(screen.getByTestId("homepage-project-remove").textContent).toMatch(
-      /^Delete$/,
-    );
-    fireEvent.click(screen.getByTestId("homepage-project-remove"));
-    expect(await screen.findByTestId("homepage-remove-dialog")).toBeTruthy();
-    expect(onRemoveFromList).not.toHaveBeenCalled();
-  });
-});
-
-describe("Homepage Create Project dialog", () => {
-  it("shows Name required and disables Create when Name is empty", async () => {
-    renderHomepage();
-    screen.getByTestId("create-project").click();
-    const name = await screen.findByTestId("create-project-name");
-    fireEvent.change(name, { target: { value: "" } });
-    expect(screen.getByTestId("create-project-name-issue").textContent).toBe(
-      "Name required.",
-    );
-    expect(
-      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
-    ).toBe(true);
-  });
-
-  it("shows Name already exists and disables Create on a listed name", async () => {
-    renderHomepage({
-      projects: [listedProject("MyGame.babproject", "opfs")],
-    });
-    screen.getByTestId("create-project").click();
-    const name = await screen.findByTestId("create-project-name");
-    fireEvent.change(name, { target: { value: "MyGame" } });
-    expect(
-      (await screen.findByTestId("create-project-name-issue")).textContent,
-    ).toBe("Name already exists.");
-    expect(
-      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
-    ).toBe(true);
-  });
-
-  it("opens Create Project with an empty Name on the live Homepage", async () => {
-    renderHomepage();
-    screen.getByTestId("create-project").click();
-    const name = await screen.findByTestId("create-project-name");
-    expect((name as HTMLInputElement).value).toBe("");
-    expect(screen.getByTestId("create-project-name-issue").textContent).toBe(
-      "Name required.",
-    );
-    expect(
-      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
-    ).toBe(true);
-  });
-
-  it("drops template copy, On this device, and Black Bars helper", async () => {
-    renderHomepage();
-    screen.getByTestId("create-project").click();
-    const dialog = await screen.findByTestId("create-project-dialog");
-    expect(dialog.textContent).not.toMatch(/or a template/i);
-    expect(screen.queryByTestId("create-project-location")).toBeNull();
-    expect(dialog.textContent).not.toMatch(/On this device/i);
-    expect(dialog.textContent).not.toMatch(/opfs/i);
-    expect(screen.queryByTestId("create-project-choose-location")).toBeNull();
-    expect(dialog.textContent).toContain(
-      `Play and export resolution (default ${DEFAULT_RENDER_WIDTH}×${DEFAULT_RENDER_HEIGHT}).`,
-    );
-    expect(dialog.textContent).not.toMatch(/letterboxes/i);
-    expect(dialog.textContent).not.toMatch(
-      /On locks WxH with bars\. Off fills without stretching\./,
-    );
-    expect(screen.getByTestId("create-project-black-bars")).toBeTruthy();
-  });
-
-  it("does not pass pickFolder when creating on web", async () => {
-    const onCreateEmpty = vi.fn(async () => {});
-    renderHomepage({ onCreateEmpty });
-    screen.getByTestId("create-project").click();
-    fireEvent.change(await screen.findByTestId("create-project-name"), {
-      target: { value: "WebGame" },
+    fireEvent.click(screen.getByTestId("create-project-template:arena"));
+    fireEvent.change(screen.getByTestId("create-project-name"), {
+      target: { value: "My Arena" },
     });
     fireEvent.click(screen.getByTestId("create-project-submit"));
-    expect(onCreateEmpty).toHaveBeenCalledWith(
-      "WebGame",
-      expect.not.objectContaining({ pickFolder: true }),
+    await waitFor(() =>
+      expect(onCreateFromTemplate).toHaveBeenCalledWith(
+        "arena",
+        "My Arena",
+        expect.any(Object),
+      ),
     );
   });
 
-  it("pins Create footer outside the right-pane form scroll", async () => {
-    renderHomepage();
-    screen.getByTestId("create-project").click();
-    const dialog = await screen.findByTestId("create-project-dialog");
-    expect(dialog.className).toMatch(/90dvh/);
-    const details = screen.getByTestId("create-project-details");
-    expect(details.className).toMatch(/overflow-x-hidden/);
-    expect(details.className).toMatch(/min-w-0/);
-    const form = screen.getByTestId("create-project-form");
-    expect(form.className).toMatch(/overflow-x-hidden/);
-    expect(form.className).toMatch(/overflow-y-auto/);
-    const footer = screen.getByTestId("create-project-footer");
-    expect(form.contains(footer)).toBe(false);
-    expect(details.contains(footer)).toBe(true);
-  });
-
-  it("gives dialog template cards an image well", async () => {
-    renderHomepage();
-    screen.getByTestId("create-project").click();
-    const empty = await screen.findByTestId("create-project-empty");
-    expect(empty.querySelector('[data-testid="template-card-well"]')).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("create-project-2d")
-        .querySelector('[data-testid="template-card-well"]'),
-    ).toBeTruthy();
-  });
-
-  it("requires Choose Location on iPad and keeps App Documents as the default", async () => {
-    const onCreateEmpty = vi.fn(async () => {});
-    getHostPlatform.mockReturnValue("ios");
-    renderHomepage({ onCreateEmpty });
-    screen.getByTestId("create-project").click();
-
-    expect(await screen.findByTestId("create-project-choose-location")).toBeTruthy();
-    expect(screen.getByTestId("create-project-app-documents")).toBeTruthy();
-    expect(screen.queryByTestId("create-project-choose-folder")).toBeNull();
-    expect(screen.getByTestId("create-project-location").textContent).toMatch(
-      /App Documents/,
-    );
-    expect(screen.getByTestId("create-project-dialog").textContent).not.toMatch(
-      /opfs/i,
-    );
-
-    fireEvent.click(screen.getByTestId("create-project-choose-location"));
-    expect(screen.getByTestId("create-project-location").textContent).toMatch(
-      /Choose a folder/,
+  it("rejects empty or duplicate project names", () => {
+    renderHomepage({ projects: [listedProject("Orbit", "opfs")] });
+    createDialog();
+    expect(screen.getByTestId("create-project-submit")).toHaveProperty(
+      "disabled",
+      true,
     );
     fireEvent.change(screen.getByTestId("create-project-name"), {
-      target: { value: "IpadGame" },
+      target: { value: "Orbit" },
     });
-    fireEvent.click(screen.getByTestId("create-project-submit"));
-    expect(onCreateEmpty).toHaveBeenCalledWith(
-      "IpadGame",
-      expect.objectContaining({ pickFolder: true }),
+    expect(screen.getByTestId("create-project-submit")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(screen.getByTestId("create-project-name-issue").textContent).toMatch(
+      /already exists/i,
     );
   });
 
-  it("requires Choose Location on Electron with a Projects folder default", async () => {
-    getHostPlatform.mockReturnValue("electron");
+  it("retains the draft when creation fails", async () => {
+    renderHomepage({
+      onCreateEmpty: vi.fn(async () => {
+        throw new Error("Storage full");
+      }),
+    });
+    createDialog();
+    fireEvent.change(screen.getByTestId("create-project-name"), {
+      target: { value: "Orbit" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("Storage full"),
+    );
+    expect(screen.getByTestId("create-project-name")).toHaveProperty(
+      "value",
+      "Orbit",
+    );
+  });
+
+  it.each(["ios", "electron"])(
+    "offers native folder choice on %s",
+    async (platform) => {
+      getHostPlatform.mockReturnValue(platform);
+      const onCreateEmpty = vi.fn(async () => {});
+      renderHomepage({ onCreateEmpty });
+      createDialog();
+      fireEvent.change(screen.getByTestId("create-project-name"), {
+        target: { value: "Orbit" },
+      });
+      fireEvent.click(screen.getByText("Options"));
+      fireEvent.click(screen.getByTestId("create-project-choose-location"));
+      fireEvent.click(screen.getByTestId("create-project-submit"));
+      await waitFor(() =>
+        expect(onCreateEmpty).toHaveBeenCalledWith(
+          "Orbit",
+          expect.objectContaining({ pickFolder: true }),
+        ),
+      );
+    },
+  );
+
+  it.each(["button", "keyboard", "context"])(
+    "opens project actions using %s without launching",
+    (method) => {
+      const onOpenProject = vi.fn(async () => {});
+      renderHomepage({
+        projects: [listedProject("Game", "opfs")],
+        onOpenProject,
+      });
+      const card = screen.getByTestId("open-listed-project-Game");
+      if (method === "button")
+        fireEvent.click(
+          screen.getByRole("button", { name: "Project Actions for Game" }),
+        );
+      else if (method === "keyboard")
+        fireEvent.keyDown(card, { key: "F10", shiftKey: true });
+      else fireEvent.contextMenu(card, { clientX: 30, clientY: 30 });
+      expect(screen.getByTestId("homepage-project-menu")).toBeTruthy();
+      expect(onOpenProject).not.toHaveBeenCalled();
+    },
+  );
+
+  it("edits identity without creating or opening a project", async () => {
+    const onUpdateProject = vi.fn(async () => {});
+    const onOpenProject = vi.fn(async () => {});
+    renderHomepage({
+      projects: [listedProject("Game", "opfs")],
+      onUpdateProject,
+      onOpenProject,
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Project Actions for Game" }),
+    );
+    fireEvent.click(screen.getByTestId("homepage-project-rename"));
+    expect(screen.queryByTestId("create-project-templates")).toBeNull();
+    fireEvent.change(screen.getByTestId("homepage-rename-input"), {
+      target: { value: "Renamed" },
+    });
+    fireEvent.click(screen.getByTestId("homepage-rename-confirm"));
+    await waitFor(() =>
+      expect(onUpdateProject).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Game" }),
+        expect.objectContaining({ name: "Renamed" }),
+      ),
+    );
+    expect(onOpenProject).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["web", "opfs", "Delete"],
+    ["ios", "documents", "Remove"],
+  ] as const)(
+    "confirms %s project removal before changing storage",
+    async (platform, tier, action) => {
+      getHostPlatform.mockReturnValue(platform);
+      const onRemoveFromList = vi.fn(async () => {});
+      renderHomepage({
+        projects: [listedProject("Game", tier)],
+        onRemoveFromList,
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Project Actions for Game" }),
+      );
+      fireEvent.click(screen.getByTestId("homepage-project-remove"));
+      expect(
+        screen.getByTestId("homepage-remove-confirm").textContent,
+      ).toContain(action);
+      expect(onRemoveFromList).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId("homepage-remove-confirm"));
+      await waitFor(() => expect(onRemoveFromList).toHaveBeenCalledOnce());
+    },
+  );
+
+  it("searches projects without changing the stored library", () => {
+    renderHomepage({
+      projects: [listedProject("Orbit", "opfs"), listedProject("Tide", "opfs")],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search Projects" }));
+    fireEvent.change(screen.getByTestId("homepage-project-search"), {
+      target: { value: "Tide" },
+    });
+    expect(screen.queryByTestId("open-listed-project-Orbit")).toBeNull();
+    expect(screen.getByTestId("open-listed-project-Tide")).toBeTruthy();
+  });
+
+  it("persists the menu theme in Engine Settings and updates editor chrome", async () => {
     renderHomepage();
-    screen.getByTestId("create-project").click();
-
-    expect(await screen.findByTestId("create-project-choose-location")).toBeTruthy();
-    expect(screen.getByTestId("create-project-app-documents")).toBeTruthy();
-    expect(screen.getByTestId("create-project-location").textContent).toMatch(
-      /Projects folder/,
+    fireEvent.click(screen.getByRole("button", { name: "Dark Mode" }));
+    await waitFor(() =>
+      expect(document.documentElement.classList.contains("dark")).toBe(true),
     );
-    expect(screen.getByTestId("create-project-dialog").textContent).not.toMatch(
-      /opfs/i,
+    expect(
+      JSON.parse(localStorage.getItem("babylonslate:engine-settings")!)
+        .appearance.theme,
+    ).toBe("dark");
+    fireEvent.click(screen.getByRole("button", { name: "Light Mode" }));
+    await waitFor(() =>
+      expect(document.documentElement.classList.contains("dark")).toBe(false),
     );
-
-    fireEvent.click(screen.getByTestId("create-project-app-documents"));
-    expect(screen.getByTestId("create-project-location").textContent).toMatch(
-      /Projects folder/,
-    );
+    expect(
+      screen.getByTestId("homepage").getAttribute("data-slate-theme"),
+    ).toBe("light");
   });
 });

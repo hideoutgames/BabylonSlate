@@ -61,16 +61,27 @@ test("routine typechecks and selected test files fit concurrent shared agents", 
   });
 });
 
-test("fast browser runs reserve all memory and cannot overlap another workload", async (t) => {
+test("shared browser work fits a six-GiB host budget while retaining headroom", async (t) => {
+  const options = await fixture(t);
+  const lease = await acquireResources(workloadFor("browser", {}), {
+    ...options,
+    freeMemory: () => 6 * 1024 ** 3,
+    timeoutMs: 1000,
+  });
+  await lease.release();
+  assert.deepEqual(await readdir(join(options.directory, "queue")), []);
+});
+
+test("fast browser runs queue when overlapping work would exceed the memory budget", async (t) => {
   const options = await fixture(t);
   const fast = workloadFor("browser", { BL_TEST_PROFILE: "fast" });
-  assert.deepEqual(fast, { workers: 2, browsers: 1, memoryGiB: 6 });
+  assert.deepEqual(fast, { workers: 2, browsers: 1, memoryGiB: 4 });
   assert.equal(workloadFor("dom", {}).workers, 1);
   assert.throws(
     () => workloadFor("dom", { BL_TEST_PROFILE: "unbounded" }),
     /profile/i,
   );
-  const first = await acquireResources(small, options);
+  const first = await acquireResources({ ...small, memoryGiB: 3 }, options);
   let queued;
   const observed = new Promise((resolve) => {
     queued = resolve;

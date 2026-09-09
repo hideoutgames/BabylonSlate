@@ -11,10 +11,7 @@ async function openTwoDProject(page: Page): Promise<void> {
   await page.getByTestId("create-project").click();
   await expect(page.getByTestId("create-project-dialog")).toBeVisible();
   await page.getByTestId("create-project-2d").click();
-  await expect(page.getByTestId("create-project-2d")).toHaveAttribute(
-    "data-selected",
-    "true",
-  );
+  await expect(page.getByTestId("create-project-details")).toBeVisible();
   await submitCreateOrOpenListed(page);
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }

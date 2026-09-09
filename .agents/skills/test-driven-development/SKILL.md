@@ -5,6 +5,10 @@ description: Use when implementing any feature or bugfix, before writing impleme
 
 # Test-Driven Development (TDD)
 
+## Repository test scope
+
+The workflow's targeted-only local policy overrides broad suite language in this imported skill. Red/green verification runs explicit files or cases for the changed behavior and directly affected consumers. "Other tests" and "all tests pass" below mean that selected set, not an unfiltered suite. Do not expand to full suites, coverage, cumulative preflight or workspace checks without an explicit user request. Instruction/prose-only edits use diff/link checks. After a repair, rerun only checks it can affect.
+
 ## Overview
 
 Write the test first. Watch it fail. Write minimal code to pass.

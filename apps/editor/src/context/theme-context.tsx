@@ -40,8 +40,9 @@ function systemPrefersDark(): boolean {
 }
 
 export function EditorThemeProvider({ children }: { children: ReactNode }) {
-  const { settings } = useAppSettings();
-  const preference = settings.appearance.theme;
+  const { settings, version } = useAppSettings();
+  // Match the boot splash until settings hydrate or a live update arrives.
+  const preference = version > 0 ? settings.appearance.theme : storedPreference();
   const [prefersDark, setPrefersDark] = useState(systemPrefersDark);
 
   useEffect(() => {

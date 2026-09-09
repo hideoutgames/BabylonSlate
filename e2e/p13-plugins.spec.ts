@@ -198,6 +198,7 @@ test.describe("P13 plugins", () => {
 
     await page.getByTestId("create-project").click();
     await expect(page.getByTestId("create-project-dialog")).toBeVisible();
+    await page.getByTestId("create-project-empty").click();
     await page.getByTestId("create-project-name").fill("PluginImportTarget");
     await page.getByTestId("create-project-submit").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();

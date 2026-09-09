@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld("babylonslate", {
       ipcRenderer.invoke("secrets:set", key, value),
     delete: (key: string) => ipcRenderer.invoke("secrets:delete", key),
   },
+  accountSecrets: {
+    get: (key: string) => ipcRenderer.invoke("account-secrets:get", key),
+    set: (key: string, value: string) =>
+      ipcRenderer.invoke("account-secrets:set", key, value),
+    delete: (key: string) => ipcRenderer.invoke("account-secrets:delete", key),
+  },
   http: {
     fetch: (request: unknown) => ipcRenderer.invoke("lfs:fetch", request),
   },

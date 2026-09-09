@@ -41,6 +41,27 @@ engine-plugins/       First-party plugins (Starter Content); packed to `public/e
 
 Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [plugins.md](plugins.md), [global-search.md](global-search.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [scene-layers.md](scene-layers.md), [input.md](input.md), [debugger.md](debugger.md), [console-commands.md](console-commands.md), [fonts.md](fonts.md), [sprites.md](sprites.md), [tilemaps.md](tilemaps.md), [anim-graph.md](anim-graph.md), [behaviour-tree.md](behaviour-tree.md), [navigation.md](navigation.md), [audio.md](audio.md), [shader-graph.md](shader-graph.md), [theming.md](theming.md), [components.md](components.md), [editor-extensions.md](editor-extensions.md), [exporter.md](exporter.md), [source-control.md](source-control.md).
 
+## Project browser and accounts
+
+- `App` retains settings, theme, and the project/document owner. `AppRoutes` loads mutually exclusive Home and Editor route modules. Play, validation, search, utility execution, and renderer hosts mount only with the Editor route.
+- The launcher theme toggle and Engine Settings share `appearance.theme`. Light/dark changes apply across both routes and loading cards; System follows the OS through the shared theme provider.
+- The Slate project browser owns its dialogs, account UI, styles, and animation lifecycle. Opening a project unmounts that entire surface, including its inline stylesheet. Returning to the browser creates fresh menu state; project state stays with `DocumentProvider`. JavaScript modules may remain in the browser's import cache.
+- Web and Electron keep account sign-in optional, including phone-sized browser windows. Native iOS and Android require an active Clerk session before the project browser mounts. Missing configuration, loading failures, and pending sessions never expose project actions; there is no offline guest bypass. This account requirement is separate from subscription plans.
+- When configured on web, the launcher lazy-loads `@clerk/react` to restore the avatar; its `UserButton` supplies the profile dropdown, account management, and sign-out, with a custom Manage Subscription action. Guests use a compact menu and Clerk sign-in modal. Polling, focus-touch requests, and telemetry are disabled. Electron restores native session identity for its compact profile menu and loads the shared native email-code form when Sign In is selected, using the public Clerk Frontend API through VFS native HTTP. Mobile uses that form as its account gate. Account providers, forms, and UI unmount on entry to the editor. No Clerk dependency enters engine packages.
+- **Manage Subscription** is a presentation-only preview. Free and Pro include the same editor features; Pro is planned to add mobile app access. There are no prices, checkout actions, subscription mutations, or plan-based restrictions.
+
+### Clerk configuration
+
+Create a Clerk application, copy `apps/editor/.env.example` to `apps/editor/.env.local`, and set `VITE_CLERK_PUBLISHABLE_KEY` to its publishable key. Restart Vite after changes. Never expose a Clerk secret key through Vite. See Clerk's [React quickstart](https://clerk.com/docs/react/getting-started/quickstart) and [provider options](https://clerk.com/docs/react/reference/components/clerk-provider).
+
+Web sign-in, sign-up, and account settings use Clerk-managed modal UI; redirect fallbacks honor Vite's deployment base. Configure the Clerk application for the deployed web origin. No account or key is provisioned by the repository. Local projects do not become cloud-synced by signing in.
+
+For Electron and native iOS/Android, enable **Native API** in the Clerk dashboard's Native applications page. Enable email addresses for sign-in and sign-up, **Sign-in with email code**, and email verification codes at sign-up. Use email-only registration without other required profile fields, passwords, or MFA; the native flow handles email codes and refuses authenticated access when additional verification or session tasks remain. Desktop guests can still create and open projects. See Clerk's [email-code configuration](https://clerk.com/docs/guides/development/custom-flows/authentication/email-sms-otp) and [native-client terminology](https://clerk.com/docs/guides/development/sdk-development/terminology).
+
+`services/native-clerk.ts` serializes public Frontend API requests with native-client headers, reads the rotating client token from response headers, and stores it through `SecretStore`. iOS uses Keychain. Electron's `app://babylonslate` renderer uses native HTTP and a dedicated account store: OS-encrypted persistence when available, otherwise process memory. Android currently keeps its token in process memory because the repository has no Keystore adapter; restarting a process-memory session requires sign-in again. No client token is persisted in local storage or project data. The native form supports email-code sign-in/sign-up, resend, restoration, and sign-out; it does not implement system-browser OAuth or account management.
+
+New and restored sessions must appear active in Clerk's response. While the account UI is mounted, window focus or foreground visibility revalidates a signed-in session; mobile project actions stay hidden until that check succeeds. These listeners and forms unmount on entering the editor (desktop sign-in forms also unmount when their modal closes). Authentication failure never gates desktop project access. The configured Clerk application and actual desktop/mobile host transport still require end-to-end validation before distribution; unit tests exercise controlled external HTTP/storage boundaries.
+
 ## Threading (P4)
 
 ```mermaid
@@ -82,16 +103,16 @@ Existing compact Texture `asset-settings` tabs and pinned Content Browser are ex
 
 Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js`:
 
-| Package | May not import |
-| --- | --- |
-| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `anim-graph`, `behaviour-tree`, `navigation`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes`, `exporter`, `source-control` | React, Babylon, Capacitor |
-| `physics` | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok` on a worker-local NullEngine Scene. |
-| `assets` | React, Babylon, Capacitor |
-| `vfs` | React, Babylon |
-| `render` | React, Capacitor |
-| `ui`, `editor-kit`, `graph-ui` | Babylon, Capacitor |
-| `apps/editor/src` | Capacitor |
-| `apps/player` | React, Capacitor (Babylon is allowed; no Dockview / editor chrome) |
+| Package                                                                                                                                                                                                          | May not import                                                                                                                                                        |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `anim-graph`, `behaviour-tree`, `navigation`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes`, `exporter`, `source-control` | React, Babylon, Capacitor                                                                                                                                             |
+| `physics`                                                                                                                                                                                                        | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok` on a worker-local NullEngine Scene. |
+| `assets`                                                                                                                                                                                                         | React, Babylon, Capacitor                                                                                                                                             |
+| `vfs`                                                                                                                                                                                                            | React, Babylon                                                                                                                                                        |
+| `render`                                                                                                                                                                                                         | React, Capacitor                                                                                                                                                      |
+| `ui`, `editor-kit`, `graph-ui`                                                                                                                                                                                   | Babylon, Capacitor                                                                                                                                                    |
+| `apps/editor/src`                                                                                                                                                                                                | Capacitor                                                                                                                                                             |
+| `apps/player`                                                                                                                                                                                                    | React, Capacitor (Babylon is allowed; no Dockview / editor chrome)                                                                                                    |
 
 Patterns rather than exact module names, so deep imports such as `@babylonjs/core/Engines/engine` are caught too.
 

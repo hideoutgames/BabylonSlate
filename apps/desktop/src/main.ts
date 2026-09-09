@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -15,6 +15,8 @@ import {
 import { NodeStorageAdapter } from "@babylonslate/vfs/node";
 import type { ProjectFolderHandle } from "@babylonslate/core";
 import { DesktopSecretStore } from "./desktop-secret-store";
+import { DesktopAccountSecretStore } from "./desktop-account-secrets";
+import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
 import { isEditorSender, rendererFile, validateIpcArguments } from "./packaged-security";
 
 const rootDir = join(app.getAppPath(), "host");
@@ -100,21 +102,22 @@ function registerIpc(): void {
     await secrets.delete(String(key));
   });
 
+  const accountSecretsPath = userDataFile("account-secrets.json");
+  const accountSecrets = new DesktopAccountSecretStore({
+    read: () => readFile(accountSecretsPath, "utf8"),
+    write: async (contents) => {
+      await mkdir(dirname(accountSecretsPath), { recursive: true });
+      const temporary = `${accountSecretsPath}.tmp`;
+      await writeFile(temporary, contents, { mode: 0o600 });
+      await rename(temporary, accountSecretsPath);
+    },
+  }, safeStorage);
+  handle("account-secrets:get", async (_event, key) => accountSecrets.get(String(key)));
+  handle("account-secrets:set", async (_event, key, value) => accountSecrets.set(String(key), String(value)));
+  handle("account-secrets:delete", async (_event, key) => accountSecrets.delete(String(key)));
+
   handle("lfs:fetch", async (_event, request) => {
-    const req = request as {
-      method?: string;
-      url?: string;
-      headers?: Record<string, string>;
-      body?: string;
-    };
-    const url = String(req.url ?? "");
-    const response = await net.fetch(url, {
-      method: req.method ?? "GET",
-      headers: req.headers ?? {},
-      body: req.body,
-      redirect: "error",
-    });
-    return { status: response.status, bodyText: await response.text() };
+    return fetchDesktopHttp(request as DesktopHttpRequest, (url, init) => net.fetch(url, init));
   });
 
   handle("project:pickFolder", async () => {
