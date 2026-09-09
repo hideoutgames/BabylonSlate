@@ -161,6 +161,7 @@ export function startPlayer(options: {
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
+    physicsWorld: manifest.physicsWorld,
     navmeshBytes: content.navmeshBytes,
     navBlockers: navDebugBlockersFromActors(scene.actors),
     ktx2BasePath: ktx2BasePath(),
@@ -247,8 +248,10 @@ export function startPlayer(options: {
   handle.applySceneEnvironment(scene);
   const releaseConsoleCapture = captureConsoleLogs(
     console,
-    (message, severity) =>
-      options.onConsoleEvent?.({ type: "log", message, severity }),
+    (message, severity) => {
+      if (runtime) runtime.reportLog(message, severity);
+      else options.onConsoleEvent?.({ type: "log", message, severity });
+    },
   );
   const onWindowError = (event: ErrorEvent) =>
     options.onConsoleEvent?.({
