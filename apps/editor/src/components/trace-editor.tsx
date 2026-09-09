@@ -13,7 +13,6 @@ import { useDocuments } from "../context/document-context";
 import { asTracePayload, validTraceIndex } from "../lib/trace-view";
 import { TraceTimelineView } from "./trace-timeline-view";
 import {
-  initialTraceSnapshotState,
   TraceSnapshotView,
   type TraceSnapshotState,
 } from "./trace-snapshot-view";
@@ -45,7 +44,10 @@ function TraceSession({
 }) {
   const length = payload?.frames.length ?? 0;
   const [index, setIndexState] = useState(Math.max(0, length - 1));
-  const [snapshot, setSnapshot] = useState(initialTraceSnapshotState);
+  const [snapshot, setSnapshot] = useState<TraceSnapshotState>(() => ({
+    mode: "tree", query: "", selectedId: null, changeId: null,
+    expanded: new Set(["/snapshot/actors", "/snapshot/gameInstance"]),
+  }));
   const [log, setLog] = useState<TraceLogState>({
     query: "",
     severity: "all",

@@ -14,7 +14,8 @@ import {
   ZoomOutIcon,
 } from "lucide-react";
 import { frameTickMs, traceGraphBuckets } from "../lib/trace-view";
-import { TraceEmptyState, useTraceTouch } from "./trace-inspection-controls";
+import { TraceEmptyState } from "./trace-inspection-controls";
+import { useTraceTouch } from "../lib/use-trace-touch";
 
 export function TraceTimelineView({
   payload,

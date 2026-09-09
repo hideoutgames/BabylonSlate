@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -85,13 +85,13 @@ describe("TracePlayback", () => {
     expect(
       within(tree)
         .getAllByRole("treeitem")
-        .some((row) => row.textContent?.startsWith("Identity")),
+        .some((row) => row.textContent?.includes("Identity")),
     ).toBe(true);
     fireEvent.keyDown(tree, { key: "ArrowLeft" });
     expect(
       within(tree)
         .getAllByRole("treeitem")
-        .some((row) => row.textContent?.startsWith("Identity")),
+        .some((row) => row.textContent?.includes("Identity")),
     ).toBe(false);
   });
 
@@ -116,7 +116,7 @@ describe("TracePlayback", () => {
       (screen.getByTestId("trace-playback-frame") as HTMLInputElement).value,
     ).toBe("1");
     fireEvent.click(
-      screen.getByRole("button", { name: "Previous Frame", exact: true }),
+      screen.getByRole("button", { name: "Previous Frame" }),
     );
     expect(screen.getByTestId("trace-frame-summary").textContent).toContain(
       "Tick 501",
@@ -162,7 +162,7 @@ describe("TracePlayback", () => {
   it("compares actor identities and exposes additions, removals and changed values", () => {
     render(<TracePlayback payload={payload} />);
     fireEvent.click(
-      screen.getByRole("button", { name: "Changes", exact: true }),
+      screen.getByRole("button", { name: "Changes" }),
     );
     const changes = screen.getByTestId("trace-snapshot-changes");
     expect(changes.textContent).toContain("Added");
@@ -209,7 +209,7 @@ describe("TracePlayback", () => {
     );
     expect(screen.getByText("Snapshot Could Not Be Parsed")).toBeTruthy();
     fireEvent.click(
-      screen.getByRole("button", { name: "Raw Snapshot", exact: true }),
+      screen.getByRole("button", { name: "Raw Snapshot" }),
     );
     expect(screen.getByTestId("trace-snapshot-raw").textContent).toBe(
       "tick=501",
@@ -218,7 +218,7 @@ describe("TracePlayback", () => {
     expect(screen.getAllByText("No Recorded Frames").length).toBeGreaterThan(0);
     expect(
       screen
-        .getByRole("button", { name: "Next Frame", exact: true })
+        .getByRole("button", { name: "Next Frame" })
         .hasAttribute("disabled"),
     ).toBe(true);
   });

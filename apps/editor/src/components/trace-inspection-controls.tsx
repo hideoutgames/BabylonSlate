@@ -6,11 +6,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { usePlatformLayoutOptions } from "../shell/use-platform-layout";
-
-export function useTraceTouch() {
-  return usePlatformLayoutOptions().dndStrategy === "pointer";
-}
+import { useTraceTouch } from "../lib/use-trace-touch";
 
 export function TraceEmptyState({
   title,

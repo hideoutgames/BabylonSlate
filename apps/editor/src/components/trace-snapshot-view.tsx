@@ -31,8 +31,8 @@ import {
 import {
   TraceCopyButton,
   TraceEmptyState,
-  useTraceTouch,
 } from "./trace-inspection-controls";
+import { useTraceTouch } from "../lib/use-trace-touch";
 
 export type TraceSnapshotState = {
   mode: "tree" | "changes" | "raw";
@@ -41,13 +41,6 @@ export type TraceSnapshotState = {
   changeId: string | null;
   expanded: Set<string>;
 };
-export const initialTraceSnapshotState = (): TraceSnapshotState => ({
-  mode: "tree",
-  query: "",
-  selectedId: null,
-  changeId: null,
-  expanded: new Set(["/snapshot/actors", "/snapshot/gameInstance"]),
-});
 
 export function TraceSnapshotView({
   payload,

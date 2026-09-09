@@ -25,8 +25,8 @@ import {
 import {
   TraceCopyButton,
   TraceEmptyState,
-  useTraceTouch,
 } from "./trace-inspection-controls";
+import { useTraceTouch } from "../lib/use-trace-touch";
 
 export type TraceLogState = {
   query: string;

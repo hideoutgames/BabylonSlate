@@ -166,7 +166,7 @@ function GalleryNestedMenus() {
 
 const GALLERY_TREE_NODES: TreeViewNode[] = [
   { id: "root", label: "Scene Root", depth: 0, hasChildren: true, expanded: true },
-  { id: "player", label: "Player", depth: 1, hasChildren: false, expanded: false },
+  { id: "player", label: "Player", depth: 1, hasChildren: false, expanded: false, preview: <span className="text-xs text-muted-foreground">Health 100</span> },
   { id: "ground", label: "Ground", depth: 1, hasChildren: false, expanded: false },
 ];
 
