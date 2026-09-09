@@ -8,6 +8,7 @@ import {
   encodeTileGid,
   getTile,
   normalizeTilemapPayload,
+  setTile,
   type TilemapPayload,
 } from "@babylonslate/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
@@ -148,6 +149,29 @@ beforeEach(() => {
 });
 
 describe("TilemapDetails", () => {
+  it("hides and restores a layer without changing its tiles or the other layers", async () => {
+    const payload = mapWithGround();
+    payload.layers.push({ ...payload.layers[0]!, id: "layer-2", name: "Props", chunks: [] });
+    const initial = setTile(setTile(payload, "layer-1", 0, 0, 1), "layer-2", 1, 0, 2);
+    const onChange = vi.fn();
+    render(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    await waitFor(() => screen.getByTestId("tilemap-palette-tile-2"));
+    const canvasContext = () => {
+      const results = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.results;
+      return results.at(-1)?.value as unknown as { fillRect: ReturnType<typeof vi.fn> };
+    };
+    expect(canvasContext().fillRect).toHaveBeenCalledWith(0, 224, 32, 32);
+    expect(canvasContext().fillRect).toHaveBeenCalledWith(32, 224, 32, 32);
+    fireEvent.click(screen.getByRole("button", { name: "Hide Props Layer" }));
+    const hidden = onChange.mock.calls.at(-1)?.[0] as TilemapPayload;
+    expect(hidden.layers.map((layer) => layer.visible)).toEqual([true, false]);
+    expect(hidden.layers[1]?.chunks).toEqual(initial.layers[1]?.chunks);
+    expect(canvasContext().fillRect).toHaveBeenCalledWith(0, 224, 32, 32);
+    expect(canvasContext().fillRect).not.toHaveBeenCalledWith(32, 224, 32, 32);
+    fireEvent.click(screen.getByRole("button", { name: "Show Props Layer" }));
+    expect(canvasContext().fillRect).toHaveBeenCalledWith(32, 224, 32, 32);
+  });
+
   it("exposes map width and height next to tile size", () => {
     const payload = createDefaultTilemapPayload();
     const onChange = vi.fn();
@@ -242,6 +266,24 @@ describe("TilemapPalette", () => {
 });
 
 describe("TilemapPaint", () => {
+  it.each(["move", "picker"])("follows two-finger translation in %s without painting", async (tool) => {
+    const onChange = vi.fn();
+    render(<TilemapHarness initial={mapWithGround() as unknown as Record<string, unknown>} onChange={onChange} />);
+    const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
+    fireEvent.click(screen.getByTestId(`tilemap-tool-${tool}`));
+    for (const [type, pointerId, clientX, clientY] of [
+      ["pointerdown", 1, 40, 80], ["pointerdown", 2, 100, 80],
+      ["pointermove", 1, 60, 110], ["pointermove", 2, 120, 110],
+      ["pointerup", 1, 60, 110], ["pointerup", 2, 120, 110],
+    ] as const) {
+      dispatchPointerEvent(canvas, type, { pointerId, clientX, clientY });
+    }
+    expect(Number(canvas.getAttribute("data-pan-x"))).toBeCloseTo(20);
+    expect(Number(canvas.getAttribute("data-pan-y"))).toBeCloseTo(-30);
+    expect(Number(canvas.getAttribute("data-cell-size"))).toBe(32);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("defaults to the Move tool", async () => {
     render(
       <TilemapHarness
