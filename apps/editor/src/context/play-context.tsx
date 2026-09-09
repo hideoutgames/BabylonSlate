@@ -1219,7 +1219,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       playFromScene,
       hasStartupScene,
       openPlaySceneGuid,
-      playScene,
       previewBuild,
       requestPreviewBuild,
       openDocuments,
