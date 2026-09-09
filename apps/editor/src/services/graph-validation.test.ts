@@ -948,7 +948,7 @@ describe("scriptPinCompatibility", () => {
       edges: [{
         id: "class-wire",
         source: "class-variable",
-        sourceHandle: "out",
+        sourceHandle: "value",
         target: "target",
         targetHandle: targetClass === "Actor" ? "classId" : "value",
       }],
