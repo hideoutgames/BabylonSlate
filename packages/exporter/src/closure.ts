@@ -1,4 +1,5 @@
 import {
+  classIdsFromVariableMembers,
   err,
   isEditorOnlyAsset,
   materialParameterTextureGuidsFromGraph,
@@ -154,6 +155,7 @@ export function collectExportReachability(
         const graph: SerializedGraph | null = input.graphByGuid(asset.guid);
         if (graph) {
           collectTypedRefs(graph, refs);
+          for (const classId of classIdsFromVariableMembers(graph.members ?? [])) refs.add(classId);
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
         }
       }
