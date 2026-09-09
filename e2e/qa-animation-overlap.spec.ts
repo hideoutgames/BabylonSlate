@@ -215,7 +215,10 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   await canvas.click();
   await page.keyboard.press("Space");
   await expect(prints).toContainText("Walk");
-  await expect.poll(() => mannequinPixels(canvas)).not.toEqual(idle);
+  await expect.poll(async () => {
+    const walk = await mannequinPixels(canvas);
+    return walk.pixels > 50 && walk.signature !== idle.signature;
+  }).toBe(true);
   await canvas.screenshot({ path: testInfo.outputPath("h16-walk.png") });
   await page.keyboard.press("Enter");
   await expect(prints).toContainText("Idle");
