@@ -12,6 +12,7 @@ import { HomepageAccount } from "./homepage-account";
 
 const clerk = vi.hoisted(() => ({
   provider: vi.fn(),
+  openSignIn: vi.fn(),
   signedIn: false,
   failed: false,
 }));
@@ -22,7 +23,7 @@ vi.mock("@clerk/react", () => ({
     return props.children;
   },
   ClerkFailed: ({ children }: { children: ReactNode }) =>
-    clerk.failed ? children : null,
+    clerk.failed ? <div data-testid="clerk-failed">{children}</div> : null,
   ClerkLoaded: ({ children }: { children: ReactNode }) =>
     clerk.failed ? null : children,
   ClerkLoading: () => null,
@@ -36,81 +37,73 @@ vi.mock("@clerk/react", () => ({
         }
       : null,
   }),
-  SignIn: ({ routing }: { routing: string }) => (
-    <div data-testid="clerk-sign-in" data-routing={routing}>
-      Clerk Sign In
-    </div>
+  useClerk: () => ({ openSignIn: clerk.openSignIn }),
+  UserButton: Object.assign(
+    ({ children }: { children: ReactNode }) => (
+      <div data-testid="clerk-user-button">{children}</div>
+    ),
+    {
+      MenuItems: ({ children }: { children: ReactNode }) => children,
+      Action: ({ label, onClick }: { label: string; onClick?: () => void }) => (
+        <button onClick={onClick}>{label}</button>
+      ),
+    },
   ),
-  UserProfile: ({ routing }: { routing: string }) => (
-    <div data-testid="clerk-user-profile" data-routing={routing}>
-      Clerk Account Settings
-    </div>
-  ),
-  SignOutButton: ({ children }: { children: ReactNode }) => children,
 }));
 
 afterEach(() => {
   cleanup();
   clerk.provider.mockClear();
+  clerk.openSignIn.mockClear();
   clerk.signedIn = false;
   clerk.failed = false;
   vi.unstubAllEnvs();
 });
 
 describe("Homepage account", () => {
-  it("keeps profile and subscription navigation usable when configured authentication fails", async () => {
+  it("keeps the subscription preview available when configured authentication fails", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     clerk.failed = true;
     render(<HomepageAccount />);
+    await screen.findByTestId("clerk-failed");
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    expect(await screen.findByText(/sign-in is unavailable/i)).toBeTruthy();
     fireEvent.click(
-      screen.getByRole("button", { name: "Manage Subscription" }),
+      await screen.findByRole("menuitem", { name: "Manage Subscription" }),
     );
-    expect(
-      await screen.findByRole("dialog", { name: "Room to Create" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Plans" })).toBeTruthy();
   });
 
-  it("keeps the guest profile usable without Clerk configuration or a purchase flow", async () => {
+  it("opens a guest menu and previews both plans without purchase actions", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     render(<HomepageAccount />);
-    expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    expect(await screen.findByRole("dialog", { name: "Profile" })).toBeTruthy();
+    expect(await screen.findByRole("menu")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(clerk.provider).not.toHaveBeenCalled();
     fireEvent.click(
-      screen.getByRole("button", { name: "Manage Subscription" }),
+      screen.getByRole("menuitem", { name: "Manage Subscription" }),
     );
-    const preview = await screen.findByRole("dialog", {
-      name: "Room to Create",
-    });
+    const preview = await screen.findByRole("dialog", { name: "Plans" });
     expect(within(preview).getByRole("heading", { name: "Free" })).toBeTruthy();
     expect(within(preview).getByRole("heading", { name: "Pro" })).toBeTruthy();
     expect(within(preview).getAllByText("Full Editor Access")).toHaveLength(2);
     expect(within(preview).getByText("Mobile App Access")).toBeTruthy();
-    expect(within(preview).getByText(/preview only/i)).toBeTruthy();
     expect(
       within(preview).queryByRole("button", {
         name: /buy|purchase|subscribe|upgrade/i,
       }),
     ).toBeNull();
-    fireEvent.click(
-      within(preview).getByRole("button", { name: "Back To Profile" }),
-    );
-    expect(await screen.findByRole("dialog", { name: "Profile" })).toBeTruthy();
+    fireEvent.click(within(preview).getByRole("button", { name: "Profile" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("loads configured authentication only after opening Profile and keeps sign-in in the dialog", async () => {
+  it("restores configured Clerk on mount and opens its sign-in flow from the menu", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     render(<HomepageAccount />);
-    expect(clerk.provider).not.toHaveBeenCalled();
+    await waitFor(() => expect(clerk.provider).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Sign In" }));
-    expect(await screen.findByTestId("clerk-sign-in")).toHaveProperty(
-      "dataset.routing",
-      "hash",
-    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Sign In" }));
+    expect(clerk.openSignIn).toHaveBeenCalledOnce();
     expect(clerk.provider).toHaveBeenCalledWith(
       expect.objectContaining({
         publishableKey: "pk_test_example",
@@ -118,26 +111,24 @@ describe("Homepage account", () => {
         telemetry: false,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Back To Profile" }));
-    expect(screen.queryByTestId("clerk-sign-in")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Manage Subscription" }),
-    ).toBeTruthy();
   });
 
-  it("shows the signed-in identity and opens account settings without leaving the project browser", async () => {
+  it("uses Clerk account controls with a subscription action for signed-in users", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     clerk.signedIn = true;
     const { unmount } = render(<HomepageAccount />);
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
-    expect(screen.getByText("ada@example.test")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Account Settings" }));
-    expect(await screen.findByTestId("clerk-user-profile")).toHaveProperty(
-      "dataset.routing",
-      "hash",
+    const controls = await screen.findByTestId("clerk-user-button");
+    expect(
+      within(controls).getByRole("button", { name: "manageAccount" }),
+    ).toBeTruthy();
+    expect(
+      within(controls).getByRole("button", { name: "signOut" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(controls).getByRole("button", { name: "Manage Subscription" }),
     );
+    expect(await screen.findByRole("dialog", { name: "Plans" })).toBeTruthy();
     unmount();
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

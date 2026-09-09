@@ -129,7 +129,7 @@ describe("native mobile account requirement", () => {
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
     expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
     expect(screen.getByText("ada@example.test")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sign Out" }));
     expect(await screen.findByLabelText("Email Address")).toBeTruthy();
     expect(auth.signOut).toHaveBeenCalledWith(session);
     expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
@@ -288,7 +288,7 @@ describe("native mobile account requirement", () => {
     );
     renderMobile();
     fireEvent.click(await screen.findByRole("button", { name: "Profile" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Sign Out" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Sign Out" }));
     expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent(window, new Event("focus"));

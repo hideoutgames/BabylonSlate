@@ -135,17 +135,19 @@ describe("Project Composer", () => {
       target: { value: "Moon Garden" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Rocket" }));
-    fireEvent.click(screen.getByRole("button", { name: "Mint" }));
-    fireEvent.click(screen.getByTestId("create-project-template-island"));
+    fireEvent.click(screen.getByRole("button", { name: "Cyan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose Template" }));
+    fireEvent.click(screen.getByTestId("create-project-template:island"));
 
     const preview = screen.getByTestId("project-identity-preview");
     expect(within(preview).getByText("Moon Garden")).toBeTruthy();
     const badge = preview.querySelector("[data-project-icon]");
     expect(badge?.getAttribute("data-project-icon")).toBe("rocket");
     expect(badge?.getAttribute("data-color")).toBe("mint");
+    fireEvent.click(screen.getByRole("button", { name: "Choose Template" }));
     expect(
       screen
-        .getByTestId("create-project-template-island")
+        .getByTestId("create-project-template:island")
         .getAttribute("data-selected"),
     ).toBe("true");
   });
@@ -231,12 +233,11 @@ describe("Project Composer", () => {
 
   it("keeps the chosen template fixed while project creation is in progress", () => {
     render(<Composer busy />);
-    const alternative = screen.getByTestId("create-project-template-island");
-    fireEvent.click(alternative);
-    fireEvent.keyDown(alternative, { key: "Enter" });
     expect(
-      screen.getByTestId("create-project-empty").getAttribute("data-selected"),
-    ).toBe("true");
+      screen.getByRole("button", { name: "Choose Template" }),
+    ).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Choose Template" }));
+    expect(screen.queryByTestId("create-project-templates")).toBeNull();
   });
 
   it("guards submission and Escape dismissal while an edit is saving", async () => {

@@ -68,21 +68,18 @@ afterEach(() => {
 });
 
 describe("optional desktop account", () => {
-  it("uses the native email flow only inside Profile and restores it on the next visit", async () => {
+  it("signs in through the native flow and exposes the restored identity in its menu", async () => {
     render(
       <>
         <button>Create Project</button>
         <HomepageAccount />
       </>,
     );
-    expect(auth.create).not.toHaveBeenCalled();
+    await waitFor(() => expect(auth.restoreSession).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Sign In" }));
     const email = await screen.findByLabelText("Email Address");
     expect(auth.browserProvider).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("homepage-mobile-auth")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Create Project", hidden: true }),
-    ).toHaveProperty("disabled", false);
     fireEvent.change(email, { target: { value: "ada@example.test" } });
     fireEvent.click(
       screen.getByRole("button", { name: "Continue With Email" }),
@@ -91,21 +88,15 @@ describe("optional desktop account", () => {
       target: { value: "123456" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Verify & Continue" }));
-    expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
-    auth.restoreSession.mockResolvedValue(session);
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.focus(window);
-    expect(auth.restoreSession).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
     expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
-    expect(auth.restoreSession).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
-    expect(await screen.findByLabelText("Email Address")).toBeTruthy();
-    expect(auth.signOut).toHaveBeenCalledWith(session);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sign Out" }));
+    await waitFor(() => expect(auth.signOut).toHaveBeenCalledWith(session));
+    expect(screen.getByRole("button", { name: "Create Project" })).toBeTruthy();
   });
 
-  it("keeps guests and subscription preview available when desktop authentication fails", async () => {
+  it("keeps guests and subscription preview available when restoration fails", async () => {
     auth.restoreSession.mockRejectedValue(
       new Error("Secure account storage is unavailable."),
     );
@@ -115,17 +106,12 @@ describe("optional desktop account", () => {
         <HomepageAccount />
       </>,
     );
+    await waitFor(() => expect(auth.restoreSession).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    expect(await screen.findByRole("alert")).toHaveProperty(
-      "textContent",
-      "Secure account storage is unavailable.",
-    );
     fireEvent.click(
-      screen.getByRole("button", { name: "Manage Subscription" }),
+      await screen.findByRole("menuitem", { name: "Manage Subscription" }),
     );
-    expect(
-      await screen.findByRole("dialog", { name: "Room to Create" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Plans" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(
       await screen.findByRole("button", { name: "Create Project" }),

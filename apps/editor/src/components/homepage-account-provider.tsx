@@ -26,12 +26,14 @@ export function HomepageClerkProvider({
           colorBackground: dark ? "#1b1d24" : "#fbfbfd",
           colorForeground: dark ? "#ededf2" : "#1b1d23",
           colorPrimary: dark ? "#b7c2f0" : "#495b9b",
-          colorInputBackground: dark ? "#242730" : "#eeeff2",
-          colorInputText: dark ? "#ededf2" : "#1b1d23",
           colorMutedForeground: dark ? "#90939f" : "#737782",
           borderRadius: "12px",
         },
         elements: {
+          formFieldInput: {
+            backgroundColor: dark ? "#242730" : "#eeeff2",
+            color: dark ? "#ededf2" : "#1b1d23",
+          },
           modalContent: "slate-clerk-overlay",
           rootBox: "homepage-theme homepage-clerk",
           cardBox: "homepage-clerk-card",

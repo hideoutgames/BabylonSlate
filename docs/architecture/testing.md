@@ -1,5 +1,7 @@
 # Testing architecture
 
+Launcher regressions cover project creation/edit/removal, explicit web folder/ZIP import actions, template selection, shared theme persistence, account menus, native sign-in gates, and route unmounting. Their jsdom fixtures supply font/image readiness and media queries; Clerk and native account transports are mocked at the integration boundary without requiring credentials or a GPU.
+
 `pnpm verify:local` is a path-aware preflight over the cumulative branch diff from the merge base with main plus untracked files. It always runs `git diff --check`, lints changed JavaScript/TypeScript files, and selects the smallest relevant checks below. Unit files are batched at 50. Only a clean, unchanged, committed run qualifies a PR for CI; dirty runs remain useful during development but are not delivery evidence. `pnpm verify` is an explicit full local diagnostic, not a routine PR requirement.
 
 | Changed area | Local preflight selection |
