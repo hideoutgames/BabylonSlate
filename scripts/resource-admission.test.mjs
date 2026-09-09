@@ -33,7 +33,7 @@ test("docs builds use a fixed one-worker reservation smaller than application bu
   assert.deepEqual(workloadFor("build", {}), {
     workers: 2,
     browsers: 0,
-    memoryGiB: 2.5,
+    memoryGiB: 2,
   });
 });
 
@@ -64,6 +64,17 @@ test("routine typechecks and selected test files fit concurrent shared agents", 
 test("shared browser work fits a six-GiB host budget while retaining headroom", async (t) => {
   const options = await fixture(t);
   const lease = await acquireResources(workloadFor("browser", {}), {
+    ...options,
+    freeMemory: () => 6 * 1024 ** 3,
+    timeoutMs: 1000,
+  });
+  await lease.release();
+  assert.deepEqual(await readdir(join(options.directory, "queue")), []);
+});
+
+test("application builds fit a six-GiB host budget while retaining headroom", async (t) => {
+  const options = await fixture(t);
+  const lease = await acquireResources(workloadFor("build", {}), {
     ...options,
     freeMemory: () => 6 * 1024 ** 3,
     timeoutMs: 1000,

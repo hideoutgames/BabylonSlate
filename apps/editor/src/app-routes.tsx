@@ -17,14 +17,14 @@ const HomeRoute = lazy(() => import("./routes/home-route"));
 const EditorRoute = lazy(() => import("./routes/editor-route"));
 
 export function AppRoutes() {
-  useSuppressNativeContextMenu();
-  useSuppressIosEditingGestures();
-  usePreventDocumentOverscroll();
-  useOrientationScrollReset();
   const { route } = useDocuments();
   const gallery =
     isTestModeEnabled() &&
     new URLSearchParams(window.location.search).has("gallery");
+  useSuppressNativeContextMenu();
+  useSuppressIosEditingGestures(gallery || route !== "home");
+  usePreventDocumentOverscroll();
+  useOrientationScrollReset();
   return (
     <LauncherTransitionProvider route={gallery ? "editor" : route}>
       <Suspense fallback={null}>

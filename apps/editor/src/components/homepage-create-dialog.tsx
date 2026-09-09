@@ -46,6 +46,13 @@ import {
   prepareProjectPicture,
 } from "./homepage-project-appearance";
 
+function hasTouchInput() {
+  return (
+    isCoarsePointerEnvironment() ||
+    Boolean(window.matchMedia?.("(any-pointer: coarse)").matches)
+  );
+}
+
 function nativeLocationStatus(
   hostPlatform: HostPlatform,
   pickFolder: boolean,
@@ -124,6 +131,35 @@ export function HomepageCreateDialog({
   const [imageBusy, setImageBusy] = useState(false);
 
   useEffect(() => {
+    if (!open) return;
+    const viewport = window.visualViewport;
+    const resize = () => {
+      // The software keyboard changes the visible viewport on iOS without
+      // changing dvh. Preserve the layout when the user deliberately zooms.
+      if (viewport && viewport.scale !== 1) return;
+      const element = popup.current;
+      const height = viewport?.height ?? window.innerHeight;
+      if (!element || height <= 0) return;
+      element.style.setProperty("--homepage-visible-height", `${height}px`);
+      element.style.setProperty(
+        "--homepage-visible-top",
+        `${viewport?.offsetTop ?? 0}px`,
+      );
+    };
+    resize();
+    const frame = requestAnimationFrame(resize);
+    viewport?.addEventListener("resize", resize);
+    viewport?.addEventListener("scroll", resize);
+    window.addEventListener("resize", resize);
+    return () => {
+      cancelAnimationFrame(frame);
+      viewport?.removeEventListener("resize", resize);
+      viewport?.removeEventListener("scroll", resize);
+      window.removeEventListener("resize", resize);
+    };
+  }, [open]);
+
+  useEffect(() => {
     setImageBusy(false);
     setImageIssue(null);
     setNameTouched(false);
@@ -178,7 +214,7 @@ export function HomepageCreateDialog({
       <DialogContent
         ref={popup}
         initialFocus={() =>
-          isCoarsePointerEnvironment() || step === "templates"
+          hasTouchInput() || step === "templates"
             ? popup.current
             : nameInput.current
         }
@@ -230,7 +266,7 @@ export function HomepageCreateDialog({
                 onTemplateIdChange(id);
                 setStep("details");
                 requestAnimationFrame(() => {
-                  const target = isCoarsePointerEnvironment()
+                  const target = hasTouchInput()
                     ? popup.current
                     : nameInput.current;
                   target?.focus({ preventScroll: true });
