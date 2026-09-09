@@ -41,11 +41,13 @@ Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local ind
 
 `encodeTileGid` / `decodeTileGid(map, gid, tilesetPayloads)` pick the highest `firstGid <= gid`. Play/editor/physics all use the same helpers. Legacy maps with an empty `tilesets[]` and only `tilesetGuid` still treat GIDs as local ids.
 
-Only **affected chunks** are copied in `setTile`. Editor and Play mesh builders still walk every **visible** chunk when the document or scene applies.
+Only **affected chunks** are copied in `setTile`. Editor and Play mesh builders still walk every **visible** chunk when the document or scene applies. Editor asset fingerprints include Tilemap and Tileset payload contents, so painting, layer visibility, and atlas grid edits refresh existing scene geometry and UVs; equivalent payloads keep mesh identity.
 
 Animated tiles (tileset `animation` frame lists) draw as a small separate set; they do not make every static tile dynamic.
 
 Play builds a parent `actor-N` mesh plus one child draw per non-empty static chunk **per atlas**, plus an `:anim` sibling when the chunk has animated tiles (`createTilemapMeshes`). Extra atlases append `:a1`, `:a2`, … Children store `metadata.tilemapTextureGuid` so `applyTilemapAlbedoTextures` can bind each atlas. Chunk children are named `editorActor:<id>:<layer>:<cx>:<cy>` (optional `:aN` / `:anim`). Editor picking maps those names back to the actor id; Play picking still walks parents to `actor-N`.
+
+Tilemap atlas materials stay **unlit and double-sided** in both 2D and 3D scenes. They disable material fog and image processing to preserve atlas colors, and retain their atlas when attached beneath actors or components with mesh/model material overrides. Alpha testing still discards transparent atlas pixels.
 
 `tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw: animated tileset ids (`animation.length > 0`) use the first frame’s UVs on the `:anim` mesh. Per-layer `sortingLayer` / `orderInLayer` write `renderingGroupId` / `alphaIndex`. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`).
 
@@ -73,9 +75,10 @@ Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 ### Tileset
 
 - Preview fills the panel (`object-contain` atlas, grid from `tileWidth/Height`, `margin`, `spacing` in **texture space** — not a CSS grid of `tiles.length`).
-- Toolbar: **Move** (default, Lucide `HandIcon`) | **Select**, then None / Full / Chain and **Paint Collision**. In Move, one-finger drag pans; a tap (movement < 8px) still selects. In Select, tap a cell as before. Two-finger pinch/pan and wheel zoom stay in both tools. `tileset-preview-cell-{id}`. Full cells show a hatch; Chain draws the stored polyline on the selected cell.
+- Toolbar: **Move** (default, Lucide `HandIcon`) | **Select**, then None / Full / Chain and **Paint Collision**. In Move, one-finger drag pans; a tap (movement < 8px) still selects. In Select, drag a rectangle to select several cells; collision, flags, animation, and chain-point edits apply to every selected tile. Selection commits on release; a second finger or canceled pointer discards the pending selection. Two-finger pinch/pan and wheel zoom stay in both tools. `tileset-preview-cell-{id}`. Full cells show a hatch; Chain draws the stored polyline.
 - `Empty` when no Texture is assigned.
 - Picking a Texture sets `atlasWidth/Height` from `img.naturalWidth/Height` and runs `ensureTilesetTiles`. Atlas size fields in Details are read-only.
+- Tile Width and Tile Height keep local drafts until **Confirm Tile Size** applies both together, avoiding atlas reconstruction on every keystroke. Undo/redo refreshes the drafts from the restored dimensions.
 
 ### Tilemap
 
