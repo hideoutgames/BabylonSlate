@@ -391,7 +391,7 @@ describe("SettingsModal project authoring", () => {
     const myGame = screen.getByTestId("search-item-MyGame");
     expect(gameInstance.textContent).toContain("Class");
     expect(myGame.textContent).toContain("Class");
-    expect(myGame.textContent).toContain("Project");
+    expect(myGame.title).toContain("Project");
     expect(screen.queryByTestId("search-item-Tools")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-MyGame"));
     expect(updateProjectSettings).toHaveBeenCalledWith(

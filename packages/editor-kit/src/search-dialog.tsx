@@ -251,7 +251,7 @@ export function SearchDialog({
                       role="option"
                       tabIndex={-1}
                       aria-selected={index === activeIndex}
-                      title={item.group ? [item.label, item.description, item.group].filter(Boolean).join(" · ") : undefined}
+                      title={item.group ? `${item.label} · ${item.group}` : undefined}
                       className={cn(
                         buttonVariants({ variant: "ghost", size: "touch" }),
                         "h-full w-full min-h-0 justify-between gap-2 overflow-hidden text-left touch-pan-y",

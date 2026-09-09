@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import {
   filterSearchItems,
   groupSearchItems,
@@ -445,6 +445,7 @@ describe("AssetPicker", () => {
   });
 
   it("shows the asset type and path so identical names can be distinguished", () => {
+    const onPick = vi.fn();
     render(
       <AssetPicker
         open
@@ -456,18 +457,30 @@ describe("AssetPicker", () => {
             type: "Scene",
             path: "assets/main.scene.babasset",
           },
+          {
+            guid: "g2",
+            name: "main.scene",
+            type: "Scene",
+            path: "assets/levels/main.scene.babasset",
+          },
         ]}
         allowNone={false}
-        onPick={() => {}}
+        onPick={onPick}
       />,
     );
     const row = screen.getByTestId("search-item-g1");
-    expect(row.textContent).toContain("main");
+    expect(within(row).getByText("main")).toBeTruthy();
     expect(row.textContent).toContain("Scene");
     expect(row.textContent).toContain("assets/main.scene.babasset");
     expect(
       row.querySelector("[data-type-family]")?.getAttribute("data-type-family"),
     ).toBe("scene");
+    const otherRow = screen.getByTestId("search-item-g2");
+    expect(within(otherRow).getByText("main")).toBeTruthy();
+    expect(otherRow.textContent).toContain("Scene · assets/levels/main.scene.babasset");
+    expect(otherRow.title).toBe("main · assets/levels/main.scene.babasset");
+    fireEvent.click(otherRow);
+    expect(onPick).toHaveBeenCalledWith("g2");
   });
 
   it("still matches a search query against the asset path", () => {

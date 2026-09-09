@@ -44,7 +44,7 @@ export function AssetPicker({
     const rows: SearchDialogItem[] = filtered.map((asset) => ({
       id: asset.guid,
       label: displayPickerTitle(asset.name),
-      description: asset.type,
+      description: [asset.type, asset.path].filter(Boolean).join(" · "),
       group: asset.path,
       leading: (
         <TypeVisualIcon visual={resolveTypeVisual({ assetType: asset.type })} />
