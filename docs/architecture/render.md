@@ -209,3 +209,9 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 **Invalidation wiring**: `RenderScheduler.invalidate(reason)` — editor tools call `"camera"`, `"gizmo"`, and `"selection"`; scene sync uses `"asset"`. Gizmo drags, viewport gestures, WASD fly, and the editor joystick acquire continuous-render leases. See [scene-editing.md](scene-editing.md).
 
 See [bridge.md](bridge.md) for the snapshot wire format and [perf-budget.md](../design/perf-budget.md) for budgets.
+
+### Editor Drop
+
+`EditorTools.dropSelectedActors(ids)` is a pure placement query in `editor-drop.ts`. It uses the current authored scene and resolved asset collision geometry, independently of editor picking and collision debug visibility. Bottom-center downward probes honor a strict 10,000-unit limit. All destinations are calculated before converting to actor-local positions, including compensation when a selected ancestor also moves.
+
+React sends `editor.drop` through `engineCommandBus`; only the engine with the matching `editorViewportId` responds with `editor.drop.result`. `requestEditorDrop` pairs viewport and request identities and removes its temporary listener after synchronous dispatch. Results contain plain transforms; the Scene and Prefab document command paths own mutation, undo, and persistence. Closed viewports and empty results are no-ops. No Play session or physics simulation is started for this authoring action.
