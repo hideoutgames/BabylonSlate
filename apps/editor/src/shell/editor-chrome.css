@@ -798,6 +798,10 @@ body:has(.slate-editor)
   .slate-editor .outliner-row-auxiliary {
     display: none;
   }
+  .slate-editor [data-testid^="property-vector3-"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 70px), 1fr));
+  }
   .slate-editor [data-slot="property-grid"] [data-slot="field"] {
     padding: 5px 12px 10px;
   }
