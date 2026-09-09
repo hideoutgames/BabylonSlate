@@ -22,6 +22,7 @@ export async function runStage(profile, command, args, options = {}) {
       ? null
       : await acquireResources(request, {
           signal,
+          env: environment,
           onQueued: () =>
             process.stdout.write(
               JSON.stringify({ event: "queued", profile }) + "\n",
