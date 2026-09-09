@@ -36,6 +36,13 @@ const patrol = {
 };
 
 describe("behaviour tree debugger", () => {
+  it("keeps the inspector usable for cyclic and bigint blackboard values", () => {
+    const cyclic: Record<string, unknown> = { name: "Gate" };
+    cyclic.self = cyclic;
+    const view = render(<DebugBehaviourTreeDialog open onOpenChange={vi.fn()} trees={[{ ...patrol, blackboard: { Counter: BigInt(42), Goal: cyclic } }]} />);
+    expect(view.getByText(/42n/)).toBeTruthy();
+    expect(view.getByRole("combobox", { name: "Behaviour Tree" })).toBeTruthy();
+  });
   it("shows actor/tree identity, active logic and current blackboard, and clears removed trees", () => {
     const view = render(
       <DebugBehaviourTreeDialog open onOpenChange={vi.fn()} trees={[patrol]} />,
