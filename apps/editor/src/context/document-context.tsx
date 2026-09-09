@@ -365,6 +365,7 @@ interface DocumentContextValue {
   repairAfterAssetDelete: (
     deletedGuids: ReadonlySet<string>,
     deletedClassNames?: ReadonlySet<string>,
+    onProgress?: (currentName: string) => Promise<void>,
   ) => Promise<void>;
   setActiveDocument: (id: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
@@ -1771,12 +1772,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (
       deletedGuids: ReadonlySet<string>,
       deletedClassNames: ReadonlySet<string> = new Set(),
+      onProgress?: (currentName: string) => Promise<void>,
     ) => {
       await projectService.clearDeletedAssetReferences(deletedGuids, {
         deletedClassNames,
+        onProgress,
       });
       for (const doc of documentService.getOpenDocumentsOrdered()) {
         if (doc.ref.kind === "content-browser" || !doc.content) continue;
+        await onProgress?.(doc.ref.path);
         const walked = clearDeletedAssetRefs(
           doc.content,
           deletedGuids,
@@ -1790,11 +1794,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         }
       }
       const current = projectDocumentRef.current;
+      await onProgress?.("Refreshing Assets");
       await projectService.remountRegistry();
       const paths = projectService.registry?.listDocumentPaths({
         rootId: "project",
       });
       if (current) {
+        await onProgress?.("Saving Project");
         const settings = clearDeletedRefsFromProjectSettings(
           current.settings,
           deletedGuids,
