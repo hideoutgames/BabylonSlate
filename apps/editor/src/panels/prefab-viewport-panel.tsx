@@ -1,6 +1,7 @@
 import type { Engine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { requestEditorDrop } from "@babylonslate/core";
 import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
@@ -48,6 +49,7 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
+import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 
 /**
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
@@ -58,12 +60,19 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const dropViewportId = useId();
+  const [dropReady, setDropReady] = useState<{
+    handle: EngineHandle;
+    loadKey: string;
+  } | null>(null);
   const joystickLeaseRef = useRef<(() => void) | null>(null);
   const {
     components,
     selectedId,
+    selectedIds,
     setSelectedId,
     commitComponentGizmo,
+    commitComponentTransforms,
     applyPivotTransform,
   } = usePrefabEditing();
   const {
@@ -93,6 +102,11 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       classParentLookup(listed),
     ).includes("SceneLayerActor");
   }, [assetRegistry, documentId, openDocuments]);
+  const prefabPhysicsWorld = overlayPrefab
+    ? "2d"
+    : physicsWorldFromOpenDocuments(openDocuments);
+  const prefabPhysicsWorldRef = useRef(prefabPhysicsWorld);
+  prefabPhysicsWorldRef.current = prefabPhysicsWorld;
   const {
     gizmoTool,
     snapEnabled,
@@ -143,6 +157,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     if (!canvas || !sharedEngine) return;
     const handle = createEngine(canvas, {
       editor: true,
+      editorViewportId: dropViewportId,
       previewLighting: !overlayPrefab,
       sharedEngine,
       present: "rtt",
@@ -235,7 +250,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     // Mode/tool changes are pushed below; remount when the app Engine swaps
     // or when overlay vs world manipulator kind is known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sharedEngine, overlayPrefab]);
+  }, [sharedEngine, overlayPrefab, dropViewportId]);
 
   useEffect(() => {
     if (engineRef.current) {
@@ -251,15 +266,48 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     assetRegistry?.list() ?? [],
   );
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+  const dropLoadKey = JSON.stringify([
+    previewLoadKey,
+    prefabPhysicsWorld,
+    materialLibraryKey,
+    textureLodKey,
+  ]);
+  const dropActorIds = selectedIds.filter(
+    (id) =>
+      id !== PREFAB_ROOT_ID &&
+      components.some((component) => component.id === id),
+  );
+  const dropDisabled =
+    dropActorIds.length === 0 ||
+    playing ||
+    preparing ||
+    !engineRef.current?.editor ||
+    dropReady?.handle !== engineRef.current ||
+    dropReady?.loadKey !== dropLoadKey;
+
+  const dropSelection = () => {
+    if (dropDisabled) return;
+    const transforms = requestEditorDrop(dropViewportId, dropActorIds);
+    if (transforms.length === 0) return;
+    commitComponentTransforms(
+      transforms.map(({ actorId, position, rotation, scale }) => ({
+        componentId: actorId,
+        transform: { position, rotation, scale },
+      })),
+    );
+  };
 
   useEffect(() => {
-    engineRef.current?.loadScene(previewSceneFor(componentsRef.current));
-  }, [previewLoadKey, sharedEngine]);
+    engineRef.current?.loadScene(
+      previewSceneFor(componentsRef.current, prefabPhysicsWorld),
+    );
+  }, [previewLoadKey, sharedEngine, prefabPhysicsWorld]);
 
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle) return;
-    const scene = previewSceneFor(componentsRef.current);
+    setDropReady(null);
+    const scene = previewSceneFor(componentsRef.current, prefabPhysicsWorld);
     let cancelled = false;
     void (async () => {
       try {
@@ -313,6 +361,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
         });
+        await handle.whenEditorModelsReady();
+        if (cancelled || engineRef.current !== handle) return;
+        setDropReady({ handle, loadKey: dropLoadKey });
       } catch (error) {
         console.error("[prefab] failed to load mesh assets", error);
       }
@@ -327,6 +378,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     previewLoadKey,
     materialLibraryKey,
     textureLodKey,
+    dropLoadKey,
+    prefabPhysicsWorld,
     sharedEngine,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
@@ -411,18 +464,18 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     if (!handle?.editor) return;
     const selectedActors = prefabSelectedActorIds(selectedId);
     handle.editor.setSelectedActors(selectedActors);
-    const scene = previewSceneFor(components);
+    const scene = previewSceneFor(components, prefabPhysicsWorld);
     handle.editor.syncSelectionDebug({
       sceneData: scene,
-      selectedActorIds: selectedActors,
+      selectedActorIds: selectedIds,
       selectedComponentIds:
-        selectedId === PREFAB_ROOT_ID
+        selectedIds.includes(PREFAB_ROOT_ID)
           ? components.map((component) => component.id)
-          : selectedId
-            ? [selectedId]
+          : selectedIds.length > 0
+            ? selectedIds
             : undefined,
     });
-  }, [components, selectedId, engineEpoch]);
+  }, [components, selectedId, selectedIds, prefabPhysicsWorld, engineEpoch]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -441,22 +494,23 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       visuals: () => {
         const sync = engineRef.current?.editor?.sync;
         if (!sync) return [];
-        return previewSceneFor(componentsRef.current).actors.flatMap(
-          (actor) => {
-            const visual = sync.visualMeshesForActor(actor.id)[0];
-            if (!visual) return [];
-            visual.computeWorldMatrix(true);
-            const position = visual.getAbsolutePosition();
-            return [
-              {
-                ...materialViewportTestSnapshot(visual),
-                actorId: actor.id,
-                position: [position.x, position.y, position.z],
-                materialName: visual.material?.name ?? null,
-              },
-            ];
-          },
-        );
+        return previewSceneFor(
+          componentsRef.current,
+          prefabPhysicsWorldRef.current,
+        ).actors.flatMap((actor) => {
+          const visual = sync.visualMeshesForActor(actor.id)[0];
+          if (!visual) return [];
+          visual.computeWorldMatrix(true);
+          const position = visual.getAbsolutePosition();
+          return [
+            {
+              ...materialViewportTestSnapshot(visual),
+              actorId: actor.id,
+              position: [position.x, position.y, position.z],
+              materialName: visual.material?.name ?? null,
+            },
+          ];
+        });
       },
     };
     return () => {
@@ -476,6 +530,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
             showDragSelect={false}
             showViewportModeToggle={!overlayPrefab}
             showGizmoTools={!overlayPrefab}
+            onDrop={dropSelection}
+            dropDisabled={dropDisabled}
           />
         </div>
       </div>

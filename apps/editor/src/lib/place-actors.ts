@@ -37,6 +37,7 @@ export type PlaceActorKind =
   | { type: "blocking-volume" }
   | { type: "audio" }
   | { type: "particle" }
+  | { type: "tilemap" }
   | { type: "empty" }
   | {
       type: "overlay-2d";
@@ -141,6 +142,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     category: "Particles",
     kind: { type: "particle" },
   },
+  {
+    id: "tilemap",
+    title: "Tilemap",
+    category: "Rendering",
+    kind: { type: "tilemap" },
+  },
 ];
 
 const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
@@ -207,6 +214,7 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "Model",
   "Audio",
   "ParticleSystem",
+  "Tilemap",
 ]);
 
 export function prefabComponentsForGuid(
@@ -352,6 +360,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   }
   if (kind.type === "particle") {
     return resolveTypeVisual({ classId: "ParticleComponent", family: "class" });
+  }
+  if (kind.type === "tilemap") {
+    return resolveTypeVisual({ classId: "TilemapComponent", family: "class" });
   }
   if (kind.type === "overlay-2d") {
     return resolveTypeVisual({ classId: kind.classId, family: "class" });
@@ -522,6 +533,18 @@ export function spawnPlacedActor(
       ],
     }));
   }
+  if (kind.type === "tilemap") {
+    return finish(createActor(id, "Tilemap", {
+      transform,
+      components: [
+        {
+          id: `${id}-tilemap`,
+          classId: "TilemapComponent",
+          properties: defaultPropertiesFor("TilemapComponent"),
+        },
+      ],
+    }));
+  }
   if (kind.type === "asset") {
     if (kind.assetType === "Class") {
       return finish(createActor(id, kind.name, {
@@ -562,6 +585,21 @@ export function spawnPlacedActor(
               ...defaultPropertiesFor("ParticleComponent"),
               particleSystemGuid: kind.guid,
               playOnStart: true,
+            },
+          },
+        ],
+      }));
+    }
+    if (kind.assetType === "Tilemap") {
+      return finish(createActor(id, kind.name, {
+        transform,
+        components: [
+          {
+            id: `${id}-tilemap`,
+            classId: "TilemapComponent",
+            properties: {
+              ...defaultPropertiesFor("TilemapComponent"),
+              assetGuid: kind.guid,
             },
           },
         ],

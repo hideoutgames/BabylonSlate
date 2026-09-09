@@ -490,38 +490,6 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   font-weight: 400;
   color: var(--muted-foreground);
 }
-.homepage-empty-object {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 170px;
-  height: 210px;
-  background: linear-gradient(140deg, var(--accent), var(--card) 65%);
-  border: 1px solid var(--border);
-  border-radius: 24px;
-  transform: rotate(-8deg);
-  box-shadow:
-    18px 24px 45px var(--launcher-shadow),
-    inset 1px 1px 0 #ffffff20;
-}
-.homepage-empty-object > span {
-  position: absolute;
-  inset: 0;
-  border: 1px solid var(--border);
-  background: var(--card);
-  border-radius: inherit;
-  z-index: -1;
-  transform: translate(14px, 10px) rotate(7deg);
-}
-.homepage-empty-object > span:nth-child(2) {
-  transform: translate(27px, 19px) rotate(14deg);
-  z-index: -2;
-}
-.homepage-empty-object img {
-  width: 76px;
-  height: 76px;
-  opacity: 0.8;
-}
 .homepage-notice,
 .homepage-error {
   width: calc(100% - 40px);
@@ -999,14 +967,6 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
   .homepage-empty {
     gap: 28px;
   }
-  .homepage-empty-object {
-    width: 132px;
-    height: 164px;
-  }
-  .homepage-empty-object img {
-    width: 60px;
-    height: 60px;
-  }
   .homepage-composer {
     width: 100vw;
     height: var(--homepage-visible-height, 100dvh);
@@ -1142,9 +1102,6 @@ body:has([data-slate-theme="light"]) [data-testid="homepage-project-menu"] {
 .homepage-sculpture canvas {
   width: 100%;
   height: 100%;
-}
-.homepage-empty-art:has([data-ready="true"]) .homepage-empty-object {
-  visibility: hidden;
 }
 @media (max-width: 699px), (max-height: 519px) {
   .homepage-empty-art {

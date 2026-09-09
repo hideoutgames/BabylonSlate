@@ -1,5 +1,6 @@
 import {
   Color3,
+  ImageProcessingConfiguration,
   Material,
   StandardMaterial,
   type AbstractMesh,
@@ -66,6 +67,11 @@ function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
   return [...map.keys()].sort().join(",");
 }
 
+function payloadMapFingerprint(map: ReadonlyMap<string, unknown> | undefined): string {
+  if (!map || map.size === 0) return "";
+  return JSON.stringify([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
+}
+
 function assetByteLength(bytes: Uint8Array | Blob): number {
   return bytes instanceof Uint8Array ? bytes.byteLength : bytes.size;
 }
@@ -102,8 +108,8 @@ export function meshAssetFingerprint(
     `ppu:${assets.pixelsPerUnit ?? ""}`,
     `sprites:${sortedMapKeys(assets.spritePayloads)}`,
     `spriteAnims:${sortedMapKeys(assets.spriteAnimations)}`,
-    `tilemaps:${sortedMapKeys(assets.tilemaps)}`,
-    `tilesets:${sortedMapKeys(assets.tilesets)}`,
+    `tilemaps:${payloadMapFingerprint(assets.tilemaps)}`,
+    `tilesets:${payloadMapFingerprint(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
     `texPx:${
       assets.texturePixelSizes
@@ -156,6 +162,8 @@ export function modelSlotFingerprint(
     .join(";");
 }
 
+const ownedAlbedoMaterials = new WeakMap<AbstractMesh, StandardMaterial>();
+
 export function applyAlbedoTexture(
   mesh: AbstractMesh,
   scene: Scene,
@@ -173,12 +181,22 @@ export function applyAlbedoTexture(
   );
   const material = new StandardMaterial(`albedo:${textureGuid}`, scene);
   material.disableLighting = true;
+  texture.hasAlpha = true;
   material.diffuseTexture = texture;
   material.emissiveTexture = texture;
   material.emissiveColor = Color3.White();
   material.useAlphaFromDiffuseTexture = true;
   material.transparencyMode = Material.MATERIAL_ALPHATEST;
   material.alphaCutOff = 0.4;
+  const previous = ownedAlbedoMaterials.get(mesh);
+  previous?.dispose(false, false);
+  if (!previous) {
+    mesh.onDisposeObservable.addOnce(() => {
+      ownedAlbedoMaterials.get(mesh)?.dispose(false, false);
+      ownedAlbedoMaterials.delete(mesh);
+    });
+  }
+  ownedAlbedoMaterials.set(mesh, material);
   mesh.material = material;
 }
 
@@ -188,8 +206,17 @@ export function applyTilemapAlbedoTextures(
   scene: Scene,
   assets?: MeshAssetContext,
 ): void {
+  const imageProcessing = new ImageProcessingConfiguration();
+  imageProcessing.isEnabled = false;
   for (const child of mesh.getChildMeshes()) {
     const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
+    const before = child.material;
     applyAlbedoTexture(child, scene, guid, assets);
+    const material = child.material;
+    if (material === before || !(material instanceof StandardMaterial)) continue;
+    // Tilemaps remain readable from either side, including inside 3D actors.
+    material.backFaceCulling = false;
+    material.fogEnabled = false;
+    material.imageProcessingConfiguration = imageProcessing;
   }
 }

@@ -37,6 +37,7 @@ import {
 } from "./scene-perf";
 import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
+import { isTilemapChunkMesh } from "./tilemap-mesh";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
@@ -483,7 +484,7 @@ export class EditorSceneSync {
       const visual = visualForMeshComponent(root, actor.id, component.id);
       if (!visual) continue;
       for (const target of meshAndDescendantMeshes(visual)) {
-        if (isColliderVisualTree(target)) continue;
+        if (isColliderVisualTree(target) || isTilemapChunkMesh(target)) continue;
         if (!this.constructionMaterials.has(target)) continue;
         target.material = this.constructionMaterials.get(target) ?? null;
       }
@@ -528,7 +529,9 @@ export class EditorSceneSync {
     options?: { unlit?: boolean },
   ): void {
     if (!guid) return;
-    const targets = meshAndDescendantMeshes(visual);
+    const targets = meshAndDescendantMeshes(visual).filter(
+      (target) => !isTilemapChunkMesh(target),
+    );
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;
       if (!this.constructionMaterials.has(target)) {
