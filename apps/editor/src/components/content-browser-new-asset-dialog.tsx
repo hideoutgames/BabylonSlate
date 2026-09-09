@@ -65,7 +65,7 @@ export interface ContentBrowserNewAssetDialogProps {
 
 function navigateChoice(event: KeyboardEvent<HTMLDivElement>) {
   if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  const choices = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)')];
+  const choices = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)'));
   if (!choices.length) return;
   event.preventDefault();
   event.stopPropagation();
