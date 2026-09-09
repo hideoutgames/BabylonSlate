@@ -159,7 +159,7 @@ describe("compiled runtime input rebinding", () => {
     runtime.spawnScriptedActor({ classId: "Rebinder" });
     runtime.start();
     expect(JSON.parse(runtime.getLogRing().entries().at(-1)!.message)).toEqual(
-      { ...JSON.parse(data), version: 2 },
+      JSON.parse(data),
     );
     expect(runtime.inputBindings.getBinding("action", "Jump", 0)?.code).toBe(
       "KeyJ",

@@ -4,8 +4,7 @@ import { normalizeInputAssetPayload } from "./input-assets";
 describe("input asset controls", () => {
   it("preserves stable bindings and axis tuning while assigning missing identities", () => {
     const asset = normalizeInputAssetPayload("InputAxis", {
-      kind: "2d",
-      legacyName: "Move",
+      valueType: "2d",
       bindings: [
         {
           id: "left",
@@ -25,7 +24,6 @@ describe("input asset controls", () => {
     });
     expect(asset).toEqual({
       valueType: "2d",
-      legacyName: "Move",
       bindings: [
         {
           id: "left",

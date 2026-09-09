@@ -1,6 +1,7 @@
 import { createDefaultMigrationRegistry } from "../migration";
 import {
   createActor,
+  createDefaultInputAssets,
   createDefaultScene,
   createEmptyProject,
   createMeshComponent,
@@ -22,6 +23,7 @@ export async function minimalProjectFiles(
   project.metadata.createdAt = project.metadata.updatedAt =
     "2026-01-01T00:00:00.000Z";
   project.settings.startupSceneGuid = sceneGuid;
+  project.settings.input = { actions: [], axes: [] };
   const scene = createDefaultScene();
   scene.actors = [
     createActor("actor-1", "Actor", {
@@ -38,7 +40,7 @@ export async function minimalProjectFiles(
     members: [],
     components: [createMeshComponent("prefab-mesh", "box")],
   };
-  return new Map([
+  const files = new Map<string, Uint8Array>([
     [PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project))],
     [
       MAIN_SCENE_FILE,
@@ -67,12 +69,33 @@ export async function minimalProjectFiles(
       ),
     ],
   ]);
+  for (const [
+    index,
+    { type, name: inputName, ...payload },
+  ] of createDefaultInputAssets().entries()) {
+    const extension = type === "InputAction" ? "inputaction" : "inputaxis";
+    files.set(
+      `assets/Input/${inputName}.${extension}.babasset`,
+      await encodeAssetDocument(
+        {
+          guid: `00000000-0000-4000-8000-${String(index + 3).padStart(12, "0")}`,
+          type,
+          name: inputName,
+          version: 1,
+          payload,
+        },
+        { headerMeta: { valueType: payload.valueType } },
+      ),
+    );
+  }
+  return files;
 }
 
 export async function installMinimalProject(
   storage: ProjectStorage,
 ): Promise<void> {
   await storage.mkdir("assets/.blobs", true);
+  await storage.mkdir("assets/Input", true);
   for (const [path, bytes] of await minimalProjectFiles())
     await storage.writeBinary(path, bytes);
 }

@@ -106,13 +106,13 @@ const authoredSignature = (binding: AxisBinding) =>
     binding.sensitivity ?? 1,
   ]);
 
-function matchingMappings<
-  T extends { id?: string; legacyName?: string; name: string },
->(rows: readonly T[], key: string): T[] {
+function matchingMappings<T extends { id?: string; name: string }>(
+  rows: readonly T[],
+  key: string,
+): T[] {
   const byId = rows.filter((row) => row.id === key);
   if (byId.length) return byId;
-  const byAlias = rows.filter((row) => row.legacyName === key);
-  return byAlias.length ? byAlias : rows.filter((row) => row.name === key);
+  return rows.filter((row) => row.name === key);
 }
 
 function slot(
@@ -388,7 +388,7 @@ export class InputBindingProfile implements InputBindingControls {
 
   exportBindings(): string {
     return JSON.stringify({
-      version: 2,
+      version: 1,
       overrides: [...this.overrides.values()],
     });
   }
@@ -402,10 +402,7 @@ export class InputBindingProfile implements InputBindingControls {
     }
     if (!parsed || typeof parsed !== "object") return false;
     const document = parsed as Record<string, unknown>;
-    if (
-      (document.version !== 1 && document.version !== 2) ||
-      !Array.isArray(document.overrides)
-    )
+    if (document.version !== 1 || !Array.isArray(document.overrides))
       return false;
     const next = new Map<string, BindingOverride>();
     for (const value of document.overrides) {

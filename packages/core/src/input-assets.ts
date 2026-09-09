@@ -17,7 +17,7 @@ export interface BindingModifiers {
   meta?: boolean;
 }
 export interface ActionBinding {
-  /** Stable within its owning input asset; legacy mappings may omit it. */
+  /** Stable within its owning input asset; low-level runtime mappings may omit it. */
   id?: string;
   device: InputDevice;
   code: string;
@@ -34,8 +34,6 @@ export interface AxisBinding extends ActionBinding {
 export interface InputAssetPayload {
   valueType: "button" | "1d" | "2d";
   bindings: Array<AxisBinding & { id: string }>;
-  /** Read-only compatibility identity for graphs made before input assets. */
-  legacyName?: string;
 }
 export interface InputAssetDefinition extends InputAssetPayload {
   guid: string;
@@ -139,12 +137,9 @@ export function normalizeInputAssetPayload(
     valueType:
       type === "InputAction"
         ? "button"
-        : source.valueType === "2d" || source.kind === "2d"
+        : source.valueType === "2d"
           ? "2d"
           : "1d",
     bindings,
-    ...(typeof source.legacyName === "string" && source.legacyName
-      ? { legacyName: source.legacyName }
-      : {}),
   };
 }

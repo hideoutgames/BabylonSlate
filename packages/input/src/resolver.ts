@@ -471,13 +471,6 @@ export class InputResolver {
       if (mapping.id) exposeAction(mapping.id, mapping.name);
     for (const mapping of this.mappings.axes)
       if (mapping.id) exposeAxis(mapping.id, mapping.name);
-    // Authored compatibility aliases take precedence over newly created display names.
-    for (const mapping of this.mappings.actions)
-      if (mapping.id && mapping.legacyName)
-        exposeAction(mapping.id, mapping.legacyName);
-    for (const mapping of this.mappings.axes)
-      if (mapping.id && mapping.legacyName)
-        exposeAxis(mapping.id, mapping.legacyName);
     return {
       inputs,
       actions,
@@ -520,7 +513,6 @@ export class InputResolver {
   isActionHeld(action: string): boolean {
     const mapping =
       this.mappings.actions.find((row) => row.id === action) ??
-      this.mappings.actions.find((row) => row.legacyName === action) ??
       this.mappings.actions.find((row) => row.name === action);
     return mapping?.id
       ? this.inputStates[mapping.id]?.held === true

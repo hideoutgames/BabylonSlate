@@ -11,7 +11,6 @@ export function inputMappingsFromAssets(
       .map((asset) => ({
         id: asset.guid,
         name: asset.name,
-        legacyName: asset.legacyName,
         bindings: asset.bindings,
       })),
     axes: assets
@@ -19,7 +18,6 @@ export function inputMappingsFromAssets(
       .map((asset) => ({
         id: asset.guid,
         name: asset.name,
-        legacyName: asset.legacyName,
         kind: asset.valueType === "2d" ? "2d" : "1d",
         bindings: asset.bindings,
       })),
