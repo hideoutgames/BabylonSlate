@@ -13,9 +13,10 @@ here:
 2. Every test exercises the real thing
 ```
 
-Strict TDD produces both naturally: a test written first and watched
-failing against real code has already proven it can fail, and only earns
-a mock when the real dependency proves slow or external.
+A failing regression test can help confirm a bug, but tests may be
+written before or after implementation. What matters is that the test
+detects a plausible production failure through real behavior. Only add
+a mock when the real dependency is slow, external, or requires isolation.
 
 ## Principle 1: Name the Break
 
@@ -149,10 +150,10 @@ BEFORE adding a mock or test helper:
 
 ## Tests Ship With the Implementation
 
-The TDD cycle — failing test, minimal implementation, refactor — is what
-"complete" means. Ship the tests the behavior needs and only those:
-trivial code and human prose earn none, and a test written to satisfy
-process costs maintenance forever.
+Ship the tests the behavior needs, whether written before or after the
+implementation. Completion follows the repository's verification and
+merge gates. Trivial code and human prose usually earn no new tests;
+a test written only to satisfy process costs maintenance forever.
 
 ## The Mutation Check
 

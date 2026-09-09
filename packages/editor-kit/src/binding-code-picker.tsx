@@ -120,6 +120,7 @@ export function BindingCodePicker({
         variant="outline"
         size={size}
         className="justify-start"
+        id={testId}
         data-testid={testId}
         aria-label={pickerTitle(device)}
       >

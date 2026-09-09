@@ -155,6 +155,7 @@ function DevicePicker({
       }}
     >
       <SelectTrigger
+        id={`${id}-device`}
         className="w-full"
         aria-label="Device"
         data-testid={`${id}-device`}
@@ -293,7 +294,7 @@ function ActionBindingRow({
     >
       <div className="flex flex-wrap items-end gap-2">
         <Field className="min-w-32 flex-1">
-          <FieldLabel>Device</FieldLabel>
+          <FieldLabel htmlFor={`${id}-device`}>Device</FieldLabel>
           <DevicePicker
             id={id}
             device={binding.device}
@@ -301,7 +302,7 @@ function ActionBindingRow({
           />
         </Field>
         <Field className="min-w-40 flex-[2]">
-          <FieldLabel>Control</FieldLabel>
+          <FieldLabel htmlFor={`${id}-code`}>Control</FieldLabel>
           <BindingCodePicker
             size="sm"
             device={binding.device}
@@ -378,7 +379,7 @@ function axisBindingSummary(binding: AxisBinding, kind: "1d" | "2d"): string {
     parts.push(`Held ${value > 0 ? "+" : ""}${value}`);
   }
   if (binding.invert) parts.push("Inverted");
-  return parts.join(" ? ");
+  return parts.join(" / ");
 }
 
 function AxisBindingRow({
@@ -412,7 +413,7 @@ function AxisBindingRow({
     >
       <div className="flex flex-wrap items-end gap-2">
         <Field className="min-w-32 flex-1">
-          <FieldLabel>Device</FieldLabel>
+          <FieldLabel htmlFor={`${id}-device`}>Device</FieldLabel>
           <DevicePicker
             id={id}
             device={binding.device}
@@ -422,7 +423,7 @@ function AxisBindingRow({
           />
         </Field>
         <Field className="min-w-40 flex-[2]">
-          <FieldLabel>Control</FieldLabel>
+          <FieldLabel htmlFor={`${id}-code`}>Control</FieldLabel>
           <BindingCodePicker
             size="sm"
             device={binding.device}
