@@ -165,7 +165,7 @@ describe("Scene Outliner folders", () => {
   });
 
   it.each(["Folder Only", "Folder And Contents"])(
-    "restores the complete folder hierarchy in one undo after %s",
+    "restores the complete folder hierarchy and order in one undo after %s",
     (choice) => {
       const before: SerializedScene = {
         ...createDefaultScene(),
@@ -173,6 +173,9 @@ describe("Scene Outliner folders", () => {
           { id: "outer", name: "Outer", parentFolderId: null },
           { id: "inner", name: "Inner", parentFolderId: "outer" },
           { id: "nested", name: "Nested", parentFolderId: "inner" },
+          { id: "unrelated", name: "Unrelated", parentFolderId: null },
+          { id: "nested-b", name: "Nested B", parentFolderId: "inner" },
+          { id: "nested-c", name: "Nested C", parentFolderId: "inner" },
         ],
         actors: [
           { ...createActor("lamp", "Lamp"), folderId: "inner" },
@@ -194,13 +197,19 @@ describe("Scene Outliner folders", () => {
       const deleted = harness.scene!;
       expect(applySceneChange).toHaveBeenCalledTimes(1);
       if (choice === "Folder And Contents") {
-        expect(deleted.folders.map((folder) => folder.id)).toEqual(["outer"]);
+        expect(deleted.folders.map((folder) => folder.id)).toEqual([
+          "outer",
+          "unrelated",
+        ]);
         expect(deleted.actors.map((actor) => actor.id)).toEqual(["control"]);
         expect(screen.queryByTestId(`tree-row-${actorRowId("lamp")}`)).toBeNull();
       } else {
         expect(deleted.folders).toEqual([
           before.folders[0],
           { id: "nested", name: "Nested", parentFolderId: "outer" },
+          before.folders[3],
+          { id: "nested-b", name: "Nested B", parentFolderId: "outer" },
+          { id: "nested-c", name: "Nested C", parentFolderId: "outer" },
         ]);
         expect(deleted.actors[0]!.folderId).toBe("outer");
         expect(deleted.actors).toHaveLength(4);

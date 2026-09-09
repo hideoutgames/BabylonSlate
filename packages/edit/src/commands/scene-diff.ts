@@ -184,7 +184,8 @@ function diffFolders(
     }
   }
 
-  for (const [id, folder] of beforeFolders) {
+  // Undo restores the original indices, so remove from the end first.
+  for (const [id, folder] of [...beforeFolders].reverse()) {
     if (!afterFolders.has(id)) {
       commands.push(
         new RemoveFolderCommand(
