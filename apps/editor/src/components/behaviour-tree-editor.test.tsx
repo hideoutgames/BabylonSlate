@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
@@ -294,6 +294,55 @@ function treeWithMisorderedSiblings(): BehaviourTreeDocument {
 }
 
 describe("BehaviourTreeEditor", () => {
+  it("adds Move To Blackboard Key and offers only spatial linked keys", async () => {
+    const doc = treeWithWait();
+    renderTree(doc);
+    await act(() => store.applyAssetDocumentChange(BB_ID, {
+      name: "Guard",
+      keys: [
+        ...defaultBlackboard.keys,
+        { name: "position", type: { kind: "vec3" } },
+        { name: "position2d", type: { kind: "vec2" } },
+        { name: "target", type: { kind: "objectRef", classId: "BObject" } },
+        { name: "actor", type: { kind: "actorRef", classId: "Actor" } },
+      ],
+    }));
+    fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.click(await screen.findByTestId("node-palette-item-bt.task.moveToBlackboardKey"));
+    await waitFor(() => expect(screen.queryByTestId("node-palette")).toBeNull());
+    const added = lastCommit().nodes.find((node) => node.classId === "bt.task.moveToBlackboardKey")!;
+    expect(added).toBeDefined();
+    fireEvent.click(screen.getByTestId(`bt-node-${added.id}`));
+    fireEvent.click(screen.getByTestId("property-key"));
+    expect(await screen.findByRole("option", { name: "Position 2D" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Alert" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Hp" })).toBeNull();
+    expect(screen.getByRole("option", { name: "Actor" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Target" })).toBeTruthy();
+    const option = screen.getByRole("option", { name: "Position" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    await waitFor(() => {
+      expect(lastCommit().nodes.find((node) => node.id === added.id)?.properties).toEqual({
+        key: "position",
+        acceptRadius: 0.5,
+      });
+    });
+  });
+
+  it("keeps Move To Blackboard Key as a None-only selector when no compatible keys exist", () => {
+    const doc = treeWithWait();
+    const task = doc.nodes.find((node) => node.id === "task")!;
+    task.classId = "bt.task.moveToBlackboardKey";
+    task.properties = { key: "", acceptRadius: 0.5 };
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    const picker = screen.getByTestId("property-key");
+    expect(picker.tagName).not.toBe("INPUT");
+    fireEvent.click(picker);
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["None"]);
+  });
+
   it("renders the default selector/sequence/succeed tree and Auto Arrange", () => {
     renderTree(createDefaultBehaviourTree("Patrol"));
     expect(screen.getByTestId("behaviour-tree-editor")).toBeTruthy();

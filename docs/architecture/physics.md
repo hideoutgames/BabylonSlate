@@ -13,7 +13,7 @@ Shared surface for simulation in the game worker (engineplan §2.1, §2.3, §13.
 
 | Export | Role |
 | --- | --- |
-| `PhysicsBackend` | Port: world lifecycle, bodies/colliders, `step(dt)`, `pollContacts()`, sync queries, impulses, live `updateBody` / `updateCollider` |
+| `PhysicsBackend` | Port: world lifecycle, bodies/colliders, `step(dt)`, `pollContacts()`, sync queries, impulses, partial world-axis `setBodyLinearVelocity` for dynamic bodies, live `updateBody` / `updateCollider` |
 | `PhysicsWorldKind` | `"3d"` \| `"2d"` — one kind per scene |
 | `NullPhysicsBackend` | In-memory no-op for tests without wasm |
 | `createPhysicsBackend` | Lazy factory; dynamic-imports only the needed engine |
@@ -84,6 +84,8 @@ Havok compound shapes share one actor-pair overlap lifetime: Begin Overlap fires
 Spawn/attach creates bodies; destroy removes them (`PhysicsWorldSync` drops backend bodies when the actor leaves the live set). Bodies use the same composed world-space actor hierarchy as render snapshots. After `step`, body poses are converted through the inverse parent transform back into Actor-local TRS before `postPhysics`; a parented body therefore does not jump between local simulation and world rendering. Static and kinematic bodies copy the composed actor transform on resync; dynamic bodies keep the simulation transform. `addImpulse` is a no-op when the actor has no body. Tilemap chain colliders skip `collision: false` layers and missing guid/tileset payloads.
 
 Graph **Set** of RigidBody / Collider catalog variables is not store-only. `setVariableOn` → `refreshComponent` → `PhysicsWorldSync.applyComponent`: `updateBody(body:${actor.guid}, RigidBodyTuning)` retunes mass, linear/angular damping, gravity scale, and motion type; `updateCollider(actor-scoped collider ID, ColliderTuning)` retunes `isTrigger`, friction, restitution, layer, and mask. Software, Rapier, and Havok implement both. Collider `shape` is not a catalog knob — changing shape still requires recreate. Unit coverage lives in `packages/runtime/src/physics-sync.test.ts`, `packages/physics/src/physics.test.ts`, and `packages/physics/src/pairing.test.ts`.
+
+In 3D worlds, dynamic actors with `NavAgentComponent` retain physics position authority and gravity. Navigation supplies XZ steering while preserving vertical velocity; the crowd follows the resolved body position. Attaching a Behaviour Tree or stopping its movement task does not freeze a falling body. Navigation does not change `motionType` or `gravityScale`; kinematic bodies still require explicit movement. See [navigation.md](navigation.md#dynamic-rigid-bodies).
 
 ### Collider TRS bake
 

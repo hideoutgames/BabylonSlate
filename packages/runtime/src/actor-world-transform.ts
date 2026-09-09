@@ -3,6 +3,30 @@ import type { Actor } from "@babylonslate/object-model";
 
 export type ActorTransformMap = ReadonlyMap<string, Transform>;
 
+/** Resolve one current pose without caching transforms changed by this tick's scripts. */
+export function actorWorldTransform(
+  actor: Actor,
+  actorsByGuid: ReadonlyMap<string, Actor>,
+): Transform | null {
+  const chain = [actor.transform];
+  let parentId = actorParentGuid(actor);
+  const visited = new Set([actor.guid]);
+  while (parentId) {
+    if (visited.has(parentId)) return null;
+    visited.add(parentId);
+    const parent = actorsByGuid.get(parentId);
+    if (!parent) break;
+    if (parent.destroyed) return null;
+    chain.push(parent.transform);
+    parentId = actorParentGuid(parent);
+  }
+  let transform = chain[chain.length - 1]!;
+  for (let index = chain.length - 2; index >= 0; index -= 1) {
+    transform = composeParentChildTransform(transform, chain[index]!);
+  }
+  return transform;
+}
+
 /** Compose every actor's local hierarchy into world space once per tick. */
 export function actorWorldTransforms(
   actors: readonly Actor[],

@@ -176,13 +176,13 @@ describe("native mobile account requirement", () => {
     auth.verifyCode.mockReturnValueOnce(new Promise(() => {}));
     renderMobile();
     const email = await screen.findByLabelText("Email Address");
-    expect(document.activeElement).toBe(email);
+    await waitFor(() => expect(document.activeElement).toBe(email));
     fireEvent.change(email, { target: { value: "ada@example.test" } });
     fireEvent.click(
       screen.getByRole("button", { name: "Continue With Email" }),
     );
     const code = await screen.findByLabelText("Verification Code");
-    expect(document.activeElement).toBe(code);
+    await waitFor(() => expect(document.activeElement).toBe(code));
     fireEvent.change(code, { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify & Continue" }));
     expect(

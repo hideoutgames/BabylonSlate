@@ -129,6 +129,29 @@ describe("Havok 3D backend uses Babylon Physics V2", () => {
     backend.dispose();
   });
 
+  it("horizontal velocity updates preserve a dynamic body's accumulated fall", async () => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+    try {
+      spawnFallingBox(backend);
+      for (let i = 0; i < 15; i += 1) backend.step(1 / 60);
+      const before = backend.getBodyTransform("dynamic")!.position;
+      for (let i = 0; i < 15; i += 1) {
+        backend.setBodyLinearVelocity("dynamic", { x: 2, z: 0 });
+        backend.step(1 / 60);
+      }
+      const after = backend.getBodyTransform("dynamic")!.position;
+      expect(after.x - before.x).toBeCloseTo(0.5, 1);
+      expect(after.y).toBeLessThan(before.y - 0.7);
+      backend.setBodyLinearVelocity("dynamic", { x: 0, z: 0 });
+      const stopped = backend.getBodyTransform("dynamic")!.position;
+      backend.step(1 / 60);
+      expect(backend.getBodyTransform("dynamic")!.position.x).toBeCloseTo(stopped.x, 5);
+      expect(backend.getBodyTransform("dynamic")!.position.y).toBeLessThan(stopped.y);
+    } finally {
+      backend.dispose();
+    }
+  });
+
   it("HavokPlugin applyImpulse moves a dynamic body and shapeCast hits", async () => {
     const backend = await createPhysicsBackend({
       kind: "3d",

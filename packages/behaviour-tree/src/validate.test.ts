@@ -82,4 +82,18 @@ describe("validateBehaviourTree", () => {
     task.properties = { key: "anything" };
     expect(codes(doc)).not.toContain("bt.missing_blackboard_key");
   });
+
+  it("flags a Move To Blackboard Key whose linked key was changed to a nonspatial type", () => {
+    const doc = createDefaultBehaviourTree();
+    const task = doc.nodes.find((node) => node.kind === "task")!;
+    task.classId = "BTTask_MoveToBlackboardKey";
+    task.properties = { key: "target", acceptRadius: 0.5 };
+    const diagnostics = validateBehaviourTree(doc, {
+      assetGuid: "tree-1",
+      blackboardKeyEntries: [{ name: "target", type: { kind: "bool" } }],
+    });
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ code: "bt.invalid_blackboard_key_type", nodeId: task.id }),
+    ]);
+  });
 });

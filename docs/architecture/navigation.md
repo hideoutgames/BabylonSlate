@@ -23,6 +23,7 @@ Do **not** use Babylon `RecastJSPlugin`. `@recast-navigation/core` + `generators
 - Crowd steps with a fixed dt and the same navmesh bytes are identical across two backends in unit tests; if that ever fails, record agent pose into the P8 trace instead of recomputing.
 - `worldToRecast` / `recastToWorld`: 2D world `(x, y, _)` ↔ Recast `(x, 0, y)`. Property-tested. No other code touches Recast axes. Runtime remaps queries and crowd pose when `physicsWorld` is `2d`.
 - `facingYawFromVelocity`: Recast XZ yaw (`atan2(x, z)`), keep previous yaw below a min-length guard.
+- `syncAgentPosition(id, position)` projects a resolved physics position onto the crowd corridor without resetting its destination or accumulated velocity.
 - `solidBlockerMesh` / `recastWalkableQuadFromXy` / `recastWallsFromXyChains`: bake solids. Walls are thick boxes so Recast can voxelise them.
 - `navmeshChunk` / `navmeshBytesFromChunks` / `extraChunksWithNavmesh` / `NAVMESH_CHUNK_ID = "navmesh"`. Pass the chunk as `extraChunks` on Scene save; `extraChunksFromDecoded` already preserves it. Not a Content Browser type.
 
@@ -57,6 +58,12 @@ Bake modal phases:
 ## Scripting and BT MoveTo
 
 Compiled graphs call `ctx.findPathTo` / `ctx.moveTo` / `ctx.stopMovement` / `ctx.isPathValid` / `ctx.getClosestNavigablePoint` / `ctx.getRandomPointInRadius` / `ctx.addObstacle` / `ctx.removeObstacle`. `scripting-nodes` must not import `@babylonslate/navigation`.
+
+**Move To Blackboard Key** uses the same navigation path as Move To, resolving a Vector or spatial Object/Actor Reference from the linked Blackboard. It follows changes to that value and stops when the target becomes invalid or the task is aborted.
+
+### Dynamic rigid bodies
+
+In 3D worlds, a dynamic RigidBody remains responsible for the actor's position. NavAgent supplies XZ steering, preserves vertical velocity, and synchronizes the crowd with the physics result instead of overwriting the actor with the navmesh height. Idle agents still fall, collider offsets remain intact, and stopping navigation does not cancel a fall. An airborne movement request is retained while the actor reaches the navmesh; arrival is checked against the actual actor position. Existing static/kinematic motion settings, `gravityScale`, and 2D crowd navigation remain unchanged.
 
 `BTTask_MoveTo` without a task host still succeeds (package stub). The runtime host requests `setNavAgentTarget` and returns `running` until the agent is inside `acceptRadius` (default 0.75). Aborting a running MoveTo calls `stopNavAgent` so the crowd does not keep the aborted target.
 

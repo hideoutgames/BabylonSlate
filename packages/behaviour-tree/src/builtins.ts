@@ -2,6 +2,7 @@
 export const BT_CLASS_ALIASES: Record<string, string> = {
   BTTask_Wait: "bt.task.wait",
   BTTask_MoveTo: "bt.task.moveTo",
+  BTTask_MoveToBlackboardKey: "bt.task.moveToBlackboardKey",
   BTTask_RotateToFace: "bt.task.rotateToFace",
   BTTask_PlayAnimation: "bt.task.playAnimation",
   BTTask_PlaySound: "bt.task.playSound",
@@ -23,6 +24,7 @@ export const BUILTIN_TASKS = new Set([
   "bt.task.wait",
   "bt.task.setBlackboard",
   "bt.task.moveTo",
+  "bt.task.moveToBlackboardKey",
   "bt.task.rotateToFace",
   "bt.task.playAnimation",
   "bt.task.playSound",
@@ -31,6 +33,7 @@ export const BUILTIN_TASKS = new Set([
 /** Built-ins that need a runtime host when one is attached (else package stubs succeed). */
 export const HOST_TASKS = new Set([
   "bt.task.moveTo",
+  "bt.task.moveToBlackboardKey",
   "bt.task.rotateToFace",
   "bt.task.playAnimation",
   "bt.task.playSound",

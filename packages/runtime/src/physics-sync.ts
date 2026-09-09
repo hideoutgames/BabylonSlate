@@ -255,6 +255,12 @@ export class PhysicsWorldSync {
     this.backend.addImpulse(bodyId, impulse, strength);
   }
 
+  /** Steering updates velocity through physics without replacing its pose. */
+  setActorLinearVelocity(actorId: string, velocity: Partial<Vec3>): void {
+    const bodyId = this.bodyByActor.get(actorId);
+    if (bodyId) this.backend.setBodyLinearVelocity(bodyId, velocity);
+  }
+
   /** Apply mid-Play RigidBody / Collider inspector knobs to the live backend. */
   applyComponent(component: ActorComponent): void {
     const owner = component.owner;
@@ -663,7 +669,7 @@ function worldScale(
   return { ...world.scale };
 }
 
-function actorLocalPhysicsTransform(
+export function actorLocalPhysicsTransform(
   world: PhysicsTransform,
   actor: Actor,
   transforms: ActorTransformMap,

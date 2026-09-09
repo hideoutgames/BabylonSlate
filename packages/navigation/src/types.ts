@@ -33,6 +33,8 @@ export type NavigationBackend = {
   removeAgent(id: string): void;
   agentPosition(id: string): NavPoint | null;
   agentVelocity(id: string): NavPoint | null;
+  /** Correct a physically resolved pose without clearing the path or velocity. */
+  syncAgentPosition(id: string, position: NavPoint): boolean;
   setAgentTarget(id: string, target: NavPoint): boolean;
   stepCrowd(dtSeconds: number): void;
 };
