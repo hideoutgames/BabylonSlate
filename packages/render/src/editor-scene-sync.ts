@@ -181,7 +181,7 @@ export class EditorSceneSync {
   }): void {
     this.selectedActorIds = new Set(options.selectedActorIds);
     this.selectedComponentIds = new Set(options.selectedComponentIds ?? []);
-    if (this.lastScene && this.syncColliderComponentVisibility(this.lastScene)) {
+    if (this.lastScene && this.syncCollisionVisibility(this.lastScene)) {
       freezeEditorActiveMeshes(this.scene);
       this.scheduler?.invalidate("selection");
     }
@@ -269,7 +269,7 @@ export class EditorSceneSync {
       assets: this.assets,
     });
     this.onAfterApply?.();
-    this.syncColliderComponentVisibility(sceneData);
+    this.syncCollisionVisibility(sceneData);
     for (const actor of sceneData.actors) {
       const mesh = this.meshes.get(actor.id);
       if (mesh) freezeStaticActorWorldMatrix(mesh);
@@ -356,13 +356,13 @@ export class EditorSceneSync {
         syncMeshCollisionDashes(visual, component, assets);
       }
     }
-    this.syncColliderComponentVisibility(sceneData);
+    this.syncCollisionVisibility(sceneData);
     // New and newly revealed dashes must enter the frozen active mesh list.
     freezeEditorActiveMeshes(this.scene);
     this.scheduler?.invalidate("asset");
   }
 
-  private syncColliderComponentVisibility(sceneData: SerializedScene): boolean {
+  private syncCollisionVisibility(sceneData: SerializedScene): boolean {
     const actors = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
     let changed = false;
     for (const actor of sceneData.actors) {
@@ -377,6 +377,17 @@ export class EditorSceneSync {
         actor.components.map((component) => [component.id, component]),
       );
       for (const component of actor.components) {
+        if (component.classId === "MeshComponent") {
+          const visual = visualForMeshComponent(root, actor.id, component.id);
+          for (const collision of visual?.getChildMeshes(true) ?? []) {
+            if (!(collision.metadata as { meshCollisionDash?: boolean } | null)?.meshCollisionDash) {
+              continue;
+            }
+            if (collision.isEnabled(false) === actor.visible) continue;
+            collision.setEnabled(actor.visible);
+            changed = true;
+          }
+        }
         if (component.classId !== "ColliderComponent") continue;
         const visual = visualForMeshComponent(root, actor.id, component.id);
         if (!visual) continue;

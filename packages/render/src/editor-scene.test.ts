@@ -739,6 +739,8 @@ describe("EditorSceneSync", () => {
     expect(drawnDashes()).toHaveLength(0);
     sync.setDrawMeshCollision(true);
     expect(drawnDashes()).toHaveLength(0);
+    sync.apply(document);
+    expect(drawnDashes().length).toBeGreaterThan(0);
   });
 
   it("does not draw MeshComponent collision dashes in a 2D world when Show Collisions is on", () => {
