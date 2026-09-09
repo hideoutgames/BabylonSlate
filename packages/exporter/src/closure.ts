@@ -153,6 +153,8 @@ export function collectExportReachability(
           for (const guid of text2dImageGuidsFromScene(scene)) refs.add(guid);
         }
       } else if (asset.type === "Class" || asset.type === "Graph") {
+        const parentClass = asset.parentClass?.trim();
+        if (parentClass) refs.add(parentClass);
         const graph: SerializedGraph | null = input.graphByGuid(asset.guid);
         if (graph) {
           collectTypedRefs(graph, refs);

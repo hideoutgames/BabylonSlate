@@ -52,11 +52,12 @@ describe("collectAndExportGame", () => {
           { id: "spawn", type: "actor.spawn", position: { x: 0, y: 0 }, data: { "default:classId": "SpawnChild" } },
           { id: "print", type: "debug.print", position: { x: 0, y: 100 }, data: { "default:value": "Unused" } },
         ] : [],
-        edges: [], components: [mesh],
+        edges: [],
         members: source === "Class variable"
           ? [{ id: "spawn", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnChild", defaultValue: "SpawnChild" }]
           : [],
       },
+      "class-base": { nodes: [], edges: [], components: [mesh] },
       "class-child": { nodes: [], edges: [], components: [childCollider] },
     };
     const scene = {
@@ -68,12 +69,13 @@ describe("collectAndExportGame", () => {
       assets: [
         asset({ guid: "scene-main", type: "Scene", name: "Main" }),
         asset({ guid: "class-main", type: "Class", name: "main", parentClass: "Actor" }),
-        asset({ guid: "class-child", type: "Class", name: "SpawnChild", parentClass: "main" }),
+        asset({ guid: "class-base", type: "Class", name: "SpawnBase", parentClass: "Actor" }),
+        asset({ guid: "class-child", type: "Class", name: "SpawnChild", parentClass: "SpawnBase" }),
         asset({ guid: "class-unused", type: "Class", name: "Unused", parentClass: "Actor" }),
       ],
       plugins: [],
       projectPluginOverrides: {},
-      parentOf: (id) => id === "SpawnChild" ? "main" : "Actor",
+      parentOf: (id) => id === "SpawnChild" ? "SpawnBase" : "Actor",
       sceneByGuid: (guid) => guid === "scene-main" ? scene : null,
       graphByGuid: (guid) => graphs[guid] ?? null,
       bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-main" ? scene : graphs[guid] ?? {})),
@@ -86,9 +88,9 @@ describe("collectAndExportGame", () => {
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
     const scripts = parseScriptRegistry(new TextDecoder().decode(result.value.files.get("scripts.js")));
-    expect(scripts.map((script) => script.classId).sort()).toEqual(["SpawnChild", "main"]);
+    expect(scripts.map((script) => script.classId).sort()).toEqual(["SpawnBase", "SpawnChild", "main"]);
     expect(scripts.find((script) => script.classId === "SpawnChild")?.components).toEqual([
-      { ...mesh, inheritedFrom: "main" },
+      { ...mesh, inheritedFrom: "SpawnBase" },
       childCollider,
     ]);
   });
