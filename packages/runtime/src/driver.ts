@@ -60,6 +60,7 @@ import {
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
+  parseRigidBodyProperties,
   SoftwarePhysicsBackend,
   type PhysicsBackend,
   type PhysicsWorldKind,
@@ -110,12 +111,13 @@ import {
 } from "@babylonslate/behaviour-tree";
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { shouldSpawnScriptedActor } from "./play-load";
-import { PhysicsWorldSync } from "./physics-sync";
+import { actorLocalPhysicsTransform, PhysicsWorldSync } from "./physics-sync";
 import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
 import { actorParentGuid, actorWorldTransforms } from "./actor-world-transform";
+import { blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
   createNavigationBackend,
@@ -426,6 +428,8 @@ class InProcessRuntime implements RuntimeDriver {
   private nav: NavigationBackend | null = null;
   private readonly navAgentByActor = new Map<string, string>();
   private readonly navYawByActor = new Map<string, number>();
+  private readonly navTargetByActor = new Map<string, NavPoint>();
+  private readonly navSteeredActors = new Set<string>();
   private readonly audioAssetGuids = new Set<string>();
   private readonly animClipCatalog = new Map<string, AnimClipCatalogEntry>();
   private readonly btPlayAnimOwnedSlots = new Set<number>();
@@ -1768,13 +1772,22 @@ class InProcessRuntime implements RuntimeDriver {
 
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean {
     if (!this.nav) return false;
+    const actor = this.world.findActor(actorGuid);
+    if (!actor || actor.destroyed || !actor.components.some(
+      (component) => component.classId === "NavAgentComponent" && !component.destroyed,
+    )) return false;
+    const destination = this.toNav(target);
+    if (!this.nav.closestPoint(destination)) return false;
     if (!this.navAgentByActor.has(actorGuid)) {
-      const actor = this.world.findActor(actorGuid);
-      if (actor) this.registerNavAgent(actor);
+      this.registerNavAgent(actor);
     }
     const agentId = this.navAgentByActor.get(actorGuid);
-    if (!agentId) return false;
-    return this.nav.setAgentTarget(agentId, this.toNav(target));
+    if (!agentId && !this.isDynamicNavActor(actor)) return false;
+    if (agentId && !this.nav.setAgentTarget(agentId, destination)) return false;
+    // A falling actor may not be close enough to a polygon yet. Keep its
+    // request until physics brings it within reach of the mesh.
+    this.navTargetByActor.set(actorGuid, { ...destination });
+    return true;
   }
 
   findNavPath(from: NavPoint, to: NavPoint): NavPoint[] {
@@ -1798,6 +1811,10 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   stopNavAgent(actorGuid: string): void {
+    this.navTargetByActor.delete(actorGuid);
+    if (this.navSteeredActors.delete(actorGuid)) {
+      this.physicsSync.setActorLinearVelocity(actorGuid, { x: 0, z: 0 });
+    }
     const agentId = this.navAgentByActor.get(actorGuid);
     if (!agentId || !this.nav) return;
     this.nav.stopAgent(agentId);
@@ -1836,6 +1853,20 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.navAgentByActor.clear();
     this.navYawByActor.clear();
+    this.navTargetByActor.clear();
+    this.navSteeredActors.clear();
+  }
+
+  private isDynamicNavActor(actor: Actor): boolean {
+    if (this.physicsWorldKind !== "3d") return false;
+    const rigid = actor.components.find(
+      (component) => component.classId === "RigidBodyComponent" && !component.destroyed,
+    );
+    return !!rigid && parseRigidBodyProperties(Object.fromEntries(rigid.variables)).motionType === "dynamic";
+  }
+
+  private navActorWorldPosition(actor: Actor): NavPoint {
+    return actorWorldTransforms(this.world.getActors()).get(actor.guid)?.position ?? actor.transform.position;
   }
 
   private registerNavAgents(): void {
@@ -1855,16 +1886,14 @@ class InProcessRuntime implements RuntimeDriver {
     const params = parseNavAgentParams(
       Object.fromEntries(component.variables),
     );
-    const id = this.nav.addAgent(
-      this.toNav({
-        x: actor.transform.position.x,
-        y: actor.transform.position.y,
-        z: actor.transform.position.z,
-      }),
-      params,
-    );
+    const world = this.toNav(this.navActorWorldPosition(actor));
+    const position = this.isDynamicNavActor(actor) ? this.nav.closestPoint(world) : world;
+    if (!position) return;
+    const id = this.nav.addAgent(position, params);
     if (!id) return;
     this.navAgentByActor.set(actor.guid, id);
+    const target = this.navTargetByActor.get(actor.guid);
+    if (target) this.nav.setAgentTarget(id, target);
   }
 
   private updateNavAgentParams(actor: Actor): void {
@@ -1971,16 +2000,47 @@ class InProcessRuntime implements RuntimeDriver {
   private tickCrowd(): void {
     if (!this.nav) return;
     this.syncNavCostVolumes();
+    this.registerNavAgents();
+    const worldTransforms = actorWorldTransforms(this.world.getActors());
+    const physicalAgents = new Set<string>();
+    for (const [actorGuid, agentId] of this.navAgentByActor) {
+      const actor = this.world.findActor(actorGuid);
+      if (!actor || actor.destroyed) {
+        this.stopNavAgent(actorGuid);
+        this.nav.removeAgent(agentId);
+        this.navAgentByActor.delete(actorGuid);
+        this.navYawByActor.delete(actorGuid);
+        continue;
+      }
+      if (!this.isDynamicNavActor(actor)) continue;
+      const position = worldTransforms.get(actorGuid)?.position ?? actor.transform.position;
+      if (this.nav.syncAgentPosition(agentId, position)) {
+        physicalAgents.add(actorGuid);
+      } else {
+        // Physics may carry an actor away from the mesh (for example a jump).
+        // Reattach with the pending target once its physical pose is reachable.
+        this.nav.removeAgent(agentId);
+        this.navAgentByActor.delete(actorGuid);
+        if (this.navSteeredActors.delete(actorGuid)) {
+          this.physicsSync.setActorLinearVelocity(actorGuid, { x: 0, z: 0 });
+        }
+      }
+    }
     this.nav.stepCrowd(this.simulationDt());
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);
       if (!actor || actor.destroyed) continue;
+      if (physicalAgents.has(actorGuid)) {
+        if (this.navTargetByActor.has(actorGuid)) {
+          const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
+          this.physicsSync.setActorLinearVelocity(actorGuid, { x: velocity.x, z: velocity.z });
+          this.navSteeredActors.add(actorGuid);
+        }
+        continue;
+      }
       const position = this.nav.agentPosition(agentId);
       if (!position) continue;
       const world = this.fromNav(position);
-      actor.transform.position.x = world.x;
-      actor.transform.position.y = world.y;
-      actor.transform.position.z = world.z;
       const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
       const previous = this.navYawByActor.get(actorGuid) ?? 0;
       const yaw = facingYawFromVelocity(velocity, previous);
@@ -1990,10 +2050,12 @@ class InProcessRuntime implements RuntimeDriver {
           ? ([0, 0, (yaw * 180) / Math.PI] as [number, number, number])
           : ([0, (yaw * 180) / Math.PI, 0] as [number, number, number]);
       const quat = eulerDegreesToQuaternion(euler);
-      actor.transform.rotation.x = quat[0];
-      actor.transform.rotation.y = quat[1];
-      actor.transform.rotation.z = quat[2];
-      actor.transform.rotation.w = quat[3];
+      const local = actorLocalPhysicsTransform({
+        position: world,
+        rotation: { x: quat[0], y: quat[1], z: quat[2], w: quat[3] },
+      }, actor, worldTransforms);
+      Object.assign(actor.transform.position, local.position);
+      Object.assign(actor.transform.rotation, local.rotation);
     }
   }
 
@@ -2209,6 +2271,10 @@ class InProcessRuntime implements RuntimeDriver {
     if (builtinClassId(node.classId) === "bt.task.moveTo") {
       return this.tickMoveTo(actor, node, memory);
     }
+    if (builtinClassId(node.classId) === "bt.task.moveToBlackboardKey") {
+      const key = typeof node.properties?.key === "string" ? node.properties.key : "";
+      return this.tickMoveTo(actor, node, memory, blackboardTargetPosition(blackboard[key], this.world));
+    }
     if (builtinClassId(node.classId) === "bt.task.rotateToFace") {
       return this.tickRotateToFace(actor, node);
     }
@@ -2249,28 +2315,51 @@ class InProcessRuntime implements RuntimeDriver {
     actor: Actor,
     node: { properties?: Record<string, unknown> },
     memory: Record<string, unknown>,
+    dest: NavPoint | null = navPointFromUnknown(node.properties?.destination),
   ): BtResult {
-    const dest = navPointFromUnknown(node.properties?.destination);
-    if (!dest) return "failure";
+    if (!dest) {
+      this.stopNavAgent(actor.guid);
+      return "failure";
+    }
     const target = this.toNav(dest);
-    if (memory.__moveRequested !== true) {
+    const previous = navPointFromUnknown(memory.__moveDestination);
+    if (memory.__moveRequested !== true || !previous ||
+      previous.x !== dest.x || previous.y !== dest.y || previous.z !== dest.z) {
+      if (!this.setNavAgentTarget(actor.guid, dest)) {
+        this.stopNavAgent(actor.guid);
+        return "failure";
+      }
       memory.__moveRequested = true;
-      if (!this.setNavAgentTarget(actor.guid, dest)) return "failure";
+      memory.__moveDestination = { ...dest };
     }
     const agentId = this.navAgentByActor.get(actor.guid);
-    const position = agentId ? this.nav?.agentPosition(agentId) : null;
-    if (!position) return "failure";
+    const dynamic = this.isDynamicNavActor(actor);
+    const world = dynamic ? this.navActorWorldPosition(actor) : null;
+    const position = world
+      ? this.nav?.closestPoint(this.toNav(world))
+      : agentId ? this.nav?.agentPosition(agentId) : null;
+    if (!position) return dynamic && this.navTargetByActor.has(actor.guid) ? "running" : "failure";
     const accept =
       typeof node.properties?.acceptRadius === "number" &&
       Number.isFinite(node.properties.acceptRadius)
-        ? node.properties.acceptRadius
+        ? Math.max(0, node.properties.acceptRadius)
         : 0.75;
+    if (world) {
+      const navComponent = actor.components.find((component) =>
+        component.classId === "NavAgentComponent" && !component.destroyed);
+      const height = parseNavAgentParams(Object.fromEntries(navComponent?.variables ?? [])).height;
+      // Root pivots can be at the feet or inside the collider. The crowd is
+      // surface-based; do not report arrival for a distant airborne owner.
+      if (Math.abs(world.y - position.y) > Math.max(height, accept)) return "running";
+    }
     const distance = Math.hypot(
       position.x - target.x,
       position.y - target.y,
       position.z - target.z,
     );
-    return distance <= accept ? "success" : "running";
+    if (distance > accept) return "running";
+    this.stopNavAgent(actor.guid);
+    return "success";
   }
 
   private tickRotateToFace(
@@ -2448,7 +2537,7 @@ class InProcessRuntime implements RuntimeDriver {
     delete memory.__moveRequested;
     delete memory.__soundPlayed;
     const classId = builtinClassId(node.classId);
-    if (classId === "bt.task.moveTo") {
+    if (classId === "bt.task.moveTo" || classId === "bt.task.moveToBlackboardKey") {
       this.stopNavAgent(actor.guid);
     }
     if (classId === "bt.task.playAnimation") {
@@ -2530,7 +2619,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emitBtMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
         continue;
       }
-      const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid"));
+      const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
       const previous = this.btEvalBySlot.get(slotId) ?? null;
       const blackboard: BlackboardValues = previous
         ? { ...previous.blackboard }
@@ -2570,11 +2659,12 @@ class InProcessRuntime implements RuntimeDriver {
       this.btEvalBySlot.set(slotId, next);
       this.currentBtNodeId = null;
       this.currentBtAssetGuid = null;
+      const blackboardSnapshot = snapshotBlackboard(next.blackboard);
       const payload = JSON.stringify({
         status: next.status,
         btNodeId: next.btNodeId,
         lastResults: next.lastResults,
-        blackboard: next.blackboard,
+        blackboard: blackboardSnapshot,
         stack: next.stack,
       });
       if (this.lastBtStateJson.get(slotId) === payload) continue;
@@ -2585,7 +2675,7 @@ class InProcessRuntime implements RuntimeDriver {
         status: next.status,
         btNodeId: next.btNodeId,
         lastResults: next.lastResults,
-        blackboard: next.blackboard,
+        blackboard: blackboardSnapshot,
         stack: next.stack,
       });
     }
@@ -3606,7 +3696,7 @@ class InProcessRuntime implements RuntimeDriver {
           status: state.status,
           btNodeId: state.btNodeId,
           lastResults: { ...state.lastResults },
-          blackboard: { ...state.blackboard },
+          blackboard: snapshotBlackboard(state.blackboard),
           stack: state.stack.map((frame) => ({ ...frame })),
           nodeMemory: Object.fromEntries(
             Object.entries(state.nodeMemory).map(([id, memory]) => [

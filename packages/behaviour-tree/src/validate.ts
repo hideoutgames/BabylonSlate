@@ -1,8 +1,10 @@
 import { diagnostic, type Diagnostic, type TypeContext } from "@babylonslate/scripting";
-import type { BehaviourTreeDocument, BtNode } from "./types";
+import type { BehaviourTreeDocument, BlackboardKey, BtNode } from "./types";
+import { propertyFieldsForClassId } from "./catalog";
 
 export type BehaviourTreeValidateContext = Pick<TypeContext, "assetGuid"> & {
   blackboardKeys?: readonly string[];
+  blackboardKeyEntries?: readonly BlackboardKey[];
 };
 
 function byId(doc: BehaviourTreeDocument): Map<string, BtNode> {
@@ -98,8 +100,9 @@ export function validateBehaviourTree(
         }),
       );
     }
-    if (ctx.blackboardKeys) {
-      const known = new Set(ctx.blackboardKeys);
+    const keyNames = ctx.blackboardKeyEntries?.map((key) => key.name) ?? ctx.blackboardKeys;
+    if (keyNames) {
+      const known = new Set(keyNames);
       for (const key of referencedKeys(node)) {
         if (known.has(key)) continue;
         out.push(
@@ -112,6 +115,18 @@ export function validateBehaviourTree(
           }),
         );
       }
+    }
+    for (const field of propertyFieldsForClassId(node.classId, node.properties)) {
+      if (!field.blackboardKeyKinds) continue;
+      const key = ctx.blackboardKeyEntries?.find((entry) => entry.name === node.properties[field.key]);
+      if (!key || field.blackboardKeyKinds.includes(key.type.kind)) continue;
+      out.push(diagnostic({
+        code: "bt.invalid_blackboard_key_type",
+        message: `Blackboard key "${key.name}" must be a Vector or Object Reference`,
+        assetGuid: ctx.assetGuid,
+        graphId,
+        nodeId: node.id,
+      }));
     }
     for (const childId of node.children) {
       if (!nodes.has(childId)) {

@@ -54,7 +54,7 @@ Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 
 ## Validation
 
-`validateBehaviourTree(doc, ctx)` emits `Diagnostic` values (`bt.missing_root`, `bt.unknown_child`, `bt.cycle`, `bt.composite_empty`, `bt.task_has_children`, `bt.parallel_too_small`, `bt.missing_blackboard_key`). One broken tree per code in `packages/behaviour-tree/fixtures/`. `bt.missing_blackboard_key` runs only when `ctx.blackboardKeys` is provided.
+`validateBehaviourTree(doc, ctx)` emits `Diagnostic` values (`bt.missing_root`, `bt.unknown_child`, `bt.cycle`, `bt.composite_empty`, `bt.task_has_children`, `bt.parallel_too_small`, `bt.missing_blackboard_key`). Structural fixtures live in `packages/behaviour-tree/fixtures/`. Key checks accept `ctx.blackboardKeys` or typed `ctx.blackboardKeyEntries`; the latter also reports `bt.invalid_blackboard_key_type` if a Move To Blackboard Key target is retyped to a nonspatial value.
 
 `registerBehaviourTreeValidationRules()` installs a `bt.structural` rule on the scripting hook. `validateGraphs([], { assetGuid, behaviourTree })` runs the same codes so Compiler Results stay one list. `TypeContext.behaviourTree` is an optional unknown payload (parsed in this package).
 

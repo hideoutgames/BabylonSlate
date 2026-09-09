@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   readActorSlot,
   snapshotFloatCount,
+  type CommandMessage,
 } from "@babylonslate/bridge";
 import {
   createActor,
@@ -138,7 +139,8 @@ const physicalMoveTree = {
   nodes: [{
     id: "move", kind: "task" as const, classId: "BTTask_MoveTo",
     children: [], decorators: [], services: [],
-    properties: { destination: { x: 4, y: 0, z: 4 }, acceptRadius: 0.75 },
+    // References may point at a pivot above the walkable surface.
+    properties: { destination: { x: 4, y: 1.5, z: 4 }, acceptRadius: 0.75 },
   }],
 };
 
@@ -193,10 +195,12 @@ describe("runtime navmesh import and crowd", () => {
   });
 
   it.each(["software", "havok"] as const)("%s: an airborne BT owner falls then navigates with its collider and parent offset", async (backend) => {
+    const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seedDemoActors: false, playScene: physicalAgentScene({ y: 6, moveTo: true }),
       preferSoftwarePhysics: backend === "software",
       behaviourTrees: { "move-tree": physicalMoveTree },
+      onCommand: (command) => commands.push(command),
     });
     try {
       await runtime.loadPhysics();
@@ -207,6 +211,7 @@ describe("runtime navmesh import and crowd", () => {
       const actor = runtime.getWorld().findActor("agent")!;
       expect(actor.transform.position.y).toBeLessThan(5.5);
       expect(actor.transform.position.y).toBeGreaterThan(3);
+      expect(commands.filter((command) => command.type === "btState").at(-1)).toMatchObject({ status: "running" });
       for (let i = 0; i < 330; i += 1) runtime.tick();
       const body = runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:agent")!;
       expect(Math.hypot(body.position.x - 4, body.position.z - 4)).toBeLessThan(1);
@@ -214,6 +219,7 @@ describe("runtime navmesh import and crowd", () => {
       expect(body.position.x).toBeCloseTo(actor.transform.position.x + 2, 5);
       expect(body.position.y).toBeCloseTo(actor.transform.position.y, 5);
       expect(body.position.z).toBeCloseTo(actor.transform.position.z + 1, 5);
+      expect(commands.filter((command) => command.type === "btState").at(-1)).toMatchObject({ status: "success" });
     } finally {
       runtime.stop();
     }

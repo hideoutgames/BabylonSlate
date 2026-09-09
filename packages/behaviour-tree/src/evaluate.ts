@@ -115,6 +115,7 @@ function tickTask(
   switch (classId) {
     case "bt.task.succeed":
     case "bt.task.moveTo":
+    case "bt.task.moveToBlackboardKey":
     case "bt.task.rotateToFace":
     case "bt.task.playAnimation":
     case "bt.task.playSound":

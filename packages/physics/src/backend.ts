@@ -29,6 +29,8 @@ export interface PhysicsBackend {
   destroyBody(bodyId: string): void;
   setBodyTransform(bodyId: string, transform: PhysicsTransform): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
+  /** Set only the supplied world velocity axes of a dynamic body. */
+  setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;
   setBodyMotionType(
     bodyId: string,
     motionType: RigidBodyDesc["motionType"],

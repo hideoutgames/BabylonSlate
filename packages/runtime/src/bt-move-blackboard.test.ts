@@ -55,10 +55,16 @@ describe("Move To Blackboard Key", () => {
           createActor("target", "Target", {
             parentId: "parent",
             transform: { position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
-            components: [{
-              id: "point", classId: "MeshComponent", properties: {},
-              transform: { position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
-            }],
+            components: [
+              {
+                id: "anchor", classId: "MeshComponent", properties: {},
+                transform: { position: [0.5, 1.5, 0], rotation: [0, 0, 0, 1], scale: [2, 1, 1] },
+              },
+              {
+                id: "point", classId: "MeshComponent", parentId: "anchor", properties: {},
+                transform: { position: [0.25, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+              },
+            ],
           }),
         ],
       },
@@ -94,7 +100,7 @@ describe("Move To Blackboard Key", () => {
   it("follows a live component reference in world space and records safe reference telemetry", async () => {
     const { runtime, commands } = await setup(null);
     const target = runtime.getWorld().findActor("target")!;
-    const point = target.components[0]!;
+    const point = target.components.find((component) => component.sourceId === "point" || component.guid === "point")!;
     runtime.registerBlackboard("board", {
       name: "Targets", keys: [{ name: "target", type: { kind: "objectRef", classId: "BObject" }, defaultValue: point }],
     });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
@@ -297,7 +297,7 @@ describe("BehaviourTreeEditor", () => {
   it("adds Move To Blackboard Key and offers only spatial linked keys", async () => {
     const doc = treeWithWait();
     renderTree(doc);
-    await store.applyAssetDocumentChange(BB_ID, {
+    await act(() => store.applyAssetDocumentChange(BB_ID, {
       name: "Guard",
       keys: [
         ...defaultBlackboard.keys,
@@ -306,7 +306,7 @@ describe("BehaviourTreeEditor", () => {
         { name: "target", type: { kind: "objectRef", classId: "BObject" } },
         { name: "actor", type: { kind: "actorRef", classId: "Actor" } },
       ],
-    });
+    }));
     fireEvent.click(screen.getByTestId("graph-add-node"));
     fireEvent.click(await screen.findByTestId("node-palette-item-bt.task.moveToBlackboardKey"));
     const added = lastCommit().nodes.find((node) => node.classId === "bt.task.moveToBlackboardKey")!;

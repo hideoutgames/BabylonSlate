@@ -253,6 +253,18 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.applyMotionType(record);
   }
 
+  setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
+    const record = this.bodies.get(bodyId);
+    const body = record?.aggregate?.body;
+    if (!body || record.desc.motionType !== "dynamic") return;
+    const current = body.getLinearVelocity();
+    for (const axis of ["x", "y", "z"] as const) {
+      const value = velocity[axis];
+      if (typeof value === "number" && Number.isFinite(value)) current[axis] = value;
+    }
+    body.setLinearVelocity(current);
+  }
+
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {
     const record = this.bodies.get(bodyId);
     const body = record?.aggregate?.body;
