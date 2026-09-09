@@ -1001,6 +1001,23 @@ describe("p7-play-scene-load", () => {
       (command) => commands.push(command),
     );
     runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
+      expect.objectContaining({
+        meshAssetGuid: null,
+        parts: [
+          expect.objectContaining({
+            componentId: "box",
+            meshKind: "box",
+            meshAssetGuid: null,
+          }),
+          expect.objectContaining({
+            componentId: "sphere",
+            meshKind: "sphere",
+            meshAssetGuid: null,
+          }),
+        ],
+      }),
+    ]);
     expect(commands.filter((c) => c.type === "assignMaterial")).toEqual([
       {
         type: "assignMaterial",
