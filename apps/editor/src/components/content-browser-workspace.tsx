@@ -2456,7 +2456,7 @@ export function ContentBrowserWorkspace({
                   {classReplacementChoices[asset.header.guid]
                     ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} /> : "None"}
                 </Button>
-                <p className="text-xs text-muted-foreground">Applies to every usage in {deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).map((ref) => ref.name).join(", ")}.</p>
+                <p className="text-xs text-muted-foreground">Applies to every usage in {deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length} assets or settings listed below.</p>
               </Field>
             ))}
             <div className={cn("grid min-w-0", deleteInboundRefs.length > 0 && "md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]")}>
