@@ -111,6 +111,7 @@ import {
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
   buildNewAssetResult,
+  classIdFromClassAsset,
   classParentLookup,
   collectFolderGuidsFromTrees,
   contentBrowserContextActions,
@@ -221,6 +222,7 @@ export function ContentBrowserWorkspace({
     setActiveDocument,
     tabOrder,
     loadAssetThumbnail,
+    loadAssetDocument,
     thumbnailEpoch,
     thumbnailsEnabled,
     pluginDescriptors,
@@ -266,6 +268,12 @@ export function ContentBrowserWorkspace({
   const [newAssetName, setNewAssetName] = useState("");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [busy, setBusy] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState<{
+    done: number;
+    total: number;
+    currentName: string;
+  } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [nameDialog, setNameDialog] = useState<
     | { kind: "rename"; guid: string; value: string }
     | { kind: "folder"; value: string }
@@ -1065,24 +1073,99 @@ export function ContentBrowserWorkspace({
     [assetRegistry],
   );
 
+  const deletingGuids = useMemo(() => contentBrowserDeletingGuids({
+    extraGuids: deleteTarget?.guids ?? [],
+    folderPaths: deleteTarget?.kind === "folder"
+      ? [deleteTarget.path]
+      : deleteTarget?.kind === "selection" ? deleteTarget.folders : [],
+    assets: allAssets,
+  }), [allAssets, deleteTarget]);
+  const deletingClassGuids = useMemo(() => new Set(referenceAssets
+    .filter((asset) => deletingGuids.has(asset.header.guid) &&
+      (asset.header.type === "Class" || asset.header.type === "Graph"))
+    .map((asset) => asset.header.guid)), [deletingGuids, referenceAssets]);
+  const [deleteReferenceScan, setDeleteReferenceScan] = useState<{
+    deleting: ReadonlySet<string>;
+    assets: readonly IndexedAsset[];
+    openDocuments: typeof openDocuments;
+    documents: Array<{ ref: { path: string }; content: unknown }>;
+    failed: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (deletingClassGuids.size === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const documents: Array<{ ref: { path: string }; content: unknown }> = [];
+      let failed = false;
+      // Older scenes may predate Class dependency headers. Read their actual
+      // payloads before allowing a Class (or its containing folder) to disappear.
+      for (const asset of referenceAssets) {
+        if (deletingGuids.has(asset.header.guid)) continue;
+        if (!["Scene", "SceneLayer", "Class", "Graph"].includes(asset.header.type)) continue;
+        if (openDocuments.some((doc) => doc.ref.path === asset.path)) continue;
+        const kind = documentKindForAssetType(asset.header.type);
+        if (!kind) continue;
+        try {
+          const content = await loadAssetDocument(kind, asset.path);
+          if (cancelled) return;
+          if (!content) failed = true;
+          else documents.push({ ref: { path: asset.path }, content });
+        } catch {
+          failed = true;
+        }
+      }
+      if (!cancelled) setDeleteReferenceScan({
+        deleting: deletingGuids, assets: referenceAssets, openDocuments,
+        documents, failed,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [deletingClassGuids, deletingGuids, referenceAssets, openDocuments, loadAssetDocument]);
+
+  const deleteReferenceScanCurrent = deleteReferenceScan?.deleting === deletingGuids &&
+    deleteReferenceScan.assets === referenceAssets &&
+    deleteReferenceScan.openDocuments === openDocuments;
+  const checkingDeleteReferences = deletingClassGuids.size > 0 && !deleteReferenceScanCurrent;
+  const deleteReferenceCheckFailed = deletingClassGuids.size > 0 &&
+    deleteReferenceScanCurrent && deleteReferenceScan.failed;
+
   const deleteInboundRefs = useMemo(() => {
     if (!deleteTarget || !assetRegistry) return [];
     const refs = new Map<string, string[]>();
-    const deleting = new Set(deleteTarget.guids);
-    for (const guid of deleting) {
-      for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments).inbound) {
-        if (deleting.has(inbound)) continue;
+    const documents = [...openDocuments,
+      ...(deleteReferenceScanCurrent ? deleteReferenceScan.documents : [])];
+    for (const guid of deletingGuids) {
+      for (const inbound of assetReferencesIncludingOpenDocuments(guid, referenceAssets, documents).inbound) {
+        if (deletingGuids.has(inbound)) continue;
         const targets = refs.get(inbound) ?? [];
-        targets.push(resolveAssetName(guid));
+        targets.push(guid);
         refs.set(inbound, targets);
       }
     }
-    return [...refs].map(([guid, targets]) => {
+    const rows = [...refs].map(([guid, targets]) => {
       const asset = assetRegistry.getByGuid(guid);
       return { guid, name: resolveAssetName(guid), path: asset?.path ?? guid,
-        type: asset?.header.type, targets };
-    }).sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
-  }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName]);
+        type: asset?.header.type, targets: targets.map(resolveAssetName),
+        blocksClassDelete: targets.some((target) => deletingClassGuids.has(target)) };
+    });
+    const projectClasses = new Set([
+      projectDocument?.settings.gameInstanceClass,
+      ...(projectDocument?.settings.editorUtilityObjects ?? []),
+    ]);
+    const projectTargets = referenceAssets.filter((asset) =>
+      deletingClassGuids.has(asset.header.guid) && projectClasses.has(classIdFromClassAsset(asset)),
+    );
+    if (projectTargets.length > 0) rows.push({
+      guid: "project-settings", name: "Project Settings", path: "project.json", type: undefined,
+      targets: projectTargets.map((asset) => resolveAssetName(asset.header.guid)),
+      blocksClassDelete: true,
+    });
+    return rows.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
+  }, [assetRegistry, referenceAssets, openDocuments, deleteTarget, resolveAssetName,
+    deletingGuids, deletingClassGuids, deleteReferenceScan, deleteReferenceScanCurrent, projectDocument]);
+  const hasReferencedClass = deleteInboundRefs.some((ref) => ref.blocksClassDelete);
+  const deleteBlocked = hasReferencedClass || checkingDeleteReferences || deleteReferenceCheckFailed;
 
   const deleteListNames = useMemo(() => {
     if (!deleteTarget) return [];
@@ -1120,7 +1203,7 @@ export function ContentBrowserWorkspace({
   }, [allAssets, deleteTarget]);
 
   const confirmDelete = useCallback(async () => {
-    if (!assetRegistry || !deleteTarget) return;
+    if (busy || !assetRegistry || !deleteTarget || deleteBlocked) return;
     const paths = new Set<string>();
     for (const guid of deleteTarget.guids) {
       const path = assetRegistry.getByGuid(guid)?.path;
@@ -1141,57 +1224,85 @@ export function ContentBrowserWorkspace({
     const oursToRelease = oursLockPaths([...paths], (path) =>
       sourceControl.lockStateForPath(path),
     );
-    const deletedGuids = contentBrowserDeletingGuids({
-      extraGuids: deleteTarget.guids,
-      folderPaths: folders,
-      assets: allAssets,
-    });
-    const deletedClassNames = new Set<string>();
-    for (const guid of deletedGuids) {
-      const asset = assetRegistry.getByGuid(guid);
-      if (
-        asset &&
-        (asset.header.type === "Class" || asset.header.type === "Graph")
-      ) {
-        deletedClassNames.add(asset.header.name);
-      }
-    }
+    const individualGuids = deleteTarget.kind === "folder"
+      ? []
+      : deleteTarget.guids.filter((guid) => {
+          const path = assetRegistry.getByGuid(guid)?.path;
+          return path && !folders.some((folder) => path.startsWith(`${folder}/`));
+        });
+    const total = folders.length + individualGuids.length + 1;
+    let done = 0;
+    const reportProgress = async (currentName: string) => {
+      setDeleteProgress({ done, total, currentName });
+      // Allow React and the browser to paint before the next work slice.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    };
+    const removedGuids = new Set<string>();
     setBusy(true);
+    setDeleteTarget(null);
+    setDeleteProgress({ done, total, currentName: "Preparing Deletion" });
     try {
+      await reportProgress("Preparing Deletion");
       closeDocumentsForPaths(paths);
-      for (const path of folders) {
-        const from = contentBrowserFolderOps(path, browserRoots);
-        if (from.readOnly) continue;
-        await assetRegistry.deleteFolder(from.rootId, from.relative);
-        setSelectedFolderPath((current) =>
-          current === path || current.startsWith(`${path}/`)
-            ? parentFolderPath(path, from.pathPrefix)
-            : current,
-        );
-      }
-      if (deleteTarget.kind !== "folder") {
-        for (const guid of deleteTarget.guids) {
-          if (assetRegistry.getByGuid(guid)) {
-            await assetRegistry.deleteAsset(guid);
+      try {
+        for (const path of folders) {
+          const from = contentBrowserFolderOps(path, browserRoots);
+          if (from.readOnly) continue;
+          await reportProgress(path);
+          await assetRegistry.deleteFolder(from.rootId, from.relative);
+          for (const asset of allAssets) {
+            if (asset.path.startsWith(`${path}/`)) removedGuids.add(asset.header.guid);
           }
+          done += 1;
+          setSelectedFolderPath((current) =>
+            current === path || current.startsWith(`${path}/`)
+              ? parentFolderPath(path, from.pathPrefix)
+              : current,
+          );
+        }
+        for (const guid of individualGuids) {
+          const asset = assetRegistry.getByGuid(guid);
+          if (asset) {
+            await reportProgress(asset.header.name);
+            await assetRegistry.deleteAsset(guid);
+            removedGuids.add(guid);
+          }
+          done += 1;
+        }
+      } finally {
+        // Repair successful removals even if a later file operation fails.
+        if (removedGuids.size > 0 || done > 0) {
+          await reportProgress("Updating References");
+          for (const path of oursToRelease) {
+            if (allAssets.some((asset) => asset.path === path && removedGuids.has(asset.header.guid))) {
+              await sourceControl.releasePath(path);
+            }
+          }
+          const removedClassNames = new Set(allAssets
+            .filter((asset) => removedGuids.has(asset.header.guid) &&
+              (asset.header.type === "Class" || asset.header.type === "Graph"))
+            .map((asset) => asset.header.name));
+          await repairAfterAssetDelete(removedGuids, removedClassNames, (name) =>
+            reportProgress(`Updating References: ${name}`),
+          );
         }
       }
       setSelectedGuids(new Set());
       setSelectedFolderPaths(new Set());
-      setDeleteTarget(null);
-      for (const path of oursToRelease) {
-        await sourceControl.releasePath(path);
-      }
-      await repairAfterAssetDelete(deletedGuids, deletedClassNames);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : String(error));
     } finally {
+      setDeleteProgress(null);
       setBusy(false);
     }
   }, [
     allAssets,
     assetRegistry,
     browserRoots,
+    busy,
     closeDocumentsForPaths,
     deleteTarget,
+    deleteBlocked,
     repairAfterAssetDelete,
     refuseTheirsAssetPaths,
     sourceControl,
@@ -2288,7 +2399,11 @@ export function ContentBrowserWorkspace({
                 {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {deleteInboundRefs.length > 0
+                {hasReferencedClass
+                  ? "Classes still referenced by remaining assets or Project Settings cannot be deleted. Remove their references and save first."
+                  : checkingDeleteReferences ? "Checking Class references before deletion."
+                  : deleteReferenceCheckFailed ? "Class references could not be checked. Reopen the affected assets and try again."
+                  : deleteInboundRefs.length > 0
                   ? "Deleting these items will break the references below. This cannot be undone."
                   : "Permanently removes the selected items. This cannot be undone."}
               </AlertDialogDescription>
@@ -2347,7 +2462,7 @@ export function ContentBrowserWorkspace({
               variant="destructive"
               size="touch"
               className="h-[var(--touch-target,44px)]"
-              disabled={busy}
+              disabled={busy || deleteBlocked}
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {
                 event.preventDefault();
@@ -2497,6 +2612,33 @@ export function ContentBrowserWorkspace({
             <AlertDialogAction onClick={() => setRefsSummary(null)}>
               Close
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={deleteProgress !== null}>
+        <DialogContent showCloseButton={false} data-testid="deleting-overlay">
+          <DialogHeader>
+            <DialogTitle>Deleting Assets</DialogTitle>
+            <DialogDescription>Removing files and updating their references.</DialogDescription>
+          </DialogHeader>
+          {deleteProgress ? (
+            <Progress value={Math.round(100 * deleteProgress.done / deleteProgress.total)}>
+              <ProgressLabel>{deleteProgress.currentName}</ProgressLabel>
+              <ProgressValue />
+            </Progress>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteError !== null} onOpenChange={(open) => { if (!open) setDeleteError(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Failed</AlertDialogTitle>
+            <AlertDialogDescription>{deleteError}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setDeleteError(null)}>Close</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

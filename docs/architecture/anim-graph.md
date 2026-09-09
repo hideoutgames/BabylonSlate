@@ -83,6 +83,8 @@ Engine Settings Focus keep-lists: **Animation Graph State Machine** (`anim-graph
 
 Reuses Class **Graph** / **Inspector** panels (`GraphPanel`, `InspectorPanel`) with `parentClass` BObject and `animationGraphHost: "object"`. Palette: `anim.event.*` plus runtime-safe nodes; hides rule/state queries, Begin Play, BT. Variables panel is the same typed list without States. Renaming or retyping a variable rewrites bound Get/Set nodes on `animationObject` and every `transition.ruleGraph`. `serializedGraphFromDocument("anim-graph")` returns `animationObject` with injected `members` from `variables`. Commits write `{ nodes, edges }` without dropping states (`commit.kind === "anim-graph"`). Open AnimationGraph tabs are skipped by `collectClassGraphsForPalette` so they are not treated as Class palettes.
 
+Selecting an Animation Object node shows its unconnected input defaults in Inspector, including loaded nodes without saved pin metadata. Inspector resolves those pins through the existing node registry. Reads and edits stay scoped to the active graph: a remembered transition rule cannot redirect Animation Object edits, even when both graphs contain the same node ID. Returning to State Machine preserves the open rule.
+
 ### Palettes and protected nodes
 
 `ClassEventOptions.animationGraphHost?: "object" | "rule"`. Actor palettes hide `anim.event.*` / `anim.rule.*` / `anim.state.*` and show `anim.actor.*`. `PROTECTED_NODE_TYPES` includes `anim.event.initialize` / `update` and `anim.rule.enterState` / `exitState`. `nodeVisualRole` paints those as events.

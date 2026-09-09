@@ -104,6 +104,7 @@ export function isLockedEngineClassId(classId: string): boolean {
 export const ENGINE_BT_BUILTIN_CLASSES = [
   { id: "BTTask_Wait", parentClassId: "BTTask" },
   { id: "BTTask_MoveTo", parentClassId: "BTTask" },
+  { id: "BTTask_MoveToBlackboardKey", parentClassId: "BTTask" },
   { id: "BTTask_RotateToFace", parentClassId: "BTTask" },
   { id: "BTTask_PlayAnimation", parentClassId: "BTTask" },
   { id: "BTTask_PlaySound", parentClassId: "BTTask" },

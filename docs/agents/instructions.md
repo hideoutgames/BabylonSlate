@@ -22,6 +22,8 @@ The Babylon skill keeps the maintained source files only. Git history preserves 
 
 ## Validation
 
+The [development testing skill](../../.agents/skills/test-driven-development/SKILL.md) retains its discovery name but uses regression-focused verification. Tests may precede or follow implementation without approval. Prefer reproducing a bug when useful; select checks that protect observable editor/runtime behavior and plausible production regressions. Resource queues may delay verification without stopping implementation, but pending checks never satisfy PR or merge gates. Shared admission and targeted-only local scope remain unchanged.
+
 - Before development, match the task and affected files to the skill table, read all applicable skills, and identify their use. Recheck when scope changes; automatically discovering a skill is not evidence that it was applied.
 - Engine integration within editor files requires BabylonJS as well as the relevant React UI skills. Load only task-relevant supporting references and verify version-specific examples against installed dependencies.
 - Preserve compact desktop Primary buttons, other small controls, margins, and panel spacing. Touch support uses input-specific hit areas or layouts; imported HIG guidance must not enlarge desktop defaults. The broad Apple HIG skill is not installed as a default design authority for this cross-platform editor.

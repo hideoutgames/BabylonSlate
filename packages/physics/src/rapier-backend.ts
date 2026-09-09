@@ -1,9 +1,11 @@
+import type { InteractionGroups, QueryFilterFlags } from "@dimforge/rapier2d-compat";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
   ColliderDesc,
   ColliderTuning,
   HitResult,
+  LineTraceOptions,
   OverlapResult,
   PhysicsBackendOptions,
   PhysicsTransform,
@@ -42,6 +44,11 @@ type RapierApi = {
       ray: unknown,
       maxToi: number,
       solid: boolean,
+      filterFlags?: QueryFilterFlags,
+      filterGroups?: InteractionGroups,
+      filterExcludeCollider?: RapierCollider,
+      filterExcludeRigidBody?: RapierRigidBody,
+      filterPredicate?: (collider: RapierCollider) => boolean,
     ): { timeOfImpact: number; collider: RapierCollider } | null;
     intersectionsWithPoint(
       point: { x: number; y: number },
@@ -99,6 +106,8 @@ type RapierColliderDesc = {
 type RapierRigidBody = {
   handle: number;
   translation(): { x: number; y: number };
+  linvel(): { x: number; y: number };
+  setLinvel(velocity: { x: number; y: number }, wakeUp: boolean): void;
   setTranslation(t: { x: number; y: number }, wakeUp: boolean): void;
   setBodyType(type: number, wakeUp: boolean): void;
   applyImpulse(impulse: { x: number; y: number }, wakeUp: boolean): void;
@@ -290,6 +299,18 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     }
   }
 
+  setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
+    const record = this.bodies.get(bodyId);
+    if (!record || record.desc.motionType !== "dynamic") return;
+    const current = record.body.linvel();
+    const next = { x: current.x, y: current.y };
+    for (const axis of ["x", "y"] as const) {
+      const value = velocity[axis];
+      if (typeof value === "number" && Number.isFinite(value)) next[axis] = value;
+    }
+    record.body.setLinvel(next, true);
+  }
+
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {
     const record = this.bodies.get(bodyId);
     if (!record || record.desc.motionType !== "dynamic") return;
@@ -454,7 +475,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return out;
   }
 
-  lineTrace(start: Vec3, end: Vec3): HitResult {
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const len = Math.hypot(dx, dy);
@@ -463,7 +484,23 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       { x: start.x, y: start.y },
       { x: dx / len, y: dy / len },
     );
-    const hit = this.world.castRay(ray, len, true);
+    const ignored = new Set(options?.ignoreActorIds);
+    const hit = this.world.castRay(
+      ray,
+      len,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ignored.size
+        ? (collider) => {
+            const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
+            const actorId = bodyId ? this.bodies.get(bodyId)?.desc.actorId : undefined;
+            return actorId === undefined || !ignored.has(actorId);
+          }
+        : undefined,
+    );
     if (!hit) return miss();
     const point = ray.pointAt(hit.timeOfImpact);
     const bodyId = this.bodyIdByHandle.get(hit.collider.parent()?.handle ?? -1);

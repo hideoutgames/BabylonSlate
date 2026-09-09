@@ -23,6 +23,7 @@ import {
 } from "./prefab-preview";
 import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
 import { mergedPrefabComponentsForClass } from "./prefab-instance-sync";
+import { uniqueSceneActorName } from "./scene-actor-names";
 
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
@@ -386,7 +387,7 @@ export function spawnPlacedActor(
   const kind = item.kind;
   const transform = placedTransform(position);
   const finish = (actor: SerializedActor): SerializedActor =>
-    applyOverlayPlace(actor, options?.overlay === true);
+    applyOverlayPlace({ ...actor, name: uniqueSceneActorName(scene, actor.name) }, options?.overlay === true);
   if (kind.type === "shape") {
     return finish(createActor(id, kind.meshKind, {
       transform,
@@ -597,7 +598,7 @@ export function duplicateSceneActor(
 ): SerializedActor {
   const copy = structuredClone(source);
   copy.id = nextActorId(scene);
-  copy.name = `${source.name} Copy`;
+  copy.name = uniqueSceneActorName(scene, `${source.name} Copy`);
   const componentIds = new Map(copy.components.map((component, index) => [
     component.id, `${copy.id}-${component.classId}-${index + 1}`,
   ]));

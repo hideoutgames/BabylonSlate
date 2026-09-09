@@ -3,6 +3,7 @@ import type {
   ColliderDesc,
   ColliderTuning,
   HitResult,
+  LineTraceOptions,
   OverlapResult,
   PhysicsBackendOptions,
   PhysicsContactEvent,
@@ -29,6 +30,8 @@ export interface PhysicsBackend {
   destroyBody(bodyId: string): void;
   setBodyTransform(bodyId: string, transform: PhysicsTransform): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
+  /** Set only the supplied world velocity axes of a dynamic body. */
+  setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;
   setBodyMotionType(
     bodyId: string,
     motionType: RigidBodyDesc["motionType"],
@@ -56,7 +59,7 @@ export interface PhysicsBackend {
   /** Snapshot all dynamic/kinematic body transforms after step. */
   readTransforms(): ReadonlyMap<string, PhysicsTransform>;
 
-  lineTrace(start: Vec3, end: Vec3): HitResult;
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
   sphereOverlap(center: Vec3, radius: number): OverlapResult;
   shapeSweep(
     shape: ColliderDesc["shape"],

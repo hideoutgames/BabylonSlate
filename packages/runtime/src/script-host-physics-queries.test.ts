@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Actor } from "@babylonslate/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 
@@ -17,6 +17,62 @@ function stubServices(
 }
 
 describe("ScriptHost physics query resolution", () => {
+  it("passes ignored Actor references to physics and draws the visible hit", () => {
+    const ignored = new Actor({ classId: "Actor", guid: "ignored" });
+    const target = new Actor({ classId: "Actor", guid: "target" });
+    const lineTrace = vi.fn(() => ({
+      hit: true,
+      location: { x: 0, y: 4.5, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      distance: 5.5,
+      actorId: "target",
+      bodyId: "body-target",
+    }));
+    const draws: Record<string, unknown>[] = [];
+    const ctx = new ScriptHost(stubServices({
+      lineTrace,
+      findActor: (id) => id === "target" ? target : ignored,
+      drawDebug: (draw) => draws.push(draw),
+    })).createContext(null, 0, 0);
+    const start = { x: 0, y: 10, z: 0 };
+    const end = { x: 0, y: 0, z: 0 };
+    expect(ctx.lineTrace(start, end, undefined, {
+      actorsToIgnore: [ignored, null, ignored],
+    }).actor).toBe(target);
+    expect(lineTrace).toHaveBeenCalledWith(start, end, {
+      ignoreActorIds: ["ignored"],
+    });
+    expect(draws).toEqual([
+      expect.objectContaining({
+        kind: "line", start, end: { x: 0, y: 4.5, z: 0 },
+        color: { x: 0, y: 1, z: 0, w: 1 }, duration: 0,
+      }),
+      expect.objectContaining({
+        kind: "circle", center: { x: 0, y: 4.5, z: 0 },
+        color: { x: 1, y: 0, z: 0, w: 1 }, duration: 0,
+      }),
+    ]);
+    draws.length = 0;
+    ctx.lineTrace(start, end, undefined, { drawDebug: false });
+    expect(draws).toEqual([]);
+  });
+
+  it("draws a red full-length miss by default", () => {
+    const draws: Record<string, unknown>[] = [];
+    const ctx = new ScriptHost(stubServices({
+      drawDebug: (draw) => draws.push(draw),
+    })).createContext(null, 0, 0);
+    const start = { x: 0, y: 1, z: 0 };
+    const end = { x: 0, y: 5, z: 0 };
+    expect(ctx.lineTrace(start, end).hit).toBe(false);
+    expect(draws).toEqual([
+      expect.objectContaining({
+        kind: "line", start, end,
+        color: { x: 1, y: 0, z: 0, w: 1 }, duration: 0,
+      }),
+    ]);
+  });
+
   it("resolves lineTrace actorId through injected world lookup to a live Actor", () => {
     const ground = new Actor({ classId: "Actor", guid: "ground" });
     const host = new ScriptHost(

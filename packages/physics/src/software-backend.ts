@@ -9,6 +9,7 @@ import type {
   ColliderDesc,
   ColliderShape,
   HitResult,
+  LineTraceOptions,
   MotionType,
   OverlapResult,
   PhysicsContactEvent,
@@ -328,6 +329,17 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     body.desc.motionType = motionType;
   }
 
+  setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return;
+    for (const axis of ["x", "y", "z"] as const) {
+      const value = velocity[axis];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        body.linearVelocity[axis] = axis === "z" && this.kind === "2d" ? 0 : value;
+      }
+    }
+  }
+
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {
     const body = this.bodies.get(bodyId);
     if (!body || body.desc.motionType !== "dynamic") return;
@@ -570,13 +582,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     return out;
   }
 
-  lineTrace(start: Vec3, end: Vec3): HitResult {
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
     const dir = vec(end.x - start.x, end.y - start.y, end.z - start.z);
+    const ignored = new Set(options?.ignoreActorIds);
     let bestT = Infinity;
     let best: HitResult = miss();
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (!body) continue;
+      if (!body || ignored.has(body.desc.actorId)) continue;
       const box = aabbForCollider(
         collider.desc,
         body.transform.position,

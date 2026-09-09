@@ -31,3 +31,4 @@ export {
   type GamepadConnectionEvent,
   type ResolvedInputTick,
 } from "./resolver";
+export type { InputBindingControls, InputBindingInfo } from "./input-bindings";

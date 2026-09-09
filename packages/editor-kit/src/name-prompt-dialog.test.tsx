@@ -16,6 +16,16 @@ afterEach(() => {
 });
 
 describe("NamePromptDialog", () => {
+  it("starts renames with the existing name and resets an abandoned edit on reopen", () => {
+    const props = { onOpenChange: vi.fn(), onSubmit: vi.fn(), title: "Rename Event", label: "Event Name", initialValue: "On Hit" };
+    const { rerender } = render(<NamePromptDialog {...props} open />);
+    expect((screen.getByLabelText("Event Name") as HTMLInputElement).value).toBe("On Hit");
+    fireEvent.change(screen.getByLabelText("Event Name"), { target: { value: "Abandoned" } });
+    rerender(<NamePromptDialog {...props} open={false} />);
+    rerender(<NamePromptDialog {...props} initialValue="On Damage" open />);
+    expect((screen.getByLabelText("Event Name") as HTMLInputElement).value).toBe("On Damage");
+  });
+
   it("keeps the prompt open with an accessible error when the host rejects the name", () => {
     const onSubmit = vi.fn();
     const onOpenChange = vi.fn();

@@ -103,6 +103,8 @@ export const physicsNodes: NodeDefinition[] = [
       pin("start", "Start", "in", VEC3),
       pin("end", "End", "in", VEC3),
       pin("channel", "Channel", "in", COLLISION_CHANNEL, "data", true),
+      pin("drawDebug", "Draw Debug", "in", BOOL, "data", true, true),
+      pin("actorsToIgnore", "Actors To Ignore", "in", ACTOR_ARRAY, "data", true, []),
       pin("hitResult", "Hit Result", "out", HIT_RESULT),
       pin("hit", "Hit", "out", BOOL),
       pin("location", "Location", "out", VEC3),
@@ -113,7 +115,7 @@ export const physicsNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       emitMappedHit(
         ctx,
-        `ctx.lineTrace(${ctx.input("start")}, ${ctx.input("end")}, ${ctx.input("channel")})`,
+        `ctx.lineTrace(${ctx.input("start")}, ${ctx.input("end")}, ${ctx.input("channel")}, { drawDebug: ${ctx.input("drawDebug")}, actorsToIgnore: ${ctx.input("actorsToIgnore")} })`,
       );
     },
   },

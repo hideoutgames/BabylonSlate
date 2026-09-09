@@ -327,6 +327,18 @@ class RecastNavigationBackend implements NavigationBackend {
     return { x: point.x, y: point.y, z: point.z };
   }
 
+  syncAgentPosition(id: string, position: NavPoint): boolean {
+    const agent = this.agents.get(id);
+    const projected = this.closestPoint(position);
+    if (!agent || !projected) return false;
+    // Detour moves the corridor to npos during update. teleport() would reset
+    // both the target and accumulated velocity, preventing physical steering.
+    agent.raw.set_npos(0, projected.x);
+    agent.raw.set_npos(1, projected.y);
+    agent.raw.set_npos(2, projected.z);
+    return true;
+  }
+
   setAgentTarget(id: string, target: NavPoint): boolean {
     const agent = this.agents.get(id);
     if (!agent) return false;

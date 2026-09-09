@@ -158,6 +158,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     const handle = createEngine(canvas, {
       editor: true,
       editorViewportId: dropViewportId,
+      previewLighting: !overlayPrefab,
       sharedEngine,
       present: "rtt",
       viewportMode,

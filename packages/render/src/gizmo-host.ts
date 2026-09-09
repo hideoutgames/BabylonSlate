@@ -321,6 +321,13 @@ export function createGizmoHost(
   options: GizmoHostOptions = {},
 ): GizmoHost {
   const layer = new UtilityLayerRenderer(scene);
+  layer.utilityLayerScene.onBeforeDrawPhaseObservable.add(() => {
+    if (layer.utilityLayerScene.activeCamera?.outputRenderTarget) {
+      // Babylon's camera RTT clear path ignores depth-only auto-clears when
+      // autoClear is false. Preserve the world color, but draw handles on top.
+      scene.getEngine().clear(null, false, true, true);
+    }
+  });
   const handleScale = options.handleScale ?? DEFAULT_GIZMO_HANDLE_SCALE;
 
   const position = new PositionGizmo(layer, GIZMO_SHAFT_THICKNESS);

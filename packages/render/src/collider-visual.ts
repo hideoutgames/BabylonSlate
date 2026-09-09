@@ -302,11 +302,16 @@ function capsuleEdges(
       new Vector3(x, halfHeight, z),
     ]);
   }
-  if (!threeD) {
-    edges.push(
-      ...arcEdges(radius, halfHeight, 1),
-      ...arcEdges(radius, -halfHeight, -1),
-    );
+  const caps = [
+    ...arcEdges(radius, halfHeight, 1),
+    ...arcEdges(radius, -halfHeight, -1),
+  ];
+  edges.push(...caps);
+  if (threeD) {
+    edges.push(...caps.map(([a, b]): [Vector3, Vector3] => [
+      new Vector3(0, a.y, a.x),
+      new Vector3(0, b.y, b.x),
+    ]));
   }
   return edges;
 }

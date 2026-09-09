@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
 import type {
   ActionBinding,
@@ -13,18 +14,21 @@ import {
   Card,
   CardContent,
   CardHeader,
+  CardTitle,
+  CardDescription,
 } from "@babylonslate/ui/components/card";
 import {
   Field,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
+  FieldGroup,
+  FieldError,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
   SelectTrigger,
   SelectValue,
 } from "@babylonslate/ui/components/select";
@@ -34,10 +38,16 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
-import { PIN_COLOR_VAR } from "@babylonslate/ui/lib/data-types";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+  EmptyDescription,
+} from "@babylonslate/ui/components/empty";
+import { SearchInput } from "./search-input";
+import { formatBindingLabel } from "./format-binding-label";
 import { BindingCodePicker } from "./binding-code-picker";
-import { NumericDragField } from "./numeric-drag-field";
-import { TypeColorMark } from "./type-color-mark";
+import { NumberField, type NumberFieldProps } from "./number-field";
 
 export const DEFAULT_TOUCH_CONTROL_IDS = [
   "joystick-x",
@@ -56,21 +66,13 @@ export const INPUT_DEVICES: Array<{ value: InputDevice; label: string }> = [
   { value: "touch", label: "Touch" },
 ];
 
-const INPUT_DEVICE_COLOR_VAR: Record<InputDevice, string> = {
-  key: PIN_COLOR_VAR.string,
-  mouseButton: PIN_COLOR_VAR.object,
-  pointer: PIN_COLOR_VAR.wildcard,
-  gamepadButton: PIN_COLOR_VAR.bool,
-  gamepadAxis: PIN_COLOR_VAR.vector,
-  touch: PIN_COLOR_VAR.float,
-};
-
-const MODIFIER_TOGGLES: Array<{ key: keyof BindingModifiers; label: string }> = [
-  { key: "ctrl", label: "Ctrl" },
-  { key: "shift", label: "Shift" },
-  { key: "alt", label: "Alt" },
-  { key: "meta", label: "Meta" },
-];
+const MODIFIER_TOGGLES: Array<{ key: keyof BindingModifiers; label: string }> =
+  [
+    { key: "ctrl", label: "Ctrl" },
+    { key: "shift", label: "Shift" },
+    { key: "alt", label: "Alt" },
+    { key: "meta", label: "Meta" },
+  ];
 
 export interface InputMappingEditorProps {
   value: InputMappings;
@@ -153,22 +155,25 @@ function DevicePicker({
       }}
     >
       <SelectTrigger
-        className="min-h-[var(--touch-target,44px)]"
+        id={`${id}-device`}
+        className="w-full"
         aria-label="Device"
         data-testid={`${id}-device`}
       >
         <SelectValue>{() => selected}</SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {INPUT_DEVICES.map((entry) => (
-          <SelectItem
-            key={entry.value}
-            value={entry.value}
-            data-testid={`${id}-device-${entry.value}`}
-          >
-            {entry.label}
-          </SelectItem>
-        ))}
+        <SelectGroup>
+          {INPUT_DEVICES.map((entry) => (
+            <SelectItem
+              key={entry.value}
+              value={entry.value}
+              data-testid={`${id}-device-${entry.value}`}
+            >
+              {entry.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );
@@ -194,7 +199,7 @@ function BindingChrome({
       <Button
         type="button"
         variant="ghost"
-        size="touch-icon"
+        size="icon-sm"
         aria-label={`Move ${name} up`}
         data-testid={`${id}-move-up`}
         disabled={index === 0}
@@ -205,7 +210,7 @@ function BindingChrome({
       <Button
         type="button"
         variant="ghost"
-        size="touch-icon"
+        size="icon-sm"
         aria-label={`Move ${name} down`}
         data-testid={`${id}-move-down`}
         disabled={index === total - 1}
@@ -216,7 +221,7 @@ function BindingChrome({
       <Button
         type="button"
         variant="ghost"
-        size="touch-icon"
+        size="icon-sm"
         aria-label={`Remove ${name}`}
         data-testid={`${id}-remove`}
         onClick={onRemove}
@@ -237,19 +242,15 @@ function ModifierToggles({
   onChange: (next?: BindingModifiers) => void;
 }) {
   return (
-    <div
-      className="flex flex-col gap-1 rounded-md border border-border/60 bg-muted/30 p-2"
-      data-testid={`${id}-modifiers`}
-    >
-      <p className="px-0.5 text-[10px] font-medium text-muted-foreground">
-        Modifiers
-      </p>
+    <div className="flex flex-col gap-2" data-testid={`${id}-modifiers`}>
+      <p className="text-sm font-medium">Modifiers</p>
       <div className="flex flex-wrap gap-1" role="group" aria-label="Modifiers">
         {MODIFIER_TOGGLES.map((entry) => (
           <Toggle
             key={entry.key}
             variant="outline"
-            size="touch"
+            size="sm"
+            className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
             pressed={modifiers?.[entry.key] === true}
             aria-label={entry.label}
             data-testid={`${id}-mod-${entry.key}`}
@@ -284,29 +285,44 @@ function ActionBindingRow({
   onMove: (delta: number) => void;
   onRemove: () => void;
 }) {
+  const [optionsOpen, setOptionsOpen] = useState(false);
   return (
     <div
-      className="flex flex-col gap-2 rounded-md border border-border border-l-2 p-2"
+      className="flex flex-col gap-2 rounded-md border border-border p-2 even:bg-list-stripe"
       data-testid={id}
       data-device={binding.device}
-      style={{ borderLeftColor: INPUT_DEVICE_COLOR_VAR[binding.device] }}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <TypeColorMark colorVar={INPUT_DEVICE_COLOR_VAR[binding.device]} />
-        <DevicePicker
-          id={id}
-          device={binding.device}
-          onChange={(device) =>
-            onChange({ device, code: "" })
-          }
-        />
-        <BindingCodePicker
-          device={binding.device}
-          code={binding.code}
-          touchControlIds={touchControlIds}
-          onChange={(code) => onChange({ ...binding, code })}
-          data-testid={`${id}-code`}
-        />
+      <div className="flex flex-wrap items-end gap-2">
+        <Field className="min-w-32 flex-1">
+          <FieldLabel htmlFor={`${id}-device`}>Device</FieldLabel>
+          <DevicePicker
+            id={id}
+            device={binding.device}
+            onChange={(device) => onChange({ device, code: "" })}
+          />
+        </Field>
+        <Field className="min-w-40 flex-[2]">
+          <FieldLabel htmlFor={`${id}-code`}>Control</FieldLabel>
+          <BindingCodePicker
+            size="sm"
+            device={binding.device}
+            code={binding.code}
+            touchControlIds={touchControlIds}
+            onChange={(code) => onChange({ ...binding, code })}
+            data-testid={`${id}-code`}
+          />
+        </Field>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-expanded={optionsOpen}
+          aria-controls={`${id}-options-body`}
+          data-testid={`${id}-options`}
+          onClick={() => setOptionsOpen(!optionsOpen)}
+        >
+          Options
+        </Button>
         <BindingChrome
           id={id}
           index={index}
@@ -316,15 +332,54 @@ function ActionBindingRow({
           name={`binding ${index + 1}`}
         />
       </div>
-      {showsModifiers(binding.device) ? (
-        <ModifierToggles
-          id={id}
-          modifiers={binding.modifiers}
-          onChange={(modifiers) => onChange({ ...binding, modifiers })}
-        />
+      <p className="text-sm text-muted-foreground">
+        {binding.code
+          ? formatBindingLabel(binding.device, binding.code, binding.modifiers)
+          : "Choose a control to finish this binding."}
+      </p>
+      {optionsOpen ? (
+        <FieldGroup id={`${id}-options-body`} className="gap-3">
+          {showsModifiers(binding.device) ? (
+            <ModifierToggles
+              id={id}
+              modifiers={binding.modifiers}
+              onChange={(modifiers) => onChange({ ...binding, modifiers })}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No additional options for this device.
+            </p>
+          )}
+        </FieldGroup>
       ) : null}
     </div>
   );
+}
+
+function AxisNumber({
+  label,
+  "data-testid": testId,
+  ...props
+}: NumberFieldProps & { label: string; "data-testid": string }) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={testId}>{label}</FieldLabel>
+      <NumberField {...props} id={testId} data-testid={testId} />
+    </Field>
+  );
+}
+
+function axisBindingSummary(binding: AxisBinding, kind: "1d" | "2d"): string {
+  const parts = [
+    formatBindingLabel(binding.device, binding.code, binding.modifiers),
+  ];
+  if (kind === "2d") parts.push((binding.component ?? "x").toUpperCase());
+  if (!isAnalogBinding(binding.device, binding.code)) {
+    const value = binding.digitalValue ?? 1;
+    parts.push(`Held ${value > 0 ? "+" : ""}${value}`);
+  }
+  if (binding.invert) parts.push("Inverted");
+  return parts.join(" / ");
 }
 
 function AxisBindingRow({
@@ -349,30 +404,46 @@ function AxisBindingRow({
   onRemove: () => void;
 }) {
   const analog = isAnalogBinding(binding.device, binding.code);
-  const colorVar = INPUT_DEVICE_COLOR_VAR[binding.device];
+  const [optionsOpen, setOptionsOpen] = useState(false);
   return (
     <div
-      className="flex flex-col gap-2 rounded-md border border-border border-l-2 p-2"
+      className="flex flex-col gap-2 rounded-md border border-border p-2 even:bg-list-stripe"
       data-testid={id}
       data-device={binding.device}
-      style={{ borderLeftColor: colorVar }}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <TypeColorMark colorVar={colorVar} />
-        <DevicePicker
-          id={id}
-          device={binding.device}
-          onChange={(device) =>
-            onChange({ device, code: "", component: binding.component })
-          }
-        />
-        <BindingCodePicker
-          device={binding.device}
-          code={binding.code}
-          touchControlIds={touchControlIds}
-          onChange={(code) => onChange({ ...binding, code })}
-          data-testid={`${id}-code`}
-        />
+      <div className="flex flex-wrap items-end gap-2">
+        <Field className="min-w-32 flex-1">
+          <FieldLabel htmlFor={`${id}-device`}>Device</FieldLabel>
+          <DevicePicker
+            id={id}
+            device={binding.device}
+            onChange={(device) =>
+              onChange({ device, code: "", component: binding.component })
+            }
+          />
+        </Field>
+        <Field className="min-w-40 flex-[2]">
+          <FieldLabel htmlFor={`${id}-code`}>Control</FieldLabel>
+          <BindingCodePicker
+            size="sm"
+            device={binding.device}
+            code={binding.code}
+            touchControlIds={touchControlIds}
+            onChange={(code) => onChange({ ...binding, code })}
+            data-testid={`${id}-code`}
+          />
+        </Field>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-expanded={optionsOpen}
+          aria-controls={`${id}-options-body`}
+          data-testid={`${id}-options`}
+          onClick={() => setOptionsOpen(!optionsOpen)}
+        >
+          Options
+        </Button>
         <BindingChrome
           id={id}
           index={index}
@@ -382,93 +453,171 @@ function AxisBindingRow({
           name={`binding ${index + 1}`}
         />
       </div>
-      {showsModifiers(binding.device) ? (
-        <ModifierToggles
-          id={id}
-          modifiers={binding.modifiers}
-          onChange={(modifiers) => onChange({ ...binding, modifiers })}
-        />
+      <p className="text-sm text-muted-foreground">
+        {binding.code
+          ? axisBindingSummary(binding, kind)
+          : "Choose a control to finish this binding."}
+      </p>
+      {optionsOpen ? (
+        <FieldGroup id={`${id}-options-body`} className="gap-3">
+          {showsModifiers(binding.device) ? (
+            <ModifierToggles
+              id={id}
+              modifiers={binding.modifiers}
+              onChange={(modifiers) => onChange({ ...binding, modifiers })}
+            />
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {kind === "2d" ? (
+              <ToggleGroup
+                variant="outline"
+                size="sm"
+                className="pointer-coarse:[&>button]:min-h-11 pointer-coarse:[&>button]:min-w-11"
+                spacing={1}
+                value={binding.component ? [binding.component] : []}
+                onValueChange={(next) => {
+                  const component = next[0];
+                  if (component !== "x" && component !== "y") return;
+                  onChange({ ...binding, component });
+                }}
+                aria-label="Axis Component"
+              >
+                <ToggleGroupItem
+                  value="x"
+                  className="text-axis-x"
+                  data-testid={`${id}-component-x`}
+                >
+                  X
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="y"
+                  className="text-axis-y"
+                  data-testid={`${id}-component-y`}
+                >
+                  Y
+                </ToggleGroupItem>
+              </ToggleGroup>
+            ) : null}
+            <Field orientation="horizontal">
+              <Switch
+                id={`${id}-invert`}
+                checked={binding.invert === true}
+                onCheckedChange={(checked) =>
+                  onChange({ ...binding, invert: checked === true })
+                }
+                data-testid={`${id}-invert`}
+              />
+              <FieldLabel htmlFor={`${id}-invert`}>Invert</FieldLabel>
+            </Field>
+          </div>
+          {analog ? (
+            <FieldGroup className="grid grid-cols-1 gap-2 @sm/input:grid-cols-3">
+              <AxisNumber
+                label="Dead Zone"
+                value={binding.deadZone ?? 0}
+                min={0}
+                max={1}
+                onChange={(deadZone) => onChange({ ...binding, deadZone })}
+                data-testid={`${id}-dead-zone`}
+              />
+              <AxisNumber
+                label="Scale"
+                value={binding.scale ?? 1}
+                onChange={(scale) => onChange({ ...binding, scale })}
+                data-testid={`${id}-scale`}
+              />
+              <AxisNumber
+                label="Sensitivity"
+                value={binding.sensitivity ?? 1}
+                onChange={(sensitivity) =>
+                  onChange({ ...binding, sensitivity })
+                }
+                data-testid={`${id}-sensitivity`}
+              />
+            </FieldGroup>
+          ) : (
+            <AxisNumber
+              label="Value When Held"
+              value={binding.digitalValue ?? 1}
+              min={-1}
+              max={1}
+              onChange={(digitalValue) =>
+                onChange({ ...binding, digitalValue })
+              }
+              data-testid={`${id}-digital-value`}
+            />
+          )}
+        </FieldGroup>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        {kind === "2d" ? (
-          <ToggleGroup
-            variant="outline"
-            size="touch"
-            spacing={1}
-            value={binding.component ? [binding.component] : []}
-            onValueChange={(next) => {
-              const component = next[0];
-              if (component !== "x" && component !== "y") return;
-              onChange({ ...binding, component });
-            }}
-            aria-label="Axis Component"
-          >
-            <ToggleGroupItem
-              value="x"
-              className="text-axis-x"
-              data-testid={`${id}-component-x`}
-            >
-              X
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="y"
-              className="text-axis-y"
-              data-testid={`${id}-component-y`}
-            >
-              Y
-            </ToggleGroupItem>
-          </ToggleGroup>
-        ) : null}
-        <Field orientation="horizontal">
-          <Switch
-            id={`${id}-invert`}
-            checked={binding.invert === true}
-            onCheckedChange={(checked) =>
-              onChange({ ...binding, invert: checked === true })
-            }
-            data-testid={`${id}-invert`}
-          />
-          <FieldLabel htmlFor={`${id}-invert`}>Invert</FieldLabel>
-        </Field>
-      </div>
-      {analog ? (
-        <div className="grid grid-cols-3 gap-2 rounded-md bg-muted/50 p-2">
-          <NumericDragField
-            label="DZ"
-            value={binding.deadZone ?? 0}
-            min={0}
-            max={1}
-            sensitivity={0.005}
-            onChange={(deadZone) => onChange({ ...binding, deadZone })}
-            data-testid={`${id}-dead-zone`}
-          />
-          <NumericDragField
-            label="Scale"
-            value={binding.scale ?? 1}
-            sensitivity={0.01}
-            onChange={(scale) => onChange({ ...binding, scale })}
-            data-testid={`${id}-scale`}
-          />
-          <NumericDragField
-            label="Sens"
-            value={binding.sensitivity ?? 1}
-            sensitivity={0.01}
-            onChange={(sensitivity) => onChange({ ...binding, sensitivity })}
-            data-testid={`${id}-sensitivity`}
-          />
-        </div>
-      ) : (
-        <NumericDragField
-          label="Dig"
-          value={binding.digitalValue ?? 0}
-          min={-1}
-          max={1}
-          sensitivity={0.01}
-          onChange={(digitalValue) => onChange({ ...binding, digitalValue })}
-          data-testid={`${id}-digital-value`}
-        />
-      )}
     </div>
+  );
+}
+
+function MappingNameField({
+  id,
+  name,
+  names,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  names: string[];
+  onChange: (name: string) => void;
+}) {
+  const [draft, setDraft] = useState(name);
+  useEffect(() => setDraft(name), [name]);
+  const trimmed = draft.trim();
+  const error = !trimmed
+    ? "Enter a mapping name."
+    : names.includes(trimmed)
+      ? "This name is already in use."
+      : undefined;
+  const commit = () => {
+    if (!error && trimmed !== name) onChange(trimmed);
+  };
+  return (
+    <Field className="min-w-32 flex-1" data-invalid={!!error}>
+      <FieldLabel htmlFor={`${id}-name`}>Name</FieldLabel>
+      <Input
+        id={`${id}-name`}
+        data-testid={`${id}-name`}
+        value={draft}
+        aria-invalid={!!error}
+        aria-describedby={error ? `${id}-name-error` : undefined}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+        }}
+      />
+      {error ? (
+        <FieldError id={`${id}-name-error`} role="alert">
+          {error}
+        </FieldError>
+      ) : null}
+    </Field>
+  );
+}
+
+function availableName(base: string, names: string[]): string {
+  if (!names.includes(base)) return base;
+  let suffix = 2;
+  while (names.includes(`${base} ${suffix}`)) suffix++;
+  return `${base} ${suffix}`;
+}
+
+function bindingSummary(mapping: ActionMapping): string {
+  return (
+    mapping.bindings
+      .map((binding) =>
+        binding.code
+          ? formatBindingLabel(binding.device, binding.code, binding.modifiers)
+          : "Unassigned",
+      )
+      .join(", ") || "No Bindings"
   );
 }
 
@@ -479,301 +628,423 @@ export function InputMappingEditor({
   touchControlIds = DEFAULT_TOUCH_CONTROL_IDS,
   "data-testid": testId,
 }: InputMappingEditorProps) {
+  const [query, setQuery] = useState("");
+  const [selection, setSelection] = useState({
+    kind: value.actions.length ? "action" : "axis",
+    index: 0,
+  });
+  const currentList = selection.kind === "action" ? value.actions : value.axes;
+  const selected = currentList.length
+    ? { ...selection, index: Math.min(selection.index, currentList.length - 1) }
+    : { kind: value.actions.length ? "action" : "axis", index: 0 };
+  const matches = (mapping: ActionMapping) =>
+    `${mapping.name} ${bindingSummary(mapping)}`
+      .toLowerCase()
+      .includes(query.toLowerCase().trim());
+  const noResults = ![...value.actions, ...value.axes].some(matches);
   return (
-    <div className="flex flex-col gap-4" data-testid={testId ?? "input-mapping-editor"}>
-      <FieldSet>
-        <FieldLegend
-          className="flex items-center gap-2"
-          data-testid="input-actions-legend"
+    <div
+      className="@container/input flex flex-col gap-3"
+      data-testid={testId ?? "input-mapping-editor"}
+    >
+      <p className="text-sm text-muted-foreground">
+        Actions are buttons such as Jump. Axes describe movement or looking. Set
+        project defaults here; games can override bindings at runtime.
+      </p>
+      <div className="grid min-w-0 grid-cols-1 items-start gap-3 @2xl/input:grid-cols-[13rem_minmax(0,1fr)]">
+        <nav
+          aria-label="Input Mappings"
+          className="flex min-w-0 flex-col gap-2 rounded-md border border-border p-2"
         >
-          <TypeColorMark colorVar={PIN_COLOR_VAR.bool} />
-          Actions
-        </FieldLegend>
-        <div className="flex flex-col gap-3">
-          {value.actions.map((action, index) => {
-            const actionId = `input-action-${index}`;
-            return (
-              <Card
-                key={`${action.name}-${index}`}
-                size="sm"
-                data-testid={actionId}
-              >
-                <CardHeader className="border-b bg-muted/50">
-                  <div className="flex flex-wrap items-end gap-2">
-                    <Field className="min-w-32 flex-1">
-                      <FieldLabel htmlFor={`${actionId}-name`}>Name</FieldLabel>
-                      <Input
-                        id={`${actionId}-name`}
-                        className="min-h-[var(--touch-target,44px)]"
-                        value={action.name}
-                        onChange={(event) =>
-                          onChange(
-                            patchAction(value, index, { name: event.target.value }),
-                          )
-                        }
-                        data-testid={`${actionId}-name`}
-                      />
-                    </Field>
-                    <BindingChrome
-                      id={actionId}
-                      index={index}
-                      total={value.actions.length}
-                      onMove={(delta) =>
-                        onChange({
-                          ...value,
-                          actions: moveItem(value.actions, index, delta),
-                        })
-                      }
-                      onRemove={() =>
-                        onChange({
-                          ...value,
-                          actions: value.actions.filter((_, i) => i !== index),
-                        })
-                      }
-                      name={action.name || "action"}
-                    />
-                  </div>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                  <div
-                    className="text-sm font-medium"
-                    data-testid={`${actionId}-bindings`}
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            aria-label="Search Mappings"
+            placeholder="Search Mappings"
+          />
+          <div className="flex max-h-64 flex-col gap-1 overflow-y-auto @2xl/input:max-h-[32rem]">
+            {(["action", "axis"] as const).map((kind) => {
+              const mappings = kind === "action" ? value.actions : value.axes;
+              return (
+                <div key={kind} className="flex min-w-0 flex-col gap-1">
+                  <p
+                    className="px-2 py-1 text-sm font-medium"
+                    data-testid={`input-${kind === "action" ? "actions" : "axes"}-legend`}
                   >
-                    Bindings
-                  </div>
-                  {action.bindings.map((binding, bindingIndex) => (
-                    <ActionBindingRow
-                      key={`${actionId}-binding-${bindingIndex}`}
-                      id={`${actionId}-binding-${bindingIndex}`}
-                      binding={binding}
-                      index={bindingIndex}
-                      total={action.bindings.length}
-                      touchControlIds={touchControlIds}
-                      onChange={(next) => {
-                        const bindings = [...action.bindings];
-                        bindings[bindingIndex] = next;
-                        onChange(patchAction(value, index, { bindings }));
-                      }}
-                      onMove={(delta) =>
-                        onChange(
-                          patchAction(value, index, {
-                            bindings: moveItem(action.bindings, bindingIndex, delta),
-                          }),
-                        )
-                      }
-                      onRemove={() =>
-                        onChange(
-                          patchAction(value, index, {
-                            bindings: action.bindings.filter(
-                              (_, i) => i !== bindingIndex,
-                            ),
-                          }),
-                        )
-                      }
-                    />
-                  ))}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="touch"
-                    className="w-fit"
-                    data-testid={`${actionId}-add-binding`}
-                    onClick={() =>
-                      onChange(
-                        patchAction(value, index, {
-                          bindings: [
-                            ...action.bindings,
-                            { device: "key", code: "" },
-                          ],
-                        }),
-                      )
-                    }
-                  >
-                    Add Binding
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-          <Button
-            type="button"
-            variant="outline"
-            size="touch"
-            className="w-fit"
-            data-testid="input-action-add"
-            onClick={() =>
-              onChange({
-                ...value,
-                actions: [
-                  ...value.actions,
-                  { name: "New Action", bindings: [] },
-                ],
-              })
-            }
-          >
-            Add Action
-          </Button>
-        </div>
-      </FieldSet>
-
-      <FieldSet>
-        <FieldLegend
-          className="flex items-center gap-2"
-          data-testid="input-axes-legend"
-        >
-          <TypeColorMark colorVar={PIN_COLOR_VAR.vector} />
-          Axes
-        </FieldLegend>
-        <div className="flex flex-col gap-3">
-          {value.axes.map((axis, index) => {
-            const axisId = `input-axis-${index}`;
-            const kind = axis.kind === "2d" ? "2d" : "1d";
-            return (
-              <Card
-                key={`${axis.name}-${index}`}
-                size="sm"
-                data-testid={axisId}
-              >
-                <CardHeader className="border-b bg-muted/50">
-                  <div className="flex flex-wrap items-end gap-2">
-                    <Field className="min-w-32 flex-1">
-                      <FieldLabel htmlFor={`${axisId}-name`}>Name</FieldLabel>
-                      <Input
-                        id={`${axisId}-name`}
-                        className="min-h-[var(--touch-target,44px)]"
-                        value={axis.name}
-                        onChange={(event) =>
-                          onChange(
-                            patchAxis(value, index, { name: event.target.value }),
-                          )
+                    {kind === "action" ? "Actions" : "Axes"} ({mappings.length})
+                  </p>
+                  {mappings.map((mapping, index) =>
+                    matches(mapping) ? (
+                      <Button
+                        key={index}
+                        type="button"
+                        variant={
+                          selected.kind === kind && selected.index === index
+                            ? "secondary"
+                            : "ghost"
                         }
-                        data-testid={`${axisId}-name`}
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel>Kind</FieldLabel>
-                      <ToggleGroup
-                        variant="outline"
-                        size="touch"
-                        spacing={1}
-                        value={[kind]}
-                        onValueChange={(next) => {
-                          const picked = next[0];
-                          if (picked !== "1d" && picked !== "2d") return;
-                          onChange(patchAxis(value, index, { kind: picked }));
-                        }}
-                        aria-label="Axis Kind"
+                        className="h-auto min-w-0 justify-start py-2"
+                        aria-current={
+                          selected.kind === kind && selected.index === index
+                            ? "true"
+                            : undefined
+                        }
+                        data-testid={`input-${kind}-${index}-select`}
+                        onClick={() => setSelection({ kind, index })}
                       >
-                        <ToggleGroupItem value="1d" data-testid={`${axisId}-kind-1d`}>
-                          1D
-                        </ToggleGroupItem>
-                        <ToggleGroupItem value="2d" data-testid={`${axisId}-kind-2d`}>
-                          2D
-                        </ToggleGroupItem>
-                      </ToggleGroup>
-                    </Field>
-                    <BindingChrome
-                      id={axisId}
-                      index={index}
-                      total={value.axes.length}
-                      onMove={(delta) =>
-                        onChange({
-                          ...value,
-                          axes: moveItem(value.axes, index, delta),
-                        })
-                      }
-                      onRemove={() =>
-                        onChange({
-                          ...value,
-                          axes: value.axes.filter((_, i) => i !== index),
-                        })
-                      }
-                      name={axis.name || "axis"}
-                    />
-                  </div>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                  <div
-                    className="text-sm font-medium"
-                    data-testid={`${axisId}-bindings`}
-                  >
-                    Bindings
-                  </div>
-                  {axis.bindings.map((binding, bindingIndex) => (
-                    <AxisBindingRow
-                      key={`${axisId}-binding-${bindingIndex}`}
-                      id={`${axisId}-binding-${bindingIndex}`}
-                      binding={binding}
-                      index={bindingIndex}
-                      total={axis.bindings.length}
-                      kind={kind}
-                      touchControlIds={touchControlIds}
-                      onChange={(next) => {
-                        const bindings = [...axis.bindings];
-                        bindings[bindingIndex] = next;
-                        onChange(patchAxis(value, index, { bindings }));
-                      }}
-                      onMove={(delta) =>
-                        onChange(
-                          patchAxis(value, index, {
-                            bindings: moveItem(axis.bindings, bindingIndex, delta),
-                          }),
-                        )
-                      }
-                      onRemove={() =>
-                        onChange(
-                          patchAxis(value, index, {
-                            bindings: axis.bindings.filter(
-                              (_, i) => i !== bindingIndex,
-                            ),
-                          }),
-                        )
-                      }
-                    />
-                  ))}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="touch"
-                    className="w-fit"
-                    data-testid={`${axisId}-add-binding`}
-                    onClick={() =>
-                      onChange(
-                        patchAxis(value, index, {
-                          bindings: [
-                            ...axis.bindings,
-                            { device: "key", code: "", digitalValue: 1 },
-                          ],
-                        }),
-                      )
-                    }
-                  >
-                    Add Binding
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-          <Button
-            type="button"
-            variant="outline"
-            size="touch"
-            className="w-fit"
-            data-testid="input-axis-add"
-            onClick={() =>
-              onChange({
-                ...value,
-                axes: [
-                  ...value.axes,
-                  { name: "New Axis", kind: "1d", bindings: [] },
-                ],
-              })
-            }
-          >
-            Add Axis
-          </Button>
+                        <span className="flex min-w-0 flex-col items-start gap-1 text-left">
+                          <span className="max-w-full truncate">
+                            {mapping.name}
+                          </span>
+                          <span className="max-w-full truncate text-xs text-muted-foreground">
+                            {bindingSummary(mapping)}
+                          </span>
+                        </span>
+                      </Button>
+                    ) : null,
+                  )}
+                </div>
+              );
+            })}
+            {noResults ? (
+              <p role="status" className="p-2 text-sm text-muted-foreground">
+                No Matching Mappings
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="input-action-add"
+              onClick={() => {
+                setQuery("");
+                setSelection({ kind: "action", index: value.actions.length });
+                onChange({
+                  ...value,
+                  actions: [
+                    ...value.actions,
+                    {
+                      name: availableName(
+                        "New Action",
+                        value.actions.map((entry) => entry.name),
+                      ),
+                      bindings: [],
+                    },
+                  ],
+                });
+              }}
+            >
+              Add Action
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="input-axis-add"
+              onClick={() => {
+                setQuery("");
+                setSelection({ kind: "axis", index: value.axes.length });
+                onChange({
+                  ...value,
+                  axes: [
+                    ...value.axes,
+                    {
+                      name: availableName(
+                        "New Axis",
+                        value.axes.map((entry) => entry.name),
+                      ),
+                      kind: "1d",
+                      bindings: [],
+                    },
+                  ],
+                });
+              }}
+            >
+              Add Axis
+            </Button>
+          </div>
+        </nav>
+        <div className="min-w-0">
+          {value.actions.length + value.axes.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>No Input Mappings</EmptyTitle>
+                <EmptyDescription>
+                  Add an action for buttons or an axis for movement.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : null}
+          <>
+            <div className="flex flex-col gap-3">
+              {value.actions.map((action, index) => {
+                if (selected.kind !== "action" || selected.index !== index)
+                  return null;
+                const actionId = `input-action-${index}`;
+                return (
+                  <Card key={actionId} size="sm" data-testid={actionId}>
+                    <CardHeader className="border-b border-border">
+                      <CardTitle>Action</CardTitle>
+                      <CardDescription>
+                        Any bound control can trigger this action.
+                      </CardDescription>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <MappingNameField
+                          id={actionId}
+                          name={action.name}
+                          names={value.actions
+                            .filter((_, i) => i !== index)
+                            .map((entry) => entry.name)}
+                          onChange={(name) =>
+                            onChange(patchAction(value, index, { name }))
+                          }
+                        />
+                        <BindingChrome
+                          id={actionId}
+                          index={index}
+                          total={value.actions.length}
+                          onMove={(delta) => {
+                            setSelection({
+                              kind: "action",
+                              index: index + delta,
+                            });
+                            onChange({
+                              ...value,
+                              actions: moveItem(value.actions, index, delta),
+                            });
+                          }}
+                          onRemove={() =>
+                            onChange({
+                              ...value,
+                              actions: value.actions.filter(
+                                (_, i) => i !== index,
+                              ),
+                            })
+                          }
+                          name={action.name || "action"}
+                        />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-2">
+                      <div
+                        className="text-sm font-medium"
+                        data-testid={`${actionId}-bindings`}
+                      >
+                        Bindings
+                      </div>
+                      {action.bindings.map((binding, bindingIndex) => (
+                        <ActionBindingRow
+                          key={`${actionId}-binding-${bindingIndex}`}
+                          id={`${actionId}-binding-${bindingIndex}`}
+                          binding={binding}
+                          index={bindingIndex}
+                          total={action.bindings.length}
+                          touchControlIds={touchControlIds}
+                          onChange={(next) => {
+                            const bindings = [...action.bindings];
+                            bindings[bindingIndex] = next;
+                            onChange(patchAction(value, index, { bindings }));
+                          }}
+                          onMove={(delta) =>
+                            onChange(
+                              patchAction(value, index, {
+                                bindings: moveItem(
+                                  action.bindings,
+                                  bindingIndex,
+                                  delta,
+                                ),
+                              }),
+                            )
+                          }
+                          onRemove={() =>
+                            onChange(
+                              patchAction(value, index, {
+                                bindings: action.bindings.filter(
+                                  (_, i) => i !== bindingIndex,
+                                ),
+                              }),
+                            )
+                          }
+                        />
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-fit"
+                        data-testid={`${actionId}-add-binding`}
+                        onClick={() =>
+                          onChange(
+                            patchAction(value, index, {
+                              bindings: [
+                                ...action.bindings,
+                                { device: "key", code: "" },
+                              ],
+                            }),
+                          )
+                        }
+                      >
+                        Add Binding
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </>
+
+          <>
+            <div className="flex flex-col gap-3">
+              {value.axes.map((axis, index) => {
+                if (selected.kind !== "axis" || selected.index !== index)
+                  return null;
+                const axisId = `input-axis-${index}`;
+                const kind = axis.kind === "2d" ? "2d" : "1d";
+                return (
+                  <Card key={axisId} size="sm" data-testid={axisId}>
+                    <CardHeader className="border-b border-border">
+                      <CardTitle>Axis</CardTitle>
+                      <CardDescription>
+                        Combine controls into a 1D value or a 2D direction.
+                      </CardDescription>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <MappingNameField
+                          id={axisId}
+                          name={axis.name}
+                          names={value.axes
+                            .filter((_, i) => i !== index)
+                            .map((entry) => entry.name)}
+                          onChange={(name) =>
+                            onChange(patchAxis(value, index, { name }))
+                          }
+                        />
+                        <Field>
+                          <FieldLabel>Kind</FieldLabel>
+                          <ToggleGroup
+                            variant="outline"
+                            size="sm"
+                            className="pointer-coarse:[&>button]:min-h-11 pointer-coarse:[&>button]:min-w-11"
+                            spacing={1}
+                            value={[kind]}
+                            onValueChange={(next) => {
+                              const picked = next[0];
+                              if (picked !== "1d" && picked !== "2d") return;
+                              onChange(
+                                patchAxis(value, index, { kind: picked }),
+                              );
+                            }}
+                            aria-label="Axis Kind"
+                          >
+                            <ToggleGroupItem
+                              value="1d"
+                              data-testid={`${axisId}-kind-1d`}
+                            >
+                              1D
+                            </ToggleGroupItem>
+                            <ToggleGroupItem
+                              value="2d"
+                              data-testid={`${axisId}-kind-2d`}
+                            >
+                              2D
+                            </ToggleGroupItem>
+                          </ToggleGroup>
+                        </Field>
+                        <BindingChrome
+                          id={axisId}
+                          index={index}
+                          total={value.axes.length}
+                          onMove={(delta) => {
+                            setSelection({
+                              kind: "axis",
+                              index: index + delta,
+                            });
+                            onChange({
+                              ...value,
+                              axes: moveItem(value.axes, index, delta),
+                            });
+                          }}
+                          onRemove={() =>
+                            onChange({
+                              ...value,
+                              axes: value.axes.filter((_, i) => i !== index),
+                            })
+                          }
+                          name={axis.name || "axis"}
+                        />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-2">
+                      <div
+                        className="text-sm font-medium"
+                        data-testid={`${axisId}-bindings`}
+                      >
+                        Bindings
+                      </div>
+                      {axis.bindings.map((binding, bindingIndex) => (
+                        <AxisBindingRow
+                          key={`${axisId}-binding-${bindingIndex}`}
+                          id={`${axisId}-binding-${bindingIndex}`}
+                          binding={binding}
+                          index={bindingIndex}
+                          total={axis.bindings.length}
+                          kind={kind}
+                          touchControlIds={touchControlIds}
+                          onChange={(next) => {
+                            const bindings = [...axis.bindings];
+                            bindings[bindingIndex] = next;
+                            onChange(patchAxis(value, index, { bindings }));
+                          }}
+                          onMove={(delta) =>
+                            onChange(
+                              patchAxis(value, index, {
+                                bindings: moveItem(
+                                  axis.bindings,
+                                  bindingIndex,
+                                  delta,
+                                ),
+                              }),
+                            )
+                          }
+                          onRemove={() =>
+                            onChange(
+                              patchAxis(value, index, {
+                                bindings: axis.bindings.filter(
+                                  (_, i) => i !== bindingIndex,
+                                ),
+                              }),
+                            )
+                          }
+                        />
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-fit"
+                        data-testid={`${axisId}-add-binding`}
+                        onClick={() =>
+                          onChange(
+                            patchAxis(value, index, {
+                              bindings: [
+                                ...axis.bindings,
+                                { device: "key", code: "", digitalValue: 1 },
+                              ],
+                            }),
+                          )
+                        }
+                      >
+                        Add Binding
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </>
         </div>
-      </FieldSet>
+      </div>
     </div>
   );
 }

@@ -23,6 +23,7 @@ export interface NamePromptDialogProps {
   label: string;
   description?: string;
   confirmLabel?: string;
+  initialValue?: string;
   onSubmit: (name: string) => void;
   /** Return a message to keep the prompt open with an invalid name. */
   validate?: (name: string) => string | null;
@@ -37,6 +38,7 @@ export function NamePromptDialog({
   label,
   description,
   confirmLabel = "Add",
+  initialValue = "",
   onSubmit,
   validate,
   "data-testid": testId,
@@ -46,10 +48,10 @@ export function NamePromptDialog({
 
   useEffect(() => {
     if (open) {
-      setDraft("");
+      setDraft(initialValue);
       setError(null);
     }
-  }, [open]);
+  }, [open, initialValue]);
 
   const submit = () => {
     const name = draft.trim();
