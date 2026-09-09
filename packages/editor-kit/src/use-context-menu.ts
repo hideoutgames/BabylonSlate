@@ -74,6 +74,7 @@ interface PressState {
   startX: number;
   startY: number;
   timerId: ReturnType<typeof setTimeout>;
+  cleanup: () => void;
 }
 
 function distance(ax: number, ay: number, bx: number, by: number): number {
@@ -104,6 +105,7 @@ export function useContextMenu(
     if (press) {
       clearTimeout(press.timerId);
       pressRef.current = null;
+      press.cleanup();
     }
   }, []);
 
@@ -131,15 +133,50 @@ export function useContextMenu(
       if (!enabled || event.pointerType === "mouse") return;
       clearPress();
       if (!event.isPrimary) return;
+      const { pointerId, clientX, clientY } = event;
+      const onOtherPointer = (next: PointerEvent) => {
+        if (next.pointerId !== pointerId) clearPress();
+      };
+      const onPointerEnd = (next: PointerEvent) => {
+        if (next.pointerId === pointerId) clearPress();
+      };
+      const onDocumentMove = (next: PointerEvent) => {
+        if (
+          next.pointerId === pointerId &&
+          distance(clientX, clientY, next.clientX, next.clientY) >
+            CONTEXT_MENU_MOVE_TOLERANCE_PX
+        ) {
+          clearPress();
+        }
+      };
+      const onVisibilityChange = () => {
+        if (document.hidden) clearPress();
+      };
+      // Only the active hold owns document listeners. Capture also catches a
+      // second contact or release outside the bound tile, including portals.
+      document.addEventListener("pointerdown", onOtherPointer, true);
+      document.addEventListener("pointermove", onDocumentMove, true);
+      document.addEventListener("pointerup", onPointerEnd, true);
+      document.addEventListener("pointercancel", onPointerEnd, true);
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("blur", clearPress);
       const timerId = setTimeout(() => {
-        pressRef.current = null;
-        openAt(event.clientX, event.clientY);
+        clearPress();
+        openAt(clientX, clientY);
       }, longPressMs);
       pressRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
+        pointerId,
+        startX: clientX,
+        startY: clientY,
         timerId,
+        cleanup: () => {
+          document.removeEventListener("pointerdown", onOtherPointer, true);
+          document.removeEventListener("pointermove", onDocumentMove, true);
+          document.removeEventListener("pointerup", onPointerEnd, true);
+          document.removeEventListener("pointercancel", onPointerEnd, true);
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+          window.removeEventListener("blur", clearPress);
+        },
       };
     },
     [clearPress, enabled, longPressMs, openAt],
@@ -182,8 +219,16 @@ export function useContextMenu(
   useEffect(() => {
     if (!enabled) return;
 
-    const onScroll = () => {
+    const onScroll = (event: Event) => {
       clearPress();
+      // A short viewport can make the menu itself scroll; only movement of the
+      // underlying surface invalidates its anchor and dismisses it.
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".context-menu-panel")
+      ) {
+        return;
+      }
       closeMenu();
     };
 

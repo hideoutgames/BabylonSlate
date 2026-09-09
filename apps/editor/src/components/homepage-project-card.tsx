@@ -11,6 +11,7 @@ import {
 import type { ListedProject } from "../lib/listed-projects";
 import { displayProjectName } from "../lib/display-project-name";
 import { ProjectIdentityBadge } from "./homepage-project-identity";
+import { useHomepageCardTouch } from "./use-homepage-card-touch";
 
 export function HomepageProjectCard({
   project,
@@ -54,6 +55,7 @@ export function HomepageProjectCard({
       },
     ],
   });
+  const touch = useHomepageCardTouch(!busy && !menu?.open);
   useEffect(() => {
     if (menu?.open) {
       holding.current = true;
@@ -72,6 +74,9 @@ export function HomepageProjectCard({
       data-color={project.appearance?.color ?? "stone"}
       data-testid={`open-listed-project-${project.name}`}
       {...bind}
+      onPointerDown={(event) => {
+        if (touch.onPointerDown(event)) bind.onPointerDown(event);
+      }}
       onKeyDown={(event) => {
         if (
           event.key === "ContextMenu" ||
@@ -97,7 +102,11 @@ export function HomepageProjectCard({
         disabled={busy}
         onClick={(event) => {
           // Keyboard/assistive activation must not be swallowed by the hold release guard.
-          if (!busy && (event.detail === 0 || !holding.current)) onOpen();
+          if (
+            touch.shouldActivate(event) &&
+            (event.detail === 0 || !holding.current)
+          )
+            onOpen();
         }}
       />
       <Button

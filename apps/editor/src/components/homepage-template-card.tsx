@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "@babylonslate/ui/components/card";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { useHomepageCardTouch } from "./use-homepage-card-touch";
 
 export function TemplateCardWell({
   imageUrl,
@@ -51,6 +52,7 @@ export function TemplatePickCard({
   className?: string;
   onSelect: () => void;
 }) {
+  const touch = useHomepageCardTouch(!disabled);
   const activate = () => {
     if (!disabled) onSelect();
   };
@@ -75,7 +77,10 @@ export function TemplatePickCard({
         selected ? "ring-2 ring-primary" : "",
         className,
       )}
-      onClick={activate}
+      onPointerDown={touch.onPointerDown}
+      onClick={(event) => {
+        if (touch.shouldActivate(event)) activate();
+      }}
       onKeyDown={onKeyDown}
     >
       <TemplateCardWell imageUrl={imageUrl}>

@@ -122,9 +122,14 @@ describe("Homepage gallery navigation", () => {
 
   it("settles when scrolling stops on browsers without a scrollend event", () => {
     render(<HomepageGallery items={projects} label="Projects" />);
+    fireEvent.touchStart(gallery(), { touches: [{ identifier: 1 }] });
     scroll(1200);
     expect(activePage()?.getAttribute("aria-label")).toBe("Page 1 of 8");
 
+    act(() => vi.advanceTimersByTime(1000));
+    expect(activePage()?.getAttribute("aria-label")).toBe("Page 1 of 8");
+    expect(gallery().getAttribute("data-scrolling")).toBe("true");
+    fireEvent.touchEnd(gallery(), { touches: [] });
     act(() => vi.advanceTimersByTime(1000));
 
     expect(activePage()?.getAttribute("aria-label")).toBe("Page 2 of 8");
@@ -144,9 +149,18 @@ describe("Homepage gallery navigation", () => {
     expect(gallery().scrollLeft).toBe(2100);
   });
 
-  it("keeps the current project visible when switching from cards to a list", () => {
+  it("keeps the current project visible through layout changes and their delayed scroll events", () => {
     const view = render(<HomepageGallery items={projects} label="Projects" />);
     scroll(2400, true);
+
+    view.rerender(
+      <HomepageGallery items={projects} label="Projects" layout="small" />,
+    );
+
+    expect(activePage()?.getAttribute("aria-label")).toBe("Page 1 of 3");
+    expect(activePage()?.textContent).toContain("Project 7");
+    fireEvent.scroll(gallery());
+    fireEvent(gallery(), new Event("scrollend"));
 
     view.rerender(
       <HomepageGallery items={projects} label="Projects" layout="list" />,

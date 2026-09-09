@@ -46,6 +46,13 @@ import {
   prepareProjectPicture,
 } from "./homepage-project-appearance";
 
+function hasTouchInput() {
+  return (
+    isCoarsePointerEnvironment() ||
+    window.matchMedia("(any-pointer: coarse)").matches
+  );
+}
+
 function nativeLocationStatus(
   hostPlatform: HostPlatform,
   pickFolder: boolean,
@@ -178,7 +185,7 @@ export function HomepageCreateDialog({
       <DialogContent
         ref={popup}
         initialFocus={() =>
-          isCoarsePointerEnvironment() || step === "templates"
+          hasTouchInput() || step === "templates"
             ? popup.current
             : nameInput.current
         }
@@ -230,7 +237,7 @@ export function HomepageCreateDialog({
                 onTemplateIdChange(id);
                 setStep("details");
                 requestAnimationFrame(() => {
-                  const target = isCoarsePointerEnvironment()
+                  const target = hasTouchInput()
                     ? popup.current
                     : nameInput.current;
                   target?.focus({ preventScroll: true });

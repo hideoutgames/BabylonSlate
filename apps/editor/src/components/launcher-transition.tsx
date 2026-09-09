@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -38,6 +39,17 @@ const TransitionContext = createContext<{
   active: false,
 });
 export const useLauncherTransition = () => useContext(TransitionContext);
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+function subscribeReducedMotion(update: () => void) {
+  const query = window.matchMedia(REDUCED_MOTION_QUERY);
+  query.addEventListener("change", update);
+  return () => query.removeEventListener("change", update);
+}
+function prefersReducedMotion() {
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
+
 export function LauncherTransitionProvider({
   route,
   children,
@@ -46,6 +58,11 @@ export function LauncherTransitionProvider({
   children: ReactNode;
 }) {
   const [scheme] = useHomepageScheme();
+  const reducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    prefersReducedMotion,
+    () => false,
+  );
   const [transition, setTransition] = useState<Transition | null>(() => ({
     target: route === "home" ? "home" : "editor",
     label: "Slate",
@@ -119,8 +136,16 @@ export function LauncherTransitionProvider({
       return;
     }
     if (!transition.mounted || !transition.settled) return;
+    // CSS removes the fade immediately when the preference changes. Release
+    // the matching interaction cover in the same update, including mid-fade.
+    if (transition.leaving && reducedMotion) {
+      setTransition(null);
+      return;
+    }
     const delay = transition.leaving
-      ? 650
+      ? // transitionend normally releases the route; this also covers browsers
+        // that omit the event, such as a backgrounded webview.
+        650
       : Math.max(
           0,
           2000 - (performance.now() - transition.since),
@@ -133,7 +158,7 @@ export function LauncherTransitionProvider({
       () =>
         setTransition((current) =>
           current === transition
-            ? current.leaving
+            ? current.leaving || reducedMotion
               ? null
               : { ...current, leaving: true }
             : current,
@@ -141,7 +166,7 @@ export function LauncherTransitionProvider({
       delay,
     );
     return () => clearTimeout(timer);
-  }, [transition, route]);
+  }, [transition, route, reducedMotion]);
   const active = Boolean(transition);
   const value = useMemo(
     () => ({
@@ -170,6 +195,16 @@ export function LauncherTransitionProvider({
               className="slate-loading"
               data-scheme={scheme}
               data-leaving={transition.leaving}
+              onTransitionEnd={(event) => {
+                if (
+                  event.target !== event.currentTarget ||
+                  event.propertyName !== "opacity"
+                )
+                  return;
+                setTransition((current) =>
+                  current === transition && current.leaving ? null : current,
+                );
+              }}
               role="status"
               aria-live="polite"
               aria-label={

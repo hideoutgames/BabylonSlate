@@ -78,6 +78,16 @@ function changeReducedMotion(value: boolean) {
   });
 }
 
+function finishTransition(element: Element, propertyName = "opacity") {
+  // jsdom has no TransitionEvent constructor, so preserve the browser payload.
+  fireEvent(
+    element,
+    Object.assign(new Event("transitionend", { bubbles: true }), {
+      propertyName,
+    }),
+  );
+}
+
 describe("Launcher Transition", () => {
   it("keeps the minimum loading time but immediately enables a ready route with reduced motion", () => {
     reducedMotion = true;
@@ -110,17 +120,15 @@ describe("Launcher Transition", () => {
     act(() => launcher.controls().ready("home"));
     const overlay = screen.getByRole("status");
 
-    fireEvent.transitionEnd(overlay, { propertyName: "opacity" });
+    finishTransition(overlay);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
     advance(2000);
-    fireEvent.transitionEnd(overlay.querySelector("section")!, {
-      propertyName: "opacity",
-    });
-    fireEvent.transitionEnd(overlay, { propertyName: "transform" });
+    finishTransition(overlay.querySelector("section")!);
+    finishTransition(overlay, "transform");
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
 
     advance(300);
-    fireEvent.transitionEnd(overlay, { propertyName: "opacity" });
+    finishTransition(overlay);
     expect(screen.queryByRole("status")).toBeNull();
     expect(launcher.surface().hasAttribute("inert")).toBe(false);
   });
