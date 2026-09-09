@@ -308,6 +308,7 @@ export function ViewportToolbar({
             <Toggle
               variant="outline"
               size="sm"
+              className="pointer-coarse:min-h-[var(--touch-target,44px)] pointer-coarse:min-w-[var(--touch-target,44px)]"
               aria-label="Snap Grid"
               pressed={snapEnabled}
               onPressedChange={toggleSnap}
@@ -342,6 +343,7 @@ export function ViewportToolbar({
         <IconActionButton
           type="button"
           size="sm"
+          className="pointer-coarse:min-h-[var(--touch-target,44px)] pointer-coarse:min-w-[var(--touch-target,44px)]"
           label="Drop"
           disabled={dropDisabled}
           onClick={onDrop}
