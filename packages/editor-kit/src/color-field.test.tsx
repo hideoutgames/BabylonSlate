@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
-  ColorField,
-  parseHexColor,
-} from "./color-field";
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { ColorField, parseHexColor } from "./color-field";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 afterEach(() => {
@@ -28,11 +31,7 @@ describe("parseHexColor", () => {
 describe("ColorField", () => {
   it("shows the committed hex next to the native picker", () => {
     render(
-      <ColorField
-        value={[1, 0, 0]}
-        onChange={() => {}}
-        data-testid="tint"
-      />,
+      <ColorField value={[1, 0, 0]} onChange={() => {}} data-testid="tint" />,
     );
     expect((screen.getByTestId("tint") as HTMLInputElement).value).toBe(
       "#ff0000",
@@ -79,6 +78,12 @@ describe("ColorField", () => {
     fireEvent.blur(hex);
     expect(hex.value).toBe("#ff0000");
     expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toMatch(/hex/i);
+    expect(hex.getAttribute("aria-describedby")).toBe(
+      screen.getByRole("alert").id,
+    );
+    fireEvent.change(hex, { target: { value: "#000" } });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("commits from the native color picker", () => {

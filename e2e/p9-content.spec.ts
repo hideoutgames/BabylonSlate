@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import {
   createContentBrowserAsset,
@@ -378,7 +379,14 @@ test.describe("P9 content systems", () => {
     await showContentBrowser(page);
     await page
       .getByTestId("content-browser-import-input")
-      .setInputFiles([path.join(process.cwd(), "e2e/fixtures/display.woff2")]);
+      .setInputFiles({
+        name: "display.woff2",
+        mimeType: "font/woff2",
+        buffer: await readFile(path.join(
+          process.cwd(),
+          "packages/ui/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+        )),
+      });
     await expect(
       page.locator('[data-asset-path="assets/display.babasset"]'),
     ).toBeVisible({ timeout: 30_000 });

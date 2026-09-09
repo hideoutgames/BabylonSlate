@@ -1,4 +1,6 @@
-import { useCallback, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useId, useRef, useState, type PointerEvent } from "react";
+import { FieldError } from "@babylonslate/ui/components/field";
+import { GripVerticalIcon } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   evaluateNumericExpression,
@@ -10,6 +12,7 @@ export interface NumericDragFieldProps {
   /** Visual scrub-handle text (axis letter). Omit for a compact unlabeled handle. */
   label?: string;
   id?: string;
+  "aria-label"?: string;
   value: number;
   /** Different selected values; `value` remains the scrub/expression baseline. */
   mixed?: boolean;
@@ -43,6 +46,7 @@ function clamp(value: number, min?: number, max?: number): number {
 export function NumericDragField({
   label,
   id,
+  "aria-label": ariaLabel,
   value,
   mixed = false,
   sensitivity = 0.01,
@@ -63,12 +67,15 @@ export function NumericDragField({
   } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   const baselineRef = useRef(value);
   const selectAll = useSelectAllOnActivate();
 
   const onPointerDown = useCallback(
     (event: PointerEvent<HTMLSpanElement>) => {
       if (disabled) return;
+      setError(null);
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -106,56 +113,85 @@ export function NumericDragField({
   );
 
   return (
-    <div className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1">
-      <span
-        className={cn(
-          "shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold",
-          !label || label.length <= 1 ? "w-3" : null,
-          accent === "x" && "text-axis-x",
-          accent === "y" && "text-axis-y",
-          accent === "z" && "text-axis-z",
-          !accent && "text-muted-foreground",
-          dragging && !accent && "text-foreground",
-        )}
-        data-testid={testId ? `${testId}-scrub` : undefined}
-        aria-hidden="true"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
+    <div
+      className="flex min-w-0 flex-col gap-1"
+      data-invalid={Boolean(error) || undefined}
+    >
+      <div
+        className="numeric-drag-field relative flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1"
+        data-scalar={!label || undefined}
       >
-        {label}
-      </span>
-      <input
-        type="text"
-        inputMode="text"
-        autoComplete="off"
-        spellCheck={false}
-        id={id}
-        className="h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-background px-1 text-xs"
-        aria-label={label || undefined}
-        data-testid={testId}
-        disabled={disabled}
-        value={draft ?? (mixed ? "" : formatNumericDisplay(value))}
-        placeholder={mixed ? "Mixed" : undefined}
-        onChange={(event) => {
-          const raw = event.target.value;
-          if (draft === null) baselineRef.current = value;
-          setDraft(raw);
-          const parsed = evaluateNumericExpression(raw, baselineRef.current);
-          if (parsed === undefined) return;
-          onChange(clamp(parsed, min, max));
-        }}
-        onFocus={selectAll.onFocus}
-        onPointerDown={selectAll.onPointerDown}
-        onPointerUp={selectAll.onPointerUp}
-        onMouseUp={selectAll.onMouseUp}
-        onBlur={() => {
-          selectAll.onBlur();
-          setDraft(null);
-          onDragEnd?.(value);
-        }}
-      />
+        <span
+          className={cn(
+            "shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold",
+            label
+              ? label.length <= 1
+                ? "w-3"
+                : null
+              : "absolute right-1 inset-y-0 flex w-4 items-center justify-center",
+            accent === "x" && "text-axis-x",
+            accent === "y" && "text-axis-y",
+            accent === "z" && "text-axis-z",
+            !accent && "text-muted-foreground",
+            dragging && !accent && "text-foreground",
+          )}
+          data-testid={testId ? `${testId}-scrub` : undefined}
+          data-numeric-scrub=""
+          title="Drag To Adjust"
+          aria-hidden="true"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        >
+          {label || <GripVerticalIcon className="size-3" />}
+        </span>
+        <input
+          data-slot="input"
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          spellCheck={false}
+          id={id}
+          className={cn(
+            "h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-control px-2 text-xs",
+            !label && "pr-6",
+          )}
+          aria-label={ariaLabel ?? (label || undefined)}
+          aria-invalid={Boolean(error) || undefined}
+          aria-describedby={error ? errorId : undefined}
+          data-testid={testId}
+          disabled={disabled}
+          value={draft ?? (mixed ? "" : formatNumericDisplay(value))}
+          placeholder={mixed ? "Mixed" : undefined}
+          onChange={(event) => {
+            const raw = event.target.value;
+            if (draft === null) baselineRef.current = value;
+            setDraft(raw);
+            setError(null);
+            const parsed = evaluateNumericExpression(raw, baselineRef.current);
+            if (parsed === undefined) return;
+            onChange(clamp(parsed, min, max));
+          }}
+          onFocus={selectAll.onFocus}
+          onPointerDown={selectAll.onPointerDown}
+          onPointerUp={selectAll.onPointerUp}
+          onMouseUp={selectAll.onMouseUp}
+          onBlur={() => {
+            selectAll.onBlur();
+            if (
+              draft?.trim() &&
+              evaluateNumericExpression(draft, baselineRef.current) ===
+                undefined
+            ) {
+              setError("Invalid expression. Restored the last valid value.");
+            }
+            setDraft(null);
+            onDragEnd?.(value);
+          }}
+        />
+      </div>
+      {error && <FieldError id={errorId}>{error}</FieldError>}
     </div>
   );
 }

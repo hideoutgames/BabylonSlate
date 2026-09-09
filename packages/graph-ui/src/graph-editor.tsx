@@ -1823,7 +1823,7 @@ function GraphEditorCanvas({
         {readOnly ? null : (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
-            className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card/90 p-1 shadow-md"
+            className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-sm"
             data-testid="graph-toolbar"
           >
             {paletteNodes && paletteNodes.length > 0 ? (
@@ -1962,7 +1962,7 @@ function GraphEditorCanvas({
             gap={20}
             size={1}
             color="var(--border)"
-            bgColor="var(--card)"
+            bgColor="var(--graph-canvas)"
           />
           <Controls
             showInteractive={false}

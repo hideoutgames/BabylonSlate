@@ -17,6 +17,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   actorSubtree,
+  folderSubtree,
   nextFolderId,
   type SerializedActor,
   type SerializedGraph,
@@ -25,6 +26,16 @@ import {
 } from "@babylonslate/core";
 import { isSceneWorkspaceKind } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
@@ -56,7 +67,10 @@ import {
   spawnPlacedActor,
   type PlaceActorItem,
 } from "../lib/place-actors";
-import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
+import {
+  classIdFromClassAsset,
+  classParentLookup,
+} from "../lib/content-browser-helpers";
 import { prefabComponentsFromGraph } from "../lib/prefab-preview";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 import {
@@ -67,6 +81,9 @@ import {
   outlinerRowTarget,
   outlinerTreeDropMoves,
 } from "../lib/outliner-drop";
+
+const QUIET_ROW_ACTION =
+  "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
 
 export {
   actorRowId,
@@ -120,7 +137,9 @@ export function flattenOutliner(
     bucket.push(folder);
     foldersByParent.set(folder.parentFolderId, bucket);
   }
-  const folderById = new Map(scene.folders.map((folder) => [folder.id, folder]));
+  const folderById = new Map(
+    scene.folders.map((folder) => [folder.id, folder]),
+  );
 
   const folderPath = (folderId: string | null): string => {
     const parts: string[] = [];
@@ -248,14 +267,25 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const phone = usePhoneLayout();
   const actionSize = phone ? "touch-icon" : "icon-sm";
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, assetRegistry, loadGraphDocument, openDocument } =
-    useDocuments();
-  const { selectedActorIds, selectActor, setSelectedActorIds, frameActor, viewportDropApi } =
-    useSceneEditing();
+  const {
+    openDocuments,
+    applySceneChange,
+    assetRegistry,
+    loadGraphDocument,
+    openDocument,
+  } = useDocuments();
+  const {
+    selectedActorIds,
+    selectActor,
+    setSelectedActorIds,
+    frameActor,
+    viewportDropApi,
+  } = useSceneEditing();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
+  const [deleteFolderId, setDeleteFolderId] = useState<string | null>(null);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(
@@ -413,9 +443,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       return diskGraphs.get(path);
                     },
                   }) ??
-                  (graph
-                    ? prefabComponentsFromGraph(graph)
-                    : kind.components),
+                  (graph ? prefabComponentsFromGraph(graph) : kind.components),
               },
             });
           });
@@ -507,26 +535,48 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [mutate, scene],
   );
 
-  /** Deleting a folder keeps its actors; contents move up one level. */
+  /** Keep each choice in one scene mutation so undo restores the whole operation. */
   const removeFolder = useCallback(
-    (folderId: string) => {
+    (folderId: string, deleteContents: boolean) => {
       if (!scene) return;
       const folder = scene.folders.find((entry) => entry.id === folderId);
       if (!folder) return;
       const promoteTo = folder.parentFolderId;
+      const doomedFolders = new Set(
+        (deleteContents ? folderSubtree(scene, folderId) : [folder]).map(
+          (entry) => entry.id,
+        ),
+      );
+      const doomedActors = new Set<string>();
+      if (deleteContents) {
+        // Attachment children appear beneath their parent actor, even when
+        // their own folderId is unset or names a different folder.
+        for (const actor of scene.actors) {
+          if (actor.folderId === null || !doomedFolders.has(actor.folderId))
+            continue;
+          for (const child of actorSubtree(scene, actor.id)) {
+            doomedActors.add(child.id);
+          }
+        }
+      }
       mutate({
         ...scene,
         folders: scene.folders
-          .filter((entry) => entry.id !== folderId)
+          .filter((entry) => !doomedFolders.has(entry.id))
           .map((entry) =>
             entry.parentFolderId === folderId
               ? { ...entry, parentFolderId: promoteTo }
               : entry,
           ),
-        actors: scene.actors.map((actor) =>
-          actor.folderId === folderId ? { ...actor, folderId: promoteTo } : actor,
-        ),
+        actors: scene.actors
+          .filter((actor) => !doomedActors.has(actor.id))
+          .map((actor) =>
+            actor.folderId === folderId
+              ? { ...actor, folderId: promoteTo }
+              : actor,
+          ),
       });
+      setDeleteFolderId(null);
       setSelectedRowId(null);
     },
     [mutate, scene],
@@ -593,7 +643,9 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       setDropHint({
         clientX,
         clientY,
-        allowed: Boolean(viewportDropApi?.containsClientPoint(clientX, clientY)),
+        allowed: Boolean(
+          viewportDropApi?.containsClientPoint(clientX, clientY),
+        ),
         label: name,
       });
     },
@@ -631,6 +683,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           onSelect: () => selectActor(actorId, true),
         },
         {
+          id: "frame-actor",
+          label: "Frame Selection",
+          testId: `outliner-frame-${actorId}`,
+          onSelect: () => frameActor(actorId),
+        },
+        {
           id: "duplicate-actor",
           label: "Duplicate",
           testId: `outliner-duplicate-${actorId}`,
@@ -655,7 +713,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       );
       return items;
     },
-    [assetRegistry, mutate, openDocument, removeActor, scene, selectActor, selectedActorIds],
+    [assetRegistry, frameActor, mutate, openDocument, removeActor, scene, selectActor, selectedActorIds],
   );
 
   const folderMenuItems = useCallback(
@@ -670,11 +728,15 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         id: "delete-folder",
         label: "Delete",
         testId: `outliner-delete-folder-${folderId}`,
-        onSelect: () => removeFolder(folderId),
+        onSelect: () => setDeleteFolderId(folderId),
       },
     ],
-    [removeFolder],
+    [],
   );
+
+  const deletingFolder = deleteFolderId
+    ? scene?.folders.find((folder) => folder.id === deleteFolderId)
+    : undefined;
 
   const renamingFolder: SerializedOutlinerFolder | undefined = renameFolderId
     ? scene?.folders.find((folder) => folder.id === renameFolderId)
@@ -683,9 +745,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame data-testid="scene-outliner-panel">
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 items-center gap-1 px-1 py-1">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
-            className={cn("min-h-[var(--chrome-row,28px)]", phone && "min-h-11")}
+            className={cn(
+              "min-h-[var(--chrome-row,28px)]",
+              phone && "min-h-11",
+            )}
             placeholder="Search actors"
             aria-label="Search actors"
             value={search}
@@ -748,6 +813,8 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       variant="ghost"
                       onClick={() => toggleFlag(actorId, "visible")}
                       data-testid={`outliner-visibility-${actorId}`}
+                      aria-pressed={!node.muted}
+                      className={node.muted ? undefined : QUIET_ROW_ACTION}
                     >
                       {node.muted ? <EyeOffIcon /> : <EyeIcon />}
                     </IconActionButton>
@@ -771,6 +838,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                           variant="ghost"
                           size={actionSize}
                           aria-label={`Actor menu for ${node.label}`}
+                          className={QUIET_ROW_ACTION}
                           data-testid={`outliner-menu-${actorId}`}
                         >
                           <MoreHorizontalIcon />
@@ -801,7 +869,13 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             onExternalDragMove={moveActorDropHint}
             onExternalDragEnd={() => setDropHint(null)}
             reparentArm="immediate"
-            emptyLabel={scene ? "No actors yet" : "Open a scene"}
+            emptyLabel={
+              scene
+                ? search.trim()
+                  ? "No Matching Actors"
+                  : "No Actors Yet"
+                : "Open A Scene"
+            }
             data-testid="outliner-tree"
           />
         </div>
@@ -814,6 +888,41 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         overlay={overlay}
       />
       <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
+      {deletingFolder ? (
+        <AlertDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleteFolderId(null);
+          }}
+        >
+          <AlertDialogContent data-testid="outliner-delete-folder-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Folder</AlertDialogTitle>
+              <AlertDialogDescription>
+                Delete {deletingFolder.name} only and move its contents up one
+                level, or delete the folder and everything inside it? Either
+                choice can be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                size="sm"
+                variant="outline"
+                onClick={() => removeFolder(deletingFolder.id, false)}
+              >
+                Folder Only
+              </AlertDialogAction>
+              <AlertDialogAction
+                size="sm"
+                onClick={() => removeFolder(deletingFolder.id, true)}
+              >
+                Folder And Contents
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
       {renamingFolder ? (
         <NamePromptDialog
           open

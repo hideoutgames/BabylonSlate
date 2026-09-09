@@ -4,7 +4,10 @@ import { createDefaultScene, type SerializedScene } from "@babylonslate/core";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
 import { ViewportToolbar } from "./viewport-toolbar";
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -28,7 +31,7 @@ const harness = vi.hoisted(() => ({
   setCollisionsVisible: vi.fn(),
   dragSelectActive: false,
   setDragSelectActive: vi.fn(),
-  viewportMode: "3d" as const,
+  viewportMode: "3d" as "2d" | "3d",
   setViewportMode: vi.fn(),
   previewGameCamera: false,
   setPreviewGameCamera: vi.fn(),
@@ -38,12 +41,23 @@ const harness = vi.hoisted(() => ({
   setViewportShadingMode: vi.fn(),
   scene: null as SerializedScene | null,
   documentKind: "scene" as "scene" | "scene-layer" | "graph",
+  gridSize: 1,
   applySceneChange: vi.fn(async () => true),
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
     documentId: "scene:assets/Main.scene.babasset",
+  }),
+}));
+
+vi.mock("../lib/viewport-engine-prefs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/viewport-engine-prefs")>()),
+  useEditorViewportPrefs: () => ({
+    gridSize: harness.gridSize,
+    flySpeed: 8,
+    editorTextureLodEnabled: true,
+    editorTextureLodQuality: 1,
   }),
 }));
 
@@ -107,6 +121,7 @@ beforeEach(() => {
   harness.viewportShadingMode = "pbr";
   harness.scene = createDefaultScene();
   harness.documentKind = "scene";
+  harness.gridSize = 1;
   harness.setGizmoTool.mockClear();
   harness.setSnapEnabled.mockClear();
   harness.setJoystickEnabled.mockClear();
@@ -149,34 +164,77 @@ const GIZMO_LABELS = [
 ] as const;
 
 describe("ViewportToolbar", () => {
+  it("exposes current snap increment and nondefault view state without opening settings", () => {
+    harness.snapEnabled = true;
+    harness.previewGameCamera = true;
+    harness.viewportShadingMode = "wireframe";
+    harness.scene!.settings.grid.snapTranslate = 2;
+    harness.scene!.settings.grid.snapEnabled = true;
+    renderToolbar();
+    const snap = screen.getByRole("button", { name: "Snap Grid" });
+    expect(snap.textContent).toBe("2");
+    expect(snap.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Wireframe")).toBeTruthy();
+    expect(screen.getByText("Game Camera")).toBeTruthy();
+    fireEvent.click(snap);
+    expect(harness.setSnapEnabled).toHaveBeenCalledWith(false);
+    expect(harness.applySceneChange).toHaveBeenCalledWith(
+      "scene:assets/Main.scene.babasset",
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          grid: expect.objectContaining({ snapEnabled: false }),
+        }),
+      }),
+    );
+  });
+
+  it("shows the prefab translation increment from editor grid preferences", () => {
+    harness.documentKind = "graph";
+    harness.scene = null;
+    harness.gridSize = 4;
+    renderToolbar();
+    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe("4");
+  });
+
+  it("shows 2D tile snapping and the selected tool increment", () => {
+    harness.viewportMode = "2d";
+    harness.scene!.settings.grid.tileSize = 3;
+    harness.scene!.settings.grid.snapTranslate = 99;
+    harness.scene!.settings.grid.snapRotateDeg = 30;
+    harness.scene!.settings.grid.snapScale = 0.5;
+    const { rerender } = renderToolbar();
+    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe("3");
+    harness.gizmoTool = "rotate";
+    rerender(
+      <TooltipProvider>
+        <ViewportToolbar />
+      </TooltipProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe("30°");
+    harness.gizmoTool = "scale";
+    rerender(
+      <TooltipProvider>
+        <ViewportToolbar />
+      </TooltipProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe("0.5");
+  });
+
   it.each(GIZMO_LABELS)(
-    "shows $label only on the enabled $id gizmo",
-    ({ id }) => {
-      harness.gizmoTool = id;
+    "selects the $label gizmo from its named tool",
+    ({ id, label }) => {
+      harness.gizmoTool = id === "translate" ? "rotate" : "translate";
       renderToolbar();
-      for (const tool of GIZMO_LABELS) {
-        const button = screen.getByTestId(`gizmo-tool-${tool.id}`);
-        if (tool.id === id) {
-          const label = button.querySelector(
-            '[data-testid="gizmo-tool-label"]',
-          ) as HTMLElement | null;
-          expect(label?.style.gridTemplateColumns).toBe("1fr");
-          expect(button.textContent).toContain(tool.label);
-        } else {
-          const label = button.querySelector(
-            '[data-testid="gizmo-tool-label"]',
-          ) as HTMLElement | null;
-          expect(label?.style.gridTemplateColumns).toBe("0fr");
-        }
-      }
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(harness.setGizmoTool).toHaveBeenCalledWith(id);
     },
   );
 
   it("keeps Drag Select and Viewport Settings icon-only", () => {
     renderToolbar();
-    expect(screen.getByTestId("viewport-drag-select").textContent).not.toContain(
-      "Drag Select",
-    );
+    expect(
+      screen.getByTestId("viewport-drag-select").textContent,
+    ).not.toContain("Drag Select");
     expect(screen.getByTestId("viewport-settings").textContent).not.toContain(
       "Viewport Settings",
     );
@@ -266,7 +324,9 @@ describe("ViewportToolbar", () => {
         .getAttribute("aria-checked"),
     ).toBe("false");
     expect(screen.getByTestId("gizmo-joystick-toggle")).toBeTruthy();
-    expect(screen.getByTestId("viewport-pivot-around-center-toggle")).toBeTruthy();
+    expect(
+      screen.getByTestId("viewport-pivot-around-center-toggle"),
+    ).toBeTruthy();
     expect(screen.getByTestId("viewport-game-camera-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-settings-submenu")).toBeTruthy();
   });
@@ -382,15 +442,15 @@ describe("ViewportToolbar", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     fireEvent.click(screen.getByTestId("viewport-shading-mode"));
-    expect(screen.getByTestId("viewport-shading-pbr").getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByTestId("viewport-shading-pbr").getAttribute("aria-checked"),
+    ).toBe("true");
     expect(screen.getByTestId("viewport-shading-unlit")).toBeTruthy();
     expect(screen.getByTestId("viewport-shading-wireframe")).toBeTruthy();
     expect(screen.queryByTestId("viewport-shading-points-cloud")).toBeNull();
-    expect(screen.getByTestId("viewport-mode-toggle").getAttribute("aria-label")).toBe(
-      "2D / 3D",
-    );
+    expect(
+      screen.getByTestId("viewport-mode-toggle").getAttribute("aria-label"),
+    ).toBe("2D / 3D");
   });
 
   it("sets Unlit shading without writing the scene document", () => {

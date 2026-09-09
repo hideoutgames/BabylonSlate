@@ -10,6 +10,7 @@ import {
   defaultExportPreset,
   isErr,
   isOk,
+  type SerializedGraph,
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import {
@@ -37,6 +38,65 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
+  it.each(["Class variable", "Spawn Actor dropdown"])("packs the inherited prefab referenced only by a %s", async (source) => {
+    const mesh = createMeshComponent("parent-mesh", "box");
+    const childCollider = {
+      id: "child-collider",
+      classId: "ColliderComponent",
+      parentId: mesh.id,
+      properties: {},
+    };
+    const graphs: Record<string, SerializedGraph> = {
+      "class-main": {
+        nodes: [
+          ...(source === "Spawn Actor dropdown" ? [
+            { id: "spawn", type: "actor.spawn", position: { x: 0, y: 0 }, data: { "default:classId": "SpawnChild" } },
+          ] : []),
+          { id: "print", type: "debug.print", position: { x: 0, y: 100 }, data: { "default:value": "Unused" } },
+        ],
+        edges: [],
+        members: source === "Class variable"
+          ? [{ id: "spawn", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnChild", defaultValue: "SpawnChild" }]
+          : [],
+      },
+      "class-base": { nodes: [], edges: [], components: [mesh] },
+      "class-child": { nodes: [], edges: [], components: [childCollider] },
+    };
+    const scene = {
+      ...createDefaultScene(),
+      actors: [createActor("spawner", "Spawner", { classId: "main" })],
+    };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-main",
+      assets: [
+        asset({ guid: "scene-main", type: "Scene", name: "Main" }),
+        asset({ guid: "class-main", type: "Class", name: "main", parentClass: "Actor" }),
+        asset({ guid: "class-base", type: "Class", name: "SpawnBase", parentClass: "Actor" }),
+        asset({ guid: "class-child", type: "Class", name: "SpawnChild", parentClass: "SpawnBase" }),
+        asset({ guid: "class-unused", type: "Class", name: "Unused", parentClass: "Actor" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: (id) => id === "SpawnChild" ? "SpawnBase" : "Actor",
+      sceneByGuid: (guid) => guid === "scene-main" ? scene : null,
+      graphByGuid: (guid) => graphs[guid] ?? null,
+      bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-main" ? scene : graphs[guid] ?? {})),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+      previewBuild: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    const scripts = parseScriptRegistry(new TextDecoder().decode(result.value.files.get("scripts.js")));
+    expect(scripts.map((script) => script.classId).sort()).toEqual(["SpawnBase", "SpawnChild", "main"]);
+    expect(scripts.find((script) => script.classId === "SpawnChild")?.components).toEqual([
+      { ...mesh, inheritedFrom: "SpawnBase" },
+      childCollider,
+    ]);
+  });
+
   it("uses startup reachability for boot and a stable shared-asset policy", async () => {
     const start = {
       ...createDefaultScene(),

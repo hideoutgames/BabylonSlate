@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { PinDefaultPreviewWidget } from "./pin-default-widget";
 
@@ -56,6 +56,10 @@ describe("PinDefaultPreviewWidget", () => {
     expect(bool?.querySelector("svg")?.getAttribute("class")).toMatch(
       /\bsize-3\.5\b/,
     );
+    expect(screen.getByText("On")).toBeTruthy();
+    rerender(<PinDefaultPreviewWidget preview={{ kind: "bool", checked: false }} />);
+    expect(screen.getByText("Off")).toBeTruthy();
+    expect(screen.queryByRole("checkbox")).toBeNull();
 
     rerender(
       <PinDefaultPreviewWidget

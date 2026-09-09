@@ -94,6 +94,8 @@ export class EditorSceneSync {
   private restoreCamera: Camera | null = null;
   private shadowQuality = "1024";
   private drawMeshCollision = false;
+  private selectedActorIds = new Set<string>();
+  private selectedComponentIds = new Set<string>();
   private modelLoadSlot = 0;
   private readonly modelLoadBinding: ModelAnimLoadBinding = {
     slotAnimEpoch: new Map<number, number>(),
@@ -164,13 +166,26 @@ export class EditorSceneSync {
   }
 
   /**
-   * Session MeshComponent collision dashes (default off). 2D worlds stay off.
+   * Session collision dashes (default off). 2D MeshComponent dashes stay off.
    * Toggling syncs existing actors without a full mesh rebuild.
    */
   setDrawMeshCollision(enabled: boolean): void {
     if (this.drawMeshCollision === enabled) return;
     this.drawMeshCollision = enabled;
     this.syncExistingMeshCollisionDashes();
+  }
+
+  /** Collider helpers stay visible for the selected object and its children. */
+  setCollisionSelection(options: {
+    selectedActorIds: readonly string[];
+    selectedComponentIds?: readonly string[];
+  }): void {
+    this.selectedActorIds = new Set(options.selectedActorIds);
+    this.selectedComponentIds = new Set(options.selectedComponentIds ?? []);
+    if (this.lastScene && this.syncCollisionVisibility(this.lastScene)) {
+      freezeEditorActiveMeshes(this.scene);
+      this.scheduler?.invalidate("selection");
+    }
   }
 
   apply(sceneData: SerializedScene): void {
@@ -255,6 +270,7 @@ export class EditorSceneSync {
       assets: this.assets,
     });
     this.onAfterApply?.();
+    this.syncCollisionVisibility(sceneData);
     for (const actor of sceneData.actors) {
       const mesh = this.meshes.get(actor.id);
       if (mesh) freezeStaticActorWorldMatrix(mesh);
@@ -341,7 +357,61 @@ export class EditorSceneSync {
         syncMeshCollisionDashes(visual, component, assets);
       }
     }
+    this.syncCollisionVisibility(sceneData);
+    // New and newly revealed dashes must enter the frozen active mesh list.
+    freezeEditorActiveMeshes(this.scene);
     this.scheduler?.invalidate("asset");
+  }
+
+  private syncCollisionVisibility(sceneData: SerializedScene): boolean {
+    const actors = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
+    let changed = false;
+    for (const actor of sceneData.actors) {
+      const root = this.meshes.get(actor.id);
+      if (!root) continue;
+      const actorSelected = hasSelectedAncestor(
+        actor.id,
+        this.selectedActorIds,
+        (id) => actors.get(id)?.parentId,
+      );
+      const components = new Map(
+        actor.components.map((component) => [component.id, component]),
+      );
+      for (const component of actor.components) {
+        if (component.classId === "MeshComponent") {
+          const visual = visualForMeshComponent(root, actor.id, component.id);
+          for (const collision of visual?.getChildMeshes(true) ?? []) {
+            if (!(collision.metadata as { meshCollisionDash?: boolean } | null)?.meshCollisionDash) {
+              continue;
+            }
+            if (collision.isEnabled(false) === actor.visible) continue;
+            collision.setEnabled(actor.visible);
+            changed = true;
+          }
+        }
+        if (component.classId !== "ColliderComponent") continue;
+        const visual = visualForMeshComponent(root, actor.id, component.id);
+        if (!visual) continue;
+        const enabled =
+          actor.visible &&
+          (this.drawMeshCollision ||
+            actorSelected ||
+            hasSelectedAncestor(
+              component.id,
+              this.selectedComponentIds,
+              (id) => components.get(id)?.parentId,
+            ));
+        // Component visuals may be parented below the collider. Only its own
+        // dash segments are helpers; disabling the root hides those meshes too.
+        for (const dash of visual.getChildMeshes(true)) {
+          if (!dash.name.startsWith(`${visual.name}:dash:`)) continue;
+          if (dash.isEnabled(false) === enabled) continue;
+          dash.setEnabled(enabled);
+          changed = true;
+        }
+      }
+    }
+    return changed;
   }
 
   private meshComponentAssetGuid(actor: SerializedActor): string | null {
@@ -485,6 +555,21 @@ export class EditorSceneSync {
     this.meshKinds.clear();
     this.liveIds.clear();
   }
+}
+
+function hasSelectedAncestor(
+  id: string,
+  selected: ReadonlySet<string>,
+  parentOf: (id: string) => string | null | undefined,
+): boolean {
+  const seen = new Set<string>();
+  let current: string | null | undefined = id;
+  while (current && !seen.has(current)) {
+    if (selected.has(current)) return true;
+    seen.add(current);
+    current = parentOf(current);
+  }
+  return false;
 }
 
 function meshKindOf(component: SerializedComponent): string | null {

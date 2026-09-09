@@ -152,6 +152,39 @@ describe("runtime navmesh import and crowd", () => {
     bytes = await generateNavMesh(groundPrism());
   });
 
+  it("streams active navigation only while requested and clears removed agents", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, playScene: patrolScene(),
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadNavMesh(bytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.setNavAgentTarget("agent", { x: 4, y: 0, z: 4 });
+    runtime.tick();
+    expect(commands.some((command) => command.type === "debugNavigation")).toBe(false);
+    expect(runtime.executeConsoleCommand("showpathfinding on").success).toBe(true);
+    const first = commands.find((command) => command.type === "debugNavigation");
+    expect(first).toMatchObject({
+      type: "debugNavigation", world: "3d",
+      agents: [{ actorGuid: "agent", actorName: "Agent", radius: 0.5, height: 2, state: "moving" }],
+    });
+    expect(first?.type === "debugNavigation" && first.agents[0]?.path.length).toBeGreaterThan(0);
+    runtime.executeConsoleCommand("shownavagent on");
+    runtime.executeConsoleCommand("showpathfinding off");
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "debugNavigation").at(-1)).toMatchObject({ agents: [{ actorGuid: "agent" }] });
+    runtime.getWorld().destroyActor("agent");
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "debugNavigation").at(-1)).toMatchObject({ agents: [] });
+    runtime.executeConsoleCommand("shownavagent off");
+    const count = commands.filter((command) => command.type === "debugNavigation").length;
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "debugNavigation")).toHaveLength(count);
+    runtime.stop();
+  });
+
   it("an idle NavAgent preserves dynamic gravity and the physics world pose", async () => {
     const runtime = createInProcessRuntime({
       seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 2 }),

@@ -1,5 +1,7 @@
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -246,6 +248,7 @@ vi.mock("../lib/viewport-render-gate", () => ({
 describe("PrefabViewportPanel engine", () => {
   afterEach(() => {
     cleanup();
+    receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000 });
     createEngineMock.mockClear();
     dispose.mockClear();
     handle.loadScene.mockClear();
@@ -257,6 +260,7 @@ describe("PrefabViewportPanel engine", () => {
     collectPlayMaterialLibrary.mockClear();
     prefabState.components = [createMeshComponent("prefab-mesh", "box")];
     prefabState.selectedIds = [];
+    handle.editor.syncSelectionDebug.mockClear();
     viewportState.mode = "3d";
     prefabDocs.openDocuments = [];
     prefabDocs.assetRegistry = null;
@@ -271,6 +275,7 @@ describe("PrefabViewportPanel engine", () => {
     const requests: string[][] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type !== "editor.drop") return;
+      expect(command.maxDistance).toBe(25_000.5);
       const viewportId = (
         createEngineMock.mock.calls.at(-1)?.[1] as { editorViewportId?: string }
       ).editorViewportId;
@@ -299,6 +304,7 @@ describe("PrefabViewportPanel engine", () => {
     try {
       render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
       await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
+      act(() => receiveActiveAppSettingsUpdate({ viewportDropDistance: 25_000.5 }));
       fireEvent.click(screen.getByRole("button", { name: "Drop" }));
       expect(requests).toEqual([["prefab-mesh", "second-mesh"]]);
       expect(commitComponentTransforms).toHaveBeenCalledExactlyOnceWith([
@@ -325,9 +331,16 @@ describe("PrefabViewportPanel engine", () => {
   });
 
   it("does not create a graph edit when the collision query returns no drops", async () => {
-    prefabState.selectedIds = ["prefab-mesh"];
+    prefabState.components.push(createMeshComponent("second-mesh", "box"));
+    prefabState.selectedIds = ["prefab-mesh", "second-mesh"];
     render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
     await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
+    expect(handle.editor.syncSelectionDebug).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selectedActorIds: ["prefab-mesh", "second-mesh"],
+        selectedComponentIds: ["prefab-mesh", "second-mesh"],
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Drop" }));
     expect(commitComponentTransforms).not.toHaveBeenCalled();
   });
@@ -460,6 +473,7 @@ describe("PrefabViewportPanel engine", () => {
     const first = { id: "engine-1" };
     const second = { id: "engine-2" };
     play.ensureSharedEngine.mockReturnValue(first);
+    prefabState.selectedIds = ["prefab-root"];
     play.sharedEngineGeneration = 1;
     const { rerender } = render(
       <PrefabViewportPanel {...({} as IDockviewPanelProps)} />,
@@ -468,6 +482,13 @@ describe("PrefabViewportPanel engine", () => {
       sharedEngine: first,
       present: "rtt",
     });
+    expect(handle.editor.syncSelectionDebug).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selectedActorIds: ["prefab-root"],
+        selectedComponentIds: ["prefab-mesh"],
+      }),
+    );
+    handle.editor.syncSelectionDebug.mockClear();
     play.ensureSharedEngine.mockReturnValue(second);
     play.sharedEngineGeneration = 2;
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
@@ -476,6 +497,12 @@ describe("PrefabViewportPanel engine", () => {
       sharedEngine: second,
       present: "rtt",
     });
+    expect(handle.editor.syncSelectionDebug).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selectedActorIds: ["prefab-root"],
+        selectedComponentIds: ["prefab-mesh"],
+      }),
+    );
   });
 
   it("loads the preview after the shared Engine is ready with a stable component list", async () => {

@@ -110,7 +110,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     viewportShadingMode,
     collisionsVisible,
   } = useSceneEditing();
-  const { flySpeed, editorTextureLodEnabled, editorTextureLodQuality } =
+  const { flySpeed, dropDistance, editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
@@ -225,7 +225,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         navBake?.lastBytes ??
         (path ? await readAssetChunk(path, NAVMESH_CHUNK_ID) : null);
       if (cancelled) return;
-      await overlay.sync(bytes ?? null, blockers);
+      await overlay.sync(bytes ?? null, blockers, scene.settings.physicsWorld);
     })();
     return () => {
       cancelled = true;
@@ -270,7 +270,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const actorIds = current.actors
       .filter((actor) => !actor.locked && selectedActorIds.includes(actor.id))
       .map((actor) => actor.id);
-    const transforms = requestEditorDrop(dropViewportId, actorIds);
+    const transforms = requestEditorDrop(dropViewportId, actorIds, dropDistance);
     if (transforms.length === 0) return;
     const byId = new Map(transforms.map((transform) => [transform.actorId, transform]));
     void applySceneChange(documentId, {
@@ -610,7 +610,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       sceneData: scene,
       selectedActorIds,
     });
-  }, [scene, selectedActorIds]);
+  }, [scene, selectedActorIds, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);

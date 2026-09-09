@@ -8,6 +8,7 @@ import {
 } from "@babylonjs/core";
 import type {
   AudioProjectSettings,
+  PhysicsWorldKind,
   SerializedScene,
   ViewportMode,
 } from "@babylonslate/core";
@@ -306,6 +307,8 @@ export interface CreateEngineOptions {
   /** Session-only studio lights for isolated editor asset previews. */
   previewLighting?: boolean;
   viewportMode?: ViewportMode;
+  /** Navigation debug geometry follows the physics world, independently of the camera view. */
+  physicsWorld?: PhysicsWorldKind;
   /** Actor id under an explicit tap, or null when the tap missed. */
   onPickActor?: (
     actorId: string | null,
@@ -499,7 +502,7 @@ export interface EditorTools {
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
   /** Pure collision query; the caller commits the resulting authored transforms. */
-  dropSelectedActors: (actorIds: readonly string[]) => EditorDropTransform[];
+  dropSelectedActors: (actorIds: readonly string[], maxDistance?: number) => EditorDropTransform[];
   /** Frustum / light debug + 1 Hz camera preview for the current selection. */
   syncSelectionDebug: (options: {
     sceneData: SerializedScene | null;
@@ -805,6 +808,7 @@ export function createEngine(
     ? createPlayConsoleViz(scene, {
         navmeshBytes: options.navmeshBytes,
         navBlockers: options.navBlockers,
+        world: options.physicsWorld ?? options.viewportMode,
       })
     : null;
   const playDebugDraw: PlayDebugDrawController | null = options.playMode
@@ -1293,6 +1297,7 @@ export function createEngine(
       },
       syncSelectionDebug: (options) => {
         debugOverlayInstance.sync(options);
+        editorSync.setCollisionSelection(options);
         scheduler.invalidate("selection");
       },
       setPreviewCanvas: (canvas) => {
@@ -1312,10 +1317,10 @@ export function createEngine(
         }
       },
       selectedActorTransforms,
-      dropSelectedActors: (selectedActorIds) => {
+      dropSelectedActors: (selectedActorIds, maxDistance) => {
         const sceneData = editorSync.serializedScene();
         return sceneData ? calculateEditorDropTransforms({
-          sceneData, selectedActorIds, meshForActor: (id) => editorSync.meshForActor(id),
+          sceneData, selectedActorIds, maxDistance, meshForActor: (id) => editorSync.meshForActor(id),
           assets: { modelBytes: binding.modelBytes, modelPayloads: binding.modelPayloads,
             spritePayloads: binding.spritePayloads, tilemaps: binding.tilemaps, tilesets: binding.tilesets,
             pixelsPerUnit: binding.pixelsPerUnit },
@@ -1531,7 +1536,7 @@ export function createEngine(
   const unsubscribeEditorDrop = engineCommandBus.subscribe((command) => {
     if (command.type !== "editor.drop" || !editor || !options.editorViewportId || command.viewportId !== options.editorViewportId) return;
     engineCommandBus.dispatch({ type: "editor.drop.result", viewportId: command.viewportId,
-      requestId: command.requestId, transforms: editor.dropSelectedActors(command.actorIds) });
+      requestId: command.requestId, transforms: editor.dropSelectedActors(command.actorIds, command.maxDistance) });
   });
 
   return {

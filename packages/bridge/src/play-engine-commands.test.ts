@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { isPlayEngineCommandType } from "./play-engine-commands";
 
 describe("isPlayEngineCommandType", () => {
+  it("delivers physics and live navigation visualizations to both Play render hosts", () => {
+    for (const type of ["setShowCollision", "debugColliders", "setShowPathfinding", "setShowNavAgent", "debugNavigation"]) {
+      expect(isPlayEngineCommandType(type), type).toBe(true);
+    }
+  });
   it("forwards runtime material parameter writes to the renderer", () => {
     expect(isPlayEngineCommandType("setMaterialParameter")).toBe(true);
   });

@@ -37,6 +37,8 @@ import {
   truncateJournal,
   clearDeletedAssetRefs,
   clearDeletedRefsFromProjectSettings,
+  replaceClassAssetReferences,
+  type ClassAssetReplacement,
   type AssetRegistry,
   type MigrationPending,
   type PluginDescriptor,
@@ -364,6 +366,11 @@ interface DocumentContextValue {
   cancelExclusiveSceneOpen: () => void;
   closeDocument: (id: string) => void;
   closeDocumentsForPaths: (paths: Iterable<string>) => void;
+  replaceClassReferencesBeforeDelete: (
+    replacements: readonly ClassAssetReplacement[],
+    deletingGuids: ReadonlySet<string>,
+    onProgress?: (currentName: string) => Promise<void>,
+  ) => Promise<void>;
   repairAfterAssetDelete: (
     deletedGuids: ReadonlySet<string>,
     deletedClassNames?: ReadonlySet<string>,
@@ -1772,6 +1779,41 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [closeDocument, documentService],
   );
+
+  const replaceClassReferencesBeforeDelete = useCallback(async (
+    replacements: readonly ClassAssetReplacement[],
+    deletingGuids: ReadonlySet<string>,
+    onProgress?: (currentName: string) => Promise<void>,
+  ) => {
+    const registry = projectService.registry;
+    const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
+      if (doc.ref.kind === "content-browser" || doc.ref.kind === "trace" || !doc.content) return [];
+      const asset = registry?.list().find((entry) => entry.path === doc.ref.path);
+      if (asset && deletingGuids.has(asset.header.guid)) return [];
+      const walked = replaceClassAssetReferences(doc.content, replacements);
+      if (!walked.changed) return [];
+      if ((asset && registry?.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
+        throw new Error(`${doc.ref.path} is read-only and still references a selected Class.`);
+      }
+      return [{ doc, content: walked.value }];
+    });
+    await projectService.replaceClassReferencesBeforeDelete(replacements, deletingGuids, onProgress);
+    const current = projectDocumentRef.current;
+    if (current) {
+      const settings = replaceClassAssetReferences(current.settings, replacements);
+      if (settings.changed) {
+        await onProgress?.("Project Settings");
+        const next = { ...current, settings: settings.value };
+        await projectService.saveProject(next, documentService.buildLayouts());
+        setProjectDocument(next);
+      }
+    }
+    for (const { doc, content } of openChanges) {
+      if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
+      else documentService.replaceLoadedContent(doc.id, content);
+    }
+    bump();
+  }, [bump, documentService, projectService]);
 
   const repairAfterAssetDelete = useCallback(
     async (
@@ -4005,6 +4047,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       cancelExclusiveSceneOpen,
       closeDocument,
       closeDocumentsForPaths,
+      replaceClassReferencesBeforeDelete,
       repairAfterAssetDelete,
       setActiveDocument,
       reorderTabs,
@@ -4215,6 +4258,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       cancelExclusiveSceneOpen,
       closeDocument,
       closeDocumentsForPaths,
+      replaceClassReferencesBeforeDelete,
       repairAfterAssetDelete,
       setActiveDocument,
       reorderTabs,

@@ -27,6 +27,7 @@ import { createPlayBootCoordinator } from "./play-boot";
 import { createPlayPauseGate } from "./play-pause-gate";
 import { applyInspectControl } from "./inspect-control";
 import { createWorkerScheduler } from "./worker-scheduler";
+import { captureConsoleLogs } from "./console-capture";
 
 let runtime: RuntimeDriver | null = null;
 const boot = createPlayBootCoordinator();
@@ -35,6 +36,7 @@ const boot = createPlayBootCoordinator();
 let snapshotPing = new TransferablePingPong(256);
 let installedGeneration = 0;
 let pendingGeneration: number | null = null;
+let stopConsoleCapture: (() => void) | null = null;
 
 function onCommand(command: CommandMessage): void {
   if (command.type === "snapshotLayout") {
@@ -67,6 +69,11 @@ const pauseGate = createPlayPauseGate({
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
     case "load": {
+      stopConsoleCapture?.();
+      stopConsoleCapture = captureConsoleLogs(console, (message, severity) => {
+        if (runtime) runtime.reportLog(message, severity);
+        else onCommand({ type: "log", message, severity, category: "console", frameId: 0 });
+      });
       scheduler.stop();
       if (runtime) {
         runtime.stop();
@@ -197,6 +204,8 @@ function handleControl(msg: ControlMessage): void {
     case "stop":
       scheduler.stop();
       ensureRuntime().stop();
+      stopConsoleCapture?.();
+      stopConsoleCapture = null;
       return;
     case "setPaused":
       pauseGate.setPaused(msg.paused);

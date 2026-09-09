@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { projectContentRoot } from "@babylonslate/assets";
@@ -24,6 +25,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
       pluginOverrides: {},
       gameInstanceClass: null as string | null,
       editorUtilityObjects: [] as string[],
+      startupSceneGuid: "",
     } },
     assetRegistry: null as unknown,
     registryVersion: 1,
@@ -32,6 +34,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     openDocument: vi.fn(),
     closeDocumentsForPaths: vi.fn(),
     repairAfterAssetDelete: vi.fn(async () => {}),
+    replaceClassReferencesBeforeDelete: vi.fn(async () => {}),
     openDocuments: [] as unknown[],
     setActiveDocument: vi.fn(),
     tabOrder: [] as string[],
@@ -165,7 +168,9 @@ afterEach(async () => {
   docs.openDocuments = [];
   docs.projectDocument.settings.gameInstanceClass = null;
   docs.projectDocument.settings.editorUtilityObjects = [];
+  docs.projectDocument.settings.startupSceneGuid = "";
   docs.loadAssetDocument.mockReset().mockResolvedValue({});
+  docs.replaceClassReferencesBeforeDelete.mockReset().mockResolvedValue(undefined);
   if (clientWidthDescriptor) {
     Object.defineProperty(
       HTMLElement.prototype,
@@ -197,7 +202,7 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     docs.thumbnailsEnabled = false;
   });
 
-  it("blocks a Class used by an unsaved open scene without changing either asset", async () => {
+  it("requires a second confirmation for unsaved Class usages and preserves both assets on Back", async () => {
     const { actorClass, scene } = classAndScene();
     const content = { actors: [{ classId: "Hero", components: [] }] };
     docs.openDocuments = [{ ref: { path: scene.path }, content }];
@@ -207,15 +212,19 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
 
     await waitFor(() => {
-      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
       expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
     });
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation").textContent).toContain("Hero → None");
+    expect(docs.replaceClassReferencesBeforeDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByTestId("content-browser-delete-cancel"));
     expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
     expect(content.actors).toEqual([{ classId: "Hero", components: [] }]);
   });
 
-  it("blocks a folder containing a Class referenced by a closed legacy scene", async () => {
+  it("requires a second confirmation for a folder containing a Class used by a closed legacy scene", async () => {
     const { actorClass, scene } = classAndScene("assets/Actors");
     docs.loadAssetDocument.mockResolvedValue({ actors: [{ classId: "Hero" }] });
     installRegistry([actorClass, scene], ["Actors"]);
@@ -226,7 +235,9 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     await waitFor(() => {
       expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
     });
-    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
   });
 
   it("allows deleting a folder when its Class referrers are also selected for deletion", async () => {
@@ -257,7 +268,7 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
   });
 
   it.each(["gameInstanceClass", "editorUtilityObjects"] as const)(
-    "blocks a Class assigned in Project Settings %s",
+    "requires a second confirmation for a Class assigned in Project Settings %s",
     async (setting) => {
       const { actorClass } = classAndScene();
       if (setting === "gameInstanceClass") docs.projectDocument.settings.gameInstanceClass = "Hero";
@@ -270,12 +281,196 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
       await waitFor(() => {
         expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
       });
-      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+      await waitFor(() => expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+      expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
     },
   );
+
+  it("chooses one replacement for two usages and stops deletion if updating references fails", async () => {
+    const { actorClass, scene } = classAndScene();
+    const replacement = { ...actorClass, path: "assets/NPC.class.babasset", header: { ...actorClass.header, guid: "npc", name: "NPC" } };
+    docs.openDocuments = [{ ref: { path: scene.path }, content: { actors: [
+      { id: "one", classId: "Hero", components: [] }, { id: "two", classId: "Hero", components: [] },
+    ] } }];
+    installRegistry([actorClass, replacement, scene]);
+    const deleteAsset = vi.fn();
+    Object.assign(docs.assetRegistry as object, { deleteAsset });
+    docs.replaceClassReferencesBeforeDelete.mockRejectedValue(new Error("Reference write failed"));
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${actorClass.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Replace Hero" })).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Replace Hero" }));
+    fireEvent.click(await screen.findByTestId("search-item-npc"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation").textContent).toContain("Hero → NPC");
+    expect(deleteAsset).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("content-browser-delete-references-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" }).textContent).toContain("Reference write failed"));
+    expect(docs.replaceClassReferencesBeforeDelete).toHaveBeenCalledWith([
+      { guid: "hero", classId: "Hero", replacement: { guid: "npc", classId: "NPC" } },
+    ], new Set(["hero"]), expect.any(Function));
+    expect(deleteAsset).not.toHaveBeenCalled();
+    expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
+  });
+
+  it("also confirms twice when the deleted asset is the project startup scene", () => {
+    const { scene } = classAndScene();
+    docs.projectDocument.settings.startupSceneGuid = scene.header.guid;
+    installRegistry([scene]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${scene.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
+  });
 });
 
 describe("ContentBrowserWorkspace grid window", () => {
+  it("reports a selected file read failure and releases the import busy state", async () => {
+    installRegistry([]);
+    let failRead!: (error: Error) => void;
+    const read = new Promise<ArrayBuffer>((_resolve, reject) => { failRead = reject; });
+    const file = new File([new Uint8Array([1])], "unreadable.png");
+    Object.defineProperty(file, "arrayBuffer", { value: () => read });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.change(screen.getByTestId("content-browser-import-input"), { target: { files: [file] } });
+    const busyWhileReading = screen.getByTestId("content-browser-import").hasAttribute("disabled");
+    await act(async () => { failRead(new Error("File access expired")); });
+    expect(await screen.findByText(/unreadable.png: File access expired/)).toBeTruthy();
+    expect(busyWhileReading).toBe(true);
+    expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false);
+  });
+  it("retries only the remaining items after a partially completed copy", async () => {
+    installRegistry([texture(0), texture(1)], ["Characters"]);
+    const copied: string[] = [];
+    let failed = false;
+    docs.assetRegistry = { ...(docs.assetRegistry as object), copyAsset: async (guid: string) => {
+      if (guid === "tex-1" && !failed) { failed = true; throw new Error("Storage busy"); }
+      copied.push(guid);
+      return texture(copied.length);
+    } };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-1.babasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy to Folder…" }));
+    const destination = within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Characters");
+    fireEvent.pointerDown(destination, { clientX: 8, clientY: 8 });
+    fireEvent.pointerUp(destination, { clientX: 8, clientY: 8 });
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    expect(await screen.findByText(/Storage busy/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
+    expect(copied).toEqual(["tex-0", "tex-1"]);
+  });
+  it("keeps the chosen move destination after a failure so the move can be retried", async () => {
+    const asset = texture(0);
+    installRegistry([asset], ["Characters"]);
+    const moveAsset = vi.fn().mockRejectedValueOnce(new Error("Destination is locked")).mockImplementation(async () => {
+      asset.path = "assets/Characters/tex-0.babasset";
+      return asset;
+    });
+    docs.assetRegistry = { ...(docs.assetRegistry as object), moveAsset };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move…" }));
+    const destination = within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Characters");
+    fireEvent.pointerDown(destination, { clientX: 8, clientY: 8 });
+    fireEvent.pointerUp(destination, { clientX: 8, clientY: 8 });
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    expect(await screen.findByText("Destination is locked")).toBeTruthy();
+    expect(screen.getByTestId("content-browser-move-destination").textContent).toContain("assets/Characters");
+    fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
+    await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
+    expect(asset.path).toBe("assets/Characters/tex-0.babasset");
+  });
+
+  it("retains the new asset draft when the storage write fails", async () => {
+    installRegistry([]);
+    docs.assetRegistry = { ...(docs.assetRegistry as object), createAsset: vi.fn().mockRejectedValue(new Error("Project storage unavailable")) };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    const input = screen.getByTestId("new-asset-name") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Main Scene" } });
+    fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
+    expect(await screen.findByText("Project storage unavailable")).toBeTruthy();
+    expect(input.value).toBe("Main Scene");
+    expect(screen.getByTestId("content-browser-new-asset-create").hasAttribute("disabled")).toBe(false);
+  });
+
+  it("shows a partial import summary without losing the successful assets", async () => {
+    const assets: IndexedAsset[] = [];
+    installRegistry(assets);
+    docs.assetRegistry = { ...(docs.assetRegistry as object), importFile: vi.fn().mockImplementation(async (_root: string, _folder: string, name: string) => {
+      if (name === "broken.png") throw new Error("Unsupported image");
+      const asset = texture(0);
+      assets.push(asset);
+      return [asset];
+    }) };
+    render(<ContentBrowserWorkspace />);
+    const files = ["good.png", "broken.png"].map((name) => {
+      const file = new File([new Uint8Array([1])], name);
+      Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([1]).buffer });
+      return file;
+    });
+    fireEvent.change(screen.getByTestId("content-browser-import-input"), { target: { files } });
+    expect(await screen.findByText("Import Partially Completed")).toBeTruthy();
+    expect(screen.getByTestId("import-result-summary").textContent).toMatch(/1.*imported/i);
+    expect(screen.getByText(/broken.png: Unsupported image/)).toBeTruthy();
+    expect(assets).toHaveLength(1);
+  });
+
+  it("opens an asset directly from the references dialog", async () => {
+    const asset = texture(0);
+    const dependency = texture(1);
+    asset.header.dependencies = [dependency.header.guid];
+    installRegistry([asset, dependency]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Show References" }));
+    fireEvent.click(screen.getByRole("button", { name: "tex-1" }));
+    await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith({ kind: "asset-settings", path: "assets/tex-1.babasset", label: "Tex 1" }));
+  });
+  it("preserves a folder name and explains a failed create so it can be retried", async () => {
+    installRegistry([]);
+    const createFolder = vi.fn().mockRejectedValueOnce(new Error("Storage is read-only")).mockResolvedValue(undefined);
+    docs.assetRegistry = { ...(docs.assetRegistry as object), createFolder };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(await screen.findByTestId("content-browser-new-folder"));
+    const input = screen.getByTestId("content-browser-name-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Characters" } });
+    fireEvent.click(screen.getByTestId("content-browser-name-confirm"));
+    expect(await screen.findByText("Storage is read-only")).toBeTruthy();
+    expect(input.value).toBe("Characters");
+    expect(screen.getByTestId("content-browser-name-confirm").hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByTestId("content-browser-name-confirm"));
+    await waitFor(() => expect(screen.queryByTestId("content-browser-name-input")).toBeNull());
+    expect(createFolder).toHaveBeenLastCalledWith("project", "Characters");
+  });
+  it("navigates back to Content with the location bar after opening a folder", async () => {
+    installRegistry([], ["Characters"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.doubleClick(await screen.findByTestId("content-folder-assets/Characters"));
+    const location = await screen.findByRole("navigation", { name: "Folder Location" });
+    expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Characters");
+    fireEvent.click(screen.getByRole("button", { name: "Parent Folder" }));
+    expect(await screen.findByTestId("content-folder-assets/Characters")).toBeTruthy();
+    expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Content");
+    expect(screen.getByRole("button", { name: "Parent Folder" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("clears an unsuccessful search without leaving the current folder", async () => {
+    installRegistry([texture(1)]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.change(screen.getByTestId("content-browser-search"), { target: { value: "missing" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Clear Filters" }));
+    expect((screen.getByTestId("content-browser-search") as HTMLInputElement).value).toBe("");
+    expect(await screen.findByTestId("content-item-assets/tex-1.babasset")).toBeTruthy();
+  });
+
   beforeEach(() => {
     docs.repairAfterAssetDelete.mockReset().mockResolvedValue(undefined);
     installRegistry(Array.from({ length: 80 }, (_, index) => texture(index)));

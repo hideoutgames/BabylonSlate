@@ -43,12 +43,12 @@ async function placeActor(page: Page, itemId: string): Promise<void> {
 
 async function pickSelectedAsset(
   page: Page,
-  classId: string,
+  componentName: string,
   guid: string,
   property = "treeGuid",
 ): Promise<void> {
   const card = page.locator("[data-testid^='component-card-']").filter({
-    hasText: classId,
+    has: page.getByRole("button", { name: new RegExp(`^${componentName}(?: \\(|$)`) }),
   });
   await expect(card).toBeVisible();
   await card.locator(`button[data-testid$="-${property}"]`).click();
@@ -246,7 +246,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
       .click();
     const treeGuid = await guidForPath(page, "assets/Patrol.bt.babasset");
     expect(treeGuid.length).toBeGreaterThan(0);
-    await pickSelectedAsset(page, "BehaviourTreeComponent", treeGuid);
+    await pickSelectedAsset(page, "Behaviour Tree", treeGuid);
 
     await clickPlayAndWaitForOverlay(page);
     await page.getByTestId("play-overlay-close").click();

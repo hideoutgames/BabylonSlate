@@ -31,15 +31,24 @@ import {
 } from "../lib/viewport-render-gate";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
-import { DebugConsole } from "./debug-console";
+import { DebugConsole, type DebugConsoleLogEntry } from "./debug-console";
+import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
+import type { DebugBehaviourTree } from "@babylonslate/bridge";
 import { DebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
-import { playConsoleCommands, playConsoleCompletionContext } from "../lib/play-console";
+import {
+  playConsoleCommands,
+  playConsoleCompletionContext,
+} from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
-import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
+import {
+  applyPlayPreviewCanvasLayout,
+  clampRenderResolution,
+  playFramebufferSize,
+} from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type {
   SpriteAnimationPayload,
@@ -107,7 +116,10 @@ export interface PlayOverlayProps {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
-  retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
+  retargetAnimationLoads?: ReadonlyMap<
+    string,
+    readonly RetargetAnimationLoad[]
+  >;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: PlayAudioLibrary;
@@ -216,7 +228,10 @@ export function PlayOverlay({
   const [textureCount, setTextureCount] = useState(0);
   const [draws, setDraws] = useState(0);
   const [bridgeRate, setBridgeRate] = useState(0);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [logs, setLogs] = useState<DebugConsoleLogEntry[]>([]);
+  const logSequence = useRef(0);
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
   const [moveX, setMoveX] = useState<number | null>(null);
   const [actorGuids, setActorGuids] = useState<string[]>([]);
   const [actorYs, setActorYs] = useState<number[]>([]);
@@ -228,9 +243,8 @@ export function PlayOverlay({
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [statsHighlight, setStatsHighlight] = useState<StatsHudHighlight | null>(
-    null,
-  );
+  const [statsHighlight, setStatsHighlight] =
+    useState<StatsHudHighlight | null>(null);
   const inspectSelectionRef = useRef<string | null>(null);
   const userPausedRef = useRef(pauseOnPlay);
   const [postProcessPasses, setPostProcessPasses] = useState(0);
@@ -393,7 +407,10 @@ export function PlayOverlay({
         },
       },
     );
-    const syncFramebuffer = (sessionHandle: { setSize: (w: number, h: number) => void; resize: () => void }) => {
+    const syncFramebuffer = (sessionHandle: {
+      setSize: (w: number, h: number) => void;
+      resize: () => void;
+    }) => {
       const framebuffer = playFramebufferSize(
         initialRenderRef.current,
         liveSizeRef.current,
@@ -488,9 +505,30 @@ export function PlayOverlay({
         setPhysicsMs(stats.physicsMs);
         setMoveX(sessionRef.current?.lastMoveX() ?? null);
       },
-      onLog: (message) =>
-        setLogs((prev) => [...prev.slice(-200), message]),
-      onPrint: (entry) => printRef.current(entry),
+      onLog: (message, severity) => {
+        const entry = {
+          id: ++logSequence.current,
+          timestamp: Date.now(),
+          severity,
+          message,
+        };
+        setLogs((prev) => [...prev.slice(-499), entry]);
+      },
+      onPrint: (entry) => {
+        printRef.current(entry);
+        const line = {
+          id: ++logSequence.current,
+          timestamp: Date.now(),
+          severity: "print",
+          message: entry.message,
+        };
+        setLogs((prev) => [...prev.slice(-499), line]);
+      },
+      onBehaviourTreeDebug: (enabled) => {
+        setTreeOpen(enabled);
+        if (enabled) setConsoleOpen(false);
+      },
+      onBehaviourTreeSnapshot: setTrees,
       onBtState: (state) => reportBtState(state),
       onSetRenderResolution: (width, height) => {
         liveSizeRef.current = {
@@ -686,10 +724,7 @@ export function PlayOverlay({
               data-testid="play-actor-guids"
               data-guids={actorGuids.join(",")}
             />
-            <span
-              data-testid="play-actor-y"
-              data-ys={actorYs.join(",")}
-            />
+            <span data-testid="play-actor-y" data-ys={actorYs.join(",")} />
             {shouldShowPlayAudioUnlockHint({
               queued: audioQueued,
               unlocked: audioUnlocked,
@@ -732,9 +767,9 @@ export function PlayOverlay({
           className="pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden rounded-md bg-background/80 p-2 text-xs"
           data-testid="play-log-tail"
         >
-          {logs.slice(-5).map((line, i) => (
-            <div key={`${i}-${line}`}>
-              <SelectableText>{line}</SelectableText>
+          {logs.slice(-5).map((line) => (
+            <div key={line.id}>
+              <SelectableText>{line.message}</SelectableText>
             </div>
           ))}
         </div>
@@ -743,6 +778,7 @@ export function PlayOverlay({
         open={consoleOpen}
         onOpenChange={setConsoleOpen}
         commands={commands}
+        logs={logs}
         completionContext={completionContext}
         onExecute={(line) =>
           sessionRef.current?.executeConsoleCommand(
@@ -752,6 +788,17 @@ export function PlayOverlay({
             ),
           ) ?? Promise.resolve({ success: false, output: "not playing" })
         }
+      />
+      <DebugBehaviourTreeDialog
+        open={treeOpen}
+        onOpenChange={(open) => {
+          setTreeOpen(open);
+          if (!open)
+            void sessionRef.current?.executeConsoleCommand(
+              "behaviourtreedebug off",
+            );
+        }}
+        trees={trees}
       />
       <DebugInspectDialog
         open={nextPlayInspectorOpen(inspectorOpen, overlayInspector)}

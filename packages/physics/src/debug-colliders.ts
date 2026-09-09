@@ -1,6 +1,6 @@
 import type { ColliderDesc, PhysicsTransform, Quat, Vec3 } from "./types";
 
-export type DebugColliderShape = "box" | "sphere" | "circle" | "polyline" | "capsule" | "convex";
+export type DebugColliderShape = "box" | "sphere" | "circle" | "polyline" | "capsule" | "capsule2d" | "cylinder" | "convex" | "mesh";
 
 export type DebugColliderPrimitive = {
   id: string;
@@ -10,7 +10,9 @@ export type DebugColliderPrimitive = {
   halfExtents?: Vec3;
   radius?: number;
   halfHeight?: number;
+  height?: number;
   points?: Vec3[];
+  indices?: number[];
 };
 
 function identityQuat(): Quat {
@@ -71,7 +73,7 @@ function polylinePoints(
   });
 }
 
-/** Boxes, spheres, circles, capsules, polylines, and convex hulls. Skip triangle-mesh authorship. */
+/** Snapshot the simulation geometry with its current body and local collider pose. */
 export function debugColliderFromDesc(
   desc: ColliderDesc,
   bodyTransform: PhysicsTransform,
@@ -123,7 +125,7 @@ export function debugColliderFromDesc(
     case "capsule2d":
       return {
         id: desc.id,
-        shape: "capsule",
+        shape: shape.kind,
         position,
         rotation,
         radius: shape.radius,
@@ -132,24 +134,30 @@ export function debugColliderFromDesc(
     case "cylinder":
       return {
         id: desc.id,
-        shape: "box",
+        shape: "cylinder",
         position,
         rotation,
-        halfExtents: {
-          x: shape.radius,
-          y: shape.height / 2,
-          z: shape.radius,
-        },
+        radius: shape.radius,
+        height: shape.height,
       };
     case "polygon":
-    case "chain":
+    case "chain": {
+      const points = polylinePoints(shape.points, position, rotation);
+      if (points.length > 1 && (shape.kind === "polygon" || shape.loop)) {
+        const first = points[0]!;
+        const last = points[points.length - 1]!;
+        if (first.x !== last.x || first.y !== last.y || first.z !== last.z) {
+          points.push({ ...first });
+        }
+      }
       return {
         id: desc.id,
         shape: "polyline",
         position,
         rotation,
-        points: polylinePoints(shape.points, position, rotation),
+        points,
       };
+    }
     case "convex":
       return {
         id: desc.id,
@@ -157,6 +165,16 @@ export function debugColliderFromDesc(
         position,
         rotation,
         points: shape.points.map((point) => ({ ...point })),
+      };
+    case "mesh":
+      if (shape.vertices.length < 3 || shape.indices.length < 3) return null;
+      return {
+        id: desc.id,
+        shape: "mesh",
+        position,
+        rotation,
+        points: shape.vertices.map((point) => ({ ...point })),
+        indices: [...shape.indices],
       };
     default:
       return null;

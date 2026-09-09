@@ -18,6 +18,7 @@ import {
   ClassPicker,
   SceneComponentPicker,
   ContextMenuOverlay,
+  FolderBreadcrumbs,
   InputMappingEditor,
   NamedListEditor,
   EntryListEditor,
@@ -103,6 +104,7 @@ import {
 import { Input } from "@babylonslate/ui/components/input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Separator } from "@babylonslate/ui/components/separator";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@babylonslate/ui/components/sheet";
 import { Skeleton } from "@babylonslate/ui/components/skeleton";
 import { Slider } from "@babylonslate/ui/components/slider";
 import { Switch } from "@babylonslate/ui/components/switch";
@@ -1073,6 +1075,7 @@ function GalleryDangerDialog() {
 }
 
 export function ComponentGallery() {
+  const [folderPath, setFolderPath] = useState("Content/Characters/Hero");
   return (
     <div
       className="flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground"
@@ -1081,7 +1084,7 @@ export function ComponentGallery() {
       <header className="border-b border-border px-6 py-4">
         <h1 className="text-xl font-semibold">Component Gallery</h1>
         <p className="text-sm text-muted-foreground">
-          Dev-only audit surface for Neutral chrome tokens and editor-kit composites.
+          Dev-only audit surface for Graphite chrome tokens and editor-kit composites.
           Open with{" "}
           <SelectableText className="font-mono text-xs">
             ?test=1&amp;gallery=1
@@ -1101,6 +1104,13 @@ export function ComponentGallery() {
               <Button variant="destructive">Destructive</Button>
             </div>
             <GalleryDangerDialog />
+            <Sheet modal={false}>
+              <SheetTrigger render={<Button variant="outline" size="sm" data-testid="gallery-console-sheet-open" />}>Open Console Sheet</SheetTrigger>
+              <SheetContent side="bottom" showOverlay={false} className="gap-0 rounded-none shadow-none data-[side=bottom]:h-[min(58dvh,38rem)]" data-testid="gallery-console-sheet">
+                <SheetHeader><SheetTitle>Console Sheet</SheetTitle></SheetHeader>
+                <SelectableText className="px-4 font-mono text-xs">A flat nonmodal drawer leaves the view above visible and interactive.</SelectableText>
+              </SheetContent>
+            </Sheet>
           </section>
 
           <GalleryTouchControls />
@@ -1174,6 +1184,11 @@ export function ComponentGallery() {
               </PanelFrame>
             </div>
             <GalleryComposites />
+            <FolderBreadcrumbs
+              root={{ path: "Content", label: "Content" }}
+              path={folderPath}
+              onNavigate={setFolderPath}
+            />
           </section>
 
           <Separator />

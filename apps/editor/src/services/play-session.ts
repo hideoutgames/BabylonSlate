@@ -1,4 +1,7 @@
-import { parseAnimGraphDocument, type AnimClipCatalogEntry } from "@babylonslate/anim-graph";
+import {
+  parseAnimGraphDocument,
+  type AnimClipCatalogEntry,
+} from "@babylonslate/anim-graph";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
@@ -7,13 +10,20 @@ import {
   createPlayBootCoordinator,
   createPlayPauseGate,
   createRuntimeFromLoad,
+  captureConsoleLogs,
   SessionDiagnosticAggregator,
   type RuntimeDiagnostic,
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, printHudCssColor, type AudioProjectSettings, type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
+import {
+  DEFAULT_PLAY_FRAME_CAP,
+  printHudCssColor,
+  type AudioProjectSettings,
+  type SerializedScene,
+  type SerializedSceneLayer,
+} from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -26,7 +36,13 @@ import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { playLoadModelsControl, playLoadSpritesControl, playLoadTilemapsControl, cookPlayComplexMeshes, playSceneByGuid } from "../lib/play-content";
+import {
+  playLoadModelsControl,
+  playLoadSpritesControl,
+  playLoadTilemapsControl,
+  cookPlayComplexMeshes,
+  playSceneByGuid,
+} from "../lib/play-content";
 import {
   createEngine,
   navDebugBlockersFromActors,
@@ -48,11 +64,12 @@ import { spawnListForScripts } from "./script-compiler";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
+import { playLoadControl, type PlayPhysicsSettings } from "./play-physics";
 import {
-  playLoadControl,
-  type PlayPhysicsSettings,
-} from "./play-physics";
-import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "../lib/public-engine-assets";
+  editorDracoPublicBase,
+  editorKtx2PublicBase,
+  editorMeshoptPublicBase,
+} from "../lib/public-engine-assets";
 import {
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   type TracePayload,
@@ -119,9 +136,7 @@ export function shouldForwardPlayEngineCommand(type: string): boolean {
   return isPlayEngineCommandType(type);
 }
 
-export function overlayLogForCommand(
-  command: CommandMessage,
-): string | null {
+export function overlayLogForCommand(command: CommandMessage): string | null {
   if (command.type === "playSound") return null;
   return null;
 }
@@ -464,7 +479,10 @@ export function startPlaySession(options: {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
-  retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
+  retargetAnimationLoads?: ReadonlyMap<
+    string,
+    readonly RetargetAnimationLoad[]
+  >;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: AudioLibrary;
@@ -505,6 +523,10 @@ export function startPlaySession(options: {
   onStatHighlight?: (name: string, enabled: boolean) => void;
   onFreeCam?: (enabled: boolean) => void;
   onSetRenderResolution?: (width: number, height: number) => void;
+  onBehaviourTreeDebug?: (enabled: boolean) => void;
+  onBehaviourTreeSnapshot?: (
+    trees: readonly import("@babylonslate/bridge").DebugBehaviourTree[],
+  ) => void;
   onBtState?: (state: {
     slotId: number;
     status: string;
@@ -525,6 +547,7 @@ export function startPlaySession(options: {
   let runtime: RuntimeDriver | null = null;
 
   const handle = createEngine(canvas, {
+    physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
     sharedEngine,
     playMode: true,
     frameCap: resolvePlayFrameCap(options.frameCap),
@@ -608,6 +631,24 @@ export function startPlaySession(options: {
     handle.applySceneEnvironment(options.scene);
   }
   handle.scheduler.invalidate("play");
+  const releaseConsoleCapture = captureConsoleLogs(
+    console,
+    (message, severity) => {
+      if (runtime) runtime.reportLog(message, severity);
+      else options.onLog?.(message, severity);
+    },
+  );
+  const onWindowError = (event: ErrorEvent) =>
+    options.onLog?.(event.error?.stack ?? event.message, "error");
+  const onRejection = (event: PromiseRejectionEvent) =>
+    options.onLog?.(
+      event.reason instanceof Error
+        ? (event.reason.stack ?? event.reason.message)
+        : String(event.reason),
+      "error",
+    );
+  window.addEventListener("error", onWindowError);
+  window.addEventListener("unhandledrejection", onRejection);
   liveBefore.meshes = handle.liveObjectCounts().meshes;
 
   let runtimeMode: "worker" | "in-process" = "in-process";
@@ -618,8 +659,9 @@ export function startPlaySession(options: {
 
   const spawnedActorGuids: string[] = [];
   let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
-  const consoleWaiters: Array<(result: { success: boolean; output: string }) => void> =
-    [];
+  const consoleWaiters: Array<
+    (result: { success: boolean; output: string }) => void
+  > = [];
   const inspectWaiters: Array<(snapshot: DebugInspectSnapshot) => void> = [];
   let recordedTrace: TracePayload | null = null;
   let commandCount = 0;
@@ -647,11 +689,15 @@ export function startPlaySession(options: {
 
   const onCommand = (command: CommandMessage) => {
     noteCommand();
-    if (command.type === "snapshotLayout" && runtime) snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
+    if (command.type === "snapshotLayout" && runtime)
+      snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
     if (command.type === "spawn") {
       spawnedActorGuids.push(command.actorGuid);
     }
-    if (command.type === "snapshotLayout" || shouldForwardPlayEngineCommand(command.type)) {
+    if (
+      command.type === "snapshotLayout" ||
+      shouldForwardPlayEngineCommand(command.type)
+    ) {
       handle.applyCommand(command);
     }
     if (command.type === "activeScene") {
@@ -729,6 +775,10 @@ export function startPlaySession(options: {
         stack: command.stack,
       });
     }
+    if (command.type === "setBehaviourTreeDebug")
+      options.onBehaviourTreeDebug?.(command.enabled);
+    if (command.type === "behaviourTreeSnapshot")
+      options.onBehaviourTreeSnapshot?.(command.trees);
     const overlayLog = overlayLogForCommand(command);
     if (overlayLog) options.onLog?.(overlayLog, "log");
   };
@@ -754,7 +804,9 @@ export function startPlaySession(options: {
     inputAssets: options.inputAssets,
     inputMappings: options.inputMappings,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
-    animClipCatalog: options.animClipCatalog ? [...options.animClipCatalog] : undefined,
+    animClipCatalog: options.animClipCatalog
+      ? [...options.animClipCatalog]
+      : undefined,
   });
 
   try {
@@ -794,7 +846,9 @@ export function startPlaySession(options: {
   } catch (err) {
     worker = null;
     runtimeMode = "in-process";
-    runtime = createRuntimeFromLoad(loadControl, (command) => onCommand(command));
+    runtime = createRuntimeFromLoad(loadControl, (command) =>
+      onCommand(command),
+    );
     runtime.registerAnchors(FIXTURE_ASSET, [
       {
         line: 1,
@@ -858,9 +912,11 @@ export function startPlaySession(options: {
     if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
       boot.queueNavMesh(inProcess, options.navmeshBytes);
     }
-    void pauseGate.beginPlay(() => boot.play(inProcess)).catch((error) => {
-      inProcess.reportError(error);
-    });
+    void pauseGate
+      .beginPlay(() => boot.play(inProcess))
+      .catch((error) => {
+        inProcess.reportError(error);
+      });
     if (options.pauseOnPlay) {
       pauseGate.setPaused(true);
     }
@@ -910,7 +966,10 @@ export function startPlaySession(options: {
     if (runtime) {
       runtime.advance(elapsed);
       if (runtime.copySnapshot(snapBuf)) {
-        lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, snapBuf);
+        lastWorkerTickIndex = applyPlaySnapshotTick(
+          lastWorkerTickIndex,
+          snapBuf,
+        );
         handle.pushSnapshot(snapBuf);
       }
     }
@@ -981,6 +1040,11 @@ export function startPlaySession(options: {
     },
     spawnedActorGuids: () => spawnedActorGuids,
     executeConsoleCommand: (line) => {
+      if (stopped)
+        return Promise.resolve({
+          success: false,
+          output: "Play session stopped",
+        });
       if (runtime) {
         return Promise.resolve(runtime.executeConsoleCommand(line));
       }
@@ -1029,6 +1093,13 @@ export function startPlaySession(options: {
     stop: () => {
       if (stopped && stopResult) return stopResult;
       stopped = true;
+      releaseConsoleCapture();
+      window.removeEventListener("error", onWindowError);
+      window.removeEventListener("unhandledrejection", onRejection);
+      for (const resolve of consoleWaiters.splice(0))
+        resolve({ success: false, output: "Play session stopped" });
+      for (const resolve of inspectWaiters.splice(0))
+        resolve({ tickIndex: 0, nodes: [] });
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", unlock);
       canvas.removeEventListener("touchstart", unlock);

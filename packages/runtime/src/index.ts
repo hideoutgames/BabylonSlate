@@ -31,6 +31,7 @@ export {
 } from "./inspect-control";
 export { PhysicsWorldSync } from "./physics-sync";
 export { LogRingBuffer, type LogEntry, type LogSeverity } from "./log-ring";
+export { captureConsoleLogs } from "./console-capture";
 export {
   SessionDiagnosticAggregator,
   type RuntimeDiagnostic,

@@ -147,6 +147,7 @@ function isVariableAccessTypeId(typeId: string): boolean {
 function pruneIncompatibleEdges(
   edges: SerializedGraph["edges"],
   nodes: SerializedGraph["nodes"],
+  hierarchy: ClassHierarchy,
 ): SerializedGraph["edges"] {
   const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
   return edges.filter((edge) => {
@@ -164,7 +165,7 @@ function pruneIncompatibleEdges(
     const fromType = pinTypeFromHydratedPins(source.data, edge.sourceHandle);
     const toType = pinTypeFromHydratedPins(target.data, edge.targetHandle);
     if (!fromType || !toType) return true;
-    return isAssignable(fromType, toType);
+    return isAssignable(fromType, toType, { hierarchy });
   });
 }
 
@@ -706,6 +707,7 @@ export function hydrateSerializedGraphForEditor(
     edges: pruneIncompatibleEdges(
       pruneEdgesToMissingPins(graph.edges, nodes),
       nodes,
+      classHierarchyFromParentOf(parentOf),
     ),
   };
 }

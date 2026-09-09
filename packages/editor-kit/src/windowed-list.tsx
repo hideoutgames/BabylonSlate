@@ -45,7 +45,7 @@ export function findWindowedListScrollParent(
 export type WindowedListProps = {
   itemCount: number;
   rowHeight: number;
-  /** Keep the keyboard-active row mounted for aria-activedescendant. */
+  /** Keep a keyboard target mounted and reveal it without moving DOM focus. */
   activeIndex?: number;
   children: (index: number) => ReactNode;
 };
@@ -53,7 +53,7 @@ export type WindowedListProps = {
 export function WindowedList({
   itemCount,
   rowHeight,
-  activeIndex,
+  activeIndex = -1,
   children,
 }: WindowedListProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -79,6 +79,23 @@ export function WindowedList({
     };
   }, [itemCount]);
 
+  useLayoutEffect(() => {
+    if (activeIndex < 0 || activeIndex >= itemCount) return;
+    const viewport = findWindowedListScrollParent(listRef.current);
+    if (!viewport || viewport.clientHeight === 0) return;
+    const bounds = listRef.current?.getBoundingClientRect();
+    const listTop =
+      bounds && bounds.height > 0
+        ? bounds.top - viewport.getBoundingClientRect().top + viewport.scrollTop
+        : 0;
+    const top = listTop + activeIndex * rowHeight;
+    const bottom = top + rowHeight;
+    if (top < viewport.scrollTop) viewport.scrollTop = top;
+    else if (bottom > viewport.scrollTop + viewport.clientHeight)
+      viewport.scrollTop = bottom - viewport.clientHeight;
+    setScrollTop(viewport.scrollTop);
+  }, [activeIndex, itemCount, rowHeight]);
+
   const { firstIndex, lastIndex } = windowedSlice({
     itemCount,
     rowHeight,
@@ -92,7 +109,6 @@ export function WindowedList({
     rows.push(index);
   }
   if (
-    activeIndex !== undefined &&
     activeIndex >= 0 &&
     activeIndex < itemCount &&
     !rows.includes(activeIndex)

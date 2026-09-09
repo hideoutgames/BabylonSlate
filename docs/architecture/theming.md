@@ -2,7 +2,7 @@
 
 Canonical tokens live in [`packages/ui/src/styles/globals.css`](../../packages/ui/src/styles/globals.css). Tailwind v4 maps them via `@theme inline`; components use semantic utilities (`bg-background`, `text-primary`, `bg-node-event`, `text-axis-x`, …) — not raw hex in app code.
 
-Engine Settings **Appearance → Theme** (`system` | `light` | `dark`) is shared by the launcher and editor. The launcher toggle saves an explicit light or dark choice to the same `appearance.theme` setting; choosing System in Engine Settings makes both follow the OS. `EditorThemeProvider` resolves the preference and toggles `html.dark`, which switches Neutral chrome surfaces. Default is **system**. A boot script in `apps/editor/index.html` reads `localStorage["babylonslate:engine-settings"]` plus `prefers-color-scheme`; the initial splash inherits that resolved scheme. Native settings hydrate after load (a brief flash is acceptable).
+Engine Settings **Appearance → Theme** (`system` | `light` | `dark`) is shared by the launcher and editor. The launcher toggle saves an explicit light or dark choice to the same `appearance.theme` setting; choosing System in Engine Settings makes both follow the OS. `EditorThemeProvider` resolves the preference and toggles `html.dark`, which switches Graphite chrome surfaces. Default is **system**. A boot script in `apps/editor/index.html` reads `localStorage["babylonslate:engine-settings"]` plus `prefers-color-scheme`; the initial splash inherits that resolved scheme. Native settings hydrate after load (a brief flash is acceptable).
 
 ## Source scanning
 
@@ -10,9 +10,9 @@ Tailwind v4 detects sources relative to the CSS entry, which here lives in `pack
 
 ## Theme source
 
-Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000h04l1gu419ckw)): achromatic surfaces and ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not re-import a tweakcn preset over those editor-function tokens.
+Chrome uses **Soft Graphite**: warm stone light surfaces and soft charcoal dark surfaces with ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not import a preset over those editor-function tokens.
 
-`apps/editor/src/shell/design-tokens.test.ts` asserts ink `--primary`, Neutral backgrounds, `--chrome-tab-accent: var(--foreground)`, a chromatic `--axis-z` that is not `var(--primary)`, a darker light-mode `--pin-exec`, dark `--secondary`/`--muted` distinct from `--popover`, and Dockview tab colors plus 1px content-container outlines.
+`apps/editor/src/shell/design-tokens.test.ts` checks actual palette contrast for main/secondary text and focus indicators, ink `--primary`, semantic type/axis colors, and Dockview boundaries. Screenshots and interaction review remain necessary to validate composed surfaces, transparency, clipping, and density.
 
 ## Safe-area insets
 
@@ -52,23 +52,42 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
 
-- **Primary is ink** (achromatic). Buttons and focus rings follow Neutral. Selected navigation/tree rows and active tabs use a whole-surface fill; do not add curved edge stripes or inset underline highlights.
+- **Primary is ink** (near-neutral). Buttons and focus rings follow Graphite. Selected navigation/tree rows and active tabs use a whole-surface fill; do not add curved edge stripes or inset underline highlights.
 - **Layered surfaces** differentiate chrome, side panels, and canvases.
 - **Saturated pin/node and `--asset-*` colors are type cues** — not whole toolbars.
-- **Axis and status accents** stay chromatic: X/Y/Z, Play (`--success`), destructive actions.
+- **Axis and status accents** stay chromatic: X/Y/Z, Play (`--play`), destructive actions.
 
 ## Surface ladder
 
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| Viewport / graph canvas (always dark) | `--background` (dark) | n/a — canvases ignore light chrome | `oklch(0.145 0 0)` ≈ `#242424` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` |
-| Chrome / raised cards | `--card` | `oklch(1 0 0)` | `oklch(0.205 0 0)` |
-| Headers / category bars | `--secondary` / `--muted` | `oklch(0.97 0 0)` | `oklch(0.32 0 0)` |
-| Menus / viewport overlay | `--popover` | `oklch(1 0 0)` | `oklch(0.269 0 0)` |
-| Hover / selection wash | `--accent` | `oklch(0.97 0 0)` | `oklch(0.371 0 0)` |
+| App frame | `--background` | `oklch(0.938 0.005 85)` | `oklch(0.23 0.003 75)` |
+| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.963 0.004 85)` | `oklch(0.275 0.003 75)` |
+| Raised cards | `--card` | `oklch(0.972 0.003 85)` | `oklch(0.30 0.003 75)` |
+| Panel toolbars / section headers | `--panel-header` | `oklch(0.953 0.005 85)` | `oklch(0.264 0.003 75)` |
+| Menus / dialogs / floating tools | `--popover` | `oklch(0.978 0.003 85)` | `oklch(0.315 0.003 75)` |
+| Inputs / outline actions | `--control` | `oklch(0.978 0.003 85)` | `oklch(0.252 0.003 75)` |
+| Hover / selection wash | `--accent` | `oklch(0.898 0.006 85)` | `oklch(0.35 0.004 75)` |
 
-`--primary` is ink in both schemes: light `oklch(0.145 0 0)`, dark `oklch(0.985 0 0)`.
+`--primary` is ink in both schemes: light `oklch(0.30 0.006 70)`, dark `oklch(0.92 0.003 85)`. The compact dimensions stay unchanged; `--radius` is 8px.
+
+Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared card adjustment cannot flatten the workbench. Graph hosts retain their existing dark default and explicit light override. Animation states use the same surface system with `--graph-state-selected` and `--graph-state-entry`. Pin/handle geometry, functional preview mattes, and transparency checkerboards are unchanged.
+
+## Search and folder navigation
+
+- Global Search keeps focus in the query: Up/Down selects a result across groups, Enter opens it, and Escape closes the dialog. The active result remains visible while navigating. Indexing hides stale results.
+- Content Browser shows the current folder path and a Parent Folder action within the selected project/plugin root. Ancestor navigation clears tile selection and retains filters.
+- Empty folders offer New Asset and Import when writable. An unsuccessful asset search offers Clear Filters; Outliner distinguishes No Matching Actors from an empty scene and retains its search-clear action.
+- Engine and Project Settings search field names and categories. Results open the relevant category and focus a specific control when available; an unmatched query offers Clear Search.
+
+## Operation feedback and recovery
+
+- Homepage actions name the pending operation and prevent repeated submissions. Native project tiles keep Open separate from their context-menu trigger; browser projects explain their storage location.
+- Content Browser keeps names and destinations after failed create, rename, move, or copy operations. Retrying a partial batch omits completed top-level items. Import summaries distinguish successful files from failures; delete failures remain visible and asset references can be opened before confirming deletion.
+- Settings export and plugin actions show pending and failure states. Failed plugin actions offer Retry. Source-control freshness and unlock recovery are described in [Source control](source-control.md).
+- Texture, Font, and Particle previews distinguish loading, missing content, and failed reads or initialization. Retry stays inside the document where possible; unsupported Model preview sources explain the supported formats. A workspace rendering failure offers Retry.
+- Compiler Results, Output Log, and Trace Log keep compact rows and show the selected message in a scrollable, selectable details area with Copy. Log rows reserve 44px for coarse pointers and 28px on desktop.
+- Long Play preparation explains the current wait after ten seconds. Trace charts scale bars to the largest frame or the tick budget and identify the selected frame and duration. Boolean graph defaults show On/Off beside the swatch.
 
 Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` is a faint black tint (2.5% light / 3.5% dark) so alternate catalog and picker rows subtly follow their containing surface instead of forming high-contrast bands. Add Node assigns stripes by item order before virtualization, excluding category headers.
 
@@ -76,10 +95,11 @@ Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch
 
 | Role | Token | Notes |
 | --- | --- | --- |
-| Default actions / ink chrome | `--primary` | Achromatic Neutral ink |
+| Default actions / ink chrome | `--primary` | Near-neutral ink |
 | Focus / docking indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; docking targets use foreground ink |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
-| Success / Play | `--success` | Positive status and the global Play control |
+| Success | `--success`, `--success-foreground` | Positive status and axis Y |
+| Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes; Play and Debug share a flush neutral enclosure matching the Play button height and corner radius, with an inset outline beneath the controls |
 
 ## Pin type colors
 
@@ -225,6 +245,8 @@ Dialog footer actions, including AlertDialog Save / Discard / Cancel, share the 
 **Touch sizes** on `Button` / `Toggle`: `touch` and `touch-icon` map to `min-h/min-w: var(--touch-target, 44px)`. Prefer these over repeating `min-h-11` at call sites. Docked panels omit `PanelFrame` titles when Dockview already shows the tab name; keep a toolbar-only row when actions are present. `PanelFrame` uses `--sidebar`; headers use `--card`.
 
 Icon-only controls always have `aria-label`; tooltips are secondary and must not be the only way to discover the action. Chrome **Save All** is disabled when the project is clean; a `bg-destructive` dot (`data-testid="save-all-dirty"`) marks unsaved documents.
+
+Numeric fields retain compact desktop sizing; coarse-pointer inputs and scrub handles use separate 44px targets. Sprite transparency checks use theme surfaces. Preview Play/Resume controls share the filled Play glyph, and Tilemap tools expose hover/focus labels. Home uses a trash glyph for permanent project deletion and a close glyph for removing a recent entry.
 
 Dev-only **Component Gallery**: `/?test=1&gallery=1` renders every installed primitive for on-device visual checks.
 

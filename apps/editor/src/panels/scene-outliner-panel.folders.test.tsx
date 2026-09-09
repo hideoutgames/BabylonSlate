@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
 import { createActor, createDefaultScene } from "@babylonslate/core";
+import { EditSession, diffSceneCommands } from "@babylonslate/edit";
 import { SceneOutlinerPanel, actorRowId, applyOutlinerRowSelect, folderRowId } from "./scene-outliner-panel";
 
 /** jsdom has no PointerEvent; a MouseEvent with pointer fields drives TreeView. */
@@ -66,6 +67,17 @@ function renderOutliner(scene: SerializedScene) {
   harness.scene = scene;
   return render(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
 }
+
+it("distinguishes an unsuccessful actor search from an empty scene and restores the tree when cleared", () => {
+  const scene = createDefaultScene();
+  scene.actors = [createActor("hero", "Hero")];
+  renderOutliner(scene);
+  fireEvent.change(screen.getByTestId("outliner-search"), { target: { value: "missing" } });
+  expect(screen.getByText("No Matching Actors")).toBeTruthy();
+  expect(screen.queryByTestId(`tree-row-${actorRowId("hero")}`)).toBeNull();
+  fireEvent.click(screen.getByTestId("outliner-search-clear"));
+  expect(screen.getByTestId(`tree-row-${actorRowId("hero")}`)).toBeTruthy();
+});
 
 function lastScene(): SerializedScene {
   const calls = applySceneChange.mock.calls;
@@ -139,11 +151,91 @@ describe("Scene Outliner folders", () => {
     fireEvent.click(screen.getByTestId(`outliner-menu-${folderRowId("inner")}`));
     fireEvent.click(screen.getByTestId("outliner-delete-folder-inner"));
 
+    expect(applySceneChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Folder Only" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+
     const next = lastScene();
     expect(next.folders.map((folder) => folder.id)).toEqual(["outer"]);
     expect(next.actors).toHaveLength(1);
     expect(next.actors[0]!.folderId).toBe("outer");
   });
+
+  it("cancels folder deletion without changing the scene", () => {
+    renderOutliner({
+      ...createDefaultScene(),
+      folders: [{ id: "f1", name: "Lighting", parentFolderId: null }],
+      actors: [{ ...createActor("lamp", "Lamp"), folderId: "f1" }],
+    });
+    fireEvent.click(screen.getByTestId(`outliner-menu-${folderRowId("f1")}`));
+    fireEvent.click(screen.getByTestId("outliner-delete-folder-f1"));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(applySceneChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId(`tree-row-${actorRowId("lamp")}`)).toBeTruthy();
+  });
+
+  it.each(["Folder Only", "Folder And Contents"])(
+    "restores the complete folder hierarchy and order in one undo after %s",
+    (choice) => {
+      const before: SerializedScene = {
+        ...createDefaultScene(),
+        folders: [
+          { id: "outer", name: "Outer", parentFolderId: null },
+          { id: "inner", name: "Inner", parentFolderId: "outer" },
+          { id: "nested", name: "Nested", parentFolderId: "inner" },
+          { id: "unrelated", name: "Unrelated", parentFolderId: null },
+          { id: "nested-b", name: "Nested B", parentFolderId: "inner" },
+          { id: "nested-c", name: "Nested C", parentFolderId: "inner" },
+        ],
+        actors: [
+          { ...createActor("lamp", "Lamp"), folderId: "inner" },
+          { ...createActor("nested-lamp", "Nested Lamp"), folderId: "nested" },
+          createActor("attached", "Attached", { parentId: "lamp" }),
+          createActor("control", "Control"),
+        ],
+      };
+      const session = new EditSession();
+      applySceneChange.mockImplementationOnce(async (id, next) => {
+        harness.scene = session.applyBatch(id, before, diffSceneCommands(before, next))!.doc;
+        return true;
+      });
+      const view = renderOutliner(before);
+      fireEvent.click(screen.getByTestId(`outliner-menu-${folderRowId("inner")}`));
+      fireEvent.click(screen.getByTestId("outliner-delete-folder-inner"));
+      fireEvent.click(screen.getByRole("button", { name: choice }));
+      view.rerender(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
+      const deleted = harness.scene!;
+      expect(applySceneChange).toHaveBeenCalledTimes(1);
+      if (choice === "Folder And Contents") {
+        expect(deleted.folders.map((folder) => folder.id)).toEqual([
+          "outer",
+          "unrelated",
+        ]);
+        expect(deleted.actors.map((actor) => actor.id)).toEqual(["control"]);
+        expect(screen.queryByTestId(`tree-row-${actorRowId("lamp")}`)).toBeNull();
+      } else {
+        expect(deleted.folders).toEqual([
+          before.folders[0],
+          { id: "nested", name: "Nested", parentFolderId: "outer" },
+          before.folders[3],
+          { id: "nested-b", name: "Nested B", parentFolderId: "outer" },
+          { id: "nested-c", name: "Nested C", parentFolderId: "outer" },
+        ]);
+        expect(deleted.actors[0]!.folderId).toBe("outer");
+        expect(deleted.actors).toHaveLength(4);
+      }
+      const id = "scene:assets/Main.scene.babasset";
+      harness.scene = session.undo(id, deleted)!.doc;
+      view.rerender(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
+      expect(harness.scene).toEqual(before);
+      expect(session.canUndo(id)).toBe(false);
+      for (const actor of before.actors) {
+        expect(screen.getByTestId(`tree-row-${actorRowId(actor.id)}`)).toBeTruthy();
+      }
+      expect(session.redo(id, harness.scene)!.doc).toEqual(deleted);
+    },
+  );
 
   it("does not offer visibility or lock toggles on a folder row", () => {
     renderOutliner({

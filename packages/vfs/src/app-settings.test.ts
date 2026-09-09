@@ -7,6 +7,12 @@ import { MemoryAppSettingsStore } from "./memory-app-settings";
 import { WebAppSettingsStore } from "./web-app-settings";
 
 describe("app settings", () => {
+  it("loads a legacy Drop distance default and rejects invalid limits", () => {
+    expect(engineSettingsSchema.parse({}).viewportDropDistance).toBe(10_000);
+    for (const viewportDropDistance of [0, -1, Infinity, NaN]) {
+      expect(engineSettingsSchema.safeParse({ viewportDropDistance }).success).toBe(false);
+    }
+  });
   it("round-trips recent project badges and tolerates legacy recents", async () => {
     const store = new MemoryAppSettingsStore();
     await store.update((settings) => {
@@ -336,10 +342,12 @@ describe("app settings", () => {
     const settings = defaultEngineSettings();
     settings.viewportFrameCap = 30;
     settings.graphDefaultZoom = 0.8;
+    settings.viewportDropDistance = 25_000.5;
     await store.save(settings);
     const reloaded = new WebAppSettingsStore();
     expect((await reloaded.load()).viewportFrameCap).toBe(30);
     expect((await reloaded.load()).graphDefaultZoom).toBe(0.8);
+    expect((await reloaded.load()).viewportDropDistance).toBe(25_000.5);
   });
 
   it("falls back to defaults when localStorage holds invalid JSON", async () => {

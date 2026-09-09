@@ -9,6 +9,7 @@ import {
   createPlayBootCoordinator,
   createPlayPauseGate,
   createRuntimeFromLoad,
+  captureConsoleLogs,
   type RuntimeDriver,
 } from "@babylonslate/runtime";
 import {
@@ -23,7 +24,12 @@ import { playFramebufferSize, type SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
-import { applyPlayerActiveScene, applyPlayerEngineCommand, schedulePlayerMaterialPrewarm, schedulePlayerSceneModelsReady } from "./engine-commands";
+import {
+  applyPlayerActiveScene,
+  applyPlayerEngineCommand,
+  schedulePlayerMaterialPrewarm,
+  schedulePlayerSceneModelsReady,
+} from "./engine-commands";
 import { mountPlayerPrintOverlay } from "./print-overlay";
 import { packedBootControls, packedContentFromGame } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
@@ -34,9 +40,15 @@ import {
   unlockAudioOnFirstGesture,
   type PlayerHudStats,
 } from "./hud";
-import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
+import {
+  loopGuardLoadFields,
+  shouldHaltPlayerOnDiagnostic,
+} from "./debug-load";
 import { playerSpawnListForScripts } from "./spawn-list";
 import { packedFontCssStacks } from "./fonts";
+import { createPlayerConsoleHost } from "./console-host";
+import { createPlayerPauseState } from "./console-pause";
+import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -69,6 +81,10 @@ export type PlayerBootHandle = {
   ticks: () => number;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
+  executeConsoleCommand: (
+    line: string,
+  ) => Promise<{ success: boolean; output: string }>;
+  inspectWorld: () => Promise<DebugInspectSnapshot>;
   stop: () => { diagnostics: PlayerDiagnostic[] };
 };
 
@@ -83,6 +99,9 @@ export function startPlayer(options: {
     draws: number;
   }) => void;
   onDiagnostic?: (diagnostics: readonly PlayerDiagnostic[]) => void;
+  onConsoleEvent?: (
+    command: { type: string } & Record<string, unknown>,
+  ) => void;
 }): PlayerBootHandle {
   const { canvas, game } = options;
   const manifest: GameManifest = game.manifest;
@@ -98,6 +117,12 @@ export function startPlayer(options: {
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   let input: ReturnType<typeof attachInputCapture> | null = null;
+  const consoleHost = createPlayerConsoleHost({
+    execute: () =>
+      runtime ? (line) => runtime!.executeConsoleCommand(line) : undefined,
+    inspect: () => (runtime ? () => runtime!.inspectWorld() : undefined),
+    post: (command) => worker?.postControl(command),
+  });
 
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
@@ -136,12 +161,18 @@ export function startPlayer(options: {
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
+    physicsWorld: manifest.physicsWorld,
     navmeshBytes: content.navmeshBytes,
     navBlockers: navDebugBlockersFromActors(scene.actors),
     ktx2BasePath: ktx2BasePath(),
     dracoBasePath: dracoBasePath(),
     meshoptBasePath: meshoptBasePath(),
     onPostProcessDiagnostic: (diagnostic) => {
+      options.onConsoleEvent?.({
+        type: "log",
+        message: diagnostic.message,
+        severity: "warning",
+      });
       diagnostics.push({
         message: diagnostic.message,
         severity: "warning",
@@ -151,6 +182,11 @@ export function startPlayer(options: {
       options.onDiagnostic?.(diagnostics);
     },
     onAudioDiagnostic: (diagnostic) => {
+      options.onConsoleEvent?.({
+        type: "log",
+        message: diagnostic.message,
+        severity: "warning",
+      });
       diagnostics.push({
         message: diagnostic.message,
         severity: "warning",
@@ -160,6 +196,11 @@ export function startPlayer(options: {
       options.onDiagnostic?.(diagnostics);
     },
     onParticleDiagnostic: (diagnostic) => {
+      options.onConsoleEvent?.({
+        type: "log",
+        message: diagnostic.message,
+        severity: "warning",
+      });
       diagnostics.push({
         message: diagnostic.message,
         severity: "warning",
@@ -169,6 +210,11 @@ export function startPlayer(options: {
       options.onDiagnostic?.(diagnostics);
     },
     onMaterialDiagnostic: (diagnostic) => {
+      options.onConsoleEvent?.({
+        type: "log",
+        message: diagnostic.message,
+        severity: diagnostic.severity ?? "error",
+      });
       diagnostics.push({
         message: diagnostic.message,
         severity: diagnostic.severity ?? "error",
@@ -200,6 +246,35 @@ export function startPlayer(options: {
     },
   });
   handle.applySceneEnvironment(scene);
+  const releaseConsoleCapture = captureConsoleLogs(
+    console,
+    (message, severity) => {
+      if (runtime) runtime.reportLog(message, severity);
+      else options.onConsoleEvent?.({ type: "log", message, severity });
+    },
+  );
+  const onWindowError = (event: ErrorEvent) =>
+    options.onConsoleEvent?.({
+      type: "log",
+      message: event.error?.stack ?? event.message,
+      severity: "error",
+    });
+  const onRejection = (event: PromiseRejectionEvent) =>
+    options.onConsoleEvent?.({
+      type: "log",
+      message:
+        event.reason instanceof Error
+          ? (event.reason.stack ?? event.reason.message)
+          : String(event.reason),
+      severity: "error",
+    });
+  window.addEventListener("error", onWindowError);
+  window.addEventListener("unhandledrejection", onRejection);
+  const releaseConsole = () => {
+    releaseConsoleCapture();
+    window.removeEventListener("error", onWindowError);
+    window.removeEventListener("unhandledrejection", onRejection);
+  };
   handle.scheduler.invalidate("play");
   const printHud = mountPlayerPrintOverlay(canvas.parentElement ?? canvas);
   if (typeof window !== "undefined") {
@@ -269,6 +344,7 @@ export function startPlayer(options: {
   let raf = 0;
   let halted = false;
   let lifecyclePaused = false;
+  const pauseState = createPlayerPauseState();
   let detachLifecycle = () => {};
   let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
   let hudStats: PlayerHudStats | undefined;
@@ -293,14 +369,26 @@ export function startPlayer(options: {
     worker?.terminate();
     worker = null;
     runtime?.stop();
+    consoleHost.dispose();
+    releaseConsole();
     printHud.dispose();
   };
 
   const materialsWarmed = { current: false };
   let hostSceneGuid: string | null = startup;
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
-    if (command.type === "snapshotLayout" && runtime) snapBuf = new Float32Array(snapshotFloatCount(Number(command.capacity)));
-    if (command.type === "snapshotLayout") handle.applyCommand(command as never);
+    if (command.type === "sessionPaused") {
+      const paused = pauseState.setConsolePaused(command.paused === true);
+      handle.setPaused(paused);
+      pauseGate?.setPaused(paused);
+      worker?.postControl({ type: "setPaused", paused });
+    }
+    consoleHost.receive(command);
+    options.onConsoleEvent?.(command);
+    if (command.type === "snapshotLayout" && runtime)
+      snapBuf = new Float32Array(snapshotFloatCount(Number(command.capacity)));
+    if (command.type === "snapshotLayout")
+      handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
     if (
       applyPlayerActiveScene(handle, game.scenes, command, hostSceneGuid) &&
@@ -309,7 +397,10 @@ export function startPlayer(options: {
       hostSceneGuid = command.sceneAssetGuid;
     }
     schedulePlayerMaterialPrewarm(handle, command.type, materialsWarmed);
-    if (command.type === "activeScene" && typeof command.sceneAssetGuid === "string") {
+    if (
+      command.type === "activeScene" &&
+      typeof command.sceneAssetGuid === "string"
+    ) {
       schedulePlayerSceneModelsReady(
         (message) => {
           worker?.postControl(message);
@@ -362,7 +453,10 @@ export function startPlayer(options: {
     worker = createPlayerWorkerHost();
     worker.onCommand((cmd) => onCommand(cmd as never));
     worker.onSnapshot((buffer) => {
-      lastWorkerTickIndex = applyPlayerSnapshotTick(lastWorkerTickIndex, buffer);
+      lastWorkerTickIndex = applyPlayerSnapshotTick(
+        lastWorkerTickIndex,
+        buffer,
+      );
       ticks = lastWorkerTickIndex;
       handle.pushSnapshot(buffer);
     });
@@ -422,9 +516,11 @@ export function startPlayer(options: {
     if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {
       boot.queueNavMesh(inProcess, content.navmeshBytes);
     }
-    void pauseGate.beginPlay(() => boot.play(inProcess)).catch((error) => {
-      inProcess.reportError(error);
-    });
+    void pauseGate
+      .beginPlay(() => boot.play(inProcess))
+      .catch((error) => {
+        inProcess.reportError(error);
+      });
   }
 
   input = attachInputCapture(canvas, {
@@ -455,7 +551,10 @@ export function startPlayer(options: {
     if (runtime) {
       runtime.advance(elapsed);
       if (runtime.copySnapshot(snapBuf)) {
-        lastWorkerTickIndex = applyPlayerSnapshotTick(lastWorkerTickIndex, snapBuf);
+        lastWorkerTickIndex = applyPlayerSnapshotTick(
+          lastWorkerTickIndex,
+          snapBuf,
+        );
         ticks = lastWorkerTickIndex;
         handle.pushSnapshot(snapBuf);
       }
@@ -473,9 +572,10 @@ export function startPlayer(options: {
     detachLifecycle = attachLifecyclePause((paused) => {
       const wasPaused = lifecyclePaused;
       lifecyclePaused = paused;
-      handle.setPaused(paused);
-      pauseGate?.setPaused(paused);
-      worker?.postControl({ type: "setPaused", paused });
+      const effectivePaused = pauseState.setLifecyclePaused(paused);
+      handle.setPaused(effectivePaused);
+      pauseGate?.setPaused(effectivePaused);
+      worker?.postControl({ type: "setPaused", paused: effectivePaused });
       if (paused) {
         cancelAnimationFrame(raf);
       } else if (wasPaused) {
@@ -490,6 +590,8 @@ export function startPlayer(options: {
     ticks: () => ticks,
     visuals: () => handle.playVisualStates(),
     meshMaterialNames: () => handle.playMeshMaterialNames(),
+    executeConsoleCommand: (line) => consoleHost.execute(line),
+    inspectWorld: () => consoleHost.inspectWorld(),
     stop: () => {
       halted = true;
       detachLifecycle();
@@ -500,6 +602,8 @@ export function startPlayer(options: {
       printHud.dispose();
       worker?.terminate();
       runtime?.stop();
+      consoleHost.dispose();
+      releaseConsole();
       handle.dispose();
       return { diagnostics };
     },

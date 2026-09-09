@@ -1,6 +1,7 @@
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
+  findClassAssetReferences,
   audioAssetDependencies,
   particleAssetDependencies,
   createDefaultMigrationRegistry,
@@ -23,6 +24,7 @@ import {
   spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
 import {
+  classIdsFromVariableMembers,
   createDefaultScene,
   createInputAssetPayload,
   isInputAssetType,
@@ -1737,6 +1739,9 @@ export function assetHeaderDependencies(
   visitInputRefs(payload);
   const unique = new Set<string>([
     ...inputRefs,
+    ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
+      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : [])),
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),
@@ -1780,6 +1785,9 @@ export function assetHeaderDependencies(
     } else {
       addClass(parentClass);
       addComponents(payload.components);
+      if (Array.isArray(payload.members)) {
+        for (const classId of classIdsFromVariableMembers(payload.members)) addClass(classId);
+      }
     }
   }
   return [...unique].sort();

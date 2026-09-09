@@ -887,39 +887,56 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits assignMaterial when a MeshComponent stores a materialGuid", () => {
-    const commands: CommandMessage[] = [];
-    const mesh = createMeshComponent("component-1", "sphere");
-    mesh.properties.materialGuid = "mat-rock";
-    const runtime = createRuntimeFromLoad(
-      {
-        type: "load",
-        sceneAssetGuid: "assets/mat.scene.babasset",
-        scene: {
-          name: "Shaded",
-          viewportMode: "3d",
-          settings: createDefaultSceneSettings(),
-          folders: [],
-          actors: [
-            createActor("actor-1", "Cube", {
-              components: [mesh],
-            }),
-          ],
+  it.each([
+    { meshKind: "box", assetGuid: null },
+    { meshKind: "sphere", assetGuid: null },
+    { meshKind: "model", assetGuid: "model-rock" },
+  ])(
+    "keeps $meshKind geometry separate from its material assignment",
+    ({ meshKind, assetGuid }) => {
+      const commands: CommandMessage[] = [];
+      const mesh = createMeshComponent("component-1", meshKind);
+      mesh.properties.assetGuid = assetGuid;
+      mesh.properties.materialGuid = "mat-rock";
+      const runtime = createRuntimeFromLoad(
+        {
+          type: "load",
+          sceneAssetGuid: "assets/mat.scene.babasset",
+          scene: {
+            name: "Shaded",
+            viewportMode: "3d",
+            settings: createDefaultSceneSettings(),
+            folders: [],
+            actors: [
+              createActor("actor-1", "Cube", {
+                components: [mesh],
+              }),
+            ],
+          },
         },
-      },
-      (command) => commands.push(command),
-    );
-    runtime.realizePlayWorld();
-    expect(commands.filter((c) => c.type === "assignMaterial")).toEqual([
-      {
-        type: "assignMaterial",
-        slotId: 0,
-        materialAssetGuid: "mat-rock",
-        componentId: "component-1",
-      },
-    ]);
-    runtime.stop();
-  });
+        (command) => commands.push(command),
+      );
+      runtime.realizePlayWorld();
+      expect(
+        commands.filter((command) => command.type === "assignMesh"),
+      ).toEqual([
+        expect.objectContaining({
+          slotId: 0,
+          meshKind,
+          meshAssetGuid: assetGuid,
+        }),
+      ]);
+      expect(commands.filter((c) => c.type === "assignMaterial")).toEqual([
+        {
+          type: "assignMaterial",
+          slotId: 0,
+          materialAssetGuid: "mat-rock",
+          componentId: "component-1",
+        },
+      ]);
+      runtime.stop();
+    },
+  );
 
   it("emits assignMaterial for a mesh in a default scene that already has a camera", () => {
     const commands: CommandMessage[] = [];
@@ -984,6 +1001,23 @@ describe("p7-play-scene-load", () => {
       (command) => commands.push(command),
     );
     runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
+      expect.objectContaining({
+        meshAssetGuid: null,
+        parts: [
+          expect.objectContaining({
+            componentId: "box",
+            meshKind: "box",
+            meshAssetGuid: null,
+          }),
+          expect.objectContaining({
+            componentId: "sphere",
+            meshKind: "sphere",
+            meshAssetGuid: null,
+          }),
+        ],
+      }),
+    ]);
     expect(commands.filter((c) => c.type === "assignMaterial")).toEqual([
       {
         type: "assignMaterial",

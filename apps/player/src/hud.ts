@@ -74,12 +74,32 @@ export function mountPlayerHud(
   options: { bundleDebugger: boolean },
 ): {
   setStats: (stats: PlayerHudStats) => void;
+  applyCommand: (command: { type: string; enabled?: unknown; name?: unknown }) => boolean;
 } {
   if (!options.bundleDebugger) {
     element.hidden = true;
-    return { setStats: () => {} };
+    return { setStats: () => {}, applyCommand: () => false };
   }
   element.hidden = false;
+  type Highlight = "unit" | "memory" | "draws" | "threads";
+  let highlight: Highlight | null = null;
+  const fields = new Map<string, HTMLSpanElement>();
+  element.replaceChildren();
+  for (const name of ["threads", "unit", "actors", "draws", "memory", "ticks", "warnings"]) {
+    const field = element.ownerDocument.createElement("span");
+    field.dataset.stat = name;
+    fields.set(name, field);
+    element.append(field, element.ownerDocument.createTextNode("  "));
+  }
+  const applyHighlight = () => {
+    element.dataset.highlight = highlight ?? "";
+    for (const [name, field] of fields) {
+      const active = name === highlight || (highlight === "threads" && name === "unit");
+      field.dataset.highlighted = String(active);
+      field.style.fontWeight = active ? "700" : "";
+      field.style.textDecoration = active ? "underline" : "";
+    }
+  };
   const setStats = (stats: PlayerHudStats) => {
     const warn = drawCallCeilingWarning(stats.draws);
     const geoWarn =
@@ -88,11 +108,15 @@ export function mountPlayerHud(
         : null;
     element.dataset.fps = String(Math.round(stats.fps));
     element.dataset.ticks = String(stats.ticks);
-    const geo =
-      stats.geometryBytes != null
-        ? `  geo ${(stats.geometryBytes / (1024 * 1024)).toFixed(1)}MB`
-        : "";
-    element.textContent = `fps ${stats.fps.toFixed(0)}  script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms  actors ${stats.liveActors ?? 0}/${stats.snapshotCapacity ?? 0}  draws ${stats.draws}${geo}  ticks ${stats.ticks}${warn ? "  DRAWS HIGH" : ""}${geoWarn ? "  GEO HIGH" : ""}`;
+    fields.get("threads")!.textContent = `fps ${stats.fps.toFixed(0)}`;
+    fields.get("unit")!.textContent = `script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms`;
+    fields.get("actors")!.textContent = `actors ${stats.liveActors ?? 0}/${stats.snapshotCapacity ?? 0}`;
+    fields.get("draws")!.textContent = `draws ${stats.draws}`;
+    fields.get("memory")!.textContent = stats.geometryBytes != null
+      ? `geo ${(stats.geometryBytes / (1024 * 1024)).toFixed(1)}MB`
+      : "";
+    fields.get("ticks")!.textContent = `ticks ${stats.ticks}`;
+    fields.get("warnings")!.textContent = `${warn ? "DRAWS HIGH" : ""}${geoWarn ? "  GEO HIGH" : ""}`;
   };
   setStats({
     ticks: 0,
@@ -103,7 +127,28 @@ export function mountPlayerHud(
     liveActors: 0,
     snapshotCapacity: 0,
   });
-  return { setStats };
+  applyHighlight();
+  return {
+    setStats,
+    applyCommand(command) {
+      if (command.type === "setShowFps") {
+        element.hidden = command.enabled !== true;
+        return true;
+      }
+      if (command.type === "setStat" && typeof command.name === "string" &&
+        ["unit", "memory", "draws", "threads"].includes(command.name)) {
+        if (command.enabled === true) {
+          element.hidden = false;
+          highlight = command.name as Highlight;
+        } else if (highlight === command.name) {
+          highlight = null;
+        }
+        applyHighlight();
+        return true;
+      }
+      return false;
+    },
+  };
 }
 
 export function mountPlayerDebuggerOverlays(

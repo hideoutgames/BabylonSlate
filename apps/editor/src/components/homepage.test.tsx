@@ -128,6 +128,7 @@ describe("Slate project browser", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Open Project Game" }));
     await waitFor(() => expect(onOpenProject).toHaveBeenCalledOnce());
+    expect(screen.getByRole("status").textContent).toMatch(/Opening Project/i);
     expect(screen.getByTestId("create-project")).toHaveProperty(
       "disabled",
       true,
@@ -136,7 +137,10 @@ describe("Slate project browser", () => {
       "disabled",
       true,
     );
+    fireEvent.click(screen.getByTestId("homepage-start-blank"));
+    expect(screen.queryByTestId("create-project-dialog")).toBeNull();
     await act(async () => rejectOpen(new Error("Project unavailable")));
+    expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByTestId("homepage-error").textContent).toContain(
       "Project unavailable",
     );
@@ -144,6 +148,8 @@ describe("Slate project browser", () => {
       "disabled",
       false,
     );
+    createDialog();
+    expect(screen.getByTestId("create-project-dialog")).toBeTruthy();
   });
 
   it.each(["blank", "empty", "2d"])(
@@ -155,9 +161,7 @@ describe("Slate project browser", () => {
       fireEvent.change(screen.getByTestId("create-project-name"), {
         target: { value: "Orbit" },
       });
-      fireEvent.click(
-        screen.getByRole("button", { name: "Rocket" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Rocket" }));
       fireEvent.click(screen.getByTestId("create-project-submit"));
       await waitFor(() =>
         expect(onCreateEmpty).toHaveBeenCalledWith(
@@ -233,6 +237,17 @@ describe("Slate project browser", () => {
       "value",
       "Orbit",
     );
+  });
+
+  it("explains browser storage without native location controls", () => {
+    renderHomepage();
+    createDialog();
+    fireEvent.click(screen.getByText("Options"));
+    const dialog = screen.getByTestId("create-project-dialog");
+    expect(dialog.textContent).toMatch(/Stored in this browser/i);
+    expect(dialog.textContent).toMatch(/backup/i);
+    expect(screen.queryByTestId("create-project-choose-location")).toBeNull();
+    expect(screen.queryByTestId("create-project-app-documents")).toBeNull();
   });
 
   it.each(["ios", "electron"])(

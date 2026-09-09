@@ -150,6 +150,14 @@ afterEach(() => {
 });
 
 describe("AssetDocumentWorkspace authoring", () => {
+  it("reports an unavailable font source instead of claiming the preview is ready", async () => {
+    readAssetChunk.mockResolvedValueOnce(new Uint8Array());
+    render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
+    expect(await screen.findByText("Font Preview Unavailable")).toBeTruthy();
+    expect(screen.getByTestId("font-sample-preview").getAttribute("data-fonts-ready")).toBe("false");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByText("No fallback glyphs detected")).toBeNull();
+  });
   it("picks Font fallbacks instead of typing guids", async () => {
     render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
     fireEvent.click(screen.getByTestId("font-fallbacks-add"));

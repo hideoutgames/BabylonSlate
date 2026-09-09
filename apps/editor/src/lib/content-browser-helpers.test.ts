@@ -1859,6 +1859,20 @@ describe("content-browser-helpers", () => {
     expect(materialAssetDependencies("Class", {})).toEqual([]);
   });
 
+  it.each(["Class", "Graph"])("records Class variable references in %s header dependencies", (type) => {
+    const classes = ["SpawnChild", "SpawnBase", "Unused"].map((name) => ({
+      path: `assets/${name}.class.babasset`,
+      header: { type: "Class", name: `${name}.class`, guid: `guid-${name}` },
+    }));
+    expect(assetHeaderDependencies(type, {
+      members: [
+        { id: "spawn", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnChild", defaultValue: "SpawnChild" },
+        { id: "choices", kind: "variable", name: "Choices", typeId: "class", typeClassId: "SpawnBase", container: "array", defaultValue: ["SpawnChild"] },
+        { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "Unused" },
+      ],
+    }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
+  });
+
   it("extracts Audio mixer and channel guids for header.dependencies", () => {
     expect(
       assetHeaderDependencies("Audio", {

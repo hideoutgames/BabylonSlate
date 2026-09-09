@@ -282,6 +282,21 @@ export function EngineSettingsForm({
             />
           </Field>
           <Field className="settings-field">
+            <FieldLabel htmlFor="setting-drop-distance">Drop Distance</FieldLabel>
+            <NumberField
+              id="setting-drop-distance"
+              min={0.0001}
+              step={1}
+              className="min-h-[var(--chrome-row,28px)]"
+              data-testid="setting-drop-distance"
+              value={settings.viewportDropDistance}
+              onChange={(viewportDropDistance) => void onChange({ viewportDropDistance })}
+            />
+            <FieldDescription>
+              World units. Scene and Prefab objects drop only to surfaces closer than this distance.
+            </FieldDescription>
+          </Field>
+          <Field className="settings-field">
             <FieldLabel htmlFor="setting-fly-speed">Camera Speed</FieldLabel>
             <NumberField
               id="setting-fly-speed"

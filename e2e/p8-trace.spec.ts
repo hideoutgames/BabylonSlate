@@ -80,8 +80,11 @@ test.describe("P8 Trace document tab", () => {
     await expect(page.getByTestId("trace-timeline-panel")).toBeVisible();
     await expect(page.getByTestId("trace-snapshot-panel")).toBeVisible();
     await expect(page.getByTestId("trace-log-panel")).toBeVisible();
-    await expect(page.getByTestId("trace-playback-graph-bar-0")).toBeVisible();
-    await expect(page.getByTestId("trace-playback-graph-bar-1")).toBeVisible();
+    const timingBars = page
+      .getByTestId("trace-playback-graph")
+      .getByRole("button");
+    await expect(timingBars.nth(0)).toBeVisible();
+    await expect(timingBars.nth(1)).toBeVisible();
     await expect(page.getByTestId("trace-playback-scrubber")).toBeVisible();
 
     const tree = page.getByRole("tree", { name: "Snapshot", exact: true });
@@ -103,8 +106,12 @@ test.describe("P8 Trace document tab", () => {
     const before = await page
       .getByTestId("trace-playback-snapshot")
       .textContent();
-    await page.getByTestId("trace-playback-graph-bar-0").click();
-    await expect(page.getByTestId("trace-playback-frame")).toHaveValue("0");
+    // Long recordings group graph bars by peak tick; select an exact frame
+    // through the frame input so this check does not depend on bucket size.
+    const frameInput = page.getByTestId("trace-playback-frame");
+    await frameInput.fill("0");
+    await frameInput.blur();
+    await expect(frameInput).toHaveValue("0");
     await expect(page.getByTestId("trace-playback-snapshot")).not.toHaveText(
       before ?? "",
     );
@@ -114,9 +121,9 @@ test.describe("P8 Trace document tab", () => {
     await expect(page.getByTestId("trace-frame-summary")).toContainText(
       `Tick ${tick}`,
     );
-    await page.getByTestId("trace-playback-frame").fill("0.5");
-    await page.getByTestId("trace-playback-frame").blur();
-    await expect(page.getByTestId("trace-playback-frame")).toHaveValue("0");
+    await frameInput.fill("0.5");
+    await frameInput.blur();
+    await expect(frameInput).toHaveValue("0");
     for (const dark of [false, true]) {
       await page.evaluate(
         (enabled) => document.documentElement.classList.toggle("dark", enabled),
