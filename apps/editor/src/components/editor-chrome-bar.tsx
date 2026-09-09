@@ -256,10 +256,12 @@ export function EditorChromeBar({
   onCloseProject,
   onSaveProject,
   onCloseDocument,
+  onCloseAllDocuments,
 }: {
   onCloseProject?: () => void;
   onSaveProject?: () => void;
   onCloseDocument?: (id: string) => void;
+  onCloseAllDocuments?: () => void;
 }) {
   const {
     projectName,
@@ -541,6 +543,7 @@ export function EditorChromeBar({
               activeDocumentId={activeDocumentId}
               onSelect={setActiveDocument}
               onClose={onCloseDocument ?? closeDocument}
+              onCloseAll={onCloseAllDocuments}
               compact
             />
           </div>
@@ -605,6 +608,7 @@ export function EditorChromeBar({
               activeDocumentId={activeDocumentId}
               onSelect={setActiveDocument}
               onClose={onCloseDocument ?? closeDocument}
+              onCloseAll={onCloseAllDocuments}
             />
           </div>
         )}
