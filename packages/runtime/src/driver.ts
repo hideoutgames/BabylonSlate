@@ -6,6 +6,8 @@ import {
   writeSnapshotHeader,
   type CommandMessage,
   type ControlMessage,
+  type DebugBehaviourTree,
+  type DebugNavAgent,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -435,6 +437,10 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly btVoiceByActor = new Map<string, string>();
   private lastStatsEmitMs: number | null = null;
   private readonly lastBtStateJson = new Map<number, string>();
+  private showPathfinding = false;
+  private showNavAgent = false;
+  private behaviourTreeDebug = false;
+  private lastBehaviourTreeDebugMs = -Infinity;
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -1589,6 +1595,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.cameraPossessedByScript = false;
     this.possessedCameraSlotId = null;
     this.realizePlayWorld();
+    this.emitNavigationDebug();
+    this.emitBehaviourTreeSnapshot(true);
   }
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
@@ -1982,7 +1990,13 @@ class InProcessRuntime implements RuntimeDriver {
     this.nav.stepCrowd(this.simulationDt());
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);
-      if (!actor || actor.destroyed) continue;
+      if (!actor || actor.destroyed || !actor.components.some((component) =>
+        component.classId === "NavAgentComponent" && !component.destroyed)) {
+        this.nav.removeAgent(agentId);
+        this.navAgentByActor.delete(actorGuid);
+        this.navYawByActor.delete(actorGuid);
+        continue;
+      }
       const position = this.nav.agentPosition(agentId);
       if (!position) continue;
       const world = this.fromNav(position);
@@ -2603,6 +2617,71 @@ class InProcessRuntime implements RuntimeDriver {
     return this.dt * this.timeDilation;
   }
 
+  private debugActorName(actor: Actor): string {
+    const name = actor.getVariable("name");
+    return typeof name === "string" && name.trim() ? name : actor.classId;
+  }
+
+  private emitNavigationDebug(): void {
+    if (!this.showPathfinding && !this.showNavAgent) return;
+    const agents: DebugNavAgent[] = [];
+    for (const [actorGuid, agentId] of this.navAgentByActor) {
+      const actor = this.world.findActor(actorGuid);
+      if (!actor || actor.destroyed) continue;
+      const state = this.nav?.agentDebugState(agentId);
+      if (!state) continue;
+      agents.push({
+        ...state,
+        actorGuid,
+        actorName: this.debugActorName(actor),
+        position: this.fromNav(state.position),
+        velocity: this.fromNav(state.velocity),
+        target: state.target ? this.fromNav(state.target) : null,
+        path: state.path.map((point) => this.fromNav(point)),
+      });
+    }
+    this.emit({ type: "debugNavigation", agents, world: this.physicsWorldKind });
+  }
+
+  private emitBehaviourTreeSnapshot(force = false): void {
+    if (!this.behaviourTreeDebug) return;
+    const now = nowMs();
+    if (!force && now - this.lastBehaviourTreeDebugMs < 200) return;
+    this.lastBehaviourTreeDebugMs = now;
+    const trees: DebugBehaviourTree[] = [];
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (slotId === undefined) continue;
+      const component = actor.components.find((entry) =>
+        entry.classId === "BehaviourTreeComponent" && !entry.destroyed);
+      if (!component) continue;
+      const treeGuid = this.behaviourTreeGuid(component);
+      const document = treeGuid ? this.behaviourTrees.get(treeGuid) : null;
+      if (!treeGuid || !document) continue;
+      const state = this.btEvalBySlot.get(slotId);
+      trees.push({
+        actorGuid: actor.guid,
+        actorName: this.debugActorName(actor),
+        treeGuid,
+        treeName: document.name || treeGuid,
+        slotId,
+        status: state?.status ?? "idle",
+        btNodeId: state?.btNodeId ?? null,
+        lastResults: { ...state?.lastResults },
+        blackboard: { ...(state?.blackboard ?? this.blackboardDefaults(this.stringGuid(component.getVariable("blackboardGuid")))) },
+        stack: state?.stack.map((frame) => ({ ...frame })) ?? [],
+        nodes: document.nodes.map((node) => ({
+          id: node.id, kind: node.kind, classId: node.classId,
+          children: [...node.children],
+          decorators: node.decorators.map(({ id, classId }) => ({ id, classId })),
+          services: node.services.map(({ id, classId }) => ({ id, classId })),
+        })),
+      });
+    }
+    this.emit({ type: "behaviourTreeSnapshot", trees });
+  }
+
   private emitDebugColliders(): void {
     if (!this.showCollision) return;
     this.emit({
@@ -2678,6 +2757,28 @@ class InProcessRuntime implements RuntimeDriver {
       },
       setShowNav: (enabled) => {
         this.emit({ type: "setShowNav", enabled: Boolean(enabled) });
+      },
+      setShowPathfinding: (enabled) => {
+        this.showPathfinding = enabled;
+        this.emit({ type: "setShowPathfinding", enabled });
+        this.emitNavigationDebug();
+        if (!this.showPathfinding && !this.showNavAgent) {
+          this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
+        }
+      },
+      setShowNavAgent: (enabled) => {
+        this.showNavAgent = enabled;
+        this.emit({ type: "setShowNavAgent", enabled });
+        this.emitNavigationDebug();
+        if (!this.showPathfinding && !this.showNavAgent) {
+          this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
+        }
+      },
+      setBehaviourTreeDebug: (enabled) => {
+        this.behaviourTreeDebug = enabled;
+        this.emit({ type: "setBehaviourTreeDebug", enabled });
+        if (enabled) this.emitBehaviourTreeSnapshot(true);
+        else this.emit({ type: "behaviourTreeSnapshot", trees: [] });
       },
       setShowAudioDebug: (enabled) => {
         this.emit({ type: "setShowAudioDebug", enabled: Boolean(enabled) });
@@ -3490,6 +3591,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.world.end();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
+    if (this.showPathfinding || this.showNavAgent) {
+      this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
+    }
+    if (this.behaviourTreeDebug) this.emit({ type: "behaviourTreeSnapshot", trees: [] });
   }
 
   pause(): void {
@@ -3566,6 +3671,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.frameId += 1;
     this.publishSnapshot();
     this.emitDebugColliders();
+    this.emitNavigationDebug();
+    this.emitBehaviourTreeSnapshot();
     const statsNow = nowMs();
     if (shouldEmitStatsCommand(statsNow, this.lastStatsEmitMs)) {
       this.lastStatsEmitMs = statsNow;

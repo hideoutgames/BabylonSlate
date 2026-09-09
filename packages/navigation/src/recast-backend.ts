@@ -1,5 +1,6 @@
 import {
   Crowd,
+  Detour,
   type CrowdAgent,
   NavMesh,
   NavMeshQuery,
@@ -19,6 +20,7 @@ import {
 import {
   DEFAULT_NAV_MESH_SETTINGS,
   type NavAgentParams,
+  type NavAgentDebugState,
   type NavCostVolume,
   type NavMeshGenerateInput,
   type NavMeshSettings,
@@ -325,6 +327,30 @@ class RecastNavigationBackend implements NavigationBackend {
     if (!agent) return null;
     const point = agent.velocity();
     return { x: point.x, y: point.y, z: point.z };
+  }
+
+  agentDebugState(id: string): NavAgentDebugState | null {
+    const agent = this.agents.get(id);
+    if (!agent) return null;
+    const request = agent.raw.targetState;
+    const hasTarget = request !== Detour.DT_CROWDAGENT_TARGET_NONE &&
+      request !== Detour.DT_CROWDAGENT_TARGET_VELOCITY;
+    const position = agent.position();
+    const velocity = agent.velocity();
+    const target = hasTarget ? agent.target() : null;
+    const corners = hasTarget ? agent.corners() : [];
+    const arrived = target !== null && Math.hypot(target.x - position.x, target.z - position.z) <= agent.radius &&
+      Math.hypot(velocity.x, velocity.y, velocity.z) < 0.05;
+    const state = agent.state() === Detour.DT_CROWDAGENT_STATE_INVALID ? "invalid" :
+      agent.state() === Detour.DT_CROWDAGENT_STATE_OFFMESH ? "off mesh" :
+      request === Detour.DT_CROWDAGENT_TARGET_FAILED ? "failed" :
+      !hasTarget ? "idle" : arrived ? "arrived" :
+      request === Detour.DT_CROWDAGENT_TARGET_VALID ? "moving" : "planning";
+    return {
+      position, velocity, radius: agent.radius, height: agent.height, target,
+      path: corners.length > 0 && !arrived ? [position, ...corners] : [],
+      state,
+    };
   }
 
   setAgentTarget(id: string, target: NavPoint): boolean {

@@ -33,6 +33,8 @@ export {
   type MaterialParameterValue,
   type ControlMessage,
   type DebugColliderPrimitive,
+  type DebugNavAgent,
+  type DebugBehaviourTree,
   type DebugDrawCommand,
   type DebugDrawKind,
   type ScriptAnchorPayload,

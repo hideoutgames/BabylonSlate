@@ -17,6 +17,16 @@ export type NavAgentParams = {
   maxAcceleration?: number;
 };
 
+export type NavAgentDebugState = {
+  position: NavPoint;
+  velocity: NavPoint;
+  radius: number;
+  height: number;
+  target: NavPoint | null;
+  path: NavPoint[];
+  state: string;
+};
+
 export type NavigationBackend = {
   importNavMesh(bytes: Uint8Array): void;
   findPath(from: NavPoint, to: NavPoint): NavPoint[];
@@ -33,6 +43,8 @@ export type NavigationBackend = {
   removeAgent(id: string): void;
   agentPosition(id: string): NavPoint | null;
   agentVelocity(id: string): NavPoint | null;
+  /** Actual crowd state and corridor corners; never a fresh path query. */
+  agentDebugState(id: string): NavAgentDebugState | null;
   setAgentTarget(id: string, target: NavPoint): boolean;
   stepCrowd(dtSeconds: number): void;
 };

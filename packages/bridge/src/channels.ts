@@ -186,13 +186,15 @@ export type ControlMessage =
 
 export type DebugColliderPrimitive = {
   id: string;
-  shape: "box" | "sphere" | "circle" | "polyline" | "capsule" | "convex";
+  shape: "box" | "sphere" | "circle" | "polyline" | "capsule" | "capsule2d" | "cylinder" | "convex" | "mesh";
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number; w: number };
   halfExtents?: { x: number; y: number; z: number };
   radius?: number;
   halfHeight?: number;
+  height?: number;
   points?: Array<{ x: number; y: number; z: number }>;
+  indices?: number[];
 };
 
 export type DebugDrawVec3 = { x: number; y: number; z: number };
@@ -240,6 +242,40 @@ export type DebugDrawCommand = {
   near?: number;
   far?: number;
   scale?: number;
+};
+
+export type DebugNavAgent = {
+  actorGuid: string;
+  actorName: string;
+  position: DebugDrawVec3;
+  velocity: DebugDrawVec3;
+  radius: number;
+  height: number;
+  target: DebugDrawVec3 | null;
+  /** Current crowd corridor corners in scene coordinates, starting at the agent. */
+  path: DebugDrawVec3[];
+  state: string;
+};
+
+export type DebugBehaviourTree = {
+  actorGuid: string;
+  actorName: string;
+  treeGuid: string;
+  treeName: string;
+  slotId: number;
+  status: "success" | "failure" | "running" | "idle";
+  btNodeId: string | null;
+  lastResults: Record<string, string>;
+  blackboard: Record<string, unknown>;
+  stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
+  nodes: Array<{
+    id: string;
+    kind: string;
+    classId: string;
+    children: string[];
+    decorators: Array<{ id: string; classId: string }>;
+    services: Array<{ id: string; classId: string }>;
+  }>;
 };
 
 export type CommandMessage =
@@ -558,6 +594,11 @@ export type CommandMessage =
   | { type: "setShowBounds"; enabled: boolean }
   | { type: "setShowCollision"; enabled: boolean }
   | { type: "setShowNav"; enabled: boolean }
+  | { type: "setShowPathfinding"; enabled: boolean }
+  | { type: "setShowNavAgent"; enabled: boolean }
+  | { type: "debugNavigation"; agents: readonly DebugNavAgent[]; world: "2d" | "3d" }
+  | { type: "setBehaviourTreeDebug"; enabled: boolean }
+  | { type: "behaviourTreeSnapshot"; trees: readonly DebugBehaviourTree[] }
   | { type: "setShowAudioDebug"; enabled: boolean }
   | {
       type: "debugColliders";

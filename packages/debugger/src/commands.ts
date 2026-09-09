@@ -44,6 +44,7 @@ export const DEBUG_COMMAND_NAMES = [
   "stat draws",
   "stat threads",
   "showcollision",
+  "debugphysics",
   "showbounds",
   "actorboundingbox",
   "wireframe",
@@ -57,6 +58,10 @@ export const DEBUG_COMMAND_NAMES = [
   "snapshot stop",
   "freecam",
   "shownav",
+  "shownavdebug",
+  "showpathfinding",
+  "shownavagent",
+  "behaviourtreedebug",
   "showaudiodebug",
   "dumpactors",
   "inspect",
@@ -215,6 +220,8 @@ export function builtinCommands(): RegisteredCommand[] {
     flagCommand("showcollision", (host, enabled) =>
       host.setShowCollision?.(enabled),
     ),
+    flagCommand("debugphysics", (host, enabled) =>
+      host.setShowCollision?.(enabled), "Show live physics collider shapes (alias of showcollision)"),
     flagCommand("showbounds", (host, enabled) => host.setShowBounds?.(enabled)),
     flagCommand("actorboundingbox", (host, enabled) =>
       host.setShowBounds?.(enabled),
@@ -225,7 +232,11 @@ export function builtinCommands(): RegisteredCommand[] {
       (host, enabled) => host.setFreeCam?.(enabled),
       "Detached fly camera; pointer/WASD stolen, gamepad still forwards; overlay Play shows a fly stick; simulation keeps running",
     ),
-    flagCommand("shownav", (host, enabled) => host.setShowNav?.(enabled)),
+    flagCommand("shownav", (host, enabled) => host.setShowNav?.(enabled), "Show the baked navigation mesh and blockers"),
+    flagCommand("shownavdebug", (host, enabled) => host.setShowNav?.(enabled), "Show the navigation mesh (alias of shownav)"),
+    flagCommand("showpathfinding", (host, enabled) => host.setShowPathfinding?.(enabled), "Show active navigation paths, corners and destinations"),
+    flagCommand("shownavagent", (host, enabled) => host.setShowNavAgent?.(enabled), "Show navigation agent bounds, paths, names and live state"),
+    flagCommand("behaviourtreedebug", (host, enabled) => host.setBehaviourTreeDebug?.(enabled), "Inspect live behaviour tree logic, node states and blackboards"),
     flagCommand("showaudiodebug", (host, enabled) =>
       host.setShowAudioDebug?.(enabled),
     ),
