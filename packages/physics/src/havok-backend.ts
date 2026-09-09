@@ -583,10 +583,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!kind) return;
     let a = actorAId;
     let b = actorBId;
-    // Havok collision events name PhysicsBody pairs, not child shapes, so
-    // collider ids fall back to the first collider on each actor.
-    let colliderAId = this.firstColliderIdForActor(actorAId);
-    let colliderBId = this.firstColliderIdForActor(actorBId);
+    // Havok reports bodies rather than child shapes. On a trigger actor route
+    // overlap events to its trigger component, even after a blocking collider.
+    let colliderAId = this.firstColliderIdForActor(actorAId, isTriggerEvent);
+    let colliderBId = this.firstColliderIdForActor(actorBId, isTriggerEvent);
     let normal = {
       x: event.normal?.x ?? 0,
       y: event.normal?.y ?? 1,
@@ -642,12 +642,15 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     });
   }
 
-  private firstColliderIdForActor(actorId: string): string | undefined {
+  private firstColliderIdForActor(actorId: string, preferTrigger = false): string | undefined {
+    let first: string | undefined;
     for (const [id, collider] of this.colliders) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (body?.desc.actorId === actorId) return id;
+      if (body?.desc.actorId !== actorId) continue;
+      first ??= id;
+      if (!preferTrigger || collider.desc.isTrigger) return id;
     }
-    return undefined;
+    return first;
   }
 
   private actorIdForPhysicsBody(body: PhysicsBody | undefined): string | null {
