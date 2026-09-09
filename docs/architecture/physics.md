@@ -77,6 +77,8 @@ Simulation needs **both** a rigid body and at least one collider on the same act
 
 ### Contact events
 
+Havok compound shapes share one actor-pair overlap lifetime: Begin Overlap fires when the first child-shape contact enters, and End Overlap waits for the last contact to leave. A MeshComponent plus ColliderComponent therefore does not repeat graph events as its shapes cross the same trigger on different ticks. An intersection already present when Play starts also emits Begin Overlap.
+
 `pollContacts()` returns `{ kind: "hit" | "overlapBegin" | "overlapEnd", actorAId, actorBId, colliderAId?, colliderBId?, location, normal }` since the previous poll. Backend collider IDs encode `[actorGuid, componentGuid]` (explicit, blocking, and sprite colliders) or `[actorGuid, componentGuid, shapeId]` (MeshComponent). This isolates colliders from older saved duplicates without changing authored IDs, prefab references, or component parents. Contact dispatch restores the authored component ID for component-bound script events and accepts legacy contact identifiers. Software, Havok, and Rapier 2D populate them. **v1:** a blocking pair emits `hit` every poll while overlapping; if either collider `isTrigger`, the pair emits begin/end overlap only (no hit). Software AABB implements that rule; Havok maps blocking `COLLISION_STARTED` / `COLLISION_CONTINUED` to hit and trigger enter/exit to overlap (body-level contacts, so multi-collider actors use the first collider id on each actor); Rapier drains `EventQueue` collision events after `step` and keys pairs by collider handle. `RuntimeDriver` dispatches after `step` onto the matching actor entries bound to that collider id (see [scripting.md](scripting.md) Entry points). Actor flags `generateHitEvents` / `generateOverlapEvents` skip script dispatch only.
 
 Spawn/attach creates bodies; destroy removes them (`PhysicsWorldSync` drops backend bodies when the actor leaves the live set). Bodies use the same composed world-space actor hierarchy as render snapshots. After `step`, body poses are converted through the inverse parent transform back into Actor-local TRS before `postPhysics`; a parented body therefore does not jump between local simulation and world rendering. Static and kinematic bodies copy the composed actor transform on resync; dynamic bodies keep the simulation transform. `addImpulse` is a no-op when the actor has no body. Tilemap chain colliders skip `collision: false` layers and missing guid/tileset payloads.
@@ -123,6 +125,8 @@ Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.
 ## Determinism
 
 Harness scenarios run on each backend where shapes overlap. Within-backend reproducibility is required. Do not require identical Havok vs Rapier **file** goldens — numeric drift between engines is expected.
+
+`packages/runtime/src/physics-duplicate-identities.test.ts` exercises real Havok with five legacy duplicated dynamic boxes resting on a thin, Simple-only Ground, both with and without explicit box ColliderComponents. The Ground needs no RigidBodyComponent. `packages/runtime/src/collision-events.test.ts` covers native trigger entry/exit through compiled component-bound graphs, including initial intersection and compound mesh collision.
 
 ## Deferred
 
