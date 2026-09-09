@@ -94,6 +94,7 @@ const {
     collectPlayModelBytes: vi.fn(async () => new Map()),
     collectPlayModelPayloads: vi.fn(async () => new Map()),
     prefabState: {
+      selectedId: null as string | null,
       components: [
         {
           id: "prefab-mesh",
@@ -107,7 +108,7 @@ const {
           },
         },
       ],
-    } as { components: import("@babylonslate/core").SerializedComponent[] },
+    } as { selectedId: string | null; components: import("@babylonslate/core").SerializedComponent[] },
     prefabDocs: {
       openDocuments: [] as Array<{
         id: string;
@@ -148,7 +149,7 @@ vi.mock("../context/play-context", () => ({
 vi.mock("../context/prefab-editing-context", () => ({
   usePrefabEditing: () => ({
     components: prefabState.components,
-    selectedId: null,
+    selectedId: prefabState.selectedId,
     setSelectedId: vi.fn(),
     updateComponentTransform: vi.fn(),
     commitComponentGizmo: vi.fn(),
@@ -219,6 +220,8 @@ describe("PrefabViewportPanel engine", () => {
     handle.setMeshAssets.mockClear();
     collectPlayMaterialLibrary.mockClear();
     prefabState.components = [createMeshComponent("prefab-mesh", "box")];
+    prefabState.selectedId = null;
+    handle.editor.syncSelectionDebug.mockClear();
     prefabDocs.openDocuments = [];
     prefabDocs.assetRegistry = null;
     play.ensureSharedEngine.mockClear();
@@ -285,6 +288,7 @@ describe("PrefabViewportPanel engine", () => {
     const first = { id: "engine-1" };
     const second = { id: "engine-2" };
     play.ensureSharedEngine.mockReturnValue(first);
+    prefabState.selectedId = "prefab-root";
     play.sharedEngineGeneration = 1;
     const { rerender } = render(
       <PrefabViewportPanel {...({} as IDockviewPanelProps)} />,
@@ -293,6 +297,13 @@ describe("PrefabViewportPanel engine", () => {
       sharedEngine: first,
       present: "rtt",
     });
+    expect(handle.editor.syncSelectionDebug).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selectedActorIds: ["prefab-root"],
+        selectedComponentIds: ["prefab-mesh"],
+      }),
+    );
+    handle.editor.syncSelectionDebug.mockClear();
     play.ensureSharedEngine.mockReturnValue(second);
     play.sharedEngineGeneration = 2;
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
@@ -301,6 +312,12 @@ describe("PrefabViewportPanel engine", () => {
       sharedEngine: second,
       present: "rtt",
     });
+    expect(handle.editor.syncSelectionDebug).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selectedActorIds: ["prefab-root"],
+        selectedComponentIds: ["prefab-mesh"],
+      }),
+    );
   });
 
   it("loads the preview after the shared Engine is ready with a stable component list", async () => {

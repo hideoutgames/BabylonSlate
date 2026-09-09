@@ -649,6 +649,7 @@ describe("EditorSceneSync", () => {
 
   it("omits MeshComponent collision dashes until Show Collisions is on", () => {
     const { scene } = createHandle();
+    createEditorCamera(scene, { mode: "3d" });
     const sync = new EditorSceneSync(scene);
     const crate = createActor("crate", "Crate", {
       components: [createMeshComponent("mesh", "box")],
@@ -664,8 +665,80 @@ describe("EditorSceneSync", () => {
     expect(hasDash()).toBe(false);
     sync.setDrawMeshCollision(true);
     expect(hasDash()).toBe(true);
+    expect(listedActiveMeshes(scene).some((entry) =>
+      entry instanceof Mesh && entry.name.includes(":mesh-collider:")
+    )).toBe(true);
     sync.setDrawMeshCollision(false);
     expect(hasDash()).toBe(false);
+    expect(listedActiveMeshes(scene).some((entry) =>
+      entry instanceof Mesh && entry.name.includes(":mesh-collider:")
+    )).toBe(false);
+  });
+
+  it("scopes collider selection and Show Collisions to each editor scene", () => {
+    const { scene } = createHandle();
+    const otherScene = createHandle().scene;
+    createEditorCamera(scene, { mode: "3d" });
+    createEditorCamera(otherScene, { mode: "3d" });
+    const sync = new EditorSceneSync(scene);
+    const other = new EditorSceneSync(otherScene);
+    const document = sceneWith([
+      createActor("parent", "Parent"),
+      createActor("child", "Child", {
+        parentId: "parent",
+        components: [{ id: "collider", classId: "ColliderComponent", properties: {} }],
+      }),
+    ]);
+    const drawnDashes = (target = scene) => listedActiveMeshes(target).filter(
+      (entry) => entry instanceof Mesh && entry.name.includes(":dash:"),
+    );
+    sync.apply(document);
+    other.apply(document);
+    expect(drawnDashes()).toHaveLength(0);
+    sync.setCollisionSelection({ selectedActorIds: ["parent"] });
+    expect(drawnDashes().length).toBeGreaterThan(0);
+    expect(drawnDashes(otherScene)).toHaveLength(0);
+    sync.setCollisionSelection({ selectedActorIds: [] });
+    expect(drawnDashes()).toHaveLength(0);
+    sync.setDrawMeshCollision(true);
+    expect(drawnDashes().length).toBeGreaterThan(0);
+    expect(drawnDashes(otherScene)).toHaveLength(0);
+    sync.setDrawMeshCollision(false);
+    expect(drawnDashes()).toHaveLength(0);
+    sync.setCollisionSelection({ selectedActorIds: [], selectedComponentIds: ["collider"] });
+    expect(drawnDashes().length).toBeGreaterThan(0);
+    sync.apply(document);
+    expect(drawnDashes().length).toBeGreaterThan(0);
+  });
+
+  it("hides collider dashes without hiding attached mesh components and restores selection after rebuilds", () => {
+    const { scene } = createHandle();
+    createEditorCamera(scene, { mode: "3d" });
+    const sync = new EditorSceneSync(scene);
+    const document = sceneWith([
+      createActor("actor", "Actor", {
+        components: [
+          { id: "collider", classId: "ColliderComponent", properties: {} },
+          { ...createMeshComponent("mesh", "box"), parentId: "collider" },
+        ],
+      }),
+    ]);
+    const drawnDashes = () => listedActiveMeshes(scene).filter(
+      (entry) => entry instanceof Mesh && entry.name.includes(":dash:"),
+    );
+    sync.apply(document);
+    expect(drawnDashes()).toHaveLength(0);
+    expect(listedActiveMeshes(scene)).toContain(
+      scene.getMeshByName(editorComponentMeshName("actor", "mesh")),
+    );
+    sync.setCollisionSelection({ selectedActorIds: ["actor"] });
+    expect(drawnDashes().length).toBeGreaterThan(0);
+    sync.setMeshAssets({ pixelsPerUnit: 32 });
+    expect(drawnDashes().length).toBeGreaterThan(0);
+    sync.apply({ ...document, actors: document.actors.map((actor) => ({ ...actor, visible: false })) });
+    expect(drawnDashes()).toHaveLength(0);
+    sync.setDrawMeshCollision(true);
+    expect(drawnDashes()).toHaveLength(0);
   });
 
   it("does not draw MeshComponent collision dashes in a 2D world when Show Collisions is on", () => {
