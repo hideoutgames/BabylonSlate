@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createDefaultScene, type SerializedScene } from "@babylonslate/core";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
 import { ViewportToolbar } from "./viewport-toolbar";
@@ -37,6 +37,7 @@ const harness = vi.hoisted(() => ({
   viewportShadingMode: "pbr" as "pbr" | "unlit" | "wireframe",
   setViewportShadingMode: vi.fn(),
   scene: null as SerializedScene | null,
+  documentKind: "scene" as "scene" | "scene-layer" | "graph",
   applySceneChange: vi.fn(async () => true),
 }));
 
@@ -79,7 +80,7 @@ vi.mock("../context/document-context", () => ({
       {
         id: "scene:assets/Main.scene.babasset",
         ref: {
-          kind: "scene",
+          kind: harness.documentKind,
           path: "assets/Main.scene.babasset",
           label: "Main Scene",
         },
@@ -105,6 +106,7 @@ beforeEach(() => {
   harness.pivotAroundCenter = false;
   harness.viewportShadingMode = "pbr";
   harness.scene = createDefaultScene();
+  harness.documentKind = "scene";
   harness.setGizmoTool.mockClear();
   harness.setSnapEnabled.mockClear();
   harness.setJoystickEnabled.mockClear();
@@ -125,9 +127,12 @@ afterEach(() => {
 
 function renderToolbar(
   props: {
+    testIdPrefix?: string;
     showDragSelect?: boolean;
     showViewportModeToggle?: boolean;
     showGizmoTools?: boolean;
+    onDrop?: () => void;
+    dropDisabled?: boolean;
   } = {},
 ) {
   return render(
@@ -179,19 +184,79 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-mode-2d").textContent).toContain("2D");
   });
 
-  it("exposes Drag Select beside gizmo tools and hides snap on the island", () => {
-    renderToolbar();
-    expect(screen.getByTestId("viewport-drag-select")).toBeTruthy();
-    expect(screen.getByTestId("viewport-settings")).toBeTruthy();
-    expect(screen.queryByTestId("gizmo-snap-toggle")).toBeNull();
+  it("places Snap Grid before Drag Select and Drop immediately before settings", () => {
+    const onDrop = vi.fn();
+    renderToolbar({ onDrop, dropDisabled: false });
+    const tools = within(screen.getByTestId("viewport-toolbar"))
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"));
+    const snapIndex = tools.indexOf("Snap Grid");
+    expect(snapIndex).toBeGreaterThanOrEqual(0);
+    expect(tools.slice(snapIndex, snapIndex + 4)).toEqual([
+      "Snap Grid",
+      "Drag Select",
+      "Drop",
+      "Viewport Settings",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+    expect(onDrop).toHaveBeenCalledTimes(1);
+    expect(harness.setDragSelectActive).not.toHaveBeenCalled();
     expect(screen.queryByTestId("gizmo-joystick-toggle")).toBeNull();
   });
 
-  it("opens a settings menu with Viewport Mode, Snap, Show Grid, Show Navmesh, Show Collisions, Joystick, Pivot Around Center, Game Camera, and Settings", () => {
+  it.each(["scene", "scene-layer"] as const)(
+    "toggles Snap Grid directly and persists it in a %s document",
+    (documentKind) => {
+      harness.documentKind = documentKind;
+      renderToolbar();
+      const snap = screen.getByRole("button", { name: "Snap Grid" });
+      expect(snap.getAttribute("aria-pressed")).toBe("false");
+      fireEvent.click(snap);
+      expect(harness.setSnapEnabled).toHaveBeenCalledWith(true);
+      expect(harness.applySceneChange).toHaveBeenCalledWith(
+        "scene:assets/Main.scene.babasset",
+        expect.objectContaining({
+          settings: expect.objectContaining({
+            grid: expect.objectContaining({ snapEnabled: true }),
+          }),
+        }),
+      );
+    },
+  );
+
+  it("shows prefab Snap Grid pressed and disables it without writing a scene", () => {
+    harness.documentKind = "graph";
+    harness.snapEnabled = true;
+    renderToolbar({ testIdPrefix: "prefab-", showDragSelect: false });
+    const snap = screen.getByTestId("prefab-gizmo-snap-toggle");
+    expect(snap.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(snap);
+    expect(harness.setSnapEnabled).toHaveBeenCalledWith(false);
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Drop" })).toBeNull();
+  });
+
+  it.each([undefined, true])("blocks Drop when dropDisabled is %s", (dropDisabled) => {
+    const onDrop = vi.fn();
+    renderToolbar({
+      testIdPrefix: "prefab-",
+      showDragSelect: false,
+      onDrop,
+      dropDisabled,
+    });
+    const drop = screen.getByRole("button", { name: "Drop" });
+    expect(drop).toHaveProperty("disabled", true);
+    fireEvent.click(drop);
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it("opens a settings menu with Viewport Mode, Show Grid, Show Navmesh, Show Collisions, Joystick, Pivot Around Center, Game Camera, and Settings", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     expect(screen.getByTestId("viewport-shading-mode")).toBeTruthy();
-    expect(screen.getByTestId("gizmo-snap-toggle")).toBeTruthy();
+    expect(
+      within(screen.getByTestId("viewport-settings-menu")).queryByTestId("gizmo-snap-toggle"),
+    ).toBeNull();
     expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-navmesh-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-collisions-toggle")).toBeTruthy();
