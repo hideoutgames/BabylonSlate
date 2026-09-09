@@ -63,7 +63,7 @@ describe("PreviewBuildOverlay", () => {
     );
     const input = view.getByRole("combobox", { name: /Console Command/i });
     fireEvent.change(input, { target: { value: "help pa" } });
-    expect(view.getByRole("option", { name: /pause/ })).toBeTruthy();
+    expect(view.getByTestId("debug-console-suggest-pause")).toBeTruthy();
     fireEvent.change(input, { target: { value: "heal" } });
     expect(view.getAllByRole("option", { name: /heal/ })).toHaveLength(1);
     expect(view.getByRole("option", { name: /heal/ }).textContent).toContain(
