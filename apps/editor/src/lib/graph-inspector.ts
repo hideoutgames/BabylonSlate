@@ -137,7 +137,7 @@ function inputTypeRow(value: unknown, onChange: (value: Record<string, unknown>)
   const available = (assets ?? []).filter((asset) => asset.type === "InputAction" || asset.type === "InputAxis");
   const current = input.Asset ?? "";
   return { id: `${label}:input`, kind: "enum", label: label || "Input", value: current,
-    options: [{ value: "", label: "Choose Input" }, ...available.map((asset) => ({ value: asset.id, label: `${asset.name} ? ${asset.type === "InputAction" ? "Action" : "Axis"}` })), ...(current && !available.some((asset) => asset.id === current) ? [{ value: current, label: "Missing Input Asset" }] : [])],
+    options: [{ value: "", label: "Choose Input" }, ...available.map((asset) => ({ value: asset.id, label: `${asset.name} - ${asset.type === "InputAction" ? "Action" : "Axis"}` })), ...(current && !available.some((asset) => asset.id === current) ? [{ value: current, label: "Missing Input Asset" }] : [])],
     onChange: (guid) => onChange({ Name: available.find((asset) => asset.id === guid)?.name ?? "", Asset: guid }),
   };
 }

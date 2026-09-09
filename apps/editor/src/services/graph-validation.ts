@@ -1813,7 +1813,7 @@ function scriptPaletteCatalogNodes(
   return nodeRegistry
     .list()
     .filter((def) => {
-      if (["input.event", "input.onAction", "input.isActionHeld", "input.getAxis", "input.getAxis2D", "input.getBinding", "input.setBinding", "input.beginRebind", "input.resetBindings", "input.getRebindStatus"].includes(def.id)) return false;
+      if (["input.event", "input.onAction", "input.isActionHeld", "input.getAxis", "input.getAxis2D", "input.getBinding", "input.setBinding", "input.beginRebind", "input.resetBinding", "input.getRebindStatus"].includes(def.id)) return false;
       if (def.editorOnly && !isEditorGraphHost(options ?? {})) {
         return false;
       }
@@ -2141,6 +2141,7 @@ export function scriptPinCompatibility(
 }
 
 export type ValidateSerializedGraphOptions = {
+  inputAssets?: readonly InputPaletteAsset[];
   assetGuid: string;
   graphId: string;
   hierarchy?: ClassHierarchy;
@@ -2221,6 +2222,7 @@ export function validateSerializedGraph(
     ];
   }
   const typeOptions: HydrateGraphOptions = {
+    inputAssets: options.inputAssets,
     enums: options.enums,
     structs: options.structs,
   };

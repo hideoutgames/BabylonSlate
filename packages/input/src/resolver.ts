@@ -226,7 +226,7 @@ export class InputResolver {
           let x = 0, y = 0;
           for (const binding of mapping.bindings) {
             const amount = axisBindingValue(binding, this.state);
-            if (("kind" in mapping && mapping.kind === "2d") && binding.component === "y") y += amount; else x += amount;
+            if (("kind" in mapping && mapping.kind === "2d") && "component" in binding && binding.component === "y") y += amount; else x += amount;
           }
           x = Math.max(-1, Math.min(1, x)); y = Math.max(-1, Math.min(1, y));
           value = ("kind" in mapping && mapping.kind === "2d") ? { x, y } : x;

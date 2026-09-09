@@ -1,10 +1,10 @@
 # Input assets and events
 
-Create **Input Action** or **Input Axis** from the Content Browser?s **Input** category. Inputs are assets, not Project Settings rows. Open an asset to edit its dockable **Bindings** and **Details** panels. Actions produce a boolean; axes produce a 1D number or 2D X/Y value. Add Control uses readable device catalogs, Listen captures a keyboard chord (Escape or window blur cancels), and axis presets add WASD, arrow keys, or either gamepad stick. Select Details for modifiers, direction, scale, dead zone, sensitivity, and inversion.
+Create **Input Action** or **Input Axis** from the Content Browser's **Input** category. Inputs are assets, not Project Settings rows. Open an asset to edit its dockable **Bindings** and **Details** panels. Actions produce a boolean; axes produce a 1D number or 2D X/Y value. Add Control uses readable device catalogs, Listen captures a keyboard chord (Escape or window blur cancels), and axis presets add WASD, arrow keys, or either gamepad stick. Select Details for modifiers, direction, scale, dead zone, sensitivity, and inversion.
 
 ## Graph workflow
 
-The Add Node menu has **Event <asset name>** for every input asset under Input/Actions or Input/Axes. Each event uses event colors and an **Input Type** dropdown. Asset GUIDs identify inputs; names are display metadata. Changing the selected asset updates Value?s type. Native **Break Input Type** exposes Name and Asset. Input events belong in ticking runtime class event graphs, not functions or animation rules.
+The Add Node menu has **Event <asset name>** for every input asset under Input/Actions or Input/Axes. Each event uses event colors and an **Input Type** dropdown. Asset GUIDs identify inputs; names are display metadata. Changing the selected asset updates Value's type. Native **Break Input Type** exposes Name and Asset. Input events belong in ticking runtime class event graphs, not functions or animation rules.
 
 | Pin | Behaviour |
 | --- | --- |
@@ -21,7 +21,7 @@ Complete taps between ticks retain both Started and Released. A release/repress 
 
 **Get Input Bindings** takes an Input Type dropdown and returns native **Input Binding** values. Use the existing array nodes to select a binding, then **Listen for Input Binding** to capture a replacement keyboard chord. **Get Input Rebind Status** returns the native Input Rebind Status enum; use its enum switch to handle listening, completed, and cancelled. **Cancel Input Rebind** cancels capture. **Set Input Control** takes an Input Binding and a native Input Control with device/control dropdowns, including mouse and gamepad choices. **Reset Input Bindings** restores one asset; **Reset All Input Bindings** restores all defaults.
 
-The existing export/import binding nodes serialize player overrides for the game?s own profile storage. They do not automatically save browser data. Version 2 profiles use asset GUIDs and stable binding IDs, so renames and reordering preserve overrides while retaining current axis tuning. Missing bindings reject import atomically. Version 1 profiles remain readable when the old name and authored control identify an unambiguous binding. Capture consumes held and newly captured keys until release to avoid activating gameplay.
+The existing export/import binding nodes serialize player overrides for the game's own profile storage. They do not automatically save browser data. Version 2 profiles use asset GUIDs and stable binding IDs, so renames and reordering preserve overrides while retaining current axis tuning. Missing bindings reject import atomically. Version 1 profiles remain readable when the old name and authored control identify an unambiguous binding. Capture consumes held and newly captured keys until release to avoid activating gameplay.
 
 ## Storage and compatibility
 

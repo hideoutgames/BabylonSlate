@@ -132,4 +132,4 @@ Not kit (single call site): `BrandLogo` (docs / wordmark), `BrandIcon` (landing 
 
 ### Input asset editors
 
-Input Action and Input Axis documents use the standard DockView document shell with Bindings and Details panels. `InputBindingsPanel` composes `PanelFrame`, `SearchDropdown`, `BindingCodePicker`, and compact Buttons; `InputBindingDetailsPanel` uses `PropertyGrid`. Shared document selection lives in `InputAssetEditingProvider`. Input authoring is reached through Content Browser ? Input, not Project Settings. See [input assets and events](input.md).
+Input Action and Input Axis documents use the standard DockView document shell with Bindings and Details panels. `InputBindingsPanel` composes `PanelFrame`, `SearchDropdown`, `BindingCodePicker`, and compact Buttons; `InputBindingDetailsPanel` uses `PropertyGrid`. Shared document selection lives in `InputAssetEditingProvider`. Input authoring is reached through Content Browser > Input, not Project Settings. See [input assets and events](input.md).
