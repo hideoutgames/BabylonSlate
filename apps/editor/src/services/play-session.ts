@@ -546,6 +546,7 @@ export function startPlaySession(options: {
   let runtime: RuntimeDriver | null = null;
 
   const handle = createEngine(canvas, {
+    physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
     sharedEngine,
     playMode: true,
     frameCap: resolvePlayFrameCap(options.frameCap),
@@ -631,7 +632,10 @@ export function startPlaySession(options: {
   handle.scheduler.invalidate("play");
   const releaseConsoleCapture = captureConsoleLogs(
     console,
-    (message, severity) => options.onLog?.(message, severity),
+    (message, severity) => {
+      if (runtime) runtime.reportLog(message, severity);
+      else options.onLog?.(message, severity);
+    },
   );
   const onWindowError = (event: ErrorEvent) =>
     options.onLog?.(event.error?.stack ?? event.message, "error");

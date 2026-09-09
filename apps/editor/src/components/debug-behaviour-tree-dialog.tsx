@@ -1,4 +1,5 @@
 import type { DebugBehaviourTree } from "@babylonslate/bridge";
+import { sanitizeInspectValue } from "@babylonslate/object-model";
 import { useState } from "react";
 import {
   humanizePropertyLabel,
@@ -183,7 +184,7 @@ export function DebugBehaviourTreeDialog({
                         </dt>
                         <dd className="whitespace-pre-wrap break-all font-mono text-muted-foreground">
                           <SelectableText>
-                            {JSON.stringify(value, null, 2) ?? String(value)}
+                              {JSON.stringify(sanitizeInspectValue(value), null, 2)}
                           </SelectableText>
                         </dd>
                       </div>
