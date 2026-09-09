@@ -33,12 +33,10 @@ for (const mode of ["Play", "Preview Build"] as const) {
     expect(rect!.height).toBeLessThan(viewport.height * 0.7);
     expect(Math.abs(rect!.y + rect!.height - viewport.height)).toBeLessThan(2);
     await page.screenshot({ path: testInfo.outputPath("console.png") });
-    for (const line of ["debugphysics on", "showpathfinding on", "shownavagent on", "shownavdebug on", "wireframe on", "wireframe off", "pause", "resume"]) {
+    for (const [index, line] of ["debugphysics on", "debugphysics off", "showpathfinding on", "showpathfinding off", "shownavagent on", "shownavagent off", "shownavdebug on", "shownavdebug off", "wireframe on", "wireframe off", "pause", "resume"].entries()) {
       await input.fill(line);
       await page.getByTestId("debug-console-submit").click();
-      await expect(page.getByTestId("debug-console-submit")).toBeEnabled();
-      await expect(transcript).toContainText(line === "pause" ? "paused" : line === "resume" ? "resumed" : line);
-      await expect(transcript).not.toContainText("Unknown command");
+      await expect(page.getByTestId(`debug-console-output-${index}`)).toHaveText(line === "pause" ? "paused" : line === "resume" ? "resumed" : line);
     }
     await input.fill("behaviourtreedebug on");
     await page.getByTestId("debug-console-submit").click();
