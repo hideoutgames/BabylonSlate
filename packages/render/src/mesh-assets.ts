@@ -1,5 +1,6 @@
 import {
   Color3,
+  ImageProcessingConfiguration,
   Material,
   StandardMaterial,
   type AbstractMesh,
@@ -66,6 +67,11 @@ function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
   return [...map.keys()].sort().join(",");
 }
 
+function payloadMapFingerprint(map: ReadonlyMap<string, unknown> | undefined): string {
+  if (!map || map.size === 0) return "";
+  return JSON.stringify([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
+}
+
 function assetByteLength(bytes: Uint8Array | Blob): number {
   return bytes instanceof Uint8Array ? bytes.byteLength : bytes.size;
 }
@@ -102,8 +108,8 @@ export function meshAssetFingerprint(
     `ppu:${assets.pixelsPerUnit ?? ""}`,
     `sprites:${sortedMapKeys(assets.spritePayloads)}`,
     `spriteAnims:${sortedMapKeys(assets.spriteAnimations)}`,
-    `tilemaps:${sortedMapKeys(assets.tilemaps)}`,
-    `tilesets:${sortedMapKeys(assets.tilesets)}`,
+    `tilemaps:${payloadMapFingerprint(assets.tilemaps)}`,
+    `tilesets:${payloadMapFingerprint(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
     `texPx:${
       assets.texturePixelSizes
@@ -188,8 +194,16 @@ export function applyTilemapAlbedoTextures(
   scene: Scene,
   assets?: MeshAssetContext,
 ): void {
+  const imageProcessing = new ImageProcessingConfiguration();
+  imageProcessing.isEnabled = false;
   for (const child of mesh.getChildMeshes()) {
     const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
     applyAlbedoTexture(child, scene, guid, assets);
+    if (child.material instanceof StandardMaterial) {
+      // Tilemaps remain readable from either side, including inside 3D actors.
+      child.material.backFaceCulling = false;
+      child.material.fogEnabled = false;
+      child.material.imageProcessingConfiguration = imageProcessing;
+    }
   }
 }
