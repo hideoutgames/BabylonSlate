@@ -443,6 +443,9 @@ describe("collectGraphTypeAssets", () => {
           { name: "Distance", typeId: "float" },
         ],
       },
+      expect.objectContaining({ guid: "engine:InputType", name: "Input Type" }),
+      expect.objectContaining({ guid: "engine:InputControl", name: "Input Control" }),
+      expect.objectContaining({ guid: "engine:InputBinding", name: "Input Binding" }),
       {
         guid: "struct-stats",
         name: "Stats",
@@ -461,6 +464,8 @@ describe("collectGraphTypeAssets", () => {
           { name: "Visibility", value: 4 },
         ],
       },
+      expect.objectContaining({ guid: "engine:InputRebindStatus", name: "Input Rebind Status" }),
+      expect.objectContaining({ guid: "engine:InputDevice", name: "Input Device" }),
       {
         guid: "enum-team",
         name: "Team",
