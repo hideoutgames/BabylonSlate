@@ -4,7 +4,8 @@ import { createActor, createDefaultScene, createMeshComponent } from "@babylonsl
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
-import type { MeshAssetContext } from "./mesh-assets";
+import { applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { ResourceCache } from "./resource-cache";
 import { createActorMesh } from "./scene-loader";
 import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
@@ -134,6 +135,38 @@ describe("tilemap rendering", () => {
     }]]) });
     expect(sync.meshForActor(actor.id)!.getChildMeshes()).toHaveLength(0);
     sync.dispose();
+  });
+
+  it("releases old tilemap materials when painted content rebuilds", () => {
+    const { assets, actor, tilemap } = content();
+    const sync = new EditorSceneSync(handle.scene);
+    sync.setMeshAssets(assets);
+    sync.apply({ ...createDefaultScene(), actors: [actor] });
+    const count = handle.scene.materials.length;
+
+    for (const tileId of [2, 1, 2]) {
+      const updated = setTile(tilemap, "layer-1", 1, 0, tileId);
+      sync.setMeshAssets({ ...assets, tilemaps: new Map([["tilemap", updated]]) });
+      expect(handle.scene.materials).toHaveLength(count);
+    }
+    sync.dispose();
+  });
+
+  it("replaces owned atlas materials without disposing the shared texture", () => {
+    const { assets, actor } = content();
+    const root = createActorMesh(handle.scene, actor, assets);
+    const tile = chunk(root);
+    const previous = tile.material as StandardMaterial;
+    const texture = previous.diffuseTexture!;
+    const count = handle.scene.materials.length;
+
+    applyTilemapAlbedoTextures(root, handle.scene, assets);
+    expect(handle.scene.materials.includes(previous)).toBe(false);
+    expect(handle.scene.materials).toHaveLength(count);
+    const current = tile.material;
+    root.dispose();
+    expect(handle.scene.materials.includes(current!)).toBe(false);
+    expect(isDisposedGpuTexture(texture)).toBe(false);
   });
 
   it("refreshes atlas UVs after a tileset grid edit and reuses equivalent payloads", () => {
