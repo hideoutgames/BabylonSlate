@@ -153,6 +153,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     phase: SceneViewportLoadPhase;
   }>({ open: false, progress: 0, phase: "Collecting Assets" });
   const [sceneReady, setSceneReady] = useState(false);
+  const [dropReady, setDropReady] = useState<{
+    scene: SerializedScene;
+    handle: EngineHandle;
+  } | null>(null);
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -256,7 +260,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const commitGizmoTransformRef = useRef(commitGizmoTransform);
   commitGizmoTransformRef.current = commitGizmoTransform;
 
-  const dropDisabled = !sceneReady || playing || preparing || !scene?.actors.some(
+  const dropDisabled = !sceneReady || dropReady?.scene !== scene ||
+    dropReady?.handle !== engineRef.current || playing || preparing || !scene?.actors.some(
     (actor) => !actor.locked && selectedActorIds.includes(actor.id),
   );
   const dropSelection = () => {
@@ -452,6 +457,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const handle = engineRef.current;
     if (!scene || !handle) return;
+    setDropReady(null);
     let cancelled = false;
     const generation = engineGenerationRef.current;
     const blocking = isSceneViewportRemountLoad(
@@ -533,6 +539,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           });
         } else {
           await applyCollectedAssets();
+          if (!cancelled && engineRef.current === handle) {
+            await handle.whenEditorModelsReady();
+          }
+        }
+        if (!cancelled && engineRef.current === handle) {
+          setDropReady({ scene, handle });
         }
       } catch (error) {
         console.error("[viewport] failed to load mesh assets", error);
