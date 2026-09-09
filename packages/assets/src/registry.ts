@@ -315,6 +315,7 @@ export class AssetRegistry {
     this.assertWritable(root);
     const storage = this.storageOf(root);
     const folderPath = joinRootPath(root, relativeFolder);
+    await storage.remove(folderPath);
     for (const asset of [...this.byGuid.values()]) {
       if (asset.rootId === rootId && isWithinFolder(asset.path, folderPath)) {
         this.removeFromIndex(asset);
@@ -325,7 +326,6 @@ export class AssetRegistry {
         this.knownFolders.delete(known);
       }
     }
-    await storage.remove(folderPath);
   }
 
   async createFolder(rootId: string, relativeFolder: string): Promise<void> {
