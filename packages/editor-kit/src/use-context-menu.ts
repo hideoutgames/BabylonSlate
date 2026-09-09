@@ -158,6 +158,7 @@ export function useContextMenu(
       document.addEventListener("pointermove", onDocumentMove, true);
       document.addEventListener("pointerup", onPointerEnd, true);
       document.addEventListener("pointercancel", onPointerEnd, true);
+      document.addEventListener("lostpointercapture", onPointerEnd, true);
       document.addEventListener("visibilitychange", onVisibilityChange);
       window.addEventListener("blur", clearPress);
       const timerId = setTimeout(() => {
@@ -174,6 +175,7 @@ export function useContextMenu(
           document.removeEventListener("pointermove", onDocumentMove, true);
           document.removeEventListener("pointerup", onPointerEnd, true);
           document.removeEventListener("pointercancel", onPointerEnd, true);
+          document.removeEventListener("lostpointercapture", onPointerEnd, true);
           document.removeEventListener("visibilitychange", onVisibilityChange);
           window.removeEventListener("blur", clearPress);
         },
