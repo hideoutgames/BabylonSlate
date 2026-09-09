@@ -33,6 +33,7 @@ import type {
   ColliderShape,
   ColliderTuning,
   HitResult,
+  LineTraceOptions,
   MotionType,
   OverlapResult,
   PhysicsBackendOptions,
@@ -397,20 +398,45 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return out;
   }
 
-  lineTrace(start: Vec3, end: Vec3): HitResult {
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
     const engine = this.scene.getPhysicsEngine();
     if (!engine) return miss();
     this.tmpFrom.copyFrom(toVector3(start));
     this.tmpTo.copyFrom(toVector3(end));
-    const hit = engine.raycast(this.tmpFrom, this.tmpTo);
-    if (!hit.hasHit) return miss();
-    return this.hitFromCast(
-      hit.hasHit,
-      hit.hitPointWorld,
-      hit.hitNormalWorld,
-      hit.hitDistance,
-      hit.body,
-    );
+    const ignored = new Set(options?.ignoreActorIds);
+    const memberships = new Map<PhysicsShape, number>();
+    // Havok exposes one ignoreBody, but the graph accepts multiple actors.
+    // Mask all their shapes for this synchronous query, then restore them.
+    // Filtering before raycast also avoids consuming a bounded hit collector.
+    try {
+      if (ignored.size) {
+        for (const record of this.bodies.values()) {
+          if (!ignored.has(record.desc.actorId)) continue;
+          for (const shape of [
+            record.aggregate?.body.shape,
+            record.aggregate?.shape,
+            ...record.extraShapes,
+          ]) {
+            if (!shape || memberships.has(shape)) continue;
+            memberships.set(shape, shape.filterMembershipMask);
+            shape.filterMembershipMask = 0;
+          }
+        }
+      }
+      const hit = engine.raycast(this.tmpFrom, this.tmpTo);
+      if (!hit.hasHit) return miss();
+      return this.hitFromCast(
+        hit.hasHit,
+        hit.hitPointWorld,
+        hit.hitNormalWorld,
+        hit.hitDistance,
+        hit.body,
+      );
+    } finally {
+      for (const [shape, membership] of memberships) {
+        shape.filterMembershipMask = membership;
+      }
+    }
   }
 
   sphereOverlap(center: Vec3, radius: number): OverlapResult {

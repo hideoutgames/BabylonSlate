@@ -824,7 +824,8 @@ class InProcessRuntime implements RuntimeDriver {
         if (!actor || actor.destroyed) return undefined;
         return actor;
       },
-      lineTrace: (start, end) => this.physicsSync.lineTrace(start, end),
+      lineTrace: (start, end, options) =>
+        this.physicsSync.lineTrace(start, end, options),
       projectCursorToScene: (channel, options) =>
         this.projectCursorToScene(channel, options),
       sphereOverlap: (center, radius) =>

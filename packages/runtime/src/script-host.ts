@@ -37,6 +37,7 @@ import {
 import type {
   ColliderShape,
   HitResult,
+  LineTraceOptions,
   OverlapResult,
   PhysicsTransform,
   Vec3,
@@ -105,7 +106,7 @@ export interface ScriptHostServices {
    * actors must return undefined so query nodes never surface string ids.
    */
   findActor?(actorId: string): Actor | undefined;
-  lineTrace?(start: Vec3, end: Vec3): HitResult;
+  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
   projectCursorToScene?(
     channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
@@ -388,6 +389,7 @@ export interface ScriptContext {
     start: Vec3,
     end: Vec3,
     channel?: string,
+    options?: { drawDebug?: boolean; actorsToIgnore?: readonly (Actor | null)[] },
   ): {
     hit: boolean;
     location: Vec3 | null;
@@ -1217,8 +1219,15 @@ export class ScriptHost {
         tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
       },
       gamepadConnections: tick?.gamepadConnections ?? [],
-      lineTrace: (start, end) => {
-        const hit = services.lineTrace?.(start, end) ?? {
+      lineTrace: (start, end, _channel, options) => {
+        const ignoreActorIds = [
+          ...new Set(
+            (options?.actorsToIgnore ?? [])
+              .filter((actor): actor is Actor => actor instanceof Actor && !actor.destroyed)
+              .map((actor) => actor.guid),
+          ),
+        ];
+        const hit = services.lineTrace?.(start, end, { ignoreActorIds }) ?? {
           hit: false,
           location: null,
           actorId: null,
@@ -1226,6 +1235,29 @@ export class ScriptHost {
           distance: 0,
           bodyId: null,
         };
+        if (options?.drawDebug !== false) {
+          const location = hit.hit === true ? hit.location : null;
+          services.drawDebug?.({
+            kind: "line",
+            start,
+            end: location ?? end,
+            thickness: 1,
+            color: location
+              ? { x: 0, y: 1, z: 0, w: 1 }
+              : { x: 1, y: 0, z: 0, w: 1 },
+            duration: 0,
+          });
+          if (location) {
+            services.drawDebug?.({
+              kind: "circle",
+              center: location,
+              radius: 0.08,
+              rotation: lookAtRotator({ x: 0, y: 0, z: 0 }, hit.normal),
+              color: { x: 1, y: 0, z: 0, w: 1 },
+              duration: 0,
+            });
+          }
+        }
         return {
           hit: hit.hit === true,
           location: hit.location ?? null,
