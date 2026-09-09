@@ -534,7 +534,8 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         // Attachment children appear beneath their parent actor, even when
         // their own folderId is unset or names a different folder.
         for (const actor of scene.actors) {
-          if (actor.folderId === null || !doomedFolders.has(actor.folderId)) continue;
+          if (actor.folderId === null || !doomedFolders.has(actor.folderId))
+            continue;
           for (const child of actorSubtree(scene, actor.id)) {
             doomedActors.add(child.id);
           }
@@ -847,38 +848,41 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         overlay={overlay}
       />
       <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
-      {deletingFolder ? <AlertDialog
-        open
-        onOpenChange={(open) => {
-          if (!open) setDeleteFolderId(null);
-        }}
-      >
-        <AlertDialogContent data-testid="outliner-delete-folder-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Folder</AlertDialogTitle>
-            <AlertDialogDescription>
-              Delete {deletingFolder.name} only and move its contents up one level,
-              or delete the folder and everything inside it? Either choice can be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              size="sm"
-              variant="outline"
-              onClick={() => removeFolder(deletingFolder.id, false)}
-            >
-              Folder Only
-            </AlertDialogAction>
-            <AlertDialogAction
-              size="sm"
-              onClick={() => removeFolder(deletingFolder.id, true)}
-            >
-              Folder And Contents
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog> : null}
+      {deletingFolder ? (
+        <AlertDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleteFolderId(null);
+          }}
+        >
+          <AlertDialogContent data-testid="outliner-delete-folder-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Folder</AlertDialogTitle>
+              <AlertDialogDescription>
+                Delete {deletingFolder.name} only and move its contents up one
+                level, or delete the folder and everything inside it? Either
+                choice can be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                size="sm"
+                variant="outline"
+                onClick={() => removeFolder(deletingFolder.id, false)}
+              >
+                Folder Only
+              </AlertDialogAction>
+              <AlertDialogAction
+                size="sm"
+                onClick={() => removeFolder(deletingFolder.id, true)}
+              >
+                Folder And Contents
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
       {renamingFolder ? (
         <NamePromptDialog
           open
