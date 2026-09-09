@@ -28,6 +28,7 @@ import {
 } from "@babylonslate/object-model";
 import {
   createDefaultSceneSettings,
+  DEFAULT_PLAY_FRAME_CAP,
   eulerDegreesToQuaternion,
   isSceneLayerDeniedComponent,
   parseSceneLayerAnchor,
@@ -134,6 +135,8 @@ import {
 export type TransportMode = "in-process" | "sab" | "transferable";
 
 export interface RuntimeDriverOptions {
+  /** Initial render cap for console readback; does not change the simulation step. */
+  frameCap?: number;
   project?: { name: string; version: string };
   seed: number;
   dt?: number;
@@ -359,7 +362,7 @@ class InProcessRuntime implements RuntimeDriver {
   private renderQuality = "high";
   private shadowQuality = "1024";
   private resolutionScale = 1;
-  private frameCap = 60;
+  private frameCap: number;
   private volume = 1;
   private timeDilation = 1;
   private showCollision = false;
@@ -444,6 +447,10 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
+    this.frameCap =
+      options.frameCap !== undefined && options.frameCap > 0
+        ? options.frameCap
+        : DEFAULT_PLAY_FRAME_CAP;
     this.transportMode = mode;
     this.dt = options.dt ?? 1 / 60;
     this.seed = options.seed;

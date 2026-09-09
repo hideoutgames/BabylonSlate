@@ -25,10 +25,10 @@ export class RenderScheduler {
   private obstructed = false;
   private resizing = false;
   private frameCap = Number.POSITIVE_INFINITY;
-  private lastRenderAt: number | null = null;
+  private nextRenderAt: number | null = null;
   private renderedFrames = 0;
   private invalidations = 0;
-  private lastSecond = 0;
+  private lastSecond = nowMs();
   private renderedThisSecond = 0;
   private invalidationsThisSecond = 0;
   private renderedFps = 0;
@@ -36,10 +36,10 @@ export class RenderScheduler {
 
   invalidate(_reason: InvalidationReason): void {
     void _reason;
+    this.rollStats();
     this.dirty = true;
     this.invalidations += 1;
     this.invalidationsThisSecond += 1;
-    this.rollStats();
   }
 
   acquireContinuous(_reason: string): () => void {
@@ -58,6 +58,7 @@ export class RenderScheduler {
   }
 
   setPaused(value: boolean): void {
+    if (value !== this.paused) this.nextRenderAt = null;
     this.paused = value;
   }
 
@@ -74,7 +75,9 @@ export class RenderScheduler {
   }
 
   setFrameCap(fps: number): void {
-    this.frameCap = fps > 0 ? fps : 60;
+    const cap = fps > 0 ? fps : 60;
+    if (cap !== this.frameCap) this.nextRenderAt = null;
+    this.frameCap = cap;
   }
 
   shouldRender(now: number = nowMs()): boolean {
@@ -83,19 +86,28 @@ export class RenderScheduler {
     const wants =
       this.alwaysRender || this.continuous > 0 || this.dirty;
     if (!wants) return false;
-    if (this.lastRenderAt !== null) {
+    if (this.nextRenderAt !== null) {
       const minDelta = 1000 / this.frameCap;
-      if (now - this.lastRenderAt < minDelta) return false;
+      // Browser callbacks jitter around fractional refresh boundaries. Permit
+      // at most 1 ms early without letting that tolerance accumulate as drift.
+      const tolerance = Math.min(1, minDelta * 0.05);
+      if (now + tolerance < this.nextRenderAt) return false;
     }
     return true;
   }
 
   noteRendered(now: number = nowMs()): void {
+    this.rollStats();
     this.dirty = false;
-    this.lastRenderAt = now;
+    const minDelta = 1000 / this.frameCap;
+    // Preserve the cadence when a callback is slightly late. After a long
+    // suspension, rebase instead of accumulating catch-up frames.
+    this.nextRenderAt =
+      this.nextRenderAt !== null && now - this.nextRenderAt < minDelta
+        ? this.nextRenderAt + minDelta
+        : now + minDelta;
     this.renderedFrames += 1;
     this.renderedThisSecond += 1;
-    this.rollStats();
   }
 
   stats(): {
@@ -115,13 +127,10 @@ export class RenderScheduler {
 
   private rollStats(): void {
     const now = nowMs();
-    if (this.lastSecond === 0) {
-      this.lastSecond = now;
-      return;
-    }
-    if (now - this.lastSecond >= 1000) {
-      this.renderedFps = this.renderedThisSecond;
-      this.invalidationsPerSecond = this.invalidationsThisSecond;
+    const elapsed = now - this.lastSecond;
+    if (elapsed >= 1000) {
+      this.renderedFps = Math.round(this.renderedThisSecond * 1000 / elapsed);
+      this.invalidationsPerSecond = Math.round(this.invalidationsThisSecond * 1000 / elapsed);
       this.renderedThisSecond = 0;
       this.invalidationsThisSecond = 0;
       this.lastSecond = now;

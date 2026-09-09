@@ -33,7 +33,7 @@ export function applyWorkerPlayerStats(
 ): PlayerHudStats {
   return {
     ticks: command.ticks ?? previous?.ticks ?? 0,
-    fps: command.fps && command.fps > 0 ? command.fps : (previous?.fps ?? 0),
+    fps: previous?.fps ?? 0,
     scriptMs: command.scriptMs,
     physicsMs: command.physicsMs,
     draws: previous?.draws ?? 0,

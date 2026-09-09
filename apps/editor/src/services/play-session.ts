@@ -367,7 +367,7 @@ export function applyWorkerPlayStats(
   },
 ): PlayHudStats {
   return {
-    fps: command.fps && command.fps > 0 ? command.fps : (previous?.fps ?? 0),
+    fps: previous?.fps ?? 0,
     scriptMs: command.scriptMs,
     physicsMs: command.physicsMs,
     frameId: command.frameId,
@@ -739,6 +739,7 @@ export function startPlaySession(options: {
     gravity: [0, -9.81, 0] as [number, number, number],
   };
   const loadControl = playLoadControl({
+    frameCap: resolvePlayFrameCap(options.frameCap),
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,
     physicsWorld: physics.physicsWorld,
@@ -880,7 +881,6 @@ export function startPlaySession(options: {
   let snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
   let raf = 0;
-  let frames = 0;
   let fpsWindowStart = last;
   let sessionDiagnostics: SessionReportEntry[] = [];
   let droppedDiagnostics = 0;
@@ -913,10 +913,8 @@ export function startPlaySession(options: {
       }
     }
     // Worker pumps itself; host only feeds input + applies snapshots via onSnapshot.
-    frames += 1;
     if (now - fpsWindowStart >= 1000) {
-      emitHudStats(applyPlayFpsSample(hudStats, frames));
-      frames = 0;
+      emitHudStats(applyPlayFpsSample(hudStats, handle.scheduler.stats().renderedFps));
       fpsWindowStart = now;
     }
     raf = requestAnimationFrame(pump);

@@ -8,9 +8,10 @@ import {
   previewPhysicsScene,
 } from "./preview-scene-fixture";
 import { expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 
 test.describe("P4 Play overlay and session report", () => {
-  test("framecap changes rendered FPS while simulation keeps ticking", async ({ page }) => {
+  test("framecap changes rendered FPS while simulation keeps ticking", { tag: IPAD_TEST_TAG }, async ({ page }) => {
     test.setTimeout(120_000);
     await openTestProject(page);
     await openMainScene(page);

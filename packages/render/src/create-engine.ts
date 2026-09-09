@@ -1381,7 +1381,8 @@ export function createEngine(
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
   const renderLoop = () => {
-    if (!scheduler.shouldRender()) {
+    const frameStart = performance.now();
+    if (!scheduler.shouldRender(frameStart)) {
       return;
     }
     const sampled = interpolator.sample(interpAlpha);
@@ -1424,7 +1425,7 @@ export function createEngine(
     sceneLayerCompositor?.render();
     if (rttPresent) rttPresent.blit();
     lastDrawCalls = readEngineDrawCalls(engine);
-    scheduler.noteRendered();
+    scheduler.noteRendered(frameStart);
     scaling.noteFrameTime(performance.now() - renderStart);
   };
   engine.runRenderLoop(renderLoop);

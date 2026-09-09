@@ -238,6 +238,7 @@ export function startPlayer(options: {
     layer,
   }));
   const loadControl = {
+    frameCap: manifest.playFrameCap,
     project: manifest.project,
     type: "load" as const,
     sceneAssetGuid: startup,
@@ -432,7 +433,6 @@ export function startPlayer(options: {
     void handle.unlockAudio();
   }, canvas);
   let last = performance.now();
-  let frames = 0;
   let fpsWindowStart = last;
 
   const pump = () => {
@@ -459,10 +459,8 @@ export function startPlayer(options: {
         handle.pushSnapshot(snapBuf);
       }
     }
-    frames += 1;
     if (now - fpsWindowStart >= 1000) {
-      emitHudStats(applyPlayerFpsSample(hudStats, frames));
-      frames = 0;
+      emitHudStats(applyPlayerFpsSample(hudStats, handle.scheduler.stats().renderedFps));
       fpsWindowStart = now;
     }
     raf = requestAnimationFrame(pump);
@@ -480,7 +478,6 @@ export function startPlayer(options: {
       } else if (wasPaused) {
         last = performance.now();
         fpsWindowStart = last;
-        frames = 0;
         raf = requestAnimationFrame(pump);
       }
     });

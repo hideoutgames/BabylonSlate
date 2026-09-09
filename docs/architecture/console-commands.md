@@ -54,6 +54,8 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 
 ### Overlay vs console (session control)
 
+`framecap [fps]` limits rendering in Play and Preview/player without changing the fixed simulation step or input polling. Both hosts initialize console readback from project `playFrameCap` (default 60). Overrides last for the session; the next Play starts from project settings. Nonpositive values use the existing 60 FPS fallback. Browser refresh scheduling, device performance, and background throttling may keep actual FPS below the requested cap. Stats reports completed renders per elapsed second, so `framecap 30` can show approximately 30 while browser callbacks continue at 60 Hz.
+
 Play chrome **Pause** / **Resume** and **Step** share `RuntimeDriver.pause` / `resume` and the overlay step helper. Console pause/resume emit `sessionPaused` so the chrome label matches. Overlay Pause still toggles via `session.setPaused`.
 
 ### Autocomplete
