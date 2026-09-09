@@ -466,9 +466,8 @@ describe("SettingsModal project authoring", () => {
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
     const copy = screen.getByTestId("settings-source-control-token-copy");
-    expect(copy.textContent).toMatch(/this project on this device/i);
-    expect(copy.textContent).toMatch(/not written into project files/i);
-    expect(copy.textContent).toMatch(/Clear Token/);
+    expect(copy.textContent).toMatch(/on this device for this project/i);
+    expect(copy.textContent).toMatch(/never included in project files or Git/i);
     expect(copy.textContent).not.toMatch(/This browser only/i);
     expect(copy.textContent).not.toMatch(/Not Saved/);
     expect(screen.queryByText("Not Saved")).toBeNull();

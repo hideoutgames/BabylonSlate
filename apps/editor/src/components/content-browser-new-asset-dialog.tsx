@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import {
   SearchInput,
@@ -63,6 +63,20 @@ export interface ContentBrowserNewAssetDialogProps {
   onCreate: () => void;
 }
 
+function navigateChoice(event: KeyboardEvent<HTMLDivElement>) {
+  if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const choices = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)')];
+  if (!choices.length) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const focused = choices.indexOf(document.activeElement as HTMLButtonElement);
+  const current = focused >= 0 ? focused : choices.findIndex((choice) => choice.getAttribute("aria-checked") === "true");
+  const direction = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
+  const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (current + direction + choices.length) % choices.length;
+  choices[next]!.focus();
+  choices[next]!.click();
+}
+
 export function ContentBrowserNewAssetDialog({
   open,
   onOpenChange,
@@ -82,6 +96,7 @@ export function ContentBrowserNewAssetDialog({
   const [search, setSearch] = useState("");
   const [parentSearch, setParentSearch] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
+  const detailsRef = useRef<HTMLElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
   const canCreate = !busy && !nameTaken && Boolean(name.trim());
 
@@ -92,6 +107,12 @@ export function ContentBrowserNewAssetDialog({
       setPhoneStep("type");
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !phone) return;
+    const target = phoneStep === "details" ? detailsRef.current : bodyRef.current;
+    target?.focus({ preventScroll: true });
+  }, [open, phone, phoneStep]);
 
   const visibleGroups = useMemo(() => {
     const allowed = new Set(filterCreatableAssetTypes(search));
@@ -158,6 +179,7 @@ export function ContentBrowserNewAssetDialog({
                 data-testid="new-asset-type"
                 role="radiogroup"
                 aria-label="Asset Type"
+                onKeyDown={navigateChoice}
               >
                 {visibleGroups.length === 0 ? (
                   <Empty>
@@ -192,7 +214,8 @@ export function ContentBrowserNewAssetDialog({
                                 type="button"
                                 size="sm"
                                 variant={selected ? "secondary" : "ghost"}
-                                  role="radio"
+                                role="radio"
+                                tabIndex={selected ? 0 : -1}
                                   aria-checked={selected}
                                   data-selected={selected ? "true" : "false"}
                                   data-testid={`new-asset-type-${item}`}
@@ -221,8 +244,10 @@ export function ContentBrowserNewAssetDialog({
           ) : null}
           {!phone || phoneStep === "details" ? (
             <aside
+              ref={detailsRef}
+              tabIndex={-1}
               className={cn(
-                "flex flex-col",
+                "flex flex-col outline-none",
                 phone
                   ? "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain"
                   : "min-h-0 min-w-0 flex-1 border-l",
@@ -252,10 +277,17 @@ export function ContentBrowserNewAssetDialog({
                       className="min-h-[var(--chrome-row,28px)]"
                       value={name}
                       aria-invalid={nameTaken || undefined}
+                      aria-describedby={nameTaken ? "new-asset-name-error" : undefined}
                       onChange={(event) => onNameChange(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                          event.preventDefault();
+                          if (canCreate) onCreate();
+                        }
+                      }}
                     />
                     {nameTaken ? (
-                      <FieldError data-testid="new-asset-name-taken">
+                      <FieldError id="new-asset-name-error" data-testid="new-asset-name-taken">
                         An asset with this name already exists in the folder.
                       </FieldError>
                     ) : null}
@@ -286,6 +318,7 @@ export function ContentBrowserNewAssetDialog({
                   <div
                     role="radiogroup"
                     aria-label="Parent Class"
+                    onKeyDown={navigateChoice}
                     data-testid="new-asset-parent"
                     className={cn(
                       "p-2",
@@ -323,6 +356,7 @@ export function ContentBrowserNewAssetDialog({
                               )}
                               style={{ paddingLeft: 8 + row.depth * 12 }}
                               role="radio"
+                              tabIndex={selected ? 0 : -1}
                               aria-checked={selected}
                               data-selected={selected ? "true" : "false"}
                               data-depth={row.depth}
