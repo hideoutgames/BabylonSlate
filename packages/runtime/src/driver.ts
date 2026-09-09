@@ -3477,6 +3477,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private releaseSlot(actorGuid: string, slotId: number): void {
     this.slotByGuid.delete(actorGuid);
+    this.btEvalBySlot.delete(slotId);
+    this.lastBtStateJson.delete(slotId);
     this.freeSlots.push(slotId);
   }
 
@@ -3843,11 +3845,14 @@ class InProcessRuntime implements RuntimeDriver {
   private publishSnapshot(): void {
     const actors = this.world.getActors();
     const liveGuids = new Set(actors.map((actor) => actor.guid));
+    let removedActors = false;
     for (const [actorGuid, slotId] of this.slotByGuid) {
       if (liveGuids.has(actorGuid)) continue;
       this.emit({ type: "despawn", slotId, actorGuid });
       this.releaseSlot(actorGuid, slotId);
+      removedActors = true;
     }
+    if (removedActors) this.emitBehaviourTreeSnapshot(true);
     const buf = this.snapshots.beginWrite();
     const worldTransforms = actorWorldTransforms(actors);
     let count = 0;
