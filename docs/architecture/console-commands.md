@@ -151,14 +151,14 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | `wireframe [on\|off]` | Force wireframe on Play scene meshes (skip helper/debug lines). |
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
 | `actorboundingbox [on\|off]` | Same host as `showbounds` (`setShowBounds`). Keep `showbounds` as the existing alias. |
-| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/capsules/polylines from `listDebugColliders()`, plus **convex** hulls (generated/cone simple collision) as world-group line systems. Local collider offsets and polyline points use body world rotation. Capsule total height is `2 * halfHeight + 2 * radius`. Complex triangle `mesh` colliders are still skipped. World-group depth-tested overlay, not a group-0 underlay. Editor-grid 2D camera bounds are unrelated. Does **not** replace per-collider **Render In Game** (world dashes when that property is on). |
+| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/capsules/polylines from `listDebugColliders()`, plus **convex** hulls (generated/cone simple collision) as world-group line systems. Local collider offsets and polyline points use body world rotation. Capsule total height is `2 * halfHeight + 2 * radius`. Cylinders, triangle meshes, planar 2D capsules, and closed chains keep their simulated shapes. World-group depth-tested overlay, not a group-0 underlay. Editor-grid 2D camera bounds are unrelated. Does **not** replace per-collider **Render In Game** (world dashes when that property is on). |
 | `shownav [on\|off]` | Reuse `NavMeshDebugOverlay` on the Play scene (baked nav chunk when present, plus NavMesh Blocker volumes). Same world rendering group as Play meshes. |
 | `showaudiodebug [on\|off]` | DOM overlay of playing voices (guid, clip, gain, pitch, loop, spatial, distance, radii, inside radius). Empty list: `No playing voices`. Off unmounts the overlay. Polls with `requestAnimationFrame` so it still draws while sim is paused. |
 | `dumpactors` | One line per actor: name, class, guid, world position. |
 | `inspect [name\|guid]` | Print the inspect-snapshot variables for that node (same data as the Inspector overlay). No arg → print the current inspector selection if any, else usage. |
 | `dumplog` / `snapshot start` / `snapshot stop` | Unchanged. |
 
-`showcollision` / `showbounds` / `actorboundingbox` / `wireframe` / `shownav` / `showaudiodebug` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
+`showcollision` / `debugphysics` / `showbounds` / `actorboundingbox` / `wireframe` / `shownav` / `shownavdebug` / `showpathfinding` / `shownavagent` / `behaviourtreedebug` / `showaudiodebug` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
 
 ### Intentionally not engine commands
 
@@ -166,7 +166,7 @@ Game-specific cheats (`god`, `heal`, `give`, `teleport pawn`) stay **user** `BDe
 
 Parked (do not block this pass):
 
-- Packaged-player command **line** UI (bundled-debugger player today is a stats string only). Editor Play console is the default surface. A tiny player prompt can follow once `help` / `resume` / `freecam` exist.
+- Standalone exported-player command **line** UI. Editor Play and Preview Build share the console overlay; standalone exports keep the stats HUD. A tiny player prompt can follow once `help` / `resume` / `freecam` exist.
 - `screenshot`, `viewmode unlit`, `kill` / `spawn` from the console, `restart` as a distinct command (`changescene` of the current scene already reloads).
 - Making `pause` toggle.
 
