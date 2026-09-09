@@ -26,7 +26,9 @@ describe("captureConsoleLogs", () => {
   });
 
   it("does not recurse when its receiver logs and tolerates circular values", () => {
-    const target = { log: (..._args: unknown[]) => {}, info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
+    const target: Pick<Console, "log" | "info" | "debug" | "warn" | "error"> = {
+      log: () => {}, info: () => {}, debug: () => {}, warn: () => {}, error: () => {},
+    };
     const messages: string[] = [];
     const stop = runtime.captureConsoleLogs?.(target, (message) => {
       messages.push(message);
