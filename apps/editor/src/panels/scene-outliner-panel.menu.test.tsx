@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
 import { createActor, createDefaultScene } from "@babylonslate/core";
@@ -74,7 +74,7 @@ afterEach(() => {
 });
 
 describe("SceneOutlinerPanel menus", () => {
-  it("toggles an actor from the menu without replacing other selected actors", () => {
+  it("toggles an actor from the menu without replacing other selected actors", async () => {
     const scene = createDefaultScene();
     scene.actors = [
       createActor("actor-1", "Cube"),
@@ -88,8 +88,10 @@ describe("SceneOutlinerPanel menus", () => {
     );
     fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Select" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     fireEvent.click(screen.getByTestId("outliner-menu-actor-2"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Select" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(
       screen
         .getAllByRole("treeitem")
@@ -97,6 +99,7 @@ describe("SceneOutlinerPanel menus", () => {
     ).toEqual(["true", "true"]);
     fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Deselect" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(
       screen
         .getAllByRole("treeitem")
