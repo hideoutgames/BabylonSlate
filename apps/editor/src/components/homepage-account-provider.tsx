@@ -32,6 +32,7 @@ export function HomepageClerkProvider({
           borderRadius: "12px",
         },
         elements: {
+          modalContent: "slate-clerk-overlay",
           rootBox: "homepage-theme homepage-clerk",
           cardBox: "homepage-clerk-card",
         },

@@ -176,10 +176,7 @@ export function Homepage({
       cancelled = true;
     };
   }, [dataReady, projects.length, artReady, transition.ready]);
-  const launch = async (
-    action: () => Promise<void>,
-    label = "Slate",
-  ) => {
+  const launch = async (action: () => Promise<void>, label = "Slate") => {
     transition.begin(label);
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -526,6 +523,7 @@ export function Homepage({
                       onReady={markArtReady}
                       paused={
                         busy ||
+                        transition.active ||
                         createOpen ||
                         settingsOpen ||
                         accountOpen ||

@@ -5,17 +5,17 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #0b0e14eb;
+  background: #000;
   color: #eef0f6;
-  backdrop-filter: blur(8px);
+  will-change: opacity;
   opacity: 1;
-  transition: opacity 420ms ease;
+  transition: opacity 650ms cubic-bezier(0.22, 0.61, 0.36, 1);
   font:
     400 13px system-ui,
     sans-serif;
 }
 .slate-loading[data-scheme="light"] {
-  background: #e8eaf0aa;
+  background: #000;
   color: #1a1e2a;
 }
 .slate-loading[data-leaving="true"] {
@@ -94,6 +94,7 @@
   box-shadow:
     12px 18px 30px #070b1770,
     inset 0 1px 0 #dce4ff80;
+  will-change: transform;
   animation: slate-splash-drift 5s ease-in-out infinite alternate;
 }
 .slate-splash-planes i:nth-child(2) {
@@ -162,6 +163,7 @@
   width: 40%;
   height: 100%;
   background: linear-gradient(90deg, transparent, #c3ccec, transparent);
+  will-change: transform;
   animation: slate-load-travel 1.8s ease-in-out infinite;
 }
 .slate-loading-track[data-ready="true"] > span {
@@ -196,7 +198,7 @@
 }
 @keyframes slate-splash-drift {
   to {
-    transform: translateY(-10px);
+    transform: translate3d(0, -10px, 0);
   }
 }
 @media (max-width: 520px) {

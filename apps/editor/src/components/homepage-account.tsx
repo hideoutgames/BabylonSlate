@@ -1,54 +1,44 @@
-import { Component, Suspense, lazy, useState, type ReactNode } from "react";
-import {
-  ArrowLeftIcon,
-  ArrowUpRightIcon,
-  CircleUserRoundIcon,
-} from "lucide-react";
-import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import { Button } from "@babylonslate/ui/components/button";
+﻿import {
+  Component,
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogDescription,
 } from "@babylonslate/ui/components/dialog";
-import { HomepageSubscription } from "./homepage-subscription";
 import { getHostPlatform } from "@babylonslate/vfs";
-import { useNativeHomepageAccount } from "./homepage-account-context";
-import { NativeAccountDetails } from "./homepage-account-native-details";
+import { HomepageSubscription } from "./homepage-subscription";
+import { HomepageProfileMenu } from "./homepage-profile-menu";
+import {
+  useNativeHomepageAccount,
+  type NativeHomepageAccount,
+} from "./homepage-account-context";
+import type { NativeClerkSession } from "../services/native-clerk";
 
 const ClerkAccount = lazy(() => import("./homepage-account-clerk"));
 const DesktopAccount = lazy(() => import("./homepage-account-desktop"));
 
-export type HomepageAccountView = "overview" | "sign-in" | "settings";
-
 class AccountErrorBoundary extends Component<
-  { children: ReactNode },
+  { children: ReactNode; fallback: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
-
   static getDerivedStateFromError() {
     return { failed: true };
   }
-
   render() {
-    if (this.state.failed) {
-      return (
-        <Alert>
-          <AlertDescription>
-            Sign-in is unavailable right now. Your local projects are ready to
-            use.
-          </AlertDescription>
-        </Alert>
-      );
-    }
-    return this.props.children;
+    return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
-
 export function HomepageAccount({
   disabled = false,
   onOpenChange,
@@ -57,110 +47,148 @@ export function HomepageAccount({
   onOpenChange?: (open: boolean) => void;
 }) {
   const nativeAccount = useNativeHomepageAccount();
-  const [open, setOpen] = useState(false);
+  const [desktopAccount, setDesktopAccount] =
+    useState<NativeHomepageAccount | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
-  const [accountView, setAccountView] =
-    useState<HomepageAccountView>("overview");
+  const [authOpen, setAuthOpen] = useState(false);
+  const host = getHostPlatform();
   const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
-
+  const desktopClient = useMemo(
+    () =>
+      host === "electron" && publishableKey
+        ? import("../services/native-clerk").then(
+            ({ createNativeClerkClient }) =>
+              createNativeClerkClient(publishableKey),
+          )
+        : null,
+    [host, publishableKey],
+  );
+  const acceptDesktopSession = useCallback(
+    async (session: NativeClerkSession) => {
+      const client = await desktopClient;
+      if (!client) return;
+      setDesktopAccount({
+        session,
+        signOut: async () => {
+          await client.signOut(session);
+          setDesktopAccount(null);
+        },
+      });
+      setAuthOpen(false);
+    },
+    [desktopClient],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    let pending = false;
+    const restore = () => {
+      if (
+        !desktopClient ||
+        cancelled ||
+        pending ||
+        document.visibilityState !== "visible"
+      )
+        return;
+      pending = true;
+      void desktopClient
+        .then((client) => client.restoreSession())
+        .then((session) => {
+          if (cancelled) return;
+          if (session) void acceptDesktopSession(session);
+          else setDesktopAccount(null);
+        })
+        .catch(() => {
+          /* Guests can still open local projects. */
+        })
+        .finally(() => {
+          pending = false;
+        });
+    };
+    restore();
+    if (desktopClient) {
+      window.addEventListener("focus", restore);
+      document.addEventListener("visibilitychange", restore);
+    }
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", restore);
+      document.removeEventListener("visibilitychange", restore);
+    };
+  }, [desktopClient, acceptDesktopSession]);
+  useEffect(() => {
+    onOpenChange?.(menuOpen || subscriptionOpen || authOpen);
+  }, [menuOpen, subscriptionOpen, authOpen, onOpenChange]);
+  const account = nativeAccount ?? desktopAccount;
+  const openSubscription = () => setSubscriptionOpen(true);
+  const fallback = (
+    <HomepageProfileMenu
+      disabled={disabled}
+      name={account?.session.name || (account ? "Your Account" : "Guest")}
+      email={account?.session.email}
+      imageUrl={account?.session.imageUrl}
+      onSignOut={account?.signOut}
+      onSignIn={
+        !account && host === "electron" && publishableKey
+          ? () => setAuthOpen(true)
+          : undefined
+      }
+      onSubscription={openSubscription}
+      onOpenChange={setMenuOpen}
+    />
+  );
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        onOpenChange?.(next);
-        if (!next) {
-          setSubscriptionOpen(false);
-          setAccountView("overview");
-        }
-      }}
-    >
-      <DialogTrigger
-        disabled={disabled}
-        render={
-          <Button
-            variant="ghost"
-            size="touch"
-            className="homepage-account"
-            aria-label="Profile"
-            data-testid="homepage-account"
-          />
-        }
-      >
-        <CircleUserRoundIcon data-icon="inline-start" />
-        <span>Profile</span>
-      </DialogTrigger>
-      <DialogContent
-        className="homepage-theme homepage-profile"
-        data-testid="homepage-profile"
-        data-auth-open={accountView !== "overview"}
-        data-subscription-open={subscriptionOpen}
-      >
-        {subscriptionOpen ? (
+    <>
+      {!nativeAccount && host === "web" && publishableKey ? (
+        <AccountErrorBoundary fallback={fallback}>
+          <Suspense fallback={fallback}>
+            <ClerkAccount
+              publishableKey={publishableKey}
+              disabled={disabled}
+              onSubscription={openSubscription}
+              onOpenChange={setMenuOpen}
+              fallback={fallback}
+            />
+          </Suspense>
+        </AccountErrorBoundary>
+      ) : (
+        fallback
+      )}
+      <Dialog open={subscriptionOpen} onOpenChange={setSubscriptionOpen}>
+        <DialogContent
+          className="homepage-theme homepage-profile"
+          data-subscription-open="true"
+        >
           <HomepageSubscription onBack={() => setSubscriptionOpen(false)} />
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle>Profile</DialogTitle>
-              <DialogDescription className="sr-only">
-                Account and subscription settings.
-              </DialogDescription>
-            </DialogHeader>
-            {accountView !== "overview" ? (
-              <Button
-                variant="ghost"
-                className="homepage-profile-back"
-                onClick={() => setAccountView("overview")}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={authOpen} onOpenChange={setAuthOpen}>
+        <DialogContent
+          className="homepage-theme homepage-profile"
+          data-auth-open="true"
+        >
+          <DialogHeader>
+            <DialogTitle>Sign In</DialogTitle>
+            <DialogDescription className="sr-only">
+              Connect your Slate account.
+            </DialogDescription>
+          </DialogHeader>
+          {authOpen && publishableKey && (
+            <AccountErrorBoundary
+              fallback={<p role="alert">Sign-in is unavailable right now.</p>}
+            >
+              <Suspense
+                fallback={<p role="status">Connecting your account...</p>}
               >
-                <ArrowLeftIcon data-icon="inline-start" />
-                Profile
-              </Button>
-            ) : null}
-            {nativeAccount ? (
-              <NativeAccountDetails account={nativeAccount} />
-            ) : open && publishableKey ? (
-              <AccountErrorBoundary>
-                <Suspense
-                  fallback={
-                    <p role="status" className="text-muted-foreground">
-                      Connecting your account…
-                    </p>
-                  }
-                >
-                  {getHostPlatform() === "electron" ? (
-                    <DesktopAccount publishableKey={publishableKey} />
-                  ) : (
-                    <ClerkAccount
-                      publishableKey={publishableKey}
-                      view={accountView}
-                      onViewChange={setAccountView}
-                    />
-                  )}
-                </Suspense>
-              </AccountErrorBoundary>
-            ) : (
-              <div className="homepage-profile-identity">
-                <CircleUserRoundIcon aria-hidden="true" />
-                <div>
-                  <h3>Guest</h3>
-                  <p>Sign-in is not configured.</p>
-                </div>
-              </div>
-            )}
-            {accountView === "overview" ? (
-              <Button
-                variant="outline"
-                size="touch"
-                className="homepage-profile-subscription"
-                onClick={() => setSubscriptionOpen(true)}
-              >
-                Manage Subscription
-                <ArrowUpRightIcon data-icon="inline-end" />
-              </Button>
-            ) : null}
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+                <DesktopAccount
+                  publishableKey={publishableKey}
+                  onAuthenticated={acceptDesktopSession}
+                />
+              </Suspense>
+            </AccountErrorBoundary>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

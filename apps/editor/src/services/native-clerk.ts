@@ -12,6 +12,7 @@ export interface NativeClerkSession {
   userId: string;
   email: string;
   name?: string;
+  imageUrl?: string;
 }
 
 export interface NativeClerkChallenge {
@@ -118,7 +119,16 @@ function activeSession(
   const name = [user.first_name, user.last_name]
     .filter((part) => typeof part === "string" && part)
     .join(" ");
-  return { id: current.id, userId: user.id, email, ...(name ? { name } : {}) };
+  return {
+    id: current.id,
+    userId: user.id,
+    email,
+    ...(name ? { name } : {}),
+    ...(typeof user.image_url === "string" &&
+    user.image_url.startsWith("https://")
+      ? { imageUrl: user.image_url }
+      : {}),
+  };
 }
 
 /** Native email-code flow over Clerk's versioned public Frontend API. */

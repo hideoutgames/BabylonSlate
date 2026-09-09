@@ -1426,3 +1426,51 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
     inset 0 -1px 1px #0000001a;
   transform: translateY(-6%);
 }
+
+.homepage-profile-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.homepage-clerk-trigger {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+}
+.homepage-clerk-avatar-button {
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.homepage-profile-menu {
+  width: 240px;
+  max-width: calc(100vw - 24px);
+  border-radius: 16px;
+  padding: 8px;
+}
+.homepage-profile-menu-name {
+  display: block;
+  color: var(--foreground);
+  font-size: 13px;
+  padding: 6px 4px;
+}
+.homepage-profile-menu-email {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px 6px;
+  font-size: 11px;
+}
+.homepage-profile-menu [role="menuitem"] {
+  min-height: 40px;
+  border-radius: 8px;
+}
+@media (pointer: coarse) {
+  .homepage-profile-menu [role="menuitem"] {
+    min-height: 48px;
+  }
+}

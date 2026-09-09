@@ -20,6 +20,7 @@ type Transition = {
   status: string;
   since: number;
   mounted: boolean;
+  readyAt: number | null;
   settled: boolean;
   leaving: boolean;
 };
@@ -28,6 +29,7 @@ const TransitionContext = createContext({
   ready: (_target: Target) => {},
   settle: () => {},
   reportHomeLoading: (_status: string) => {},
+  active: false,
 });
 export const useLauncherTransition = () => useContext(TransitionContext);
 export function LauncherTransitionProvider({
@@ -44,6 +46,7 @@ export function LauncherTransitionProvider({
     status: "Loading application",
     since: performance.now(),
     mounted: false,
+    readyAt: null,
     settled: true,
     leaving: false,
   }));
@@ -55,6 +58,7 @@ export function LauncherTransitionProvider({
         status: "Opening project",
         since: performance.now(),
         mounted: false,
+        readyAt: null,
         settled: false,
         leaving: false,
       }),
@@ -67,6 +71,7 @@ export function LauncherTransitionProvider({
           ? {
               ...current,
               mounted: true,
+              readyAt: current.settled ? performance.now() : null,
               status: current.settled ? "Ready" : "Preparing editor",
             }
           : current,
@@ -80,6 +85,7 @@ export function LauncherTransitionProvider({
           ? {
               ...current,
               settled: true,
+              readyAt: current.mounted ? performance.now() : null,
               status: current.mounted ? "Ready" : current.status,
             }
           : current,
@@ -109,8 +115,15 @@ export function LauncherTransitionProvider({
     }
     if (!transition.mounted || !transition.settled) return;
     const delay = transition.leaving
-      ? 420
-      : Math.max(0, 2000 - (performance.now() - transition.since));
+      ? 650
+      : Math.max(
+          0,
+          2000 - (performance.now() - transition.since),
+          transition.target === "editor"
+            ? 600 -
+                (performance.now() - (transition.readyAt ?? performance.now()))
+            : 0,
+        );
     const timer = window.setTimeout(
       () =>
         setTransition((current) =>
@@ -124,9 +137,16 @@ export function LauncherTransitionProvider({
     );
     return () => clearTimeout(timer);
   }, [transition, route]);
+  const active = Boolean(transition);
   const value = useMemo(
-    () => ({ begin, ready, settle, reportHomeLoading }),
-    [begin, ready, settle, reportHomeLoading],
+    () => ({
+      begin,
+      ready,
+      settle,
+      reportHomeLoading,
+      active,
+    }),
+    [begin, ready, settle, reportHomeLoading, active],
   );
   return (
     <TransitionContext.Provider value={value}>
@@ -165,7 +185,9 @@ export function LauncherTransitionProvider({
                     <i />
                   </div>
                   <span className="slate-splash-caption">
-                    A space to create.
+                    {transition.target === "home"
+                      ? "A blank slate to create with."
+                      : "Preparing slate project..."}
                   </span>
                 </div>
                 <div className="slate-splash-info">
