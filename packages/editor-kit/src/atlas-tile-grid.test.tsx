@@ -24,6 +24,51 @@ function twoTileSet() {
 }
 
 describe("AtlasTileGrid", () => {
+  it.each([false, true])("selects an atlas rectangle at display scale, reversed=%s", (reverse) => {
+    const onSelect = vi.fn();
+    const onSelectionChange = vi.fn();
+    render(<AtlasTileGrid
+      tileset={ensureTilesetTiles(normalizeTilesetPayload({ atlasWidth: 48, atlasHeight: 32, tileWidth: 16, tileHeight: 16 }))}
+      imageUrl={null} selectedId={1} onSelect={onSelect}
+      onSelectionChange={onSelectionChange} panZoom tool="select" data-testid="atlas"
+    />);
+    const surface = screen.getByTestId("atlas-surface");
+    const cell = screen.getByTestId("atlas-cell-1");
+    cell.parentElement!.getBoundingClientRect = () =>
+      ({ left: 100, top: 50, width: 96, height: 64 }) as DOMRect;
+    const start = reverse ? { clientX: 152, clientY: 102 } : { clientX: 104, clientY: 54 };
+    const end = reverse ? { clientX: 104, clientY: 54 } : { clientX: 152, clientY: 102 };
+    dispatchPointerEvent(cell, "pointerdown", { pointerId: 1, ...start });
+    dispatchPointerEvent(surface, "pointermove", { pointerId: 1, ...end });
+    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId("atlas-cell-5").getAttribute("aria-pressed")).toBe("true");
+    dispatchPointerEvent(surface, "pointerup", { pointerId: 1, ...end });
+    expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith([1, 2, 4, 5]);
+    fireEvent.click(cell);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(surface.getAttribute("data-pan-x")).toBe("0");
+  });
+
+  it("cancels an in-progress selection when a second finger begins a pinch", () => {
+    const onSelectionChange = vi.fn();
+    render(<AtlasTileGrid tileset={twoTileSet()} imageUrl={null} selectedId={2}
+      selectedIds={[2]} onSelect={() => {}} onSelectionChange={onSelectionChange}
+      panZoom tool="select" data-testid="atlas" />);
+    const surface = screen.getByTestId("atlas-surface");
+    const cell = screen.getByTestId("atlas-cell-1");
+    cell.parentElement!.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 32, height: 16 }) as DOMRect;
+    dispatchPointerEvent(cell, "pointerdown", { pointerId: 1, clientX: 2, clientY: 2 });
+    dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 28, clientY: 12 });
+    expect(cell.getAttribute("aria-pressed")).toBe("true");
+    dispatchPointerEvent(surface, "pointerdown", { pointerId: 2, clientX: 30, clientY: 12 });
+    dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 28, clientY: 12 });
+    dispatchPointerEvent(surface, "pointerup", { pointerId: 2, clientX: 30, clientY: 12 });
+    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(cell.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("atlas-cell-2").getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("renders a cell for every atlas tile and selects on tap", () => {
     const onSelect = vi.fn();
     render(
