@@ -25,6 +25,7 @@ function isReferenceField(key: string): boolean {
   return (
     /Guids?$/.test(key) ||
     key === "classId" ||
+    key === "default:classId" ||
     key === "parentClass" ||
     key === "gameInstanceClass" ||
     key === "scene" ||

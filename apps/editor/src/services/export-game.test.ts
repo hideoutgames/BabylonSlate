@@ -38,7 +38,7 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
-  it("packs the inherited Spawn Actor prefab referenced only by a Class variable", async () => {
+  it.each(["Class variable", "Spawn Actor dropdown"])("packs the inherited prefab referenced only by a %s", async (source) => {
     const mesh = createMeshComponent("parent-mesh", "box");
     const childCollider = {
       id: "child-collider",
@@ -48,8 +48,14 @@ describe("collectAndExportGame", () => {
     };
     const graphs: Record<string, SerializedGraph> = {
       "class-main": {
-        nodes: [], edges: [], components: [mesh],
-        members: [{ id: "spawn", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnChild", defaultValue: "SpawnChild" }],
+        nodes: source === "Spawn Actor dropdown" ? [
+          { id: "spawn", type: "actor.spawn", position: { x: 0, y: 0 }, data: { "default:classId": "SpawnChild" } },
+          { id: "print", type: "debug.print", position: { x: 0, y: 100 }, data: { "default:value": "Unused" } },
+        ] : [],
+        edges: [], components: [mesh],
+        members: source === "Class variable"
+          ? [{ id: "spawn", kind: "variable", name: "SpawnClass", typeId: "class", typeClassId: "SpawnChild", defaultValue: "SpawnChild" }]
+          : [],
       },
       "class-child": { nodes: [], edges: [], components: [childCollider] },
     };
