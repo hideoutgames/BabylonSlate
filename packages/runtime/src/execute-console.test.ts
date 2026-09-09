@@ -42,7 +42,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
 
   it("does not expose actor mutation commands without the debugger", () => {
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
-      preferSoftwarePhysics: true, includeDebugger: false });
+      preferSoftwarePhysics: true, includeDebugCommands: false });
     expect(runtime.executeConsoleCommand("possess cam").success).toBe(false);
     expect(runtime.executeConsoleCommand("destroyactor cam").success).toBe(false);
     runtime.stop();
