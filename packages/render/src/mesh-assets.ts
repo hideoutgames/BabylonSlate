@@ -162,6 +162,8 @@ export function modelSlotFingerprint(
     .join(";");
 }
 
+const ownedAlbedoMaterials = new WeakMap<AbstractMesh, StandardMaterial>();
+
 export function applyAlbedoTexture(
   mesh: AbstractMesh,
   scene: Scene,
@@ -186,10 +188,17 @@ export function applyAlbedoTexture(
   material.useAlphaFromDiffuseTexture = true;
   material.transparencyMode = Material.MATERIAL_ALPHATEST;
   material.alphaCutOff = 0.4;
+  const previous = ownedAlbedoMaterials.get(mesh);
+  previous?.dispose(false, false);
+  if (!previous) {
+    mesh.onDisposeObservable.addOnce(() => {
+      ownedAlbedoMaterials.get(mesh)?.dispose(false, false);
+      ownedAlbedoMaterials.delete(mesh);
+    });
+  }
+  ownedAlbedoMaterials.set(mesh, material);
   mesh.material = material;
 }
-
-const tilemapMaterials = new WeakMap<AbstractMesh, StandardMaterial>();
 
 /** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */
 export function applyTilemapAlbedoTextures(
@@ -205,15 +214,6 @@ export function applyTilemapAlbedoTextures(
     applyAlbedoTexture(child, scene, guid, assets);
     const material = child.material;
     if (material === before || !(material instanceof StandardMaterial)) continue;
-    const previous = tilemapMaterials.get(child);
-    previous?.dispose(false, false);
-    if (!previous) {
-      child.onDisposeObservable.addOnce(() => {
-        tilemapMaterials.get(child)?.dispose(false, false);
-        tilemapMaterials.delete(child);
-      });
-    }
-    tilemapMaterials.set(child, material);
     // Tilemaps remain readable from either side, including inside 3D actors.
     material.backFaceCulling = false;
     material.fogEnabled = false;
