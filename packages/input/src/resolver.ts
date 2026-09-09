@@ -1,4 +1,5 @@
 import type { RawInputEvent } from "./ring-buffer";
+import { InputBindingProfile } from "./input-bindings";
 import type {
   ActionBinding,
   AxisBinding,
@@ -190,13 +191,15 @@ export class InputResolver {
   };
 
   private mappings: InputMappings;
+  readonly bindings: InputBindingProfile;
 
   constructor(mappings: InputMappings) {
     this.mappings = mappings;
+    this.bindings = new InputBindingProfile(mappings, (current) => { this.mappings = current; }, () => this.reset());
   }
 
   setMappings(mappings: InputMappings): void {
-    this.mappings = mappings;
+    this.bindings.setDefaults(mappings);
   }
 
   /** Apply one tick's events and return the resolved action / axis snapshot. */
@@ -222,6 +225,7 @@ export class InputResolver {
     };
 
     for (const event of events) {
+      if (!this.bindings.accepts(event)) continue;
       switch (event.kind) {
         case "key": {
           const down = event.phase === "down";

@@ -49,6 +49,7 @@ import type {
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
 import { isInfiniteLoopError } from "@babylonslate/debugger";
+import type { InputBindingControls } from "@babylonslate/input";
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -65,6 +66,7 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  inputBindings?: InputBindingControls;
   getProjectName?(): string;
   getProjectVersion?(): string;
   /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
@@ -187,6 +189,7 @@ export interface ScriptHostServices {
 }
 
 export interface ScriptContext {
+  inputBindings?: InputBindingControls;
   self: BObject | null;
   deltaSeconds: number;
   tickIndex: number;
@@ -1201,6 +1204,7 @@ export class ScriptHost {
         ) as Record<string, unknown>;
       },
       isActionHeld: (action) => tick?.isActionHeld?.(action) ?? false,
+      inputBindings: services.inputBindings,
       wasActionPressed: (action) => tick?.wasActionPressed?.(action) ?? false,
       wasActionReleased: (action) =>
         tick?.wasActionReleased?.(action) ?? false,
