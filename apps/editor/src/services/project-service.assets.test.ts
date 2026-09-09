@@ -1,5 +1,5 @@
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createDefaultScene,
   createActor,
