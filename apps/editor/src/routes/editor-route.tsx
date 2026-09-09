@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   AlertDialog,
@@ -186,10 +187,14 @@ function EditorLayout() {
   } = usePlay();
   const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
   const [showMigrate, setShowMigrate] = useState(false);
-  const [pendingTabClose, setPendingTabClose] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
+  const [pendingTabClose, setPendingTabClose] = useState<
+    | {
+        id: string;
+        name: string;
+        dirty: boolean;
+      }[]
+    | null
+  >(null);
 
   useEffect(() => {
     if (playAwaitingMigration) setShowMigrate(true);
@@ -218,17 +223,34 @@ function EditorLayout() {
         .map((doc) => doc.ref.label)
     : [];
   const promptNames = pendingTabClose
-    ? [pendingTabClose.name]
+    ? pendingTabClose.filter((doc) => doc.dirty).map((doc) => doc.name)
     : (dirtyPrompt ?? exclusiveDirtyNames);
 
   const requestCloseDocument = (id: string) => {
     const doc = openDocuments.find((entry) => entry.id === id);
     if (!doc) return;
     if (tabCloseDecision(doc.dirty) === "prompt") {
-      setPendingTabClose({ id: doc.id, name: doc.ref.label });
+      setPendingTabClose([
+        { id: doc.id, name: doc.ref.label, dirty: doc.dirty },
+      ]);
       return;
     }
     closeDocument(id);
+  };
+
+  const requestCloseAllDocuments = () => {
+    const tabs = openDocuments.filter((doc) => doc.id !== CONTENT_BROWSER_ID);
+    if (tabs.some((doc) => doc.dirty)) {
+      setPendingTabClose(
+        tabs.map((doc) => ({
+          id: doc.id,
+          name: doc.ref.label,
+          dirty: doc.dirty,
+        })),
+      );
+      return;
+    }
+    for (const doc of tabs) closeDocument(doc.id);
   };
 
   const requestSave = async () => {
@@ -245,6 +267,7 @@ function EditorLayout() {
         onCloseProject={() => void requestClose()}
         onSaveProject={() => void requestSave()}
         onCloseDocument={requestCloseDocument}
+        onCloseAllDocuments={requestCloseAllDocuments}
       />
       <RecoveryBanner />
       <main className="flex min-h-0 flex-1 flex-col">
@@ -264,7 +287,7 @@ function EditorLayout() {
         }}
         onDiscard={() => {
           if (pendingTabClose) {
-            closeDocument(pendingTabClose.id);
+            for (const doc of pendingTabClose) closeDocument(doc.id);
             setPendingTabClose(null);
             return;
           }
@@ -277,7 +300,7 @@ function EditorLayout() {
         }}
         onSave={() => {
           if (pendingTabClose) {
-            const id = pendingTabClose.id;
+            const tabs = pendingTabClose;
             void (async () => {
               if (migrationPending.length > 0) {
                 setShowMigrate(true);
@@ -286,7 +309,7 @@ function EditorLayout() {
               const saved = await saveAll();
               if (!saved) return;
               setPendingTabClose(null);
-              closeDocument(id);
+              for (const doc of tabs) closeDocument(doc.id);
             })();
             return;
           }
