@@ -181,7 +181,7 @@ Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`,
 
 ## Other extension tokens
 
-Trace inspection uses `--trace-selected` (vibrant orange in both schemes), `--trace-script` and `--trace-physics`. Orange selection and the full-height cursor remain independent of destructive budget markers. These tokens do not recolor the neutral focus ring or primary controls.
+Trace inspection uses `--trace-selected` (vibrant orange in both schemes), `--trace-script` and `--trace-physics`. Orange selection and the full-height cursor remain independent of destructive budget markers. Current-tick log entries use a subtle orange whole-row fill without an edge stripe. These tokens do not recolor the neutral focus ring or primary controls.
 
 | Token | Purpose |
 | --- | --- |
