@@ -514,6 +514,25 @@ export class AssetRegistry {
     if (decoded.header.type === "Scene") {
       stampDocumentChunkName(chunksById, uniqueName);
     }
+    if (
+      decoded.header.type === "InputAction" ||
+      decoded.header.type === "InputAxis"
+    ) {
+      // A legacy name belongs to its migrated original, never to an independent copy.
+      headerRest.payload = { ...headerRest.payload };
+      delete headerRest.payload.legacyName;
+      const document = chunksById.get("document");
+      if (document) {
+        const payload = JSON.parse(
+          new TextDecoder().decode(document.data),
+        ) as Record<string, unknown>;
+        delete payload.legacyName;
+        chunksById.set("document", {
+          ...document,
+          data: new TextEncoder().encode(JSON.stringify(payload)),
+        });
+      }
+    }
     const encoded = await encodeBabasset({
       header: { ...headerRest, guid: newGuid, name: uniqueName },
       chunks: [...chunksById.values()],

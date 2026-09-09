@@ -27,7 +27,7 @@ The existing export/import binding nodes serialize player overrides for the game
 
 `InputAction` and `InputAxis` are version 1 `.babasset` documents with `valueType`, stable-ID `bindings`, and an optional `legacyName` alias. Registry headers contain value type and compatibility alias; full bindings live in the document chunk. Play uses open document changes first. Export includes all enabled input assets in startup reachability and carries the definitions into the player manifest and worker load message. An explicit empty catalog means no input defaults.
 
-Older projects copy their mappings into `assets/Input` before writing `settings.inputAssetsVersion: 1`. Existing mappings remain in the on-disk manifest until a normal project save. Copy retries recognize already-created assets by their legacy aliases. The marker prevents removed inputs being recreated. Existing string-based graph nodes remain registered for old graphs but are hidden from Add Node; legacy names resolve to migrated assets. New projects author the familiar default controls as assets.
+Older projects copy their mappings into `assets/Input` before writing `settings.inputAssetsVersion: 1`. Existing mappings remain in the on-disk manifest until a normal project save. Copy retries recognize already-created assets by their legacy aliases. The marker prevents removed inputs being recreated. Existing string-based graph nodes remain registered for old graphs but are hidden from Add Node; legacy names resolve to migrated assets, even when a newer asset reuses a display name. Duplicates retain controls but leave compatibility aliases on the original asset. New projects author the familiar default controls as assets.
 
 ## Mapping model (`@babylonslate/input`)
 

@@ -106,6 +106,15 @@ const authoredSignature = (binding: AxisBinding) =>
     binding.sensitivity ?? 1,
   ]);
 
+function matchingMappings<
+  T extends { id?: string; legacyName?: string; name: string },
+>(rows: readonly T[], key: string): T[] {
+  const byId = rows.filter((row) => row.id === key);
+  if (byId.length) return byId;
+  const byAlias = rows.filter((row) => row.legacyName === key);
+  return byAlias.length ? byAlias : rows.filter((row) => row.name === key);
+}
+
 function slot(
   mappings: InputMappings,
   kind: string,
@@ -115,10 +124,7 @@ function slot(
   if (!Number.isInteger(index) || index < 0) return undefined;
   const rows =
     kind === "action" ? mappings.actions : kind === "axis" ? mappings.axes : [];
-  return rows.find(
-    (row) =>
-      row.id === mapping || row.name === mapping || row.legacyName === mapping,
-  )?.bindings[index];
+  return matchingMappings(rows, mapping)[0]?.bindings[index];
 }
 
 function validControl(device: unknown, code: unknown): device is InputDevice {
@@ -288,14 +294,10 @@ export class InputBindingProfile implements InputBindingControls {
     alt = false,
     meta = false,
   ): boolean {
-    const mappingRow = (
-      kind === "action" ? this.defaults.actions : this.defaults.axes
-    ).find(
-      (row) =>
-        row.id === mapping ||
-        row.name === mapping ||
-        row.legacyName === mapping,
-    );
+    const mappingRow = matchingMappings(
+      kind === "action" ? this.defaults.actions : this.defaults.axes,
+      mapping,
+    )[0];
     mapping = mappingRow?.id ?? mapping;
     const original = slot(this.defaults, kind, mapping, index);
     if (
@@ -364,30 +366,16 @@ export class InputBindingProfile implements InputBindingControls {
 
   resetBindings(kind?: string, mapping?: string): boolean {
     const resetAll = kind === undefined && mapping === undefined;
-    mapping =
-      [...this.defaults.actions, ...this.defaults.axes].find(
-        (row) =>
-          row.id === mapping ||
-          row.name === mapping ||
-          row.legacyName === mapping,
-      )?.id ?? mapping;
     const rows =
       kind === "action"
         ? this.defaults.actions
         : kind === "axis"
           ? this.defaults.axes
           : null;
-    if (
-      !resetAll &&
-      (!mapping ||
-        !rows?.some(
-          (row) =>
-            row.id === mapping ||
-            row.name === mapping ||
-            row.legacyName === mapping,
-        ))
-    )
-      return false;
+    const selected =
+      rows && mapping ? matchingMappings(rows, mapping)[0] : undefined;
+    if (!resetAll && !selected) return false;
+    mapping = selected?.id ?? selected?.name ?? mapping;
     for (const [key, override] of this.overrides) {
       if (resetAll || (override.kind === kind && override.mapping === mapping))
         this.overrides.delete(key);
@@ -432,12 +420,7 @@ export class InputBindingProfile implements InputBindingControls {
         return false;
       const mappings =
         row.kind === "action" ? this.defaults.actions : this.defaults.axes;
-      const candidates = mappings.filter(
-        (entry) =>
-          entry.id === row.mapping ||
-          entry.name === row.mapping ||
-          entry.legacyName === row.mapping,
-      );
+      const candidates = matchingMappings(mappings, row.mapping);
       if (candidates.length !== 1) return false;
       const mapping = candidates[0]!;
       const originalAuthored = row.defaultBinding as AxisBinding | undefined;

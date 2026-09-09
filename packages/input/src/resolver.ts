@@ -446,17 +446,38 @@ export class InputResolver {
         value.heldSeconds += dt;
     }
     this.inputStates = inputs;
-    for (const mapping of this.mappings.actions) {
-      if (mapping.legacyName && !actions[mapping.legacyName])
-        actions[mapping.legacyName] = actions[mapping.name]!;
-    }
-    for (const mapping of this.mappings.axes) {
-      if (mapping.legacyName && axes[mapping.legacyName] === undefined) {
-        axes[mapping.legacyName] = axes[mapping.name]!;
-        if (axes2D[mapping.name])
-          axes2D[mapping.legacyName] = axes2D[mapping.name]!;
+    // Asset identities remain independent even when two assets share a display name.
+    const exposeAction = (id: string, name: string) => {
+      const state = inputs[id];
+      if (state)
+        actions[name] = {
+          pressed: state.started,
+          released: state.released,
+          held: state.held,
+        };
+    };
+    const exposeAxis = (id: string, name: string) => {
+      const state = inputs[id];
+      if (!state) return;
+      if (typeof state.value === "object") {
+        axes2D[name] = state.value;
+        axes[name] = Math.hypot(state.value.x, state.value.y);
+      } else {
+        axes[name] = Number(state.value);
+        delete axes2D[name];
       }
-    }
+    };
+    for (const mapping of this.mappings.actions)
+      if (mapping.id) exposeAction(mapping.id, mapping.name);
+    for (const mapping of this.mappings.axes)
+      if (mapping.id) exposeAxis(mapping.id, mapping.name);
+    // Authored compatibility aliases take precedence over newly created display names.
+    for (const mapping of this.mappings.actions)
+      if (mapping.id && mapping.legacyName)
+        exposeAction(mapping.id, mapping.legacyName);
+    for (const mapping of this.mappings.axes)
+      if (mapping.id && mapping.legacyName)
+        exposeAxis(mapping.id, mapping.legacyName);
     return {
       inputs,
       actions,
@@ -497,7 +518,13 @@ export class InputResolver {
   }
 
   isActionHeld(action: string): boolean {
-    return this.state.previousHeldActions.has(action);
+    const mapping =
+      this.mappings.actions.find((row) => row.id === action) ??
+      this.mappings.actions.find((row) => row.legacyName === action) ??
+      this.mappings.actions.find((row) => row.name === action);
+    return mapping?.id
+      ? this.inputStates[mapping.id]?.held === true
+      : this.state.previousHeldActions.has(action);
   }
 
   reset(): void {

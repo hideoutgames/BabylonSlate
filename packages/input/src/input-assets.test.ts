@@ -97,7 +97,9 @@ describe("asset input runtime", () => {
         Meta: false,
       }),
     ).toBe(true);
-    expect(resolver.bindings.getInputBindings({ Name: "", Asset: "move" })[1]!.Label).toBe("H");
+    expect(
+      resolver.bindings.getInputBindings({ Name: "", Asset: "move" })[1]!.Label,
+    ).toBe("H");
     const saved = resolver.bindings.exportBindings();
     const renamed = new InputResolver(
       inputMappingsFromAssets([
@@ -123,6 +125,56 @@ describe("asset input runtime", () => {
     expect(
       renamed.bindings.beginInputRebind({ ...selected, Id: "deleted" }),
     ).toBe(false);
+  });
+
+  it("keeps legacy aliases attached to their original asset when new inputs reuse a name", () => {
+    const assets = [
+      {
+        ...action,
+        guid: "other",
+        bindings: [{ id: "keyboard", device: "key" as const, code: "KeyJ" }],
+      },
+      { ...action, name: "Leap", legacyName: "Jump" },
+      { ...axis, name: "Jump", legacyName: "Jump" },
+    ];
+    const resolver = new InputResolver(inputMappingsFromAssets(assets));
+    const pressed = resolver.resolve([key("Space", "down")]);
+    expect(pressed.inputs.jump.held).toBe(true);
+    expect(pressed.inputs.other.held).toBe(false);
+    expect(pressed.actions.Jump.held).toBe(true);
+    expect(resolver.isActionHeld("Jump")).toBe(true);
+    expect(resolver.bindings.getBinding("action", "Jump", 0)?.code).toBe(
+      "Space",
+    );
+    expect(
+      resolver.bindings.setBinding("action", "Jump", 0, "key", "KeyH"),
+    ).toBe(true);
+    expect(
+      resolver.bindings.getInputBindings({ Name: "", Asset: "jump" })[0]
+        ?.Control.Code,
+    ).toBe("KeyH");
+    expect(
+      resolver.bindings.getInputBindings({ Name: "", Asset: "other" })[0]
+        ?.Control.Code,
+    ).toBe("KeyJ");
+    expect(resolver.bindings.setBinding("axis", "Jump", 0, "key", "KeyL")).toBe(
+      true,
+    );
+    expect(resolver.bindings.resetBindings("axis", "Jump")).toBe(true);
+    expect(
+      resolver.bindings.getInputBindings({ Name: "", Asset: "move" })[0]
+        ?.Control.Code,
+    ).toBe("KeyD");
+    const saved = JSON.parse(resolver.bindings.exportBindings());
+    saved.version = 1;
+    saved.overrides[0].mapping = "Jump";
+    delete saved.overrides[0].bindingId;
+    const restored = new InputResolver(inputMappingsFromAssets(assets));
+    expect(restored.bindings.importBindings(JSON.stringify(saved))).toBe(true);
+    expect(
+      restored.bindings.getInputBindings({ Name: "", Asset: "jump" })[0]
+        ?.Control.Code,
+    ).toBe("KeyH");
   });
 
   it("captures a replacement key without activating gameplay and preserves legacy aliases", () => {
