@@ -1,6 +1,13 @@
-import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   applyPointerPan,
+  atlasCellAt,
   ensureTilesetTiles,
   tilesetTileRect,
   type TilesetCollision,
@@ -20,7 +27,10 @@ export interface AtlasTileGridProps {
   tileset: TilesetPayload;
   imageUrl: string | null;
   selectedId: number;
+  selectedIds?: readonly number[];
   onSelect: (tileId: number) => void;
+  /** Completed rectangular selection in Select mode; pinch/cancel never commits it. */
+  onSelectionChange?: (tileIds: number[]) => void;
   emptyLabel?: string;
   panZoom?: boolean;
   tool?: AtlasTileGridTool;
@@ -65,16 +75,19 @@ export function AtlasTileGrid({
   tileset,
   imageUrl,
   selectedId,
+  selectedIds,
   onSelect,
+  onSelectionChange,
   emptyLabel = "No Texture",
   panZoom = false,
   tool: toolProp,
   onImageSize,
   "data-testid": testId = "atlas-tile-grid",
 }: AtlasTileGridProps) {
-  const filled = ensureTilesetTiles(tileset);
+  const filled = useMemo(() => ensureTilesetTiles(tileset), [tileset]);
   const tool = toolProp ?? (panZoom ? "move" : "select");
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLDivElement>(null);
   const fittedKeyRef = useRef<string | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef({
@@ -94,6 +107,30 @@ export function AtlasTileGrid({
     panned: boolean;
   } | null>(null);
   const didPanRef = useRef(false);
+  const tapRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    tileId: number;
+  } | null>(null);
+  const selectionDragRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startX: number;
+    startY: number;
+    ids: number[] | null;
+  } | null>(null);
+  const [selectionPreview, setSelectionPreview] = useState<{
+    ids: number[];
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const highlightedIds = new Set(
+    selectionPreview?.ids ?? selectedIds ?? [selectedId],
+  );
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
 
@@ -122,8 +159,22 @@ export function AtlasTileGrid({
     return typeof event.pointerId === "number" ? event.pointerId : 0;
   };
 
+  const tileAtPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = imageRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    return atlasCellAt({
+      localX: event.clientX,
+      localY: event.clientY,
+      imageX: rect.left,
+      imageY: rect.top,
+      imageWidth: rect.width,
+      imageHeight: rect.height,
+      tileset: filled,
+    });
+  };
+
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!panZoom) return;
+    if (!panZoom && !(tool === "select" && onSelectionChange)) return;
     try {
       event.currentTarget.setPointerCapture?.(pointerIdOf(event));
     } catch {
@@ -136,6 +187,9 @@ export function AtlasTileGrid({
     if (pointersRef.current.size >= 2) {
       event.preventDefault();
       panDragRef.current = null;
+      tapRef.current = null;
+      selectionDragRef.current = null;
+      setSelectionPreview(null);
       didPanRef.current = true;
       const points = [...pointersRef.current.values()];
       const spread = Math.hypot(
@@ -153,6 +207,12 @@ export function AtlasTileGrid({
       return;
     }
     didPanRef.current = false;
+    tapRef.current = {
+      pointerId: pointerIdOf(event),
+      x: event.clientX,
+      y: event.clientY,
+      tileId: tileAtPointer(event),
+    };
     if (tool === "move") {
       panDragRef.current = {
         pointerId: pointerIdOf(event),
@@ -162,17 +222,36 @@ export function AtlasTileGrid({
         lastY: event.clientY,
         panned: false,
       };
+    } else if (onSelectionChange) {
+      const rect = imageRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      selectionDragRef.current = {
+        pointerId: pointerIdOf(event),
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: ((event.clientX - rect.left) / rect.width) * filled.atlasWidth,
+        startY: ((event.clientY - rect.top) / rect.height) * filled.atlasHeight,
+        ids: null,
+      };
     }
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const pointerId = pointerIdOf(event);
-    if (!panZoom || !pointersRef.current.has(pointerId)) return;
+    if (!pointersRef.current.has(pointerId)) return;
     pointersRef.current.set(pointerId, {
       x: event.clientX,
       y: event.clientY,
     });
+    const tap = tapRef.current;
+    if (
+      tap &&
+      Math.hypot(event.clientX - tap.x, event.clientY - tap.y) >= TAP_SELECT_PX
+    ) {
+      tapRef.current = null;
+    }
     if (pointersRef.current.size >= 2) {
+      if (!panZoom) return;
       event.preventDefault();
       const points = [...pointersRef.current.values()];
       const spread = Math.hypot(
@@ -181,7 +260,10 @@ export function AtlasTileGrid({
       );
       const nextZoom = Math.min(
         MAX_ZOOM,
-        Math.max(MIN_ZOOM, pinchRef.current.zoom * (spread / pinchRef.current.spread)),
+        Math.max(
+          MIN_ZOOM,
+          pinchRef.current.zoom * (spread / pinchRef.current.spread),
+        ),
       );
       const surface = surfaceRef.current;
       if (!surface) return;
@@ -202,6 +284,44 @@ export function AtlasTileGrid({
           (originY - pinchRef.current.panY) * scale +
           (midY - pinchRef.current.midY),
       });
+      return;
+    }
+    const selection = selectionDragRef.current;
+    if (selection && selection.pointerId === pointerId && tool === "select") {
+      if (
+        Math.hypot(
+          event.clientX - selection.startClientX,
+          event.clientY - selection.startClientY,
+        ) < TAP_SELECT_PX &&
+        !selection.ids
+      )
+        return;
+      const rect = imageRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      event.preventDefault();
+      didPanRef.current = true;
+      const endX =
+        ((event.clientX - rect.left) / rect.width) * filled.atlasWidth;
+      const endY =
+        ((event.clientY - rect.top) / rect.height) * filled.atlasHeight;
+      const x = Math.min(selection.startX, endX);
+      const y = Math.min(selection.startY, endY);
+      const right = Math.max(selection.startX, endX);
+      const bottom = Math.max(selection.startY, endY);
+      const ids = filled.tiles
+        .filter((tile) => {
+          const cell = tilesetTileRect(filled, tile.id);
+          return (
+            cell &&
+            cell.x <= right &&
+            cell.x + cell.width >= x &&
+            cell.y <= bottom &&
+            cell.y + cell.height >= y
+          );
+        })
+        .map((tile) => tile.id);
+      selection.ids = ids;
+      setSelectionPreview({ ids, x, y, width: right - x, height: bottom - y });
       return;
     }
     const drag = panDragRef.current;
@@ -233,8 +353,32 @@ export function AtlasTileGrid({
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const pointerId = pointerIdOf(event);
     pointersRef.current.delete(pointerId);
+    const tap = tapRef.current;
+    if (tap?.pointerId === pointerId) {
+      tapRef.current = null;
+      if (
+        event.type !== "pointercancel" &&
+        tap.tileId > 0 &&
+        Math.hypot(event.clientX - tap.x, event.clientY - tap.y) <
+          TAP_SELECT_PX &&
+        tileAtPointer(event) === tap.tileId
+      ) {
+        onSelect(tap.tileId);
+        // Capture retargets the browser click to the surface; some hosts still
+        // deliver it to the cell, so consume either path after selecting once.
+        didPanRef.current = true;
+      }
+    }
     if (panDragRef.current?.pointerId === pointerId) {
       panDragRef.current = null;
+    }
+    const selection = selectionDragRef.current;
+    if (selection?.pointerId === pointerId) {
+      selectionDragRef.current = null;
+      setSelectionPreview(null);
+      if (event.type !== "pointercancel" && selection.ids?.length) {
+        onSelectionChange?.(selection.ids);
+      }
     }
   };
 
@@ -264,7 +408,7 @@ export function AtlasTileGrid({
         ref={surfaceRef}
         className={cn(
           "relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md border border-border",
-          panZoom ? "touch-none" : null,
+          panZoom || onSelectionChange ? "touch-none" : null,
         )}
         style={{
           backgroundImage:
@@ -294,6 +438,7 @@ export function AtlasTileGrid({
           </Empty>
         ) : null}
         <div
+          ref={imageRef}
           className="relative shrink-0"
           style={{
             width: Math.max(1, filled.atlasWidth),
@@ -319,7 +464,7 @@ export function AtlasTileGrid({
           {filled.tiles.map((tile) => {
             const rect = tilesetTileRect(filled, tile.id);
             if (!rect) return null;
-            const selected = tile.id === selectedId;
+            const selected = highlightedIds.has(tile.id);
             return (
               <button
                 key={tile.id}
@@ -342,6 +487,9 @@ export function AtlasTileGrid({
                 }}
                 aria-label={`Tile ${tile.id}`}
                 aria-pressed={selected}
+                onKeyDown={() => {
+                  didPanRef.current = false;
+                }}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (didPanRef.current) {
@@ -373,6 +521,18 @@ export function AtlasTileGrid({
               </button>
             );
           })}
+          {selectionPreview ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute border border-primary bg-primary/10"
+              style={{
+                left: selectionPreview.x,
+                top: selectionPreview.y,
+                width: selectionPreview.width,
+                height: selectionPreview.height,
+              }}
+            />
+          ) : null}
         </div>
       </div>
     </div>

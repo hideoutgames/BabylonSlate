@@ -1,4 +1,4 @@
-import { Mesh, Scene, VertexData } from "@babylonjs/core";
+import { Mesh, Scene, VertexData, type AbstractMesh } from "@babylonjs/core";
 import {
   tilemapChunkVertexData,
   tilemapParallaxOffset,
@@ -10,6 +10,11 @@ import {
 import { applySortingToMesh, resolveSortingLayer } from "./sorting";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
+
+/** Atlas materials belong to tilemap draws, not their actor's mesh material slots. */
+export function isTilemapChunkMesh(mesh: AbstractMesh): boolean {
+  return Object.prototype.hasOwnProperty.call(mesh.metadata ?? {}, "tilemapTextureGuid");
+}
 
 /** Build a parent mesh plus one child draw per non-empty chunk atlas (and an `:anim` sibling). */
 export function createTilemapMeshes(
