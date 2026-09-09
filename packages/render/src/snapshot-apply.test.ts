@@ -627,6 +627,8 @@ describe("createPlayMesh", () => {
     ]);
     createPlayMesh(scene, 2, "box", "mannequin", binding);
     await binding.slotAnimLoads?.get(2);
+    const otherRoot = createPlayMesh(scene, 3, "box", "mannequin", binding);
+    await binding.slotAnimLoads?.get(3);
     const native = scene.animationGroups.find((group) => group.name === "idle");
     expect(native).toBeDefined();
     expect(native!.animatables.length).toBeGreaterThan(0);
@@ -653,6 +655,12 @@ describe("createPlayMesh", () => {
       clipKind: "animation" as const,
       clipAssetGuid: "mannequin-idle",
     };
+    const otherPose = () => otherRoot.getChildMeshes().map((mesh) => [
+      ...mesh.position.asArray(),
+      ...(mesh.rotationQuaternion?.asArray() ?? mesh.rotation.asArray()),
+    ]);
+    applyAnimStateToScene(host, { ...command, slotId: 3, normalisedTime: 0.75 });
+    const otherIdle = otherPose();
     applyAnimStateToScene(host, command);
     const atStart = poseAt();
     applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
@@ -678,6 +686,7 @@ describe("createPlayMesh", () => {
     expect(poseAt()).not.toEqual(walking);
     applyAnimStateToScene(host, command);
     expect(poseAt()).toEqual(atStart);
+    expect(otherPose()).toEqual(otherIdle);
     expect(native!.isPlaying).toBe(false);
   });
 
