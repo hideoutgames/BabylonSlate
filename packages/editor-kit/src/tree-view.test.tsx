@@ -9,6 +9,7 @@ import {
   treeDropPlacement,
   type TreeViewNode,
 } from "./tree-view";
+import { treeGuideSegments } from "./tree-guides";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 import { CONTEXT_MENU_LONG_PRESS_MS, DRAG_ARM_MS } from "./use-context-menu";
 
@@ -17,6 +18,28 @@ const nodes: TreeViewNode[] = [
   { id: "child", label: "Child", depth: 1, hasChildren: false, expanded: false },
   { id: "other", label: "Other", depth: 0, hasChildren: false, expanded: false },
 ];
+
+describe("tree guide endpoints", () => {
+  it("ends the last sibling at its branch and omits finished ancestor guides below it", () => {
+    const depths = [0, 1, 2, 2, 1, 2, 3, 0];
+    expect(treeGuideSegments(depths.map((depth) => ({ depth })))).toEqual([
+      [],
+      ["full"],
+      ["full", "full"],
+      ["full", "end"],
+      ["end"],
+      [null, "end"],
+      [null, null, "end"],
+      [],
+    ]);
+  });
+
+  it("ends a collapsed sibling group without carrying its guides into the next root", () => {
+    expect(treeGuideSegments([{ depth: 0 }, { depth: 1 }, { depth: 0 }, { depth: 1 }])).toEqual([
+      [], ["end"], [], ["end"],
+    ]);
+  });
+});
 
 describe("TreeView", () => {
   afterEach(() => {

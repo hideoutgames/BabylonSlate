@@ -25,6 +25,7 @@ import {
 } from "@babylonslate/core";
 import { isSceneWorkspaceKind } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
+import { Toggle } from "@babylonslate/ui/components/toggle";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   EyeIcon,
@@ -748,17 +749,18 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                     >
                       {node.muted ? <EyeOffIcon /> : <EyeIcon />}
                     </IconActionButton>
-                    <IconActionButton
-                      label={`Toggle lock of ${node.label}`}
-                      size={actionSize}
-                      variant="ghost"
-                      onClick={() => toggleFlag(actorId, "locked")}
+                    <Toggle
+                      aria-label={`${lockedIds.has(actorId) ? "Unlock" : "Lock"} ${node.label}`}
+                      title={`${lockedIds.has(actorId) ? "Unlock" : "Lock"} ${node.label}`}
+                      size={phone ? "touch" : "sm"}
+                      variant={lockedIds.has(actorId) ? "outline" : "default"}
+                      onPressedChange={() => toggleFlag(actorId, "locked")}
                       data-testid={`outliner-lock-${actorId}`}
-                      aria-pressed={lockedIds.has(actorId)}
-                      className={lockedIds.has(actorId) ? "text-primary" : undefined}
+                      pressed={lockedIds.has(actorId)}
+                      className="px-0"
                     >
                       {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
-                    </IconActionButton>
+                    </Toggle>
                     <NestedMenu
                       items={actorMenuItems(actorId)}
                       trigger={
