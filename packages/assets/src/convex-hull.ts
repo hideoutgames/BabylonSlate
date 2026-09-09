@@ -76,7 +76,11 @@ function uniquePoints(points: readonly HullVec3[], eps = 1e-7): HullVec3[] {
   return out;
 }
 
-function orientOutward(points: readonly HullVec3[], face: Face, interior: HullVec3): Face {
+function orientOutward(
+  points: readonly HullVec3[],
+  face: Face,
+  interior: HullVec3,
+): Face {
   const n = faceNormal(points, face);
   if (dot(n, sub(interior, points[face.a]!)) > 0) {
     return { a: face.a, b: face.c, c: face.b };
@@ -84,7 +88,9 @@ function orientOutward(points: readonly HullVec3[], face: Face, interior: HullVe
   return face;
 }
 
-function initialTetrahedron(points: readonly HullVec3[]): [number, number, number, number] | null {
+function initialTetrahedron(
+  points: readonly HullVec3[],
+): [number, number, number, number] | null {
   if (points.length < 4) return null;
   let i0 = 0;
   let i1 = 1;
