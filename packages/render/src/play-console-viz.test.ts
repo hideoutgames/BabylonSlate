@@ -100,6 +100,27 @@ describe("play console visualization", () => {
     engine.dispose();
   });
 
+  it("restores shared materials when wireframe stops, including despawned owners", () => {
+    const { engine, scene } = createTestEngine();
+    const material = new StandardMaterial("shared", scene);
+    const first = MeshBuilder.CreateBox("first", {}, scene);
+    const second = MeshBuilder.CreateBox("second", {}, scene);
+    first.material = material;
+    second.material = material;
+    const viz = createPlayConsoleViz(scene);
+    viz.applyCommand({ type: "setWireframe", enabled: true });
+    expect(material.wireframe).toBe(true);
+    first.dispose();
+    viz.refresh();
+    viz.applyCommand({ type: "setWireframe", enabled: false });
+    expect(material.wireframe).toBe(false);
+    material.wireframe = true;
+    viz.applyCommand({ type: "setWireframe", enabled: true });
+    viz.dispose();
+    expect(material.wireframe).toBe(true);
+    engine.dispose();
+  });
+
   it("preserves cylinder, planar capsule, and triangle mesh collider geometry", () => {
     const { engine, scene } = createTestEngine();
     const overlay = createPlayCollisionOverlay(scene);
