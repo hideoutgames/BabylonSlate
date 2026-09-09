@@ -43,8 +43,8 @@ describe("PreviewBuildOverlay", () => {
       command: { type: "log", severity: "warning", message: "Path is partial" },
     });
     fireEvent.click(view.getByRole("button", { name: "Console" }));
-    expect(view.queryByText("Agent cannot reach goal")).toBeNull();
-    await waitFor(() => expect(view.getByText("Path is partial")).toBeTruthy());
+    expect(view.queryByText(/Agent cannot reach goal/)).toBeNull();
+    await waitFor(() => expect(view.getByText(/Path is partial/)).toBeTruthy());
     fireEvent.change(view.getByRole("combobox", { name: "Console Command" }), {
       target: { value: "showpathfinding on" },
     });
