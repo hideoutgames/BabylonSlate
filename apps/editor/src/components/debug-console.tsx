@@ -314,7 +314,7 @@ export function DebugConsole({
                   variant="ghost"
                   size="icon-sm"
                   className="pointer-coarse:size-11"
-                  aria-label="Close Console"
+                  aria-label="Close"
                 />
               }
             >

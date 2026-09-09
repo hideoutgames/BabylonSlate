@@ -11,6 +11,22 @@ describe("DebugConsole", () => {
     cleanup();
   });
 
+  it("closes with Escape from the command input", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <DebugConsole
+        open
+        onOpenChange={onOpenChange}
+        commands={createCommandRegistry().list()}
+        onExecute={() => ({ success: true, output: "" })}
+      />,
+    );
+    fireEvent.keyDown(screen.getByTestId("debug-console-input"), {
+      key: "Escape",
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
+  });
+
   it("runs a command, shows SelectableText output, and suggests names", async () => {
     const onExecute = vi.fn().mockResolvedValue({
       success: true,
