@@ -5,6 +5,7 @@ import {
   Quaternion,
   StandardMaterial,
   Vector3,
+  VertexData,
   type LinesMesh,
   type Scene,
 } from "@babylonjs/core";
@@ -13,11 +14,14 @@ import { convexHullEdges } from "@babylonslate/assets";
 import { NavMeshDebugOverlay, type NavDebugBlockerPose } from "./nav-debug-overlay";
 import { isPlayConsoleVizSkipMesh } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
+import { createPlayNavigationOverlay } from "./play-navigation-overlay";
 
 const DEBUG_OVERLAY_PREFIX = "playConsoleViz:";
 
 function markDebugOverlay(mesh: Mesh | LinesMesh): void {
   mesh.isPickable = false;
+  mesh.receiveShadows = false;
+  mesh.applyFog = false;
   mesh.renderingGroupId = RENDERING_GROUP.world;
   mesh.metadata = { ...(mesh.metadata ?? {}), playDebugOverlay: true };
 }
@@ -80,11 +84,17 @@ function colliderShapeKey(collider: DebugColliderPrimitive): string | null {
     return `line:${points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}`;
   }
   if (
-    collider.shape === "capsule" &&
+    (collider.shape === "capsule" || collider.shape === "capsule2d") &&
     collider.radius != null &&
     collider.halfHeight != null
   ) {
-    return `capsule:${collider.radius}:${collider.halfHeight}`;
+    return `${collider.shape}:${collider.radius}:${collider.halfHeight}`;
+  }
+  if (collider.shape === "cylinder" && collider.radius != null && collider.height != null) {
+    return `cylinder:${collider.radius}:${collider.height}`;
+  }
+  if (collider.shape === "mesh" && collider.points && collider.indices && collider.indices.length >= 3) {
+    return `mesh:${collider.points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}:${collider.indices.join(",")}`;
   }
   if (collider.shape === "convex" && collider.points && collider.points.length >= 4) {
     return `convex:${collider.points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}`;
@@ -119,6 +129,8 @@ export function createPlayCollisionOverlay(scene: Scene): {
   const slots = new Map<string, { mesh: Mesh | LinesMesh; key: string }>();
   const material = new StandardMaterial(`${DEBUG_OVERLAY_PREFIX}collisionMat`, scene);
   material.diffuseColor = new Color3(0.2, 0.95, 0.35);
+  material.disableLighting = true;
+  material.emissiveColor = material.diffuseColor.clone();
   material.wireframe = true;
   material.alpha = 0.5;
   material.backFaceCulling = false;
@@ -184,6 +196,44 @@ export function createPlayCollisionOverlay(scene: Scene): {
       line.color = lineColor;
       markDebugOverlay(line);
       return line;
+    }
+    if (collider.shape === "capsule2d" && collider.radius != null && collider.halfHeight != null) {
+      const points: Vector3[] = [];
+      for (const end of [1, -1]) {
+        for (let step = 0; step <= 16; step++) {
+          const angle = (step / 16) * Math.PI + (end === 1 ? 0 : Math.PI);
+          points.push(new Vector3(
+            Math.cos(angle) * collider.radius,
+            Math.sin(angle) * collider.radius + end * collider.halfHeight,
+            0,
+          ));
+        }
+      }
+      points.push(points[0]!.clone());
+      const line = MeshBuilder.CreateLines(name, { points }, scene);
+      line.color = lineColor;
+      markDebugOverlay(line);
+      return line;
+    }
+    if (collider.shape === "cylinder" && collider.radius != null && collider.height != null) {
+      const mesh = MeshBuilder.CreateCylinder(name, {
+        diameter: collider.radius * 2,
+        height: collider.height,
+        tessellation: 24,
+      }, scene);
+      mesh.material = material;
+      markDebugOverlay(mesh);
+      return mesh;
+    }
+    if (collider.shape === "mesh" && collider.points && collider.indices) {
+      const mesh = new Mesh(name, scene);
+      const data = new VertexData();
+      data.positions = collider.points.flatMap((point) => [point.x, point.y, point.z]);
+      data.indices = collider.indices;
+      data.applyToMesh(mesh);
+      mesh.material = material;
+      markDebugOverlay(mesh);
+      return mesh;
     }
     if (
       collider.shape === "capsule" &&
@@ -265,6 +315,7 @@ export function createPlayConsoleViz(
   let bounds = false;
   const collision = createPlayCollisionOverlay(scene);
   const nav = new NavMeshDebugOverlay(scene);
+  const navigation = createPlayNavigationOverlay(scene);
 
   const refresh = () => {
     if (wireframe) applyPlayWireframe(scene, true);
@@ -273,6 +324,7 @@ export function createPlayConsoleViz(
 
   return {
     applyCommand(command) {
+      if (navigation.applyCommand(command)) return true;
       if (command.type === "setWireframe") {
         wireframe = command.enabled;
         applyPlayWireframe(scene, wireframe);
@@ -307,6 +359,7 @@ export function createPlayConsoleViz(
       applyPlayShowBounds(scene, false);
       collision.dispose();
       nav.dispose();
+      navigation.dispose();
     },
   };
 }
