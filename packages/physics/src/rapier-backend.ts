@@ -106,6 +106,8 @@ type RapierColliderDesc = {
 type RapierRigidBody = {
   handle: number;
   translation(): { x: number; y: number };
+  linvel(): { x: number; y: number };
+  setLinvel(velocity: { x: number; y: number }, wakeUp: boolean): void;
   setTranslation(t: { x: number; y: number }, wakeUp: boolean): void;
   setBodyType(type: number, wakeUp: boolean): void;
   applyImpulse(impulse: { x: number; y: number }, wakeUp: boolean): void;
@@ -295,6 +297,18 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         record.body.setBodyType(R.RigidBodyType.Dynamic, true);
         break;
     }
+  }
+
+  setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
+    const record = this.bodies.get(bodyId);
+    if (!record || record.desc.motionType !== "dynamic") return;
+    const current = record.body.linvel();
+    const next = { x: current.x, y: current.y };
+    for (const axis of ["x", "y"] as const) {
+      const value = velocity[axis];
+      if (typeof value === "number" && Number.isFinite(value)) next[axis] = value;
+    }
+    record.body.setLinvel(next, true);
   }
 
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {

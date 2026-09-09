@@ -261,6 +261,7 @@ function useBehaviourTreeDocument() {
   const diagnostics = validateBehaviourTree(doc, {
     assetGuid: blackboardAsset?.header.guid ?? "tree",
     blackboardKeys: blackboardKeys.length > 0 ? blackboardKeys : undefined,
+    blackboardKeyEntries: blackboardDocument?.keys,
   });
   const openClass = (classId: string) => {
     const asset = (assetRegistry?.list() ?? []).find(
@@ -762,14 +763,22 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
           },
         ];
       }
-      if (field.kind === "enum" || (field.kind === "blackboardKey" && keyOptions.length > 1)) {
+      const fieldKeyOptions = field.blackboardKeyKinds
+        ? [
+            { value: "", label: "None" },
+            ...blackboardKeyEntries
+              .filter((key) => field.blackboardKeyKinds!.includes(key.type.kind))
+              .map((key) => ({ value: key.name, label: key.name })),
+          ]
+        : keyOptions;
+      if (field.kind === "enum" || (field.kind === "blackboardKey" && (field.blackboardKeyKinds || fieldKeyOptions.length > 1))) {
         return [
           {
             id: field.id,
             kind: "enum" as const,
             label: field.label,
             value: String(raw ?? ""),
-            options: field.options ?? keyOptions,
+            options: field.options ?? fieldKeyOptions,
             onChange: (value: string) => {
               if (field.key === "clipKind") {
                 write({ clipKind: value, clipAssetGuid: "", clipName: "" });

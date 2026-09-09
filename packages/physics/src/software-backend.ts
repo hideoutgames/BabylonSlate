@@ -329,6 +329,17 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     body.desc.motionType = motionType;
   }
 
+  setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return;
+    for (const axis of ["x", "y", "z"] as const) {
+      const value = velocity[axis];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        body.linearVelocity[axis] = axis === "z" && this.kind === "2d" ? 0 : value;
+      }
+    }
+  }
+
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {
     const body = this.bodies.get(bodyId);
     if (!body || body.desc.motionType !== "dynamic") return;
