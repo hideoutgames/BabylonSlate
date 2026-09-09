@@ -81,8 +81,12 @@ function edge(
 /** Only tan Mannequin pixels: chrome, Print text, and frame counters cannot change the signature. */
 async function mannequinPixels(canvas: Locator) {
   return canvas.evaluate((element: HTMLCanvasElement) => {
-    const context = element.getContext("2d");
+    const copy = document.createElement("canvas");
+    copy.width = element.width;
+    copy.height = element.height;
+    const context = copy.getContext("2d");
     if (!context) return { pixels: 0, signature: 0 };
+    context.drawImage(element, 0, 0);
     const { data } = context.getImageData(0, 0, element.width, element.height);
     let pixels = 0;
     let signature = 2166136261;
