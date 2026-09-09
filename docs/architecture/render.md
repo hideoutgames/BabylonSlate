@@ -77,6 +77,8 @@ Light/material additions, removals, and effective enabled-state changes trigger 
 
 ## Engine default material
 
+World Prefab Preview opts into `CreateEngineOptions.previewLighting`, using the same session-only key/fill lights as Material and Model Preview. PBR shading therefore remains visible without adding Light components to the prefab. Unlit shows the authored base color and textures; returning to PBR restores lighting, including frozen surface shaders. Preview lights survive prefab refreshes and are disposed with their Scene. Scene viewport and Play keep authored lighting; overlay prefabs remain unlit.
+
 Meshes with no authored surface Material (`MeshComponent.materialGuid` empty, no glTF construction material) render the engine default, not Babylon’s white `StandardMaterial`. `installEngineDefaultMaterial` (`packages/render/src/default-material.ts`) sets `scene.defaultMaterial` to a lit `PBRMaterial` matching a new user Material (opaque, not two-sided, `metallic` 0, `roughness` 0.5) with a UV-tiled 2×2 grey checker albedo (0.8 / ~0.65, wrap, nearest, 8 tiles). Installed from `setupDefaultViewport` (editor, Play, Prefab, player), `createTestEngine`, and Material Preview. Primitives keep `mesh.material === null` so Details still shows **None**. Model slot Default/None still restores the glTF construction material. Sprites, tilemaps, skybox, 3D text, colliders, billboards, and pivot markers keep their own materials. Particle / post-process **None** is unchanged.
 
 ## Skybox mesh

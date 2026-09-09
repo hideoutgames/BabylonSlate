@@ -239,7 +239,9 @@ describe("Play createEngine view", () => {
       }),
     ];
     handle.loadScene(data);
-    expect(handle.scene.lights.some((light) => light.isEnabled() && light.intensity > 0)).toBe(true);
+    expect(
+      handle.scene.lights.some((light) => light.isEnabled() && light.intensity > 0),
+    ).toBe(true);
     const lights = [...handle.scene.lights];
     handle.editor!.setViewportShadingMode("unlit");
     expect(handle.scene.lightsEnabled).toBe(false);
