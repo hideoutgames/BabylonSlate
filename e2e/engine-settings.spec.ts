@@ -116,7 +116,10 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
   expect(bloomGuid.length).toBeGreaterThan(0);
   await page.getByTestId(`search-item-${bloomGuid}`).click();
 
-  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(1);
+  // Adding a pass asynchronously recollects viewport assets before attaching it.
+  await expect
+    .poll(async () => viewportPostProcessPassCount(page), { timeout: 30_000 })
+    .toBe(1);
 
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("engine-settings").click();
