@@ -1,5 +1,7 @@
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -246,6 +248,7 @@ vi.mock("../lib/viewport-render-gate", () => ({
 describe("PrefabViewportPanel engine", () => {
   afterEach(() => {
     cleanup();
+    receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000 });
     createEngineMock.mockClear();
     dispose.mockClear();
     handle.loadScene.mockClear();
@@ -271,6 +274,7 @@ describe("PrefabViewportPanel engine", () => {
     const requests: string[][] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type !== "editor.drop") return;
+      expect(command.maxDistance).toBe(25_000.5);
       const viewportId = (
         createEngineMock.mock.calls.at(-1)?.[1] as { editorViewportId?: string }
       ).editorViewportId;
@@ -299,6 +303,7 @@ describe("PrefabViewportPanel engine", () => {
     try {
       render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
       await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
+      act(() => receiveActiveAppSettingsUpdate({ viewportDropDistance: 25_000.5 }));
       fireEvent.click(screen.getByRole("button", { name: "Drop" }));
       expect(requests).toEqual([["prefab-mesh", "second-mesh"]]);
       expect(commitComponentTransforms).toHaveBeenCalledExactlyOnceWith([

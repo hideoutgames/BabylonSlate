@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -11,6 +12,8 @@ import { AppRoutes } from "./app-routes";
 
 const documentState = vi.hoisted(() => ({
   route: "home" as "home" | "editor",
+  recoveryAvailable: false,
+  keepRecovery: vi.fn(async () => {}),
 }));
 
 // Project I/O and the GPU editor are the two external sides of this route boundary.
@@ -21,7 +24,7 @@ vi.mock("./context/document-context", () => ({
     homepageReady: true,
     templates: [],
     needsReconnect: false,
-    recoveryAvailable: false,
+    recoveryAvailable: documentState.recoveryAvailable,
     createEmptyProject: async () => {},
     createFromTemplate: async () => {},
     openProject: async () => {},
@@ -30,7 +33,7 @@ vi.mock("./context/document-context", () => ({
     updateListedProject: async () => {},
     removeListedProject: async () => {},
     reconnectProject: async () => {},
-    keepRecovery: async () => {},
+    keepRecovery: documentState.keepRecovery,
     dismissRecovery: async () => {},
     refreshTemplates: async () => {},
   }),
@@ -62,10 +65,48 @@ afterEach(() => {
   vi.unstubAllGlobals();
   cleanup();
   documentState.route = "home";
+  documentState.recoveryAvailable = false;
+  documentState.keepRecovery.mockReset();
   vi.unstubAllEnvs();
 });
 
 describe("application route lifetime", () => {
+  it("keeps homepage actions locked until recovery finishes", async () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    documentState.recoveryAvailable = true;
+    let finishRecovery!: () => void;
+    documentState.keepRecovery.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRecovery = resolve;
+        }),
+    );
+    render(
+      <TooltipProvider>
+        <AppRoutes />
+      </TooltipProvider>,
+    );
+    const recover = await screen.findByRole("button", { name: "Recover" });
+    await waitFor(
+      () => expect(document.querySelector(".slate-loading")).toBeNull(),
+      { timeout: 5000 },
+    );
+    fireEvent.click(recover);
+    // Let a discarded recovery Promise unlock actions, if the route drops it.
+    await act(async () => {});
+    expect(screen.getByTestId("create-project")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(recover).toHaveProperty("disabled", true);
+    await act(async () => finishRecovery());
+    expect(screen.getByTestId("create-project")).toHaveProperty(
+      "disabled",
+      false,
+    );
+    expect(recover).toHaveProperty("disabled", false);
+  });
+
   it("removes the project browser and its open profile when entering the editor, and starts fresh on return", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     const ui = () => (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MessageDetails } from "./message-details";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -1118,6 +1119,8 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
   }, [doc?.content, editing.functions, isFunction, textureExists]);
 
   const rows = [...diagnostics, ...editing.compileDiagnostics];
+  const [selectedDiagnostic, setSelectedDiagnostic] = useState<(typeof rows)[number] | null>(null);
+  const selected = selectedDiagnostic && rows.some((row) => row.code === selectedDiagnostic.code && row.message === selectedDiagnostic.message && row.nodeId === selectedDiagnostic.nodeId) ? selectedDiagnostic : null;
 
   return (
     <PanelFrame className="flex-1" data-testid="material-compiler-results">
@@ -1127,7 +1130,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
           <EmptyDescription>This material compiles cleanly.</EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="h-full p-2">
+        <ScrollArea className="min-h-0 flex-1 p-2">
           <WindowedList
             itemCount={rows.length}
             rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -1141,6 +1144,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
                   size="touch"
                   className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
                   onClick={() => {
+                    setSelectedDiagnostic(row);
                     if (row.nodeId) editing.focusNode(row.nodeId);
                   }}
                   data-testid={`material-diagnostic-${row.code}`}
@@ -1156,6 +1160,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
           </WindowedList>
         </ScrollArea>
       )}
+      {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}`} onClose={() => setSelectedDiagnostic(null)} /> : null}
     </PanelFrame>
   );
 }

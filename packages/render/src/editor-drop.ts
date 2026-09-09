@@ -6,7 +6,7 @@ import {
   Vector3,
   type Node,
 } from "@babylonjs/core";
-import type { SerializedScene, SerializedTransform } from "@babylonslate/core";
+import { DEFAULT_EDITOR_DROP_DISTANCE, type SerializedScene, type SerializedTransform } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isColliderVisualTree } from "./collider-visual";
 import {
@@ -18,7 +18,6 @@ import {
 
 export type EditorDropTransform = SerializedTransform & { actorId: string };
 
-const MAX_DISTANCE = 10_000;
 const EPS = 1e-8;
 
 function dropTransformMatrix(transform: SerializedTransform): Matrix {
@@ -35,8 +34,10 @@ export function calculateEditorDropTransforms(options: {
   selectedActorIds: readonly string[];
   meshForActor: (id: string) => Mesh | null;
   assets?: MeshAssetContext;
+  maxDistance?: number;
 }): EditorDropTransform[] {
-  const { sceneData, meshForActor, assets } = options;
+  const { sceneData, meshForActor, assets, maxDistance = DEFAULT_EDITOR_DROP_DISTANCE } = options;
+  if (!Number.isFinite(maxDistance) || maxDistance <= 0) return [];
   const actors = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
   const selected = new Set(
     options.selectedActorIds.filter((id) => {
@@ -98,14 +99,14 @@ export function calculateEditorDropTransforms(options: {
           (bounds.min.z + bounds.max.z) / 2,
         )
       : worldPosition.clone();
-    let distance = MAX_DISTANCE;
+    let distance = maxDistance;
     for (const surface of targets) {
       const hit = surfaceHit(surface, origin);
       if (hit !== null && hit >= 0 && hit < distance) distance = hit;
     }
     displacements.set(
       actor.id,
-      distance > EPS && distance < MAX_DISTANCE ? -distance : 0,
+      distance > EPS && distance < maxDistance ? -distance : 0,
     );
   }
   // A selected no-hit child retains its world pose even if its parent drops.

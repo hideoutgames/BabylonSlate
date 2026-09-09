@@ -53,6 +53,28 @@ describe("NumericDragField", () => {
     expect(onChange).toHaveBeenCalledWith(7);
   });
 
+  it("explains a rejected expression on blur and clears the feedback when corrected", () => {
+    render(
+      <NumericDragField
+        label="Scale"
+        value={3}
+        onChange={() => {}}
+        data-testid="field"
+      />,
+    );
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "1/" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.blur(input);
+    expect(input.value).toBe("3");
+    expect(screen.getByRole("alert").textContent).toMatch(/expression/i);
+    expect(input.getAttribute("aria-describedby")).toBe(
+      screen.getByRole("alert").id,
+    );
+    fireEvent.change(input, { target: { value: "6" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("scrubs the value by horizontal drag distance", () => {
     const onChange = vi.fn();
     render(

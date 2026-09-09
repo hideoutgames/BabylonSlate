@@ -1,5 +1,7 @@
 import type { SerializedTransform } from "./scene";
 
+export const DEFAULT_EDITOR_DROP_DISTANCE = 10_000;
+
 export interface EditorActorTransform extends SerializedTransform {
   actorId: string;
 }
@@ -12,6 +14,7 @@ export type EngineCommand =
       viewportId: string;
       requestId: string;
       actorIds: readonly string[];
+      maxDistance?: number;
     }
   | {
       type: "editor.drop.result";
@@ -43,6 +46,7 @@ let nextDropRequestId = 0;
 export function requestEditorDrop(
   viewportId: string,
   actorIds: readonly string[],
+  maxDistance = DEFAULT_EDITOR_DROP_DISTANCE,
 ): readonly EditorActorTransform[] {
   if (actorIds.length === 0) return [];
   const requestId = String(++nextDropRequestId);
@@ -57,7 +61,7 @@ export function requestEditorDrop(
     }
   });
   try {
-    engineCommandBus.dispatch({ type: "editor.drop", viewportId, requestId, actorIds });
+    engineCommandBus.dispatch({ type: "editor.drop", viewportId, requestId, actorIds, maxDistance });
     return transforms;
   } finally {
     unsubscribe();

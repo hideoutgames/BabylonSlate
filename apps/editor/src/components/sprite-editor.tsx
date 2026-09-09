@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -16,6 +16,7 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
+import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-status";
 
 export function SpritePreviewPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -42,7 +43,7 @@ export function SpriteDetailsPanel(_props: IDockviewPanelProps) {
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
-    <PanelFrame data-testid="sprite-details-panel" title="Details">
+    <PanelFrame data-testid="sprite-details-panel">
       <SpriteEditor
         payload={payload}
         onChange={(next) => {
@@ -61,31 +62,9 @@ export function SpritePreview({
   onChange?: (next: Record<string, unknown>) => void;
 }) {
   const sprite = normalizeSprite(payload);
-  const { assetRegistry, readAssetChunk } = useDocuments();
-  const [url, setUrl] = useState<string | null>(null);
-  const texture = (assetRegistry?.list() ?? []).find(
-    (asset) => asset.header.guid === sprite.textureGuid,
-  );
+  const preview = useTexturePreview(sprite.textureGuid);
+  const { url } = preview;
   const frame = sprite.frames[0];
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setUrl(null);
-    if (!texture || !readAssetChunk) return;
-    void (async () => {
-      const bytes = await readAssetChunk(texture.path, "pixels");
-      if (!bytes || cancelled || bytes.byteLength === 0) return;
-      objectUrl = URL.createObjectURL(
-        new Blob([bytes], { type: "image/png" }),
-      );
-      if (!cancelled) setUrl(objectUrl);
-    })();
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [readAssetChunk, texture]);
 
   const u = frame?.u ?? 0;
   const v = frame?.v ?? 0;
@@ -101,7 +80,7 @@ export function SpritePreview({
         className="relative aspect-square w-full overflow-hidden rounded-md border border-border"
         style={{
           backgroundImage:
-            "conic-gradient(#808080 0.25turn, #c0c0c0 0.25turn 0.5turn, #808080 0.5turn 0.75turn, #c0c0c0 0.75turn)",
+            "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
           backgroundSize: "16px 16px",
         }}
       >
@@ -109,6 +88,7 @@ export function SpritePreview({
           <div className="absolute inset-0 overflow-hidden">
             <img
               src={url}
+              onError={preview.fail}
               alt=""
               className="absolute max-w-none"
               style={{
@@ -120,9 +100,9 @@ export function SpritePreview({
             />
           </div>
         ) : (
-          <p className="absolute inset-0 flex items-center justify-center p-3 text-center text-sm text-muted-foreground">
-            {sprite.textureGuid ? "Loading texture…" : "No Texture"}
-          </p>
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/90">
+            <TexturePreviewStatus preview={preview} />
+          </div>
         )}
         <div
           data-testid="sprite-pivot-marker"
