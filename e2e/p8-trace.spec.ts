@@ -98,6 +98,7 @@ test.describe("P8 Trace document tab", () => {
     await expect(
       page.getByRole("button", { name: "Copy Value", exact: true }),
     ).toBeVisible();
+    await expect(page.getByTestId("trace-value-detail")).toBeInViewport();
 
     const before = await page
       .getByTestId("trace-playback-snapshot")

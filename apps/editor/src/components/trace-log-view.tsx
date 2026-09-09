@@ -77,7 +77,7 @@ export function TraceLogView({
     [payload],
   );
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 p-2">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-2 p-2">
       <div className="flex flex-wrap items-center gap-2">
         <SearchInput
           aria-label="Search Log"
