@@ -1,18 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { GameInstance } from "@babylonslate/object-model";
+import { createActor, createDefaultScene } from "@babylonslate/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("RuntimeDriver.executeConsoleCommand", () => {
   it("possesses a live camera and destroys it while paused through debug commands", () => {
     const commands: CommandMessage[] = [];
+    const scene = createDefaultScene();
+    scene.actors = [createActor("cam", "Camera", {
+      components: [
+        { id: "cam-component", classId: "CameraComponent", properties: {} },
+        { id: "audio", classId: "AudioComponent", properties: {} },
+        { id: "particle", classId: "ParticleComponent", properties: {} },
+      ],
+    })];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
-      preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
+      playScene: scene, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
+    runtime.realizePlayWorld();
     runtime.start();
     const world = runtime.getWorld();
-    const actor = world.createActor({ guid: "cam", classId: "Actor", variables: { name: "Camera" } });
-    actor.attachComponent(world.createComponent({ classId: "CameraComponent", guid: "cam-component" }));
-    world.spawnActorNow(actor);
     runtime.tick();
     runtime.pause();
     const pausedTick = world.clock.tickIndex;
@@ -23,6 +30,10 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand('destroyactor "cam"').success).toBe(true);
     expect(runtime.inspectWorld().nodes.some((node) => node.id === "cam")).toBe(false);
     expect(commands).toContainEqual({ type: "despawn", slotId: 0, actorGuid: "cam" });
+    expect(commands).toContainEqual({ type: "stopSound", voiceId: "audio" });
+    expect(commands).toContainEqual({ type: "assignParticle", slotId: 0, actorGuid: "cam",
+      componentId: "particle", particleSystemGuid: null });
+    expect(scene.actors).toHaveLength(1);
     runtime.tick();
     expect(world.clock.tickIndex).toBe(pausedTick);
     expect(runtime.executeConsoleCommand('destroyactor "cam"').success).toBe(false);
