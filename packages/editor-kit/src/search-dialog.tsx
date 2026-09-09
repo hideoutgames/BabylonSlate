@@ -29,6 +29,7 @@ export function commitPickerOptionKeyDown(
   event: KeyboardEvent,
   commit: () => void,
 ): void {
+  if (event.nativeEvent.isComposing) return;
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
   commit();
@@ -110,11 +111,13 @@ export function SearchDialog({
     [items, query],
   );
   const activeIndex = filtered.findIndex((item) => item.id === activeId);
+  const optionId = (id: string) => `${listId}-${encodeURIComponent(id)}`;
   const activeOptionId =
-    activeIndex < 0 ? undefined : `${listId}-${activeIndex}`;
+    activeIndex < 0 ? undefined : optionId(filtered[activeIndex]!.id);
   const resetQuery = (value: string) => {
     setQuery(value);
     setActiveId(null);
+    if (listRef.current) listRef.current.scrollTop = 0;
   };
   const commit = (id: string) => {
     onSelect(id);
@@ -234,6 +237,7 @@ export function SearchDialog({
               <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
             ) : (
               <WindowedList
+                key={query}
                 activeIndex={activeIndex}
                 itemCount={filtered.length}
                 rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -243,10 +247,11 @@ export function SearchDialog({
                   return (
                     <div
                       key={item.id}
-                      id={`${listId}-${index}`}
+                      id={optionId(item.id)}
                       role="option"
                       tabIndex={-1}
                       aria-selected={index === activeIndex}
+                      title={item.group ? [item.label, item.description, item.group].filter(Boolean).join(" · ") : undefined}
                       className={cn(
                         buttonVariants({ variant: "ghost", size: "touch" }),
                         "h-full w-full min-h-0 justify-between gap-2 overflow-hidden text-left touch-pan-y",
@@ -254,6 +259,7 @@ export function SearchDialog({
                           "bg-secondary border-l-2 border-l-primary",
                       )}
                       onClick={() => commit(item.id)}
+                      onFocus={() => setActiveId(item.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ")
                           event.stopPropagation();

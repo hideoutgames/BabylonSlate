@@ -48,6 +48,7 @@ function Slider({
         </SliderPrimitive.Track>
         {thumbs.map((_, index) => (
           <SliderPrimitive.Thumb
+            aria-labelledby={props["aria-labelledby"]}
             data-slot="slider-thumb"
             key={index}
             index={index}

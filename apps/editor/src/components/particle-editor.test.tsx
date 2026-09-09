@@ -115,7 +115,7 @@ describe("ParticleEmitterEditor", () => {
     expect(screen.getByTestId("particle-emitter-preview")).toBeTruthy();
     expect(screen.getByText("No Texture")).toBeTruthy();
     expect(
-      screen.getByText(/Billboard quads sample that Texture/i),
+      screen.getByText(/Pick a Texture in Details/i),
     ).toBeTruthy();
   });
 
@@ -188,6 +188,15 @@ describe("ParticleSystemEditor", () => {
 });
 
 describe("ParticleSystemPreview", () => {
+  it("recovers a failed emitter document read without reopening the system", async () => {
+    loadAssetDocument.mockRejectedValueOnce(new Error("Emitter read failed"));
+    loadAssetDocument.mockResolvedValue({ ...createDefaultParticleEmitterPayload(), textureGuid: "tex-1" });
+    render(<ParticleSystemPreview payload={{ ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] } as unknown as Record<string, unknown>} />);
+    expect(await screen.findByText("Preview Failed")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByTestId("particle-system-preview-canvas")).toBeTruthy());
+    expect(screen.queryByText("Preview Failed")).toBeNull();
+  });
   it("loads closed Emitter documents instead of empty registry headers", async () => {
     loadAssetDocument.mockResolvedValue({
       ...createDefaultParticleEmitterPayload(),

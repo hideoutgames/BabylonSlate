@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   CatalogDialog,
   humanizePropertyLabel,
-  windowedSlice,
+  WindowedList,
+  isCoarsePointerEnvironment,
 } from "@babylonslate/editor-kit";
 import { buttonVariants } from "@babylonslate/ui/components/button";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
@@ -61,112 +62,91 @@ function flattenPaletteRows(
 
 function PaletteWindowedList({
   rows,
+  activeId,
+  listId,
+  onActiveChange,
   onAddNode,
   onOpenChange,
 }: {
   rows: PaletteRow[];
+  activeId: string | null;
+  listId: string;
+  onActiveChange: (id: string) => void;
   onAddNode: (node: PaletteNode) => void;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
-  const listRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    const body = listRef.current?.closest(
-      '[data-testid="node-palette-body"]',
-    );
-    if (!(body instanceof HTMLElement)) return;
-    const read = () => {
-      setViewportHeight(body.clientHeight);
-      setScrollTop(body.scrollTop);
-    };
-    read();
-    const onScroll = () => setScrollTop(body.scrollTop);
-    body.addEventListener("scroll", onScroll, { passive: true });
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(read);
-    observer?.observe(body);
-    return () => {
-      body.removeEventListener("scroll", onScroll);
-      observer?.disconnect();
-    };
-  }, [rows.length]);
-
-  const { firstIndex, lastIndex } = windowedSlice({
-    itemCount: rows.length,
-    rowHeight: NODE_PALETTE_ROW_HEIGHT,
-    scrollTop,
-    viewportHeight,
-  });
-  const visibleRows = rows.slice(firstIndex, lastIndex);
-
+  const activeIndex = rows.findIndex(
+    (row) => row.kind === "item" && row.key === activeId,
+  );
   return (
-    <div
-      ref={listRef}
-      className="relative"
-      style={{ height: rows.length * NODE_PALETTE_ROW_HEIGHT }}
-    >
-      {visibleRows.map((row, index) => {
-        const top = (firstIndex + index) * NODE_PALETTE_ROW_HEIGHT;
-        if (row.kind === "header") {
+    <div role="listbox" id={listId} aria-label="Nodes">
+      <WindowedList
+        itemCount={rows.length}
+        rowHeight={NODE_PALETTE_ROW_HEIGHT}
+        activeIndex={activeIndex}
+      >
+        {(index) => {
+          const row = rows[index]!;
+          if (row.kind === "header")
+            return (
+              <h3 className="flex h-full items-center px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {row.category}
+              </h3>
+            );
+          const node = row.node;
+          const commit = () => {
+            onAddNode(node);
+            onOpenChange(false);
+          };
           return (
-            <h3
-              key={row.key}
-              className="absolute right-0 left-0 flex items-center px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground"
-              style={{ top, height: NODE_PALETTE_ROW_HEIGHT }}
-            >
-              {row.category}
-            </h3>
-          );
-        }
-        const node = row.node;
-        const commit = () => {
-          onAddNode(node);
-          onOpenChange(false);
-        };
-        return (
-          <div
-            key={row.key}
-            role="option"
-            tabIndex={0}
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "touch" }),
-              "absolute right-0 left-0 h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 overflow-hidden touch-pan-y",
-            )}
-            style={{ top, height: NODE_PALETTE_ROW_HEIGHT }}
-            data-testid={`node-palette-item-${node.id}`}
-            onClick={commit}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" && event.key !== " ") return;
-              event.preventDefault();
-              commit();
-            }}
-          >
-            <span
+            <div
+              role="option"
+              id={`${listId}-${encodeURIComponent(node.id)}`}
+              aria-selected={node.id === activeId}
+              tabIndex={-1}
               className={cn(
-                "size-2.5 shrink-0 rounded-sm",
-                nodeRoleClass(
-                  nodeVisualRole({
-                    nodeType: node.id,
-                    title: node.title,
-                    category: node.category,
-                    pure: node.pure,
-                    latent: node.latent,
-                  }),
-                ),
+                buttonVariants({ variant: "ghost", size: "touch" }),
+                "h-full w-full min-h-0 justify-start gap-2 overflow-hidden touch-pan-y",
+                node.id === activeId && "bg-accent",
               )}
-              aria-hidden="true"
-            />
-            <span className="flex min-w-0 flex-col items-start leading-tight">
-              <span className="truncate">{node.title}</span>
-              <span className="truncate text-xs text-muted-foreground">
-                {humanizePropertyLabel(node.category)}
+              data-testid={`node-palette-item-${node.id}`}
+              onClick={commit}
+              onFocus={() => onActiveChange(node.id)}
+              onKeyDown={(event) => {
+                if (
+                  event.nativeEvent.isComposing ||
+                  (event.key !== "Enter" && event.key !== " ")
+                )
+                  return;
+                event.preventDefault();
+                commit();
+              }}
+            >
+              <span
+                className={cn(
+                  "size-2.5 shrink-0 rounded-sm",
+                  nodeRoleClass(
+                    nodeVisualRole({
+                      nodeType: node.id,
+                      title: node.title,
+                      category: node.category,
+                      pure: node.pure,
+                      latent: node.latent,
+                    }),
+                  ),
+                )}
+                aria-hidden="true"
+              />
+              <span className="flex min-w-0 flex-col items-start leading-tight">
+                <span className="truncate">{node.title}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {humanizePropertyLabel(node.category)}
+                </span>
               </span>
-            </span>
-          </div>
-        );
-      })}
+            </div>
+          );
+        }}
+      </WindowedList>
     </div>
   );
 }
@@ -180,6 +160,8 @@ export function NodePalette({
   pinCompatibility,
 }: NodePaletteProps) {
   const [search, setSearch] = useState("");
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const listId = useId();
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [contextSensitive, setContextSensitive] = useState(true);
   const pinFiltered = Boolean(filterPin && contextSensitive);
@@ -187,6 +169,7 @@ export function NodePalette({
   useEffect(() => {
     if (!open) return;
     setSearch("");
+    setActiveId(null);
     setActiveCategory("all");
   }, [open]);
 
@@ -254,6 +237,11 @@ export function NodePalette({
     [grouped, pinFiltered],
   );
 
+  const options = rows.flatMap((row) =>
+    row.kind === "item" ? [row.node] : [],
+  );
+  const activeIndex = options.findIndex((node) => node.id === activeId);
+
   if (!paletteNodes?.length) return null;
 
   return (
@@ -269,9 +257,48 @@ export function NodePalette({
       title="Add Node"
       categories={categories}
       activeCategoryId={activeCategory}
-      onCategoryChange={setActiveCategory}
+      onCategoryChange={(id) => {
+        setActiveCategory(id);
+        setActiveId(null);
+      }}
       search={search}
-      onSearchChange={setSearch}
+      onSearchChange={(value) => {
+        setSearch(value);
+        setActiveId(null);
+      }}
+      autoFocusSearch={!isCoarsePointerEnvironment()}
+      searchInputProps={{
+        role: "combobox",
+        "aria-label": "Search Nodes",
+        "aria-autocomplete": "list",
+        "aria-expanded": options.length > 0,
+        "aria-controls": options.length > 0 ? listId : undefined,
+        "aria-activedescendant":
+          activeIndex >= 0
+            ? `${listId}-${encodeURIComponent(options[activeIndex]!.id)}`
+            : undefined,
+        onKeyDown: (event) => {
+          if (event.nativeEvent.isComposing || options.length === 0) return;
+          let next = activeIndex;
+          if (event.key === "ArrowDown")
+            next = Math.min(options.length - 1, activeIndex + 1);
+          else if (event.key === "ArrowUp")
+            next =
+              activeIndex < 0
+                ? options.length - 1
+                : Math.max(0, activeIndex - 1);
+          else if (event.key === "Home") next = 0;
+          else if (event.key === "End") next = options.length - 1;
+          else if (event.key === "Enter") {
+            event.preventDefault();
+            onAddNode(options[Math.max(0, activeIndex)]!);
+            onOpenChange(false);
+            return;
+          } else return;
+          event.preventDefault();
+          setActiveId(options[next]!.id);
+        },
+      }}
       searchPlaceholder="Search nodes"
       data-testid="node-palette"
       footer={
@@ -282,9 +309,7 @@ export function NodePalette({
           <Switch
             id="node-palette-context-sensitive"
             checked={contextSensitive}
-            onCheckedChange={(checked) =>
-              setContextSensitive(checked === true)
-            }
+            onCheckedChange={(checked) => setContextSensitive(checked === true)}
             data-testid="node-palette-context-sensitive"
           />
           <FieldLabel htmlFor="node-palette-context-sensitive">
@@ -297,7 +322,11 @@ export function NodePalette({
         <p className="text-sm text-muted-foreground">No matches</p>
       ) : (
         <PaletteWindowedList
+          key={`${search}:${activeCategory}:${contextSensitive}`}
           rows={rows}
+          activeId={activeId}
+          listId={listId}
+          onActiveChange={setActiveId}
           onAddNode={onAddNode}
           onOpenChange={onOpenChange}
         />

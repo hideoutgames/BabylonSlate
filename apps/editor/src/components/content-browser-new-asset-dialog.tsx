@@ -8,6 +8,7 @@ import {
 } from "@babylonslate/editor-kit";
 import { MAX_CLASS_INHERITANCE_DEPTH } from "@babylonslate/object-model";
 import { Button } from "@babylonslate/ui/components/button";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +60,7 @@ export interface ContentBrowserNewAssetDialogProps {
   classAssets?: readonly NewAssetClassAssetRef[];
   nameTaken: boolean;
   busy?: boolean;
+  error?: string | null;
   onCreate: () => void;
 }
 
@@ -88,6 +90,7 @@ export function ContentBrowserNewAssetDialog({
   classAssets = [],
   nameTaken,
   busy = false,
+  error = null,
   onCreate,
 }: ContentBrowserNewAssetDialogProps) {
   const phone = usePhoneLayout();
@@ -376,6 +379,7 @@ export function ContentBrowserNewAssetDialog({
             </aside>
           ) : null}
         </div>
+        {error ? <Alert variant="destructive"><AlertTitle>Could Not Create Asset</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
         <div className="flex shrink-0 justify-end gap-2 border-t px-4 py-3">
           <Button
             type="button"
@@ -413,7 +417,7 @@ export function ContentBrowserNewAssetDialog({
               data-testid="content-browser-new-asset-create"
               onClick={() => onCreate()}
             >
-              Create
+              {busy ? "Creating…" : "Create"}
             </Button>
           )}
         </div>

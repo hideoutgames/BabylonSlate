@@ -211,6 +211,7 @@ export function Homepage({
   const [sort, setSort] = useState<HomepageProjectSortMode>("last-opened-desc");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<string | null>(null);
   const busyRef = useRef(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -248,10 +249,14 @@ export function Homepage({
     [projects, search, sort],
   );
 
-  const run = async (action: () => Promise<void>) => {
+  const run = async (
+    action: () => void | Promise<void>,
+    label = "Opening Project",
+  ) => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
+    setOperation(label);
     setError(null);
     try {
       await action();
@@ -260,6 +265,7 @@ export function Homepage({
     } finally {
       busyRef.current = false;
       setBusy(false);
+      setOperation(null);
     }
   };
   const create = (id = "blank", choose = true) => {
@@ -292,7 +298,7 @@ export function Homepage({
       if (!files[0]) return;
       await importTemplateArchive(files[0].name, files[0].bytes);
       await onSettingsChanged();
-    });
+    }, "Importing Template");
 
   return (
     <div
@@ -329,7 +335,10 @@ export function Homepage({
             aria-label={scheme === "dark" ? "Light Mode" : "Dark Mode"}
             disabled={busy}
             onClick={() =>
-              void run(() => setScheme(scheme === "dark" ? "light" : "dark"))
+              void run(
+                () => setScheme(scheme === "dark" ? "light" : "dark"),
+                "Updating Theme",
+              )
             }
           >
             {scheme === "dark" ? <SunIcon /> : <MoonIcon />}
@@ -348,6 +357,11 @@ export function Homepage({
         </div>
       </header>
       <main className="homepage-main">
+        {operation && (
+          <p role="status" className="shrink-0 text-sm text-muted-foreground">
+            {operation}…
+          </p>
+        )}
         <div className="homepage-library-toolbar">
           <div className="homepage-library-label">
             <span>{view === "projects" ? "Projects" : "Templates"}</span>
@@ -461,7 +475,9 @@ export function Homepage({
             <Button
               variant="outline"
               disabled={busy}
-              onClick={() => void run(() => launch(onReconnect))}
+              onClick={() =>
+                void run(() => launch(onReconnect), "Reconnecting Project")
+              }
             >
               Reconnect
             </Button>
@@ -473,11 +489,7 @@ export function Homepage({
             <Button
               variant="outline"
               disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  await onRecover();
-                })
-              }
+              onClick={() => void run(onRecover, "Recovering Edits")}
             >
               Recover
             </Button>
@@ -661,43 +673,46 @@ export function Homepage({
         onBlackBarsChange={setBlackBars}
         onSubmit={() => {
           if (busy || nameIssue) return;
-          void run(async () => {
-            if (editTarget)
-              await onUpdateProject(editTarget, {
-                name: name.trim(),
-                appearance,
-              });
-            else {
-              await launch(async () => {
-                const options: CreateProjectOptions = {
+          void run(
+            async () => {
+              if (editTarget)
+                await onUpdateProject(editTarget, {
+                  name: name.trim(),
                   appearance,
-                  renderWidth: width,
-                  renderHeight: height,
-                  blackBars,
-                  ...(hostPlatform === "web" ? {} : { pickFolder }),
-                };
-                const folderName = normalizeProjectFolderName(name);
-                if (!folderName) return;
-                if (
-                  templateId === "blank" ||
-                  templateId === "empty" ||
-                  templateId === "2d"
-                )
-                  await onCreateEmpty(folderName, {
-                    ...options,
-                    kind: templateId,
-                  });
-                else
-                  await onCreateFromTemplate(
-                    templateId.slice("template:".length),
-                    folderName,
-                    options,
-                  );
-                recordTemplateUse(templateId);
-              }, name.trim());
-            }
-            setCreateOpen(false);
-          });
+                });
+              else {
+                await launch(async () => {
+                  const options: CreateProjectOptions = {
+                    appearance,
+                    renderWidth: width,
+                    renderHeight: height,
+                    blackBars,
+                    ...(hostPlatform === "web" ? {} : { pickFolder }),
+                  };
+                  const folderName = normalizeProjectFolderName(name);
+                  if (!folderName) return;
+                  if (
+                    templateId === "blank" ||
+                    templateId === "empty" ||
+                    templateId === "2d"
+                  )
+                    await onCreateEmpty(folderName, {
+                      ...options,
+                      kind: templateId,
+                    });
+                  else
+                    await onCreateFromTemplate(
+                      templateId.slice("template:".length),
+                      folderName,
+                      options,
+                    );
+                  recordTemplateUse(templateId);
+                }, name.trim());
+              }
+              setCreateOpen(false);
+            },
+            editTarget ? "Updating Project" : "Creating Project",
+          );
         }}
       />
       <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
@@ -725,7 +740,12 @@ export function Homepage({
               data-testid="homepage-remove-confirm"
               onClick={() => {
                 if (removeTarget)
-                  void run(() => onRemoveFromList(removeTarget));
+                  void run(
+                    () => onRemoveFromList(removeTarget),
+                    deleting
+                      ? "Deleting Project"
+                      : "Removing Project From List",
+                  );
                 setRemoveOpen(false);
               }}
             >

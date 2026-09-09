@@ -7,6 +7,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type KeyboardEvent,
 } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { treeGuideSegments } from "./tree-guides";
@@ -169,6 +170,23 @@ export function TreeView({
     nodes.findIndex((node) => node.id === (activeId ?? selectedId)),
   );
   const activeNode = nodes[activeIndex];
+  const rowId = (id: string) => `${treeId}-${encodeURIComponent(id)}`;
+  const hierarchy = useMemo(() => {
+    const parents: string[] = [];
+    const counts = new Map<string, number>();
+    const positions = nodes.map((node) => {
+      const parent = parents[node.depth - 1] ?? "";
+      parents[node.depth] = node.id;
+      parents.length = node.depth + 1;
+      const position = (counts.get(parent) ?? 0) + 1;
+      counts.set(parent, position);
+      return { parent, position };
+    });
+    return positions.map((entry) => ({
+      ...entry,
+      size: counts.get(entry.parent),
+    }));
+  }, [nodes]);
   const selectedSet = new Set(
     selectedIds ??
       (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
@@ -219,6 +237,62 @@ export function TreeView({
     setScrollTop(element.scrollTop);
   }, [activeIndex, activeNode, rowHeight, viewportHeight]);
   const guides = useMemo(() => treeGuideSegments(nodes), [nodes]);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.target !== event.currentTarget ||
+      event.nativeEvent.isComposing ||
+      !activeNode
+    )
+      return;
+    const select = (index: number) => {
+      const node = nodes[index];
+      if (!node) return;
+      setActiveId(node.id);
+      const container = containerRef.current;
+      if (container && container.clientHeight > 0) {
+        const top = index * rowHeight;
+        if (top < container.scrollTop) container.scrollTop = top;
+        else if (top + rowHeight > container.scrollTop + container.clientHeight)
+          container.scrollTop = top + rowHeight - container.clientHeight;
+        setScrollTop(container.scrollTop);
+      }
+      if (event.shiftKey) onSelect?.(node.id, { range: true });
+      else if (!event.ctrlKey && !event.metaKey) onSelect?.(node.id);
+    };
+    if (event.key === "ArrowDown")
+      select(Math.min(nodes.length - 1, activeIndex + 1));
+    else if (event.key === "ArrowUp") select(Math.max(0, activeIndex - 1));
+    else if (event.key === "Home") select(0);
+    else if (event.key === "End") select(nodes.length - 1);
+    else if (event.key === "ArrowRight") {
+      const child = nodes[activeIndex + 1];
+      if (activeNode.hasChildren && !activeNode.expanded)
+        onToggleExpanded?.(activeNode.id);
+      else if (child && child.depth > activeNode.depth) select(activeIndex + 1);
+    } else if (event.key === "ArrowLeft") {
+      if (activeNode.hasChildren && activeNode.expanded)
+        onToggleExpanded?.(activeNode.id);
+      else {
+        for (let index = activeIndex - 1; index >= 0; index--) {
+          if (nodes[index]!.depth < activeNode.depth) {
+            select(index);
+            break;
+          }
+        }
+      }
+    } else if (event.key === "Enter") {
+      onSelect?.(activeNode.id);
+      onActivate?.(activeNode.id);
+    } else if (event.key === " ") {
+      onSelect?.(activeNode.id, {
+        additive: event.ctrlKey || event.metaKey,
+        range: event.shiftKey,
+      });
+    } else return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   const measure = useCallback((element: HTMLDivElement | null) => {
     containerRef.current = element;
@@ -495,66 +569,12 @@ export function TreeView({
       aria-label={accessibleName}
       aria-multiselectable={selectedIds ? true : undefined}
       aria-activedescendant={
-        activeNode ? `${treeId}-${activeIndex}` : undefined
+        activeNode ? rowId(activeNode.id) : undefined
       }
       tabIndex={0}
       className="group/tree text-foreground h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
       data-testid={testId}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget || !activeNode) return;
-        let nextIndex = activeIndex;
-        switch (event.key) {
-          case "ArrowDown":
-            nextIndex = Math.min(nodes.length - 1, activeIndex + 1);
-            break;
-          case "ArrowUp":
-            nextIndex = Math.max(0, activeIndex - 1);
-            break;
-          case "Home":
-            nextIndex = 0;
-            break;
-          case "End":
-            nextIndex = nodes.length - 1;
-            break;
-          case "ArrowRight":
-            if (activeNode.hasChildren && !activeNode.expanded) {
-              event.preventDefault();
-              onToggleExpanded?.(activeNode.id);
-              return;
-            } else if ((nodes[activeIndex + 1]?.depth ?? -1) > activeNode.depth)
-              nextIndex++;
-            break;
-          case "ArrowLeft":
-            if (activeNode.hasChildren && activeNode.expanded) {
-              event.preventDefault();
-              onToggleExpanded?.(activeNode.id);
-              return;
-            } else {
-              for (let i = activeIndex - 1; i >= 0; i--) {
-                if (nodes[i]!.depth < activeNode.depth) {
-                  nextIndex = i;
-                  break;
-                }
-              }
-            }
-            break;
-          case "Enter":
-            onActivate?.(activeNode.id);
-            break;
-          case " ":
-            break;
-          default:
-            return;
-        }
-        event.preventDefault();
-        const next = nodes[nextIndex]!;
-        setActiveId(next.id);
-        if (event.ctrlKey || event.metaKey)
-          onSelect?.(next.id, { additive: true });
-        else if (event.shiftKey && nextIndex !== activeIndex)
-          onSelect?.(next.id, { range: true });
-        else onSelect?.(next.id);
-      }}
+      onKeyDown={onKeyDown}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -577,7 +597,10 @@ export function TreeView({
             return (
               <div
                 key={node.id}
-                id={`${treeId}-${index}`}
+                id={rowId(node.id)}
+                aria-label={node.label}
+                aria-posinset={hierarchy[index]?.position}
+                aria-setsize={hierarchy[index]?.size}
                 role="treeitem"
                 aria-level={node.depth + 1}
                 aria-selected={selected}

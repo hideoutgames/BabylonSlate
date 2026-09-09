@@ -1,13 +1,16 @@
-import { useState, type ComponentProps } from "react";
+import { useId, useState, type ComponentProps } from "react";
+import {
+  FieldDescription,
+  FieldError,
+} from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import { parseNumberInput } from "./parse-number-input";
 import { SelectAllInput } from "./select-all-input";
 
-export interface NumberFieldProps
-  extends Omit<
-    ComponentProps<typeof Input>,
-    "type" | "value" | "onChange" | "min" | "max"
-  > {
+export interface NumberFieldProps extends Omit<
+  ComponentProps<typeof Input>,
+  "type" | "value" | "onChange" | "min" | "max"
+> {
   value: number;
   onChange: (value: number) => void;
   min?: number;
@@ -41,36 +44,70 @@ export function NumberField({
   ...props
 }: NumberFieldProps) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{
+    message: string;
+    invalid: boolean;
+  } | null>(null);
+  const feedbackId = useId();
 
   return (
-    <SelectAllInput
-      {...props}
-      type="text"
-      inputMode="decimal"
-      autoComplete="off"
-      spellCheck={false}
-      min={min}
-      max={max}
-      value={draft ?? String(value)}
-      onChange={(event) => {
-        const raw = event.target.value;
-        setDraft(raw);
-        const parsed = parseNumberInput(raw);
-        if (parsed === undefined) return;
-        if (!inRange(parsed, min, max)) return;
-        onChange(parsed);
-      }}
-      onBlur={(event) => {
-        const parsed = parseNumberInput(draft ?? "");
-        if (parsed === undefined) {
-          setDraft(null);
-        } else {
-          const next = clamp(parsed, min, max);
-          if (next !== value) onChange(next);
-          setDraft(null);
+    <div
+      className="flex min-w-0 flex-col gap-1"
+      data-invalid={feedback?.invalid || undefined}
+    >
+      <SelectAllInput
+        {...props}
+        aria-describedby={
+          [props["aria-describedby"], feedback ? feedbackId : undefined]
+            .filter(Boolean)
+            .join(" ") || undefined
         }
-        onBlur?.(event);
-      }}
-    />
+        aria-invalid={feedback?.invalid || props["aria-invalid"]}
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        spellCheck={false}
+        min={min}
+        max={max}
+        value={draft ?? String(value)}
+        onChange={(event) => {
+          const raw = event.target.value;
+          setDraft(raw);
+          setFeedback(null);
+          const parsed = parseNumberInput(raw);
+          if (parsed === undefined) return;
+          if (!inRange(parsed, min, max)) return;
+          onChange(parsed);
+        }}
+        onBlur={(event) => {
+          const parsed = parseNumberInput(draft ?? "");
+          if (parsed === undefined) {
+            if (draft?.trim())
+              setFeedback({
+                message: "Enter a number. Restored the last valid value.",
+                invalid: true,
+              });
+            setDraft(null);
+          } else {
+            const next = clamp(parsed, min, max);
+            if (next !== parsed)
+              setFeedback({
+                message: `Adjusted to ${next} to stay within the allowed range.`,
+                invalid: false,
+              });
+            if (next !== value) onChange(next);
+            setDraft(null);
+          }
+          onBlur?.(event);
+        }}
+      />
+      {feedback?.invalid ? (
+        <FieldError id={feedbackId}>{feedback.message}</FieldError>
+      ) : feedback ? (
+        <FieldDescription id={feedbackId} role="status">
+          {feedback.message}
+        </FieldDescription>
+      ) : null}
+    </div>
   );
 }

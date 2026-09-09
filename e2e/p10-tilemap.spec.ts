@@ -62,12 +62,12 @@ async function tileAt(page: Page, gx: number, gy: number): Promise<number | null
 
 async function pickSelectedAsset(
   page: Page,
-  classId: string,
+  componentName: string,
   guid: string,
   property: "assetGuid" | "graphGuid" = "assetGuid",
 ) {
   const card = page.locator("[data-testid^='component-card-']").filter({
-    hasText: classId,
+    has: page.getByRole("button", { name: new RegExp(`^${componentName}(?: \\(|$)`) }),
   });
   await expect(card).toBeVisible();
   await card.locator(`button[data-testid$="-${property}"]`).click();
@@ -240,7 +240,7 @@ test.describe("P10 tilemaps", () => {
       page,
       "assets/Overworld.tilemap.babasset",
     );
-    await pickSelectedAsset(page, "TilemapComponent", tilemapGuid);
+    await pickSelectedAsset(page, "Tilemap", tilemapGuid);
 
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
@@ -255,11 +255,11 @@ test.describe("P10 tilemaps", () => {
     await page.getByTestId("add-component-catalog-item-ColliderComponent").click();
 
     const spriteGuid = await guidForPath(page, "assets/Hero.sprite.babasset");
-    await pickSelectedAsset(page, "SpriteComponent", spriteGuid);
+    await pickSelectedAsset(page, "Sprite", spriteGuid);
     const graphGuid = await guidForPath(page, "assets/Loco.anim.babasset");
     await pickSelectedAsset(
       page,
-      "AnimationGraphComponent",
+      "Animation Graph",
       graphGuid,
       "graphGuid",
     );

@@ -18,6 +18,8 @@ const {
   sourceControl,
   host,
   exportGameArtifact,
+  exportProject,
+  importPlugin,
   sourceControlEnabled,
   lastProjectInput,
 } = vi.hoisted(() => {
@@ -36,6 +38,8 @@ const {
     },
     host: { platform: "electron", testMode: true },
     exportGameArtifact: vi.fn(),
+    exportProject: vi.fn(),
+    importPlugin: vi.fn(),
     sourceControlEnabled: { current: false },
     lastProjectInput,
   };
@@ -67,7 +71,7 @@ vi.mock("../context/document-context", async () => {
       }
       return {
       projectDocument,
-      exportProject: vi.fn(),
+      exportProject,
       exportGameArtifact,
       zipExportedGame: vi.fn(),
       retryFailedTextureEncoding: vi.fn(),
@@ -129,7 +133,7 @@ vi.mock("../context/document-context", async () => {
       createProjectPlugin: vi.fn(),
       deleteProjectPlugin: vi.fn(),
       exportPlugin: vi.fn(),
-      importPlugin: vi.fn(),
+      importPlugin,
       openDocument: vi.fn(),
     };
     },
@@ -149,6 +153,8 @@ afterEach(() => {
   host.platform = "electron";
   host.testMode = true;
   exportGameArtifact.mockReset();
+  exportProject.mockReset();
+  importPlugin.mockReset();
   sourceControlEnabled.current = false;
 });
 
@@ -162,6 +168,7 @@ it("hides unrelated settings when search has no matching section", () => {
   fireEvent.change(screen.getByTestId("settings-modal-search"), {
     target: { value: "autosave" },
   });
+  fireEvent.click(screen.getByRole("button", { name: /Autosave Interval/ }));
   expect(screen.getByTestId("settings-autosave-interval")).toBeTruthy();
 });
 
@@ -172,6 +179,48 @@ describe("SettingsModal project authoring", () => {
     expect((version as HTMLInputElement).value).toBe("1.0.0");
     fireEvent.change(version, { target: { value: "2.4.0-beta.3" } });
     expect(updateProjectVersion).toHaveBeenCalledWith("2.4.0-beta.3");
+  });
+
+  it("explains a failed plugin import and re-enables importing", async () => {
+    let reject!: (error: Error) => void;
+    importPlugin.mockReturnValue(new Promise((_resolve, fail) => { reject = fail; }));
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-plugins"));
+    const file = new File([new Uint8Array([1, 2])], "broken.babplugin");
+    Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([1, 2]).buffer });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("import-plugin-input"), { target: { files: [file] } });
+    });
+    expect(screen.getByTestId("settings-plugin-import").hasAttribute("disabled")).toBe(true);
+    await act(async () => { reject(new Error("Invalid plugin archive")); });
+    expect(await screen.findByText("Invalid plugin archive")).toBeTruthy();
+    expect(screen.getByTestId("settings-plugin-import").hasAttribute("disabled")).toBe(false);
+  });
+  it("keeps a project export pending and shows a recoverable failure", async () => {
+    let reject!: (error: Error) => void;
+    exportProject.mockReturnValue(new Promise((_resolve, fail) => { reject = fail; }));
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("export-project"));
+    expect(screen.getByTestId("export-project").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByTestId("export-project").textContent).toMatch(/Exporting/);
+    await act(async () => { reject(new Error("Backup storage unavailable")); });
+    expect(await screen.findByText("Backup storage unavailable")).toBeTruthy();
+    expect(screen.getByTestId("export-project").hasAttribute("disabled")).toBe(false);
+  });
+  it("shows no matches instead of unrelated settings for an unknown query", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "no-such-setting" } });
+    expect(screen.getByText("No Matching Settings")).toBeTruthy();
+    expect(screen.queryByTestId("settings-startup-scene")).toBeNull();
+  });
+
+  it("finds a specific field and reveals it when its result is chosen", async () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "reverb decay" } });
+    fireEvent.click(screen.getByRole("button", { name: /Reverb Decay Scale/ }));
+    const field = await screen.findByTestId("settings-audio-reverb-decay-scale");
+    await waitFor(() => expect(document.activeElement).toBe(field));
   });
   it("edits input mappings with the structured editor instead of JSON", () => {
     render(
@@ -342,7 +391,7 @@ describe("SettingsModal project authoring", () => {
     const myGame = screen.getByTestId("search-item-MyGame");
     expect(gameInstance.textContent).toContain("Class");
     expect(myGame.textContent).toContain("Class");
-    expect(myGame.textContent).not.toContain("Project");
+    expect(myGame.textContent).toContain("Project");
     expect(screen.queryByTestId("search-item-Tools")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-MyGame"));
     expect(updateProjectSettings).toHaveBeenCalledWith(

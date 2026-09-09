@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -46,6 +52,11 @@ export interface CatalogDialogProps {
   searchPlaceholder?: string;
   /** When true, focus the search field on open. Default false (iPad keyboard). */
   autoFocusSearch?: boolean;
+  /** Search-result owners can supply combobox semantics and keyboard navigation. */
+  searchInputProps?: Omit<
+    ComponentProps<typeof SearchInput>,
+    "value" | "onChange" | "ref"
+  >;
   children: ReactNode;
   footer?: ReactNode;
   "data-testid"?: string;
@@ -93,6 +104,7 @@ export function CatalogDialog({
   onSearchChange,
   searchPlaceholder = "Search",
   autoFocusSearch = false,
+  searchInputProps,
   children,
   footer,
   "data-testid": testId,
@@ -180,6 +192,7 @@ export function CatalogDialog({
           }}
         >
           <SearchInput
+            {...searchInputProps}
             ref={searchRef}
             aria-label={searchPlaceholder}
             value={search}
@@ -244,6 +257,7 @@ export function CatalogDialog({
             ref={bodyRef}
             tabIndex={-1}
             className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain outline-none"
+            style={{ overflowY: "auto" }}
             data-testid={testId ? `${testId}-body` : undefined}
           >
             <div className="p-4">{children}</div>

@@ -201,7 +201,7 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
     await page.getByTestId("place-actors-item-audio").click();
     const audioCard = page.locator("[data-testid^='component-card-']").filter({
-      hasText: "AudioComponent",
+      has: page.getByRole("button", { name: /^Audio(?: \(|$)/ }),
     });
     await expect(audioCard).toBeVisible();
     await audioCard.locator('button[data-testid$="-audioAssetGuid"]').click();
@@ -275,7 +275,7 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
     await page.getByTestId("place-actors-item-audio").click();
     const audioCard = page.locator("[data-testid^='component-card-']").filter({
-      hasText: "AudioComponent",
+      has: page.getByRole("button", { name: /^Audio(?: \(|$)/ }),
     });
     await expect(audioCard).toBeVisible();
     await audioCard.locator('button[data-testid$="-audioAssetGuid"]').click();

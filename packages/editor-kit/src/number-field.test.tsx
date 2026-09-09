@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { NumberField } from "./number-field";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
@@ -69,10 +75,16 @@ describe("NumberField", () => {
     fireEvent.change(input, { target: { value: "0" } });
     fireEvent.blur(input);
     expect(onChange).toHaveBeenLastCalledWith(0.25);
+    expect(screen.getByRole("status").textContent).toContain("0.25");
+    expect(input.getAttribute("aria-describedby")).toBe(
+      screen.getByRole("status").id,
+    );
   });
 
   it("selects the value on tap so typing overwrites it", async () => {
-    render(<NumberField value={12.5} onChange={() => {}} data-testid="field" />);
+    render(
+      <NumberField value={12.5} onChange={() => {}} data-testid="field" />,
+    );
     const input = screen.getByTestId("field") as HTMLInputElement;
     expect(input.type).toBe("text");
     expect(input.inputMode).toBe("decimal");
