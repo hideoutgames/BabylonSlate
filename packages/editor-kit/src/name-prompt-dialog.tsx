@@ -9,7 +9,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
-import { Field, FieldError, FieldLabel } from "@babylonslate/ui/components/field";
+import {
+  Field,
+  FieldError,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 
 export interface NamePromptDialogProps {
@@ -66,15 +70,13 @@ export function NamePromptDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description ? (
             <AlertDialogDescription>{description}</AlertDialogDescription>
-          ) : (
-            <AlertDialogDescription>{label}</AlertDialogDescription>
-          )}
+          ) : null}
         </AlertDialogHeader>
         <Field data-invalid={Boolean(error)}>
           <FieldLabel htmlFor="name-prompt-input">{label}</FieldLabel>
           <Input
             id="name-prompt-input"
-            className="min-h-[var(--touch-target,44px)]"
+            className="min-h-[var(--chrome-row,28px)]"
             value={draft}
             aria-invalid={Boolean(error)}
             aria-describedby={error ? "name-prompt-error" : undefined}
@@ -90,7 +92,9 @@ export function NamePromptDialog({
             }}
             data-testid="name-prompt-input"
           />
-          {error ? <FieldError id="name-prompt-error">{error}</FieldError> : null}
+          {error ? (
+            <FieldError id="name-prompt-error">{error}</FieldError>
+          ) : null}
         </Field>
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="name-prompt-cancel">

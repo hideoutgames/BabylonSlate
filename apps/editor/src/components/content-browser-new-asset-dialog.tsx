@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import {
   SearchInput,
-  TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
   resolveTypeVisual,
   walkAncestry,
@@ -10,15 +9,8 @@ import {
 import { MAX_CLASS_INHERITANCE_DEPTH } from "@babylonslate/object-model";
 import { Button } from "@babylonslate/ui/components/button";
 import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@babylonslate/ui/components/card";
-import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
@@ -38,7 +30,6 @@ import {
   FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
-import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   CREATABLE_ASSET_TYPE_GROUPS,
@@ -133,23 +124,20 @@ export function ContentBrowserNewAssetDialog({
         data-testid="content-browser-new-asset-dialog"
         initialFocus={bodyRef}
         className={cn(
-          "flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
-          phone && "h-[min(92dvh,52rem)]",
+          "editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
         )}
       >
-        <DialogHeader className="shrink-0 border-b px-4 py-3 pr-12">
+        <DialogHeader className="min-h-14 shrink-0 border-b px-4 py-3 pr-12">
           <DialogTitle>New Asset</DialogTitle>
-          <DialogDescription>
-            {phone
-              ? phoneStep === "type"
-                ? "Choose an asset type, then add its details."
-                : "Name the asset and review its settings."
-              : "Create a new asset in the selected folder."}
-          </DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 flex-1">
           {!phone || phoneStep === "type" ? (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div
+              className={cn(
+                "flex min-h-0 min-w-0 flex-col",
+                phone ? "flex-1" : "w-64 shrink-0",
+              )}
+            >
               <div className="shrink-0 border-b px-4 py-3">
                 <SearchInput
                   value={search}
@@ -181,7 +169,7 @@ export function ContentBrowserNewAssetDialog({
                     </EmptyHeader>
                   </Empty>
                 ) : (
-                  <div className="flex flex-col gap-5">
+                  <div className="flex flex-col gap-4">
                     {visibleGroups.map((group) => (
                       <FieldSet key={group.id} className="gap-2">
                         <FieldLegend variant="label">{group.label}</FieldLegend>
@@ -192,55 +180,35 @@ export function ContentBrowserNewAssetDialog({
                             {group.hint}
                           </FieldDescription>
                         ) : null}
-                        <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-2">
+                        <div className="flex flex-col gap-1">
                           {group.types.map((item) => {
                             const selected = item === type;
                             const visual = resolveTypeVisual({
                               assetType: item,
                             });
                             return (
-                              <Card
+                              <Button
                                 key={item}
+                                type="button"
                                 size="sm"
-                                className={cn(
-                                  "gap-0 overflow-hidden py-0",
-                                  selected
-                                    ? "border-primary ring-1 ring-primary"
-                                    : "",
-                                )}
-                              >
-                                <button
-                                  type="button"
+                                variant={selected ? "secondary" : "ghost"}
                                   role="radio"
                                   aria-checked={selected}
                                   data-selected={selected ? "true" : "false"}
                                   data-testid={`new-asset-type-${item}`}
-                                  className="flex min-h-[var(--touch-target,44px)] w-full flex-col text-left hover:bg-accent/50"
+                                className={cn(
+                                  "h-auto w-full justify-start border-l-2 py-2",
+                                  selected
+                                    ? "border-l-primary"
+                                    : "border-l-transparent",
+                                )}
                                   onClick={() => onTypeChange(item)}
                                 >
-                                  <div className="relative aspect-square w-full">
-                                    <div
-                                      className="absolute inset-0.5 flex items-center justify-center overflow-hidden bg-card"
-                                      style={typeColorThumbAccent(
-                                        visual.colorVar,
-                                      )}
-                                    >
-                                      <TypeVisualIcon
-                                        visual={visual}
-                                        size={TYPE_VISUAL_ICON_TILE_SIZE}
-                                      />
-                                    </div>
-                                  </div>
-                                  <CardHeader className="gap-0.5 p-1.5">
-                                    <CardTitle className="truncate text-xs font-medium">
+                                <TypeVisualIcon visual={visual} />
+                                <span className="whitespace-normal text-left">
                                       {creatableAssetTypeLabel(item)}
-                                    </CardTitle>
-                                    <CardDescription className="truncate text-[10px]">
-                                      {item}
-                                    </CardDescription>
-                                  </CardHeader>
-                                </button>
-                              </Card>
+                                </span>
+                              </Button>
                             );
                           })}
                         </div>
@@ -257,20 +225,12 @@ export function ContentBrowserNewAssetDialog({
                 "flex flex-col",
                 phone
                   ? "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain"
-                  : "w-72 shrink-0 border-l",
+                  : "min-h-0 min-w-0 flex-1 border-l",
               )}
             >
               <div className="flex shrink-0 flex-col gap-4 border-b p-4">
                 <div className="flex items-start gap-3">
-                  <div
-                    className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-card p-0.5"
-                    style={typeColorThumbAccent(selectedVisual.colorVar)}
-                  >
-                    <TypeVisualIcon
-                      visual={selectedVisual}
-                      size={TYPE_VISUAL_ICON_TILE_SIZE}
-                    />
-                  </div>
+                  <TypeVisualIcon visual={selectedVisual} />
                   <div className="min-w-0 flex flex-col gap-1">
                     <p className="truncate font-medium">
                       {creatableAssetTypeLabel(type)}
@@ -289,7 +249,7 @@ export function ContentBrowserNewAssetDialog({
                     <Input
                       id="new-asset-name"
                       data-testid="new-asset-name"
-                      className="min-h-[var(--touch-target,44px)]"
+                      className="min-h-[var(--chrome-row,28px)]"
                       value={name}
                       aria-invalid={nameTaken || undefined}
                       onChange={(event) => onNameChange(event.target.value)}
@@ -349,15 +309,17 @@ export function ContentBrowserNewAssetDialog({
                             <Button
                               key={row.id}
                               type="button"
-                              variant={selected ? "secondary" : "outline"}
+                              variant={selected ? "secondary" : "ghost"}
                               size={phone ? "touch" : "default"}
                               disabled={!row.selectable}
                               className={cn(
-                                "h-auto w-full justify-start",
+                                "h-auto w-full justify-start border-l-2",
                                 phone
                                   ? "min-h-11"
                                   : "min-h-[var(--chrome-row,28px)]",
-                                selected ? "ring-1 ring-primary" : "",
+                                selected
+                                  ? "border-l-primary"
+                                  : "border-l-transparent",
                               )}
                               style={{ paddingLeft: 8 + row.depth * 12 }}
                               role="radio"

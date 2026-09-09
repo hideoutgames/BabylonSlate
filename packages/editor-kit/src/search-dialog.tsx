@@ -1,4 +1,12 @@
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { buttonVariants } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -93,17 +101,95 @@ export function SearchDialog({
   "data-testid": testId,
 }: SearchDialogProps) {
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => filterSearchItems(items, query), [items, query]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const queryRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const filtered = useMemo(
+    () => filterSearchItems(items, query),
+    [items, query],
+  );
+  const activeIndex = filtered.findIndex((item) => item.id === activeId);
+  const activeOptionId =
+    activeIndex < 0 ? undefined : `${listId}-${activeIndex}`;
+  const resetQuery = (value: string) => {
+    setQuery(value);
+    setActiveId(null);
+  };
+  const commit = (id: string) => {
+    onSelect(id);
+    resetQuery("");
+    onOpenChange(false);
+  };
+  const navigate = (event: KeyboardEvent) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter" && activeIndex >= 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      commit(filtered[activeIndex]!.id);
+      return;
+    }
+    // Home/End still edit the query when the input owns focus.
+    const inQuery = event.target === queryRef.current;
+    if (
+      !["ArrowDown", "ArrowUp", ...(inQuery ? [] : ["Home", "End"])].includes(
+        event.key,
+      )
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!filtered.length) return;
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? filtered.length - 1
+          : activeIndex < 0
+            ? event.key === "ArrowUp"
+              ? filtered.length - 1
+              : 0
+            : Math.max(
+                0,
+                Math.min(
+                  filtered.length - 1,
+                  activeIndex + (event.key === "ArrowDown" ? 1 : -1),
+                ),
+              );
+    setActiveId(filtered[next]!.id);
+  };
+  useLayoutEffect(() => {
+    if (!open) {
+      resetQuery("");
+      return;
+    }
+    const list = listRef.current;
+    if (!list || activeIndex < 0) return;
+    const top = activeIndex * WINDOWED_LIST_TOUCH_ROW_HEIGHT;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (
+      top + WINDOWED_LIST_TOUCH_ROW_HEIGHT >
+      list.scrollTop + list.clientHeight
+    ) {
+      list.scrollTop = Math.max(
+        0,
+        top + WINDOWED_LIST_TOUCH_ROW_HEIGHT - list.clientHeight,
+      );
+    }
+  }, [activeIndex, open]);
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) setQuery("");
+        if (!next) resetQuery("");
         onOpenChange(next);
       }}
     >
       <DialogContent
+        initialFocus={(interaction) =>
+          interaction === "keyboard" ? queryRef.current : listRef.current
+        }
         className="flex max-h-[min(24rem,70vh)] w-full max-w-md flex-col gap-3 overflow-hidden sm:max-w-md"
         data-testid={testId}
       >
@@ -115,14 +201,27 @@ export function SearchDialog({
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-2">
           <SearchInput
+            ref={queryRef}
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeOptionId}
+            onKeyDown={navigate}
             className="min-h-[var(--touch-target,44px)]"
             aria-label={placeholder}
             placeholder={placeholder}
             value={query}
-            onChange={setQuery}
+            onChange={resetQuery}
             data-testid={testId ? `${testId}-query` : undefined}
           />
           <div
+            ref={listRef}
+            id={listId}
+            tabIndex={0}
+            aria-label={title}
+            aria-activedescendant={activeOptionId}
+            onKeyDown={navigate}
             className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
             style={{
               height: pickerListHeightPx(filtered.length),
@@ -135,29 +234,31 @@ export function SearchDialog({
               <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
             ) : (
               <WindowedList
+                activeIndex={activeIndex}
                 itemCount={filtered.length}
                 rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
               >
                 {(index) => {
                   const item = filtered[index]!;
-                  const commit = () => {
-                    onSelect(item.id);
-                    setQuery("");
-                    onOpenChange(false);
-                  };
                   return (
                     <div
                       key={item.id}
+                      id={`${listId}-${index}`}
                       role="option"
-                      tabIndex={0}
+                      tabIndex={-1}
+                      aria-selected={index === activeIndex}
                       className={cn(
                         buttonVariants({ variant: "ghost", size: "touch" }),
                         "h-full w-full min-h-0 justify-between gap-2 overflow-hidden text-left touch-pan-y",
+                        index === activeIndex &&
+                          "bg-secondary border-l-2 border-l-primary",
                       )}
-                      onClick={commit}
-                      onKeyDown={(event) =>
-                        commitPickerOptionKeyDown(event, commit)
-                      }
+                      onClick={() => commit(item.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ")
+                          event.stopPropagation();
+                        commitPickerOptionKeyDown(event, () => commit(item.id));
+                      }}
                       data-testid={`search-item-${item.id}`}
                     >
                       <PickerIdentity

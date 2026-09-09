@@ -1,9 +1,4 @@
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "./windowed-slice";
 
 /** Matches `--touch-target` for catalog and Compiler Results rows. */
@@ -25,7 +20,9 @@ const VIEWPORT_SLOT = '[data-slot="scroll-area-viewport"]';
 
 function isOverflowScroll(el: Element): boolean {
   const overflowY = getComputedStyle(el).overflowY;
-  return overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+  return (
+    overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay"
+  );
 }
 
 /** ScrollArea viewport if present; otherwise nearest overflow-y auto/scroll ancestor. */
@@ -48,12 +45,15 @@ export function findWindowedListScrollParent(
 export type WindowedListProps = {
   itemCount: number;
   rowHeight: number;
+  /** Keep the keyboard-active row mounted for aria-activedescendant. */
+  activeIndex?: number;
   children: (index: number) => ReactNode;
 };
 
 export function WindowedList({
   itemCount,
   rowHeight,
+  activeIndex,
   children,
 }: WindowedListProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -90,6 +90,15 @@ export function WindowedList({
   const rows: number[] = [];
   for (let index = firstIndex; index < lastIndex; index++) {
     rows.push(index);
+  }
+  if (
+    activeIndex !== undefined &&
+    activeIndex >= 0 &&
+    activeIndex < itemCount &&
+    !rows.includes(activeIndex)
+  ) {
+    rows.push(activeIndex);
+    rows.sort((a, b) => a - b);
   }
 
   return (

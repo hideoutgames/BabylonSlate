@@ -14,8 +14,17 @@ import {
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
 import type { ProjectInputSettings } from "@babylonslate/core";
-import { defaultExportPreset, isErr, MAX_COLLISION_LAYERS } from "@babylonslate/core";
+import {
+  defaultExportPreset,
+  isErr,
+  MAX_COLLISION_LAYERS,
+} from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Input } from "@babylonslate/ui/components/input";
@@ -82,7 +91,8 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "general",
     label: "General",
-    keywords: "project name version touch target editor utility objects infinite loop detection loop count",
+    keywords:
+      "compile autosave editor utility objects infinite loop detection loop count",
   },
   {
     id: "input",
@@ -128,7 +138,8 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "export",
     label: "Export",
-    keywords: "export project zip download startup scene packaged player export game packed debugger file count",
+    keywords:
+      "export project zip download startup scene packaged player export game packed debugger file count",
   },
   {
     id: "sourceControl",
@@ -137,20 +148,39 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   },
   {
     id: "project",
-    label: "Done",
+    label: "Session",
     keywords: "close project homepage dirty save done",
   },
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Project", ids: ["general", "input", "twoD", "physics", "fonts", "audio", "rendering", "textures", "plugins", "export", "sourceControl"] },
+  {
+    label: "Project",
+    ids: [
+      "general",
+      "input",
+      "twoD",
+      "physics",
+      "fonts",
+      "audio",
+      "rendering",
+      "textures",
+      "plugins",
+      "export",
+      "sourceControl",
+    ],
+  },
   { label: "Session", ids: ["project"] },
 ];
 
 const ENGINE_CATEGORIES: Array<
   CatalogCategory & { keywords: string; id: EngineSettingsCategoryId }
 > = [
-  { id: "about", label: "About", keywords: "version channel build commit source release test" },
+  {
+    id: "about",
+    label: "About",
+    keywords: "version channel build commit source release test",
+  },
   {
     id: "appearance",
     label: "Appearance",
@@ -169,7 +199,8 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "assets",
     label: "Assets",
-    keywords: "model import default scale glb gltf texture lod budget quality audio pcm voices",
+    keywords:
+      "model import default scale glb gltf texture lod budget quality audio pcm voices",
   },
   {
     id: "graph",
@@ -201,7 +232,19 @@ const GENERIC_FONT_FALLBACKS = [
 ] as const;
 
 const ENGINE_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "assets", "thumbnails", "focus", "about"] },
+  {
+    label: "Editor",
+    ids: [
+      "appearance",
+      "undo",
+      "viewport",
+      "graph",
+      "assets",
+      "thumbnails",
+      "focus",
+      "about",
+    ],
+  },
   { label: "Projects", ids: ["templates"] },
 ];
 
@@ -351,7 +394,8 @@ export function SettingsModal({
     projectDocument?.settings.exportPresets[0] ?? defaultExportPreset();
 
   const twoD = projectDocument?.settings.twoD;
-  const showProjectBody = scope === "project" && Boolean(projectDocument);
+  const showProjectBody =
+    scope === "project" && Boolean(projectDocument) && categories.length > 0;
 
   return (
     <>
@@ -360,12 +404,11 @@ export function SettingsModal({
       onOpenChange={onOpenChange}
       title={scope === "engine" ? "Engine Settings" : "Project Settings"}
       description={
-        scope === "engine"
-          ? "Global editor preferences stored outside any project"
-          : projectDocument
-            ? `Configuration for ${projectDocument.metadata.name}`
-            : "Open a project to edit project settings"
+          scope === "project" && !projectDocument
+            ? "Open a project to edit settings."
+            : undefined
       }
+        className="settings-dialog"
       categories={categories}
       groups={groups}
       activeCategoryId={activeCategoryId}
@@ -374,8 +417,26 @@ export function SettingsModal({
       onSearchChange={setSearch}
       searchPlaceholder="Search settings"
       data-testid={resolvedTestId}
+        footer={
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
     >
-      {scope === "engine" ? (
+              Done
+            </Button>
+          </div>
+        }
+      >
+        {categories.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>No Matching Settings</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
+        ) : null}
+        {scope === "engine" && categories.length > 0 ? (
         <EngineSettingsForm
           settings={engineSettings}
           onChange={saveEngine}
@@ -383,30 +444,16 @@ export function SettingsModal({
         />
       ) : null}
 
-      {showProjectBody && projectDocument && twoD && activeCategoryId === "general" ? (
+        {showProjectBody &&
+        projectDocument &&
+        twoD &&
+        activeCategoryId === "general" ? (
         <FieldGroup>
           <FieldSet>
             <FieldLegend>General</FieldLegend>
-            <Field>
-              <FieldLabel>Project name</FieldLabel>
-              <p className="text-sm">{projectDocument.metadata.name}</p>
-            </Field>
-            <Field>
-              <FieldLabel>Version</FieldLabel>
-              <p className="text-sm">{projectDocument.metadata.version}</p>
-            </Field>
-            <Field>
-              <FieldLabel>Touch target minimum</FieldLabel>
-              <p className="text-sm">
-                {projectDocument.settings.touchMinTargetPx}px
-              </p>
-              <FieldDescription>
-                Matches shell <code>--touch-target</code> on this device.
-              </FieldDescription>
-            </Field>
-            <Field orientation="horizontal">
+              <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-compile-on-save">
-                Compile on save
+                  Compile On Save
               </FieldLabel>
               <Switch
                 id="settings-compile-on-save"
@@ -417,7 +464,7 @@ export function SettingsModal({
                 data-testid="settings-compile-on-save"
               />
             </Field>
-            <Field orientation="horizontal">
+              <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-infinite-loop-detection">
                 Infinite Loop Detection
               </FieldLabel>
@@ -433,28 +480,27 @@ export function SettingsModal({
               />
             </Field>
             <FieldDescription>
-              Editor Play and Preview Build abort compiled scripts that exceed
-              Loop Count in one tick. Release exports never include this guard.
+                Stops runaway scripts during Play and Preview. Excluded from
+                release exports.
             </FieldDescription>
-            <Field>
-              <FieldLabel htmlFor="settings-loop-count">Loop Count</FieldLabel>
+              <Field className="settings-field">
+                <FieldLabel htmlFor="settings-loop-count">
+                  Loop Count
+                </FieldLabel>
               <NumberField
                 id="settings-loop-count"
                 min={1}
                 step={1}
                 disabled={!projectDocument.settings.infiniteLoopDetection}
-                className="min-h-[var(--touch-target,44px)]"
+                  className="min-h-[var(--chrome-row,28px)]"
                 value={projectDocument.settings.loopCount}
                 onChange={(loopCount) => updateProjectSettings({ loopCount })}
                 data-testid="settings-loop-count"
               />
-              <FieldDescription>
-                Iterations in one tick that count as an infinite loop.
-              </FieldDescription>
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="settings-autosave-interval">
-                Auto-save interval (seconds)
+                  Auto-Save Interval (Seconds)
               </FieldLabel>
               <NumberField
                 id="settings-autosave-interval"
@@ -485,17 +531,18 @@ export function SettingsModal({
                   <Button
                     type="button"
                     variant="outline"
-                    className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                      className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                     data-testid={`settings-editor-utility-objects-${index}`}
                     onClick={() => setUtilityPick(index)}
                   >
-                    {selectedPickerIdentity(classRowIdentity({ id: value, name: value }))}
+                      {selectedPickerIdentity(
+                        classRowIdentity({ id: value, name: value }),
+                      )}
                   </Button>
                 )}
               />
               <FieldDescription>
-                EditorUtilityObject classes that run in the editor ScriptHost.
-                They are not compiled into Play.
+                  Classes that run only in the editor.
               </FieldDescription>
             </Field>
           </FieldSet>
@@ -506,10 +553,6 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Input</FieldLegend>
-            <FieldDescription>
-              Named actions and axes bind keys, gamepad, and touch controls.
-              Pick a device, then choose a key or button from the list.
-            </FieldDescription>
             <InputMappingEditor
               value={normalizeInputMappings(projectDocument.settings.input, {
                 allowIncomplete: true,
@@ -526,17 +569,22 @@ export function SettingsModal({
         </FieldGroup>
       ) : null}
 
-      {showProjectBody && projectDocument && twoD && activeCategoryId === "twoD" ? (
+        {showProjectBody &&
+        projectDocument &&
+        twoD &&
+        activeCategoryId === "twoD" ? (
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>2D</FieldLegend>
-            <Field>
-              <FieldLabel htmlFor="pixels-per-unit">Pixels per unit</FieldLabel>
+              <Field className="settings-field">
+                <FieldLabel htmlFor="pixels-per-unit">
+                  Pixels Per Unit
+                </FieldLabel>
               <NumberField
                 id="pixels-per-unit"
                 min={1}
                 step={1}
-                className="min-h-[var(--touch-target,44px)]"
+                  className="min-h-[var(--chrome-row,28px)]"
                 value={twoD.pixelsPerUnit}
                 onChange={(pixelsPerUnit) =>
                   updateProjectSettings({
@@ -548,13 +596,10 @@ export function SettingsModal({
                 }
                 data-testid="settings-pixels-per-unit"
               />
-              <FieldDescription>
-                Texture pixels that span one world unit in 2D scenes.
-              </FieldDescription>
             </Field>
-            <Field orientation="horizontal">
+              <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-pixel-perfect">
-                Pixel-perfect mode
+                  Pixel-Perfect Mode
               </FieldLabel>
               <Switch
                 id="settings-pixel-perfect"
@@ -568,12 +613,11 @@ export function SettingsModal({
               />
             </Field>
             <FieldDescription>
-              Ortho bounds from canvas size, nearest sampling, camera snapped to
-              the pixel grid.
+                Keeps pixels sharp and snaps the camera to the pixel grid.
             </FieldDescription>
-            <Field orientation="horizontal">
+              <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-integer-zoom">
-                Integer zoom steps
+                  Integer Zoom Steps
               </FieldLabel>
               <Switch
                 id="settings-integer-zoom"
@@ -587,8 +631,7 @@ export function SettingsModal({
               />
             </Field>
             <FieldDescription>
-              Does not step the editor camera. Pinch and wheel stay continuous;
-              pixel-perfect still snaps pan to the pixel grid.
+                Applies to game cameras; editor zoom stays continuous.
             </FieldDescription>
             <Field>
               <FieldLabel>Sorting Layers</FieldLabel>
@@ -603,15 +646,15 @@ export function SettingsModal({
                 addLabel="Add Layer"
                 data-testid="settings-sorting-layers"
               />
-              <FieldDescription>
-                Back to front. Compiles to one alphaIndex sort key per sprite.
-              </FieldDescription>
+                <FieldDescription>Ordered back to front.</FieldDescription>
             </Field>
           </FieldSet>
         </FieldGroup>
       ) : null}
 
-      {showProjectBody && projectDocument && activeCategoryId === "physics" ? (
+        {showProjectBody &&
+        projectDocument &&
+        activeCategoryId === "physics" ? (
         <FieldGroup>
           <FieldSet>
             <FieldLegend>Physics</FieldLegend>
@@ -634,8 +677,8 @@ export function SettingsModal({
                 data-testid="settings-collision-layers"
               />
               <FieldDescription>
-                Named bits for collider Layer and Collides With. Storage stays
-                32-bit. Maximum {MAX_COLLISION_LAYERS} layers.
+                  Names used by Layer and Collides With. Up to{" "}
+                  {MAX_COLLISION_LAYERS} layers.
               </FieldDescription>
             </Field>
           </FieldSet>
@@ -654,7 +697,7 @@ export function SettingsModal({
                 <Button
                   type="button"
                   variant="outline"
-                  className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                    className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                   onClick={() => setFontPickerOpen(true)}
                   data-testid="settings-default-font"
                 >
@@ -680,11 +723,10 @@ export function SettingsModal({
                 </Button>
               </AssetPickerControl>
               <FieldDescription>
-                Font asset inserted after authored families. Empty means the
-                compiled stack is the source family plus the global fallback.
+                  Fallback when the requested font is unavailable.
               </FieldDescription>
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="settings-global-fallback">
                 Global Fallback
               </FieldLabel>
@@ -701,7 +743,7 @@ export function SettingsModal({
               >
                 <SelectTrigger
                   id="settings-global-fallback"
-                  className="min-h-[var(--touch-target,44px)] w-full"
+                    className="min-h-[var(--chrome-row,28px)] w-full"
                   data-testid="settings-global-fallback"
                 >
                   <SelectValue />
@@ -722,8 +764,7 @@ export function SettingsModal({
                 </SelectContent>
               </Select>
               <FieldDescription>
-                Generic CSS family appended to every compiled stack (never silent
-                Arial).
+                  Used when no matching font is available.
               </FieldDescription>
             </Field>
           </FieldSet>
@@ -742,7 +783,7 @@ export function SettingsModal({
                 <Button
                   type="button"
                   variant="outline"
-                  className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                    className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                   onClick={() => setMixerPickerOpen(true)}
                   data-testid="settings-audio-mixer"
                 >
@@ -768,11 +809,10 @@ export function SettingsModal({
                 </Button>
               </AssetPickerControl>
               <FieldDescription>
-                Optional mixer for Play and export. None plays Audio without
-                channel or global gain.
+                  None bypasses channel and master volume controls.
               </FieldDescription>
             </Field>
-            <Field orientation="horizontal">
+              <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-audio-occlusion">
                 Occlusion
               </FieldLabel>
@@ -791,13 +831,20 @@ export function SettingsModal({
               />
             </Field>
             <FieldDescription>
-              Muffles spatial sounds through baked occupancy walls when a
-              channel enables Muffle Through Walls. Channel-less stays clear.
+                Wall muffling for channels with Muffle Through Walls enabled.
             </FieldDescription>
             {(
               [
-                ["settings-audio-reverb-wet-scale", "Reverb Wet Scale", "reverbWetScale"],
-                ["settings-audio-reverb-decay-scale", "Reverb Decay Scale", "reverbDecayScale"],
+                  [
+                    "settings-audio-reverb-wet-scale",
+                    "Reverb Wet Scale",
+                    "reverbWetScale",
+                  ],
+                  [
+                    "settings-audio-reverb-decay-scale",
+                    "Reverb Decay Scale",
+                    "reverbDecayScale",
+                  ],
                 [
                   "settings-audio-reverb-damping-scale",
                   "Reverb Damping Scale",
@@ -832,7 +879,7 @@ export function SettingsModal({
                       min={0}
                       max={2}
                       step={0.05}
-                      className="min-h-[var(--touch-target,44px)]"
+                        className="min-h-[var(--chrome-row,28px)]"
                       value={projectDocument.settings.audio[key]}
                       onChange={(scale) =>
                         updateProjectSettings({
@@ -856,18 +903,20 @@ export function SettingsModal({
         </FieldGroup>
       ) : null}
 
-      {showProjectBody && projectDocument && activeCategoryId === "rendering" ? (
+        {showProjectBody &&
+        projectDocument &&
+        activeCategoryId === "rendering" ? (
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Rendering</FieldLegend>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="setting-play-frame-cap">
-                Play frame cap
+                  Play Frame Cap
               </FieldLabel>
               <NumberField
                 id="setting-play-frame-cap"
                 min={1}
-                className="min-h-[var(--touch-target,44px)]"
+                  className="min-h-[var(--chrome-row,28px)]"
                 data-testid="setting-play-frame-cap"
                 value={projectDocument.settings.playFrameCap}
                 onChange={(playFrameCap) =>
@@ -875,11 +924,10 @@ export function SettingsModal({
                 }
               />
               <FieldDescription>
-                Caps Play and Preview. The editor viewport cap lives in Engine
-                Settings.
+                  Applies to Play and Preview.
               </FieldDescription>
             </Field>
-            <Field orientation="horizontal">
+              <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="setting-render-custom">
                 Custom Resolution
               </FieldLabel>
@@ -898,13 +946,10 @@ export function SettingsModal({
               />
             </Field>
             <FieldDescription>
-              Lock Play and packaged builds to a design size. Black Bars on
-              letterboxes that WxH framebuffer. Off fills the host at the
-              window size without stretching; the camera stays centered.
-              Follow System applies only when this is off. Editor viewports
-              still fill the panel.
+                Sets the design size for Play and exported games. Overrides
+                Follow System.
             </FieldDescription>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="setting-render-width">
                 Render Size
               </FieldLabel>
@@ -914,7 +959,7 @@ export function SettingsModal({
                   min={1}
                   step={1}
                   disabled={!projectDocument.settings.render.customResolution}
-                  className="min-h-[var(--touch-target,44px)]"
+                    className="min-h-[var(--chrome-row,28px)]"
                   value={projectDocument.settings.render.width}
                   onChange={(width) =>
                     updateProjectSettings({
@@ -930,7 +975,7 @@ export function SettingsModal({
                   min={1}
                   step={1}
                   disabled={!projectDocument.settings.render.customResolution}
-                  className="min-h-[var(--touch-target,44px)]"
+                    className="min-h-[var(--chrome-row,28px)]"
                   value={projectDocument.settings.render.height}
                   onChange={(height) =>
                     updateProjectSettings({
@@ -962,9 +1007,8 @@ export function SettingsModal({
               </FieldLabel>
             </Field>
             <FieldDescription>
-              On letterboxes the locked WxH framebuffer; unused overlay space
-              is black. Off fills the host at the window size without
-              stretching. The camera stays centered.
+                Adds bars to preserve the design size. Off fills the window
+                without stretching.
             </FieldDescription>
             <PlayPreviewSettingsFields
               settings={projectDocument.settings.playPreview}
@@ -976,25 +1020,15 @@ export function SettingsModal({
         </FieldGroup>
       ) : null}
 
-      {showProjectBody && projectDocument && activeCategoryId === "textures" ? (
+        {showProjectBody &&
+        projectDocument &&
+        activeCategoryId === "textures" ? (
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Textures</FieldLegend>
-            <Field>
-              <FieldLabel>Texture policy</FieldLabel>
-              <FieldDescription>
-                Max dimension{" "}
-                {projectDocument.settings.textures.maxTextureDimension}
-                px. Auto re-queue uncompressed:{" "}
-                {projectDocument.settings.textures.autoRequeueUncompressed
-                  ? "on"
-                  : "off"}
-                .
-              </FieldDescription>
-            </Field>
             <Button
               variant="outline"
-              className="min-h-[var(--touch-target,44px)] w-fit"
+                className="min-h-[var(--chrome-row,28px)] w-fit"
               data-testid="retry-texture-encoding"
               onClick={() => void retryFailedTextureEncoding()}
             >
@@ -1004,7 +1038,9 @@ export function SettingsModal({
         </FieldGroup>
       ) : null}
 
-      {showProjectBody && projectDocument && activeCategoryId === "plugins" ? (
+        {showProjectBody &&
+        projectDocument &&
+        activeCategoryId === "plugins" ? (
         <ProjectPluginsSettings />
       ) : null}
 
@@ -1020,7 +1056,7 @@ export function SettingsModal({
                 <Button
                   type="button"
                   variant="outline"
-                  className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                    className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                   onClick={() => setScenePickerOpen(true)}
                   data-testid="settings-startup-scene"
                 >
@@ -1046,8 +1082,8 @@ export function SettingsModal({
                 </Button>
               </AssetPickerControl>
               <FieldDescription>
-                Packaged builds boot this scene. Editor Play uses the open scene
-                tab.
+                  Startup scene for exported games. Editor Play uses the open
+                  scene.
               </FieldDescription>
             </Field>
             <Field>
@@ -1055,13 +1091,15 @@ export function SettingsModal({
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                  className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
                 onClick={() => setGameInstancePickerOpen(true)}
                 data-testid="settings-game-instance"
               >
                 {selectedPickerIdentity(
                   classRowIdentity(
-                    gameInstanceClassEntries(assetRegistry?.list() ?? []).find(
+                      gameInstanceClassEntries(
+                        assetRegistry?.list() ?? [],
+                      ).find(
                       (entry) =>
                         entry.id ===
                         projectDocument.settings.gameInstanceClass,
@@ -1070,11 +1108,8 @@ export function SettingsModal({
                   ),
                 )}
               </Button>
-              <FieldDescription>
-                Play, Preview, and export construct this GameInstance subclass.
-              </FieldDescription>
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="setting-export-packed">Packed</FieldLabel>
               <Switch
                 id="setting-export-packed"
@@ -1091,10 +1126,10 @@ export function SettingsModal({
                 data-testid="setting-export-packed"
               />
               <FieldDescription>
-                Default packed `.babpack`. Off writes loose tree-shaken files.
+                  Stores assets in a .babpack file. Off exports separate files.
               </FieldDescription>
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="setting-export-debugger">
                 Bundle Debugger
               </FieldLabel>
@@ -1115,11 +1150,11 @@ export function SettingsModal({
                 data-testid="setting-export-debugger"
               />
               <FieldDescription>
-                Off for release zips (strips Development Only). Preview Build
-                always bundles the debugger.
+                  Includes debugging tools and Development Only nodes in the
+                  export.
               </FieldDescription>
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="setting-export-file-warn">
                 File Count Warn
               </FieldLabel>
@@ -1139,7 +1174,7 @@ export function SettingsModal({
                 data-testid="setting-export-file-warn"
               />
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="setting-export-file-fail">
                 File Count Fail
               </FieldLabel>
@@ -1160,19 +1195,20 @@ export function SettingsModal({
               />
             </Field>
             <Field>
-              <FieldLabel>Export Game</FieldLabel>
               <FieldDescription>
-                Download an itch.io zip that boots the startup scene. Distinct
-                from Export Project backup.
+                  Playable ZIP for web hosting.
               </FieldDescription>
             </Field>
             {exportGameError ? (
-              <p className="text-sm text-destructive" data-testid="export-game-error">
+                <p
+                  className="text-sm text-destructive"
+                  data-testid="export-game-error"
+                >
                 {exportGameError}
               </p>
             ) : null}
             <Button
-              className="min-h-[var(--touch-target,44px)] w-fit"
+                className="min-h-[var(--chrome-row,28px)] w-fit"
               data-testid="export-game"
               disabled={exportGameBusy}
               onClick={() => void handleExportGame()}
@@ -1180,13 +1216,10 @@ export function SettingsModal({
               Export Game
             </Button>
             <Field>
-              <FieldLabel>Export Project</FieldLabel>
-              <FieldDescription>
-                Download a zip of the project directory layout.
-              </FieldDescription>
+                <FieldDescription>Editable project backup.</FieldDescription>
             </Field>
             <Button
-              className="min-h-[var(--touch-target,44px)] w-fit"
+                className="min-h-[var(--chrome-row,28px)] w-fit"
               data-testid="export-project"
               onClick={() => void handleExport()}
             >
@@ -1202,7 +1235,7 @@ export function SettingsModal({
         <FieldGroup>
           <FieldSet>
             <FieldLegend>Source Control</FieldLegend>
-            <Field orientation="horizontal">
+              <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-source-control-enabled">
                 Enable
               </FieldLabel>
@@ -1237,7 +1270,7 @@ export function SettingsModal({
                 data-testid="settings-source-control-enabled"
               />
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="settings-source-control-url">
                 Repository URL
               </FieldLabel>
@@ -1255,7 +1288,7 @@ export function SettingsModal({
                 data-testid="settings-source-control-url"
               />
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="settings-source-control-branch">
                 Branch
               </FieldLabel>
@@ -1273,13 +1306,15 @@ export function SettingsModal({
                 data-testid="settings-source-control-branch"
               />
             </Field>
-            <Field orientation="horizontal">
+              <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-source-control-auto-lock">
                 Auto-Lock On First Edit
               </FieldLabel>
               <Switch
                 id="settings-source-control-auto-lock"
-                checked={projectDocument.settings.sourceControl.autoLockOnEdit}
+                  checked={
+                    projectDocument.settings.sourceControl.autoLockOnEdit
+                  }
                 onCheckedChange={(checked) =>
                   updateProjectSettings({
                     sourceControl: {
@@ -1291,16 +1326,17 @@ export function SettingsModal({
                 data-testid="settings-source-control-auto-lock"
               />
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="settings-source-control-poll">
-                Poll Interval (seconds)
+                  Poll Interval (Seconds)
               </FieldLabel>
               <NumberField
                 id="settings-source-control-poll"
                 min={1}
                 className="min-h-[var(--chrome-row,28px)]"
                 value={Math.round(
-                  projectDocument.settings.sourceControl.pollIntervalMs / 1000,
+                    projectDocument.settings.sourceControl.pollIntervalMs /
+                      1000,
                 )}
                 onChange={(seconds) =>
                   updateProjectSettings({
@@ -1313,7 +1349,7 @@ export function SettingsModal({
                 data-testid="settings-source-control-poll"
               />
             </Field>
-            <Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="settings-source-control-token">
                 Token
               </FieldLabel>
@@ -1340,15 +1376,14 @@ export function SettingsModal({
               </FieldDescription>
               <FieldDescription data-testid="settings-source-control-token-copy">
                 {sourceControl.hasToken ? "Token Saved. " : ""}
-                Save Token stores it for this project on this device. It is not
-                written into project files or git. Clear Token removes it from
-                that store.
+                  Stored on this device for this project. Never included in
+                  project files or Git.
               </FieldDescription>
             </Field>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                className="min-h-[var(--touch-target,44px)]"
+                  className="min-h-[var(--chrome-row,28px)]"
                 data-testid="settings-source-control-save-token"
                 disabled={!tokenDraft}
                 onClick={() => {
@@ -1362,7 +1397,7 @@ export function SettingsModal({
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)]"
+                  className="min-h-[var(--chrome-row,28px)]"
                 data-testid="settings-source-control-clear-token"
                 onClick={() => {
                   void sourceControl.clearToken().then(() => {
@@ -1384,16 +1419,10 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Close</FieldLegend>
-            <Field>
-              <FieldLabel>Close Project</FieldLabel>
-              <FieldDescription>
-                Returns to the Homepage after a dirty-document check.
-              </FieldDescription>
-            </Field>
             <Button
               variant="outline"
               data-testid="close-project"
-              className="min-h-[var(--touch-target,44px)] w-fit"
+                className="min-h-[var(--chrome-row,28px)] w-fit"
               onClick={() => {
                 onOpenChange(false);
                 onCloseProject();

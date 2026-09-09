@@ -67,6 +67,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
+import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import {
   Progress,
@@ -2368,17 +2369,16 @@ export function ContentBrowserWorkspace({
                   ? "Rename Folder"
                   : "Rename Asset"}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {nameDialog?.kind === "folder"
-                ? "Create a folder under the current selection."
-                : nameDialog?.kind === "rename-folder"
-                  ? "Rename the folder. Nested assets keep their guids."
-                  : "Rename the asset file. References by guid stay intact."}
-            </AlertDialogDescription>
           </AlertDialogHeader>
+          <Field>
+            <FieldLabel htmlFor="content-browser-name-input">Name</FieldLabel>
           <Input
+              id="content-browser-name-input"
             className="min-h-[var(--touch-target,44px)]"
             data-testid="content-browser-name-input"
+              aria-describedby={
+                nameDialogTaken ? "content-browser-name-error" : undefined
+              }
             aria-invalid={nameDialogTaken || undefined}
             value={nameDialog?.value ?? ""}
             onChange={(event) =>
@@ -2391,10 +2391,13 @@ export function ContentBrowserWorkspace({
             <p
               className="text-sm text-destructive"
               data-testid="content-browser-name-taken"
+                id="content-browser-name-error"
+                role="alert"
             >
               That name is already used in this folder.
             </p>
           ) : null}
+          </Field>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -2405,7 +2408,7 @@ export function ContentBrowserWorkspace({
                 void confirmNameDialog();
               }}
             >
-              Confirm
+              {nameDialog?.kind === "folder" ? "Create" : "Rename"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

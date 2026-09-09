@@ -148,6 +148,19 @@ afterEach(() => {
   sourceControlEnabled.current = false;
 });
 
+it("hides unrelated settings when search has no matching section", () => {
+  render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+  fireEvent.change(screen.getByTestId("settings-modal-search"), {
+    target: { value: "unmatched-setting" },
+  });
+  expect(screen.queryByTestId("settings-compile-on-save")).toBeNull();
+  expect(screen.getByText("No Matching Settings")).toBeTruthy();
+  fireEvent.change(screen.getByTestId("settings-modal-search"), {
+    target: { value: "autosave" },
+  });
+  expect(screen.getByTestId("settings-autosave-interval")).toBeTruthy();
+});
+
 describe("SettingsModal project authoring", () => {
   it("edits input mappings with the structured editor instead of JSON", () => {
     render(
