@@ -113,6 +113,7 @@ export function DebugConsole({
     activeSuggestion,
     Math.max(0, suggestions.length - 1),
   );
+  const selectedSuggestion = suggestions[selectedIndex];
   const transcript = useMemo(
     () =>
       [
@@ -140,7 +141,7 @@ export function DebugConsole({
     suggestionsRef.current
       ?.querySelector('[aria-selected="true"]')
       ?.scrollIntoView?.({ block: "nearest" });
-  }, [selectedIndex, suggestions]);
+  }, [selectedIndex, selectedSuggestion]);
 
   const updateDraft = (value: string) => {
     setDraft(value);
