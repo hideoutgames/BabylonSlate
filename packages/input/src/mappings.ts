@@ -4,51 +4,29 @@
  * on-screen joystick can drive the same axis identically.
  */
 
-export type InputDevice =
-  | "key"
-  | "mouseButton"
-  | "pointer"
-  | "gamepadButton"
-  | "gamepadAxis"
-  | "touch";
-
-export interface BindingModifiers {
-  shift?: boolean;
-  ctrl?: boolean;
-  alt?: boolean;
-  meta?: boolean;
-}
-
-export interface ActionBinding {
-  device: InputDevice;
-  /**
-   * Device-specific code: keyboard `KeyW`, mouse `0`, gamepad button
-   * `0:0` (pad:button), pointer `primary`, touch control id.
-   */
-  code: string;
-  modifiers?: BindingModifiers;
-}
-
-export interface AxisBinding {
-  device: InputDevice;
-  code: string;
-  /** Component for 2D axes assembled from two 1D bindings. */
-  component?: "x" | "y";
-  deadZone?: number;
-  scale?: number;
-  invert?: boolean;
-  sensitivity?: number;
-  modifiers?: BindingModifiers;
-  /** Constant contribution while a digital binding is held (keys, buttons). */
-  digitalValue?: number;
-}
+import type {
+  InputDevice,
+  BindingModifiers,
+  ActionBinding,
+  AxisBinding,
+} from "@babylonslate/core";
+export type {
+  InputDevice,
+  BindingModifiers,
+  ActionBinding,
+  AxisBinding,
+} from "@babylonslate/core";
 
 export interface ActionMapping {
+  id?: string;
+  legacyName?: string;
   name: string;
   bindings: ActionBinding[];
 }
 
 export interface AxisMapping {
+  id?: string;
+  legacyName?: string;
   name: string;
   /** `2d` folds x/y bindings into one `getAxis2D` result. */
   kind?: "1d" | "2d";
@@ -130,9 +108,7 @@ export const DEFAULT_INPUT_MAPPINGS: InputMappings = {
     {
       name: "Look",
       kind: "1d",
-      bindings: [
-        { device: "gamepadAxis", code: "0:2", deadZone: 0.15 },
-      ],
+      bindings: [{ device: "gamepadAxis", code: "0:2", deadZone: 0.15 }],
     },
   ],
 };
@@ -166,6 +142,7 @@ function normalizeActionBinding(
   const modifiers = source.modifiers as BindingModifiers | undefined;
   return {
     device,
+    ...(typeof source.id === "string" ? { id: source.id } : {}),
     code: source.code,
     ...(modifiers ? { modifiers: { ...modifiers } } : {}),
   };
@@ -180,6 +157,7 @@ function normalizeAxisBinding(
   if (!device || typeof source.code !== "string") return null;
   if (source.code === "" && !allowIncomplete) return null;
   const binding: AxisBinding = { device, code: source.code };
+  if (typeof source.id === "string") binding.id = source.id;
   if (source.component === "x" || source.component === "y") {
     binding.component = source.component;
   }
@@ -219,7 +197,11 @@ export function normalizeInputMappings(
             .map((binding) => normalizeActionBinding(binding, allowIncomplete))
             .filter((binding): binding is ActionBinding => binding !== null)
         : [];
-      actions.push({ name: row.name.trim(), bindings });
+      actions.push({
+        name: row.name.trim(),
+        ...mappingIdentity(row),
+        bindings,
+      });
     }
   }
   const axes: AxisMapping[] = [];
@@ -234,6 +216,7 @@ export function normalizeInputMappings(
         : [];
       axes.push({
         name: row.name.trim(),
+        ...mappingIdentity(row),
         kind: row.kind === "2d" ? "2d" : "1d",
         bindings,
       });
@@ -243,4 +226,16 @@ export function normalizeInputMappings(
     return createDefaultInputMappings();
   }
   return { actions, axes };
+}
+
+function mappingIdentity(row: Record<string, unknown>): {
+  id?: string;
+  legacyName?: string;
+} {
+  return {
+    ...(typeof row.id === "string" && row.id ? { id: row.id } : {}),
+    ...(typeof row.legacyName === "string" && row.legacyName
+      ? { legacyName: row.legacyName }
+      : {}),
+  };
 }

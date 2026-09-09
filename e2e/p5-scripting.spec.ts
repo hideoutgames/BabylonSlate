@@ -512,7 +512,7 @@ test.describe("P5 visual scripting acceptance", () => {
     await page.getByTestId("play-overlay-close").click();
   });
 
-  test("the node palette can add Get Axis 2D on the Class graph", async ({
+  test("the node palette adds the Move asset event instead of legacy axis polling", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -528,8 +528,16 @@ test.describe("P5 visual scripting acceptance", () => {
       .dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Get Axis 2D");
-    await page.getByTestId("node-palette-item-input.getAxis2D").click();
+    await expect(page.getByTestId("node-palette-item-input.getAxis2D")).toHaveCount(0);
+    await page.getByTestId("node-palette-search").fill("Event Move");
+    const event = page.locator('[data-testid^="node-palette-item-input.event:"]').filter({ hasText: "Event Move" });
+    await expect(event).toHaveCount(1);
+    await event.click();
     await expect(nodes).toHaveCount(baseline + 1);
+    const added = nodes.filter({ hasText: "Event Move" });
+    await expect(added).toHaveCount(1);
+    for (const label of ["Started", "Held", "Released", "Value", "Held Seconds"])
+      await expect(added.getByText(label, { exact: true })).toBeVisible();
   });
 
   test("a type mismatch blocks Preview and tap-to-navigate focuses the node", async ({

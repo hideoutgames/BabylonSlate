@@ -147,12 +147,12 @@ describe("runtime input bindings", () => {
     expect(next.bindings.importBindings(JSON.stringify(malformed))).toBe(false);
     expect(next.bindings.getBinding("action", "Jump", 0)?.code).toBe("KeyJ");
     expect(next.bindings.importBindings("not json")).toBe(false);
-    expect(next.bindings.importBindings('{"version":2,"overrides":[]}')).toBe(
+    expect(next.bindings.importBindings('{"version":3,"overrides":[]}')).toBe(
       false,
     );
     next.bindings.resetBindings();
     expect(JSON.parse(next.bindings.exportBindings())).toEqual({
-      version: 1,
+      version: 2,
       overrides: [],
     });
     expect(next.resolve([key("Space")]).actions.Jump).toEqual({

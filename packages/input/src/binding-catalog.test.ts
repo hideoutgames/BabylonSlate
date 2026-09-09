@@ -79,8 +79,8 @@ describe("bindingCodesForDevice", () => {
     });
   });
 
-  it("does not invent a touch catalog; callers supply control ids", () => {
-    expect(bindingCodesForDevice("touch")).toEqual([]);
+  it("offers built-in touch controls to typed input pickers", () => {
+    expect(bindingCodesForDevice("touch").map((entry) => entry.code)).toEqual(["joystick-x", "joystick-y", "dpad-x", "dpad-y", "Jump"]);
   });
 });
 

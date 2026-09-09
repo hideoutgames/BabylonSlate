@@ -31,7 +31,14 @@ export function remapImportResultGuids(
     ...result,
     guid: remap.get(result.guid) ?? result.guid,
     dependencies: result.dependencies.map((dep) => remap.get(dep) ?? dep),
-    payload: remapAnimationPayloadGuids(
+    chunks: result.chunks.map((chunk) => {
+      if (chunk.id !== "document") return chunk;
+      try {
+        const body = JSON.parse(new TextDecoder().decode(chunk.data));
+        return { ...chunk, data: new TextEncoder().encode(JSON.stringify(remapInputReferences(body, remap))) };
+      } catch { return chunk; }
+    }),
+    payload: remapInputReferences(remapAnimationPayloadGuids(
       result.type,
       remapSkeletonPayloadGuids(
         result.type,
@@ -47,9 +54,19 @@ export function remapImportResultGuids(
         remap,
       ),
       remap,
-    ),
+    ), remap) as Record<string, unknown>,
     attachToGuid: result.attachToGuid
       ? remap.get(result.attachToGuid) ?? result.attachToGuid
       : result.attachToGuid,
   }));
+}
+
+/** InputType defaults can be nested inside variables, arrays, and function graphs. */
+function remapInputReferences(value: unknown, remap: ReadonlyMap<string, string>): unknown {
+  if (Array.isArray(value)) return value.map((entry) => remapInputReferences(entry, remap));
+  if (!value || typeof value !== "object") return value;
+  const row = value as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(row).map(([key, entry]) => [key,
+    key === "Asset" && typeof row.Name === "string" && typeof entry === "string" ? remap.get(entry) ?? entry : remapInputReferences(entry, remap),
+  ]));
 }

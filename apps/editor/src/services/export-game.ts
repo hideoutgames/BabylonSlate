@@ -1,3 +1,4 @@
+import { isInputAssetType, normalizeInputAssetPayload } from "@babylonslate/core";
 import {
   collectExportReachability,
   exportGame,
@@ -43,7 +44,6 @@ import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   compileAnimGraphScripts,
   compileGraphDocuments,
-  compileGraphDocumentsForExport,
 } from "./script-compiler";
 
 export { MISSING_STARTUP_SCENE_MESSAGE };
@@ -366,10 +366,12 @@ export async function collectAndExportGame(
     });
   }
 
+  const inputAssets = params.assets.flatMap((asset) => {
+    if (!isInputAssetType(asset.type) || !closure.value.guids.includes(asset.guid)) return [];
+    return [{ ...normalizeInputAssetPayload(asset.type, params.payloadByGuid?.(asset.guid)), guid: asset.guid, name: asset.name, type: asset.type }];
+  });
   params.onPhase?.("Compiling");
-  const classScripts: ScriptBundleEntry[] = bundleDebugger
-    ? compileGraphDocuments(graphDocs)
-    : compileGraphDocumentsForExport(graphDocs);
+  const classScripts = compileGraphDocuments(graphDocs, { stripDevelopmentOnly: !bundleDebugger, inputAssets });
   const animScripts = compileAnimGraphScripts(animDocs, {
     stripDevelopmentOnly: !bundleDebugger,
   });
@@ -395,6 +397,7 @@ export async function collectAndExportGame(
     physicsWorld: params.physicsWorld,
     infiniteLoopDetection: params.infiniteLoopDetection,
     loopCount: params.loopCount,
+    inputAssets,
     inputMappings: params.inputMappings,
     scripts,
     assets: exportAssets,

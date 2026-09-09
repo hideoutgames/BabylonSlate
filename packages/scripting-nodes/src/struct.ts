@@ -96,7 +96,9 @@ export const structNodes: NodeDefinition[] = [
       const value = ctx.input("in");
       const out: Record<string, string> = {};
       for (const field of structFieldsOf(ctx.node.properties)) {
-        out[field.name] = `(${value})[${JSON.stringify(field.name)}]`;
+        out[field.name] = structGuidOf(ctx.node.properties) === "engine:InputType" && field.name === "Name"
+          ? `(ctx.getInputState?.(${value})?.input.Name ?? (${value})?.Name ?? "")`
+          : `(${value})[${JSON.stringify(field.name)}]`;
       }
       return out;
     },

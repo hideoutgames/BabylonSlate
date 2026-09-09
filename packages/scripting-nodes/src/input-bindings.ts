@@ -1,5 +1,8 @@
 import {
   BOOL,
+  arrayOf,
+  enumRef,
+  structRef,
   EXEC,
   INT,
   STRING,
@@ -24,6 +27,82 @@ const slotArgs = (ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0]) =>
 
 /** Player-owned overrides; these nodes never alter authored project defaults. */
 export const inputBindingNodes: NodeDefinition[] = [
+  {
+    id: "input.rebindStatus",
+    title: "Get Input Rebind Status",
+    category: "input",
+    pure: true,
+    pins: () => [
+      pin("status", "Status", "out", enumRef("engine:InputRebindStatus")),
+    ],
+    codegen: () => ({
+      status: `(ctx.inputBindings?.getRebindStatus() ?? "idle")`,
+    }),
+  },
+  {
+    id: "input.bindings",
+    title: "Get Input Bindings",
+    category: "input",
+    pure: true,
+    pins: () => [
+      pin("input", "Input", "in", structRef("engine:InputType")),
+      pin(
+        "bindings",
+        "Bindings",
+        "out",
+        arrayOf(structRef("engine:InputBinding")),
+      ),
+    ],
+    codegen: (ctx) => ({
+      bindings: `(ctx.inputBindings?.getInputBindings?.(${ctx.input("input")}) ?? [])`,
+    }),
+  },
+  {
+    id: "input.rebind",
+    title: "Listen for Input Binding",
+    category: "input",
+    pins: () => [
+      ...execPins(),
+      pin("binding", "Binding", "in", structRef("engine:InputBinding")),
+      pin("success", "Listening", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `${ctx.output("success")} = ctx.inputBindings?.beginInputRebind?.(${ctx.input("binding")}) ?? false;`,
+      );
+    },
+  },
+  {
+    id: "input.setControl",
+    title: "Set Input Control",
+    category: "input",
+    pins: () => [
+      ...execPins(),
+      pin("binding", "Binding", "in", structRef("engine:InputBinding")),
+      pin("control", "Control", "in", structRef("engine:InputControl")),
+      pin("success", "Success", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `${ctx.output("success")} = ctx.inputBindings?.setInputControl?.(${ctx.input("binding")}, ${ctx.input("control")}) ?? false;`,
+      );
+    },
+  },
+  {
+    id: "input.resetInput",
+    title: "Reset Input Bindings",
+    category: "input",
+    pins: () => [
+      ...execPins(),
+      pin("input", "Input", "in", structRef("engine:InputType")),
+      pin("success", "Success", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `${ctx.output("success")} = ctx.inputBindings?.resetInputBindings?.(${ctx.input("input")}) ?? false;`,
+      );
+    },
+  },
   {
     id: "input.getBinding",
     title: "Get Input Binding",

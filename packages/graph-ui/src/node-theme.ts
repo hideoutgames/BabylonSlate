@@ -77,6 +77,7 @@ export function nodeVisualRole(input: {
     return "call-parent";
   }
   if (
+    nodeType === "input.event" ||
     nodeType.startsWith("flow.event") ||
     nodeType.startsWith("anim.event") ||
     nodeType.startsWith("anim.rule") ||

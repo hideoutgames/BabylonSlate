@@ -319,6 +319,7 @@ export function startPlayer(options: {
     sceneAssetGuid: startup,
     scene,
     physicsWorld: manifest.physicsWorld,
+    inputAssets: manifest.inputAssets,
     inputMappings: manifest.inputMappings,
     gravity: scene.settings.gravity,
     havokWasmUrl: havokWasmUrl(),

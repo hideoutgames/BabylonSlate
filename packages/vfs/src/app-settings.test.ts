@@ -65,6 +65,8 @@ describe("app settings", () => {
       animGraphObject: ["anim-object-graph"],
       "behaviour-tree": ["behaviour-tree-graph"],
       audio: ["audio-preview"],
+      "input-action": ["input-bindings"],
+      "input-axis": ["input-bindings"],
       "audio-mixer": ["audio-mixer-details"],
       "audio-channel": ["audio-channel-details"],
       "sound-attenuation": ["sound-attenuation-details"],

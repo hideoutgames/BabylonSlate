@@ -157,6 +157,16 @@ describe("listDockWindows", () => {
     });
   });
 
+  it.each(["input-action", "input-axis"] as const)("provides dockable Bindings and Details for %s", (kind) => {
+    const windows = listDockWindows(kind);
+    expect(windows.map(({ id, title }) => ({ id, title }))).toEqual([
+      { id: "input-bindings", title: "Bindings" },
+      { id: "input-details", title: "Details" },
+    ]);
+    expect(primaryDockPanel(kind)).toBe("input-bindings");
+    expect(windows[1]?.defaultPosition).toMatchObject({ referencePanelId: "input-bindings", direction: "right" });
+  });
+
   it("lists Enum, Structure, and ScriptInterface dock catalogs", () => {
     expect(listDockWindows("enum").map((entry) => entry.id)).toEqual([
       "enum-members",

@@ -1,6 +1,12 @@
+import { INPUT_DEVICES } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
+
+export const ENGINE_INPUT_TYPE_STRUCT_ID = "engine:InputType";
+export const ENGINE_INPUT_CONTROL_STRUCT_ID = "engine:InputControl";
+export const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
+export const ENGINE_INPUT_DEVICE_ENUM_ID = "engine:InputDevice";
 
 export const ENGINE_TYPE_GUID_PREFIX = "engine:";
 
@@ -34,6 +40,19 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     name: "Collision Channel",
     members: COLLISION_CHANNEL_MEMBERS.map((name, value) => ({ name, value })),
   },
+
+  {
+    id: "engine:InputRebindStatus",
+    name: "Input Rebind Status",
+    members: ["idle", "listening", "completed", "cancelled"].map(
+      (name, value) => ({ name, value }),
+    ),
+  },
+  {
+    id: ENGINE_INPUT_DEVICE_ENUM_ID,
+    name: "Input Device",
+    members: INPUT_DEVICES.map((name, value) => ({ name, value })),
+  },
 ];
 
 /** Engine user-style structs. Pin-kind math types stay first-class. */
@@ -47,6 +66,49 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "Normal", typeId: "vec3" },
       { name: "Actor", typeId: "actor" },
       { name: "Distance", typeId: "float" },
+    ],
+  },
+
+  {
+    id: ENGINE_INPUT_TYPE_STRUCT_ID,
+    name: "Input Type",
+    fields: [
+      { name: "Name", typeId: "string" },
+      { name: "Asset", typeId: "asset" },
+    ],
+  },
+  {
+    id: ENGINE_INPUT_CONTROL_STRUCT_ID,
+    name: "Input Control",
+    fields: [
+      {
+        name: "Device",
+        typeId: "enum",
+        typeClassId: ENGINE_INPUT_DEVICE_ENUM_ID,
+      },
+      { name: "Code", typeId: "string" },
+      ...["Shift", "Ctrl", "Alt", "Meta"].map((name) => ({
+        name,
+        typeId: "bool",
+      })),
+    ],
+  },
+  {
+    id: ENGINE_INPUT_BINDING_STRUCT_ID,
+    name: "Input Binding",
+    fields: [
+      {
+        name: "Input",
+        typeId: "struct",
+        typeClassId: ENGINE_INPUT_TYPE_STRUCT_ID,
+      },
+      { name: "Id", typeId: "string" },
+      { name: "Label", typeId: "string" },
+      {
+        name: "Control",
+        typeId: "struct",
+        typeClassId: ENGINE_INPUT_CONTROL_STRUCT_ID,
+      },
     ],
   },
 ];

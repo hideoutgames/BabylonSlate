@@ -10,6 +10,8 @@ import type {
   SerializedSceneLayer,
 } from "@babylonslate/core";
 import {
+  isInputAssetType,
+  normalizeInputAssetPayload,
   assetTypeForDocumentKind,
   assetTypeForDocumentSave,
   createDefaultScene,
@@ -99,6 +101,7 @@ import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
+  newAssetFileName,
   assetHeaderDependencies,
   materialHeaderMeta,
 } from "../lib/content-browser-helpers";
@@ -128,6 +131,10 @@ function headerMetaForSave(
     | SerializedGraph
     | Record<string, unknown>,
 ): Record<string, unknown> | undefined {
+  if (isInputAssetType(type)) {
+    const input = normalizeInputAssetPayload(type, content);
+    return { valueType: input.valueType, ...(input.legacyName ? { legacyName: input.legacyName } : {}) };
+  }
   const materialMeta = materialHeaderMeta(
     type,
     content as Record<string, unknown>,
@@ -722,7 +729,7 @@ export class ProjectService {
       this.migrationPending.push(migrated.pending);
     }
 
-    const withDocuments = await this.ensureDocuments(document);
+    const withDocuments = await this.copyLegacyInputAssets(await this.ensureDocuments(document), raw as unknown as Record<string, unknown>);
     const scenePayloads: SerializedScene[] = [];
     if (!withDocuments.settings.gameInstanceClass) {
       for (const path of withDocuments.scenes) {
@@ -1209,6 +1216,7 @@ export class ProjectService {
     } else {
       document.graphs = [];
     }
+    await this.copyLegacyInputAssets(document);
     document.settings.startupSceneGuid = await this.guidForAsset(MAIN_SCENE_FILE);
     await this.saveProject(document, createEmptyLayouts());
     const stored = JSON.parse(
@@ -1228,6 +1236,43 @@ export class ProjectService {
       layouts: createEmptyLayouts(),
       migrationPending: [],
     };
+  }
+
+  /** Copy first; the original project mappings stay on disk until the next successful project save.
+   * Header aliases make retrying an interrupted conversion idempotent without overwriting edits.
+   */
+  private async copyLegacyInputAssets(document: ProjectDocument, originalManifest?: Record<string, unknown>): Promise<ProjectDocument> {
+    if (document.settings.inputAssetsVersion === 1) return document;
+    const existing = this.assetRegistry?.list({ rootId: "project" }) ?? [];
+    const mappings = [
+      ...document.settings.input.actions.map((mapping) => ({ type: "InputAction" as const, mapping })),
+      ...document.settings.input.axes.map((mapping) => ({ type: "InputAxis" as const, mapping })),
+    ];
+    for (const { type, mapping } of mappings) {
+      if (existing.some((asset) => asset.header.type === type && asset.header.payload.legacyName === mapping.name)) continue;
+      const payload = normalizeInputAssetPayload(type, { ...mapping, legacyName: mapping.name });
+      const suffix = type === "InputAction" ? ".inputaction.babasset" : ".inputaxis.babasset";
+      const filename = newAssetFileName(type, mapping.name) || `Input${suffix}`;
+      const stem = filename.slice(0, -suffix.length);
+      let path = `assets/Input/${filename}`;
+      for (let index = 2; await this.storage.exists(path); index++) path = `assets/Input/${stem}_${index}${suffix}`;
+      await this.storage.mkdir("assets/Input", true);
+      const bytes = await encodeAssetDocument({
+        type, name: mapping.name, guid: await this.guidForAsset(path),
+        version: this.migrations.currentVersion(type), payload: payload as unknown as Record<string, unknown>,
+      }, { blobs: this.blobs, headerMeta: headerMetaForSave(type, payload as unknown as Record<string, unknown>) });
+      await this.storage.writeBinary(path, bytes);
+      const indexed = await this.assetRegistry?.reindexPath(path);
+      if (indexed) existing.push(indexed);
+    }
+    if (originalManifest) {
+      await this.storage.writeText(PROJECT_FILE, JSON.stringify({
+        ...originalManifest, guid: this.projectGuid,
+        settings: { ...(originalManifest.settings as Record<string, unknown> ?? {}), input: document.settings.input, inputAssetsVersion: 1 },
+      }, null, 2));
+    }
+    document.settings = { ...document.settings, inputAssetsVersion: 1, input: { actions: [], axes: [] } };
+    return document;
   }
 
   private async scaffoldKenneyMannequinEmpty(
@@ -1400,6 +1445,7 @@ export class ProjectService {
         : isAssetDocumentKind(kind)
           ? assetTypeForDocumentSave(kind, existing?.type)
           : "Class";
+    if (isInputAssetType(type)) content = normalizeInputAssetPayload(type, content) as unknown as Record<string, unknown>;
     const version = this.migrations.currentVersion(type);
     const parentClass =
       options?.parentClass !== undefined
@@ -1424,7 +1470,7 @@ export class ProjectService {
               "string" &&
             (content as { displayName: string }).displayName.trim() !== ""
               ? (content as { displayName: string }).displayName.trim()
-              : assetName(path),
+              : isInputAssetType(type) && existing?.name ? existing.name : assetName(path),
           guid: await this.guidForAsset(path),
           version,
           payload: content as unknown as Record<string, unknown>,
@@ -1606,6 +1652,7 @@ export class ProjectService {
 
   private async readExistingAssetMeta(path: string): Promise<{
     type: string;
+    name: string;
     parentClass: string | null;
     hasDocumentChunk: boolean;
   } | null> {
@@ -1616,6 +1663,7 @@ export class ProjectService {
       );
       return {
         type: header.type,
+        name: header.name,
         parentClass: header.parentClass ?? null,
         hasDocumentChunk: header.chunks.some(
           (chunk) => chunk.id === DOCUMENT_CHUNK_ID,

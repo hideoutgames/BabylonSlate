@@ -1,3 +1,4 @@
+import { InputBindingsPanel, InputBindingDetailsPanel } from "../panels/input-asset-panels";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "../panels/viewport-panel";
 import { GraphPanel } from "../panels/graph-panel";
@@ -187,6 +188,8 @@ export const panelComponents = {
   "plugin-settings-details": (props: IDockviewPanelProps) => (
     <PluginSettingsDetailsPanel {...props} />
   ),
+  "input-bindings": (props: IDockviewPanelProps) => <InputBindingsPanel {...props} />,
+  "input-details": (props: IDockviewPanelProps) => <InputBindingDetailsPanel {...props} />,
   "audio-mixer-details": (props: IDockviewPanelProps) => (
     <AudioMixerDetailsPanel {...props} />
   ),

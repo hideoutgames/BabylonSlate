@@ -1,3 +1,4 @@
+import { InputAssetEditingProvider } from "../context/input-asset-editing-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect } from "react";
@@ -464,6 +465,21 @@ export function DocumentWorkspace() {
                     />
                   </DocumentShell>
                 </ModelColliderSessionProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "input-action" || doc.ref.kind === "input-axis") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <InputAssetEditingProvider>
+                  <DocumentShell path={doc.ref.path} testId={`document-workspace-${doc.ref.kind}`} active={active}>
+                    <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
+                  </DocumentShell>
+                </InputAssetEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );

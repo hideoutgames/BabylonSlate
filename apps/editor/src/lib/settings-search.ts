@@ -25,8 +25,6 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["general", "Loop Count", "settings-loop-count"],
   ["general", "Autosave Interval", "settings-autosave-interval"],
   ["general", "Editor Utility Objects"],
-  ["input", "Input Actions And Bindings"],
-  ["input", "Input Axes And Bindings"],
   ["twoD", "Pixels Per Unit", "pixels-per-unit"],
   ["twoD", "Pixel Perfect", "settings-pixel-perfect"],
   ["twoD", "Integer Zoom", "settings-integer-zoom"],

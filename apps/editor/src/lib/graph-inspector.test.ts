@@ -458,6 +458,8 @@ describe("collectEnumMemberNames", () => {
         ],
       ),
     ).toEqual({
+      "engine:InputDevice": ["key", "mouseButton", "pointer", "gamepadButton", "gamepadAxis", "touch"],
+      "engine:InputRebindStatus": ["idle", "listening", "completed", "cancelled"],
       "enum-1": ["Idle", "Run"],
       "enum-2": ["Red", "Blue"],
       "engine:CollisionChannel": [

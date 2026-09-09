@@ -20,6 +20,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "script-interface",
   "plugin-settings",
   "audio",
+  "input-action",
+  "input-axis",
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
@@ -104,6 +106,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "PluginSettings";
     case "audio":
       return "Audio";
+    case "input-action":
+      return "InputAction";
+    case "input-axis":
+      return "InputAxis";
     case "audio-mixer":
       return "AudioMixer";
     case "audio-channel":
@@ -191,6 +197,10 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "plugin-settings";
     case "Audio":
       return "audio";
+    case "InputAction":
+      return "input-action";
+    case "InputAxis":
+      return "input-axis";
     case "AudioMixer":
       return "audio-mixer";
     case "AudioChannel":
@@ -260,6 +270,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Plugin Settings";
     case "audio":
       return "Audio";
+    case "input-action":
+      return "Input Action";
+    case "input-axis":
+      return "Input Axis";
     case "audio-mixer":
       return "Audio Mixer";
     case "audio-channel":
@@ -375,7 +389,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

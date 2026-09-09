@@ -145,7 +145,8 @@ export function compileGraphDocument(
     parentClassId?: string | null;
     stripDevelopmentOnly?: boolean;
     instrumentInfiniteLoops?: boolean;
-    enums?: HydrateGraphOptions["enums"];
+    inputAssets?: HydrateGraphOptions["inputAssets"];
+  enums?: HydrateGraphOptions["enums"];
     structs?: HydrateGraphOptions["structs"];
     latentFunctions?: ReadonlySet<string>;
     parentOf?: (classId: string) => string | null | undefined;
@@ -155,6 +156,7 @@ export function compileGraphDocument(
   const graphId = options.graphId ?? "event-graph";
   const serialized = isLogicGraphPayload(content) ? null : content;
   const typeOptions: HydrateGraphOptions = {
+    inputAssets: options.inputAssets,
     enums: options.enums,
     structs: options.structs,
   };
@@ -399,6 +401,7 @@ function compileFunctionGraphFingerprint(
  */
 export function graphCompileSignature(
   documents: ReadonlyArray<GraphCompileDocument>,
+  inputAssets?: HydrateGraphOptions["inputAssets"],
 ): string {
   const payload = [...documents]
     .map((doc) => ({
@@ -410,7 +413,7 @@ export function graphCompileSignature(
       functionGraphs: compileFunctionGraphFingerprint(doc.content.functionGraphs),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
-  return JSON.stringify(payload);
+  return JSON.stringify(inputAssets === undefined ? payload : { graphs: payload, inputAssets });
 }
 
 export function graphsNeedCompile(
@@ -422,6 +425,7 @@ export function graphsNeedCompile(
 
 export type GraphCompileCacheOptions = {
   stripDevelopmentOnly?: boolean;
+  inputAssets?: HydrateGraphOptions["inputAssets"];
   enums?: HydrateGraphOptions["enums"];
   structs?: HydrateGraphOptions["structs"];
 };
@@ -476,6 +480,7 @@ function graphDocumentCompileCacheKey(
       options.typesFingerprint ??
       typeSchemasFingerprint(options.enums, options.structs),
     latent: options.latentFingerprint ?? "",
+    inputAssets: options.inputAssets ?? [],
   });
 }
 
@@ -520,7 +525,8 @@ function compileGraphDocumentCached(
       classId: doc.classId,
       parentClassId: doc.parentClassId,
       stripDevelopmentOnly: options.stripDevelopmentOnly,
-      enums: options.enums,
+      inputAssets: options.inputAssets,
+    enums: options.enums,
       structs: options.structs,
       latentFunctions: options.latentFunctions,
       parentOf: options.parentOf,

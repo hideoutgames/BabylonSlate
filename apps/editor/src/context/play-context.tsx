@@ -303,6 +303,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   >(() => new Map());
   const [playAudioSourceLoader, setPlayAudioSourceLoader] =
     useState<PlayAudioSourceLoader | undefined>(undefined);
+  const [playInputAssets, setPlayInputAssets] = useState<import("@babylonslate/core").InputAssetDefinition[]>([]);
   const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
     () => emptyPlayAudioLibrary(),
   );
@@ -347,6 +348,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayFontCssStacks,
     collectPlayModelBytes,
     collectPlayModelPayloads,
+    collectPlayInputAssets,
     collectPlayAudio,
     collectPlayParticles,
     collectPlayMaterialLibrary,
@@ -1134,6 +1136,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayFontCssStackByGuid(new Map());
         }
 
+        setPlayInputAssets(await collectPlayInputAssets());
         try {
           const audio = await collectPlayAudio();
           setPlayAudioSourceLoader(() => audio.loadSourceBytes);
@@ -1207,7 +1210,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayFontCssStacks,
       collectPlayModelBytes,
       collectPlayModelPayloads,
-      collectPlayAudio,
+      collectPlayInputAssets,
+    collectPlayAudio,
       collectPlayParticles,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
@@ -1459,6 +1463,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             navmeshBytes={playNavmeshBytes}
             audioReverbBytes={playAudioReverbBytes}
             audioProjectSettings={projectDocument?.settings.audio}
+            inputAssets={playInputAssets}
             inputMappings={projectDocument?.settings.input}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100

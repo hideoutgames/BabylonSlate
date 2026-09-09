@@ -4,7 +4,6 @@ import {
   AssetPickerControl,
   CatalogDialog,
   ClassPicker,
-  InputMappingEditor,
   NamedListEditor,
   NumberField,
   assetRowIdentity,
@@ -13,13 +12,11 @@ import {
   type CatalogCategory,
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
-import type { ProjectInputSettings } from "@babylonslate/core";
 import {
   defaultExportPreset,
   isErr,
   MAX_COLLISION_LAYERS,
 } from "@babylonslate/core";
-import { normalizeInputMappings } from "@babylonslate/input";
 import {
   Empty,
   EmptyDescription,
@@ -98,11 +95,6 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
       "project version build compile autosave editor utility objects infinite loop detection loop count",
   },
   {
-    id: "input",
-    label: "Input",
-    keywords: "actions axes bindings gamepad keyboard",
-  },
-  {
     id: "twoD",
     label: "2D",
     keywords: "pixels per unit pixel perfect integer zoom sorting layers",
@@ -161,7 +153,6 @@ const PROJECT_GROUPS: CatalogCategoryGroup[] = [
     label: "Project",
     ids: [
       "general",
-      "input",
       "twoD",
       "physics",
       "fonts",
@@ -257,10 +248,6 @@ function matchesSearch(
   needle: string,
 ): boolean {
   return !needle || `${label} ${keywords}`.toLowerCase().includes(needle);
-}
-
-function collectTouchControlIds(): string[] {
-  return ["joystick-x", "joystick-y", "dpad-x", "dpad-y", "Jump"];
 }
 
 export function SettingsModal({
@@ -629,26 +616,6 @@ export function SettingsModal({
                   Classes that run only in the editor.
               </FieldDescription>
             </Field>
-          </FieldSet>
-        </FieldGroup>
-      ) : null}
-
-      {showProjectBody && projectDocument && activeCategoryId === "input" ? (
-        <FieldGroup className="gap-4">
-          <FieldSet>
-            <FieldLegend>Input</FieldLegend>
-            <InputMappingEditor
-              value={normalizeInputMappings(projectDocument.settings.input, {
-                allowIncomplete: true,
-              })}
-              onChange={(input) =>
-                updateProjectSettings({
-                  input: input as unknown as ProjectInputSettings,
-                })
-              }
-              touchControlIds={collectTouchControlIds()}
-              data-testid="settings-input-mapping"
-            />
           </FieldSet>
         </FieldGroup>
       ) : null}

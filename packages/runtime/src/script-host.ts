@@ -1,3 +1,4 @@
+import type { InputTypeValue, InputValueState } from "@babylonslate/core";
 import {
   combineRotators,
   createSeededRng,
@@ -67,6 +68,7 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  */
 export interface ScriptHostServices {
   inputBindings?: InputBindingControls;
+  getInputState?: (input: InputTypeValue) => InputValueState | null;
   getProjectName?(): string;
   getProjectVersion?(): string;
   /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
@@ -190,6 +192,7 @@ export interface ScriptHostServices {
 
 export interface ScriptContext {
   inputBindings?: InputBindingControls;
+  getInputState?: (input: InputTypeValue) => InputValueState | null;
   self: BObject | null;
   deltaSeconds: number;
   tickIndex: number;
@@ -1205,6 +1208,7 @@ export class ScriptHost {
       },
       isActionHeld: (action) => tick?.isActionHeld?.(action) ?? false,
       inputBindings: services.inputBindings,
+      getInputState: services.getInputState,
       wasActionPressed: (action) => tick?.wasActionPressed?.(action) ?? false,
       wasActionReleased: (action) =>
         tick?.wasActionReleased?.(action) ?? false,

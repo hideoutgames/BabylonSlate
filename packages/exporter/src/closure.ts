@@ -24,6 +24,7 @@ function pluginGuidFromRoot(rootId: string): string | null {
 function isReferenceField(key: string): boolean {
   return (
     /Guids?$/.test(key) ||
+    key === "Asset" ||
     key === "classId" ||
     key === "default:classId" ||
     key === "parentClass" ||
@@ -115,6 +116,7 @@ export function collectExportReachability(
     const pending = [sceneRoot];
     const seen = new Set<string>([sceneRoot]);
     if (sceneRoot === startup) {
+      for (const asset of sortedAssets) if (asset.type === "InputAction" || asset.type === "InputAxis") pending.push(asset.guid);
       for (const ref of [input.gameInstanceClass, input.audioMixerGuid]) {
         if (ref?.trim()) pending.push(ref.trim());
       }

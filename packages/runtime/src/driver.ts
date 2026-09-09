@@ -1,3 +1,5 @@
+import type { InputAssetDefinition } from "@babylonslate/core";
+import { inputMappingsFromAssets } from "@babylonslate/input";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -150,6 +152,7 @@ export interface RuntimeDriverOptions {
   maxCatchUpSteps?: number;
   onCommand?: (command: CommandMessage) => void;
   /** Project Settings input mappings; defaults when omitted. */
+  inputAssets?: InputAssetDefinition[];
   inputMappings?: InputMappings;
   /** Demo actors exist so an empty project still shows motion in Preview. */
   seedDemoActors?: boolean;
@@ -346,6 +349,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly input = new InputRingBuffer(512);
   private readonly resolver: InputResolver;
   private resolvedInput: ResolvedInputTick = {
+    inputs: {},
     actions: {},
     axes: {},
     axes2D: {},
@@ -585,7 +589,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     const mappings = normalizeInputMappings(
-      options.inputMappings ?? createDefaultInputMappings(),
+      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : options.inputMappings ?? createDefaultInputMappings(),
     );
     this.resolver = new InputResolver(mappings);
 
@@ -675,6 +679,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.scriptHost = new ScriptHost({
       inputBindings: this.resolver.bindings,
+      getInputState: (input) => this.resolver.getInputState(input),
       interfaceRegistry: this.world.interfaceRegistry,
       classRegistry: registry,
       checkInfiniteLoop: () => this.loopGuard.check(),
@@ -3821,7 +3826,7 @@ class InProcessRuntime implements RuntimeDriver {
     // and drain() discarded the "future" events instead of deferring them.
     // Replay still works because it feeds one tick of events at a time.
     const pending = this.input.drain();
-    this.resolvedInput = this.resolver.resolve(pending);
+    this.resolvedInput = this.resolver.resolve(pending, simDt);
     this.connectionBox.current = this.resolvedInput.gamepadConnections;
     this.tickPrints = [];
     for (const connection of this.resolvedInput.gamepadConnections) {

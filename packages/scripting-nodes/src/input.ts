@@ -38,6 +38,30 @@ function emitMappedHit(
 
 /** Input category: mappings resolve through the runtime ctx (engineplan §11). */
 export const inputNodes: NodeDefinition[] = [
+  {
+    id: "input.event",
+    title: "Input Event",
+    category: "input",
+    pins: (properties) => [
+      pin("started", "Started", "out", EXEC),
+      pin("held", "Held", "out", EXEC),
+      pin("released", "Released", "out", EXEC),
+      pin("input", "Input", "in", structRef("engine:InputType")),
+      pin(
+        "value",
+        "Value",
+        "out",
+        properties?.valueType === "2d"
+          ? VEC2
+          : properties?.valueType === "1d"
+            ? FLOAT
+            : BOOL,
+      ),
+      pin("heldSeconds", "Held Seconds", "out", FLOAT),
+      pin("lastHeldSeconds", "Last Held Seconds", "out", FLOAT),
+    ],
+    codegen: () => {},
+  },
   ...inputBindingNodes,
   {
     id: "input.isActionHeld",

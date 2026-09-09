@@ -1,3 +1,5 @@
+import type { InputTypeValue, InputValueState } from "@babylonslate/core";
+import { inputMappingKey } from "./input-assets";
 import type { RawInputEvent } from "./ring-buffer";
 import { InputBindingProfile } from "./input-bindings";
 import type {
@@ -24,6 +26,7 @@ export interface GamepadConnectionEvent {
 }
 
 export interface ResolvedInputTick {
+  inputs: Record<string, InputValueState>;
   actions: Record<string, ActionState>;
   axes: Record<string, number>;
   axes2D: Record<string, Axis2DValue>;
@@ -191,16 +194,24 @@ export class InputResolver {
   };
 
   private mappings: InputMappings;
+  private inputStates: Record<string, InputValueState> = {};
   readonly bindings: InputBindingProfile;
 
   constructor(mappings: InputMappings) {
     this.mappings = structuredClone(mappings);
     this.bindings = new InputBindingProfile(
       mappings,
-      (current) => { this.mappings = current; },
+      (current) => {
+        this.mappings = current;
+      },
       () => {
         this.state.heldKeys.clear();
-        this.state.modifiers = { shift: false, ctrl: false, alt: false, meta: false };
+        this.state.modifiers = {
+          shift: false,
+          ctrl: false,
+          alt: false,
+          meta: false,
+        };
       },
     );
   }
@@ -210,7 +221,61 @@ export class InputResolver {
   }
 
   /** Apply one tick's events and return the resolved action / axis snapshot. */
-  resolve(events: readonly RawInputEvent[]): ResolvedInputTick {
+  resolve(
+    events: readonly RawInputEvent[],
+    deltaSeconds = 0,
+  ): ResolvedInputTick {
+    const inputs: Record<string, InputValueState> = {};
+    const sampleInputs = () => {
+      for (const mapping of [...this.mappings.actions, ...this.mappings.axes]) {
+        const key = inputMappingKey(mapping);
+        const axis = this.mappings.axes.includes(mapping);
+        let value: InputValueState["value"] = false;
+        if (!axis)
+          value = mapping.bindings.some((binding) =>
+            actionBindingHeld(binding, this.state),
+          );
+        else {
+          let x = 0,
+            y = 0;
+          for (const binding of mapping.bindings) {
+            const amount = axisBindingValue(binding, this.state);
+            if (
+              "kind" in mapping &&
+              mapping.kind === "2d" &&
+              "component" in binding &&
+              binding.component === "y"
+            )
+              y += amount;
+            else x += amount;
+          }
+          x = Math.max(-1, Math.min(1, x));
+          y = Math.max(-1, Math.min(1, y));
+          value = "kind" in mapping && mapping.kind === "2d" ? { x, y } : x;
+        }
+        const held =
+          typeof value === "object" ? value.x !== 0 || value.y !== 0 : !!value;
+        const previous = inputs[key] ?? this.inputStates[key];
+        const accumulated = inputs[key];
+        inputs[key] = {
+          input: { Name: mapping.name, Asset: mapping.id ?? "" },
+          valueType: axis
+            ? "kind" in mapping && mapping.kind === "2d"
+              ? "2d"
+              : "1d"
+            : "button",
+          value,
+          held,
+          started: !!accumulated?.started || (held && !previous?.held),
+          released: !!accumulated?.released || (!held && !!previous?.held),
+          heldSeconds: held ? (previous?.held ? previous.heldSeconds : 0) : 0,
+          lastHeldSeconds:
+            !held && previous?.held
+              ? previous.heldSeconds
+              : (previous?.lastHeldSeconds ?? 0),
+        };
+      }
+    };
     const connections: GamepadConnectionEvent[] = [];
     const actions: Record<string, ActionState> = {};
     const heldNow = new Set(this.state.previousHeldActions);
@@ -234,6 +299,7 @@ export class InputResolver {
     // A mapping change can release an action before the first new event arrives.
     // Observe that boundary so a fresh press of the replacement key keeps its edge.
     sampleActions();
+    sampleInputs();
     for (const event of events) {
       if (!this.bindings.accepts(event)) continue;
       switch (event.kind) {
@@ -334,9 +400,11 @@ export class InputResolver {
           break;
       }
       sampleActions();
+      sampleInputs();
     }
 
     sampleActions();
+    sampleInputs();
     this.state.previousHeldActions = new Set(
       this.mappings.actions
         .filter((mapping) => heldNow.has(mapping.name))
@@ -346,7 +414,7 @@ export class InputResolver {
     const axes: Record<string, number> = {};
     const axes2D: Record<string, Axis2DValue> = {};
     for (const mapping of this.mappings.axes) {
-      if (mapping.kind === "2d") {
+      if ("kind" in mapping && mapping.kind === "2d") {
         let x = 0;
         let y = 0;
         for (const binding of mapping.bindings) {
@@ -372,7 +440,46 @@ export class InputResolver {
       }
     }
 
+    const dt = Number.isFinite(deltaSeconds) ? Math.max(0, deltaSeconds) : 0;
+    for (const [key, value] of Object.entries(inputs)) {
+      if (value.held && !value.started && this.inputStates[key]?.held)
+        value.heldSeconds += dt;
+    }
+    this.inputStates = inputs;
+    // Asset identities remain independent even when two assets share a display name.
+    const exposeAction = (id: string, name: string) => {
+      const state = inputs[id];
+      if (state)
+        actions[name] = {
+          pressed: state.started,
+          released: state.released,
+          held: state.held,
+        };
+    };
+    const exposeAxis = (id: string, name: string) => {
+      const state = inputs[id];
+      if (!state) return;
+      if (typeof state.value === "object") {
+        axes2D[name] = state.value;
+        axes[name] = Math.hypot(state.value.x, state.value.y);
+      } else {
+        axes[name] = Number(state.value);
+        delete axes2D[name];
+      }
+    };
+    for (const mapping of this.mappings.actions)
+      if (mapping.id) exposeAction(mapping.id, mapping.name);
+    for (const mapping of this.mappings.axes)
+      if (mapping.id) exposeAxis(mapping.id, mapping.name);
+    // Authored compatibility aliases take precedence over newly created display names.
+    for (const mapping of this.mappings.actions)
+      if (mapping.id && mapping.legacyName)
+        exposeAction(mapping.id, mapping.legacyName);
+    for (const mapping of this.mappings.axes)
+      if (mapping.id && mapping.legacyName)
+        exposeAxis(mapping.id, mapping.legacyName);
     return {
+      inputs,
       actions,
       axes,
       axes2D,
@@ -381,11 +488,47 @@ export class InputResolver {
     };
   }
 
+  getInputState(input: InputTypeValue): InputValueState | null {
+    const mapping = [...this.mappings.actions, ...this.mappings.axes].find(
+      (entry) => entry.id === input?.Asset,
+    );
+    if (!mapping) return null;
+    const valueType = this.mappings.axes.includes(mapping)
+      ? "kind" in mapping && mapping.kind === "2d"
+        ? "2d"
+        : "1d"
+      : "button";
+    return (
+      this.inputStates[mapping.id!] ?? {
+        input: { Name: mapping.name, Asset: mapping.id! },
+        valueType,
+        started: false,
+        held: false,
+        released: false,
+        value:
+          valueType === "button"
+            ? false
+            : valueType === "2d"
+              ? { x: 0, y: 0 }
+              : 0,
+        heldSeconds: 0,
+        lastHeldSeconds: 0,
+      }
+    );
+  }
+
   isActionHeld(action: string): boolean {
-    return this.state.previousHeldActions.has(action);
+    const mapping =
+      this.mappings.actions.find((row) => row.id === action) ??
+      this.mappings.actions.find((row) => row.legacyName === action) ??
+      this.mappings.actions.find((row) => row.name === action);
+    return mapping?.id
+      ? this.inputStates[mapping.id]?.held === true
+      : this.state.previousHeldActions.has(action);
   }
 
   reset(): void {
+    this.inputStates = {};
     this.bindings.clearInputState();
     this.state.heldKeys.clear();
     this.state.heldMouseButtons.clear();

@@ -1075,3 +1075,14 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-layer");
   });
 });
+
+
+it("packs enabled input assets at startup even when no graph currently references them", () => {
+  const result = collectExportClosure({ startupSceneGuid: "scene", assets: [
+    asset({ guid: "scene", name: "Main", type: "Scene" }),
+    asset({ guid: "action", name: "Jump", type: "InputAction" }),
+    asset({ guid: "axis", name: "Move", type: "InputAxis" }),
+    asset({ guid: "disabled", name: "Plugin Input", type: "InputAction", rootId: "plugin:disabled" }),
+  ], pluginEnabledGuids: new Set(), parentOf: () => null, sceneByGuid: () => createDefaultScene(), graphByGuid: () => null });
+  expect(result).toEqual({ ok: true, value: ["action", "axis", "scene"] });
+});

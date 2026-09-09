@@ -1,5 +1,6 @@
 import {
   createDefaultSceneSettings,
+  normalizeInputAssetPayload,
   identitySerializedTransform,
   normalizeSceneLayer,
 } from "@babylonslate/core";
@@ -184,6 +185,9 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   });
   const asRecord = <T extends object>(value: T): Record<string, unknown> =>
     value as unknown as Record<string, unknown>;
+  for (const type of ["InputAction", "InputAxis"] as const) {
+    registry.register({ type, migrations: [(payload) => asRecord(normalizeInputAssetPayload(type, payload))] });
+  }
   registry.register({
     type: "Audio",
     migrations: [(payload) => ({ ...payload })],

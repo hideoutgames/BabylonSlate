@@ -30,6 +30,7 @@ function clampAudioScale(value: unknown, fallback = 1): number {
 }
 
 const JSON_TYPES = new Set([
+  "InputAction", "InputAxis",
   "Scene",
   "Class",
   "Graph",
@@ -230,6 +231,7 @@ export async function exportGame(
 
   const manifest: GameManifest = {
     project: { name: options.project?.name ?? "", version: options.project?.version ?? "" },
+    ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
     ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.gameInstanceClass?.trim()

@@ -166,6 +166,7 @@ export function resolvePreviewStartupGuid(options: {
 export function playLoadControl(options: {
   frameCap?: number;
   project?: { name: string; version: string };
+  inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
@@ -196,6 +197,7 @@ export function playLoadControl(options: {
     type: "load",
     frameCap: options.frameCap,
     ...(options.project ? { project: options.project } : {}),
+    inputAssets: options.inputAssets,
     inputMappings: options.inputMappings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,
