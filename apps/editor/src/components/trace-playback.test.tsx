@@ -82,9 +82,17 @@ describe("TracePlayback", () => {
     fireEvent.keyDown(tree, { key: "ArrowDown" });
     fireEvent.keyDown(tree, { key: "ArrowDown" });
     fireEvent.keyDown(tree, { key: "ArrowRight" });
-    expect(within(tree).getAllByRole("treeitem").some((row) => row.textContent?.startsWith("Identity"))).toBe(true);
+    expect(
+      within(tree)
+        .getAllByRole("treeitem")
+        .some((row) => row.textContent?.startsWith("Identity")),
+    ).toBe(true);
     fireEvent.keyDown(tree, { key: "ArrowLeft" });
-    expect(within(tree).getAllByRole("treeitem").some((row) => row.textContent?.startsWith("Identity"))).toBe(false);
+    expect(
+      within(tree)
+        .getAllByRole("treeitem")
+        .some((row) => row.textContent?.startsWith("Identity")),
+    ).toBe(false);
   });
 
   it("shows the recorded tick and rejects fractional frame selection", () => {

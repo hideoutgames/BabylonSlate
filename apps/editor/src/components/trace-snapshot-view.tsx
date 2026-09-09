@@ -108,9 +108,9 @@ export function TraceSnapshotView({
         depth: row.depth,
         expanded: row.expanded,
         hasChildren: row.hasChildren,
-        trailing: (
+        preview: (
           <span
-            className="max-w-32 truncate font-mono text-xs text-muted-foreground"
+            className="block max-w-32 truncate font-mono text-xs text-muted-foreground"
             title={traceValuePreview(row.value)}
           >
             {traceValuePreview(row.value)}

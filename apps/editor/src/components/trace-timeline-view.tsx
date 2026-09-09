@@ -50,6 +50,10 @@ export function TraceTimelineView({
     () => traceGraphBuckets(payload, start, end, limit),
     [payload, start, end, limit],
   );
+  const selectedBucketIndex = buckets.findIndex(
+    (bucket) => index >= bucket.start && index <= bucket.end,
+  );
+  const selectionFraction = count ? (index - start + 0.5) / count : 0;
   const scale =
     Math.max(
       TICK_BUDGET_MS,
@@ -212,6 +216,7 @@ export function TraceTimelineView({
               key={bucket.start}
               variant="ghost"
               className="trace-timing-bar relative h-full min-w-0 flex-1"
+              style={{ flexGrow: bucket.end - bucket.start + 1 }}
               aria-label={title}
               title={title}
               aria-current={selected ? "true" : undefined}
@@ -262,7 +267,7 @@ export function TraceTimelineView({
               data-testid="trace-selection-indicator"
               className="pointer-events-none absolute inset-y-0 w-0.5 bg-trace-selected"
               style={{
-                left: `calc(${((index - start + 0.5) / count) * 100}% - 1px)`,
+                left: `calc(${selectionFraction * 100}% + ${selectedBucketIndex - selectionFraction * (buckets.length - 1) - 1}px)`,
               }}
             />
           </>

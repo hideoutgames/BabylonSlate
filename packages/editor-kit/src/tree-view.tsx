@@ -65,6 +65,8 @@ export interface TreeViewNode {
   expanded: boolean;
   /** Trailing controls such as visibility and lock toggles. */
   trailing?: ReactNode;
+  /** Noninteractive value summary; pointer gestures still select the row. */
+  preview?: ReactNode;
   /** Optional type cue, rendered between the disclosure and the label. */
   icon?: ReactNode;
   muted?: boolean;
@@ -511,15 +513,19 @@ export function TreeView({
             nextIndex = nodes.length - 1;
             break;
           case "ArrowRight":
-            if (activeNode.hasChildren && !activeNode.expanded)
+            if (activeNode.hasChildren && !activeNode.expanded) {
+              event.preventDefault();
               onToggleExpanded?.(activeNode.id);
-            else if (nodes[activeIndex + 1]?.depth > activeNode.depth)
+              return;
+            } else if ((nodes[activeIndex + 1]?.depth ?? -1) > activeNode.depth)
               nextIndex++;
             break;
           case "ArrowLeft":
-            if (activeNode.hasChildren && activeNode.expanded)
+            if (activeNode.hasChildren && activeNode.expanded) {
+              event.preventDefault();
               onToggleExpanded?.(activeNode.id);
-            else {
+              return;
+            } else {
               for (let i = activeIndex - 1; i >= 0; i--) {
                 if (nodes[i]!.depth < activeNode.depth) {
                   nextIndex = i;
@@ -631,6 +637,8 @@ export function TreeView({
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
+                      setActiveId(node.id);
+                      containerRef.current?.focus({ preventScroll: true });
                       onToggleExpanded?.(node.id);
                     }}
                     data-testid={`tree-disclosure-${node.id}`}
@@ -659,6 +667,9 @@ export function TreeView({
                 >
                   {node.label}
                 </span>
+                {node.preview ? (
+                  <span className="min-w-0 shrink">{node.preview}</span>
+                ) : null}
                 {node.trailing ? (
                   <div
                     className="flex shrink-0 items-center gap-1"

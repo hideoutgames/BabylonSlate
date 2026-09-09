@@ -1,7 +1,7 @@
 .trace-timing-chart .trace-timing-bar {
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   min-width: 0;
   background: transparent;
 }
@@ -27,4 +27,24 @@
 }
 [data-testid="trace-playback-log-line"] [data-severity="error"] {
   color: var(--destructive);
+}
+
+@media (pointer: coarse) {
+  [data-testid="trace-snapshot-panel"] .editor-search-input input,
+  [data-testid="trace-log-panel"] .editor-search-input input,
+  [data-testid="trace-log-panel"] [data-slot="select-trigger"],
+  [data-testid="trace-playback-frame"] {
+    min-height: var(--touch-target, 44px);
+  }
+  [data-testid="trace-snapshot-panel"] .editor-search-input input,
+  [data-testid="trace-log-panel"] .editor-search-input input {
+    padding-right: calc(var(--touch-target, 44px) + 4px);
+  }
+  [data-testid="trace-snapshot-panel"]
+    .editor-search-input
+    [data-slot="button"],
+  [data-testid="trace-log-panel"] .editor-search-input [data-slot="button"] {
+    min-width: var(--touch-target, 44px);
+    min-height: var(--touch-target, 44px);
+  }
 }

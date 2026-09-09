@@ -86,15 +86,25 @@ function objectLabel(value: Record<string, unknown>, fallback: string): string {
     .join(" · ");
 }
 
-const labels: Record<string, string> = {
-  gameInstance: "Game Instance",
-  transform: "Local Transform",
-  rotation: "Rotation (Quaternion)",
-  inputEvents: "Input Events",
-  bt: "Behaviour Trees",
-  dt: "Delta Seconds",
-  btNodeId: "Current Node ID",
-};
+function isEntityCollection(path: string): boolean {
+  return (
+    path === "/snapshot/actors" ||
+    path === "/bt" ||
+    /^\/snapshot\/actors\/[^/]+\/components$/.test(path)
+  );
+}
+
+function snapshotLabel(key: string, path: string): string {
+  if (path === "/snapshot/gameInstance") return "Game Instance";
+  if (path === "/inputEvents") return "Input Events";
+  if (path === "/bt") return "Behaviour Trees";
+  if (/^\/snapshot\/actors\/[^/]+\/transform$/.test(path))
+    return "Local Transform";
+  if (/^\/snapshot\/actors\/[^/]+\/transform\/rotation$/.test(path))
+    return "Rotation (Quaternion)";
+  if (/^\/bt\/[^/]+\/btNodeId$/.test(path)) return "Current Node ID";
+  return humanizePropertyLabel(key);
+}
 
 function buildNode(
   value: unknown,
@@ -107,35 +117,47 @@ function buildNode(
     id,
     path,
     value,
-    label: labels[key] ?? humanizePropertyLabel(key),
+    label: snapshotLabel(key, path),
     children: [],
   };
   // Deep values remain inspectable in the exact-value pane and Raw Snapshot.
   if (depth >= 64) return node;
   if (Array.isArray(value)) {
-    node.children = collectionEntries(value, key).map((entry) => {
-      const child = buildNode(
-        entry.value,
-        `[${entry.index}]`,
-        `${id}/${pointerPart(entry.key)}`,
-        `${path}/${entry.index}`,
-        depth + 1,
-      );
-      if ((key === "actors" || key === "components") && record(entry.value))
-        child.label = objectLabel(entry.value, child.label);
-      if (key === "bt" && record(entry.value))
-        child.label = `Slot ${String(entry.value.slotId ?? entry.index)} · ${String(entry.value.status ?? "Unknown")}`;
-      if (
-        (key === "position" || key === "scale" || key === "rotation") &&
-        entry.index < 4
-      )
-        child.label = ["X", "Y", "Z", "W"][entry.index]!;
-      return child;
-    });
+    const entityCollection = isEntityCollection(path);
+    node.children = collectionEntries(value, entityCollection ? key : "").map(
+      (entry) => {
+        const child = buildNode(
+          entry.value,
+          `[${entry.index}]`,
+          `${id}/${pointerPart(entry.key)}`,
+          `${path}/${entry.index}`,
+          depth + 1,
+        );
+        if (
+          entityCollection &&
+          (key === "actors" || key === "components") &&
+          record(entry.value)
+        )
+          child.label = objectLabel(entry.value, child.label);
+        if (path === "/bt" && record(entry.value))
+          child.label = `Slot ${String(entry.value.slotId ?? entry.index)} · ${String(entry.value.status ?? "Unknown")}`;
+        if (
+          /^\/snapshot\/actors\/[^/]+\/transform\/(position|scale|rotation)$/.test(
+            path,
+          ) &&
+          entry.index < 4
+        )
+          child.label = ["X", "Y", "Z", "W"][entry.index]!;
+        return child;
+      },
+    );
   } else if (record(value)) {
     const identityFields = ["guid", "classId", "spawnIndex", "assetGuid"];
     const isEntity =
-      typeof value.guid === "string" && typeof value.classId === "string";
+      typeof value.guid === "string" &&
+      typeof value.classId === "string" &&
+      (path === "/snapshot/gameInstance" ||
+        /^\/snapshot\/actors\/[^/]+(\/components\/[^/]+)?$/.test(path));
     if (isEntity) {
       node.children.push({
         id: `${id}/$identity`,
@@ -290,11 +312,12 @@ export function compareTraceSnapshots(
   ) => {
     if (Object.is(left, right)) return;
     if (depth < 64 && Array.isArray(left) && Array.isArray(right)) {
+      const collection = isEntityCollection(path) ? key : "";
       const a = new Map(
-        collectionEntries(left, key).map((entry) => [entry.key, entry]),
+        collectionEntries(left, collection).map((entry) => [entry.key, entry]),
       );
       const b = new Map(
-        collectionEntries(right, key).map((entry) => [entry.key, entry]),
+        collectionEntries(right, collection).map((entry) => [entry.key, entry]),
       );
       for (const entryKey of new Set([...a.keys(), ...b.keys()])) {
         const previous = a.get(entryKey),
@@ -313,8 +336,8 @@ export function compareTraceSnapshots(
         ...Object.keys(right),
       ])) {
         walk(
-          left[name],
-          right[name],
+          Object.hasOwn(left, name) ? left[name] : undefined,
+          Object.hasOwn(right, name) ? right[name] : undefined,
           `${path}/${pointerPart(name)}`,
           name,
           depth + 1,
