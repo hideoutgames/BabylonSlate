@@ -152,7 +152,7 @@ describe("runtime input bindings", () => {
     );
     next.bindings.resetBindings();
     expect(JSON.parse(next.bindings.exportBindings())).toEqual({
-      version: 1,
+      version: 2,
       overrides: [],
     });
     expect(next.resolve([key("Space")]).actions.Jump).toEqual({
