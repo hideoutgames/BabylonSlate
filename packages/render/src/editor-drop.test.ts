@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Quaternion, Vector3 } from "@babylonjs/core";
+import { MeshBuilder, Quaternion, TransformNode, Vector3 } from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
@@ -75,6 +75,19 @@ describe("editor Drop", () => {
     raised.components[0]!.transform!.position = [0, 2, 0];
     expect(setup([raised, box("floor", [0, 0, 0])]).drop(["raised"])[0]?.position)
       .toEqual([0, -0.5, 0]);
+  });
+
+  it("uses imported visual bounds through TransformNode wrappers and ignores debug lines", () => {
+    const model = createActor("model", "Model", { transform: { ...identitySerializedTransform(), position: [0, 10, 0] },
+      components: [{ ...createMeshComponent("model-mesh", "box"), properties: { assetGuid: "model", collisionMode: "none" } }] });
+    const { sync, drop } = setup([model, box("floor", [0, 0, 0])]);
+    const root = sync.meshForActor("model")!;
+    const wrapper = new TransformNode("import-scale", root.getScene()); wrapper.parent = root;
+    const visual = MeshBuilder.CreateBox("imported-part", { size: 2 }, root.getScene());
+    visual.parent = wrapper; visual.position.y = 2;
+    const debug = MeshBuilder.CreateLines("debugFrustum:model", { points: [new Vector3(0, -100, 0), new Vector3(0, 100, 0)] }, root.getScene());
+    debug.parent = wrapper;
+    expect(drop(["model"])[0]?.position).toEqual([0, -0.25, 0]);
   });
 
   it.each([
