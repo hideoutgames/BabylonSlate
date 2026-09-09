@@ -1,4 +1,28 @@
-import { XIcon } from "lucide-react";
+import { TerminalIcon, XIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  DebugBehaviourTree,
+  ScriptBundleEntry,
+} from "@babylonslate/bridge";
+import {
+  PREVIEW_CONSOLE_REQUEST_MESSAGE,
+  PREVIEW_CONSOLE_RESULT_MESSAGE,
+  PREVIEW_CONSOLE_EVENT_MESSAGE,
+  PREVIEW_CONSOLE_CATALOG_MESSAGE,
+  PREVIEW_CONSOLE_CONTEXT_MESSAGE,
+} from "@babylonslate/exporter";
+import {
+  createUserCommand,
+  createCommandRegistry,
+  type ConsoleCompletionContext,
+  type TracePayload,
+} from "@babylonslate/debugger";
+import {
+  isExpectedPreviewMessage,
+  previewTargetFromSrc,
+} from "../lib/preview-build-handoff";
+import { DebugConsole, type DebugConsoleLogEntry } from "./debug-console";
+import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Alert,
@@ -12,6 +36,7 @@ export type PreviewBuildOverlayProps = {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   onClose: () => void;
   onLoad?: () => void;
+  onTrace?: (trace: TracePayload) => void;
   /** Boot failure reported by the player, so the black canvas is explained. */
   error?: string | null;
 };
@@ -21,8 +46,158 @@ export function PreviewBuildOverlay({
   iframeRef,
   onClose,
   onLoad,
+  onTrace,
   error = null,
 }: PreviewBuildOverlayProps) {
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [logs, setLogs] = useState<DebugConsoleLogEntry[]>([]);
+  const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [userCommands, setUserCommands] = useState<
+    NonNullable<ScriptBundleEntry["command"]>[]
+  >([]);
+  const [context, setContext] = useState<ConsoleCompletionContext>({});
+  const sequence = useRef(0);
+  const lastTrace = useRef<TracePayload | null>(null);
+  const ready = useRef(false);
+  const [stopping, setStopping] = useState(false);
+  const pending = useRef(
+    new Map<
+      number,
+      {
+        resolve: (value: { success: boolean; output: string }) => void;
+        timer: ReturnType<typeof setTimeout>;
+      }
+    >(),
+  );
+  const origin = previewTargetFromSrc(src, window.location.href).origin;
+  const commands = useMemo(() => {
+    const registry = createCommandRegistry({ includeDebug: true });
+    for (const entry of userCommands)
+      registry.register(
+        createUserCommand({
+          ...entry,
+          run: () => ({ success: true, output: "" }),
+        }),
+      );
+    return registry.list();
+  }, [userCommands]);
+  const completionContext = useMemo(
+    () => ({
+      ...context,
+      commands: commands.map((command) => command.name),
+    }),
+    [commands, context],
+  );
+  const execute = (line: string) =>
+    new Promise<{ success: boolean; output: string }>((resolve) => {
+      const frame = iframeRef.current?.contentWindow;
+      if (!frame) {
+        resolve({ success: false, output: "Player is unavailable" });
+        return;
+      }
+      const requestId = ++sequence.current;
+      const timer = setTimeout(() => {
+        pending.current.delete(requestId);
+        resolve({
+          success: false,
+          output: "Player did not respond to the command",
+        });
+      }, 10000);
+      pending.current.set(requestId, { resolve, timer });
+      frame.postMessage(
+        { type: PREVIEW_CONSOLE_REQUEST_MESSAGE, requestId, line },
+        origin,
+      );
+    });
+  const finish = () => {
+    const close = () => {
+      if (lastTrace.current) onTrace?.(lastTrace.current);
+      onClose();
+    };
+    if (!ready.current || error) {
+      close();
+      return;
+    }
+    setStopping(true);
+    void execute("snapshot stop").finally(close);
+  };
+  useEffect(() => {
+    const requests = pending.current;
+    const receive = (event: MessageEvent) => {
+      if (
+        !isExpectedPreviewMessage(
+          event,
+          iframeRef.current?.contentWindow,
+          origin,
+        )
+      )
+        return;
+      const data = event.data;
+      if (data?.type === PREVIEW_CONSOLE_RESULT_MESSAGE) {
+        const request = requests.get(data.requestId);
+        if (!request) return;
+        clearTimeout(request.timer);
+        requests.delete(data.requestId);
+        request.resolve({
+          success: data.success === true,
+          output: String(data.output ?? ""),
+        });
+      }
+      if (data?.type === PREVIEW_CONSOLE_CATALOG_MESSAGE) {
+        if (data.commands !== undefined) {
+          ready.current = true;
+          setUserCommands(data.commands);
+        }
+        setContext((previous) => ({
+          scenes: data.scenes ?? previous.scenes,
+          actors: data.actors ?? previous.actors,
+        }));
+      }
+      if (data?.type !== PREVIEW_CONSOLE_EVENT_MESSAGE) return;
+      const command = data.command;
+      if (
+        ["log", "print", "diagnostic"].includes(command?.type) &&
+        typeof command.message === "string"
+      ) {
+        const entry = {
+          id: ++sequence.current,
+          timestamp: Date.now(),
+          severity:
+            command.type === "print" ? "print" : (command.severity ?? "log"),
+          message: command.message,
+        };
+        setLogs((previous) => [...previous.slice(-499), entry]);
+      }
+      if (command?.type === "setBehaviourTreeDebug") {
+        setTreeOpen(command.enabled === true);
+        if (command.enabled) setConsoleOpen(false);
+      }
+      if (command?.type === "behaviourTreeSnapshot") setTrees(command.trees);
+      if (command?.type === "trace")
+        lastTrace.current = command.payload as TracePayload;
+    };
+    window.addEventListener("message", receive);
+    return () => {
+      window.removeEventListener("message", receive);
+      for (const request of requests.values()) {
+        clearTimeout(request.timer);
+        request.resolve({ success: false, output: "Play session stopped" });
+      }
+      requests.clear();
+    };
+  }, [iframeRef, origin]);
+  useEffect(() => {
+    if (!consoleOpen) return;
+    const refresh = () =>
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: PREVIEW_CONSOLE_CONTEXT_MESSAGE },
+        origin,
+      );
+    refresh();
+    const timer = setInterval(refresh, 500);
+    return () => clearInterval(timer);
+  }, [consoleOpen, iframeRef, origin]);
   return (
     <div
       className="fixed inset-0 z-50 bg-black"
@@ -49,19 +224,46 @@ export function PreviewBuildOverlay({
           </Alert>
         </div>
       ) : null}
-      <div className="safe-overlay-chrome pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-end">
+      <div className="safe-overlay-chrome pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-end gap-2">
+        <Button
+          size="touch"
+          variant="secondary"
+          className="pointer-events-auto"
+          aria-label="Console"
+          onClick={() => setConsoleOpen(true)}
+        >
+          <TerminalIcon data-icon="inline-start" />
+          Console
+        </Button>
         <Button
           size="touch"
           variant="secondary"
           className="pointer-events-auto"
           aria-label="Stop"
           data-testid="preview-build-close"
-          onClick={onClose}
+          disabled={stopping}
+          onClick={finish}
         >
           <XIcon data-icon="inline-start" />
           Stop
         </Button>
       </div>
+      <DebugConsole
+        open={consoleOpen}
+        onOpenChange={setConsoleOpen}
+        commands={commands}
+        completionContext={completionContext}
+        logs={logs}
+        onExecute={execute}
+      />
+      <DebugBehaviourTreeDialog
+        open={treeOpen}
+        onOpenChange={(open) => {
+          setTreeOpen(open);
+          if (!open) void execute("behaviourtreedebug off");
+        }}
+        trees={trees}
+      />
     </div>
   );
 }

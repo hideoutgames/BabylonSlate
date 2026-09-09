@@ -225,7 +225,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         navBake?.lastBytes ??
         (path ? await readAssetChunk(path, NAVMESH_CHUNK_ID) : null);
       if (cancelled) return;
-      await overlay.sync(bytes ?? null, blockers);
+      await overlay.sync(bytes ?? null, blockers, scene.settings.physicsWorld);
     })();
     return () => {
       cancelled = true;
@@ -610,7 +610,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       sceneData: scene,
       selectedActorIds,
     });
-  }, [scene, selectedActorIds]);
+  }, [scene, selectedActorIds, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);

@@ -21,6 +21,7 @@ import {
   behaviourTreeGuidsFromScene,
   blackboardGuidsFromScene,
   collectPlayScriptDocuments,
+  playPrefabDependencyScene,
   mergePlayAnimGraphs,
   collectAnimGraphCompileDocuments,
   playAnimGraphsFromOpenDocuments,
@@ -56,6 +57,51 @@ import {
   sceneLayerGuidsFromScenes,
   sceneLayerMaterialGuidsFromGraphs,
 } from "./play-content";
+
+describe("playPrefabDependencyScene", () => {
+  it("exposes assets from unplaced prefab components to the Play content collectors", () => {
+    const scripts = [{
+      classId: "UnplacedActor",
+      components: [
+        { id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", materialGuid: "surface" } },
+        { id: "sprite", classId: "SpriteComponent", properties: { assetGuid: "sprite" } },
+        { id: "tiles", classId: "TilemapComponent", properties: { assetGuid: "tilemap" } },
+        { id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "animation-graph" } },
+        { id: "ai", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree", blackboardGuid: "blackboard" } },
+        { id: "text", classId: "Text3DComponent", properties: { fontAssetGuid: "font" } },
+        { id: "sky", classId: "SkyboxComponent", properties: { faces: { px: "sky-texture" } } },
+      ],
+    }];
+    const original = structuredClone(scripts);
+    const dependencies = playPrefabDependencyScene(scripts);
+    expect({
+      models: modelAssetGuidsFromScene(dependencies),
+      materials: materialGuidsFromScenes([dependencies]),
+      sprites: spriteAssetGuidsFromScene(dependencies),
+      tilemaps: tilemapAssetGuidsFromScene(dependencies),
+      animationGraphs: animationGraphGuidsFromScene(dependencies),
+      behaviourTrees: behaviourTreeGuidsFromScene(dependencies),
+      blackboards: blackboardGuidsFromScene(dependencies),
+      fonts: playFontGuidsFromScenes([dependencies]),
+      skyTextures: skyboxFaceGuidsFromScene(dependencies),
+    }).toEqual({
+      models: ["model"],
+      materials: ["surface"],
+      sprites: ["sprite"],
+      tilemaps: ["tilemap"],
+      animationGraphs: ["animation-graph"],
+      behaviourTrees: ["tree"],
+      blackboards: ["blackboard"],
+      fonts: ["font"],
+      skyTextures: ["sky-texture"],
+    });
+    expect(scripts).toEqual(original);
+  });
+
+  it("adds no dependency scene for classes without prefab components", () => {
+    expect(playPrefabDependencyScene([{ classId: "Empty", components: [] }])).toBeNull();
+  });
+});
 
 describe("collectPlayScriptDocuments", () => {
   it("keeps Class graphs and drops editor-only assets", () => {

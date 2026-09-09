@@ -40,10 +40,7 @@ function valueSuggestions(param: CommandParameter): string[] {
   if (param.type === "bool") {
     return ["on", "off"];
   }
-  if (
-    param.defaultValue !== undefined &&
-    param.defaultValue !== null
-  ) {
+  if (param.defaultValue !== undefined && param.defaultValue !== null) {
     return [String(param.defaultValue)];
   }
   return [];
@@ -53,32 +50,106 @@ function suggestionsForParam(
   param: CommandParameter,
   typed: string,
   context?: ConsoleCompletionContext,
+  namedValue = false,
 ): string[] {
   const prefix = typed.toLowerCase();
   const named = namedPrefix(param);
   const out: string[] = [];
   if (
-    !prefix ||
-    named.toLowerCase().startsWith(prefix) ||
-    param.name.toLowerCase().startsWith(prefix)
+    !namedValue &&
+    (!prefix ||
+      named.toLowerCase().startsWith(prefix) ||
+      param.name.toLowerCase().startsWith(prefix))
   ) {
     out.push(named);
   }
-  const values = [...valueSuggestions(param), ...contextValues(param, context)];
-  for (const value of values) {
-    if (!prefix || value.toLowerCase().startsWith(prefix)) {
-      out.push(value);
-    }
-  }
+  const values = unique([
+    ...valueSuggestions(param),
+    ...contextValues(param, context),
+  ]);
+  out.push(...rankMatches(values, typed));
   return unique(out);
 }
 
-function currentParamIndex(
+/** Exact, prefix, interior, then abbreviated subsequence; short queries stay precise. */
+function matchRank(value: string, query: string): number {
+  const candidate = value.toLowerCase();
+  const needle = query.toLowerCase();
+  if (candidate === needle) return 0;
+  if (candidate.startsWith(needle)) return 1;
+  if (candidate.includes(needle)) return 2;
+  if (needle.length < 3) return Infinity;
+  let cursor = 0;
+  for (const letter of needle) {
+    const index = candidate.indexOf(letter, cursor);
+    if (index < 0) return Infinity;
+    cursor = index + 1;
+  }
+  return 3;
+}
+
+function rankMatches(
+  values: readonly string[],
+  query: string,
+  alphabetic = false,
+): string[] {
+  return values
+    .map((value, index) => ({ value, index, rank: matchRank(value, query) }))
+    .filter(({ rank }) => Number.isFinite(rank))
+    .sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        (alphabetic ? a.value.localeCompare(b.value) : a.index - b.index),
+    )
+    .map(({ value }) => value);
+}
+
+/** Keep source spans so completion never discards quoting in earlier arguments. */
+function sourceTokens(line: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  let start = -1;
+  let quote = "";
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (start < 0 && /\s/.test(char)) continue;
+    if (start < 0) start = index;
+    if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (/\s/.test(char)) {
+      spans.push({ start, end: index });
+      start = -1;
+    }
+  }
+  if (start >= 0) spans.push({ start, end: line.length });
+  return spans;
+}
+
+function currentParameter(
+  parameters: readonly CommandParameter[],
   rest: readonly string[],
   trailingSpace: boolean,
-): number {
-  if (trailingSpace) return rest.length;
-  return Math.max(0, rest.length - 1);
+): CommandParameter | undefined {
+  const current = trailingSpace ? "" : (rest[rest.length - 1] ?? "");
+  const named = /^([A-Za-z_][\w]*)=/.exec(current);
+  if (named)
+    return parameters.find(
+      (param) => param.name.toLowerCase() === named[1]!.toLowerCase(),
+    );
+  const previous = trailingSpace ? rest : rest.slice(0, -1);
+  const suppliedNames = new Set(
+    previous.flatMap((token) => {
+      const match = /^([A-Za-z_][\w]*)=/.exec(token);
+      return match ? [match[1]!.toLowerCase()] : [];
+    }),
+  );
+  const positionalCount = previous.filter(
+    (token) => !/^[A-Za-z_][\w]*=/.test(token),
+  ).length;
+  return parameters.filter(
+    (param) => !suppliedNames.has(param.name.toLowerCase()),
+  )[positionalCount];
 }
 
 function typedValue(token: string | undefined): string {
@@ -87,7 +158,7 @@ function typedValue(token: string | undefined): string {
   return named ? named[1]! : token;
 }
 
-/** Prefix match on command names, then values for the current argument. */
+/** Ranked command matches, then contextual values for the current argument. */
 export function suggestConsoleCompletions(
   line: string,
   commands: readonly RegisteredCommand[],
@@ -101,19 +172,23 @@ export function suggestConsoleCompletions(
   }
   const { name, rest } = matchCommandName(tokens, known);
   const command = commands.find((c) => c.name.toLowerCase() === name);
-  const trailingSpace = /\s$/.test(line);
+  const lastSpan = sourceTokens(line).at(-1);
+  const trailingSpace = !lastSpan || lastSpan.end < line.length;
   if (!command) {
-    const prefix = tokens.join(" ").toLowerCase();
-    return names.filter((n) => n.toLowerCase().startsWith(prefix)).sort();
+    return rankMatches(names, tokens.join(" "), true);
   }
   if (rest.length === 0 && !trailingSpace) {
-    return names.filter((n) => n.toLowerCase().startsWith(name)).sort();
+    return rankMatches(names, name, true);
   }
-  const index = currentParamIndex(rest, trailingSpace);
-  const param = command.parameters[index];
+  const param = currentParameter(command.parameters, rest, trailingSpace);
   if (!param) return [];
-  const typed = trailingSpace ? "" : typedValue(rest[index]);
-  return suggestionsForParam(param, typed, context);
+  const current = trailingSpace ? "" : rest.at(-1);
+  return suggestionsForParam(
+    param,
+    typedValue(current),
+    context,
+    /^[A-Za-z_][\w]*=/.test(current ?? ""),
+  );
 }
 
 /**
@@ -127,7 +202,8 @@ export function applyConsoleCompletion(
 ): string {
   const leading = /^\s*/.exec(line)?.[0] ?? "";
   const body = line.slice(leading.length);
-  const trailingSpace = /\s$/.test(line);
+  const lastSpan = sourceTokens(body).at(-1);
+  const trailingSpace = !lastSpan || lastSpan.end < body.length;
   const names = commands.map((command) => command.name);
   const known = new Set(names.map((name) => name.toLowerCase()));
   const tokens = tokenize(body.trimStart());
@@ -145,11 +221,19 @@ export function applyConsoleCompletion(
   if (trailingSpace || rest.length === 0) {
     const prefix = body.trimEnd();
     const spacer = prefix.length > 0 ? " " : "";
-    return `${leading}${prefix}${spacer}${suggestion}`;
+    return `${leading}${prefix}${spacer}${quoteCompletion(suggestion)}`;
   }
   const last = rest[rest.length - 1]!;
   const named = /^([A-Za-z_][\w]*)=(.*)$/.exec(last);
   const replaced =
-    named && !suggestion.includes("=") ? `${named[1]}=${suggestion}` : suggestion;
-  return `${leading}${[command.name, ...rest.slice(0, -1), replaced].join(" ")}`;
+    named && !suggestion.includes("=")
+      ? `${named[1]}=${quoteCompletion(suggestion)}`
+      : quoteCompletion(suggestion);
+  return `${leading}${body.slice(0, lastSpan?.start ?? body.length)}${replaced}`;
+}
+
+function quoteCompletion(value: string): string {
+  if (!/\s/.test(value)) return value;
+  const quote = value.includes('"') ? "'" : '"';
+  return `${quote}${value}${quote}`;
 }

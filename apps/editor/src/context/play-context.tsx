@@ -96,6 +96,7 @@ import {
   readPlayAudioReverbBytes,
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScenes,
+  playPrefabDependencyScene,
   skyboxFaceGuidsFromScene,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
@@ -883,12 +884,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setStartupAlertOpen(true);
           return;
         }
+        const prefabScene = playPrefabDependencyScene(nextScripts);
+        const prefabScenes = prefabScene ? [prefabScene] : [];
         let overlayScenes: import("@babylonslate/core").SerializedScene[] = [];
         let overlayGraphMaterials: string[] = [];
         try {
           const collected = await collectPlaySceneLayers([
             resolvedScene.scene,
             ...playLibrary.map((entry) => entry.scene),
+            ...prefabScenes,
           ]);
           setPlaySceneLayers(collected.layers);
           overlayScenes = collected.overlayScenes;
@@ -899,11 +903,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlaySceneLayers([]);
         }
+        const resourceScenes = [...overlayScenes, ...prefabScenes];
+        const skyboxTextureGuids = [resolvedScene.scene, ...resourceScenes]
+          .flatMap(skyboxFaceGuidsFromScene);
         let playGraphs: typeof playAnimGraphs = [];
         try {
           playGraphs = await collectPlayAnimGraphs(
             resolvedScene?.scene,
-            overlayScenes,
+            resourceScenes,
           );
           setPlayAnimGraphs(playGraphs);
         } catch (error) {
@@ -916,7 +923,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         try {
           playTrees = await collectPlayBehaviourTrees(
             resolvedScene?.scene,
-            overlayScenes,
+            resourceScenes,
           );
           setPlayBehaviourTrees(playTrees);
         } catch (error) {
@@ -927,7 +934,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         }
         try {
           setPlayBlackboards(
-            await collectPlayBlackboards(resolvedScene?.scene, overlayScenes),
+            await collectPlayBlackboards(resolvedScene?.scene, resourceScenes),
           );
         } catch (error) {
           appendLog(
@@ -944,7 +951,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           sprites = await collectPlaySpritePayloads(
             resolvedScene?.scene,
             playGraphs,
-            overlayScenes,
+            resourceScenes,
           );
           setPlaySpritePayloads(sprites);
         } catch (error) {
@@ -968,7 +975,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         try {
           const tileContent = await collectPlayTilemapContent(
             resolvedScene?.scene,
-            overlayScenes,
+            resourceScenes,
           );
           setPlayTilemaps(tileContent.tilemaps);
           setPlayTilesets(tileContent.tilesets);
@@ -983,11 +990,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         let modelPayloads = new Map<string, ModelPayload>();
         try {
           setPlayModelBytes(
-            await collectPlayModelBytes(resolvedScene?.scene, overlayScenes),
+            await collectPlayModelBytes(resolvedScene?.scene, resourceScenes),
           );
           modelPayloads = await collectPlayModelPayloads(
             resolvedScene?.scene,
-            overlayScenes,
+            resourceScenes,
           );
           setPlayModelPayloads(modelPayloads);
           setPlayModelClipAnimationGuids(
@@ -1013,7 +1020,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             resolvedScene?.scene,
             [
               ...playLibrary.map((entry) => entry.scene),
-              ...overlayScenes,
+              ...resourceScenes,
             ],
             [
               ...particleMaterialGuidsFromLibrary(particles),
@@ -1029,8 +1036,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             [
               ...materials.textureGuids,
               ...particleTextureGuidsFromLibrary(particles),
-              ...skyboxFaceGuidsFromScene(resolvedScene?.scene),
-              ...overlayTextureGuidsFromScenes(overlayScenes),
+              ...skyboxTextureGuids,
+              ...overlayTextureGuidsFromScenes(resourceScenes),
             ],
             spriteAnimations,
             true,
@@ -1041,8 +1048,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             [
               ...materials.textureGuids,
               ...particleTextureGuidsFromLibrary(particles),
-              ...skyboxFaceGuidsFromScene(resolvedScene?.scene),
-              ...overlayTextureGuidsFromScenes(overlayScenes),
+              ...skyboxTextureGuids,
+              ...overlayTextureGuidsFromScenes(resourceScenes),
             ],
             spriteAnimations,
           );
@@ -1060,8 +1067,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               sprites,
               tilesets,
               [
-                ...skyboxFaceGuidsFromScene(resolvedScene?.scene),
-                ...overlayTextureGuidsFromScenes(overlayScenes),
+                ...skyboxTextureGuids,
+                ...overlayTextureGuidsFromScenes(resourceScenes),
               ],
               spriteAnimations,
               true,
@@ -1070,8 +1077,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               sprites,
               tilesets,
               [
-                ...skyboxFaceGuidsFromScene(resolvedScene?.scene),
-                ...overlayTextureGuidsFromScenes(overlayScenes),
+                ...skyboxTextureGuids,
+                ...overlayTextureGuidsFromScenes(resourceScenes),
               ],
               spriteAnimations,
             );
@@ -1095,14 +1102,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           const fontScenes = [
             resolvedScene?.scene,
             ...playLibrary.map((entry) => entry.scene),
-            ...overlayScenes,
+            ...resourceScenes,
           ];
           setPlayFontFacetypeBytes(
             await collectPlayFontFacetypeBytes(
               resolvedScene?.scene,
               [
                 ...playLibrary.map((entry) => entry.scene),
-                ...overlayScenes,
+                ...resourceScenes,
               ],
             ),
           );
@@ -1212,7 +1219,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       playFromScene,
       hasStartupScene,
       openPlaySceneGuid,
-      playScene,
       previewBuild,
       requestPreviewBuild,
       openDocuments,
@@ -1486,6 +1492,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             error={previewError}
             onClose={closePreview}
             onLoad={sendPreviewPack}
+            onTrace={(trace) => void openRecordedTrace(trace)}
           />
         ) : null}
         <PreviewSessionReport

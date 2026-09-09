@@ -51,6 +51,9 @@ function stringProp(
 }
 
 function componentAssetGuid(component: SerializedComponent): string | null {
+  if (component.classId === "MeshComponent") {
+    return stringProp(component.properties, "assetGuid");
+  }
   return (
     stringProp(component.properties, "assetGuid") ??
     stringProp(component.properties, "graphGuid") ??

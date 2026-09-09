@@ -17,6 +17,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   actorSubtree,
+  folderSubtree,
   nextFolderId,
   type SerializedActor,
   type SerializedGraph,
@@ -25,6 +26,16 @@ import {
 } from "@babylonslate/core";
 import { isSceneWorkspaceKind } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
@@ -274,6 +285,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
+  const [deleteFolderId, setDeleteFolderId] = useState<string | null>(null);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(
@@ -523,28 +535,48 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [mutate, scene],
   );
 
-  /** Deleting a folder keeps its actors; contents move up one level. */
+  /** Keep each choice in one scene mutation so undo restores the whole operation. */
   const removeFolder = useCallback(
-    (folderId: string) => {
+    (folderId: string, deleteContents: boolean) => {
       if (!scene) return;
       const folder = scene.folders.find((entry) => entry.id === folderId);
       if (!folder) return;
       const promoteTo = folder.parentFolderId;
+      const doomedFolders = new Set(
+        (deleteContents ? folderSubtree(scene, folderId) : [folder]).map(
+          (entry) => entry.id,
+        ),
+      );
+      const doomedActors = new Set<string>();
+      if (deleteContents) {
+        // Attachment children appear beneath their parent actor, even when
+        // their own folderId is unset or names a different folder.
+        for (const actor of scene.actors) {
+          if (actor.folderId === null || !doomedFolders.has(actor.folderId))
+            continue;
+          for (const child of actorSubtree(scene, actor.id)) {
+            doomedActors.add(child.id);
+          }
+        }
+      }
       mutate({
         ...scene,
         folders: scene.folders
-          .filter((entry) => entry.id !== folderId)
+          .filter((entry) => !doomedFolders.has(entry.id))
           .map((entry) =>
             entry.parentFolderId === folderId
               ? { ...entry, parentFolderId: promoteTo }
               : entry,
           ),
-        actors: scene.actors.map((actor) =>
-          actor.folderId === folderId
-            ? { ...actor, folderId: promoteTo }
-            : actor,
-        ),
+        actors: scene.actors
+          .filter((actor) => !doomedActors.has(actor.id))
+          .map((actor) =>
+            actor.folderId === folderId
+              ? { ...actor, folderId: promoteTo }
+              : actor,
+          ),
       });
+      setDeleteFolderId(null);
       setSelectedRowId(null);
     },
     [mutate, scene],
@@ -696,11 +728,15 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         id: "delete-folder",
         label: "Delete",
         testId: `outliner-delete-folder-${folderId}`,
-        onSelect: () => removeFolder(folderId),
+        onSelect: () => setDeleteFolderId(folderId),
       },
     ],
-    [removeFolder],
+    [],
   );
+
+  const deletingFolder = deleteFolderId
+    ? scene?.folders.find((folder) => folder.id === deleteFolderId)
+    : undefined;
 
   const renamingFolder: SerializedOutlinerFolder | undefined = renameFolderId
     ? scene?.folders.find((folder) => folder.id === renameFolderId)
@@ -852,6 +888,41 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         overlay={overlay}
       />
       <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
+      {deletingFolder ? (
+        <AlertDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleteFolderId(null);
+          }}
+        >
+          <AlertDialogContent data-testid="outliner-delete-folder-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Folder</AlertDialogTitle>
+              <AlertDialogDescription>
+                Delete {deletingFolder.name} only and move its contents up one
+                level, or delete the folder and everything inside it? Either
+                choice can be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                size="sm"
+                variant="outline"
+                onClick={() => removeFolder(deletingFolder.id, false)}
+              >
+                Folder Only
+              </AlertDialogAction>
+              <AlertDialogAction
+                size="sm"
+                onClick={() => removeFolder(deletingFolder.id, true)}
+              >
+                Folder And Contents
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
       {renamingFolder ? (
         <NamePromptDialog
           open

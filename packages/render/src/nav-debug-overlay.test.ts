@@ -52,9 +52,43 @@ describe("NavMeshDebugOverlay", () => {
       ?.vertices[0]?.[1] ?? 0;
     expect(positions?.[1]).toBeCloseTo(rawY + NAVMESH_DEBUG_Y_OFFSET, 5);
     expect(overlay.mesh!.edgesWidth).toBeGreaterThan(0);
+    const material = overlay.mesh!.material;
     overlay.clear();
     expect(overlay.mesh).toBeNull();
+    expect(handle.scene.materials).not.toContain(material);
     overlay.dispose();
+  });
+
+  it("maps Recast ground onto the XY plane in a 2D physics world", async () => {
+    const bytes = await generateNavMesh(groundPrism());
+    const handle = createTestEngine();
+    handles.push(handle);
+    const overlay = new NavMeshDebugOverlay(handle.scene);
+    await overlay.sync(bytes, [], "2d");
+    const positions = overlay.mesh!.getVerticesData(VertexBuffer.PositionKind)!;
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let index = 0; index < positions.length; index += 3) {
+      xs.push(positions[index]!);
+      ys.push(positions[index + 1]!);
+      expect(positions[index + 2]).toBeCloseTo(-0.04);
+    }
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(10);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(10);
+    overlay.dispose();
+  });
+
+  it("does not resurrect an overlay disabled while navigation initializes", async () => {
+    const bytes = await generateNavMesh(groundPrism());
+    const handle = createTestEngine();
+    handles.push(handle);
+    const overlay = new NavMeshDebugOverlay(handle.scene);
+    const pending = overlay.sync(bytes);
+    overlay.clear();
+    await pending;
+    expect(overlay.mesh).toBeNull();
+    expect(handle.scene.getMeshByName("navmeshDebug")).toBeNull();
+    expect(handle.scene.materials.some((material) => material.name === "navmeshDebugMat")).toBe(false);
   });
 
   it("draws NavMesh Blocker volumes when the overlay is on", async () => {

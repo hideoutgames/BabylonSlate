@@ -87,6 +87,13 @@ test.describe("Scene Outliner folders", () => {
 
     await page.getByTestId("outliner-menu-folder:folder-1").click();
     await page.getByTestId("outliner-delete-folder-folder-1").click();
+    const confirmation = page.getByTestId("outliner-delete-folder-dialog");
+    await expect(confirmation).toBeVisible();
+    await expect(page.getByTestId("tree-row-folder:folder-1")).toBeVisible();
+    await confirmation
+      .getByRole("button", { name: "Folder Only", exact: true })
+      .click();
+    await expect(confirmation).toHaveCount(0);
     await expect(page.getByTestId("tree-row-folder:folder-1")).toHaveCount(0);
     // The default Mannequin must survive a folder delete.
     await expect(page.getByTestId("tree-row-actor:actor-1")).toBeVisible();

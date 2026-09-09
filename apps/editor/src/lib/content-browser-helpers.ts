@@ -23,6 +23,7 @@ import {
   spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
 import {
+  classIdsFromVariableMembers,
   createDefaultScene,
   createDefaultSceneLayer,
   isLegacyMaterialAssetType,
@@ -1757,6 +1758,9 @@ export function assetHeaderDependencies(
     } else {
       addClass(parentClass);
       addComponents(payload.components);
+      if (Array.isArray(payload.members)) {
+        for (const classId of classIdsFromVariableMembers(payload.members)) addClass(classId);
+      }
     }
   }
   return [...unique].sort();
