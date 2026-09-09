@@ -389,7 +389,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

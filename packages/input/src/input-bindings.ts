@@ -136,6 +136,29 @@ function validControl(device: unknown, code: unknown): device is InputDevice {
   return true;
 }
 
+function describeBinding(binding: ActionBinding): InputBindingInfo {
+  const flags = {
+    shift: binding.modifiers?.shift === true,
+    ctrl: binding.modifiers?.ctrl === true,
+    alt: binding.modifiers?.alt === true,
+    meta: binding.modifiers?.meta === true,
+  };
+  const prefix = [
+    flags.ctrl && "Ctrl",
+    flags.shift && "Shift",
+    flags.alt && "Alt",
+    flags.meta && "Meta",
+  ].filter(Boolean);
+  return {
+    device: binding.device,
+    code: binding.code,
+    label: [...prefix, bindingCodeLabel(binding.device, binding.code)].join(
+      " + ",
+    ),
+    ...flags,
+  };
+}
+
 /** Session overrides over authored defaults; browser-independent keyboard capture. */
 export class InputBindingProfile implements InputBindingControls {
   private defaults: InputMappings;
@@ -181,6 +204,7 @@ export class InputBindingProfile implements InputBindingControls {
             {
               Input: { Name: row.name, Asset: row.id! },
               Id: binding.id,
+              Label: describeBinding(binding).label,
               Control: {
                 Device: binding.device,
                 Code: binding.code,
@@ -250,26 +274,7 @@ export class InputBindingProfile implements InputBindingControls {
   ): InputBindingInfo | null {
     const binding = slot(this.current, kind, mapping, index);
     if (!binding) return null;
-    const flags = {
-      shift: binding.modifiers?.shift === true,
-      ctrl: binding.modifiers?.ctrl === true,
-      alt: binding.modifiers?.alt === true,
-      meta: binding.modifiers?.meta === true,
-    };
-    const prefix = [
-      flags.ctrl && "Ctrl",
-      flags.shift && "Shift",
-      flags.alt && "Alt",
-      flags.meta && "Meta",
-    ].filter(Boolean);
-    return {
-      device: binding.device,
-      code: binding.code,
-      label: [...prefix, bindingCodeLabel(binding.device, binding.code)].join(
-        " + ",
-      ),
-      ...flags,
-    };
+    return describeBinding(binding);
   }
 
   setBinding(

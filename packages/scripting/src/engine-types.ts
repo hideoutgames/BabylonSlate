@@ -96,6 +96,7 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
         typeClassId: ENGINE_INPUT_TYPE_STRUCT_ID,
       },
       { name: "Id", typeId: "string" },
+      { name: "Label", typeId: "string" },
       {
         name: "Control",
         typeId: "struct",

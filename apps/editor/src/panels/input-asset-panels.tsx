@@ -241,6 +241,23 @@ export function InputBindingsPanel(_props: IDockviewPanelProps) {
                       ?.label
                   }
                 </Button>
+                {(["ctrl", "shift", "alt", "meta"] as const).some(
+                  (modifier) => binding.modifiers?.[modifier],
+                ) && (
+                  <span className="text-xs">
+                    {(["ctrl", "shift", "alt", "meta"] as const)
+                      .filter((modifier) => binding.modifiers?.[modifier])
+                      .map((modifier) =>
+                        modifier === "ctrl"
+                          ? "Ctrl"
+                          : modifier === "meta"
+                            ? "Cmd / Win"
+                            : modifier[0].toUpperCase() + modifier.slice(1),
+                      )
+                      .join(" + ")}{" "}
+                    +
+                  </span>
+                )}
                 <BindingCodePicker
                   size="sm"
                   device={binding.device}

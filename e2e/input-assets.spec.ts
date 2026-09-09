@@ -22,6 +22,11 @@ test(
       .dblclick();
     const workspace = page.getByTestId("document-workspace-input-axis");
     await expect(workspace).toBeVisible();
+    await expect(
+      page.locator(
+        '[data-testid="document-tab"][data-document-kind="input-axis"]',
+      ),
+    ).not.toContainText(".inputaxis");
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
     await workspace.getByRole("button", { name: "Add Preset" }).click();
     await page.getByRole("menuitem", { name: /WASD/ }).click();
@@ -65,6 +70,7 @@ test(
       .filter({ hasText: "Event CameraMove" });
     await expect(event).toHaveCount(1);
     await event.click();
+    await expect(page.getByTestId("node-palette")).toHaveCount(0);
     await expect(
       page
         .getByTestId("graph-panel")

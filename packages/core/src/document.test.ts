@@ -379,3 +379,9 @@ describe("document ids and layouts", () => {
     ).toBe("Level2 Scene");
   });
 });
+
+
+it("uses readable input asset tab names without implementation suffixes", () => {
+  expect(labelFromPath("assets/Jump.inputaction.babasset")).toBe("Jump");
+  expect(labelFromPath("assets/CameraMove.inputaxis.babasset")).toBe("CameraMove");
+});

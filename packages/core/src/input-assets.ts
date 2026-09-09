@@ -56,6 +56,7 @@ export interface InputControlValue {
   Meta: boolean;
 }
 export interface InputBindingValue {
+  Label: string;
   Input: InputTypeValue;
   Id: string;
   Control: InputControlValue;

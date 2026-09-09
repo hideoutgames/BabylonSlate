@@ -97,6 +97,7 @@ describe("asset input runtime", () => {
         Meta: false,
       }),
     ).toBe(true);
+    expect(resolver.bindings.getInputBindings({ Name: "", Asset: "move" })[1]!.Label).toBe("H");
     const saved = resolver.bindings.exportBindings();
     const renamed = new InputResolver(
       inputMappingsFromAssets([
