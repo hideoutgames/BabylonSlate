@@ -160,7 +160,7 @@ export default function HomepageSculpture({
       .catch(() => {
         clearTimeout(deadline);
         if (!disposed) readyCallback.current?.();
-        /* Keep the existing Slate logo if WebGL or loading fails. */
+        /* Release the loading cover even when the model is unavailable. */
       });
     return () => {
       disposed = true;

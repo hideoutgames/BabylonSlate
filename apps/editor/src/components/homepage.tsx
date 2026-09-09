@@ -522,7 +522,6 @@ export function Homepage({
                 >
                   {!search && (
                     <HomepageEmptyArt
-                      scheme={scheme}
                       onReady={markArtReady}
                       paused={
                         busy ||
