@@ -74,8 +74,8 @@ describe("behaviour tree debugger", () => {
     );
     fireEvent.click(view.getByRole("combobox", { name: "Behaviour Tree" }));
     const option = await view.findByRole("option", { name: "Scout (Patrol)" });
-    fireEvent.mouseMove(option);
-    fireEvent.mouseUp(option);
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
     expect(view.getByText('"Tower"')).toBeTruthy();
     expect(view.queryByText('"Gate"')).toBeNull();
   });

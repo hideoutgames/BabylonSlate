@@ -45,7 +45,7 @@ describe("PreviewBuildOverlay", () => {
     fireEvent.click(view.getByRole("button", { name: "Console" }));
     expect(view.queryByText(/Agent cannot reach goal/)).toBeNull();
     await waitFor(() => expect(view.getByText(/Path is partial/)).toBeTruthy());
-    fireEvent.change(view.getByRole("combobox", { name: "Console Command" }), {
+    fireEvent.change(view.getByRole("combobox", { name: /Console Command/i }), {
       target: { value: "showpathfinding on" },
     });
     fireEvent.click(view.getByRole("button", { name: "Run" }));
