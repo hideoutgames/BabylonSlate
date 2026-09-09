@@ -198,7 +198,7 @@ describe("ViewportToolbar", () => {
       "Drop",
       "Viewport Settings",
     ]);
-    fireEvent.click(screen.getByRole("button", { name: "Drop", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
     expect(onDrop).toHaveBeenCalledTimes(1);
     expect(harness.setDragSelectActive).not.toHaveBeenCalled();
     expect(screen.queryByTestId("gizmo-joystick-toggle")).toBeNull();
@@ -233,7 +233,7 @@ describe("ViewportToolbar", () => {
     fireEvent.click(snap);
     expect(harness.setSnapEnabled).toHaveBeenCalledWith(false);
     expect(harness.applySceneChange).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "Drop", exact: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Drop" })).toBeNull();
   });
 
   it.each([undefined, true])("blocks Drop when dropDisabled is %s", (dropDisabled) => {
@@ -244,7 +244,7 @@ describe("ViewportToolbar", () => {
       onDrop,
       dropDisabled,
     });
-    const drop = screen.getByRole("button", { name: "Drop", exact: true });
+    const drop = screen.getByRole("button", { name: "Drop" });
     expect(drop).toHaveProperty("disabled", true);
     fireEvent.click(drop);
     expect(onDrop).not.toHaveBeenCalled();
