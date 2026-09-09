@@ -4,7 +4,7 @@ Verify uses standard runners: `static` + `unit` + seven `e2e` shards = 9 jobs pe
 
 ## Local verification before opening
 
-- Pass focused regressions and `pnpm verify:local` before opening any PR, including a draft. Its path-aware selection may be diff-only for instruction/prose metadata and uses focused contracts for tooling or workflow changes. The full workspace typecheck, exhaustive tests, coverage, and browsers belong in CI; do not run a full local suite merely because infrastructure changed. Add a full local `pnpm typecheck` when intentionally changing a public cross-package API. A failed or unavailable required check is not sufficient.
+- Pass targeted tests and relevant scoped static checks for the changed behavior before opening a PR, including a draft. Instruction/prose-only changes need diff/link review. Follow the workflow's selected-check record and reuse unaffected results. Do not run cumulative preflight, full suites, coverage, all browser tests, or workspace-wide checks unless the user explicitly requests the broader local run. Required CI remains unchanged; failed or unavailable selected checks never count as passing.
 - Open the verified work as a draft, then check for a Verify slot. Do not use draft PRs as a substitute for local testing.
 
 ## Wait for a slot, then mark ready once
@@ -17,6 +17,6 @@ Verify uses standard runners: `static` + `unit` + seven `e2e` shards = 9 jobs pe
 
 ## Monitor, repair, and merge
 
-Follow [the delivery workflow](agent-workflow.md#workflow) through CI completion and confirmed merge. Batch repairs, pass local `pnpm verify:local`, then push; each ready-PR push restarts nine Verify jobs. Pending CI is a reason to wait, not to hand the task back. Missing or skipped checks are not proof of a passing Verify run.
+Follow [the delivery workflow](agent-workflow.md#workflow) through CI completion and confirmed merge. Batch repairs, pass checks targeted to those repairs, then push; each ready-PR push restarts nine Verify jobs. Pending CI is a reason to wait, not to hand the task back. Missing or skipped checks are not proof of a passing Verify run.
 
 Do not use larger runners to raise the cap. See [standard runners](github-actions-standard-runners.md).

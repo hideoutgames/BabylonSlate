@@ -1,5 +1,8 @@
 # Testing architecture
 
+Agents run only explicit targeted test files/cases for changed behavior and directly affected consumers, with scoped static checks where relevant. Full local suites, coverage, all browser tests, workspace-wide checks and the cumulative `verify:local` diagnostic require an explicit user request; they are not automatic PR prerequisites. Prose/instruction-only changes use diff/link review. After repairs, rerun only affected checks and document why reused results still apply. Required GitHub CI is unchanged. The cumulative tooling described below remains available as an opt-in diagnostic; its `deliveryEligible` certificate is not required for targeted agent delivery.
+
+
 Launcher regressions cover project creation/edit/removal, explicit web folder/ZIP import actions, template selection, shared theme persistence, account menus, native sign-in gates, and route unmounting. Their jsdom fixtures supply font/image readiness and media queries; Clerk and native account transports are mocked at the integration boundary without requiring credentials or a GPU.
 
 `pnpm verify:local` is a path-aware preflight over the cumulative branch diff from the merge base with main plus untracked files. It always runs `git diff --check`, lints changed JavaScript/TypeScript files, and selects the smallest relevant checks below. Unit files are batched at 50. Only a clean, unchanged, committed run qualifies a PR for CI; dirty runs remain useful during development but are not delivery evidence. `pnpm verify` is an explicit full local diagnostic, not a routine PR requirement.
