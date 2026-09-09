@@ -267,6 +267,8 @@ describe("Scene Outliner lock icons", () => {
     expect(screen.getByTestId("outliner-lock-open").getAttribute("aria-pressed")).toBe("false");
     expect(lockIconName("shut")).toBe("lock");
     expect(screen.getByTestId("outliner-lock-shut").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Unlock Shut" }).textContent).toContain("Locked");
+    expect(screen.getByTestId("outliner-lock-open").textContent).not.toContain("Locked");
   });
 
   it("switches the lock glyph after the toggle is clicked", () => {
@@ -282,6 +284,12 @@ describe("Scene Outliner lock icons", () => {
     harness.scene = lastScene();
     view.rerender(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
     expect(lockIconName("lamp")).toBe("lock");
+    fireEvent.click(screen.getByRole("button", { name: "Unlock Lamp" }));
+    expect(lastScene().actors[0]!.locked).toBe(false);
+    harness.scene = lastScene();
+    view.rerender(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("outliner-lock-lamp").textContent).not.toContain("Locked");
+    expect(lockIconName("lamp")).toBe("unlock");
   });
 });
 
