@@ -179,6 +179,17 @@ describe("useContextMenu", () => {
     expect(state()).toBe("closed");
   });
 
+  it("cancels a pending hold when pointer capture is lost", async () => {
+    vi.useFakeTimers();
+    const { target, state } = renderHost();
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    const event = new Event("lostpointercapture", { bubbles: true });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    fireEvent(target, event);
+    await advancePastLongPress();
+    expect(state()).toBe("closed");
+  });
+
   it("cancels a held pointer released outside the original target", async () => {
     vi.useFakeTimers();
     const { target, state } = renderHost();
