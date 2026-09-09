@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   applyPointerPan,
+  atlasCellAt,
   ensureTilesetTiles,
   tilesetTileRect,
   type TilesetCollision,
@@ -106,6 +107,12 @@ export function AtlasTileGrid({
     panned: boolean;
   } | null>(null);
   const didPanRef = useRef(false);
+  const tapRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    tileId: number;
+  } | null>(null);
   const selectionDragRef = useRef<{
     pointerId: number;
     startClientX: number;
@@ -152,6 +159,20 @@ export function AtlasTileGrid({
     return typeof event.pointerId === "number" ? event.pointerId : 0;
   };
 
+  const tileAtPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = imageRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    return atlasCellAt({
+      localX: event.clientX,
+      localY: event.clientY,
+      imageX: rect.left,
+      imageY: rect.top,
+      imageWidth: rect.width,
+      imageHeight: rect.height,
+      tileset: filled,
+    });
+  };
+
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!panZoom && !(tool === "select" && onSelectionChange)) return;
     try {
@@ -166,6 +187,7 @@ export function AtlasTileGrid({
     if (pointersRef.current.size >= 2) {
       event.preventDefault();
       panDragRef.current = null;
+      tapRef.current = null;
       selectionDragRef.current = null;
       setSelectionPreview(null);
       didPanRef.current = true;
@@ -185,6 +207,12 @@ export function AtlasTileGrid({
       return;
     }
     didPanRef.current = false;
+    tapRef.current = {
+      pointerId: pointerIdOf(event),
+      x: event.clientX,
+      y: event.clientY,
+      tileId: tileAtPointer(event),
+    };
     if (tool === "move") {
       panDragRef.current = {
         pointerId: pointerIdOf(event),
@@ -215,6 +243,13 @@ export function AtlasTileGrid({
       x: event.clientX,
       y: event.clientY,
     });
+    const tap = tapRef.current;
+    if (
+      tap &&
+      Math.hypot(event.clientX - tap.x, event.clientY - tap.y) >= TAP_SELECT_PX
+    ) {
+      tapRef.current = null;
+    }
     if (pointersRef.current.size >= 2) {
       if (!panZoom) return;
       event.preventDefault();
@@ -318,6 +353,22 @@ export function AtlasTileGrid({
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const pointerId = pointerIdOf(event);
     pointersRef.current.delete(pointerId);
+    const tap = tapRef.current;
+    if (tap?.pointerId === pointerId) {
+      tapRef.current = null;
+      if (
+        event.type !== "pointercancel" &&
+        tap.tileId > 0 &&
+        Math.hypot(event.clientX - tap.x, event.clientY - tap.y) <
+          TAP_SELECT_PX &&
+        tileAtPointer(event) === tap.tileId
+      ) {
+        onSelect(tap.tileId);
+        // Capture retargets the browser click to the surface; some hosts still
+        // deliver it to the cell, so consume either path after selecting once.
+        didPanRef.current = true;
+      }
+    }
     if (panDragRef.current?.pointerId === pointerId) {
       panDragRef.current = null;
     }
@@ -436,6 +487,9 @@ export function AtlasTileGrid({
                 }}
                 aria-label={`Tile ${tile.id}`}
                 aria-pressed={selected}
+                onKeyDown={() => {
+                  didPanRef.current = false;
+                }}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (didPanRef.current) {
