@@ -48,8 +48,9 @@ describe("TracePlayback", () => {
     const tree = screen.getByRole("tree", { name: "Snapshot" });
     expect(tree.textContent).toContain("PlayerCharacter");
     const health = within(tree).getAllByRole("treeitem").find((row) => row.textContent?.includes("Health") && row.textContent.includes("75"))!;
-    fireEvent.pointerDown(health, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerUp(health, { pointerId: 1, clientX: 10, clientY: 10 });
+    const healthIndex = within(tree).getAllByRole("treeitem").indexOf(health);
+    fireEvent.keyDown(tree, { key: "Home" });
+    for (let i = 0; i < healthIndex; i++) fireEvent.keyDown(tree, { key: "ArrowDown" });
     expect(screen.getByTestId("trace-value-detail").textContent).toContain("75");
     fireEvent.click(screen.getByTestId("trace-playback-graph-bar-0"));
     expect(screen.getByTestId("trace-value-detail").textContent).toContain("100");
