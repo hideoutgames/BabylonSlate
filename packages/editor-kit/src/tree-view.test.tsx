@@ -97,6 +97,7 @@ describe("TreeView", () => {
   it("selects through a value preview while keeping trailing actions separate", () => {
     const onSelect = vi.fn();
     render(<TreeView nodes={[{ ...nodes[1]!, preview: <span data-testid="preview">75</span>, trailing: <button type="button">Action</button> }]} onSelect={onSelect} />);
+    expect(screen.getByRole("treeitem", { name: "Child 75" })).toBeTruthy();
     const preview = screen.getByTestId("preview");
     dispatchPointerEvent(preview, "pointerdown");
     dispatchPointerEvent(preview, "pointerup");
