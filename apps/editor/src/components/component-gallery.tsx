@@ -80,6 +80,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
+import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   Card,
   CardContent,
