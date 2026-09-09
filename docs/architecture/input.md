@@ -85,7 +85,7 @@ Project Settings owns the game's default mappings. Rebinding creates session-loc
 | --- | --- |
 | Get Input Binding | Read the current device, code, human label, modifiers, and whether the slot exists. |
 | Set Input Binding | Replace one slot's device/code/modifiers; return Success. |
-| Begin Input Rebind | Listen for the next fresh non-modifier keyboard key, including held Ctrl/Shift/Alt/Meta. Return whether listening started. |
+| Begin Input Rebind | Listen for a fresh keyboard key, including held Ctrl/Shift/Alt/Meta. Standalone modifiers (such as Shift for Sprint) complete on release; chords complete on the other key's press. Return whether listening started. |
 | Get Input Rebind Status | Read `idle`, `listening`, `completed`, or `cancelled`, plus boolean status pins. |
 | Cancel Input Rebind | Cancel active listening without changing the binding. Escape also cancels. |
 | Reset Input Mapping / Reset All Input Bindings | Restore the project's authored defaults for one mapping or every mapping. |
@@ -93,7 +93,7 @@ Project Settings owns the game's default mappings. Rebinding creates session-loc
 
 For a rebinding menu, call Begin Input Rebind for the selected row, show a listening prompt, then use Get Input Rebind Status on Tick to refresh its label after completion/cancellation. Keys already held when listening starts do not complete capture. Captured keys are consumed until released, so confirming a new binding cannot also trigger gameplay. Capture is keyboard-only; Set Input Binding supports the other device codes from the authoring catalog. Conflicting bindings are allowed, matching existing multiple-action mappings; games can compare Get Input Binding results if their UI requires exclusivity.
 
-The `RuntimeDriver.inputBindings` service is exposed to compiled graphs during Begin Play as well as Tick, including worker Play and the exported player. Existing raw capture forwards arbitrary keyboard codes from the focused game canvas. Overrides survive scene changes within a session. Export the string into the game's own save/profile storage and import it when that profile loads; exporting alone does not persist data across sessions and does not introduce a SaveGame node or automatic browser storage. Keep saves scoped to the game/profile. Renaming a mapping or removing/reordering binding slots changes override identity; stale imports are rejected, allowing the game to retain its new authored defaults.
+The `RuntimeDriver.inputBindings` service is exposed to compiled graphs during Begin Play as well as Tick, including worker Play and the exported player. Existing raw capture forwards arbitrary keyboard codes from the focused game canvas. Overrides survive scene changes within a session. Export the string into the game's own save/profile storage and import it when that profile loads; exporting alone does not persist data across sessions and does not introduce a SaveGame node or automatic browser storage. Keep saves scoped to the game/profile. Overrides store the complete authored binding identity, including modifiers, axis component and tuning. Renaming a mapping or removing/reordering/changing binding slots makes an old profile stale; import rejects it atomically so games can retain their new authored defaults.
 
 | Node | Behaviour |
 | --- | --- |

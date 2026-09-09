@@ -11,6 +11,57 @@ const key = (code: string, phase: "down" | "up" = "down"): RawInputEvent => ({
 });
 
 describe("runtime input bindings", () => {
+  it("captures a standalone modifier on release without requiring itself as a modifier", () => {
+    const resolver = new InputResolver(createDefaultInputMappings());
+    resolver.bindings.beginRebind("action", "Jump", 0);
+    resolver.resolve([key("ShiftLeft")]);
+    expect(resolver.bindings.getRebindStatus()).toBe("listening");
+    resolver.resolve([key("ShiftLeft", "up")]);
+    expect(resolver.bindings.getRebindStatus()).toBe("completed");
+    expect(resolver.bindings.getBinding("action", "Jump", 0)).toMatchObject({
+      code: "ShiftLeft",
+      shift: false,
+    });
+    expect(resolver.resolve([key("ShiftLeft")]).actions.Jump?.pressed).toBe(
+      true,
+    );
+    resolver.bindings.beginRebind("action", "Jump", 0);
+    resolver.resolve([key("ShiftLeft", "up")]);
+    expect(resolver.bindings.getRebindStatus()).toBe("listening");
+    resolver.resolve([key("Escape")]);
+    expect(resolver.bindings.getRebindStatus()).toBe("cancelled");
+  });
+
+  it("rejects reordered axis slots with the same key but different components", () => {
+    const defaults = {
+      actions: [],
+      axes: [
+        {
+          name: "Diagonal",
+          kind: "2d" as const,
+          bindings: [
+            { device: "key" as const, code: "KeyW", component: "x" as const },
+            { device: "key" as const, code: "KeyW", component: "y" as const },
+          ],
+        },
+      ],
+    };
+    const resolver = new InputResolver(defaults);
+    resolver.bindings.setBinding("axis", "Diagonal", 0, "key", "KeyA");
+    const saved = resolver.bindings.exportBindings();
+    defaults.axes[0]!.bindings.reverse();
+    const updatedGame = new InputResolver(defaults);
+    expect(updatedGame.bindings.importBindings(saved)).toBe(false);
+    expect(updatedGame.resolve([key("KeyA")]).axes2D.Diagonal).toEqual({
+      x: 0,
+      y: 0,
+    });
+    expect(updatedGame.resolve([key("KeyW")]).axes2D.Diagonal).toEqual({
+      x: 1,
+      y: 1,
+    });
+  });
+
   it("rebinds one action slot without mutating defaults or other devices", () => {
     const defaults = createDefaultInputMappings();
     const resolver = new InputResolver(defaults);

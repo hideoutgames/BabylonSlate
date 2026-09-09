@@ -18,8 +18,15 @@ describe("compiled runtime input rebinding", () => {
       "KeyC",
     ],
     ["input.resetAllBindings", {}, "idle", "Space", "Enter"],
+    [
+      "input.resetBinding",
+      { kind: "action", mapping: "" },
+      "idle",
+      "KeyJ",
+      "KeyC",
+    ],
   ])(
-    "executes %s without changing unrelated overrides",
+    "executes %s with properties %j against the player profile",
     async (typeId, properties, status, jump, confirm) => {
       const registry = createDefaultNodeRegistry();
       expect(registry.get(typeId)).toBeDefined();
@@ -91,8 +98,7 @@ describe("compiled runtime input rebinding", () => {
           kind: "action",
           mapping: "Jump",
           index: 0,
-          defaultDevice: "key",
-          defaultCode: "Space",
+          defaultBinding: { device: "key", code: "Space" },
           device: "key",
           code: "KeyJ",
         },
