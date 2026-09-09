@@ -187,6 +187,20 @@ test.describe("P10 tilemaps", () => {
     await expect(page.getByTestId(`search-item-${tilesetGuid}`)).toBeVisible();
     await page.getByTestId(`search-item-${tilesetGuid}`).click();
     await expect(page.getByTestId("tilemap-palette-tile-1")).toBeVisible();
+    const paletteSearch = page.getByTestId("tilemap-palette-search");
+    await paletteSearch.fill("Tile 1");
+    const searchBounds = await paletteSearch.boundingBox();
+    const clearBounds = await page.getByTestId("tilemap-palette-search-clear").boundingBox();
+    const paletteBounds = await page.getByTestId("tilemap-palette").boundingBox();
+    expect(searchBounds).toBeTruthy();
+    expect(clearBounds).toBeTruthy();
+    expect(paletteBounds).toBeTruthy();
+    expect(clearBounds!.y + clearBounds!.height / 2).toBeGreaterThanOrEqual(searchBounds!.y);
+    expect(clearBounds!.y + clearBounds!.height / 2).toBeLessThanOrEqual(searchBounds!.y + searchBounds!.height);
+    const tileBounds = await page.getByTestId("tilemap-palette-tile-1").boundingBox();
+    expect(tileBounds!.y - paletteBounds!.y).toBeLessThan(110);
+    await page.getByTestId("tilemap-palette-search-clear").click();
+    await expect(paletteSearch).toHaveValue("");
     await page.getByTestId("tilemap-palette-tile-1").click();
 
     const canvas = page.getByTestId("tilemap-paint-canvas");
@@ -233,9 +247,7 @@ test.describe("P10 tilemaps", () => {
 
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
-    await page.getByTestId("place-actors-item-empty").click();
-    await page.getByTestId("details-add-component").click();
-    await page.getByTestId("add-component-catalog-item-TilemapComponent").click();
+    await page.getByTestId("place-actors-item-tilemap").click();
     const tilemapGuid = await guidForPath(
       page,
       "assets/Overworld.tilemap.babasset",

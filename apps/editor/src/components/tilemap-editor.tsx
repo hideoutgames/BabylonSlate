@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   EraserIcon,
+  EyeIcon,
+  EyeOffIcon,
   HandIcon,
   PaintBucketIcon,
   PencilIcon,
@@ -377,17 +379,38 @@ export function TilemapDetails({
         }}
         renderItem={({ value }) => {
           const entry = tilemap.layers.find((layerRow) => layerRow.id === value);
+          if (!entry) return null;
+          const visibilityLabel = `${entry.visible ? "Hide" : "Show"} ${entry.name} Layer`;
           return (
-            <Button
-              type="button"
-              variant={value === selectedLayerId ? "default" : "outline"}
-              size="sm"
-              className="w-full justify-start"
-              data-testid={`tilemap-layer-${value}`}
-              onClick={() => setSelectedLayerId(value)}
-            >
-              {entry?.name ?? value}
-            </Button>
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              <Button
+                type="button"
+                variant={value === selectedLayerId ? "default" : "outline"}
+                size="sm"
+                className="min-w-0 flex-1 justify-start"
+                data-testid={`tilemap-layer-${value}`}
+                onClick={() => setSelectedLayerId(value)}
+              >
+                <span className="truncate">{entry.name}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                className="shrink-0 pointer-coarse:size-11"
+                aria-label={visibilityLabel}
+                title={visibilityLabel}
+                data-testid={`tilemap-layer-visibility-${value}`}
+                onClick={() => commit({
+                  ...tilemap,
+                  layers: tilemap.layers.map((item) => item.id === entry.id
+                    ? { ...item, visible: !item.visible }
+                    : item),
+                })}
+              >
+                {entry.visible ? <EyeIcon /> : <EyeOffIcon />}
+              </Button>
+            </div>
           );
         }}
       />
@@ -486,13 +509,15 @@ export function TilemapPalette({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2" data-testid="tilemap-palette">
-      <SearchInput
-        value={query}
-        onChange={setQuery}
-        placeholder="Search Tiles"
-        aria-label="Search Tiles"
-        data-testid="tilemap-palette-search"
-      />
+      <div className="flex shrink-0">
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Search Tiles"
+          aria-label="Search Tiles"
+          data-testid="tilemap-palette-search"
+        />
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tilemap.tilesets.map((ref) => {
           const tileset = payloads.get(ref.guid);
@@ -646,11 +671,10 @@ export function TilemapPaint({
       tilemap,
       pan,
       cellSize,
-      layer?.id,
       payloads,
       atlases,
     );
-  }, [atlases, cellSize, cssSize, layer?.id, pan, payloads, tilemap]);
+  }, [atlases, cellSize, cssSize, pan, payloads, tilemap]);
 
   const cellAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -960,7 +984,8 @@ export function TilemapPaint({
                 canvasHeight: rect.height || cssSize.height,
                 spreadRatio: spread / start.spread,
                 translationX: midX - start.midX,
-                translationY: midY - start.midY,
+                // Screen Y points down; the tilemap pan is in +Y-up space.
+                translationY: start.midY - midY,
               });
               setPan({ x: view.panX, y: view.panY });
               setCellSize(view.cellSize);
@@ -1193,7 +1218,6 @@ function drawTilemapCanvas(
   tilemap: TilemapPayload,
   pan: { x: number; y: number },
   cellSize: number,
-  layerId: string | undefined,
   payloads: ReadonlyMap<string, TilesetPayload>,
   atlases: ReadonlyMap<string, HTMLImageElement>,
 ): void {
@@ -1202,8 +1226,8 @@ function drawTilemapCanvas(
   ctx.fillStyle = "oklch(0.2 0 0)";
   ctx.fillRect(0, 0, cssWidth, cssHeight);
   ctx.imageSmoothingEnabled = false;
-  const layer = tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
-  if (layer) {
+  for (const layer of tilemap.layers) {
+    if (!layer.visible) continue;
     const size = tilemap.chunkSize;
     for (const chunk of layer.chunks) {
       for (let ly = 0; ly < size; ly++) {

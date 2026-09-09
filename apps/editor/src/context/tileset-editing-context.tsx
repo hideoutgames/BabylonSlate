@@ -9,6 +9,8 @@ import {
 export interface TilesetEditingContextValue {
   selectedTileId: number;
   setSelectedTileId: (id: number) => void;
+  selectedTileIds: number[];
+  setSelectedTileIds: (ids: number[]) => void;
   paintCollision: boolean;
   setPaintCollision: (value: boolean) => void;
 }
@@ -18,16 +20,18 @@ const TilesetEditingContext = createContext<TilesetEditingContextValue | null>(
 );
 
 export function TilesetEditingProvider({ children }: { children: ReactNode }) {
-  const [selectedTileId, setSelectedTileId] = useState(1);
+  const [selectedTileIds, setSelectedTileIds] = useState([1]);
   const [paintCollision, setPaintCollision] = useState(false);
   const value = useMemo(
     () => ({
-      selectedTileId,
-      setSelectedTileId,
+      selectedTileId: selectedTileIds[0] ?? 1,
+      setSelectedTileId: (id: number) => setSelectedTileIds([id]),
+      selectedTileIds,
+      setSelectedTileIds,
       paintCollision,
       setPaintCollision,
     }),
-    [paintCollision, selectedTileId],
+    [paintCollision, selectedTileIds],
   );
   return (
     <TilesetEditingContext.Provider value={value}>

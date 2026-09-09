@@ -37,15 +37,17 @@ Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local ind
 
 ## Chunk geometry
 
-`tilemapChunkVertexData` is a **pure**, Babylon-free function: GIDs + a GID resolver → `{ positions, uvs, indices }`. One draw per chunk **per atlas**; tile 0 is skipped. Callers pass `atlasGuid` to emit only that tileset’s quads. Quad order matches sprite `CreatePlane`: BL, BR, TR, TL. Callers pass `worldTileWidth` / `worldTileHeight` (`px / pixelsPerUnit`, default PPU 100) so `@babylonslate/assets` does not read project settings. GPU UVs are **half-texel inset** (`tilesetTileUv`) so sampling does not sit on a neighboring cell. Each quad is expanded by **one texel in world space** so that inset does not open a crack, and so camera zoom/pan cannot leave a 1px gap between coplanar quads (alpha-test would show the clear color). Collision chains stay on the un-expanded grid. Sprite/tilemap albedo binds a **per-sampling-key** ResourceCache wrapper (`PIXEL_ART_TEXTURE_SAMPLING`: NEAREST, no mips) so a mipped 3D load of the same guid cannot bleed atlas rows. Extra sampling keys uniquify with another `createObjectURL` of the same Blob — never `#nomip` / `#ninv` on `blob:` URLs (only `#.ktx2` is allowed).
+`tilemapChunkVertexData` is a **pure**, Babylon-free function: GIDs + a GID resolver → `{ positions, uvs, indices }`. One draw per chunk **per atlas**; tile 0 is skipped. Callers pass `atlasGuid` to emit only that tileset’s quads. Quad order matches sprite `CreatePlane`: BL, BR, TR, TL. Callers pass `worldTileWidth` / `worldTileHeight` (`px / pixelsPerUnit`, default PPU 100) so `@babylonslate/assets` does not read project settings. GPU UVs are **half-texel inset** (`tilesetTileUv`) so sampling does not sit on a neighboring cell. Each quad occupies its **exact grid cell**, sharing identical boundaries with adjacent chunks; tiles neither stretch nor paint over their neighbors. Collision chains use the same grid. Sprite/tilemap albedo binds a **per-sampling-key** ResourceCache wrapper (`PIXEL_ART_TEXTURE_SAMPLING`: NEAREST, no mips) so a mipped 3D load of the same guid cannot bleed atlas rows. Pixel-art wrappers enable diffuse texture alpha for cutouts, while lit material wrappers keep their own alpha settings. Extra sampling keys uniquify with another `createObjectURL` of the same Blob — never `#nomip` / `#ninv` on `blob:` URLs (only `#.ktx2` is allowed).
 
 `encodeTileGid` / `decodeTileGid(map, gid, tilesetPayloads)` pick the highest `firstGid <= gid`. Play/editor/physics all use the same helpers. Legacy maps with an empty `tilesets[]` and only `tilesetGuid` still treat GIDs as local ids.
 
-Only **affected chunks** are copied in `setTile`. Editor and Play mesh builders still walk every **visible** chunk when the document or scene applies.
+Only **affected chunks** are copied in `setTile`. Editor and Play mesh builders still walk every **visible** chunk when the document or scene applies. Editor asset fingerprints include Tilemap and Tileset payload contents, so painting, layer visibility, and atlas grid edits refresh existing scene geometry and UVs; equivalent payloads keep mesh identity.
 
 Animated tiles (tileset `animation` frame lists) draw as a small separate set; they do not make every static tile dynamic.
 
 Play builds a parent `actor-N` mesh plus one child draw per non-empty static chunk **per atlas**, plus an `:anim` sibling when the chunk has animated tiles (`createTilemapMeshes`). Extra atlases append `:a1`, `:a2`, … Children store `metadata.tilemapTextureGuid` so `applyTilemapAlbedoTextures` can bind each atlas. Chunk children are named `editorActor:<id>:<layer>:<cx>:<cy>` (optional `:aN` / `:anim`). Editor picking maps those names back to the actor id; Play picking still walks parents to `actor-N`.
+
+Tilemap atlas materials stay **unlit and double-sided** in both 2D and 3D scenes. They disable material fog and image processing to preserve atlas colors, and retain their atlas when attached beneath actors or components with mesh/model material overrides. Alpha testing discards transparent atlas pixels. Sprite and tilemap mesh disposal or atlas rebinding disposes the old owned albedo material while preserving the shared ResourceCache texture, including mixed scenes rebuilt after painting.
 
 `tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw: animated tileset ids (`animation.length > 0`) use the first frame’s UVs on the `:anim` mesh. Per-layer `sortingLayer` / `orderInLayer` write `renderingGroupId` / `alphaIndex`. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`).
 
@@ -59,7 +61,7 @@ Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` va
 
 ## Placement
 
-`TilemapComponent` is in Add Component (Rendering) and Search. Properties: `assetGuid`, sorting layer / order.
+**Place Actors > Rendering > Tilemap** creates an actor with `TilemapComponent`. Project Tilemap assets also appear in Place Actors and bind their asset automatically, in both Scenes and Scene Layers. `TilemapComponent` remains in Add Component (Rendering) and Search. Properties: `assetGuid`, sorting layer / order.
 
 ## Authoring
 
@@ -73,16 +75,18 @@ Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 ### Tileset
 
 - Preview fills the panel (`object-contain` atlas, grid from `tileWidth/Height`, `margin`, `spacing` in **texture space** — not a CSS grid of `tiles.length`).
-- Toolbar: **Move** (default, Lucide `HandIcon`) | **Select**, then None / Full / Chain and **Paint Collision**. In Move, one-finger drag pans; a tap (movement < 8px) still selects. In Select, tap a cell as before. Two-finger pinch/pan and wheel zoom stay in both tools. `tileset-preview-cell-{id}`. Full cells show a hatch; Chain draws the stored polyline on the selected cell.
+- Toolbar: **Move** (default, Lucide `HandIcon`) | **Select**, then None / Full / Chain and **Paint Collision**. In Move, one-finger drag pans; a tap (movement < 8px) still selects. In Select, drag a rectangle to select several cells; collision, flags, animation, and chain-point edits apply to every selected tile. Selection commits on release; a second finger or canceled pointer discards the pending selection. Two-finger pinch/pan and wheel zoom stay in both tools. `tileset-preview-cell-{id}`. Full cells show a hatch; Chain draws the stored polyline.
 - `Empty` when no Texture is assigned.
 - Picking a Texture sets `atlasWidth/Height` from `img.naturalWidth/Height` and runs `ensureTilesetTiles`. Atlas size fields in Details are read-only.
+- Tile Width and Tile Height keep local drafts until **Confirm Tile Size** applies both together, avoiding atlas reconstruction on every keystroke. Undo/redo refreshes the drafts from the restored dimensions.
 
 ### Tilemap
 
 - **Tilesets** is a `NamedListEditor` (`Add Tileset` opens `AssetPicker`). Rows use `PickerIdentity`. Empty copy: “Add a Tileset to start painting.” Several tilesets share one GID space on the map — not one tileset per layer.
-- **Palette** loads each listed tileset with `loadAssetDocument` (closed tabs included) plus Texture `pixels`. Thumbs are cropped with `tilesetTileRect` and nearest-neighbor, grouped by tileset name. Tap sets the paint GID. `SearchInput` filters large sets. The Paint toolbar shows a 44px selected-tile thumb (`data-gid` / `data-tile`), not a text Palette dropdown.
+- **Palette** loads each listed tileset with `loadAssetDocument` (closed tabs included) plus Texture `pixels`. Thumbs are cropped with `tilesetTileRect` and nearest-neighbor, grouped by tileset name. Tap sets the paint GID. The compact search bar keeps Clear inside the field; the tile list scrolls in the remaining panel height. The Paint toolbar shows a 44px selected-tile thumb (`data-gid` / `data-tile`), not a text Palette dropdown.
 - **Paint** fills `PanelFrame` (`ResizeObserver` backing store, `devicePixelRatio`). Blit with `imageSmoothingEnabled = false` and draw the grid **only inside** the map rectangle (full cell, no gutters) with a high-contrast bounds stroke; outside stays the dark canvas. Empty in-bounds cells stay empty. Default tool is **Move** (`HandIcon`, `data-tool="move"`); switch to Brush to paint. One-finger drag pans in Move. Other tools (brush/eraser/rect/bucket/stamp/picker) still one-finger paint. Two-finger pinch zooms about the midpoint and translation pans in every tool; a second finger drops an in-progress paint stroke (reverts it) so pinch does not leave a stray tile. Wheel zooms about the cursor. Cell size is clamped 8–96 CSS px (default 32). `data-cell-size` / `data-zoom` / `data-pan-x` / `data-pan-y` / `data-paint-source` (`atlas` \| `hsl`) are for Playwright. No tilesets → `Empty` instead of a blank square.
 - Details **Map** group: Map Width / Map Height (`property-mapWidth` / `property-mapHeight`) with Tile Width/Height.
+- **Layers** rows have **Hide / Show** eye buttons. The Paint canvas composites all visible layers in list order; the paint-layer picker only chooses where edits go. Visibility uses the saved layer setting (also respected in Scenes and Play), preserves tiles, and participates in undo/redo. Two-finger translation follows the fingers in both axes, using the same +Y-up pan coordinates as Move.
 - **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
 
 Stamp places a 2×2 of the selected GID. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
