@@ -165,6 +165,8 @@ describe("addClassMember", () => {
     graph = addCallEventNode(graph, { name: "On Hit" }, {
       idFactory: () => "function-call", functionId: "fn-1",
     });
+    const functionNode = { id: "evt-1", type: "debug.log", position: { x: 0, y: 0 }, data: { title: "Log" } };
+    graph.functionGraphs["fn-1"]!.nodes.push(functionNode);
     graph.edges = [{ id: "edge", source: "evt-1", target: "local", sourceHandle: "then", targetHandle: "exec" }];
     const next = patchClassMember(graph, "evt-1", { name: "onDamage" });
     expect(next.members?.[0]?.name).toBe("On Damage");
@@ -172,6 +174,7 @@ describe("addClassMember", () => {
     expect(next.nodes[1]).toMatchObject({ id: "local", data: { name: "On Damage", title: "Call On Damage" } });
     expect(next.nodes[2]).toEqual(graph.nodes[2]);
     expect(next.functionGraphs?.["fn-1"]?.nodes[0]?.data.name).toBe("On Damage");
+    expect(next.functionGraphs?.["fn-1"]?.nodes[1]).toEqual(functionNode);
     expect(next.edges).toEqual(graph.edges);
     expect(graph.nodes[0]?.data.name).toBe("On Hit");
   });
