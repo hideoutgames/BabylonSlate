@@ -30,7 +30,7 @@ Shared base tokens derive from **Minimal Neutral** ([tweakcn](https://tweakcn.co
 ## Adaptive editor layout
 
 - Desktop has a branded command row with compact 28px actions and a separate document ribbon. Content Browser and the open Scene remain pinned; other documents scroll. Resizable Dockview groups use rounded card surfaces and 30px tab strips.
-- Touch capability (`any-pointer: coarse`) selects 44px controls, document tabs, dock strips, tree rows, and property fields on iPad, including when a trackpad is attached. Desktop keeps its compact controls and spacing.
+- Touch capability (`any-pointer: coarse`) selects 44px controls, document tabs, dock strips, tree rows, and property fields on iPad, including when a trackpad is attached. Numeric inputs use readable 16px text, and transform axes wrap when an inspector is too narrow for one row. Desktop keeps its compact controls and spacing.
 - A vertical desktop window rail and a labeled bottom iPad rail expose the active document's windows. They reuse **Windows** and **Focus** operations and their saved `layout.json` placements; the dock model and per-document layout persistence stay intact.
 - Phone layout activates below 768px wide, or at 500px tall or less with a coarse pointer. The global bars use 44px targets; Content Browser and Open Documents provide navigation, with secondary commands under More Tools.
 - Phone Dockview shows one window with a bottom **Window** picker. Window switching uses Dockview visibility and keeps the tablet layout separate; returning to a larger window restores its splits. Focus is unnecessary in this mode.
