@@ -92,6 +92,23 @@ describe("DocumentSwitcher", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
-    expect(screen.queryByRole("menuitem", { name: /Close/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /Close main/i })).toBeNull();
+  });
+
+  it("offers bulk close from Content Browser and disables it when no document tabs remain", () => {
+    const closeAll = vi.fn();
+    const screen = render(
+      <DocumentSwitcher documents={documents} activeDocumentId={CONTENT_BROWSER_ID}
+        onSelect={() => {}} onClose={() => {}} onCloseAll={closeAll} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close Open Tab(s)" }));
+    expect(closeAll).toHaveBeenCalledOnce();
+    screen.rerender(
+      <DocumentSwitcher documents={[documents[0]!]} activeDocumentId={CONTENT_BROWSER_ID}
+        onSelect={() => {}} onClose={() => {}} onCloseAll={closeAll} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
+    expect(screen.getByRole("menuitem", { name: "Close Open Tab(s)" }).getAttribute("aria-disabled")).toBe("true");
   });
 });
