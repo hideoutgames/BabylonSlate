@@ -78,10 +78,18 @@ describe("tilemap rendering", () => {
     expect(material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
   });
 
-  it("preserves a nested tilemap atlas when its parent mesh has an authored material", () => {
+  it.each(["component", "model slot"])("preserves a nested tilemap atlas under a parent mesh %s material", (source) => {
     const { assets, actor } = content();
     const parentMesh = createMeshComponent("mesh", "box");
-    parentMesh.properties.materialGuid = "lit-material";
+    if (source === "component") {
+      parentMesh.properties.materialGuid = "lit-material";
+    } else {
+      parentMesh.properties.assetGuid = "model";
+      assets.modelPayloads = new Map([["model", {
+        materialSlots: [{ index: 0, name: "slot", materialGuid: "lit-material" }],
+        clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [],
+      }]]);
+    }
     actor.components = [parentMesh, { ...actor.components[0]!, parentId: "mesh" }];
     const lit = new StandardMaterial("lit", handle.scene);
     const sync = new EditorSceneSync(handle.scene, undefined, { resolveMaterial: () => lit });
@@ -108,7 +116,7 @@ describe("tilemap rendering", () => {
 
     for (const materialAssetGuid of ["lit-material", null]) {
       applyAssignMaterial(handle.scene, binding, { type: "assignMaterial", slotId: 0, materialAssetGuid });
-      expect(tile.material).toBe(atlasMaterial);
+      expect(tile.material === atlasMaterial).toBe(true);
     }
   });
 
