@@ -30,12 +30,14 @@ export function DocumentSwitcher({
   activeDocumentId,
   onSelect,
   onClose,
+  onCloseAll,
   compact = false,
 }: {
   documents: OpenDocument[];
   activeDocumentId: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
+  onCloseAll?: () => void;
   compact?: boolean;
 }) {
   const active = documents.find((doc) => doc.id === activeDocumentId);
@@ -121,6 +123,20 @@ export function DocumentSwitcher({
             </DropdownMenuGroup>
           </>
         ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            className="min-h-11"
+            disabled={
+              !onCloseAll ||
+              !documents.some((doc) => doc.id !== CONTENT_BROWSER_ID)
+            }
+            onClick={onCloseAll}
+          >
+            <XIcon />
+            <span className="truncate">Close Open Tab(s)</span>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

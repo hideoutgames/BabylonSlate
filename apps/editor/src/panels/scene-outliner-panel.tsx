@@ -622,6 +622,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       }
       items.push(
         {
+          id: "select-actor",
+          label: selectedActorIds.includes(actorId) ? "Deselect" : "Select",
+          testId: `outliner-select-${actorId}`,
+          onSelect: () => selectActor(actorId, true),
+        },
+        {
           id: "duplicate-actor",
           label: "Duplicate",
           testId: `outliner-duplicate-${actorId}`,
@@ -646,7 +652,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       );
       return items;
     },
-    [assetRegistry, mutate, openDocument, removeActor, scene, selectActor],
+    [assetRegistry, mutate, openDocument, removeActor, scene, selectActor, selectedActorIds],
   );
 
   const folderMenuItems = useCallback(
