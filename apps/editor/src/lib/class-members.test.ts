@@ -166,7 +166,7 @@ describe("addClassMember", () => {
       idFactory: () => "function-call", functionId: "fn-1",
     });
     const functionNode = { id: "evt-1", type: "debug.log", position: { x: 0, y: 0 }, data: { title: "Log" } };
-    graph.functionGraphs["fn-1"]!.nodes.push(functionNode);
+    graph.functionGraphs!["fn-1"]!.nodes.push(functionNode);
     graph.edges = [{ id: "edge", source: "evt-1", target: "local", sourceHandle: "then", targetHandle: "exec" }];
     const next = patchClassMember(graph, "evt-1", { name: "onDamage" });
     expect(next.members?.[0]?.name).toBe("On Damage");
