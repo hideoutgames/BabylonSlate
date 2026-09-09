@@ -98,7 +98,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       expect(runtime.executeConsoleCommand("possess selected").success).toBe(true);
       runtime.tick();
       expect(commands.some((command) => command.type === "debugDraw" &&
-        command.kind === "line" && command.start.x > 19)).toBe(true);
+        command.kind === "line" && command.start !== undefined && command.start.x > 19)).toBe(true);
       runtime.pause();
       expect(runtime.executeConsoleCommand("destroyactor selected").success).toBe(true);
       const replacement = runtime.spawnScriptedActor({ classId: "Probe" })!;
@@ -109,7 +109,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       runtime.resume();
       runtime.tick();
       expect(commands.some((command) => command.type === "debugDraw" &&
-        command.kind === "line" && command.start.x > 2 && command.start.x < 4)).toBe(true);
+        command.kind === "line" && command.start !== undefined && command.start.x > 2 && command.start.x < 4)).toBe(true);
     } finally {
       runtime.stop();
     }
