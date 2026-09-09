@@ -91,6 +91,14 @@ function tokenValue(block: string, name: string): string {
   return match?.[1]?.trim() ?? "";
 }
 
+function resolvedTokenValue(block: string, name: string, seen = new Set<string>()): string {
+  if (seen.has(name)) return "";
+  seen.add(name);
+  const value = tokenValue(block, name);
+  const alias = value.match(/^var\((--[\w-]+)\)$/)?.[1];
+  return alias ? resolvedTokenValue(block, alias, seen) : value;
+}
+
 function oklchLightness(value: string): number {
   const match = value.match(/oklch\(\s*([0-9.]+)/i);
   return match ? Number(match[1]) : Number.NaN;
@@ -303,10 +311,10 @@ describe("Graphite theme tokens", () => {
   });
 
   it("keeps dark field and panel boundaries visible against modal surfaces", () => {
-    const surface = oklchLightness(tokenValue(dark, "--popover")) ** 3;
+    const surface = oklchLightness(resolvedTokenValue(dark, "--popover")) ** 3;
     for (const name of ["--border", "--input", "--sidebar-border"]) {
       // Achromatic OKLCH lightness cubed is relative luminance.
-      const boundary = oklchLightness(tokenValue(dark, name)) ** 3;
+      const boundary = oklchLightness(resolvedTokenValue(dark, name)) ** 3;
       expect((boundary + 0.05) / (surface + 0.05), name).toBeGreaterThanOrEqual(
         1.5,
       );
