@@ -333,7 +333,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Scene editing | `p6-scene-editing` | `edit` (scene commands), `apps/editor` (viewport, outliner, details, mini asset browser, actor prefab) | Scene schema + editor-kit + command layer |
 | 2D viewport | `p6-2d-viewport` | `render` (editor-camera, gizmo-host, editor-grid, viewport-gestures) | Scene editing |
 | 2D units + sorting | `p6-2d-units-sorting` | `core` (project `twoD` settings), `render` (sorting, pixel-perfect) | 2D viewport |
-| Input mappings | `p6-input-mappings` | `input`, `runtime`, `scripting-nodes`, `apps/editor` (Project Settings Input tab) | P4 input capture |
+| Input mappings | `p6-input-mappings` | `input`, `runtime`, `scripting-nodes`, `apps/editor` (Input assets) | P4 input capture |
 | E2E + docs | — | `e2e/`, `docs/` | All P6 slices |
 
 Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](../architecture/input.md).
@@ -349,7 +349,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | Done (`p-lighting-camera` + default skybox) | Incremental `authoredLight`/`authoredCamera`; direction from actor rotation × `(0,0,1)`; Play color/intensity/range/cone; detached `UniversalCamera`; named Default Camera (`SceneComponentPicker`); Possess Camera; one `ShadowGenerator` from `shadowquality` (`off`/`512`/`1024`/`2048`); fog/IBL; `environmentColor` clear; **SkyboxComponent** mesh (not IBL) + 3D default locked Skybox and daylight directional light. Spec: [engineplan §2.5](../engineplan.md). |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
-| Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (searchable code picker); no JSON textarea |
+| Structured Input mappings editor (vs raw JSON) | Done | Input Action and Input Axis assets have dedicated Bindings/Details editors and typed graph events; no JSON textarea |
 | Multi-select gizmo (transform all selected) | Done | Outline covers all; gizmo attaches to the first pickable selection root; world-space TRS delta follows onto the other roots; `SetActorsTransformsCommand` is one undo |
 
 ## P7 slice ownership

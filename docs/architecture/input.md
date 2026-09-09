@@ -4,7 +4,7 @@ Create **Input Action** or **Input Axis** from the Content Browser's **Input** c
 
 ## Graph workflow
 
-The Add Node menu has **Event <asset name>** for every input asset under Input/Actions or Input/Axes. Each event uses event colors and an **Input Type** dropdown. Asset GUIDs identify inputs; names are display metadata. Changing the selected asset updates Value's type. Native **Break Input Type** exposes Name and Asset. Input events belong in ticking runtime class event graphs, not functions or animation rules.
+The Add Node menu has `Event <asset name>` for every input asset under Input/Actions or Input/Axes. Each event uses event colors and an **Input Type** dropdown. Asset GUIDs identify inputs; names are display metadata. Changing the selected asset updates Value's type. Native **Break Input Type** exposes Name and Asset. Input events belong in ticking runtime class event graphs, not functions or animation rules.
 
 | Pin | Behaviour |
 | --- | --- |

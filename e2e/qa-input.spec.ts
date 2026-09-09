@@ -1,15 +1,28 @@
 import { expect, test } from "@playwright/test";
 import type { SerializedGraph } from "../packages/core/src/index.ts";
-import { openMainScene, openTestProject } from "./open-test-project";
+import {
+  openMainScene,
+  openTestProject,
+  openAssetFromBrowser,
+  openContentBrowser,
+  selectContentBrowserAssetsFolder,
+} from "./open-test-project";
+import { guidForPath } from "./material-graph";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 
-const graph: SerializedGraph = {
+const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
   nodes: ["Jump", "Fire", "Confirm"].flatMap((action, index) => [
     {
       id: action,
-      type: "input.onAction",
+      type: action === "Confirm" ? "input.onAction" : "input.event",
       position: { x: 0, y: index * 160 },
-      data: { action, phase: "pressed" },
+      data:
+        action === "Confirm"
+          ? { action, phase: "pressed" }
+          : {
+              "default:input": { Name: action, Asset: guids[action] },
+              valueType: "button",
+            },
     },
     {
       id: `${action}-print`,
@@ -22,10 +35,10 @@ const graph: SerializedGraph = {
     id: `${action}-edge`,
     source: action,
     target: `${action}-print`,
-    sourceHandle: "execOut",
+    sourceHandle: action === "Confirm" ? "execOut" : "started",
     targetHandle: "execIn",
   })),
-};
+});
 
 for (const preview of [false, true]) {
   test(`H13: authored keys survive reload and dispatch in ${preview ? "Preview Build" : "Normal Play"}`, async ({
@@ -33,6 +46,42 @@ for (const preview of [false, true]) {
   }) => {
     test.setTimeout(120_000);
     await openTestProject(page);
+    await openAssetFromBrowser(page, "assets/Input/Jump.inputaction.babasset");
+    let bindings = page.getByTestId("document-workspace-input-action");
+    await bindings
+      .getByRole("button", { name: "Listen", exact: true })
+      .first()
+      .click();
+    await page.keyboard.press("h");
+    await bindings.getByRole("button", { name: "Add Control" }).click();
+    await page.getByRole("menuitem", { name: "Keyboard", exact: true }).click();
+    await bindings
+      .getByRole("button", { name: "Listen", exact: true })
+      .last()
+      .click();
+    await page.keyboard.press("g");
+    await openContentBrowser(page);
+    await selectContentBrowserAssetsFolder(page);
+    await page.getByTestId("content-browser-new-asset").click();
+    await page.getByTestId("new-asset-type").click();
+    await page.getByTestId("new-asset-type-InputAction").click();
+    await page.getByTestId("new-asset-name").fill("Fire");
+    await page.getByTestId("content-browser-new-asset-create").click();
+    await expect(
+      page.getByTestId("content-browser-new-asset-dialog"),
+    ).toHaveCount(0);
+    await openAssetFromBrowser(page, "assets/Fire.inputaction.babasset");
+    bindings = page
+      .getByTestId("document-workspace-input-action")
+      .filter({ visible: true });
+    await bindings.getByRole("button", { name: "Add Control" }).click();
+    await page.getByRole("menuitem", { name: "Keyboard", exact: true }).click();
+    await bindings.getByRole("button", { name: "Listen", exact: true }).click();
+    await page.keyboard.press("f");
+    const graph = inputGraph({
+      Jump: await guidForPath(page, "assets/Input/Jump.inputaction.babasset"),
+      Fire: await guidForPath(page, "assets/Fire.inputaction.babasset"),
+    });
     expect(
       await page.evaluate(
         async (next) =>
@@ -48,41 +97,22 @@ for (const preview of [false, true]) {
         graph,
       ),
     ).toBe(true);
-    await openMainScene(page);
-    await page.getByTestId("settings-menu").click();
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-input").click();
-    await page.getByTestId("input-action-0-binding-0-code").click();
-    await page.getByTestId("search-item-KeyH").click();
-    await page.getByTestId("input-action-0-add-binding").click();
-    await page.getByTestId("input-action-0-binding-3-code").click();
-    await page.getByTestId("search-item-KeyG").click();
-    await page.getByTestId("input-action-add").click();
-    await page.getByTestId("input-action-2-name").fill("Fire");
-    await page.getByTestId("input-action-2-add-binding").click();
-    await page.getByTestId("input-action-2-binding-0-code").click();
-    await page.getByTestId("search-item-KeyF").click();
-    await page
-      .getByTestId("settings-modal")
-      .getByRole("button", { name: "Close", exact: true })
-      .click();
     await page.getByTestId("save-all-project").click();
     await expect(page.getByTestId("save-all-project")).toBeDisabled();
     await page.reload();
     await openTestProject(page);
-    await openMainScene(page);
-    await page.getByTestId("settings-menu").click();
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-input").click();
+    await openAssetFromBrowser(page, "assets/Input/Jump.inputaction.babasset");
+    await expect(page.getByTestId("input-control-binding-1")).toContainText(
+      "H",
+    );
+    await openAssetFromBrowser(page, "assets/Fire.inputaction.babasset");
     await expect(
-      page.getByTestId("input-action-0-binding-0-code"),
-    ).toContainText("H");
-    await page.getByTestId("input-action-2-select").click();
-    await expect(page.getByTestId("input-action-2-name")).toHaveValue("Fire");
-    await page
-      .getByTestId("settings-modal")
-      .getByRole("button", { name: "Close", exact: true })
-      .click();
+      page
+        .getByTestId("document-workspace-input-action")
+        .filter({ visible: true })
+        .locator('[data-testid^="input-control-"]'),
+    ).toContainText("F");
+    await openMainScene(page);
 
     if (preview) {
       await page.getByTestId("debug-menu").click();
