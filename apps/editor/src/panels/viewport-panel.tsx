@@ -574,7 +574,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       sceneData: scene,
       selectedActorIds,
     });
-  }, [scene, selectedActorIds]);
+  }, [scene, selectedActorIds, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
