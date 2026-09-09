@@ -37,6 +37,7 @@ import {
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
 import { playerSpawnListForScripts } from "./spawn-list";
 import { packedFontCssStacks } from "./fonts";
+import { createPlayerConsoleHost } from "./console-host";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -69,6 +70,7 @@ export type PlayerBootHandle = {
   ticks: () => number;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
+  executeConsoleCommand: (line: string) => Promise<{ success: boolean; output: string }>;
   stop: () => { diagnostics: PlayerDiagnostic[] };
 };
 
@@ -83,6 +85,7 @@ export function startPlayer(options: {
     draws: number;
   }) => void;
   onDiagnostic?: (diagnostics: readonly PlayerDiagnostic[]) => void;
+  onConsoleEvent?: (command: { type: string } & Record<string, unknown>) => void;
 }): PlayerBootHandle {
   const { canvas, game } = options;
   const manifest: GameManifest = game.manifest;
@@ -98,6 +101,10 @@ export function startPlayer(options: {
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   let input: ReturnType<typeof attachInputCapture> | null = null;
+  const consoleHost = createPlayerConsoleHost({
+    execute: () => runtime ? (line) => runtime!.executeConsoleCommand(line) : undefined,
+    post: (command) => worker?.postControl(command),
+  });
 
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
@@ -142,6 +149,7 @@ export function startPlayer(options: {
     dracoBasePath: dracoBasePath(),
     meshoptBasePath: meshoptBasePath(),
     onPostProcessDiagnostic: (diagnostic) => {
+      options.onConsoleEvent?.({ type: "log", message: diagnostic.message, severity: "warning" });
       diagnostics.push({
         message: diagnostic.message,
         severity: "warning",
@@ -151,6 +159,7 @@ export function startPlayer(options: {
       options.onDiagnostic?.(diagnostics);
     },
     onAudioDiagnostic: (diagnostic) => {
+      options.onConsoleEvent?.({ type: "log", message: diagnostic.message, severity: "warning" });
       diagnostics.push({
         message: diagnostic.message,
         severity: "warning",
@@ -160,6 +169,7 @@ export function startPlayer(options: {
       options.onDiagnostic?.(diagnostics);
     },
     onParticleDiagnostic: (diagnostic) => {
+      options.onConsoleEvent?.({ type: "log", message: diagnostic.message, severity: "warning" });
       diagnostics.push({
         message: diagnostic.message,
         severity: "warning",
@@ -169,6 +179,7 @@ export function startPlayer(options: {
       options.onDiagnostic?.(diagnostics);
     },
     onMaterialDiagnostic: (diagnostic) => {
+      options.onConsoleEvent?.({ type: "log", message: diagnostic.message, severity: diagnostic.severity ?? "error" });
       diagnostics.push({
         message: diagnostic.message,
         severity: diagnostic.severity ?? "error",
@@ -292,12 +303,15 @@ export function startPlayer(options: {
     worker?.terminate();
     worker = null;
     runtime?.stop();
+    consoleHost.dispose();
     printHud.dispose();
   };
 
   const materialsWarmed = { current: false };
   let hostSceneGuid: string | null = startup;
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    consoleHost.receive(command);
+    options.onConsoleEvent?.(command);
     if (command.type === "snapshotLayout" && runtime) snapBuf = new Float32Array(snapshotFloatCount(Number(command.capacity)));
     if (command.type === "snapshotLayout") handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
@@ -489,6 +503,7 @@ export function startPlayer(options: {
     ticks: () => ticks,
     visuals: () => handle.playVisualStates(),
     meshMaterialNames: () => handle.playMeshMaterialNames(),
+    executeConsoleCommand: (line) => consoleHost.execute(line),
     stop: () => {
       halted = true;
       detachLifecycle();
@@ -499,6 +514,7 @@ export function startPlayer(options: {
       printHud.dispose();
       worker?.terminate();
       runtime?.stop();
+      consoleHost.dispose();
       handle.dispose();
       return { diagnostics };
     },
