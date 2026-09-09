@@ -11,10 +11,11 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.start();
     const world = runtime.getWorld();
     const actor = world.createActor({ guid: "cam", classId: "Actor", variables: { name: "Camera" } });
-    actor.addComponent(world.createComponent({ classId: "CameraComponent", guid: "cam-component" }));
+    actor.attachComponent(world.createComponent({ classId: "CameraComponent", guid: "cam-component" }));
     world.spawnActorNow(actor);
     runtime.tick();
     runtime.pause();
+    const pausedTick = world.clock.tickIndex;
     commands.length = 0;
     expect(runtime.executeConsoleCommand('possess "cam"').success).toBe(true);
     expect(commands).toContainEqual({ type: "setFreeCam", enabled: false });
@@ -22,7 +23,36 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand('destroyactor "cam"').success).toBe(true);
     expect(runtime.inspectWorld().nodes.some((node) => node.id === "cam")).toBe(false);
     expect(commands).toContainEqual({ type: "despawn", slotId: 0, actorGuid: "cam" });
+    runtime.tick();
+    expect(world.clock.tickIndex).toBe(pausedTick);
     expect(runtime.executeConsoleCommand('destroyactor "cam"').success).toBe(false);
+    runtime.stop();
+  });
+
+  it("defers console destruction invoked inside a tick until actor callbacks finish", () => {
+    const events: string[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+    });
+    const world = runtime.getWorld();
+    const actor = world.createActor({
+      guid: "actor",
+      classId: "Actor",
+      hooks: {
+        onTick: () => {
+          expect(runtime.executeConsoleCommand("destroyactor actor").success).toBe(true);
+          events.push("tick returned");
+        },
+        onDestroyed: () => events.push("destroyed"),
+      },
+    });
+    world.spawnActorNow(actor);
+    runtime.start();
+    runtime.tick();
+    expect(events).toEqual(["tick returned", "destroyed"]);
+    expect(world.getActors()).toHaveLength(0);
     runtime.stop();
   });
 

@@ -60,6 +60,8 @@ export const DEBUG_COMMAND_NAMES = [
   "showaudiodebug",
   "dumpactors",
   "inspect",
+  "possess",
+  "destroyactor",
 ] as const;
 
 export function isReservedConsoleCommandName(name: string): boolean {
