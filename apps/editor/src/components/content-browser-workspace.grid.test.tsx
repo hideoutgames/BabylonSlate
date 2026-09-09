@@ -29,6 +29,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     setActiveDocument: vi.fn(),
     tabOrder: [] as string[],
     loadAssetThumbnail,
+    loadAssetDocument: vi.fn(async () => ({})),
     thumbnailsEnabled: true,
     pluginDescriptors: [] as unknown[],
     showPluginContent: false,
@@ -154,6 +155,8 @@ afterEach(async () => {
   docs.thumbnailsEnabled = true;
   layout.phone = false;
   docs.openDocument.mockClear();
+  docs.openDocuments = [];
+  docs.loadAssetDocument.mockReset().mockResolvedValue({});
   if (clientWidthDescriptor) {
     Object.defineProperty(
       HTMLElement.prototype,
@@ -168,6 +171,81 @@ afterEach(async () => {
       clientHeightDescriptor,
     );
   }
+});
+
+describe("ContentBrowserWorkspace referenced Class deletion", () => {
+  function classAndScene(folder = "assets") {
+    const actorClass = texture(0);
+    actorClass.path = `${folder}/Hero.class.babasset`;
+    actorClass.header = { ...actorClass.header, type: "Class", name: "Hero", guid: "hero" };
+    const scene = texture(1);
+    scene.path = "assets/main.scene.babasset";
+    scene.header = { ...scene.header, type: "Scene", name: "main", guid: "main" };
+    return { actorClass, scene };
+  }
+
+  beforeEach(() => {
+    docs.thumbnailsEnabled = false;
+  });
+
+  it("blocks a Class used by an unsaved open scene without changing either asset", async () => {
+    const { actorClass, scene } = classAndScene();
+    const content = { actors: [{ classId: "Hero", components: [] }] };
+    docs.openDocuments = [{ ref: { path: scene.path }, content }];
+    installRegistry([actorClass, scene]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${actorClass.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+    await waitFor(() => {
+      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
+    });
+    fireEvent.click(screen.getByTestId("content-browser-delete-cancel"));
+    expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
+    expect(content.actors).toEqual([{ classId: "Hero", components: [] }]);
+  });
+
+  it("blocks a folder containing a Class referenced by a closed legacy scene", async () => {
+    const { actorClass, scene } = classAndScene("assets/Actors");
+    docs.loadAssetDocument.mockResolvedValue({ actors: [{ classId: "Hero" }] });
+    installRegistry([actorClass, scene], ["Actors"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Actors"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
+    });
+    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("allows deleting a folder when its Class referrers are also selected for deletion", async () => {
+    const { actorClass, scene } = classAndScene("assets/Actors");
+    scene.path = "assets/Actors/main.scene.babasset";
+    scene.header.dependencies = ["hero"];
+    installRegistry([actorClass, scene], ["Actors"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Actors"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+    await waitFor(() => {
+      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+
+  it("keeps referenced material deletion available", () => {
+    const { actorClass: material, scene } = classAndScene();
+    material.header.type = "Material";
+    scene.header.dependencies = ["hero"];
+    installRegistry([material, scene]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${material.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+    expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
+    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
+  });
 });
 
 describe("ContentBrowserWorkspace grid window", () => {
