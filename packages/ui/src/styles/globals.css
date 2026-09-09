@@ -557,3 +557,54 @@
     transition: none;
   }
 }
+
+/* Editor alternative: the launcher's graphite/silver palette. Keeping this on
+ * the body only while an editor is mounted also themes portaled controls,
+ * without changing the Project Browser or Main Menu. */
+body:has(.slate-editor) {
+  --background: #eeeff2;
+  --foreground: #1b1d23;
+  --card: #f9f9fb;
+  --card-foreground: var(--foreground);
+  --popover: #fbfbfd;
+  --popover-foreground: var(--foreground);
+  --primary: #242833;
+  --primary-foreground: #ffffff;
+  --secondary: #e3e5eb;
+  --secondary-foreground: var(--foreground);
+  --muted: #e5e6eb;
+  --muted-foreground: #737782;
+  --accent: #e1e4ee;
+  --accent-foreground: var(--foreground);
+  --border: #d6d8e0;
+  --input: #c6c9d2;
+  --ring: #616faa;
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-ring: var(--ring);
+  --chrome-tab-active: var(--accent);
+  --chrome-tab-accent: var(--foreground);
+  --editor-shadow: #30364b18;
+}
+
+.dark body:has(.slate-editor) {
+  --background: #0c0e12;
+  --foreground: #ededf2;
+  --card: #17191f;
+  --popover: #1b1d24;
+  --primary: #e9eaf0;
+  --primary-foreground: #111319;
+  --secondary: #242730;
+  --muted: #21242b;
+  --muted-foreground: #90939f;
+  --accent: #2b2e39;
+  --border: #2b2e37;
+  --input: #343742;
+  --ring: #afbaff;
+  --editor-shadow: #00000066;
+}

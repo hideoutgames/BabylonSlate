@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@babylonslate/ui/components/card";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { Button } from "@babylonslate/ui/components/button";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 
 export interface ContentBrowserFolderTileProps {
@@ -46,16 +47,18 @@ export function ContentBrowserFolderTile({
     <Card
       size="sm"
       className={cn(
-        "relative w-full gap-0 overflow-hidden py-0",
+        "content-library-tile content-library-folder-tile relative w-full gap-0 overflow-hidden py-0",
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
+      data-selected={selected ? "true" : "false"}
     >
-      <button
+      <Button
         type="button"
+        variant="ghost"
         data-testid={`content-folder-${path}`}
         data-folder-path={path}
         data-selected={selected ? "true" : "false"}
-        className="flex w-full flex-col text-left hover:bg-accent/50"
+        className="content-library-tile-button flex h-auto w-full flex-col items-stretch gap-0 rounded-none border-0 p-0 text-left"
         onClick={(event) => {
           event.stopPropagation();
           if (event.button !== 0) return;
@@ -68,7 +71,7 @@ export function ContentBrowserFolderTile({
         }}
         {...bind}
       >
-        <div className="flex aspect-square w-full items-center justify-center bg-card">
+        <div className="content-library-tile-preview flex aspect-square w-full items-center justify-center bg-card">
           <FolderIcon
             size={TYPE_VISUAL_ICON_TILE_SIZE}
             strokeWidth={TYPE_VISUAL_ICON_TILE_STROKE_WIDTH}
@@ -77,7 +80,7 @@ export function ContentBrowserFolderTile({
             aria-hidden
           />
         </div>
-        <CardHeader className="gap-0.5 p-1.5">
+        <CardHeader className="content-library-tile-identity gap-0.5 p-1.5">
           <CardTitle className="truncate text-xs font-medium">
             <SelectableText>{name}</SelectableText>
           </CardTitle>
@@ -85,7 +88,7 @@ export function ContentBrowserFolderTile({
             Folder
           </CardDescription>
         </CardHeader>
-      </button>
+      </Button>
     </Card>
   );
 }

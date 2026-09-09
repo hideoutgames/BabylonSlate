@@ -6,6 +6,7 @@ import {
   type TypeVisual,
 } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
+import { Button } from "@babylonslate/ui/components/button";
 import {
   Card,
   CardContent,
@@ -68,17 +69,19 @@ export function ContentBrowserAssetTile({
     <Card
       size="sm"
       className={cn(
-        "relative w-full gap-0 overflow-hidden py-0",
+        "content-library-tile relative w-full gap-0 overflow-hidden py-0",
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
+      data-selected={selected ? "true" : "false"}
     >
-      <button
+      <Button
         type="button"
+        variant="ghost"
         data-testid={`content-item-${asset.path}`}
         data-asset-path={asset.path}
         data-asset-guid={asset.header.guid}
         data-selected={selected ? "true" : "false"}
-        className="flex w-full flex-col text-left hover:bg-accent/50"
+        className="content-library-tile-button flex h-auto w-full flex-col items-stretch gap-0 rounded-none border-0 p-0 text-left"
         onClick={(event) => {
           event.stopPropagation();
           if (event.button !== 0) return;
@@ -91,28 +94,28 @@ export function ContentBrowserAssetTile({
         }}
         {...bind}
       >
-        <div className="relative aspect-square w-full">
+        <div className="content-library-tile-preview relative aspect-square w-full">
           <div
-            className="absolute inset-0.5 flex items-center justify-center overflow-hidden bg-card"
+            className="content-library-tile-accent absolute inset-0.5 flex items-center justify-center overflow-hidden bg-card"
             style={thumbAccent}
           >
-          {thumbnailUrl ? (
-            <img
-              src={thumbnailUrl}
-              alt=""
-              data-testid={`content-item-thumb-${asset.header.guid}`}
-              className="size-full object-cover"
-            />
-          ) : (
-            <TypeVisualIcon
-              visual={typeVisual}
-              size={TYPE_VISUAL_ICON_TILE_SIZE}
-              data-testid={`content-item-type-icon-${asset.header.guid}`}
-            />
-          )}
+            {thumbnailUrl ? (
+              <img
+                src={thumbnailUrl}
+                alt=""
+                data-testid={`content-item-thumb-${asset.header.guid}`}
+                className="size-full object-cover"
+              />
+            ) : (
+              <TypeVisualIcon
+                visual={typeVisual}
+                size={TYPE_VISUAL_ICON_TILE_SIZE}
+                data-testid={`content-item-type-icon-${asset.header.guid}`}
+              />
+            )}
           </div>
         </div>
-        <CardHeader className="gap-0.5 p-1.5">
+        <CardHeader className="content-library-tile-identity gap-0.5 p-1.5">
           <CardTitle className="truncate text-xs font-medium">
             <SelectableText>{displayAssetTitle(asset.header.name)}</SelectableText>
           </CardTitle>
@@ -120,7 +123,7 @@ export function ContentBrowserAssetTile({
             {asset.header.type}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-1 px-1.5 pb-1.5">
+        <CardContent className="content-library-tile-status flex flex-wrap gap-1 px-1.5 pb-1.5">
           {compression ? (
             <Badge
               variant="secondary"
@@ -136,7 +139,7 @@ export function ContentBrowserAssetTile({
               className="w-fit text-[10px]"
               data-testid={`compile-error-overlay-${asset.header.guid}`}
             >
-              Compile error
+              Compile Error
             </Badge>
           ) : null}
           {sourceControlEnabled ? (
@@ -154,7 +157,7 @@ export function ContentBrowserAssetTile({
             <span data-lock-slot className="hidden" aria-hidden />
           )}
         </CardContent>
-      </button>
+      </Button>
     </Card>
   );
 }

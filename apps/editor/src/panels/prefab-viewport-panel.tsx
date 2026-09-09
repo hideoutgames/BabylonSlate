@@ -465,7 +465,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       data-testid="prefab-viewport-panel"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
-        <div className="pointer-events-auto rounded-md border border-border bg-card/90 p-1">
+        <div className="pointer-events-auto rounded-md border border-border bg-card/90 p-1" data-testid="prefab-viewport-panel-frame">
           <ViewportToolbar
             testIdPrefix="prefab-"
             showDragSelect={false}

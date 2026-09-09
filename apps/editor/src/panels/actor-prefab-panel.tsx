@@ -20,6 +20,7 @@ import {
 } from "../lib/prefab-preview";
 import { applyPrefabTreeSelect } from "../lib/prefab-tree-select";
 import { IconActionButton } from "../components/icon-action-button";
+import { usePhoneLayout, useTouchLayout } from "../shell/use-platform-layout";
 import { AddComponentDialog } from "../components/add-component-dialog";
 import {
   prefabComponentLabel,
@@ -87,6 +88,8 @@ export function flattenPrefabComponents(
  */
 export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   void _props;
+  const phone = usePhoneLayout();
+  const touch = useTouchLayout();
   const {
     components,
     selectedId,
@@ -161,6 +164,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     >
       <div className="min-h-0 flex-1">
         <TreeView
+          rowHeight={phone || touch ? 44 : undefined}
           nodes={nodes}
           selectedId={selectedId}
           selectedIds={selectedIds}
@@ -188,7 +192,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
             })
           }
           onReparent={reparentComponent}
-          reparentArm="immediate"
+          reparentArm={phone || touch ? "hold" : "immediate"}
           onActivate={(id) => frameActor(id)}
           emptyLabel="No components"
           data-testid="prefab-tree"

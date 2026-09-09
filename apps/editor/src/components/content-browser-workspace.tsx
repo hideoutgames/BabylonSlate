@@ -48,6 +48,14 @@ import {
   pickImportFiles,
 } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
+import { Badge } from "@babylonslate/ui/components/badge";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   Sheet,
@@ -171,7 +179,7 @@ import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneLayout, useTouchLayout } from "../shell/use-platform-layout";
 
 const PROJECT_ROOT_ID = PROJECT_CONTENT_ROOT_ID;
 
@@ -204,10 +212,12 @@ export function ContentBrowserWorkspace({
   hidden?: boolean;
 } = {}) {
   const phone = usePhoneLayout();
+  const touch = useTouchLayout();
+  const compactNavigation = phone || touch;
   const [foldersOpen, setFoldersOpen] = useState(false);
   useEffect(() => {
-    if (hidden || !phone) setFoldersOpen(false);
-  }, [hidden, phone]);
+    if (hidden || !compactNavigation) setFoldersOpen(false);
+  }, [hidden, compactNavigation]);
   const {
     projectDocument,
     assetRegistry,
@@ -1811,7 +1821,7 @@ export function ContentBrowserWorkspace({
       <Button
         type="button"
         variant="outline"
-        size={phone ? "touch" : "sm"}
+        size={compactNavigation ? "touch" : "sm"}
         className="w-full justify-start"
         data-testid="content-browser-new-folder"
         disabled={busy || !selectedRootWritable}
@@ -1828,10 +1838,10 @@ export function ContentBrowserWorkspace({
           nodes={treeNodes}
           selectedId={treeSelectedId}
           selectedIds={treeSelectedIds}
-          rowHeight={phone ? 44 : undefined}
+          rowHeight={compactNavigation ? 44 : undefined}
           onSelect={(id, options) => {
             handleTreeSelect(id, options);
-            if (phone) setFoldersOpen(false);
+            if (compactNavigation) setFoldersOpen(false);
           }}
           onToggleExpanded={(id) => {
             const row = browserRows.find((item) => item.id === id);
@@ -1855,42 +1865,77 @@ export function ContentBrowserWorkspace({
 
   return (
     <div
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card"
+      className="content-library flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card"
       data-testid="content-browser-workspace"
     >
+      <div className="content-library-heading flex shrink-0 items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="content-library-title truncate">Content Library</h1>
+            <Badge variant="secondary" className="content-library-count shrink-0">
+              {allAssets.length} {allAssets.length === 1 ? "Asset" : "Assets"}
+            </Badge>
+          </div>
+          <p className="content-library-description text-muted-foreground">
+            Scenes, Scripts &amp; Assets
+          </p>
+        </div>
+        <div className="content-library-actions flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size={
+              compactNavigation ? (phone ? "touch-icon" : "touch") : "sm"
+            }
+            aria-label="Import"
+            data-testid="content-browser-import"
+            disabled={busy || !selectedRootWritable}
+            onClick={() => void handleImport()}
+          >
+            <UploadIcon data-icon="inline-start" />
+            {!phone ? "Import" : null}
+          </Button>
+          <Button
+            type="button"
+            size={compactNavigation ? "touch" : "sm"}
+            data-testid="content-browser-new-asset"
+            disabled={busy || !selectedRootWritable}
+            onClick={openNewAssetDialog}
+          >
+            <PlusIcon data-icon="inline-start" />
+            New Asset
+          </Button>
+        </div>
+      </div>
       <div
         className={cn(
-          "flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2",
+          "content-library-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2",
           phone && "px-2",
         )}
       >
-        {phone ? (
+        {compactNavigation ? (
           <Sheet open={foldersOpen && !hidden} onOpenChange={setFoldersOpen}>
             <SheetTrigger
               render={
                 <Button
                   variant="outline"
                   size="touch"
-                  className="min-w-0 flex-1 justify-start"
+                  className="content-library-folder-trigger min-w-0 justify-start"
                   aria-label="Browse Folders"
                   data-testid="content-browser-browse-folders"
                 />
               }
             >
               <FolderIcon data-icon="inline-start" />
-              <span className="truncate">
-                {browserRows.find((row) => row.id === selectedFolderPath)?.label ??
-                  selectedFolderPath.split("/").at(-1) ??
-                  "Content"}
-              </span>
+              Folders
             </SheetTrigger>
             <SheetContent
               side="left"
-              className="gap-0"
+              className="content-library-folders-sheet gap-0"
               data-testid="content-browser-folders-sheet"
             >
               <SheetHeader>
-                <SheetTitle>Folders</SheetTitle>
+                <SheetTitle>Project Folders</SheetTitle>
                 <SheetDescription>Choose a folder to browse.</SheetDescription>
               </SheetHeader>
               <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
@@ -1899,34 +1944,7 @@ export function ContentBrowserWorkspace({
             </SheetContent>
           </Sheet>
         ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          size={phone ? "touch-icon" : "sm"}
-          aria-label="Import"
-          data-testid="content-browser-import"
-          disabled={busy || !selectedRootWritable}
-          onClick={() => void handleImport()}
-        >
-          <UploadIcon data-icon="inline-start" />
-          {!phone ? "Import" : null}
-        </Button>
-        <Button
-          type="button"
-          size={phone ? "touch" : "sm"}
-          data-testid="content-browser-new-asset"
-          disabled={busy || !selectedRootWritable}
-          onClick={openNewAssetDialog}
-        >
-          <PlusIcon data-icon="inline-start" />
-          New Asset
-        </Button>
-        <div
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-2",
-            phone && "basis-full",
-          )}
-        >
+        <div className="content-library-search-tools flex min-w-0 flex-1 items-center gap-2">
           <SearchInput
             value={search}
             onChange={setSearch}
@@ -1934,7 +1952,7 @@ export function ContentBrowserWorkspace({
             aria-label="Search Assets"
             className={cn(
               "min-h-[var(--chrome-row,28px)]",
-              phone ? "h-11 min-w-0" : "min-w-40",
+              compactNavigation ? "h-11 min-w-0" : "min-w-40",
             )}
             data-testid="content-browser-search"
           />
@@ -1944,7 +1962,9 @@ export function ContentBrowserWorkspace({
                 <Button
                   type="button"
                   variant={typeFilters.length > 0 ? "secondary" : "outline"}
-                  size={phone ? "touch-icon" : "sm"}
+                  size={
+                    compactNavigation ? (phone ? "touch-icon" : "touch") : "sm"
+                  }
                   data-testid="content-browser-filter"
                   aria-label={
                     typeFilters.length > 0
@@ -1997,7 +2017,9 @@ export function ContentBrowserWorkspace({
                 <Button
                   type="button"
                   variant="outline"
-                  size={phone ? "touch-icon" : "sm"}
+                  size={
+                    compactNavigation ? (phone ? "touch-icon" : "touch") : "sm"
+                  }
                   data-testid="content-browser-sort"
                   aria-label="Sort"
                 />
@@ -2036,7 +2058,7 @@ export function ContentBrowserWorkspace({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        {!phone ? (
+        {!compactNavigation ? (
           <ContentBrowserSelectionActions
             selectionCount={selectionCount}
             busy={busy}
@@ -2061,17 +2083,34 @@ export function ContentBrowserWorkspace({
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {!phone ? (
-          <aside className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-hidden border-r border-border p-2">
+      <div className="content-library-body flex min-h-0 flex-1 overflow-hidden">
+        {!compactNavigation ? (
+          <aside className="content-library-sidebar flex w-56 min-h-0 shrink-0 flex-col gap-2 overflow-hidden border-r border-border p-2">
+            <h2 className="content-library-sidebar-title text-muted-foreground">
+              Project Folders
+            </h2>
             {folderNavigation}
           </aside>
         ) : null}
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="content-library-pathbar flex shrink-0 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <FolderIcon
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span className="truncate" title={selectedFolderPath}>
+                {selectedFolderPath.split("/").join(" / ")}
+              </span>
+            </div>
+            <span className="shrink-0 text-muted-foreground">
+              {gridItems.length} {gridItems.length === 1 ? "Item" : "Items"}
+            </span>
+          </div>
           <div
             ref={scrollerRef}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
+            className="content-library-grid min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
             data-testid="content-browser-asset-grid"
             style={paintBind.style}
             tabIndex={0}
@@ -2117,12 +2156,21 @@ export function ContentBrowserWorkspace({
             onPointerCancelCapture={paintBind.onPointerCancelCapture}
           >
             {gridItems.length === 0 ? (
-              <p
-                className="p-3 text-sm text-muted-foreground"
-                data-testid="content-browser-empty-copy"
-              >
-                No assets in this folder match the current filters.
-              </p>
+              <Empty className="content-library-empty h-full">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <FolderIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>
+                    {search.trim() || typeFilters.length > 0
+                      ? "No Matching Assets"
+                      : "This Folder Is Empty"}
+                  </EmptyTitle>
+                  <EmptyDescription data-testid="content-browser-empty-copy">
+                    No assets in this folder match the current filters.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <div className="relative" style={{ height: spacerHeight }}>
                 {gridItems
@@ -2204,9 +2252,9 @@ export function ContentBrowserWorkspace({
         </div>
       </div>
 
-      {phone && selectionCount > 0 ? (
+      {compactNavigation && selectionCount > 0 ? (
         <div
-          className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border p-2"
+          className="content-library-selection flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border p-2"
           data-testid="content-browser-phone-selection"
         >
           {canOpenSelection ? (

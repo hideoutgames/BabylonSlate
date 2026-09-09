@@ -66,6 +66,7 @@ import {
 import { cn } from "@babylonslate/ui/lib/utils";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 import { DocumentSwitcher } from "./document-switcher";
+import { BrandIcon } from "./brand-icon";
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
@@ -399,7 +400,7 @@ export function EditorChromeBar({
         }
       >
         <BugIcon data-icon="inline-start" />
-        Debug
+        <span className="chrome-optional-label">Debug</span>
         <ChevronDownIcon data-icon="inline-end" />
       </DropdownMenuTrigger>
       <PlayDebugMenuItems
@@ -487,7 +488,7 @@ export function EditorChromeBar({
           }
         >
           <SettingsIcon data-icon="inline-start" />
-          Settings
+          <span className="chrome-optional-label">Settings</span>
           <ChevronDownIcon data-icon="inline-end" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -510,153 +511,196 @@ export function EditorChromeBar({
     </>
   );
 
+  const documentNavigation = (
+    <nav
+      className={cn("editor-chrome-bar", !phone && "editor-document-ribbon")}
+      data-testid="editor-chrome-bar"
+      aria-label="Documents"
+    >
+      {phone ? (
+        <div className="editor-phone-documents">
+          <Button
+            variant="ghost"
+            size="touch-icon"
+            aria-label="Content Browser"
+            title="Content Browser"
+            onClick={() => setActiveDocument(CONTENT_BROWSER_ID)}
+            aria-current={
+              activeDocumentId === CONTENT_BROWSER_ID ? "page" : undefined
+            }
+          >
+            <LayoutGridIcon />
+          </Button>
+          <DocumentSwitcher
+            documents={openDocuments}
+            activeDocumentId={activeDocumentId}
+            onSelect={setActiveDocument}
+            onClose={onCloseDocument ?? closeDocument}
+            compact
+          />
+        </div>
+      ) : (
+        <div className="editor-chrome-tabs" data-testid="document-tab-bar">
+          <div
+            className="editor-chrome-tabs-pinned"
+            data-testid="document-tab-pinned"
+          >
+            {contentBrowserDoc ? (
+              <PinnedDocumentTab
+                doc={contentBrowserDoc}
+                active={activeDocumentId === CONTENT_BROWSER_ID}
+                onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
+              />
+            ) : null}
+            {pinnedSceneDoc ? (
+              <PinnedDocumentTab
+                doc={pinnedSceneDoc}
+                active={activeDocumentId === pinnedSceneDoc.id}
+                onSelect={() => setActiveDocument(pinnedSceneDoc.id)}
+                onClose={() =>
+                  onCloseDocument
+                    ? onCloseDocument(pinnedSceneDoc.id)
+                    : closeDocument(pinnedSceneDoc.id)
+                }
+              />
+            ) : null}
+          </div>
+
+          <div
+            className="editor-chrome-tabs-scroll"
+            data-testid="document-tab-scroll"
+          >
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={scrollableDocs.map((doc) => doc.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+                {scrollableDocs.map((doc) => (
+                  <SortableDocumentTab
+                    key={doc.id}
+                    doc={doc}
+                    active={doc.id === activeDocumentId}
+                    onSelect={() => setActiveDocument(doc.id)}
+                    onClose={() =>
+                      onCloseDocument
+                        ? onCloseDocument(doc.id)
+                        : closeDocument(doc.id)
+                    }
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          </div>
+          <DocumentSwitcher
+            documents={openDocuments}
+            activeDocumentId={activeDocumentId}
+            onSelect={setActiveDocument}
+            onClose={onCloseDocument ?? closeDocument}
+          />
+        </div>
+      )}
+    </nav>
+  );
+
   return (
     <div className="editor-chrome-shell" data-phone={phone ? "true" : "false"}>
-      <header className="editor-chrome-bar" data-testid="editor-chrome-bar">
-        {!phone ? (
-          <div
-            className="editor-chrome-title"
-            data-testid="project-name"
-            title={projectName ? displayProjectName(projectName) : undefined}
-          >
-            {projectName ? displayProjectName(projectName) : ""}
-          </div>
-        ) : null}
-        {phone ? (
-          <div className="editor-phone-documents">
-            <Button
-              variant="ghost"
-              size="touch-icon"
-              aria-label="Content Browser"
-              title="Content Browser"
-              onClick={() => setActiveDocument(CONTENT_BROWSER_ID)}
-              aria-current={
-                activeDocumentId === CONTENT_BROWSER_ID ? "page" : undefined
-              }
-            >
-              <LayoutGridIcon />
-            </Button>
-            <DocumentSwitcher
-              documents={openDocuments}
-              activeDocumentId={activeDocumentId}
-              onSelect={setActiveDocument}
-              onClose={onCloseDocument ?? closeDocument}
-              compact
-            />
-          </div>
-        ) : (
-          <div className="editor-chrome-tabs" data-testid="document-tab-bar">
-            <div
-              className="editor-chrome-tabs-pinned"
-              data-testid="document-tab-pinned"
-            >
-              {contentBrowserDoc ? (
-                <PinnedDocumentTab
-                  doc={contentBrowserDoc}
-                  active={activeDocumentId === CONTENT_BROWSER_ID}
-                  onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
-                />
-              ) : null}
-              {pinnedSceneDoc ? (
-                <PinnedDocumentTab
-                  doc={pinnedSceneDoc}
-                  active={activeDocumentId === pinnedSceneDoc.id}
-                  onSelect={() => setActiveDocument(pinnedSceneDoc.id)}
-                  onClose={() =>
-                    onCloseDocument
-                      ? onCloseDocument(pinnedSceneDoc.id)
-                      : closeDocument(pinnedSceneDoc.id)
-                  }
-                />
-              ) : null}
-            </div>
+      {phone ? documentNavigation : null}
 
-            <div
-              className="editor-chrome-tabs-scroll"
-              data-testid="document-tab-scroll"
-            >
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={scrollableDocs.map((doc) => doc.id)}
-                  strategy={horizontalListSortingStrategy}
-                >
-                  {scrollableDocs.map((doc) => (
-                    <SortableDocumentTab
-                      key={doc.id}
-                      doc={doc}
-                      active={doc.id === activeDocumentId}
-                      onSelect={() => setActiveDocument(doc.id)}
-                      onClose={() =>
-                        onCloseDocument
-                          ? onCloseDocument(doc.id)
-                          : closeDocument(doc.id)
-                      }
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            </div>
-            <DocumentSwitcher
-              documents={openDocuments}
-              activeDocumentId={activeDocumentId}
-              onSelect={setActiveDocument}
-              onClose={onCloseDocument ?? closeDocument}
-            />
-          </div>
-        )}
-      </header>
-
-      <div
+      <header
         className="editor-global-toolbar"
         data-testid="editor-global-toolbar"
       >
         <div className="editor-global-toolbar-start">
-          <span className="relative inline-flex">
+          {!phone ? (
+            <div className="editor-workspace-identity">
+              <IconActionButton
+                label="Back To Projects"
+                variant="ghost"
+                className="editor-project-return chrome-icon-button"
+                data-testid="editor-back-to-projects"
+                disabled={!onCloseProject}
+                onClick={onCloseProject}
+              >
+                <BrandIcon className="editor-workspace-brand" />
+              </IconActionButton>
+              <div className="editor-project-identity">
+                <span
+                  className="editor-chrome-title editor-project-label"
+                  data-testid="project-name"
+                  title={
+                    projectName ? displayProjectName(projectName) : undefined
+                  }
+                >
+                  {projectName
+                    ? displayProjectName(projectName)
+                    : "Slate Editor"}
+                </span>
+                <span className="editor-project-eyebrow">
+                  Slate Editor
+                  <span aria-hidden="true"> &middot; </span>
+                  <span
+                    className="editor-save-status"
+                    data-dirty={dirtyDocuments.length > 0 ? "true" : "false"}
+                  >
+                    {dirtyDocuments.length > 0 ? "Unsaved Changes" : "Saved"}
+                  </span>
+                </span>
+              </div>
+            </div>
+          ) : null}
+          <div
+            className={cn(
+              !phone && "editor-history-group",
+              phone && "contents",
+            )}
+          >
+            <span className="relative inline-flex">
+              <IconActionButton
+                label={
+                  dirtyDocuments.length > 0
+                    ? "Save All (unsaved changes)"
+                    : "Save All"
+                }
+                data-testid="save-all-project"
+                className="chrome-icon-button"
+                disabled={!projectName || dirtyDocuments.length === 0}
+                onClick={() => {
+                  if (onSaveProject) onSaveProject();
+                  else void saveAll();
+                }}
+              >
+                <SaveAllIcon />
+              </IconActionButton>
+              {dirtyDocuments.length > 0 ? (
+                <span
+                  data-testid="save-all-dirty"
+                  className="pointer-events-none absolute top-0.5 end-0.5 size-1.5 rounded-full bg-destructive"
+                />
+              ) : null}
+            </span>
             <IconActionButton
-              label={
-                dirtyDocuments.length > 0
-                  ? "Save All (unsaved changes)"
-                  : "Save All"
-              }
-              data-testid="save-all-project"
+              label="Undo"
+              data-testid="undo-document"
               className="chrome-icon-button"
-              disabled={!projectName || dirtyDocuments.length === 0}
-              onClick={() => {
-                if (onSaveProject) onSaveProject();
-                else void saveAll();
-              }}
+              disabled={!canUndoActiveDocument}
+              onClick={() => undoActiveDocument()}
             >
-              <SaveAllIcon />
+              <Undo2Icon />
             </IconActionButton>
-            {dirtyDocuments.length > 0 ? (
-              <span
-                data-testid="save-all-dirty"
-                className="pointer-events-none absolute top-0.5 end-0.5 size-1.5 rounded-full bg-destructive"
-              />
-            ) : null}
-          </span>
-          <IconActionButton
-            label="Undo"
-            data-testid="undo-document"
-            className="chrome-icon-button"
-            disabled={!canUndoActiveDocument}
-            onClick={() => undoActiveDocument()}
-          >
-            <Undo2Icon />
-          </IconActionButton>
-          <IconActionButton
-            label="Redo"
-            data-testid="redo-document"
-            className="chrome-icon-button"
-            disabled={!canRedoActiveDocument}
-            onClick={() => redoActiveDocument()}
-          >
-            <Redo2Icon />
-          </IconActionButton>
+            <IconActionButton
+              label="Redo"
+              data-testid="redo-document"
+              className="chrome-icon-button"
+              disabled={!canRedoActiveDocument}
+              onClick={() => redoActiveDocument()}
+            >
+              <Redo2Icon />
+            </IconActionButton>
+          </div>
           {activeKind === "graph" ? (
             <>
               <Button
@@ -812,7 +856,12 @@ export function EditorChromeBar({
           </div>
         </div>
 
-        <div className="editor-global-toolbar-end">
+        <div
+          className={cn(
+            "editor-global-toolbar-end",
+            !phone && "editor-utility-group",
+          )}
+        >
           {phone ? (
             <Sheet open={toolsOpen} onOpenChange={setToolsOpen}>
               <SheetTrigger
@@ -845,7 +894,9 @@ export function EditorChromeBar({
             utilityTools
           )}
         </div>
-      </div>
+      </header>
+
+      {!phone ? documentNavigation : null}
 
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       <SettingsModal

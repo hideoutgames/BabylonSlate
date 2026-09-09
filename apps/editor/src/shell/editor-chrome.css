@@ -318,3 +318,587 @@
 .ui-dock-surface-inactive * {
   pointer-events: none !important;
 }
+
+/* Slate workspace: rounded working surfaces within a quiet launcher-like frame. */
+.slate-editor .editor-chrome-shell {
+  background: var(--background);
+  padding-inline: 10px;
+}
+
+.slate-editor .editor-global-toolbar {
+  min-height: 50px;
+  padding: 6px 2px;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+}
+
+.editor-workspace-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-inline-end: 16px;
+}
+
+.slate-editor .editor-project-return {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+
+.editor-workspace-brand {
+  width: 23px;
+  height: 23px;
+  object-fit: contain;
+}
+.slate-editor .editor-project-identity {
+  display: flex;
+  min-width: 0;
+  max-width: 190px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+}
+.editor-project-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.slate-editor .editor-chrome-title {
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+}
+.editor-project-eyebrow {
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.editor-history-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.slate-editor :is(.chrome-icon-button, .chrome-action-button) {
+  border-radius: 8px;
+}
+.slate-editor .editor-utility-group {
+  gap: 4px;
+}
+.slate-editor .editor-play-island {
+  border-radius: 12px;
+  gap: 3px;
+  padding: 3px;
+  background: var(--card);
+  box-shadow: 0 3px 10px -5px var(--editor-shadow);
+}
+.slate-editor .chrome-play-button {
+  padding-inline: 14px;
+  border-radius: 8px;
+}
+.slate-editor .editor-document-ribbon {
+  display: flex;
+  min-width: 0;
+  min-height: 38px;
+  padding: 3px 0 7px;
+}
+.slate-editor .editor-chrome-tabs {
+  gap: 6px;
+  background: transparent;
+  align-items: center;
+}
+.slate-editor :is(.editor-chrome-tabs-pinned, .editor-chrome-tabs-scroll) {
+  align-items: center;
+  gap: 4px;
+}
+.slate-editor .chrome-tab {
+  border: 1px solid transparent;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.slate-editor .chrome-tab-active {
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 2px 6px -3px var(--editor-shadow);
+}
+.slate-editor .chrome-tab-label {
+  padding-inline: 10px;
+  font-size: 11px;
+}
+.slate-editor .chrome-tab-close {
+  min-width: 24px;
+}
+.slate-editor .document-switcher {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+}
+.editor-workspace-main {
+  padding: 0 10px 10px;
+}
+
+/* The dock rail is navigation; document content remains in Dockview. */
+.editor-dock-workspace {
+  position: relative;
+  flex-direction: row;
+  gap: 8px;
+}
+.editor-dock-workspace[data-layout="phone"] {
+  flex-direction: column;
+}
+.editor-window-rail {
+  display: flex;
+  flex: 0 0 40px;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 3px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.editor-window-rail-item {
+  width: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+.editor-window-rail-item[aria-pressed="true"] {
+  border-color: var(--border);
+  background: var(--accent);
+  color: var(--foreground);
+}
+.editor-window-rail-label {
+  display: none;
+}
+.editor-window-rail-items {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.editor-window-rail-footer {
+  margin-top: auto;
+}
+.editor-window-rail [data-slot="separator"] {
+  margin-block: 3px;
+}
+
+/* Inspector and hierarchy surfaces share the card language of the library. */
+.slate-editor .dv-content-container > div > section {
+  background: var(--card);
+}
+.slate-editor [data-slot="property-grid"] > h3 {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  background: transparent;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+}
+.slate-editor [data-slot="property-grid"] [data-slot="field"] {
+  border-bottom-color: color-mix(in srgb, var(--border) 55%, transparent);
+}
+.slate-editor [data-slot="field-label"] {
+  color: var(--muted-foreground);
+}
+.slate-editor
+  [data-slot="property-grid"]
+  :is([data-slot="input"], [data-slot="select-trigger"]) {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--background) 48%, var(--card));
+  border-radius: 7px;
+}
+.slate-editor [data-testid^="component-card-"] {
+  overflow: hidden;
+  border-radius: 10px;
+}
+.slate-editor [role="treeitem"] {
+  border-radius: 7px;
+}
+.slate-editor
+  [data-testid="scene-outliner-panel"]
+  > div
+  > div
+  > div:first-child {
+  padding: 8px;
+  gap: 4px;
+}
+
+/* Keep tools clear of the joystick and camera preview at the lower corners. */
+.slate-editor
+  [data-testid="viewport-panel"]
+  > div:has(> [data-testid="viewport-panel-frame"]),
+.slate-editor
+  [data-testid="prefab-viewport-panel"]
+  > div:has(> [data-testid="prefab-viewport-panel-frame"]) {
+  top: 8px;
+  bottom: auto;
+}
+.slate-editor
+  :is(
+    [data-testid="viewport-panel-frame"],
+    [data-testid="prefab-viewport-panel-frame"]
+  ) {
+  border-radius: 14px;
+  padding: 5px;
+  background: var(--popover);
+  box-shadow: 0 8px 24px -8px var(--editor-shadow);
+}
+.slate-editor [data-testid$="viewport-toolbar"] {
+  gap: 5px;
+}
+.slate-editor
+  [data-testid$="viewport-toolbar"]
+  :is(
+    [data-slot="button"],
+    [data-slot="toggle"],
+    [data-slot="toggle-group-item"]
+  ) {
+  border-radius: 9px;
+}
+.slate-editor .graph-toolbar {
+  border-radius: 12px;
+  box-shadow: 0 6px 20px -10px var(--editor-shadow);
+}
+
+/* The Content Library keeps its existing tile geometry and windowing. */
+.content-library {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  overflow: hidden;
+}
+.content-library-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px 14px;
+}
+.content-library-heading h1,
+.content-library-heading h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+}
+.content-library-description {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.content-library-count {
+  font-variant-numeric: tabular-nums;
+}
+.content-library-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.content-library-actions [data-slot="button"] {
+  border-radius: 9px;
+}
+.content-library-toolbar {
+  background: transparent;
+  padding: 8px 22px 14px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+.content-library-search-tools {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.content-library-sidebar {
+  background: color-mix(in srgb, var(--background) 36%, var(--card));
+  border-right: 1px solid var(--border);
+  padding: 10px 6px;
+}
+.content-library-sidebar-title {
+  padding: 4px 10px 12px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+.content-library-pathbar {
+  min-height: 38px;
+  padding: 0 18px;
+  background: transparent;
+  font-size: 11px;
+}
+.content-library-grid {
+  background: var(--background);
+}
+.content-library-tile {
+  border-radius: 14px;
+  box-shadow: 0 5px 14px -8px var(--editor-shadow);
+}
+.content-library-tile-preview {
+  background: var(--card);
+}
+.content-library-tile-preview svg {
+  width: 40px;
+  height: 40px;
+}
+.content-library-tile-identity {
+  background: var(--card);
+}
+.content-library-selection {
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+
+/* Portaled editor dialogs use the same palette; Home is outside this scope. */
+body:has(.slate-editor)
+  :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
+  border-radius: 18px;
+  box-shadow: 0 24px 80px -20px var(--editor-shadow);
+}
+body:has(.slate-editor)
+  :is([data-slot="dropdown-menu-content"], [data-slot="select-content"]) {
+  border-radius: 12px;
+}
+
+@media (max-width: 1100px) and (min-width: 768px) {
+  .editor-workspace-identity {
+    margin-inline-end: 6px;
+  }
+  .slate-editor .editor-project-identity {
+    max-width: 135px;
+  }
+  .slate-editor .editor-utility-group .chrome-optional-label {
+    display: none;
+  }
+  .slate-editor .editor-global-toolbar {
+    gap: 6px;
+  }
+}
+
+@media (any-pointer: coarse) {
+  .slate-editor {
+    --chrome-row: 44px;
+  }
+  .slate-editor .editor-chrome-shell {
+    padding-inline: 12px;
+  }
+  .slate-editor .editor-global-toolbar {
+    min-height: 66px;
+    padding-block: 8px;
+  }
+  .slate-editor .editor-project-return {
+    width: 44px;
+    height: 44px;
+  }
+  .editor-workspace-brand {
+    width: 26px;
+    height: 26px;
+  }
+  .editor-project-label {
+    font-size: 14px;
+  }
+  .editor-project-eyebrow {
+    font-size: 10px;
+  }
+  .slate-editor :is(.chrome-action-button, .chrome-icon-button) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .slate-editor .editor-document-ribbon {
+    min-height: 56px;
+    padding-bottom: 10px;
+  }
+  .slate-editor .chrome-tab-label {
+    font-size: 12px;
+    padding-inline: 12px;
+  }
+  .slate-editor .chrome-tab-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .slate-editor .document-switcher {
+    height: 44px;
+    min-width: 44px;
+  }
+  .editor-workspace-main {
+    padding: 0 12px 8px;
+  }
+  .editor-dock-workspace {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .editor-window-rail {
+    order: 2;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-self: center;
+    max-width: 100%;
+    gap: 4px;
+    padding: 5px;
+    overflow-x: auto;
+    touch-action: pan-x;
+    border-radius: 17px;
+    box-shadow: 0 4px 18px -10px var(--editor-shadow);
+  }
+  .editor-window-rail-item {
+    display: flex;
+    flex-direction: row;
+    width: auto;
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 12px;
+    gap: 7px;
+    border-radius: 12px;
+  }
+  .editor-window-rail-label {
+    display: inline;
+    font-size: 11px;
+  }
+  .editor-window-rail-items {
+    flex-direction: row;
+    gap: 4px;
+  }
+  .editor-window-rail-footer {
+    margin-top: 0;
+    margin-left: 4px;
+  }
+  .editor-window-rail [data-slot="separator"] {
+    width: 1px;
+    height: 28px;
+    margin: 0 2px;
+  }
+  .slate-editor
+    .dv-content-container
+    :is(
+      [data-slot="button"],
+      [data-slot="toggle"],
+      [data-slot="toggle-group-item"],
+      [data-slot="input"],
+      [data-slot="select-trigger"]
+    ) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .slate-editor .dv-content-container [data-slot="input"] {
+    font-size: 16px;
+  }
+  .slate-editor .outliner-row-auxiliary {
+    display: none;
+  }
+  .slate-editor [data-slot="property-grid"] [data-slot="field"] {
+    padding: 5px 12px 10px;
+  }
+  .slate-editor [data-slot="property-grid"] [data-slot="field-label"] {
+    font-size: 12px;
+  }
+  .slate-editor
+    [data-slot="property-grid"]
+    [data-slot="field"][data-orientation="vertical"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 4px;
+    row-gap: 5px;
+  }
+  .slate-editor
+    [data-slot="property-grid"]
+    [data-slot="field"][data-orientation="vertical"]
+    > div:first-child {
+    display: contents;
+  }
+  .slate-editor
+    [data-slot="property-grid"]
+    [data-slot="field"][data-orientation="vertical"]
+    > div:first-child
+    > [data-slot="button"] {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+  .slate-editor
+    [data-slot="property-grid"]
+    [data-slot="field"][data-orientation="vertical"]
+    > div:last-child {
+    grid-column: 1;
+  }
+  .content-library-heading {
+    padding: 22px 24px 16px;
+  }
+  .content-library-heading h1,
+  .content-library-heading h2 {
+    font-size: 26px;
+  }
+  .content-library-toolbar {
+    padding-inline: 24px;
+  }
+  .content-library-description {
+    font-size: 12px;
+  }
+  .content-library :is([data-slot="input"], [data-slot="button"]) {
+    min-height: 44px;
+  }
+  .content-library-pathbar {
+    min-height: 48px;
+    font-size: 12px;
+  }
+}
+
+@media (any-pointer: coarse) and (min-width: 768px) and (max-width: 1050px) {
+  .slate-editor
+    .editor-play-island
+    [data-testid="debug-menu"]
+    .chrome-optional-label {
+    display: none;
+  }
+  .slate-editor .editor-project-identity {
+    max-width: 120px;
+  }
+  .slate-editor .editor-global-toolbar-start {
+    gap: 3px;
+  }
+  .slate-editor .editor-play-island {
+    gap: 0;
+  }
+  .slate-editor .editor-play-island [data-testid="debug-menu"] {
+    padding-inline: 8px;
+  }
+  .editor-window-rail-item {
+    padding-inline: 10px;
+  }
+}
+
+@media (max-width: 767px) {
+  .editor-workspace-main {
+    padding: 0 4px 4px;
+  }
+  .slate-editor .editor-chrome-shell {
+    padding-inline: 4px;
+  }
+  .slate-editor .editor-global-toolbar {
+    gap: 4px;
+  }
+  .content-library-heading {
+    padding: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .content-library-heading h1,
+  .content-library-heading h2 {
+    font-size: 20px;
+  }
+  .content-library-toolbar {
+    padding-inline: 12px;
+  }
+}

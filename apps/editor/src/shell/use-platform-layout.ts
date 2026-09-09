@@ -28,6 +28,11 @@ export function usePhoneLayout(): boolean {
   return useMediaQuery(PHONE_LAYOUT_QUERY);
 }
 
+/** Input density follows touch capability, including iPad with a trackpad. */
+export function useTouchLayout(): boolean {
+  return useMediaQuery("(any-pointer: coarse)");
+}
+
 export function usePlatformLayoutOptions() {
   const mobile = isMobilePlatform();
   const singleWindow = usePhoneLayout();

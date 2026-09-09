@@ -240,14 +240,14 @@ function EditorLayout() {
   };
 
   return (
-    <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
+    <div className="slate-editor safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
       <EditorChromeBar
         onCloseProject={() => void requestClose()}
         onSaveProject={() => void requestSave()}
         onCloseDocument={requestCloseDocument}
       />
       <RecoveryBanner />
-      <main className="flex min-h-0 flex-1 flex-col">
+      <main className="editor-workspace-main flex min-h-0 flex-1 flex-col">
         <DocumentWorkspace />
       </main>
       <DirtyCloseDialog

@@ -45,7 +45,7 @@ import {
   selectionAfterLockChange,
 } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { usePhoneLayout, useTouchLayout } from "../shell/use-platform-layout";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
   duplicateSceneActor,
@@ -243,7 +243,9 @@ export function flattenOutliner(
 export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
   const phone = usePhoneLayout();
-  const actionSize = phone ? "touch-icon" : "icon-sm";
+  const touch = useTouchLayout();
+  const touchTargets = phone || touch;
+  const actionSize = touchTargets ? "touch-icon" : "icon-sm";
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange, assetRegistry, loadGraphDocument, openDocument } =
     useDocuments();
@@ -620,6 +622,24 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           },
         });
       }
+      if (touchTargets && actor) {
+        items.push(
+          {
+            type: "checkbox",
+            id: "actor-visible",
+            label: "Visible",
+            checked: actor.visible,
+            onCheckedChange: () => toggleFlag(actorId, "visible"),
+          },
+          {
+            type: "checkbox",
+            id: "actor-locked",
+            label: "Locked",
+            checked: actor.locked,
+            onCheckedChange: () => toggleFlag(actorId, "locked"),
+          },
+        );
+      }
       items.push(
         {
           id: "duplicate-actor",
@@ -646,7 +666,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       );
       return items;
     },
-    [assetRegistry, mutate, openDocument, removeActor, scene, selectActor],
+    [assetRegistry, mutate, openDocument, removeActor, scene, selectActor, touchTargets, toggleFlag],
   );
 
   const folderMenuItems = useCallback(
@@ -676,7 +696,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-1 px-1 py-1">
           <SearchInput
-            className={cn("min-h-[var(--chrome-row,28px)]", phone && "min-h-11")}
+            className={cn("min-h-[var(--chrome-row,28px)]", touchTargets && "min-h-11")}
             placeholder="Search actors"
             aria-label="Search actors"
             value={search}
@@ -704,7 +724,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         </div>
         <div className="min-h-0 flex-1">
           <TreeView
-            rowHeight={phone ? 44 : undefined}
+            rowHeight={touchTargets ? 44 : undefined}
             nodes={nodes.map((node) => {
               const target = outlinerRowTarget(node.id);
               if (target?.kind === "folder") {
@@ -737,6 +757,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       label={`Toggle visibility of ${node.label}`}
                       size={actionSize}
                       variant="ghost"
+                      className="outliner-row-auxiliary"
                       onClick={() => toggleFlag(actorId, "visible")}
                       data-testid={`outliner-visibility-${actorId}`}
                     >
@@ -749,7 +770,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       onClick={() => toggleFlag(actorId, "locked")}
                       data-testid={`outliner-lock-${actorId}`}
                       aria-pressed={lockedIds.has(actorId)}
-                      className={lockedIds.has(actorId) ? "text-primary" : undefined}
+                      className={cn("outliner-row-auxiliary", lockedIds.has(actorId) && "text-primary")}
                     >
                       {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
                     </IconActionButton>
@@ -790,7 +811,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             onExternalDrop={dropActorRow}
             onExternalDragMove={moveActorDropHint}
             onExternalDragEnd={() => setDropHint(null)}
-            reparentArm="immediate"
+            reparentArm={touchTargets ? "hold" : "immediate"}
             emptyLabel={scene ? "No actors yet" : "Open a scene"}
             data-testid="outliner-tree"
           />

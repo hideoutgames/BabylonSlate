@@ -90,3 +90,73 @@
   color: var(--foreground);
   box-shadow: inset 0 -2px 0 var(--chrome-tab-accent);
 }
+
+/* Slate's alternative workspace keeps the native dock surface and sashes. */
+.slate-editor .dockview-theme-babylonslate {
+  --dv-group-view-background-color: var(--card);
+  --dv-tabs-and-actions-container-background-color: var(--card);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--card);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--card);
+  --dv-separator-border: 5px solid var(--background);
+  --dv-tab-divider-color: transparent;
+  --dv-tab-margin: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--background);
+}
+.slate-editor .dockview-theme-babylonslate .dv-groupview {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.slate-editor .dockview-theme-babylonslate .dv-tabs-and-actions-container {
+  height: 30px;
+  min-height: 30px;
+  padding: 0 5px;
+  border-bottom: 1px solid var(--border);
+}
+.slate-editor .dockview-theme-babylonslate .dv-tab {
+  height: 29px;
+  min-height: 29px;
+  padding-inline: 8px;
+  border-radius: 0;
+  font-size: 11px;
+  font-weight: 500;
+}
+.slate-editor .dockview-theme-babylonslate .dv-active-tab {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ring) 70%, transparent);
+}
+.slate-editor .dockview-theme-babylonslate .dv-content-container {
+  background: var(--card);
+  outline: none;
+}
+@media (any-pointer: coarse) {
+  .slate-editor .dockview-theme-babylonslate {
+    border-radius: 16px;
+  }
+  .slate-editor .dockview-theme-babylonslate .dv-groupview {
+    border-radius: 14px;
+  }
+  .slate-editor .dockview-theme-babylonslate .dv-tabs-and-actions-container {
+    height: 44px;
+    min-height: 44px;
+    padding-inline: 6px;
+  }
+  .slate-editor .dockview-theme-babylonslate .dv-tab {
+    height: 43px;
+    min-height: 43px;
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+  .slate-editor
+    .dockview-theme-babylonslate
+    .dv-default-tab
+    .dv-default-tab-action {
+    min-width: 44px;
+    min-height: 43px;
+    display: grid;
+    place-items: center;
+  }
+}

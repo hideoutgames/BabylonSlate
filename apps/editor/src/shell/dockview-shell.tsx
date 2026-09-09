@@ -11,14 +11,18 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import { createDefaultLayoutForKind } from "./default-layout";
 import { migrateRestoredLayout, restoreDockviewLayout } from "./layout-ops";
 import { panelComponents } from "./panel-registry";
-import { usePlatformLayoutOptions } from "./use-platform-layout";
+import {
+  usePlatformLayoutOptions,
+  useTouchLayout,
+} from "./use-platform-layout";
 import type { AnimEditorMode } from "./anim-document-layout";
 import {
   enterPhoneDockLayout,
   inlineDetachedDockviewLayout,
 } from "./phone-dock-layout";
 import { PhoneWindowSwitcher } from "./phone-window-switcher";
-import { listDockWindows } from "./window-catalog";
+import { listDockWindows, primaryDockPanel } from "./window-catalog";
+import { EditorWindowRail } from "./editor-window-rail";
 
 export interface DockviewShellProps {
   documentKind: DockviewDocumentKind;
@@ -51,6 +55,7 @@ export function DockviewShell({
   const initialLayoutRef = useRef(initialLayout);
   initialLayoutRef.current = initialLayout;
   const platformOptions = usePlatformLayoutOptions();
+  const touch = useTouchLayout();
 
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
@@ -168,10 +173,23 @@ export function DockviewShell({
 
   return (
     <div
-      className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
+      className={cn(
+        "editor-dock-workspace flex h-full min-h-0 min-w-0 flex-1",
+        platformOptions.singleWindow && "flex-col",
+      )}
       data-layout={platformOptions.singleWindow ? "phone" : "docked"}
+      data-touch={touch ? "true" : "false"}
     >
-      <div className="min-h-0 min-w-0 flex-1">
+      {!platformOptions.singleWindow && (
+        <EditorWindowRail
+          api={api}
+          windows={windows}
+          primaryId={primaryDockPanel(documentKind, { animEditorMode })}
+          touch={touch}
+          animEditorMode={animEditorMode}
+        />
+      )}
+      <div className="editor-dock-surface min-h-0 min-w-0 flex-1">
         <DockviewReact
           className={cn(
             "dockview-theme-babylonslate h-full w-full",

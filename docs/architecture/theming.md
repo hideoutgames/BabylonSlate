@@ -2,7 +2,7 @@
 
 Canonical tokens live in [`packages/ui/src/styles/globals.css`](../../packages/ui/src/styles/globals.css). Tailwind v4 maps them via `@theme inline`; components use semantic utilities (`bg-background`, `text-primary`, `bg-node-event`, `text-axis-x`, …) — not raw hex in app code.
 
-Engine Settings **Appearance → Theme** (`system` | `light` | `dark`) is shared by the launcher and editor. The launcher toggle saves an explicit light or dark choice to the same `appearance.theme` setting; choosing System in Engine Settings makes both follow the OS. `EditorThemeProvider` resolves the preference and toggles `html.dark`, which switches Neutral chrome surfaces. Default is **system**. A boot script in `apps/editor/index.html` reads `localStorage["babylonslate:engine-settings"]` plus `prefers-color-scheme`; the initial splash inherits that resolved scheme. Native settings hydrate after load (a brief flash is acceptable).
+Engine Settings **Appearance → Theme** (`system` | `light` | `dark`) is shared by the launcher and editor. The launcher toggle saves an explicit light or dark choice to the same `appearance.theme` setting; choosing System in Engine Settings makes both follow the OS. `EditorThemeProvider` resolves the preference and toggles `html.dark`. Default is **system**. A boot script in `apps/editor/index.html` reads `localStorage["babylonslate:engine-settings"]` plus `prefers-color-scheme`; the initial splash inherits that resolved scheme. Native settings hydrate after load (a brief flash is acceptable).
 
 ## Source scanning
 
@@ -10,7 +10,7 @@ Tailwind v4 detects sources relative to the CSS entry, which here lives in `pack
 
 ## Theme source
 
-Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000h04l1gu419ckw)): achromatic surfaces and ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not re-import a tweakcn preset over those editor-function tokens.
+Shared base tokens derive from **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000h04l1gu419ckw)). This branch contains an editor design exploration for iPad and desktop: cool graphite and light silver surfaces match the Project Browser palette, with Geist typography and existing Slate branding. Editor overrides in `globals.css` are scoped by `body:has(.slate-editor)` so menus and dialogs portaled to the body inherit them. The Main Menu and its `.homepage-theme` remain unchanged. Pin, node, success, and axis tokens retain their existing meanings; do not import a preset over them.
 
 `apps/editor/src/shell/design-tokens.test.ts` asserts ink `--primary`, Neutral backgrounds, `--chrome-tab-accent: var(--foreground)`, a chromatic `--axis-z` that is not `var(--primary)`, a darker light-mode `--pin-exec`, dark `--secondary`/`--muted` distinct from `--popover`, and Dockview tab colors plus 1px content-container outlines.
 
@@ -29,11 +29,13 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 ## Adaptive editor layout
 
-- iPad and desktop retain the compact 28px global bars, small Primary actions, pinned Content Browser/Scene tabs, and resizable dock layout. Dock tabs retain their 18px fine-pointer / 26px coarse-pointer strips; semantic borders and surfaces separate tools from content.
+- Desktop has a branded command row with compact 28px actions and a separate document ribbon. Content Browser and the open Scene remain pinned; other documents scroll. Resizable Dockview groups use rounded card surfaces and 30px tab strips.
+- Touch capability (`any-pointer: coarse`) selects 44px controls, document tabs, dock strips, tree rows, and property fields on iPad, including when a trackpad is attached. Desktop keeps its compact controls and spacing.
+- A vertical desktop window rail and a labeled bottom iPad rail expose the active document's windows. They reuse **Windows** and **Focus** operations and their saved `layout.json` placements; the dock model and per-document layout persistence stay intact.
 - Phone layout activates below 768px wide, or at 500px tall or less with a coarse pointer. The global bars use 44px targets; Content Browser and Open Documents provide navigation, with secondary commands under More Tools.
 - Phone Dockview shows one window with a bottom **Window** picker. Window switching uses Dockview visibility and keeps the tablet layout separate; returning to a larger window restores its splits. Focus is unnecessary in this mode.
-- Phone Outliner and My Class trees use 44px rows and actions; tablet and desktop retain their compact 28px rows.
-- Content Browser keeps its tile appearance. Folders open in a Sheet, selected items have an explicit **Open** action, and **New Asset** separates type selection from details. Catalog dialogs replace their category sidebar with a picker.
+- Content Browser presents a **Content Library** heading, asset count, grouped Import/New Asset actions, search/filter/sort tools, and a folder path with item count. Desktop retains the folder sidebar; iPad and phones use a **Project Folders** Sheet and an explicit **Open** selection action. Asset and folder tiles compose existing Card/Button primitives and retain type-colored thumbnail borders and virtual-grid geometry.
+- Phone **New Asset** separates type selection from details, and phone catalog dialogs replace their category sidebar with a picker.
 - Dialogs and sheets fit the dynamic viewport and safe areas. Menu rows expand for coarse pointers. Feedback uses color and restrained fades, without button movement; reduced-motion preferences are respected.
 - These adaptations apply [Apple HIG layout](https://developer.apple.com/design/human-interface-guidelines/layout), [button](https://developer.apple.com/design/human-interface-guidelines/buttons), and [toolbar](https://developer.apple.com/design/human-interface-guidelines/toolbars) guidance while retaining professional editor density. Device input and safe areas determine presentation; the UI does not depend on an Apple-only host.
 
@@ -52,7 +54,7 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
 
-- **Primary is ink** (achromatic). Buttons, focus rings, and selection bars follow Neutral. Active tabs use `--chrome-tab-accent` → `var(--foreground)`.
+- **Primary is ink**: dark on silver surfaces, near-white on graphite. Focus uses a muted lavender ring; document tab accents use `--chrome-tab-accent` → `var(--foreground)`.
 - **Layered surfaces** differentiate chrome, side panels, and canvases.
 - **Saturated pin/node and `--asset-*` colors are type cues** — not whole toolbars.
 - **Axis and status accents** stay chromatic: X/Y/Z, Play (`--success`), destructive actions.
@@ -62,20 +64,21 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
 | Viewport / graph canvas (always dark) | `--background` (dark) | n/a — canvases ignore light chrome | `oklch(0.145 0 0)` ≈ `#242424` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` |
-| Chrome / raised cards | `--card` | `oklch(1 0 0)` | `oklch(0.205 0 0)` |
-| Headers / category bars | `--secondary` / `--muted` | `oklch(0.97 0 0)` | `oklch(0.32 0 0)` |
-| Menus / viewport overlay | `--popover` | `oklch(1 0 0)` | `oklch(0.269 0 0)` |
-| Hover / selection wash | `--accent` | `oklch(0.97 0 0)` | `oklch(0.371 0 0)` |
+| Editor backdrop | `--background` | `#eeeff2` | `#0c0e12` |
+| Side panels (`PanelFrame`) | `--sidebar` | `#f9f9fb` | `#17191f` |
+| Chrome / raised cards | `--card` | `#f9f9fb` | `#17191f` |
+| Headers / category bars | `--secondary` / `--muted` | `#e3e5eb` / `#e5e6eb` | `#242730` / `#21242b` |
+| Menus / viewport overlay | `--popover` | `#fbfbfd` | `#1b1d24` |
+| Hover / selection wash | `--accent` | `#e1e4ee` | `#2b2e39` |
 
-`--primary` is ink in both schemes: light `oklch(0.145 0 0)`, dark `oklch(0.985 0 0)`.
+The table describes the scoped editor palette; shared base tokens remain available outside it. Editor `--primary` is `#242833` in light mode and `#e9eaf0` in dark mode.
 
 ## Action and status tokens
 
 | Role | Token | Notes |
 | --- | --- | --- |
-| Default actions / ink chrome | `--primary` | Achromatic Neutral ink |
-| Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
+| Default actions / ink chrome | `--primary` | Dark ink / near-white ink |
+| Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Muted lavender ring; document tab accent is `var(--foreground)` |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
 | Success / Play | `--success` | Positive status and the global Play control |
 
@@ -159,7 +162,7 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 | Token | Value | Use |
 | --- | --- | --- |
 | `--touch-target` | `44px` | Graph pin rows and remaining large hit boxes |
-| `--chrome-row` | `28px` | Editor chrome, panel headers, property rows, catalog item rows |
+| `--chrome-row` | `28px`; editor touch override `44px` | Compact desktop chrome; touch panel headers and property controls |
 | `--graph-pin-size` | `22px` | Visual pin diamond / circle / list / map |
 | `--graph-pin-default-max-width` | `12rem` | Truncation cap for on-node literal default and type-name fields |
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
@@ -169,7 +172,7 @@ Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace
 
 Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
 
-Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `--border` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
+Inside `.slate-editor`, Dockview tab strips are **30px** on desktop and **44px** on touch-capable devices (`apps/editor/src/shell/dockview-theme.css`). Rounded groups have semantic borders, card surfaces, and a subtle active-tab underline; the existing dock sashes and drag behavior remain. Labels use `--foreground` / `--muted-foreground`. Outliner, My Class, actor-prefab Components, and Content Browser folder trees use 44px touch rows and retain 28px desktop rows.
 
 The chrome document tab strip keeps pinned Content Browser and the open Scene tab (when present) outside the scroller (`.editor-chrome-tabs-pinned` inside `.editor-chrome-tabs`, `overflow: hidden`). Other document tabs pan in `.editor-chrome-tabs-scroll` (`overflow-x: auto`) when they overflow and hide native and iOS overlay scrollbars (`scrollbar-width: none` plus `::-webkit-scrollbar { display: none }`). The Scene pin is closable and is not drag-reorderable.
 
@@ -181,8 +184,8 @@ Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`,
 
 | Token | Purpose |
 | --- | --- |
-| `--chrome-row` | Compact chrome / panel header height (28px) |
-| `--chrome-tab-active` | Active document tab fill (`var(--card)`) |
+| `--chrome-row` | Compact desktop controls (28px); editor touch controls (44px) |
+| `--chrome-tab-active` | Scoped editor active document tab fill (`var(--accent)`) |
 | `--chrome-tab-accent` | Tab indicator (`var(--foreground)`) |
 
 ## Viewport and graph canvas
@@ -229,7 +232,7 @@ Source artwork lives in [`engine-logos/`](../../engine-logos/). It is human-auth
 | File | Ink | Use |
 | --- | --- | --- |
 | `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Docs home hero |
-| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Homepage rail (`BrandIcon`), docs nav, favicon source |
+| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Homepage and editor command row (`BrandIcon`), docs nav, favicon source |
 
 `*Dark` is dark ink for light chrome; `*Light` is light ink for dark chrome. Served copies must stay byte-identical in `apps/editor/public/branding/` and `apps/docs/public/branding/`.
 
