@@ -33,6 +33,7 @@ import type {
   ColliderShape,
   ColliderTuning,
   HitResult,
+  LineTraceOptions,
   MotionType,
   OverlapResult,
   PhysicsBackendOptions,
@@ -128,6 +129,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly down = new Vector3(0, -1, 0);
   private disposed = false;
   private pendingContacts: PhysicsContactEvent[] = [];
+  private readonly activeTriggerPairs = new Map<string, {
+    actorAId: string;
+    actorBId: string;
+    contacts: number;
+  }>();
 
   private constructor(engine: NullEngine, scene: Scene, plugin: HavokPlugin) {
     this.engine = engine;
@@ -172,6 +178,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     this.bodies.clear();
     this.bodyIdByPhysicsBody.clear();
+    this.activeTriggerPairs.clear();
     this.scene.disablePhysicsEngine();
     this.scene.dispose();
     this.engine.dispose();
@@ -198,6 +205,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   destroyBody(bodyId: string): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;
+    for (const [key, pair] of this.activeTriggerPairs) {
+      if (pair.actorAId === record.desc.actorId || pair.actorBId === record.desc.actorId) {
+        this.activeTriggerPairs.delete(key);
+      }
+    }
     for (const [id, collider] of [...this.colliders]) {
       if (collider.desc.bodyId === bodyId) this.colliders.delete(id);
     }
@@ -251,6 +263,18 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const body = record.aggregate?.body;
     if (!body) return;
     this.applyMotionType(record);
+  }
+
+  setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
+    const record = this.bodies.get(bodyId);
+    const body = record?.aggregate?.body;
+    if (!body || record.desc.motionType !== "dynamic") return;
+    const current = body.getLinearVelocity();
+    for (const axis of ["x", "y", "z"] as const) {
+      const value = velocity[axis];
+      if (typeof value === "number" && Number.isFinite(value)) current[axis] = value;
+    }
+    body.setLinearVelocity(current);
   }
 
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {
@@ -397,20 +421,45 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return out;
   }
 
-  lineTrace(start: Vec3, end: Vec3): HitResult {
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
     const engine = this.scene.getPhysicsEngine();
     if (!engine) return miss();
     this.tmpFrom.copyFrom(toVector3(start));
     this.tmpTo.copyFrom(toVector3(end));
-    const hit = engine.raycast(this.tmpFrom, this.tmpTo);
-    if (!hit.hasHit) return miss();
-    return this.hitFromCast(
-      hit.hasHit,
-      hit.hitPointWorld,
-      hit.hitNormalWorld,
-      hit.hitDistance,
-      hit.body,
-    );
+    const ignored = new Set(options?.ignoreActorIds);
+    const memberships = new Map<PhysicsShape, number>();
+    // Havok exposes one ignoreBody, but the graph accepts multiple actors.
+    // Mask all their shapes for this synchronous query, then restore them.
+    // Filtering before raycast also avoids consuming a bounded hit collector.
+    try {
+      if (ignored.size) {
+        for (const record of this.bodies.values()) {
+          if (!ignored.has(record.desc.actorId)) continue;
+          for (const shape of [
+            record.aggregate?.body.shape,
+            record.aggregate?.shape,
+            ...record.extraShapes,
+          ]) {
+            if (!shape || memberships.has(shape)) continue;
+            memberships.set(shape, shape.filterMembershipMask);
+            shape.filterMembershipMask = 0;
+          }
+        }
+      }
+      const hit = engine.raycast(this.tmpFrom, this.tmpTo);
+      if (!hit.hasHit) return miss();
+      return this.hitFromCast(
+        hit.hasHit,
+        hit.hitPointWorld,
+        hit.hitNormalWorld,
+        hit.hitDistance,
+        hit.body,
+      );
+    } finally {
+      for (const [shape, membership] of memberships) {
+        shape.filterMembershipMask = membership;
+      }
+    }
   }
 
   sphereOverlap(center: Vec3, radius: number): OverlapResult {
@@ -572,10 +621,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!kind) return;
     let a = actorAId;
     let b = actorBId;
-    // Havok collision events name PhysicsBody pairs, not child shapes, so
-    // collider ids fall back to the first collider on each actor.
-    let colliderAId = this.firstColliderIdForActor(actorAId);
-    let colliderBId = this.firstColliderIdForActor(actorBId);
+    // Havok reports bodies rather than child shapes. On a trigger actor route
+    // overlap events to its trigger component, even after a blocking collider.
+    let colliderAId = this.firstColliderIdForActor(actorAId, isTriggerEvent);
+    let colliderBId = this.firstColliderIdForActor(actorBId, isTriggerEvent);
     let normal = {
       x: event.normal?.x ?? 0,
       y: event.normal?.y ?? 1,
@@ -589,6 +638,24 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       colliderAId = colliderBId;
       colliderBId = swapCollider;
       normal = { x: -normal.x, y: -normal.y, z: -normal.z };
+    }
+    if (kind === "overlapBegin" || kind === "overlapEnd") {
+      // Havok reports each overlapping child-shape pair. Keep the actor overlap
+      // alive until its final shape leaves, including events on later ticks.
+      const pairKey = JSON.stringify([a, b]);
+      const pair = this.activeTriggerPairs.get(pairKey);
+      if (kind === "overlapBegin") {
+        if (pair) {
+          pair.contacts += 1;
+          return;
+        }
+        this.activeTriggerPairs.set(pairKey, { actorAId: a, actorBId: b, contacts: 1 });
+      } else {
+        if (!pair) return;
+        pair.contacts -= 1;
+        if (pair.contacts > 0) return;
+        this.activeTriggerPairs.delete(pairKey);
+      }
     }
     const key = `${kind}|${a}|${b}`;
     if (
@@ -613,12 +680,15 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     });
   }
 
-  private firstColliderIdForActor(actorId: string): string | undefined {
+  private firstColliderIdForActor(actorId: string, preferTrigger = false): string | undefined {
+    let first: string | undefined;
     for (const [id, collider] of this.colliders) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (body?.desc.actorId === actorId) return id;
+      if (body?.desc.actorId !== actorId) continue;
+      first ??= id;
+      if (!preferTrigger || collider.desc.isTrigger) return id;
     }
-    return undefined;
+    return first;
   }
 
   private actorIdForPhysicsBody(body: PhysicsBody | undefined): string | null {

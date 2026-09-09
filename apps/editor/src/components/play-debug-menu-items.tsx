@@ -39,7 +39,7 @@ export function PlayDebugMenuItems({
   onPlayFromSceneChange,
 }: PlayDebugMenuItemsProps) {
   return (
-    <DropdownMenuContent align="center">
+    <DropdownMenuContent align="center" className="w-max min-w-56 whitespace-nowrap">
       <DropdownMenuGroup>
         <DropdownMenuLabel>Play Overlay</DropdownMenuLabel>
         <DropdownMenuSeparator />

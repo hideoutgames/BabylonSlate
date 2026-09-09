@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { normalizeInputMappings, type InputMappings } from "@babylonslate/input";
+import {
+  normalizeInputMappings,
+  type InputMappings,
+} from "@babylonslate/input";
 import { InputMappingEditor } from "./input-mapping-editor";
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -34,70 +40,79 @@ const jumpOnly: InputMappings = {
     {
       name: "Look",
       kind: "1d",
-      bindings: [
-        { device: "gamepadAxis", code: "0:2", deadZone: 0.15 },
-      ],
+      bindings: [{ device: "gamepadAxis", code: "0:2", deadZone: 0.15 }],
     },
   ],
 };
 
 describe("InputMappingEditor", () => {
-  it("groups mappings into cards with device color marks on binding rows", () => {
+  it("shows searchable mapping summaries and edits only the selected mapping", () => {
     render(<InputMappingEditor value={jumpOnly} onChange={() => {}} />);
-    expect(
-      screen
-        .getByTestId("input-actions-legend")
-        .querySelector("[data-type-color-swatch]"),
-    ).not.toBeNull();
-    expect(
-      screen
-        .getByTestId("input-axes-legend")
-        .querySelector("[data-type-color-swatch]"),
-    ).not.toBeNull();
-    expect(screen.getByTestId("input-action-0-bindings").textContent).toBe(
-      "Bindings",
-    );
-    const row = screen.getByTestId("input-action-0-binding-0");
-    expect(row.getAttribute("data-device")).toBe("key");
-    expect(row.querySelector("[data-type-color-swatch]")).not.toBeNull();
-    expect(row.className).toMatch(/border-l-2/);
-  });
-
-  it("colors 2D axis component toggles", () => {
-    const value: InputMappings = {
-      actions: [],
-      axes: [
-        {
-          name: "Move",
-          kind: "2d",
-          bindings: [{ device: "key", code: "KeyW", component: "y" }],
-        },
-      ],
-    };
-    render(<InputMappingEditor value={value} onChange={() => {}} />);
-    expect(screen.getByTestId("input-axis-0-binding-0-component-x").className).toMatch(
-      /axis-x/,
-    );
-    expect(screen.getByTestId("input-axis-0-binding-0-component-y").className).toMatch(
-      /axis-y/,
-    );
-  });
-
-  it("lists action and axis names", () => {
-    render(
-      <InputMappingEditor value={jumpOnly} onChange={() => {}} />,
-    );
-    expect(
-      (screen.getByTestId("input-action-0-name") as HTMLInputElement).value,
-    ).toBe("Jump");
-    expect(
-      (screen.getByTestId("input-axis-0-name") as HTMLInputElement).value,
-    ).toBe("Look");
-    expect(screen.getByTestId("input-action-0-binding-0-code").textContent).toContain(
+    expect(screen.getByTestId("input-action-0-name")).toBeTruthy();
+    expect(screen.queryByTestId("input-axis-0-name")).toBeNull();
+    expect(screen.getByTestId("input-action-0-select").textContent).toContain(
       "Space",
     );
-    expect(screen.queryByTestId("input-action-0-binding-0-listen")).toBeNull();
-    expect(screen.queryByText(/press a key/i)).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Mappings" }), {
+      target: { value: "Look" },
+    });
+    expect(screen.queryByTestId("input-action-0-select")).toBeNull();
+    fireEvent.click(screen.getByTestId("input-axis-0-select"));
+    expect(screen.getByTestId("input-axis-0-name")).toHaveProperty(
+      "value",
+      "Look",
+    );
+    expect(screen.queryByTestId("input-action-0-name")).toBeNull();
+  });
+
+  it("keeps name drafts focused and rejects empty or duplicate names before saving", () => {
+    const onChange = vi.fn();
+    const value = {
+      ...jumpOnly,
+      actions: [...jumpOnly.actions, { name: "Fire", bindings: [] }],
+    };
+    const { rerender } = render(
+      <InputMappingEditor value={value} onChange={onChange} />,
+    );
+    const name = screen.getByTestId("input-action-0-name");
+    name.focus();
+    fireEvent.change(name, { target: { value: "Fire" } });
+    expect(document.activeElement).toBe(name);
+    fireEvent.blur(name);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(name.getAttribute("aria-invalid")).toBe("true");
+    fireEvent.change(name, { target: { value: " " } });
+    fireEvent.blur(name);
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.change(name, { target: { value: "Leap" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(onChange.mock.calls[0]![0].actions[0].name).toBe("Leap");
+    rerender(
+      <InputMappingEditor
+        value={onChange.mock.calls[0]![0]}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByTestId("input-action-0-name")).toBe(name);
+  });
+
+  it("creates distinct mapping names and selects the new mapping", () => {
+    const onChange = vi.fn();
+    const value = {
+      ...jumpOnly,
+      actions: [...jumpOnly.actions, { name: "New Action", bindings: [] }],
+    };
+    const { rerender } = render(
+      <InputMappingEditor value={value} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByTestId("input-action-add"));
+    const next = onChange.mock.calls[0]![0];
+    expect(next.actions[2].name).toBe("New Action 2");
+    rerender(<InputMappingEditor value={next} onChange={onChange} />);
+    expect(screen.getByTestId("input-action-2-name")).toHaveProperty(
+      "value",
+      "New Action 2",
+    );
   });
 
   it("renames an action", () => {
@@ -106,6 +121,7 @@ describe("InputMappingEditor", () => {
     fireEvent.change(screen.getByTestId("input-action-0-name"), {
       target: { value: "Leap" },
     });
+    fireEvent.blur(screen.getByTestId("input-action-0-name"));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         actions: [expect.objectContaining({ name: "Leap" })],
@@ -138,7 +154,9 @@ describe("InputMappingEditor", () => {
     onChange.mockClear();
     render(<InputMappingEditor value={withBinding} onChange={onChange} />);
     fireEvent.click(screen.getByTestId("input-action-0-binding-1-code"));
-    expect(screen.getByTestId("input-action-0-binding-1-code-menu")).toBeTruthy();
+    expect(
+      screen.getByTestId("input-action-0-binding-1-code-menu"),
+    ).toBeTruthy();
     screen.getByTestId("search-item-KeyW").click();
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -219,6 +237,10 @@ describe("InputMappingEditor", () => {
   it("toggles keyboard modifiers on a binding", () => {
     const onChange = vi.fn();
     render(<InputMappingEditor value={jumpOnly} onChange={onChange} />);
+    expect(
+      screen.queryByTestId("input-action-0-binding-0-mod-shift"),
+    ).toBeNull();
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-options"));
     fireEvent.click(screen.getByTestId("input-action-0-binding-0-mod-shift"));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -246,13 +268,19 @@ describe("InputMappingEditor", () => {
       ],
     };
     render(<InputMappingEditor value={value} onChange={() => {}} />);
-    expect(screen.getByTestId("input-axis-0-binding-0-digital-value")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("input-axis-0-binding-0-options"));
+    fireEvent.click(screen.getByTestId("input-axis-0-binding-1-options"));
+    expect(
+      screen.getByTestId("input-axis-0-binding-0-digital-value"),
+    ).toBeTruthy();
     expect(screen.queryByTestId("input-axis-0-binding-0-dead-zone")).toBeNull();
     expect(screen.getByTestId("input-axis-0-binding-1-dead-zone")).toBeTruthy();
-    expect(screen.queryByTestId("input-axis-0-binding-1-digital-value")).toBeNull();
+    expect(
+      screen.queryByTestId("input-axis-0-binding-1-digital-value"),
+    ).toBeNull();
   });
 
-  it("reorders bindings with 44px targets", () => {
+  it("reorders bindings without changing their codes", () => {
     const onChange = vi.fn();
     const value: InputMappings = {
       actions: [
@@ -268,11 +296,12 @@ describe("InputMappingEditor", () => {
     };
     render(<InputMappingEditor value={value} onChange={onChange} />);
     const up = screen.getByTestId("input-action-0-binding-1-move-up");
-    expect(up.className).toMatch(/touch-icon|min-h|size-\[var\(--touch-target/);
     fireEvent.click(up);
-    expect(onChange.mock.calls[0]![0].actions[0].bindings.map((b: { code: string }) => b.code)).toEqual(
-      ["KeyJ", "Space"],
-    );
+    expect(
+      onChange.mock.calls[0]![0].actions[0].bindings.map(
+        (b: { code: string }) => b.code,
+      ),
+    ).toEqual(["KeyJ", "Space"]);
   });
 
   it("removes an action", () => {
@@ -287,6 +316,8 @@ describe("InputMappingEditor", () => {
   it("toggles axis invert", () => {
     const onChange = vi.fn();
     render(<InputMappingEditor value={jumpOnly} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("input-axis-0-select"));
+    fireEvent.click(screen.getByTestId("input-axis-0-binding-0-options"));
     fireEvent.click(screen.getByTestId("input-axis-0-binding-0-invert"));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({

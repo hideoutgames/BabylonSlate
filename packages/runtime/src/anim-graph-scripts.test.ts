@@ -97,18 +97,18 @@ function locoDocument(): AnimGraphDocument {
 function jumpDocument(): AnimGraphDocument {
   const doc = createDefaultAnimGraph();
   doc.states.push({
-    id: "run",
-    name: "Run",
-    clipId: "run-clip",
+    id: "walk",
+    name: "Walk",
+    clipId: "walk-clip",
     speed: 1,
     loop: true,
     position: { x: 300, y: 80 },
   });
   doc.clips.push({
-    id: "run-clip",
-    kind: "sprite",
-    assetGuid: "sprite-1",
-    clipName: "Run",
+    id: "walk-clip",
+    kind: "animation",
+    assetGuid: "mannequin-walk",
+    clipName: "walk",
     durationMs: 400,
   });
   return doc;
@@ -259,14 +259,14 @@ describe("runtime AnimationGraph scripts", () => {
     runtime.stop();
   });
 
-  it("jumps to a named state from an Actor Tick graph before evaluating the AnimGraph", async () => {
+  it("jumps to Walk on Space during Actor Tick and advances its Animation clip", async () => {
     const registry = createDefaultNodeRegistry();
     const actorGraph: LogicGraph = {
       id: "hero",
       kind: "event",
       nodes: [
-        node(registry, "tick", "flow.event.tick"),
-        node(registry, "jump", "anim.actor.jumpToState", { state: "Run" }),
+        node(registry, "tick", "input.onAction", { action: "Jump", phase: "pressed" }),
+        node(registry, "jump", "anim.actor.jumpToState", { state: "Walk" }),
         node(registry, "graph", "component.getNamed", {
           componentClassId: "AnimationGraphComponent",
           implicitSelf: true,
@@ -315,7 +315,23 @@ describe("runtime AnimationGraph scripts", () => {
     runtime.start();
     runtime.realizePlayWorld();
     runtime.tick();
-    expect(lastAnimState(commands)?.stateId).toBe("run");
+    expect(lastAnimState(commands)?.stateId).toBe("idle");
+    runtime.pushInput([{ kind: "key", tick: 1, code: "Space", phase: "down" }]);
+    runtime.tick();
+    const jumped = lastAnimState(commands);
+    expect(jumped).toMatchObject({
+      stateId: "walk",
+      clipKind: "animation",
+      clipAssetGuid: "mannequin-walk",
+      clipName: "walk",
+      blendWeights: { walk: 1 },
+    });
+    expect(jumped?.layers).toEqual([
+      expect.objectContaining({ stateId: "walk", clipName: "walk", weight: 1 }),
+    ]);
+    runtime.tick();
+    expect(lastAnimState(commands)?.stateId).toBe("walk");
+    expect(lastAnimState(commands)?.normalisedTime).toBeGreaterThan(jumped!.normalisedTime);
     runtime.stop();
   });
 

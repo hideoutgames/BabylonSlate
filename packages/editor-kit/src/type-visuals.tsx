@@ -93,6 +93,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   BTComposite: "BObject",
   BTTask_Wait: "BTTask",
   BTTask_MoveTo: "BTTask",
+  BTTask_MoveToBlackboardKey: "BTTask",
   BTTask_RotateToFace: "BTTask",
   BTTask_PlayAnimation: "BTTask",
   BTTask_PlaySound: "BTTask",

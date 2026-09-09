@@ -164,6 +164,7 @@ export function resolvePreviewStartupGuid(options: {
 }
 
 export function playLoadControl(options: {
+  frameCap?: number;
   project?: { name: string; version: string };
   inputMappings?: ProjectInputSettings;
   sceneAssetGuid?: string;
@@ -193,6 +194,7 @@ export function playLoadControl(options: {
   });
   return {
     type: "load",
+    frameCap: options.frameCap,
     ...(options.project ? { project: options.project } : {}),
     inputMappings: options.inputMappings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",

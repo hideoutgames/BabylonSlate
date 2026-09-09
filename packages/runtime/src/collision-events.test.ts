@@ -125,6 +125,64 @@ function attachKinematicBox(
 }
 
 describe("runtime collision events", () => {
+  it.each([
+    { name: "single collider", startX: -2, mesh: false, leadingCollider: false },
+    { name: "compound body entering", startX: -2, mesh: true, leadingCollider: false },
+    { name: "compound body already intersecting", startX: 0, mesh: true, leadingCollider: false },
+    { name: "trigger after a blocking collider", startX: -2, mesh: false, leadingCollider: true },
+  ])("dispatches one Havok begin and end overlap for $name", async ({ startX, mesh, leadingCollider }) => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 4,
+      seedDemoActors: false,
+      physicsWorld: "3d",
+      gravity: [0, 0, 0],
+      dt: 1 / 60,
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([
+        toScript(overlapLogGraph(registry), registry, "Sensor", "sensor-asset"),
+      ]);
+      const sensor = runtime.spawnScriptedActor({ classId: "Sensor" })!;
+      const moving = runtime.spawnScriptedActor({ classId: "Sensor" })!;
+      if (leadingCollider) {
+        const blocking = runtime.getWorld().createComponent({
+          sourceId: "blocking",
+          classId: "ColliderComponent",
+          variables: { isTrigger: false },
+        });
+        blocking.transform.position.y = 10;
+        sensor.attachComponent(blocking);
+      }
+      attachKinematicBox(runtime, sensor, true);
+      attachKinematicBox(runtime, moving);
+      if (mesh) {
+        moving.attachComponent(runtime.getWorld().createComponent({
+          classId: "MeshComponent",
+          variables: { meshKind: "box", collisionMode: "simple" },
+        }));
+      }
+      sensor.components.find((component) => component.classId === "RigidBodyComponent")!
+        .setVariable("motionType", "static");
+      moving.components.find((component) => component.classId === "RigidBodyComponent")!
+        .setVariable("motionType", "dynamic");
+      moving.transform.position.x = startX;
+      await runtime.loadPhysics();
+      runtime.getPhysicsSync()!.addImpulse(moving.guid, { x: 3, y: 0, z: 0 });
+      runtime.start();
+      for (let tick = 0; tick < 100; tick++) runtime.tick();
+      expect(commands.filter((command) => command.type === "log" && command.category === "OverlapBegin"))
+        .toHaveLength(2);
+      expect(commands.filter((command) => command.type === "log" && command.category === "OverlapEnd"))
+        .toHaveLength(2);
+      expect(moving.transform.position.x).toBeGreaterThan(2);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("dispatches component-bound onHit for actors sharing a legacy collider ID", async () => {
     const registry = createDefaultNodeRegistry();
     const commands: CommandMessage[] = [];

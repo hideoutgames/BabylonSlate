@@ -1,4 +1,9 @@
-import type { PhysicsBackend, PhysicsTransform, Vec3 } from "@babylonslate/physics";
+import type {
+  LineTraceOptions,
+  PhysicsBackend,
+  PhysicsTransform,
+  Vec3,
+} from "@babylonslate/physics";
 import {
   decodeTileGid,
   parseMeshCollisionLayer,
@@ -228,8 +233,8 @@ export class PhysicsWorldSync {
     }
   }
 
-  lineTrace(start: Vec3, end: Vec3) {
-    return this.backend.lineTrace(start, end);
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions) {
+    return this.backend.lineTrace(start, end, options);
   }
 
   sphereOverlap(center: Vec3, radius: number) {
@@ -248,6 +253,12 @@ export class PhysicsWorldSync {
     const bodyId = this.bodyByActor.get(actorId);
     if (!bodyId) return;
     this.backend.addImpulse(bodyId, impulse, strength);
+  }
+
+  /** Steering updates velocity through physics without replacing its pose. */
+  setActorLinearVelocity(actorId: string, velocity: Partial<Vec3>): void {
+    const bodyId = this.bodyByActor.get(actorId);
+    if (bodyId) this.backend.setBodyLinearVelocity(bodyId, velocity);
   }
 
   /** Apply mid-Play RigidBody / Collider inspector knobs to the live backend. */
@@ -658,7 +669,7 @@ function worldScale(
   return { ...world.scale };
 }
 
-function actorLocalPhysicsTransform(
+export function actorLocalPhysicsTransform(
   world: PhysicsTransform,
   actor: Actor,
   transforms: ActorTransformMap,

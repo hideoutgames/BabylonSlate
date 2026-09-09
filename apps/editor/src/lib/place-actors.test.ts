@@ -19,6 +19,27 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
+describe("camera names", () => {
+  it("keeps repeated placement and duplication distinguishable", () => {
+    const scene = createDefaultScene();
+    scene.actors = [];
+    const camera = ENGINE_PLACE_ACTORS.find((item) => item.id === "camera")!;
+    for (let index = 1; index <= 3; index += 1) {
+      scene.actors.push(spawnPlacedActor(scene, camera, `cam-${index}`, ORIGIN));
+    }
+    expect(scene.actors.map((actor) => actor.name)).toEqual([
+      "Camera", "Camera 2", "Camera 3",
+    ]);
+    const source = scene.actors[0]!;
+    scene.actors.push(duplicateSceneActor(scene, source));
+    scene.actors.push(duplicateSceneActor(scene, source));
+    expect(scene.actors.slice(3).map((actor) => actor.name)).toEqual([
+      "Camera Copy", "Camera Copy 2",
+    ]);
+    expect(source.name).toBe("Camera");
+  });
+});
+
 describe("ENGINE_PLACE_ACTORS", () => {
   it("groups shapes, lights, camera, empty, and navigation", () => {
     const categories = new Set(ENGINE_PLACE_ACTORS.map((item) => item.category));
@@ -257,7 +278,7 @@ describe("spawnPlacedActor", () => {
     expect(item.category).toBe("Environment");
     expect(visualForPlaceActor(item).iconKey).toBe("SkyboxComponent");
     const actor = spawnPlacedActor(createDefaultScene(), item, "actor-sky", ORIGIN);
-    expect(actor.name).toBe("Skybox");
+    expect(actor.name).toBe("Skybox 2");
     expect(actor.locked).toBe(true);
     expect(actor.components[0]?.classId).toBe("SkyboxComponent");
     expect(actor.components[0]?.properties.size).toBe(1000);

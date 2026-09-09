@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
 import { InspectorPanel } from "./inspector-panel";
+import { GraphPanel } from "./graph-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 
@@ -23,6 +24,7 @@ const applyGraphChange = vi.hoisted(() =>
     async () => true,
   ),
 );
+const eventState = vi.hoisted(() => ({ qualifier: "" }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
@@ -51,6 +53,7 @@ vi.mock("../context/document-context", () => ({
                 name: "On Hit",
                 pins: [],
                 __nodeType: "flow.event.custom",
+                eventQualifier: eventState.qualifier,
               },
             },
             {
@@ -82,6 +85,8 @@ vi.mock("../context/document-context", () => ({
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({
     focusDiagnostic: null,
+    diagnostics: [],
+    setDiagnostics: vi.fn(),
     setFocusDiagnostic: vi.fn(),
   }),
 }));
@@ -103,9 +108,43 @@ function renderEventInspector() {
 afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
+  eventState.qualifier = "";
 });
 
 describe("Inspector custom event details", () => {
+  it("keeps inherited event names bound to their parent", () => {
+    eventState.qualifier = "Inherited";
+    renderEventInspector();
+    expect(screen.queryByRole("button", { name: "Rename Event" })).toBeNull();
+  });
+
+  it("renames an event through its graph node context menu", () => {
+    render(
+      <GraphEditingProvider>
+        <GraphPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    fireEvent.contextMenu(screen.getByText("Event On Hit"));
+    fireEvent.click(screen.getByText("Rename Event"));
+    expect((screen.getByLabelText("Event Name") as HTMLInputElement).value).toBe("On Hit");
+    fireEvent.change(screen.getByLabelText("Event Name"), { target: { value: "On Damage" } });
+    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    expect(applyGraphChange.mock.calls[0]?.[1].nodes[0]?.data.name).toBe("On Damage");
+    expect(applyGraphChange.mock.calls[0]?.[1].nodes[1]?.data.name).toBe("On Damage");
+  });
+
+  it("renames the selected custom event and its call from Details", () => {
+    renderEventInspector();
+    fireEvent.click(screen.getByRole("button", { name: "Rename Event" }));
+    expect((screen.getByLabelText("Event Name") as HTMLInputElement).value).toBe("On Hit");
+    fireEvent.change(screen.getByLabelText("Event Name"), { target: { value: "onDamage" } });
+    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(next?.members?.[0]?.name).toBe("On Damage");
+    expect(next?.nodes[0]?.data.title).toBe("Event On Damage");
+    expect(next?.nodes[1]?.data.name).toBe("On Damage");
+  });
+
   it("shows an Outputs pin list when the Class-panel event node is selected", () => {
     renderEventInspector();
     expect(screen.getByTestId("inspector-event-outputs")).toBeTruthy();

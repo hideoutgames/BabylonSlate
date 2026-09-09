@@ -13,7 +13,7 @@ Shared surface for simulation in the game worker (engineplan §2.1, §2.3, §13.
 
 | Export | Role |
 | --- | --- |
-| `PhysicsBackend` | Port: world lifecycle, bodies/colliders, `step(dt)`, `pollContacts()`, sync queries, impulses, live `updateBody` / `updateCollider` |
+| `PhysicsBackend` | Port: world lifecycle, bodies/colliders, `step(dt)`, `pollContacts()`, sync queries, impulses, partial world-axis `setBodyLinearVelocity` for dynamic bodies, live `updateBody` / `updateCollider` |
 | `PhysicsWorldKind` | `"3d"` \| `"2d"` — one kind per scene |
 | `NullPhysicsBackend` | In-memory no-op for tests without wasm |
 | `createPhysicsBackend` | Lazy factory; dynamic-imports only the needed engine |
@@ -77,11 +77,15 @@ Simulation needs **both** a rigid body and at least one collider on the same act
 
 ### Contact events
 
-`pollContacts()` returns `{ kind: "hit" | "overlapBegin" | "overlapEnd", actorAId, actorBId, colliderAId?, colliderBId?, location, normal }` since the previous poll. Backend collider IDs encode `[actorGuid, componentGuid]` (explicit, blocking, and sprite colliders) or `[actorGuid, componentGuid, shapeId]` (MeshComponent). This isolates colliders from older saved duplicates without changing authored IDs, prefab references, or component parents. Contact dispatch restores the authored component ID for component-bound script events and accepts legacy contact identifiers. Software, Havok, and Rapier 2D populate them. **v1:** a blocking pair emits `hit` every poll while overlapping; if either collider `isTrigger`, the pair emits begin/end overlap only (no hit). Software AABB implements that rule; Havok maps blocking `COLLISION_STARTED` / `COLLISION_CONTINUED` to hit and trigger enter/exit to overlap (body-level contacts, so multi-collider actors use the first collider id on each actor); Rapier drains `EventQueue` collision events after `step` and keys pairs by collider handle. `RuntimeDriver` dispatches after `step` onto the matching actor entries bound to that collider id (see [scripting.md](scripting.md) Entry points). Actor flags `generateHitEvents` / `generateOverlapEvents` skip script dispatch only.
+Havok compound shapes share one actor-pair overlap lifetime: Begin Overlap fires when the first child-shape contact enters, and End Overlap waits for the last contact to leave. A MeshComponent plus ColliderComponent therefore does not repeat graph events as its shapes cross the same trigger on different ticks. An intersection already present when Play starts also emits Begin Overlap.
+
+`pollContacts()` returns `{ kind: "hit" | "overlapBegin" | "overlapEnd", actorAId, actorBId, colliderAId?, colliderBId?, location, normal }` since the previous poll. Backend collider IDs encode `[actorGuid, componentGuid]` (explicit, blocking, and sprite colliders) or `[actorGuid, componentGuid, shapeId]` (MeshComponent). This isolates colliders from older saved duplicates without changing authored IDs, prefab references, or component parents. Contact dispatch restores the authored component ID for component-bound script events and accepts legacy contact identifiers. Software, Havok, and Rapier 2D populate them. **v1:** a blocking pair emits `hit` every poll while overlapping; if either collider `isTrigger`, the pair emits begin/end overlap only (no hit). Software AABB implements that rule; Havok maps blocking `COLLISION_STARTED` / `COLLISION_CONTINUED` to hit and trigger enter/exit to overlap (body-level contacts: overlap routing prefers the first trigger collider on each actor, then falls back to its first collider; multiple trigger components on one actor still share that binding); Rapier drains `EventQueue` collision events after `step` and keys pairs by collider handle. `RuntimeDriver` dispatches after `step` onto the matching actor entries bound to that collider id (see [scripting.md](scripting.md) Entry points). Actor flags `generateHitEvents` / `generateOverlapEvents` skip script dispatch only.
 
 Spawn/attach creates bodies; destroy removes them (`PhysicsWorldSync` drops backend bodies when the actor leaves the live set). Bodies use the same composed world-space actor hierarchy as render snapshots. After `step`, body poses are converted through the inverse parent transform back into Actor-local TRS before `postPhysics`; a parented body therefore does not jump between local simulation and world rendering. Static and kinematic bodies copy the composed actor transform on resync; dynamic bodies keep the simulation transform. `addImpulse` is a no-op when the actor has no body. Tilemap chain colliders skip `collision: false` layers and missing guid/tileset payloads.
 
 Graph **Set** of RigidBody / Collider catalog variables is not store-only. `setVariableOn` → `refreshComponent` → `PhysicsWorldSync.applyComponent`: `updateBody(body:${actor.guid}, RigidBodyTuning)` retunes mass, linear/angular damping, gravity scale, and motion type; `updateCollider(actor-scoped collider ID, ColliderTuning)` retunes `isTrigger`, friction, restitution, layer, and mask. Software, Rapier, and Havok implement both. Collider `shape` is not a catalog knob — changing shape still requires recreate. Unit coverage lives in `packages/runtime/src/physics-sync.test.ts`, `packages/physics/src/physics.test.ts`, and `packages/physics/src/pairing.test.ts`.
+
+In 3D worlds, dynamic actors with `NavAgentComponent` retain physics position authority and gravity. Navigation supplies XZ steering while preserving vertical velocity; the crowd follows the resolved body position. Attaching a Behaviour Tree or stopping its movement task does not freeze a falling body. Navigation does not change `motionType` or `gravityScale`; kinematic bodies still require explicit movement. See [navigation.md](navigation.md#dynamic-rigid-bodies).
 
 ### Collider TRS bake
 
@@ -110,7 +114,7 @@ Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable in
 
 Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. Dragging off **Get Rigid Body** also Calls **Add Impulse** (`callComponentFunction` `addImpulse`) on that owner.
 
-- **Line Trace** returns Hit Result plus exploded Hit, Location, Normal, Distance, and a live Actor reference.
+- **Line Trace** returns Hit Result plus exploded Hit, Location, Normal, Distance, and a live Actor reference. **Draw Debug** defaults on: misses draw a red line to End; hits draw a green line to the impact and a red circle aligned to its surface. Draws last one frame. **Actors To Ignore** accepts an Actor array (default empty); every collider on those actors is excluded before selecting the closest hit, so ignored actors cannot hide a target behind them. Software, Havok, and Rapier use the same exclusion contract (`LineTraceOptions.ignoreActorIds`); Havok restores temporarily masked shapes after each synchronous query.
 - **Sphere Overlap Actors** keeps the `physics.sphereOverlap` id for existing graphs and returns a deterministic, de-duplicated live Actor array plus Int Count. Missing or destroyed actor ids are filtered.
 - **Sphere Shape Sweep** exposes Radius and returns the same Hit Result / exploded query fields as Line Trace.
 - Query misses return false, null vectors/Actor, and zero Distance rather than leaking backend ids or typed `undefined`. Radius defaults at or below zero emit `physics.radius`.
@@ -123,6 +127,8 @@ Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.
 ## Determinism
 
 Harness scenarios run on each backend where shapes overlap. Within-backend reproducibility is required. Do not require identical Havok vs Rapier **file** goldens — numeric drift between engines is expected.
+
+`packages/runtime/src/physics-duplicate-identities.test.ts` exercises real Havok with five legacy duplicated dynamic boxes resting on a thin, Simple-only Ground, both with and without explicit box ColliderComponents. The Ground needs no RigidBodyComponent. `packages/runtime/src/collision-events.test.ts` covers native trigger entry/exit through compiled component-bound graphs, including initial intersection and compound mesh collision.
 
 ## Deferred
 

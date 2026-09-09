@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
+  act,
   fireEvent,
   render,
   screen,
@@ -19,16 +20,23 @@ import {
 const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
   const loadAssetThumbnail = vi.fn(async () => new Uint8Array([1, 2, 3]));
   const docs = {
-    projectDocument: { settings: { pluginOverrides: {} } },
+    projectDocument: { settings: {
+      pluginOverrides: {},
+      gameInstanceClass: null as string | null,
+      editorUtilityObjects: [] as string[],
+    } },
     assetRegistry: null as unknown,
     registryVersion: 1,
     refreshAssetRegistry: vi.fn(),
     repathDocument: vi.fn(),
     openDocument: vi.fn(),
+    closeDocumentsForPaths: vi.fn(),
+    repairAfterAssetDelete: vi.fn(async () => {}),
     openDocuments: [] as unknown[],
     setActiveDocument: vi.fn(),
     tabOrder: [] as string[],
     loadAssetThumbnail,
+    loadAssetDocument: vi.fn(async () => ({})),
     thumbnailsEnabled: true,
     pluginDescriptors: [] as unknown[],
     showPluginContent: false,
@@ -154,6 +162,10 @@ afterEach(async () => {
   docs.thumbnailsEnabled = true;
   layout.phone = false;
   docs.openDocument.mockClear();
+  docs.openDocuments = [];
+  docs.projectDocument.settings.gameInstanceClass = null;
+  docs.projectDocument.settings.editorUtilityObjects = [];
+  docs.loadAssetDocument.mockReset().mockResolvedValue({});
   if (clientWidthDescriptor) {
     Object.defineProperty(
       HTMLElement.prototype,
@@ -170,9 +182,183 @@ afterEach(async () => {
   }
 });
 
+describe("ContentBrowserWorkspace referenced Class deletion", () => {
+  function classAndScene(folder = "assets") {
+    const actorClass = texture(0);
+    actorClass.path = `${folder}/Hero.class.babasset`;
+    actorClass.header = { ...actorClass.header, type: "Class", name: "Hero", guid: "hero" };
+    const scene = texture(1);
+    scene.path = "assets/main.scene.babasset";
+    scene.header = { ...scene.header, type: "Scene", name: "main", guid: "main" };
+    return { actorClass, scene };
+  }
+
+  beforeEach(() => {
+    docs.thumbnailsEnabled = false;
+  });
+
+  it("blocks a Class used by an unsaved open scene without changing either asset", async () => {
+    const { actorClass, scene } = classAndScene();
+    const content = { actors: [{ classId: "Hero", components: [] }] };
+    docs.openDocuments = [{ ref: { path: scene.path }, content }];
+    installRegistry([actorClass, scene]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${actorClass.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+    await waitFor(() => {
+      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
+    });
+    fireEvent.click(screen.getByTestId("content-browser-delete-cancel"));
+    expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
+    expect(content.actors).toEqual([{ classId: "Hero", components: [] }]);
+  });
+
+  it("blocks a folder containing a Class referenced by a closed legacy scene", async () => {
+    const { actorClass, scene } = classAndScene("assets/Actors");
+    docs.loadAssetDocument.mockResolvedValue({ actors: [{ classId: "Hero" }] });
+    installRegistry([actorClass, scene], ["Actors"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Actors"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
+    });
+    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("allows deleting a folder when its Class referrers are also selected for deletion", async () => {
+    const { actorClass, scene } = classAndScene("assets/Actors");
+    scene.path = "assets/Actors/main.scene.babasset";
+    scene.header.dependencies = ["hero"];
+    installRegistry([actorClass, scene], ["Actors"]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Actors"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+    await waitFor(() => {
+      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+
+  it("keeps referenced material deletion available", () => {
+    const { actorClass: material, scene } = classAndScene();
+    material.header.type = "Material";
+    scene.header.dependencies = ["hero"];
+    installRegistry([material, scene]);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${material.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+    expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
+    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it.each(["gameInstanceClass", "editorUtilityObjects"] as const)(
+    "blocks a Class assigned in Project Settings %s",
+    async (setting) => {
+      const { actorClass } = classAndScene();
+      if (setting === "gameInstanceClass") docs.projectDocument.settings.gameInstanceClass = "Hero";
+      else docs.projectDocument.settings.editorUtilityObjects = ["Hero"];
+      installRegistry([actorClass]);
+      render(<ContentBrowserWorkspace />);
+      fireEvent.click(screen.getByTestId(`content-item-${actorClass.path}`));
+      fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
+      });
+      expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(true);
+    },
+  );
+});
+
 describe("ContentBrowserWorkspace grid window", () => {
   beforeEach(() => {
+    docs.repairAfterAssetDelete.mockReset().mockResolvedValue(undefined);
     installRegistry(Array.from({ length: 80 }, (_, index) => texture(index)));
+  });
+
+  it("blocks editing with progress until deletion and reference cleanup finish", async () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([texture(0)]);
+    let finishDelete!: () => void;
+    let finishRepair!: () => void;
+    const deleting = new Promise<void>((resolve) => { finishDelete = resolve; });
+    const repairing = new Promise<void>((resolve) => { finishRepair = resolve; });
+    const deleteAsset = vi.fn(() => deleting);
+    Object.assign(docs.assetRegistry as object, { deleteAsset });
+    docs.repairAfterAssetDelete.mockImplementation(() => repairing);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+
+    const progress = screen.getByRole("dialog", { name: "Deleting Assets" });
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("0");
+    expect(deleteAsset).not.toHaveBeenCalled();
+    fireEvent.keyDown(progress, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Deleting Assets" })).toBeTruthy();
+    await waitFor(() => expect(deleteAsset).toHaveBeenCalledWith("tex-0"));
+
+    await act(async () => { finishDelete(); });
+    await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalled());
+    expect(screen.getByRole("dialog", { name: "Deleting Assets" }).textContent).toContain("Updating References");
+    await act(async () => { finishRepair(); });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Deleting Assets" })).toBeNull());
+    expect((screen.getByTestId("content-browser-new-asset") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("unblocks editing and reports a deletion failure", async () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([texture(0)]);
+    Object.assign(docs.assetRegistry as object, {
+      deleteAsset: async () => { throw new Error("Storage unavailable"); },
+    });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
+    expect(screen.getByRole("alertdialog", { name: "Delete Failed" }).textContent).toContain("Storage unavailable");
+    expect(screen.queryByRole("dialog", { name: "Deleting Assets" })).toBeNull();
+  });
+
+  it("refreshes the project after deleting an empty folder", async () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([], ["Empty"]);
+    Object.assign(docs.assetRegistry as object, { deleteFolder: async () => {} });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Empty"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(
+      new Set(), new Set(), expect.any(Function),
+    ));
+  });
+
+  it("repairs only removed Class assets when a later deletion fails", async () => {
+    docs.thumbnailsEnabled = false;
+    const textureAsset = texture(0);
+    const classAsset = texture(1);
+    textureAsset.header.name = "Enemy";
+    classAsset.header.name = "Enemy";
+    classAsset.header.type = "Class";
+    installRegistry([textureAsset, classAsset]);
+    Object.assign(docs.assetRegistry as object, {
+      deleteAsset: async (guid: string) => {
+        if (guid === "tex-1") throw new Error("Class is locked");
+      },
+    });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
+    expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function));
   });
 
   it("mounts only viewport-near tiles for a large folder", () => {

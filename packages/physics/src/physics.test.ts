@@ -113,6 +113,33 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
+  it.each(["software", "rapier"] as const)("%s: partial velocity updates preserve gravity and reject non-dynamic motion", async (kind) => {
+    const backend = kind === "software"
+      ? createSoftwarePhysicsBackend("3d", { x: 0, y: -9.81, z: 0 })
+      : await createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: -9.81, z: 0 } });
+    try {
+      backend.createBody({
+        id: "moving", actorId: "actor", motionType: "dynamic", mass: 1,
+        linearDamping: 0, angularDamping: 0, gravityScale: 1, transform: identity(),
+      });
+      for (let i = 0; i < 15; i += 1) backend.step(1 / 60);
+      const before = backend.getBodyTransform("moving")!.position;
+      for (let i = 0; i < 15; i += 1) {
+        backend.setBodyLinearVelocity("moving", { x: 2 });
+        backend.step(1 / 60);
+      }
+      const after = backend.getBodyTransform("moving")!.position;
+      expect(after.x - before.x).toBeCloseTo(0.5, 2);
+      expect(after.y).toBeLessThan(before.y - 0.7);
+      backend.setBodyMotionType("moving", "static");
+      backend.setBodyLinearVelocity("moving", { x: 100 });
+      backend.step(1 / 60);
+      expect(backend.getBodyTransform("moving")!.position).toEqual(after);
+    } finally {
+      backend.dispose();
+    }
+  });
+
   it("software 2d: sphere overlap and character controller move", () => {
     const backend = createSoftwarePhysicsBackend("2d", {
       x: 0,

@@ -14,6 +14,7 @@ import {
   ENGINE_COLLISION_CHANNEL_ENUM_ID,
   ENGINE_HIT_RESULT_STRUCT_ID,
 } from "@babylonslate/scripting";
+import { inputBindingNodes } from "./input-bindings";
 
 const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
 const COLLISION_CHANNEL = enumRef(ENGINE_COLLISION_CHANNEL_ENUM_ID);
@@ -37,6 +38,7 @@ function emitMappedHit(
 
 /** Input category: mappings resolve through the runtime ctx (engineplan §11). */
 export const inputNodes: NodeDefinition[] = [
+  ...inputBindingNodes,
   {
     id: "input.isActionHeld",
     title: "Is Action Held",

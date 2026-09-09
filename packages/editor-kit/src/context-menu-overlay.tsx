@@ -17,8 +17,12 @@ export function ContextMenuOverlay({
   useEffect(() => {
     if (!menu?.open) return;
     let awaitingFreshPress = true;
-    const onPointerDown = () => {
+    const onPointerDown = (event: PointerEvent) => {
       awaitingFreshPress = false;
+      const target = event.target;
+      if (target instanceof Element && !target.closest('[role="menu"]')) {
+        onClose();
+      }
     };
     const onClick = (event: MouseEvent) => {
       if (!awaitingFreshPress || event.detail === 0) return;
@@ -34,7 +38,7 @@ export function ContextMenuOverlay({
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("click", onClick, true);
     };
-  }, [menu?.open]);
+  }, [menu?.open, onClose]);
 
   if (!menu?.open) return null;
 

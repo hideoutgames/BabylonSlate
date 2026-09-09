@@ -2,7 +2,6 @@ import "./gltf-loader";
 import {
   ArcRotateCamera,
   Color4,
-  HemisphericLight,
   MeshBuilder,
   RenderTargetTexture,
   Scene,
@@ -21,6 +20,7 @@ import { adoptLoadedHierarchy } from "./glb-anim";
 import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
 import { applyMaterialToVisualMeshes, visualHierarchyBoundingVectors } from "./visual-meshes";
 import { installEngineDefaultMaterial } from "./default-material";
+import { createPreviewLighting } from "./preview-lighting";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -133,18 +133,7 @@ export function createMaterialPreviewScene(
   camera.pinchDeltaPercentage = 0.02;
   camera.useNaturalPinchZoom = true;
 
-  const key = new HemisphericLight(
-    "materialPreviewLight",
-    new Vector3(0.4, 1, 0.6),
-    scene,
-  );
-  key.intensity = 1.1;
-  const fill = new HemisphericLight(
-    "materialPreviewFill",
-    new Vector3(-0.6, -0.4, -0.8),
-    scene,
-  );
-  fill.intensity = 0.35;
+  createPreviewLighting(scene);
 
   let mesh = createMaterialPreviewMesh(scene, options.mesh ?? "cube");
   aimPreviewCameraAtMesh(camera, mesh);

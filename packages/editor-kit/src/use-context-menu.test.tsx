@@ -77,6 +77,16 @@ describe("useContextMenu", () => {
     expect(notPrevented).toBe(false);
   });
 
+  it("dismisses on a fresh outside press without waiting for a synthesized click", () => {
+    const { target, state } = renderHost();
+    fireEvent.contextMenu(target, { clientX: 10, clientY: 20 });
+    expect(state()).toBe("open");
+
+    act(() => dispatchPointerEvent(document.body, "pointerdown", { pointerType: "touch" }));
+
+    expect(state()).toBe("closed");
+  });
+
   it("opens after a stationary long press from a touch pointer", async () => {
     vi.useFakeTimers();
     const { target, state } = renderHost();
