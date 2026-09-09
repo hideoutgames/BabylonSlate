@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createCommandRegistry } from "@babylonslate/debugger";
+import { createCommandRegistry, createUserCommand } from "@babylonslate/debugger";
 import { DebugConsole } from "./debug-console";
 
 describe("DebugConsole", () => {
@@ -23,8 +23,8 @@ describe("DebugConsole", () => {
     );
 
     const root = screen.getByTestId("debug-console");
-    expect(root.getAttribute("data-slot")).toBe("dialog-content");
-    expect(root.getAttribute("data-side")).toBeNull();
+    expect(root.getAttribute("data-slot")).toBe("sheet-content");
+    expect(root.getAttribute("data-side")).toBe("bottom");
 
     fireEvent.change(screen.getByTestId("debug-console-input"), {
       target: { value: "ch" },
@@ -42,37 +42,31 @@ describe("DebugConsole", () => {
     );
   });
 
-  it("opens as a large overlay instead of a small centered dialog", () => {
+  it("shows a scrollable context list and applies its keyboard selection", () => {
+    const commands = Array.from({ length: 12 }, (_, index) => createUserCommand({
+      name: `nav${String(index).padStart(2, "0")}`, description: `Navigation tool ${index}`,
+      category: "debug", parameters: [], run: () => ({ success: true, output: "" }),
+    }));
     render(
       <DebugConsole
         open
         onOpenChange={() => {}}
-        commands={createCommandRegistry({ includeDebug: true }).list()}
+        commands={commands}
         onExecute={async () => ({ success: true, output: "" })}
       />,
     );
-    const root = screen.getByTestId("debug-console");
-    expect(root.className).toContain("h-[min(92vh,56rem)]");
-    expect(root.className).toContain("w-[min(96vw,80rem)]");
-    expect(root.className).toContain("max-w-none");
-    expect(root.className).not.toContain("sm:max-w-lg");
-    const header = root.querySelector('[data-slot="dialog-header"]');
-    expect(header?.className).toContain("flex-row");
-    expect(header?.className).toContain("gap-2");
-    expect(header?.className).not.toContain("space-y-");
-    expect(screen.getByTestId("debug-console-input").hasAttribute("autofocus")).toBe(
-      false,
-    );
-    fireEvent.change(screen.getByTestId("debug-console-input"), {
-      target: { value: "ch" },
-    });
-    const suggest = screen.getByTestId("debug-console-suggest-changescene");
-    expect(suggest.className).toContain("min-h-[var(--touch-target,44px)]");
-    expect(screen.getByTestId("debug-console-clear")).toBeTruthy();
-    expect(screen.getByTestId("debug-console-copy")).toBeTruthy();
+    const input = screen.getByRole("combobox", { name: "Console command" });
+    fireEvent.change(input, { target: { value: "nav" } });
+    expect(screen.getAllByRole("option")).toHaveLength(12);
+    expect(screen.getByRole("listbox").className).toContain("overflow-y-auto");
+    expect(screen.getByRole("option", { name: /nav11/ }).textContent).toContain("Navigation tool 11");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /nav01/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect((input as HTMLInputElement).value).toBe("nav01 ");
   });
 
-  it("applies a suggestion chip into the current token", async () => {
+  it("applies a suggestion into the current token", async () => {
     render(
       <DebugConsole
         open
@@ -88,6 +82,53 @@ describe("DebugConsole", () => {
     expect(
       (screen.getByTestId("debug-console-input") as HTMLInputElement).value,
     ).toBe("renderquality high");
+  });
+
+  it("retains command history and restores a draft after browsing history", async () => {
+    render(<DebugConsole open onOpenChange={() => {}} commands={createCommandRegistry().list()} onExecute={async () => ({ success: true, output: "Ready" })} />);
+    const input = screen.getByTestId("debug-console-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "help" } });
+    fireEvent.click(screen.getByTestId("debug-console-submit"));
+    await screen.findByText("Ready");
+    fireEvent.change(input, { target: { value: "unsubmitted" } });
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(input.value).toBe("help");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input.value).toBe("unsubmitted");
+  });
+
+  it("shows play logs and prints, copies them, and only clears existing messages", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const props = { open: true, onOpenChange: () => {}, commands: createCommandRegistry().list(), onExecute: async () => ({ success: true, output: "" }) };
+    const logs = [
+      { id: 1, timestamp: 10, severity: "info", message: "Game started" },
+      { id: 2, timestamp: 20, severity: "print", message: "Hello from actor" },
+      { id: 3, timestamp: 30, severity: "warning", message: "Missing target" },
+      { id: 4, timestamp: 40, severity: "error", message: "Script failed" },
+    ];
+    const view = render(<DebugConsole {...props} logs={logs} />);
+    expect(screen.getByTestId("debug-console-transcript").textContent).toContain("Game started");
+    expect(screen.getByTestId("debug-console-log-3").getAttribute("data-severity")).toBe("warning");
+    expect(screen.getByTestId("debug-console-log-4").className).toContain("text-destructive");
+    fireEvent.click(screen.getByTestId("debug-console-copy"));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("[print] Hello from actor"));
+    fireEvent.click(screen.getByTestId("debug-console-clear"));
+    expect(screen.getByTestId("debug-console-transcript").textContent).toBe("");
+    view.rerender(<DebugConsole {...props} logs={[...logs, { id: 5, timestamp: 50, severity: "info", message: "Next frame" }]} />);
+    expect(screen.getByTestId("debug-console-transcript").textContent).toBe("[info] Next frame");
+  });
+
+  it("reports rejected execution without losing the command or blocking the next run", async () => {
+    const execute = vi.fn().mockRejectedValueOnce(new Error("Worker disconnected")).mockResolvedValueOnce({ success: true, output: "Reconnected" });
+    render(<DebugConsole open onOpenChange={() => {}} commands={createCommandRegistry().list()} onExecute={execute} />);
+    const input = screen.getByTestId("debug-console-input");
+    fireEvent.change(input, { target: { value: "help" } });
+    fireEvent.click(screen.getByTestId("debug-console-submit"));
+    expect(await screen.findByText("Worker disconnected")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "help" } });
+    fireEvent.click(screen.getByTestId("debug-console-submit"));
+    expect(await screen.findByText("Reconnected")).toBeTruthy();
   });
 
   it("clears the transcript and copies it to the clipboard", async () => {
