@@ -1,6 +1,7 @@
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
+  findClassAssetReferences,
   audioAssetDependencies,
   particleAssetDependencies,
   createDefaultMigrationRegistry,
@@ -1714,6 +1715,9 @@ export function assetHeaderDependencies(
   parentClass?: string | null,
 ): string[] {
   const unique = new Set<string>([
+    ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
+      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : [])),
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),

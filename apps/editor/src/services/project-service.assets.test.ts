@@ -42,6 +42,49 @@ async function scaffolded(authentic = false) {
 }
 
 describe("project documents as .babasset", () => {
+  it.each([false, true])("persists one Class replacement across all usages (None=%s)", async (none) => {
+    const { service, storage } = await scaffolded();
+    const sourcePath = "assets/Hero.class.babasset";
+    const replacementPath = "assets/NPC.class.babasset";
+    const childPath = "assets/Child.class.babasset";
+    await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
+    await service.saveDocument("graph", replacementPath, { nodes: [], edges: [] }, { parentClass: "Actor" });
+    await service.saveDocument("graph", childPath, { nodes: [], edges: [], properties: { "default:classId": "Hero" } }, { parentClass: "Hero" });
+    const sourceGuid = service.guidForPath(sourcePath)!;
+    const replacementGuid = service.guidForPath(replacementPath)!;
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...createDefaultScene(), actors: [
+      createActor("one", "Hero", { classId: "Hero" }), createActor("two", "Second", { classId: "Hero" }),
+    ] });
+    await service.replaceClassReferencesBeforeDelete([
+      { guid: sourceGuid, classId: "Hero", replacement: none ? null : { guid: replacementGuid, classId: "NPC" } },
+    ], new Set([sourceGuid]));
+    await service.registry!.deleteAsset(sourceGuid);
+    const reloaded = new ProjectService(storage);
+    await reloaded.loadCurrentProject();
+    const scene = await reloaded.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    expect(scene.actors.map((actor) => [actor.id, actor.name, actor.classId])).toEqual([
+      ["one", "Hero", none ? "Actor" : "NPC"], ["two", "Second", none ? "Actor" : "NPC"],
+    ]);
+    expect(readAssetDocumentHeader(await storage.readBinary(MAIN_SCENE_FILE)).dependencies).toEqual(none ? [] : [replacementGuid]);
+    expect(readAssetDocumentHeader(await storage.readBinary(childPath)).parentClass).toBe(none ? "BObject" : "NPC");
+    expect(reloaded.guidForPath(sourcePath)).toBeNull();
+  });
+
+  it("rejects descendant replacements before changing any saved reference", async () => {
+    const { service, storage } = await scaffolded();
+    const sourcePath = "assets/Hero.class.babasset";
+    const childPath = "assets/Child.class.babasset";
+    await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
+    await service.saveDocument("graph", childPath, { nodes: [], edges: [] }, { parentClass: "Hero" });
+    const sourceGuid = service.guidForPath(sourcePath)!;
+    const before = await storage.readBinary(childPath);
+    await expect(service.replaceClassReferencesBeforeDelete([
+      { guid: sourceGuid, classId: "Hero", replacement: { guid: service.guidForPath(childPath)!, classId: "Child" } },
+    ], new Set([sourceGuid]))).rejects.toThrow(/incompatible/);
+    expect(await storage.readBinary(childPath)).toEqual(before);
+    expect(service.guidForPath(sourcePath)).toBe(sourceGuid);
+  });
+
   it("refuses to save unnamed or duplicate material parameters and keeps the saved asset intact", async () => {
     const { storage, service } = await scaffolded();
     const path = "assets/Named.material.babasset";

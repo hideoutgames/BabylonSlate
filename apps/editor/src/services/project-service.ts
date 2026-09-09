@@ -55,6 +55,8 @@ import {
   exportProjectZip,
   fallbackParentClass,
   clearDeletedAssetRefs,
+  replaceClassAssetReferences,
+  type ClassAssetReplacement,
   isAssetDocumentPath,
   isTracePath,
   loadPayloadWithMigration,
@@ -93,6 +95,7 @@ import {
   type PluginImportPlan,
 } from "@babylonslate/assets";
 import { onEncodeQueuePause } from "./encode-queue-pause";
+import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
@@ -1027,6 +1030,45 @@ export class ProjectService {
       await this.markCompressedTexturesFallback();
     }
     return registry;
+  }
+
+  /** Validate all referrers before writing replacements; never delete a Class here. */
+  async replaceClassReferencesBeforeDelete(
+    replacements: readonly ClassAssetReplacement[],
+    deletingGuids: ReadonlySet<string>,
+    onProgress?: (path: string) => Promise<void>,
+  ): Promise<void> {
+    const registry = this.assetRegistry;
+    if (!registry) throw new Error("The asset registry is unavailable.");
+    const assets = registry.list();
+    validateClassDeletionReplacements(replacements, assets, deletingGuids);
+    const plans: Array<{
+      kind: Exclude<DocumentKind, "content-browser">;
+      path: string;
+      content: Awaited<ReturnType<ProjectService["loadDocument"]>>;
+      parentClass: string | null;
+    }> = [];
+    for (const asset of assets) {
+      if (deletingGuids.has(asset.header.guid)) continue;
+      const kind = documentKindForAssetType(asset.header.type);
+      if (!kind || kind === "trace") continue;
+      await onProgress?.(asset.path);
+      const content = await this.loadDocument(kind, asset.path);
+      const walked = replaceClassAssetReferences(content, replacements);
+      const header = replaceClassAssetReferences({
+        parentClass: asset.header.parentClass ?? null,
+        dependencies: asset.header.dependencies,
+      }, replacements);
+      if (!walked.changed && !header.changed) continue;
+      if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) {
+        throw new Error(`${asset.path} is read-only and still references a selected Class.`);
+      }
+      plans.push({ kind, path: asset.path, content: walked.value, parentClass: header.value.parentClass });
+    }
+    for (const plan of plans) {
+      await onProgress?.(plan.path);
+      await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
+    }
   }
 
   /**
