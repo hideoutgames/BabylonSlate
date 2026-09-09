@@ -224,6 +224,19 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(screen.queryByRole("dialog", { name: "Deleting Assets" })).toBeNull();
   });
 
+  it("refreshes the project after deleting an empty folder", async () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([], ["Empty"]);
+    Object.assign(docs.assetRegistry as object, { deleteFolder: async () => {} });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Empty"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(
+      new Set(), new Set(), expect.any(Function),
+    ));
+  });
+
   it("mounts only viewport-near tiles for a large folder", () => {
     docs.thumbnailsEnabled = false;
     stubGridSize(
