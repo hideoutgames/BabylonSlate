@@ -52,7 +52,7 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
 
-- **Primary is ink** (achromatic). Buttons, focus rings, and selection bars follow Neutral. Active tabs use `--chrome-tab-accent` → `var(--foreground)`.
+- **Primary is ink** (achromatic). Buttons and focus rings follow Neutral. Selected navigation/tree rows and active tabs use a whole-surface fill; do not add curved edge stripes or inset underline highlights.
 - **Layered surfaces** differentiate chrome, side panels, and canvases.
 - **Saturated pin/node and `--asset-*` colors are type cues** — not whole toolbars.
 - **Axis and status accents** stay chromatic: X/Y/Z, Play (`--success`), destructive actions.
@@ -70,12 +70,14 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 `--primary` is ink in both schemes: light `oklch(0.145 0 0)`, dark `oklch(0.985 0 0)`.
 
+Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` supplies a slightly darker alternate background in both themes for catalog and picker rows. Add Node assigns stripes by item order before virtualization, excluding category headers.
+
 ## Action and status tokens
 
 | Role | Token | Notes |
 | --- | --- | --- |
 | Default actions / ink chrome | `--primary` | Achromatic Neutral ink |
-| Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
+| Focus / docking indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; docking targets use foreground ink |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
 | Success / Play | `--success` | Positive status and the global Play control |
 
@@ -179,7 +181,7 @@ Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`,
 
 ## Other extension tokens
 
-Trace inspection uses `--trace-selected` (vibrant orange in both schemes), `--trace-script` and `--trace-physics`. Orange selection and the full-height cursor remain independent of destructive budget markers. These tokens do not recolor the neutral focus ring or primary controls.
+Trace inspection uses `--trace-selected` (vibrant orange in both schemes), `--trace-script` and `--trace-physics`. Orange selection and the full-height cursor remain independent of destructive budget markers. Current-tick log entries use a subtle orange whole-row fill without an edge stripe. These tokens do not recolor the neutral focus ring or primary controls.
 
 | Token | Purpose |
 | --- | --- |
@@ -216,7 +218,9 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 | `Button variant="destructive"` | Solid filled `--destructive` confirm on a danger `AlertDialog` — asset, folder, and plugin delete. Not a 10% tint. |
 | `AlertDialogContent variant="destructive"` | Irreversible file-destroying confirms: red ring, red media well, red title, `sm:max-w-md` |
 | `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses **accent fill + primary border** + `aria-pressed` (not a near-invisible secondary wash) |
-| Catalog / folder / outliner selected | `variant="secondary"` (where applicable) plus a 2px start-edge **primary** bar (`border-l-2 border-l-primary`) |
+| Catalog / folder / outliner selected | Whole-row `secondary` / `accent` fill with accessible selected/current state; no start-edge bar |
+
+Dialog footer actions, including AlertDialog Save / Discard / Cancel, share the same 44px minimum on coarse pointers and preserve compact desktop sizing.
 
 **Touch sizes** on `Button` / `Toggle`: `touch` and `touch-icon` map to `min-h/min-w: var(--touch-target, 44px)`. Prefer these over repeating `min-h-11` at call sites. Docked panels omit `PanelFrame` titles when Dockview already shows the tab name; keep a toolbar-only row when actions are present. `PanelFrame` uses `--sidebar`; headers use `--card`.
 
@@ -250,4 +254,4 @@ Favicon is a theme-aware SVG (`prefers-color-scheme`) plus `favicon.ico` and `ap
 
 Projects and Templates occupy separate viewport-sized views with native horizontal pagination. Project view density persists independently as large cards, eight-card (4 by 2) desktop pages with fixed column slots on partially filled pages, or a list. Project pictures stay on the badge; the browser and creator share a full-width shaded back and raised face, with depth proportional to badge size; Lucide glyphs render without forced parent 3D layers. Static inverted dot vignettes and subtle badge-colored glows sit behind the badges. Template cards reserve an image well for future catalog images. Search, Most Used / Name ordering, and ZIP import appear in both template pickers. The creator Options disclosure uses only its label and plus/minus indicator, with no border or fill. The create flow transitions from template selection to name/appearance; edit opens the identity step directly. Uploaded pictures use bounded local raster thumbnails, and vivid preset colors have named, focusable circular choices alongside the picture upload action. Coarse pointers receive 48px targets and avoid automatic keyboard opening. Project context menus support right-click, long-press, and Shift+F10; after Escape restores focus, Enter can open the project immediately without being consumed by the touch-release guard.
 
-The desktop empty state loads `homepage-sculpture.tsx` and its Blender-created `public/launcher/slate-object.glb` on demand. The model cuts the existing Slate logo silhouette through only the front slab in Blender, preserving the source image's 289:371 aspect ratio; it has no printed logo texture. The two rear slabs are simple beveled meshes; the optimized GLB is about 290 KB with 4,706 source mesh vertices. This isolated Three.js renderer has a capped pixel ratio and 30 fps loop, pauses on document visibility changes and behind loading, launcher dialogs, profile menus, or Templates, renders statically with reduced motion, and disposes its GPU resources on unmount. Desktop shows no decorative placeholder while the model loads. Phone and short-landscape layouts use the existing mark without loading the 3D module. Switching Projects and Templates retains the canvas while pausing hidden rendering. A matching HTML/React splash card uses lightweight animated slab shapes, a shadow over an opaque black background, the engine or project name, release build version (Development build for local previews), and real loading status. It has a two-second minimum and waits for the launcher assets; project launch keeps the cover through editor route setup and fades it away. The cover is portaled above the composer and unmounts its stylesheet afterward. The model was created for the explicitly requested Blender design iteration; it does not change the general artwork policy.
+The empty Project Browser on every viewport, including phone and short-landscape layouts, loads `homepage-sculpture.tsx` and its Blender-created `public/launcher/slate-object.glb` on demand. The model cuts the existing Slate logo silhouette through only the front slab in Blender, preserving the source image's 289:371 aspect ratio; it has no printed logo texture. The two rear slabs are simple beveled meshes; the optimized GLB is about 290 KB with 4,706 source mesh vertices. This isolated Three.js renderer has a capped pixel ratio and 30 fps loop, pauses on document visibility changes and behind loading, launcher dialogs, profile menus, or Templates, renders statically with reduced motion, and disposes its GPU resources on unmount. Only the Metal 3D cards are shown; the 2D card placeholder is removed. All layouts wait for the model readiness callback before releasing the loading cover, and show no decorative placeholder while the model loads or if rendering is unavailable. Switching Projects and Templates retains the canvas while pausing hidden rendering. A matching HTML/React splash card uses lightweight animated slab shapes, a shadow over an opaque black background, the engine or project name, release build version (Development build for local previews), and real loading status. It has a two-second minimum and waits for the launcher assets; project launch keeps the cover through editor route setup and fades it away. The cover is portaled above the composer and unmounts its stylesheet afterward. The model was created for the explicitly requested Blender design iteration; it does not change the general artwork policy.

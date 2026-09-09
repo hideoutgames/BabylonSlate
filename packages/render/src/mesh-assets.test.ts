@@ -82,6 +82,10 @@ describe("applyAlbedoTexture", () => {
     const overlay = mesh.material as StandardMaterial;
     expect(overlay.diffuseTexture).not.toBe(albedo);
     expect((overlay.diffuseTexture as Texture | null)?.invertY).toBe(true);
+    // Explicit alpha test runs after alpha composition in StandardMaterial;
+    // without hasAlpha the diffuse alpha is never included in that composition.
+    expect(overlay.getAlphaTestTexture()?.hasAlpha).toBe(true);
+    expect(overlay.useAlphaFromDiffuseTexture).toBe(true);
     expect(overlay.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
     cache.dispose();
     scene.dispose();

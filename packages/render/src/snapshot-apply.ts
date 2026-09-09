@@ -80,6 +80,7 @@ import { createSpriteQuad } from "./sprite-quad";
 import {
   applyTilemapParallaxToMesh,
   createTilemapMeshes,
+  isTilemapChunkMesh,
   worldTileSize,
 } from "./tilemap-mesh";
 import { snapToPixelGrid } from "./pixel-perfect";
@@ -400,6 +401,7 @@ export function applyMaterialToActorMeshes(
 ): void {
   const targets: Mesh[] = [root, ...root.getChildMeshes().filter(isMesh)];
   for (const target of targets) {
+    if (isTilemapChunkMesh(target)) continue;
     const componentId = componentIdForPlayMesh(target, slotId, binding);
     const guid = assignedMaterialGuid(binding, slotId, componentId);
     if (guid === null) {

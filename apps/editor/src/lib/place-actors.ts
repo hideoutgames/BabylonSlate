@@ -23,6 +23,7 @@ import {
 } from "./prefab-preview";
 import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
 import { mergedPrefabComponentsForClass } from "./prefab-instance-sync";
+import { uniqueSceneActorName } from "./scene-actor-names";
 
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
@@ -36,6 +37,7 @@ export type PlaceActorKind =
   | { type: "blocking-volume" }
   | { type: "audio" }
   | { type: "particle" }
+  | { type: "tilemap" }
   | { type: "empty" }
   | {
       type: "overlay-2d";
@@ -140,6 +142,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     category: "Particles",
     kind: { type: "particle" },
   },
+  {
+    id: "tilemap",
+    title: "Tilemap",
+    category: "Rendering",
+    kind: { type: "tilemap" },
+  },
 ];
 
 const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
@@ -206,6 +214,7 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "Model",
   "Audio",
   "ParticleSystem",
+  "Tilemap",
 ]);
 
 export function prefabComponentsForGuid(
@@ -352,6 +361,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "particle") {
     return resolveTypeVisual({ classId: "ParticleComponent", family: "class" });
   }
+  if (kind.type === "tilemap") {
+    return resolveTypeVisual({ classId: "TilemapComponent", family: "class" });
+  }
   if (kind.type === "overlay-2d") {
     return resolveTypeVisual({ classId: kind.classId, family: "class" });
   }
@@ -386,7 +398,7 @@ export function spawnPlacedActor(
   const kind = item.kind;
   const transform = placedTransform(position);
   const finish = (actor: SerializedActor): SerializedActor =>
-    applyOverlayPlace(actor, options?.overlay === true);
+    applyOverlayPlace({ ...actor, name: uniqueSceneActorName(scene, actor.name) }, options?.overlay === true);
   if (kind.type === "shape") {
     return finish(createActor(id, kind.meshKind, {
       transform,
@@ -521,6 +533,18 @@ export function spawnPlacedActor(
       ],
     }));
   }
+  if (kind.type === "tilemap") {
+    return finish(createActor(id, "Tilemap", {
+      transform,
+      components: [
+        {
+          id: `${id}-tilemap`,
+          classId: "TilemapComponent",
+          properties: defaultPropertiesFor("TilemapComponent"),
+        },
+      ],
+    }));
+  }
   if (kind.type === "asset") {
     if (kind.assetType === "Class") {
       return finish(createActor(id, kind.name, {
@@ -566,6 +590,21 @@ export function spawnPlacedActor(
         ],
       }));
     }
+    if (kind.assetType === "Tilemap") {
+      return finish(createActor(id, kind.name, {
+        transform,
+        components: [
+          {
+            id: `${id}-tilemap`,
+            classId: "TilemapComponent",
+            properties: {
+              ...defaultPropertiesFor("TilemapComponent"),
+              assetGuid: kind.guid,
+            },
+          },
+        ],
+      }));
+    }
     const component = createMeshComponent(`${id}-mesh`, "box");
     component.properties.assetGuid = kind.guid;
     return finish(createActor(id, kind.name, { transform, components: [component] }));
@@ -597,7 +636,7 @@ export function duplicateSceneActor(
 ): SerializedActor {
   const copy = structuredClone(source);
   copy.id = nextActorId(scene);
-  copy.name = `${source.name} Copy`;
+  copy.name = uniqueSceneActorName(scene, `${source.name} Copy`);
   const componentIds = new Map(copy.components.map((component, index) => [
     component.id, `${copy.id}-${component.classId}-${index + 1}`,
   ]));

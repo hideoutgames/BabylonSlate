@@ -39,6 +39,8 @@ import {
 } from "./editor-place";
 import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { calculateEditorDropTransforms, type EditorDropTransform } from "./editor-drop";
+import { createPreviewLighting } from "./preview-lighting";
 import {
   ViewportShadingOverlay,
   type ViewportShadingMode,
@@ -300,6 +302,10 @@ export interface CreateEngineOptions {
   maxActors?: number;
   /** Attach the editor camera, gizmos, grid, selection and scene sync. */
   editor?: boolean;
+  /** Document viewport identity for scoped editor commands. */
+  editorViewportId?: string;
+  /** Session-only studio lights for isolated editor asset previews. */
+  previewLighting?: boolean;
   viewportMode?: ViewportMode;
   /** Navigation debug geometry follows the physics world, independently of the camera view. */
   physicsWorld?: PhysicsWorldKind;
@@ -495,6 +501,8 @@ export interface EditorTools {
   }) => void;
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
+  /** Pure collision query; the caller commits the resulting authored transforms. */
+  dropSelectedActors: (actorIds: readonly string[]) => EditorDropTransform[];
   /** Frustum / light debug + 1 Hz camera preview for the current selection. */
   syncSelectionDebug: (options: {
     sceneData: SerializedScene | null;
@@ -661,6 +669,9 @@ export function createEngine(
     configureEditorRenderingGroups(scene);
   } else {
     scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
+  }
+  if (options.editor && !options.playMode && options.previewLighting) {
+    createPreviewLighting(scene);
   }
   if (presentRtt) {
     // RTT clear targets the preview buffer, not Scene/Play's framebuffer.
@@ -1305,6 +1316,15 @@ export function createEngine(
         }
       },
       selectedActorTransforms,
+      dropSelectedActors: (selectedActorIds) => {
+        const sceneData = editorSync.serializedScene();
+        return sceneData ? calculateEditorDropTransforms({
+          sceneData, selectedActorIds, meshForActor: (id) => editorSync.meshForActor(id),
+          assets: { modelBytes: binding.modelBytes, modelPayloads: binding.modelPayloads,
+            spritePayloads: binding.spritePayloads, tilemaps: binding.tilemaps, tilesets: binding.tilesets,
+            pixelsPerUnit: binding.pixelsPerUnit },
+        }) : [];
+      },
       attachedActorTransform: () => {
         const mesh = gizmos.attachedMesh();
         if (!mesh) return selectedActorTransforms()[0] ?? null;
@@ -1512,6 +1532,12 @@ export function createEngine(
 
   rebuildPostProcessStack();
 
+  const unsubscribeEditorDrop = engineCommandBus.subscribe((command) => {
+    if (command.type !== "editor.drop" || !editor || !options.editorViewportId || command.viewportId !== options.editorViewportId) return;
+    engineCommandBus.dispatch({ type: "editor.drop.result", viewportId: command.viewportId,
+      requestId: command.requestId, transforms: editor.dropSelectedActors(command.actorIds) });
+  });
+
   return {
     engine,
     scene,
@@ -1520,6 +1546,7 @@ export function createEngine(
     scaling,
     editor,
     dispose: () => {
+      unsubscribeEditorDrop();
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
       playFreeCamInput?.dispose();

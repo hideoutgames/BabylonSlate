@@ -23,7 +23,7 @@
   outline-offset: -2px;
 }
 [data-testid="trace-playback-log-line"][data-current-tick="true"] {
-  border-inline-start: 2px solid var(--trace-selected);
+  background: color-mix(in oklab, var(--trace-selected) 18%, var(--background));
 }
 [data-testid="trace-playback-log-line"] [data-severity="error"] {
   color: var(--destructive);

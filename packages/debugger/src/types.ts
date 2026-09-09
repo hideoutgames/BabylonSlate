@@ -50,6 +50,8 @@ export type ConsoleCommandHost = {
   setShowAudioDebug?(enabled: boolean): void;
   dumpActors?(): string;
   inspectActor?(query: string): string;
+  possessActorCamera?(query: string): CommandResult;
+  destroyActor?(query: string): CommandResult;
   getInspectSelection?(): string | null;
   pause?(): void;
   resume?(): void;

@@ -14,11 +14,11 @@ describe("alertDialogContentVariants", () => {
     expect(tokens).toContain("sm:max-w-md");
   });
 
-  it("keeps default confirms on the quiet foreground ring", () => {
+  it("keeps default confirms on the theme boundary ring", () => {
     const tokens = classTokens(
       alertDialogContentVariants({ variant: "default" }),
     );
-    expect(tokens).toContain("ring-foreground/10");
+    expect(tokens).toContain("ring-border");
     expect(tokens).not.toContain("ring-destructive");
     expect(tokens).not.toContain("sm:max-w-md");
   });

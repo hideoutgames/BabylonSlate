@@ -12,6 +12,7 @@ import {
   createDefaultScene,
   createMeshComponent,
   engineCommandBus,
+  requestEditorDrop,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
@@ -165,6 +166,26 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it("scopes editor Drop requests to one viewport and unregisters on disposal", () => {
+    const engine = sharedEngine();
+    const make = (editorViewportId: string, floorY: number) => {
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, editorViewportId });
+      handles.push(handle);
+      handle.loadScene({ ...createDefaultScene(), actors: [
+        createActor("selected", "Selected", { transform: { position: [0, 10, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [createMeshComponent("mesh", "box")] }),
+        createActor("floor", "Floor", { transform: { position: [0, floorY, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [createMeshComponent("floor-mesh", "box")] }),
+      ] });
+      return handle;
+    };
+    const scene = make("scene-viewport", 0);
+    const prefab = make("prefab-viewport", 3);
+    expect(requestEditorDrop("scene-viewport", ["selected"])[0]?.position).toEqual([0, 1.5, 0]);
+    expect(requestEditorDrop("prefab-viewport", ["selected"])[0]?.position).toEqual([0, 4.5, 0]);
+    expect(scene.editor!.sync.meshForActor("selected")!.position.y).toBe(10);
+    prefab.dispose(); handles.pop();
+    expect(requestEditorDrop("prefab-viewport", ["selected"])).toEqual([]);
+  });
+
   it("does not plant document authored lights from play-mode loadScene", () => {
     const { handle } = playHandle(sharedEngine());
     const scene = createDefaultScene();
@@ -222,6 +243,36 @@ describe("Play createEngine view", () => {
   it("still seeds the default scene into a non-Play view", () => {
     const { handle } = editorHandle(sharedEngine());
     expect(handle.scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
+  });
+
+  it("lights an isolated prefab preview through PBR and Unlit mode changes", () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      previewLighting: true,
+    });
+    handles.push(handle);
+    const data = createDefaultScene();
+    data.actors = [
+      createActor("prefab", "Prefab", {
+        components: [createMeshComponent("mesh", "box")],
+      }),
+    ];
+    handle.loadScene(data);
+    expect(
+      handle.scene.lights.some((light) => light.isEnabled() && light.intensity > 0),
+    ).toBe(true);
+    const lights = [...handle.scene.lights];
+    handle.editor!.setViewportShadingMode("unlit");
+    expect(handle.scene.lightsEnabled).toBe(false);
+    expect((handle.scene.defaultMaterial as PBRMaterial).unlit).toBe(true);
+    handle.loadScene(data);
+    handle.editor!.setViewportShadingMode("pbr");
+    expect(handle.scene.lightsEnabled).toBe(true);
+    expect((handle.scene.defaultMaterial as PBRMaterial).unlit).toBe(false);
+    expect(handle.scene.lights).toEqual(lights);
+    expect(data.actors).toHaveLength(1);
   });
 
   it("registerView clears the overlay canvas before copying", () => {

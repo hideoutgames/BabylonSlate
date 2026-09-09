@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { HandIcon, MousePointerIcon } from "lucide-react";
 import {
@@ -11,6 +11,7 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Toggle } from "@babylonslate/ui/components/toggle";
+import { Button } from "@babylonslate/ui/components/button";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -24,9 +25,7 @@ import {
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import {
-  useOptionalTilesetEditing,
-} from "../context/tileset-editing-context";
+import { useOptionalTilesetEditing } from "../context/tileset-editing-context";
 
 export function TilesetPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -71,12 +70,19 @@ export function TilesetPreview({
   payload: Record<string, unknown>;
   onChange?: (next: Record<string, unknown>) => void;
 }) {
-  const tileset = ensureTilesetTiles(normalizeTilesetPayload(payload));
-  const editing = useOptionalTilesetEditing();
-  const [localSelectedId, setLocalSelectedId] = useState(
-    tileset.tiles[0]?.id ?? 1,
+  const tileset = useMemo(
+    () => ensureTilesetTiles(normalizeTilesetPayload(payload)),
+    [payload],
   );
-  const selectedId = editing?.selectedTileId ?? localSelectedId;
+  const editing = useOptionalTilesetEditing();
+  const [localSelectedIds, setLocalSelectedIds] = useState([
+    tileset.tiles[0]?.id ?? 1,
+  ]);
+  const selectedIds = currentTileSelection(
+    tileset,
+    editing?.selectedTileIds ?? localSelectedIds,
+  );
+  const selectedId = selectedIds[0] ?? 1;
   const [previewTool, setPreviewTool] = useState<AtlasTileGridTool>("move");
   const { assetRegistry, readAssetChunk } = useDocuments();
   const [url, setUrl] = useState<string | null>(null);
@@ -94,9 +100,7 @@ export function TilesetPreview({
     void (async () => {
       const bytes = await readAssetChunk(texture.path, "pixels");
       if (!bytes || cancelled || bytes.byteLength === 0) return;
-      objectUrl = URL.createObjectURL(
-        new Blob([bytes], { type: "image/png" }),
-      );
+      objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
       if (!cancelled) setUrl(objectUrl);
     })();
     return () => {
@@ -109,11 +113,12 @@ export function TilesetPreview({
     onChange?.(ensureTilesetTiles(next) as unknown as Record<string, unknown>);
   };
 
-  const patchTile = (tileId: number, patch: Partial<TilesetTile>) => {
+  const patchTiles = (tileIds: number[], patch: Partial<TilesetTile>) => {
+    const ids = new Set(tileIds);
     commit({
       ...tileset,
       tiles: tileset.tiles.map((tile) =>
-        tile.id === tileId ? { ...tile, ...patch } : tile,
+        ids.has(tile.id) ? { ...tile, ...patch } : tile,
       ),
     });
   };
@@ -152,7 +157,7 @@ export function TilesetPreview({
           onValueChange={(value) => {
             const next = value[0];
             if (!next || !selected) return;
-            patchTile(selected.id, { collision: collisionFromEnum(next) });
+            patchTiles(selectedIds, { collision: collisionFromEnum(next) });
           }}
           aria-label="Tile Collision"
           data-testid="tileset-collision-tools"
@@ -181,15 +186,23 @@ export function TilesetPreview({
         tileset={tileset}
         imageUrl={url}
         selectedId={selectedId}
+        selectedIds={selectedIds}
         panZoom
         tool={previewTool}
         emptyLabel={tileset.textureGuid ? "Loading texture…" : "No Texture"}
         data-testid="tileset-preview"
         onSelect={(id) => {
           if (editing) editing.setSelectedTileId(id);
-          else setLocalSelectedId(id);
+          else setLocalSelectedIds([id]);
           if (editing?.paintCollision && selected) {
-            patchTile(id, { collision: selected.collision });
+            patchTiles([id], { collision: selected.collision });
+          }
+        }}
+        onSelectionChange={(ids) => {
+          if (editing) editing.setSelectedTileIds(ids);
+          else setLocalSelectedIds(ids);
+          if (editing?.paintCollision && selected) {
+            patchTiles(ids, { collision: selected.collision });
           }
         }}
         onImageSize={(width, height) => {
@@ -220,10 +233,24 @@ export function TilesetEditor({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const tileset = ensureTilesetTiles(normalizeTilesetPayload(payload));
+  const tileset = useMemo(
+    () => ensureTilesetTiles(normalizeTilesetPayload(payload)),
+    [payload],
+  );
+  const [tileSize, setTileSize] = useState({
+    width: tileset.tileWidth,
+    height: tileset.tileHeight,
+  });
+  useEffect(() => {
+    setTileSize({ width: tileset.tileWidth, height: tileset.tileHeight });
+  }, [tileset.tileWidth, tileset.tileHeight]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const editing = useOptionalTilesetEditing();
-  const selectedId = editing?.selectedTileId ?? tileset.tiles[0]?.id ?? 1;
+  const selectedIds = currentTileSelection(
+    tileset,
+    editing?.selectedTileIds ?? [],
+  );
+  const selectedId = selectedIds[0] ?? 1;
   const { assetRegistry } = useDocuments();
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
@@ -231,8 +258,9 @@ export function TilesetEditor({
     type: asset.header.type,
     path: asset.path,
   }));
-  const textureName = assets.find((asset) => asset.guid === tileset.textureGuid)
-    ?.name;
+  const textureName = assets.find(
+    (asset) => asset.guid === tileset.textureGuid,
+  )?.name;
   const selected =
     tileset.tiles.find((tile) => tile.id === selectedId) ?? tileset.tiles[0];
 
@@ -242,10 +270,11 @@ export function TilesetEditor({
 
   const patchTile = (patch: Partial<TilesetTile>) => {
     if (!selected) return;
+    const ids = new Set(selectedIds);
     commit({
       ...tileset,
       tiles: tileset.tiles.map((tile) =>
-        tile.id === selected.id ? { ...tile, ...patch } : tile,
+        ids.has(tile.id) ? { ...tile, ...patch } : tile,
       ),
     });
   };
@@ -268,15 +297,17 @@ export function TilesetEditor({
       id: "tileWidth",
       kind: "number",
       label: "Tile Width",
-      value: tileset.tileWidth,
-      onChange: (value) => commit({ ...tileset, tileWidth: value }),
+      value: tileSize.width,
+      min: 1,
+      onChange: (width) => setTileSize((current) => ({ ...current, width })),
     },
     {
       id: "tileHeight",
       kind: "number",
       label: "Tile Height",
-      value: tileset.tileHeight,
-      onChange: (value) => commit({ ...tileset, tileHeight: value }),
+      value: tileSize.height,
+      min: 1,
+      onChange: (height) => setTileSize((current) => ({ ...current, height })),
     },
     {
       id: "margin",
@@ -367,10 +398,38 @@ export function TilesetEditor({
   return (
     <div data-testid="tileset-editor">
       <PropertyGrid title="Atlas" rows={atlasRows} />
-      <p className="px-2 pt-2 text-sm font-medium" data-testid="tileset-selected-label">
-        Selected Tile {selected?.id ?? 1}
+      <div className="px-2 py-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={
+            Math.floor(tileSize.width) === tileset.tileWidth &&
+            Math.floor(tileSize.height) === tileset.tileHeight
+          }
+          onClick={() =>
+            commit({
+              ...tileset,
+              tileWidth: Math.max(1, Math.floor(tileSize.width)),
+              tileHeight: Math.max(1, Math.floor(tileSize.height)),
+            })
+          }
+          data-testid="tileset-confirm-tile-size"
+        >
+          Confirm Tile Size
+        </Button>
+      </div>
+      <p
+        className="px-2 pt-2 text-sm font-medium"
+        data-testid="tileset-selected-label"
+      >
+        {selectedIds.length > 1
+          ? `Selected Tiles (${selectedIds.length})`
+          : `Selected Tile ${selected?.id ?? 1}`}
       </p>
-      <PropertyGrid title="Selected Tile" rows={tileRows} />
+      <PropertyGrid
+        title={selectedIds.length > 1 ? "Selected Tiles" : "Selected Tile"}
+        rows={tileRows}
+      />
       <AssetPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -384,6 +443,15 @@ export function TilesetEditor({
       />
     </div>
   );
+}
+
+function currentTileSelection(
+  tileset: TilesetPayload,
+  ids: number[],
+): number[] {
+  const available = new Set(tileset.tiles.map((tile) => tile.id));
+  const selected = ids.filter((id) => available.has(id));
+  return selected.length ? selected : [tileset.tiles[0]?.id ?? 1];
 }
 
 function collisionEnum(value: TilesetCollision | undefined): string {

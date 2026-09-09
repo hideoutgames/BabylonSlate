@@ -19,6 +19,27 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
+describe("camera names", () => {
+  it("keeps repeated placement and duplication distinguishable", () => {
+    const scene = createDefaultScene();
+    scene.actors = [];
+    const camera = ENGINE_PLACE_ACTORS.find((item) => item.id === "camera")!;
+    for (let index = 1; index <= 3; index += 1) {
+      scene.actors.push(spawnPlacedActor(scene, camera, `cam-${index}`, ORIGIN));
+    }
+    expect(scene.actors.map((actor) => actor.name)).toEqual([
+      "Camera", "Camera 2", "Camera 3",
+    ]);
+    const source = scene.actors[0]!;
+    scene.actors.push(duplicateSceneActor(scene, source));
+    scene.actors.push(duplicateSceneActor(scene, source));
+    expect(scene.actors.slice(3).map((actor) => actor.name)).toEqual([
+      "Camera Copy", "Camera Copy 2",
+    ]);
+    expect(source.name).toBe("Camera");
+  });
+});
+
 describe("ENGINE_PLACE_ACTORS", () => {
   it("groups shapes, lights, camera, empty, and navigation", () => {
     const categories = new Set(ENGINE_PLACE_ACTORS.map((item) => item.category));
@@ -33,6 +54,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
         "Audio",
         "Particles",
         "Physics",
+        "Rendering",
       ]),
     );
     expect(ENGINE_PLACE_ACTORS.some((entry) => entry.id === "navmesh-blocker")).toBe(
@@ -170,6 +192,35 @@ describe("ENGINE_PLACE_ACTORS", () => {
     });
   });
 
+  it.each([
+    { overlay: false, actorClass: "Actor" },
+    { overlay: true, actorClass: "SceneLayerActor" },
+  ])("places a Tilemap actor in $actorClass hosts", ({ overlay, actorClass }) => {
+    const item = placeActorsForHost({ overlay }).find(
+      (entry) => entry.id === "tilemap",
+    );
+    expect(item).toBeDefined();
+    expect(visualForPlaceActor(item!).iconKey).toBe("TilemapComponent");
+    const actor = spawnPlacedActor(
+      createDefaultScene(),
+      item!,
+      "actor-tilemap",
+      [3, -2, 1],
+      { overlay },
+    );
+    expect(actor).toMatchObject({
+      name: "Tilemap",
+      classId: actorClass,
+      transform: { position: [3, -2, 1] },
+      components: [
+        {
+          classId: "TilemapComponent",
+          properties: { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 },
+        },
+      ],
+    });
+  });
+
   it("places a Particle actor with a ParticleComponent", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "particle")!;
     expect(item.category).toBe("Particles");
@@ -227,7 +278,7 @@ describe("spawnPlacedActor", () => {
     expect(item.category).toBe("Environment");
     expect(visualForPlaceActor(item).iconKey).toBe("SkyboxComponent");
     const actor = spawnPlacedActor(createDefaultScene(), item, "actor-sky", ORIGIN);
-    expect(actor.name).toBe("Skybox");
+    expect(actor.name).toBe("Skybox 2");
     expect(actor.locked).toBe(true);
     expect(actor.components[0]?.classId).toBe("SkyboxComponent");
     expect(actor.components[0]?.properties.size).toBe(1000);
@@ -438,16 +489,56 @@ describe("duplicateSceneActor", () => {
 });
 
 describe("projectPlaceActors", () => {
-  it("lists Class, Model, Audio, and Particle System assets, not textures", () => {
+  it("lists Class, Model, Audio, Particle System, and Tilemap assets, not textures", () => {
     const items = projectPlaceActors([
       { header: { guid: "hero", name: "Hero", type: "Class" } },
       { header: { guid: "mesh", name: "Tree", type: "Model" } },
       { header: { guid: "sfx", name: "Jump", type: "Audio" } },
       { header: { guid: "fx", name: "Fire", type: "ParticleSystem" } },
+      { header: { guid: "map", name: "Dungeon", type: "Tilemap" } },
       { header: { guid: "tex", name: "Grass", type: "Texture" } },
     ]);
-    expect(items.map((item) => item.title)).toEqual(["Hero", "Tree", "Jump", "Fire"]);
+    expect(items.map((item) => item.title)).toEqual([
+      "Hero", "Tree", "Jump", "Fire", "Dungeon",
+    ]);
   });
+
+  it.each([
+    { overlay: false, actorClass: "Actor" },
+    { overlay: true, actorClass: "SceneLayerActor" },
+  ])(
+    "places a project Tilemap with its asset bound in $actorClass hosts",
+    ({ overlay, actorClass }) => {
+      const item = projectPlaceActors(
+        [{ header: { guid: "dungeon", name: "Dungeon", type: "Tilemap" } }],
+        undefined,
+        { overlay },
+      )[0];
+      expect(item).toBeDefined();
+      const actor = spawnPlacedActor(
+        createDefaultScene(),
+        item!,
+        "actor-map",
+        [4, 5, 0],
+        { overlay },
+      );
+      expect(actor).toMatchObject({
+        name: "Dungeon",
+        classId: actorClass,
+        transform: { position: [4, 5, 0] },
+        components: [
+          {
+            classId: "TilemapComponent",
+            properties: {
+              assetGuid: "dungeon",
+              sortingLayer: "Default",
+              orderInLayer: 0,
+            },
+          },
+        ],
+      });
+    },
+  );
 
   it("keeps SceneLayerActor classes on overlay Place Actors and world Classes off overlay", () => {
     const assets = [

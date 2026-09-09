@@ -1,4 +1,4 @@
-import { NullEngine, Scene, VertexBuffer } from "@babylonjs/core";
+import { Animation, AnimationGroup, NullEngine, Scene, TransformNode, VertexBuffer } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyAnimStateToScene,
@@ -578,6 +578,43 @@ describe("seekGameplayAnimation", () => {
     expect(overlay.visibility).toBeCloseTo(0.6);
     scene.dispose();
     engine.dispose();
+  });
+});
+
+describe("AnimationGraph pose changes", () => {
+  let engine: NullEngine;
+  let scene: Scene;
+
+  beforeEach(() => {
+    engine = new NullEngine();
+    scene = new Scene(engine);
+  });
+
+  afterEach(() => {
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("seeks the visible pose inside an Animation clip with a nonzero first frame", () => {
+    const target = new TransformNode("hero", scene);
+    const animation = new Animation("Walk", "position.x", 30, Animation.ANIMATIONTYPE_FLOAT);
+    animation.setKeys([{ frame: 30, value: 10 }, { frame: 60, value: 20 }]);
+    const walk = new AnimationGroup("Walk", scene);
+    walk.addTargetedAnimation(animation, target);
+    walk.start(true);
+    walk.pause();
+    walk.setWeightForAllAnimatables(0);
+    applyAnimStateToScene({ animationGroups: [walk] }, {
+      type: "animState",
+      slotId: 1,
+      stateId: "walk",
+      normalisedTime: 0.5,
+      blendWeights: { walk: 1 },
+      clipName: "Walk",
+      clipKind: "animation",
+    });
+    expect(target.position.x).toBeCloseTo(15);
+    expect(walk.isPlaying).toBe(false);
   });
 });
 

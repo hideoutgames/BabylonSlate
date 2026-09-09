@@ -11,6 +11,7 @@ import {
 import { applyModelImportScale } from "./glb-anim";
 import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
 import { constructionMaterialOf, visualHierarchyBoundingVectors, visualMeshes } from "./visual-meshes";
+import { isTilemapChunkMesh } from "./tilemap-mesh";
 
 export { applyMaterialToVisualMeshes, visualMeshes } from "./visual-meshes";
 
@@ -43,7 +44,7 @@ export function applyModelMaterialSlots(
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string) => Material | null,
 ): void {
-  const meshes = visualMeshes(root);
+  const meshes = visualMeshes(root).filter((mesh) => !isTilemapChunkMesh(mesh));
   const constructionToSlot = new Map<Material, number>();
   const usedIndices = new Set<number>();
   const slotIndices = new Set(slots.map((slot) => slot.index));
