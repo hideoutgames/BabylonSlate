@@ -44,6 +44,9 @@ export type ConsoleCommandHost = {
   setWireframe?(enabled: boolean): void;
   setFreeCam?(enabled: boolean): void;
   setShowNav?(enabled: boolean): void;
+  setShowPathfinding?(enabled: boolean): void;
+  setShowNavAgent?(enabled: boolean): void;
+  setBehaviourTreeDebug?(enabled: boolean): void;
   setShowAudioDebug?(enabled: boolean): void;
   dumpActors?(): string;
   inspectActor?(query: string): string;

@@ -104,6 +104,7 @@ import {
 import { Input } from "@babylonslate/ui/components/input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Separator } from "@babylonslate/ui/components/separator";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@babylonslate/ui/components/sheet";
 import { Skeleton } from "@babylonslate/ui/components/skeleton";
 import { Slider } from "@babylonslate/ui/components/slider";
 import { Switch } from "@babylonslate/ui/components/switch";
@@ -1103,6 +1104,13 @@ export function ComponentGallery() {
               <Button variant="destructive">Destructive</Button>
             </div>
             <GalleryDangerDialog />
+            <Sheet modal={false}>
+              <SheetTrigger render={<Button variant="outline" size="sm" data-testid="gallery-console-sheet-open" />}>Open Console Sheet</SheetTrigger>
+              <SheetContent side="bottom" showOverlay={false} className="gap-0 rounded-none shadow-none data-[side=bottom]:h-[min(58dvh,38rem)]" data-testid="gallery-console-sheet">
+                <SheetHeader><SheetTitle>Console Sheet</SheetTitle></SheetHeader>
+                <SelectableText className="px-4 font-mono text-xs">A flat nonmodal drawer leaves the view above visible and interactive.</SelectableText>
+              </SheetContent>
+            </Sheet>
           </section>
 
           <GalleryTouchControls />

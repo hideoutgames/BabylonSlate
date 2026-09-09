@@ -29,6 +29,99 @@ function aiScene(properties: Record<string, unknown>): SerializedScene {
 }
 
 describe("runtime behaviour tree evaluation", () => {
+  it("safely inspects cyclic and bigint custom blackboard values without changing runtime values", async () => {
+    const commands: CommandMessage[] = [];
+    const tree = createDefaultBehaviourTree("Custom Logic");
+    tree.nodes.find((node) => node.kind === "task")!.classId = "CustomTask";
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false,
+      playScene: aiScene({ treeGuid: "tree-1" }),
+      behaviourTrees: { "tree-1": tree },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "custom-task", classId: "CustomTask", parentClassId: "BTTask",
+      source: `export function onBtTick(ctx) {
+        const prior = ctx.getBlackboard("cycle");
+        if (prior) ctx.setBlackboard("preserved", prior.self === prior && typeof ctx.getBlackboard("large") === "bigint");
+        else { const cycle = {}; cycle.self = cycle; ctx.setBlackboard("cycle", cycle); ctx.setBlackboard("large", 5n); }
+      }`,
+      anchors: [], entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }],
+    }]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.executeConsoleCommand("behaviourtreedebug on");
+    expect(() => runtime.tick()).not.toThrow();
+    runtime.tick();
+    runtime.executeConsoleCommand("behaviourtreedebug on");
+    const snapshot = commands.filter((command) => command.type === "behaviourTreeSnapshot").at(-1);
+    expect(snapshot).toMatchObject({ trees: [{ blackboard: { cycle: expect.stringContaining("self"), large: "5n", preserved: true } }] });
+    expect(() => JSON.stringify(snapshot)).not.toThrow();
+    const graphState = commands.filter((command) => command.type === "btState").at(-1);
+    expect(() => JSON.stringify(graphState)).not.toThrow();
+    runtime.stop();
+  });
+
+  it("does not give a newly spawned tree the completed state of a despawned actor", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false,
+      playScene: aiScene({ treeGuid: "tree-1" }),
+      behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard Logic") },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "replacement-script", classId: "Replacement", parentClassId: "Actor",
+      source: "export function onTick() {}", anchors: [],
+      entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
+    }]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    runtime.getWorld().destroyActor("guard");
+    runtime.tick();
+    const replacement = runtime.spawnScriptedActor({ classId: "Replacement", variables: { name: "Replacement" } });
+    expect(replacement).not.toBeNull();
+    replacement!.attachComponent(runtime.getWorld().createComponent({
+      classId: "BehaviourTreeComponent", variables: { treeGuid: "tree-1" },
+    }));
+    runtime.pause();
+    runtime.executeConsoleCommand("behaviourtreedebug on");
+    expect(commands.filter((command) => command.type === "behaviourTreeSnapshot").at(-1)).toMatchObject({
+      trees: [{ actorName: "Replacement", status: "idle", lastResults: {}, stack: [] }],
+    });
+    runtime.stop();
+  });
+
+  it("opens with the current paused tree, names its actor and nodes, and clears removals", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false,
+      playScene: aiScene({ treeGuid: "tree-1" }),
+      behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard Logic") },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    runtime.pause();
+    expect(runtime.executeConsoleCommand("behaviourtreedebug on").success).toBe(true);
+    expect(commands).toContainEqual({ type: "setBehaviourTreeDebug", enabled: true });
+    const snapshot = commands.find((command) => command.type === "behaviourTreeSnapshot");
+    expect(snapshot).toMatchObject({ trees: [{ actorGuid: "guard", actorName: "Guard", treeGuid: "tree-1", treeName: "Guard Logic", status: "success" }] });
+    expect(snapshot?.type === "behaviourTreeSnapshot" && snapshot.trees[0]?.nodes.length).toBeGreaterThan(0);
+    runtime.getWorld().destroyActor("guard");
+    runtime.getWorld().flushPending();
+    runtime.executeConsoleCommand("behaviourtreedebug on");
+    expect(commands.filter((command) => command.type === "behaviourTreeSnapshot").at(-1)).toEqual({ type: "behaviourTreeSnapshot", trees: [] });
+    runtime.executeConsoleCommand("behaviourtreedebug off");
+    const count = commands.filter((command) => command.type === "behaviourTreeSnapshot").length;
+    runtime.resume();
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "behaviourTreeSnapshot")).toHaveLength(count);
+    runtime.stop();
+  });
+
   it("emits btState from BehaviourTreeComponent and skips identical repeats", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

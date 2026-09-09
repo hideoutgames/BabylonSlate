@@ -11,7 +11,7 @@ The organising idea does not change: **the command system is always present; onl
 | `@babylonslate/debugger` | Parser, registry, builtin catalog, `createUserCommand`, autocomplete. No React, Babylon, or runtime. |
 | `ConsoleCommandHost` | Callbacks the registry invokes. `RuntimeDriver.consoleHost()` implements it. |
 | `RuntimeDriver.executeConsoleCommand` | Play, Preview, `ExecuteConsoleCommand`, and worker `{ type: "console" }` all go through this. |
-| Overlay `DebugConsole` | Modal dialog; Play keeps ticking. Completions from `playConsoleCommands` (builtins + compiled `script.command`). |
+| Overlay `DebugConsole` | Flat bottom-edge Sheet shared by Play and Preview Build; simulation keeps ticking. Completions from `playConsoleCommands` (builtins + compiled `script.command`). Live logs, prints, warnings, errors, and command results share the transcript. |
 | `BDebugCommand` | User class → `Event On Command Run` → compiled as **core** via `loadScripts` / `bindUserCommand`. Ships even when `includeDebug: false`. |
 
 Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `snapshot start`), positional or `name=value` args, coercion to string/float/int/bool/enum. Unknown names and stripped debug names return `{ success: false, output }` and never throw.
@@ -45,14 +45,18 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
 | `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
 | `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls, including body rotation of local offsets and polyline points). Overlay meshes sit in `RENDERING_GROUP.world` (depth-tested, not a group-0 underlay). Reuse by id when pose changes. Skip helper/debug meshes. `actorboundingbox` is an alias of `showbounds`. |
-| `shownav` | yes | **yes** | `NavMeshDebugOverlay` on the Play scene (`RENDERING_GROUP.world`) with the session navmesh bytes **and** NavMesh Blocker volumes. Blocking Volumes are physics, not nav, and stay off this overlay. |
+| `shownav` / `shownavdebug` | yes | **yes** | Baked navmesh and NavMesh Blocker volumes in the world rendering group. Blocking Volumes belong to physics. |
+| `debugphysics [on\|off]` | yes | **yes** | Alias of `showcollision`: actual simulation collider shapes, including cylinders, triangle meshes, planar capsules, and closed chains. Reuses meshes as bodies move. |
+| `showpathfinding [on\|off]` | yes | **yes** | Active crowd path corners, waypoint markers, and destinations. Clears completed/removed paths; does not recompute a different path for display. |
+| `shownavagent [on\|off]` | yes | **yes** | Agent bounds, active paths, velocity lines, and camera-facing 3D labels with actor identity, crowd state, and speed. Independent of the baked navmesh display. |
+| `behaviourtreedebug [on\|off]` | yes | **yes** | Live modal with an `Actor Name (Tree Name)` selector, node results, active stack, decorators/services, and blackboard values. Closing disables telemetry. |
 | `showaudiodebug` | yes | **yes** | DOM voice overlay from `AudioService` `debugVoices` (`setShowAudioDebug`). Flag default is **on**. |
 | `dumpactors` | yes | **yes** | One line per actor from `inspectWorld()` (name, class, guid, position). |
 | `inspect` | yes | **yes** | Prints inspect-snapshot variables. No arg uses overlay Inspector selection when known, else usage. |
 | `possess <name\|guid>` | yes | **yes** | Switches to a live actor's CameraComponent and exits free cam, including while paused. Ambiguous names or actors without cameras are rejected. |
 | `destroyactor <name\|guid>` | yes | **yes** | Destroys a live actor through its runtime lifecycle, including while paused. Ambiguous names are rejected; authored scene data is unchanged. |
 | `dumplog` | yes | **yes** | Returns the log-ring messages. |
-| `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. |
+| `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. Both Play modes retain the trace and open its editor document when the session closes. |
 
 ### Overlay vs console (session control)
 
@@ -66,16 +70,18 @@ The Play **Inspector** exposes **Use Camera** for selected camera actors and **D
 
 `suggestConsoleCompletions(line, commands, context?)` completes:
 
-- Command names (prefix)
+- Command names ranked by exact, prefix, interior, then abbreviated subsequence match (`nav` finds `shownavagent`; `physics` finds `debugphysics`)
 - Enum values
 - Bool flags: `on` / `off`
-- `param=` chips when the next arg is empty
+- `param=` suggestions when the next arg is empty; named arguments resolve their parameter regardless of order
 - Default / example values when `defaultValue` is set
 - Context lists from `CommandParameter.complete`: `scenes` (`changescene`), `actors` (`inspect`), `commands` (`help`)
 
 Play passes scene keys and live actor names (inspect snapshots while the **console or inspector** is open). Debugger stays headless.
 
-`applyConsoleCompletion(line, suggestion, commands)` replaces the **current token** (or appends after a trailing space). Command-name hits become `name `. DebugConsole chips and Tab call this helper; history stays ArrowUp/Down.
+`applyConsoleCompletion(line, suggestion, commands)` replaces the **current token** (or appends after a trailing space). Command-name hits become `name `; values containing spaces are quoted and earlier quoted arguments are preserved. Context values match prefixes and interior text too.
+
+The console shows a scrollable suggestion list above the input with command descriptions and parameter types. ArrowUp/Down selects a row; Tab or a tap accepts it; Enter executes the command. With no suggestions, ArrowUp/Down browses history and restores the unsubmitted draft. Clear removes the current transcript without discarding history or hiding future session messages. Copy Transcript includes logs and command results. The input focuses on keyboard opening; touch opening leaves the software keyboard closed until the input is tapped.
 
 ### User commands
 
@@ -149,14 +155,14 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | `wireframe [on\|off]` | Force wireframe on Play scene meshes (skip helper/debug lines). |
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
 | `actorboundingbox [on\|off]` | Same host as `showbounds` (`setShowBounds`). Keep `showbounds` as the existing alias. |
-| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/capsules/polylines from `listDebugColliders()`, plus **convex** hulls (generated/cone simple collision) as world-group line systems. Local collider offsets and polyline points use body world rotation. Capsule total height is `2 * halfHeight + 2 * radius`. Complex triangle `mesh` colliders are still skipped. World-group depth-tested overlay, not a group-0 underlay. Editor-grid 2D camera bounds are unrelated. Does **not** replace per-collider **Render In Game** (world dashes when that property is on). |
+| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/capsules/polylines from `listDebugColliders()`, plus **convex** hulls (generated/cone simple collision) as world-group line systems. Local collider offsets and polyline points use body world rotation. Capsule total height is `2 * halfHeight + 2 * radius`. Cylinders, triangle meshes, planar 2D capsules, and closed chains keep their simulated shapes. World-group depth-tested overlay, not a group-0 underlay. Editor-grid 2D camera bounds are unrelated. Does **not** replace per-collider **Render In Game** (world dashes when that property is on). |
 | `shownav [on\|off]` | Reuse `NavMeshDebugOverlay` on the Play scene (baked nav chunk when present, plus NavMesh Blocker volumes). Same world rendering group as Play meshes. |
 | `showaudiodebug [on\|off]` | DOM overlay of playing voices (guid, clip, gain, pitch, loop, spatial, distance, radii, inside radius). Empty list: `No playing voices`. Off unmounts the overlay. Polls with `requestAnimationFrame` so it still draws while sim is paused. |
 | `dumpactors` | One line per actor: name, class, guid, world position. |
 | `inspect [name\|guid]` | Print the inspect-snapshot variables for that node (same data as the Inspector overlay). No arg → print the current inspector selection if any, else usage. |
 | `dumplog` / `snapshot start` / `snapshot stop` | Unchanged. |
 
-`showcollision` / `showbounds` / `actorboundingbox` / `wireframe` / `shownav` / `showaudiodebug` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
+`showcollision` / `debugphysics` / `showbounds` / `actorboundingbox` / `wireframe` / `shownav` / `shownavdebug` / `showpathfinding` / `shownavagent` / `behaviourtreedebug` / `showaudiodebug` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
 
 ### Intentionally not engine commands
 
@@ -164,7 +170,7 @@ Game-specific cheats (`god`, `heal`, `give`, `teleport pawn`) stay **user** `BDe
 
 Parked (do not block this pass):
 
-- Packaged-player command **line** UI (bundled-debugger player today is a stats string only). Editor Play console is the default surface. A tiny player prompt can follow once `help` / `resume` / `freecam` exist.
+- Standalone exported-player command **line** UI. Editor Play and Preview Build share the console overlay; standalone exports keep the stats HUD. A tiny player prompt can follow once `help` / `resume` / `freecam` exist.
 - `screenshot`, `viewmode unlit`, `kill` / `spawn` from the console, `restart` as a distinct command (`changescene` of the current scene already reloads).
 - Making `pause` toggle.
 

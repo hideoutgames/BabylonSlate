@@ -6,6 +6,8 @@ import {
   writeSnapshotHeader,
   type CommandMessage,
   type ControlMessage,
+  type DebugBehaviourTree,
+  type DebugNavAgent,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -85,7 +87,7 @@ import {
   type TracePayload,
   type UserCommandDef,
 } from "@babylonslate/debugger";
-import { LogRingBuffer } from "./log-ring";
+import { LogRingBuffer, type LogSeverity } from "./log-ring";
 import { componentIdFromColliderPhysicsId } from "./physics-collider-id";
 import {
   SessionDiagnosticAggregator,
@@ -223,6 +225,8 @@ export interface RuntimeDriver {
   getWorld(): World;
   getLogRing(): LogRingBuffer;
   getDiagnostics(): SessionDiagnosticAggregator;
+  /** Add a host/native console message to both live output and dumplog. */
+  reportLog(message: string, severity?: LogSeverity, category?: string): void;
   registerAnchors(assetGuid: string, anchors: readonly AnchorEntry[]): void;
   reportError(
     error: unknown,
@@ -445,6 +449,11 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly btVoiceByActor = new Map<string, string>();
   private lastStatsEmitMs: number | null = null;
   private readonly lastBtStateJson = new Map<number, string>();
+  private showPathfinding = false;
+  private showNavAgent = false;
+  private lastNavigationDebugMs = -Infinity;
+  private behaviourTreeDebug = false;
+  private lastBehaviourTreeDebugMs = -Infinity;
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -1600,6 +1609,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.cameraPossessedByScript = false;
     this.possessedCameraSlotId = null;
     this.realizePlayWorld();
+    this.emitNavigationDebug(true);
+    this.emitBehaviourTreeSnapshot(true);
   }
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
@@ -1802,6 +1813,7 @@ class InProcessRuntime implements RuntimeDriver {
     // A falling actor may not be close enough to a polygon yet. Keep its
     // request until physics brings it within reach of the mesh.
     this.navTargetByActor.set(actorGuid, { ...destination });
+    this.emitNavigationDebug(true);
     return true;
   }
 
@@ -1833,6 +1845,7 @@ class InProcessRuntime implements RuntimeDriver {
     const agentId = this.navAgentByActor.get(actorGuid);
     if (!agentId || !this.nav) return;
     this.nav.stopAgent(agentId);
+    this.emitNavigationDebug(true);
   }
 
   private toNav(point: NavPoint): NavPoint {
@@ -2024,13 +2037,16 @@ class InProcessRuntime implements RuntimeDriver {
     const worldTransforms = actorWorldTransforms(this.world.getActors());
     this.registerNavAgents(worldTransforms);
     const physicalAgents = new Set<string>();
+    let removed = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);
-      if (!actor || actor.destroyed) {
+      if (!actor || actor.destroyed || !actor.components.some((component) =>
+        component.classId === "NavAgentComponent" && !component.destroyed)) {
         this.stopNavAgent(actorGuid);
         this.nav.removeAgent(agentId);
         this.navAgentByActor.delete(actorGuid);
         this.navYawByActor.delete(actorGuid);
+        removed = true;
         continue;
       }
       if (!this.isDynamicNavActor(actor)) continue;
@@ -2042,6 +2058,7 @@ class InProcessRuntime implements RuntimeDriver {
         // Reattach with the pending target once its physical pose is reachable.
         this.nav.removeAgent(agentId);
         this.navAgentByActor.delete(actorGuid);
+        removed = true;
         if (this.navSteeredActors.delete(actorGuid)) {
           this.physicsSync.setActorLinearVelocity(actorGuid, { x: 0, z: 0 });
         }
@@ -2078,6 +2095,7 @@ class InProcessRuntime implements RuntimeDriver {
       Object.assign(actor.transform.position, local.position);
       Object.assign(actor.transform.rotation, local.rotation);
     }
+    if (removed) this.emitNavigationDebug(true);
   }
 
   private animGraphGuid(component: {
@@ -2712,6 +2730,74 @@ class InProcessRuntime implements RuntimeDriver {
     return this.dt * this.timeDilation;
   }
 
+  private debugActorName(actor: Actor): string {
+    const name = actor.getVariable("name");
+    return typeof name === "string" && name.trim() ? name : actor.classId;
+  }
+
+  private emitNavigationDebug(force = false): void {
+    if (!this.showPathfinding && !this.showNavAgent) return;
+    const now = nowMs();
+    if (!force && now - this.lastNavigationDebugMs < 200) return;
+    this.lastNavigationDebugMs = now;
+    const agents: DebugNavAgent[] = [];
+    for (const [actorGuid, agentId] of this.navAgentByActor) {
+      const actor = this.world.findActor(actorGuid);
+      if (!actor || actor.destroyed) continue;
+      const state = this.nav?.agentDebugState(agentId);
+      if (!state) continue;
+      agents.push({
+        ...state,
+        actorGuid,
+        actorName: this.debugActorName(actor),
+        position: this.fromNav(state.position),
+        velocity: this.fromNav(state.velocity),
+        target: state.target ? this.fromNav(state.target) : null,
+        path: state.path.map((point) => this.fromNav(point)),
+      });
+    }
+    this.emit({ type: "debugNavigation", agents, world: this.physicsWorldKind });
+  }
+
+  private emitBehaviourTreeSnapshot(force = false): void {
+    if (!this.behaviourTreeDebug) return;
+    const now = nowMs();
+    if (!force && now - this.lastBehaviourTreeDebugMs < 200) return;
+    this.lastBehaviourTreeDebugMs = now;
+    const trees: DebugBehaviourTree[] = [];
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (slotId === undefined) continue;
+      const component = actor.components.find((entry) =>
+        entry.classId === "BehaviourTreeComponent" && !entry.destroyed);
+      if (!component) continue;
+      const treeGuid = this.behaviourTreeGuid(component);
+      const document = treeGuid ? this.behaviourTrees.get(treeGuid) : null;
+      if (!treeGuid || !document) continue;
+      const state = this.btEvalBySlot.get(slotId);
+      trees.push({
+        actorGuid: actor.guid,
+        actorName: this.debugActorName(actor),
+        treeGuid,
+        treeName: document.name || treeGuid,
+        slotId,
+        status: state?.status ?? "idle",
+        btNodeId: state?.btNodeId ?? null,
+        lastResults: { ...state?.lastResults },
+        blackboard: snapshotBlackboard(state?.blackboard ?? this.blackboardDefaults(this.stringGuid(component.getVariable("blackboardGuid")))),
+        stack: state?.stack.map((frame) => ({ ...frame })) ?? [],
+        nodes: document.nodes.map((node) => ({
+          id: node.id, kind: node.kind, classId: node.classId,
+          children: [...node.children],
+          decorators: node.decorators.map(({ id, classId }) => ({ id, classId })),
+          services: node.services.map(({ id, classId }) => ({ id, classId })),
+        })),
+      });
+    }
+    this.emit({ type: "behaviourTreeSnapshot", trees });
+  }
+
   private emitDebugColliders(): void {
     if (!this.showCollision) return;
     this.emit({
@@ -2767,7 +2853,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emit({ type: "setShowFps", enabled: Boolean(enabled) });
       },
       setStat: (name, enabled) => {
-        this.emit({ type: "setShowFps", enabled: true });
+        if (enabled) this.emit({ type: "setShowFps", enabled: true });
         this.emit({ type: "setStat", name, enabled: Boolean(enabled) });
       },
       setShowCollision: (enabled) => {
@@ -2787,6 +2873,28 @@ class InProcessRuntime implements RuntimeDriver {
       },
       setShowNav: (enabled) => {
         this.emit({ type: "setShowNav", enabled: Boolean(enabled) });
+      },
+      setShowPathfinding: (enabled) => {
+        this.showPathfinding = enabled;
+        this.emit({ type: "setShowPathfinding", enabled });
+        this.emitNavigationDebug(true);
+        if (!this.showPathfinding && !this.showNavAgent) {
+          this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
+        }
+      },
+      setShowNavAgent: (enabled) => {
+        this.showNavAgent = enabled;
+        this.emit({ type: "setShowNavAgent", enabled });
+        this.emitNavigationDebug(true);
+        if (!this.showPathfinding && !this.showNavAgent) {
+          this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
+        }
+      },
+      setBehaviourTreeDebug: (enabled) => {
+        this.behaviourTreeDebug = enabled;
+        this.emit({ type: "setBehaviourTreeDebug", enabled });
+        if (enabled) this.emitBehaviourTreeSnapshot(true);
+        else this.emit({ type: "behaviourTreeSnapshot", trees: [] });
       },
       setShowAudioDebug: (enabled) => {
         this.emit({ type: "setShowAudioDebug", enabled: Boolean(enabled) });
@@ -3527,6 +3635,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private releaseSlot(actorGuid: string, slotId: number): void {
     this.slotByGuid.delete(actorGuid);
+    this.btEvalBySlot.delete(slotId);
+    this.lastBtStateJson.delete(slotId);
     if (this.possessedCameraSlotId === slotId) {
       this.possessedCameraSlotId = null;
       this.cameraPossessedByScript = false;
@@ -3655,6 +3765,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.world.end();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
+    if (this.showPathfinding || this.showNavAgent) {
+      this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
+    }
+    if (this.behaviourTreeDebug) this.emit({ type: "behaviourTreeSnapshot", trees: [] });
   }
 
   pause(): void {
@@ -3747,6 +3861,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.frameId += 1;
     this.publishSnapshot();
     this.emitDebugColliders();
+    this.emitNavigationDebug();
+    this.emitBehaviourTreeSnapshot();
     const statsNow = nowMs();
     if (shouldEmitStatsCommand(statsNow, this.lastStatsEmitMs)) {
       this.lastStatsEmitMs = statsNow;
@@ -3839,6 +3955,11 @@ class InProcessRuntime implements RuntimeDriver {
     return this.diagnostics;
   }
 
+  reportLog(message: string, severity: LogSeverity = "log", category = "console"): void {
+    this.logs.push({ message, severity, category, frameId: this.frameId, tickIndex: this.world.clock.tickIndex });
+    this.emit({ type: "log", message, severity, category, frameId: this.frameId });
+  }
+
   registerAnchors(assetGuid: string, anchors: readonly AnchorEntry[]): void {
     this.anchors.set(assetGuid, anchors);
   }
@@ -3907,11 +4028,14 @@ class InProcessRuntime implements RuntimeDriver {
   private publishSnapshot(): void {
     const actors = this.world.getActors();
     const liveGuids = new Set(actors.map((actor) => actor.guid));
+    let removedActors = false;
     for (const [actorGuid, slotId] of this.slotByGuid) {
       if (liveGuids.has(actorGuid)) continue;
       this.emit({ type: "despawn", slotId, actorGuid });
       this.releaseSlot(actorGuid, slotId);
+      removedActors = true;
     }
+    if (removedActors) this.emitBehaviourTreeSnapshot(true);
     const buf = this.snapshots.beginWrite();
     const worldTransforms = actorWorldTransforms(actors);
     let count = 0;

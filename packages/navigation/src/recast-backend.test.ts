@@ -98,6 +98,27 @@ describe("recast generate / import round-trip", () => {
     expect(walk(0.5, 8)).toBeGreaterThan(walk(0.5) + 0.5);
   });
 
+  it("reports live crowd corners and clears the active path when stopped or removed", () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(bytes);
+    const id = nav.addAgent({ x: -4, y: 0, z: -4 }, { radius: 0.4, height: 1.8 });
+    expect(nav.agentDebugState?.(id)).toMatchObject({ target: null, path: [], state: "idle" });
+    nav.setAgentTarget(id, { x: 4, y: 0, z: 4 });
+    for (let i = 0; i < 30; i += 1) nav.stepCrowd(1 / 60);
+    const debug = nav.agentDebugState?.(id);
+    expect(debug).toMatchObject({ state: "moving" });
+    expect(debug?.radius).toBeCloseTo(0.4);
+    expect(debug?.height).toBeCloseTo(1.8);
+    expect(debug?.position.x).toBeGreaterThan(-4);
+    expect(debug?.target?.x).toBeCloseTo(4);
+    expect(debug?.path.length).toBeGreaterThan(0);
+    expect(debug?.path.at(-1)?.z).toBeCloseTo(4);
+    nav.stopAgent(id);
+    expect(nav.agentDebugState?.(id)).toMatchObject({ target: null, path: [], state: "idle" });
+    nav.removeAgent(id);
+    expect(nav.agentDebugState?.(id)).toBeNull();
+  });
+
   it("correcting a crowd pose preserves its destination and acceleration", () => {
     const nav = createNavigationBackend();
     nav.importNavMesh(bytes);

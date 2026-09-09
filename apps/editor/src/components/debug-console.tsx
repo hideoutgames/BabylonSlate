@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -13,20 +14,28 @@ import {
   type RegisteredCommand,
 } from "@babylonslate/debugger";
 import { SelectableText } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@babylonslate/ui/components/dialog";
+import { Button, buttonVariants } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+import { Separator } from "@babylonslate/ui/components/separator";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { ChevronRightIcon, TerminalIcon, XIcon } from "lucide-react";
 
-export type ConsoleExecuteResult = {
-  success: boolean;
-  output: string;
+export type ConsoleExecuteResult = { success: boolean; output: string };
+
+/** IDs increase throughout a session, including while the console is closed. */
+export type DebugConsoleLogEntry = {
+  id: number;
+  timestamp: number;
+  severity: string;
+  message: string;
 };
 
 export type DebugConsoleProps = {
@@ -34,235 +43,432 @@ export type DebugConsoleProps = {
   onOpenChange: (open: boolean) => void;
   commands: readonly RegisteredCommand[];
   completionContext?: ConsoleCompletionContext;
+  logs?: readonly DebugConsoleLogEntry[];
   onExecute: (
     line: string,
   ) => ConsoleExecuteResult | Promise<ConsoleExecuteResult>;
 };
 
-const ACCESSORY = ["\"", "'", "=", ":", ",", ".", "/", "-", "Tab"] as const;
+const ACCESSORY = ['"', "'", "=", ":", ",", ".", "/", "-", "Tab"] as const;
+const NO_LOGS: readonly DebugConsoleLogEntry[] = [];
+const TRANSCRIPT_LIMIT = 500;
 
-type HistoryEntry = {
-  line: string;
-  success: boolean;
-  output: string;
+type TranscriptEntry = {
+  id: string;
+  timestamp: number;
+  text: string;
+  severity: string;
+  testId?: string;
 };
 
-function formatTranscript(entries: readonly HistoryEntry[]): string {
-  return entries
-    .map((entry) =>
-      entry.output ? `> ${entry.line}\n${entry.output}` : `> ${entry.line}`,
-    )
-    .join("\n");
+function commandUsage(command: RegisteredCommand): string {
+  return command.parameters
+    .map((parameter) => {
+      const type =
+        parameter.type === "bool"
+          ? "on|off"
+          : (parameter.enumValues?.join("|") ?? parameter.type);
+      const value = `${parameter.name}: ${type}`;
+      return parameter.optional || parameter.defaultValue !== undefined
+        ? `[${value}]`
+        : `<${value}>`;
+    })
+    .join(" ");
 }
 
-/** Play overlay console: large transcript, history, registry autocomplete. */
+/** Flat console over the running view, shared by Play and Preview Build. */
 export function DebugConsole({
   open,
   onOpenChange,
   commands,
   completionContext,
+  logs = NO_LOGS,
   onExecute,
 }: DebugConsoleProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+  const followOutputRef = useRef(true);
+  const commandIdRef = useRef(0);
+  const executingRef = useRef(false);
+  const draftBeforeHistoryRef = useRef("");
+  const listId = useId();
   const [draft, setDraft] = useState("");
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+  const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
-
+  const [activeSuggestion, setActiveSuggestion] = useState(0);
+  const [clearedLogId, setClearedLogId] = useState(-Infinity);
+  const [executing, setExecuting] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const suggestions = useMemo(
-    () => suggestConsoleCompletions(draft, commands, completionContext),
+    () =>
+      draft
+        ? suggestConsoleCompletions(draft, commands, completionContext)
+        : [],
     [draft, commands, completionContext],
+  );
+  const selectedIndex = Math.min(
+    activeSuggestion,
+    Math.max(0, suggestions.length - 1),
+  );
+  const selectedSuggestion = suggestions[selectedIndex];
+  const transcript = useMemo(
+    () =>
+      [
+        ...entries,
+        ...logs
+          .filter((entry) => entry.id > clearedLogId)
+          .map((entry): TranscriptEntry => ({
+            id: `log-${entry.id}`,
+            timestamp: entry.timestamp,
+            text: `[${entry.severity}] ${entry.message}`,
+            severity: entry.severity,
+            testId: `debug-console-log-${entry.id}`,
+          })),
+      ]
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .slice(-TRANSCRIPT_LIMIT),
+    [entries, logs, clearedLogId],
   );
 
   useEffect(() => {
-    const end = transcriptEndRef.current;
-    if (typeof end?.scrollIntoView === "function") {
-      end.scrollIntoView({ block: "end" });
-    }
-  }, [entries]);
+    if (open && followOutputRef.current)
+      transcriptEndRef.current?.scrollIntoView?.({ block: "end" });
+  }, [transcript, open]);
+  useEffect(() => {
+    suggestionsRef.current
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedIndex, selectedSuggestion]);
 
+  const updateDraft = (value: string) => {
+    setDraft(value);
+    setHistoryIndex(null);
+    setActiveSuggestion(0);
+  };
   const submit = async (line: string) => {
     const trimmed = line.trim();
-    if (!trimmed) return;
-    const result = await onExecute(trimmed);
-    setEntries((prev) => [
-      ...prev,
-      { line: trimmed, success: result.success, output: result.output },
-    ]);
-    setDraft("");
-    setHistoryIndex(null);
+    if (!trimmed || executingRef.current) return;
+    executingRef.current = true;
+    setExecuting(true);
+    const id = commandIdRef.current++;
+    followOutputRef.current = true;
+    setEntries((previous) =>
+      [
+        ...previous,
+        {
+          id: `command-${id}`,
+          timestamp: Date.now(),
+          text: `> ${trimmed}`,
+          severity: "command",
+        },
+      ].slice(-TRANSCRIPT_LIMIT),
+    );
+    setHistory((previous) => [...previous, trimmed].slice(-TRANSCRIPT_LIMIT));
+    updateDraft("");
+    try {
+      let result: ConsoleExecuteResult;
+      try {
+        result = await onExecute(trimmed);
+      } catch (error) {
+        result = {
+          success: false,
+          output: error instanceof Error ? error.message : String(error),
+        };
+      }
+      if (result.output)
+        setEntries((previous) =>
+          [
+            ...previous,
+            {
+              id: `result-${id}`,
+              timestamp: Date.now(),
+              text: result.output,
+              severity: result.success ? "result" : "error",
+              testId: `debug-console-output-${id}`,
+            },
+          ].slice(-TRANSCRIPT_LIMIT),
+        );
+    } finally {
+      executingRef.current = false;
+      setExecuting(false);
+    }
   };
-
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     void submit(draft);
   };
-
+  const applySuggestion = (suggestion: string) => {
+    updateDraft(applyConsoleCompletion(draft, suggestion, commands));
+    inputRef.current?.focus();
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Tab" && suggestions[0]) {
+    if (event.key === "Tab" && suggestions[selectedIndex]) {
       event.preventDefault();
-      setDraft((current) =>
-        applyConsoleCompletion(current, suggestions[0]!, commands),
-      );
-      setHistoryIndex(null);
+      applySuggestion(suggestions[selectedIndex]!);
       return;
     }
-    if (event.key === "ArrowUp" && entries.length > 0) {
+    if (
+      (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+      historyIndex === null &&
+      suggestions.length > 0
+    ) {
       event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setActiveSuggestion(
+        (selectedIndex + direction + suggestions.length) % suggestions.length,
+      );
+      return;
+    }
+    if (event.key === "ArrowUp" && history.length > 0) {
+      event.preventDefault();
+      if (historyIndex === null) draftBeforeHistoryRef.current = draft;
       const next =
         historyIndex === null
-          ? entries.length - 1
+          ? history.length - 1
           : Math.max(0, historyIndex - 1);
       setHistoryIndex(next);
-      setDraft(entries[next]?.line ?? draft);
-      return;
-    }
-    if (event.key === "ArrowDown" && historyIndex !== null) {
+      setDraft(history[next] ?? "");
+    } else if (event.key === "ArrowDown" && historyIndex !== null) {
       event.preventDefault();
-      if (historyIndex >= entries.length - 1) {
-        setHistoryIndex(null);
-        setDraft("");
-        return;
-      }
       const next = historyIndex + 1;
-      setHistoryIndex(next);
-      setDraft(entries[next]?.line ?? "");
+      if (next >= history.length) {
+        setHistoryIndex(null);
+        setDraft(draftBeforeHistoryRef.current);
+      } else {
+        setHistoryIndex(next);
+        setDraft(history[next] ?? "");
+      }
     }
   };
-
   const insert = (token: string) => {
-    setDraft((current) =>
-      token === "Tab"
-        ? applyConsoleCompletion(
-            current,
-            suggestions[0] ?? "  ",
-            commands,
-          )
-        : `${current}${token}`,
+    if (token === "Tab") {
+      if (suggestions[selectedIndex])
+        applySuggestion(suggestions[selectedIndex]!);
+    } else {
+      updateDraft(`${draft}${token}`);
+      inputRef.current?.focus();
+    }
+  };
+  const clearTranscript = () => {
+    setEntries([]);
+    setClearedLogId((previous) =>
+      Math.max(previous, ...logs.map((entry) => entry.id)),
     );
+    setCopyStatus("");
   };
-
-  const applySuggestion = (suggestion: string) => {
-    setDraft((current) => applyConsoleCompletion(current, suggestion, commands));
-    setHistoryIndex(null);
-  };
-
   const copyTranscript = async () => {
-    await navigator.clipboard.writeText(formatTranscript(entries));
+    try {
+      await navigator.clipboard.writeText(
+        transcript.map((entry) => entry.text).join("\n"),
+      );
+      setCopyStatus("Copied");
+    } catch {
+      setCopyStatus("Copy Failed");
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="flex h-[min(92vh,56rem)] w-[min(96vw,80rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+      <SheetContent
+        side="bottom"
+        showCloseButton={false}
+        showOverlay={false}
+        className="w-full gap-0 overflow-hidden rounded-none shadow-none data-[side=bottom]:h-[min(58dvh,38rem)]"
         data-testid="debug-console"
-        initialFocus={bodyRef}
+        initialFocus={(interaction) =>
+          interaction === "keyboard" ? inputRef.current : bodyRef.current
+        }
+        onKeyDown={(event) => event.stopPropagation()}
+        onKeyUp={(event) => event.stopPropagation()}
       >
-        <DialogHeader className="flex-row items-center justify-between gap-2 border-b px-4 py-3 pr-14">
-          <DialogTitle>Console</DialogTitle>
-          <div className="flex shrink-0 gap-2">
+        <SheetHeader className="flex-row items-center justify-between gap-2 px-2 py-1 pr-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <TerminalIcon className="size-4 shrink-0 text-muted-foreground" />
+            <SheetTitle>Console</SheetTitle>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
             <Button
               type="button"
-              size="touch"
-              variant="outline"
+              size="sm"
+              variant="ghost"
+              className="pointer-coarse:min-h-11"
               data-testid="debug-console-clear"
-              onClick={() => setEntries([])}
+              onClick={clearTranscript}
             >
               Clear
             </Button>
             <Button
               type="button"
-              size="touch"
-              variant="outline"
+              size="sm"
+              variant="ghost"
+              className="pointer-coarse:min-h-11"
               data-testid="debug-console-copy"
               onClick={() => void copyTranscript()}
             >
-              Copy Transcript
+              {copyStatus || "Copy Transcript"}
             </Button>
+            <SheetClose
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="pointer-coarse:size-11"
+                  aria-label="Close"
+                />
+              }
+            >
+              <XIcon />
+            </SheetClose>
           </div>
-        </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1 bg-background">
+        </SheetHeader>
+        <Separator />
+        <ScrollArea
+          className="min-h-0 flex-1 bg-background"
+          onScroll={(event) => {
+            const viewport = event.target as HTMLElement;
+            followOutputRef.current =
+              viewport.scrollHeight -
+                viewport.scrollTop -
+                viewport.clientHeight <
+              48;
+          }}
+        >
           <div
             ref={bodyRef}
             tabIndex={-1}
-            className="flex min-h-full flex-col gap-1 p-3 font-mono text-sm outline-none"
+            className="flex min-h-full flex-col gap-0.5 px-3 py-2 font-mono text-xs outline-none"
             data-testid="debug-console-transcript"
+            role="log"
+            aria-label="Play Console Output"
+            aria-live="polite"
           >
-            {entries.map((entry, index) => (
-              <div key={`${index}-${entry.line}`}>
-                <SelectableText>{`> ${entry.line}`}</SelectableText>
-                {entry.output ? (
-                  <div
-                    className={cn(
-                      "whitespace-pre-wrap",
-                      entry.success ? "text-foreground" : "text-destructive",
-                    )}
-                    data-testid={`debug-console-output-${index}`}
-                  >
-                    <SelectableText>{entry.output}</SelectableText>
-                  </div>
-                ) : null}
+            {transcript.map((entry) => (
+              <div
+                key={entry.id}
+                className={cn(
+                  "whitespace-pre-wrap break-words",
+                  entry.severity === "error"
+                    ? "text-destructive"
+                    : entry.severity === "info"
+                      ? "text-muted-foreground"
+                      : "text-foreground",
+                  (entry.severity === "warning" || entry.severity === "warn") &&
+                    "font-semibold",
+                )}
+                data-testid={entry.testId}
+                data-severity={entry.severity}
+              >
+                <SelectableText>{entry.text}</SelectableText>
               </div>
             ))}
             <div ref={transcriptEndRef} />
           </div>
         </ScrollArea>
-        <div className="flex shrink-0 flex-col gap-2 border-t p-3">
-          {suggestions.length > 0 ? (
+        {suggestions.length > 0 ? (
+          <>
+            <Separator />
             <div
-              className="flex flex-wrap gap-1"
+              ref={suggestionsRef}
+              id={listId}
+              role="listbox"
+              aria-label="Console Suggestions"
+              className="max-h-[min(24dvh,12rem)] shrink-0 overflow-y-auto overscroll-y-contain touch-pan-y"
               data-testid="debug-console-suggestions"
             >
-              {suggestions.slice(0, 8).map((name) => (
-                <Button
-                  key={name}
-                  type="button"
-                  variant="outline"
-                  size="touch"
-                  data-testid={`debug-console-suggest-${name}`}
-                  onClick={() => applySuggestion(name)}
-                >
-                  {name}
-                </Button>
-              ))}
+              {suggestions.map((name, index) => {
+                const command = commands.find((entry) => entry.name === name);
+                return (
+                  <div
+                    key={name}
+                    id={`${listId}-${index}`}
+                    role="option"
+                    tabIndex={-1}
+                    aria-selected={index === selectedIndex}
+                    className={cn(
+                      buttonVariants({ variant: "ghost", size: "sm" }),
+                      "flex h-auto min-h-8 w-full justify-start gap-3 rounded-none px-3 py-1 text-left touch-pan-y pointer-coarse:min-h-11",
+                      index === selectedIndex && "bg-secondary",
+                    )}
+                    data-testid={`debug-console-suggest-${name}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applySuggestion(name)}
+                  >
+                    <span className="shrink-0 font-mono">{name}</span>
+                    {command ? (
+                      <span className="min-w-0 truncate text-muted-foreground">
+                        {commandUsage(command)}
+                        {command.parameters.length ? " · " : ""}
+                        {command.description}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
-          ) : null}
-          <form className="flex gap-2" onSubmit={onSubmit}>
-            <Input
-              className="min-h-11 flex-1 font-mono"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder="changescene …"
-              aria-label="Console command"
-              data-testid="debug-console-input"
-              autoComplete="off"
-              autoCorrect="off"
-              autoFocus={false}
-            />
-            <Button type="submit" size="touch" data-testid="debug-console-submit">
-              Run
-            </Button>
-          </form>
-          <div
-            className="flex flex-wrap gap-1"
-            data-testid="debug-console-accessory"
+          </>
+        ) : null}
+        <Separator />
+        <form
+          className="flex shrink-0 items-center gap-2 px-2 py-1.5"
+          onSubmit={onSubmit}
+        >
+          <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+          <Input
+            ref={inputRef}
+            className="min-w-0 flex-1 font-mono pointer-coarse:min-h-11"
+            value={draft}
+            onChange={(event) => updateDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Enter A Command…"
+            aria-label="Console command"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={suggestions.length > 0}
+            aria-controls={suggestions.length > 0 ? listId : undefined}
+            aria-activedescendant={
+              suggestions.length > 0 ? `${listId}-${selectedIndex}` : undefined
+            }
+            data-testid="debug-console-input"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            autoFocus={false}
+          />
+          <Button
+            type="submit"
+            size="sm"
+            className="pointer-coarse:min-h-11"
+            disabled={executing || !draft.trim()}
+            data-testid="debug-console-submit"
           >
-            {ACCESSORY.map((token) => (
-              <Button
-                key={token}
-                type="button"
-                variant="secondary"
-                size="touch-icon"
-                aria-label={token === "Tab" ? "Tab" : `Insert ${token}`}
-                onClick={() => insert(token)}
-              >
-                {token === "Tab" ? "⇥" : token}
-              </Button>
-            ))}
-          </div>
+            Run
+          </Button>
+        </form>
+        <div className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1 text-xs text-muted-foreground pointer-coarse:hidden">
+          <span>↑ ↓ Select / History · Tab Complete · Enter Run</span>
+          <span>Esc Close</span>
         </div>
-      </DialogContent>
-    </Dialog>
+        <div
+          className="hidden shrink-0 flex-wrap gap-1 px-2 pb-1 pointer-coarse:flex"
+          data-testid="debug-console-accessory"
+        >
+          {ACCESSORY.map((token) => (
+            <Button
+              key={token}
+              type="button"
+              variant="secondary"
+              size="touch-icon"
+              aria-label={token === "Tab" ? "Tab" : `Insert ${token}`}
+              onClick={() => insert(token)}
+            >
+              {token === "Tab" ? "⇥" : token}
+            </Button>
+          ))}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
