@@ -107,6 +107,67 @@ describe("resource cache", () => {
 });
 
 describe("render scheduler", () => {
+  it("keeps a sustained cap with fractional, jittered browser callbacks", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.acquireContinuous("play");
+    scheduler.setFrameCap(30);
+    for (let frame = 0; frame < 600; frame += 1) {
+      const now = frame * (1000 / 60) + (frame % 3) * 0.2;
+      if (scheduler.shouldRender(now)) scheduler.noteRendered(now);
+    }
+    expect(scheduler.stats().renderedFrames).toBeGreaterThanOrEqual(299);
+    expect(scheduler.stats().renderedFrames).toBeLessThanOrEqual(301);
+  });
+
+  it("rebases pacing after cap changes and suspension without catch-up bursts", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.acquireContinuous("play");
+    scheduler.setFrameCap(15);
+    scheduler.noteRendered(0);
+    scheduler.setFrameCap(60);
+    expect(scheduler.shouldRender(17)).toBe(true);
+    scheduler.noteRendered(17);
+    scheduler.setFrameCap(30);
+    scheduler.setPaused(true);
+    expect(scheduler.shouldRender(10_000)).toBe(false);
+    scheduler.setPaused(false);
+    expect(scheduler.shouldRender(10_000)).toBe(true);
+    scheduler.noteRendered(10_000);
+    expect(scheduler.shouldRender(10_001)).toBe(false);
+    expect(scheduler.shouldRender(10_017)).toBe(false);
+    expect(scheduler.shouldRender(10_034)).toBe(true);
+  });
+
+  it("normalizes rendered FPS by elapsed time and reports zero when no frames render", () => {
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const scheduler = new RenderScheduler();
+      for (let frame = 0; frame < 30; frame += 1) {
+        now = frame * 30;
+        scheduler.noteRendered(now);
+      }
+      now = 1500;
+      expect(scheduler.stats().renderedFps).toBe(20);
+      now = 2500;
+      expect(scheduler.stats().renderedFps).toBe(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("does not catch up when a cap change lands on a fractional deadline", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.acquireContinuous("play");
+    scheduler.setFrameCap(30);
+    scheduler.noteRendered(58 * (1000 / 60));
+    scheduler.setFrameCap(60);
+    expect(scheduler.shouldRender(1000)).toBe(true);
+    scheduler.noteRendered(1000);
+    expect(scheduler.shouldRender(1001)).toBe(false);
+    expect(scheduler.shouldRender(1017)).toBe(true);
+  });
+
   it("skips renders when clean and renders when dirty", () => {
     const scheduler = new RenderScheduler();
     expect(scheduler.shouldRender()).toBe(false);

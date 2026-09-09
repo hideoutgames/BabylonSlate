@@ -3973,6 +3973,22 @@ describe("GraphEditor", () => {
     expect(queryByTestId("graph-paste")).toBeNull();
   });
 
+  it("opens host actions from a custom event node context menu", () => {
+    const rename = vi.fn();
+    const { getByText, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [{ id: "event", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { title: "Event On Hit", __pins: [] } }],
+          edges: [],
+        }}
+        contextMenuItemsForNode={(id) => [{ id: "rename", label: "Rename Event", testId: "rename-event", onSelect: () => rename(id) }]}
+      />,
+    );
+    fireEvent.contextMenu(getByText("Event On Hit"));
+    fireEvent.click(getByTestId("rename-event"));
+    expect(rename).toHaveBeenCalledWith("event");
+  });
+
   it("opens a long-press menu on a behaviour-tree node", async () => {
     const wrap = vi.fn();
     const { getByTestId } = render(

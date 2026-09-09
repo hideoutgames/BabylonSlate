@@ -10,6 +10,7 @@ import {
   ParameterListEditor,
   EntryListEditor,
   NamedListEditor,
+  NamePromptDialog,
   PinListEditor,
   PropertyGrid,
   SearchDropdown,
@@ -102,7 +103,8 @@ import {
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
-import { patchClassMember } from "../lib/class-members";
+import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
+import { classIdForGraphPath } from "../services/script-compiler";
 import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 import {
@@ -946,6 +948,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   } = usePrefabEditing();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [parentClassPickOpen, setParentClassPickOpen] = useState(false);
+  const [renameEventOpen, setRenameEventOpen] = useState(false);
   const [parentClassError, setParentClassError] = useState<string | null>(null);
   const [classPinPick, setClassPinPick] = useState<{
     pinId: string;
@@ -1562,6 +1565,23 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           </>
         ) : null}
         {isCustomEvent ? (
+          <>
+          {canRenameCustomEvent(graph, selectedNode.id) ? (
+            <Button variant="outline" size="sm" onClick={() => setRenameEventOpen(true)}>
+              Rename Event
+            </Button>
+          ) : null}
+          <NamePromptDialog
+            key={selectedNode.id}
+            open={renameEventOpen}
+            onOpenChange={setRenameEventOpen}
+            title="Rename Event"
+            label="Event Name"
+            confirmLabel="Rename"
+            initialValue={formatEventMemberName(String(selectedNode.data.name ?? selectedNode.data.title ?? ""))}
+            validate={(name) => customEventRenameError(graph, selectedNode.id, name)}
+            onSubmit={(name) => persistGraph(renameCustomEvent(graph, selectedNode.id, name, doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined))}
+          />
           <PinListEditor
             title="Outputs"
             rows={eventOutputRows}
@@ -1615,6 +1635,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               persistGraph(patchClassMember(withMember, memberId, { pins }));
             }}
           />
+          </>
         ) : null}
       </div>
       <ClassPicker

@@ -53,6 +53,22 @@ describe("collider visual", () => {
     expect(mesh.getChildMeshes().length).toBeGreaterThan(8);
   });
 
+  it("draws both capsule hemispheres in the front and side planes", () => {
+    const { scene } = createHandle();
+    const mesh = createColliderVisualMesh(scene, "capsule", {
+      kind: "capsule",
+      radius: 0.5,
+      halfHeight: 1,
+    });
+    const centers = mesh.getChildMeshes().map((dash) => dash.position);
+    for (const sign of [-1, 1]) {
+      const cap = centers.filter((point) => point.y * sign > 1.1);
+      expect(cap.some((point) => Math.abs(point.x) > 0.1 && Math.abs(point.z) < 0.01)).toBe(true);
+      expect(cap.some((point) => Math.abs(point.z) > 0.1 && Math.abs(point.x) < 0.01)).toBe(true);
+      expect(Math.max(...cap.map((point) => point.y * sign))).toBeGreaterThan(1.45);
+    }
+  });
+
   it("builds dashed cylinder edges instead of an AABB", () => {
     const { scene } = createHandle();
     const mesh = createColliderVisualMesh(scene, "cyl", {

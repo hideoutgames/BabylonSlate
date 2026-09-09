@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
+  act,
   fireEvent,
   render,
   screen,
@@ -29,6 +30,8 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     refreshAssetRegistry: vi.fn(),
     repathDocument: vi.fn(),
     openDocument: vi.fn(),
+    closeDocumentsForPaths: vi.fn(),
+    repairAfterAssetDelete: vi.fn(async () => {}),
     openDocuments: [] as unknown[],
     setActiveDocument: vi.fn(),
     tabOrder: [] as string[],
@@ -274,7 +277,88 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
 
 describe("ContentBrowserWorkspace grid window", () => {
   beforeEach(() => {
+    docs.repairAfterAssetDelete.mockReset().mockResolvedValue(undefined);
     installRegistry(Array.from({ length: 80 }, (_, index) => texture(index)));
+  });
+
+  it("blocks editing with progress until deletion and reference cleanup finish", async () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([texture(0)]);
+    let finishDelete!: () => void;
+    let finishRepair!: () => void;
+    const deleting = new Promise<void>((resolve) => { finishDelete = resolve; });
+    const repairing = new Promise<void>((resolve) => { finishRepair = resolve; });
+    const deleteAsset = vi.fn(() => deleting);
+    Object.assign(docs.assetRegistry as object, { deleteAsset });
+    docs.repairAfterAssetDelete.mockImplementation(() => repairing);
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+
+    const progress = screen.getByRole("dialog", { name: "Deleting Assets" });
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("0");
+    expect(deleteAsset).not.toHaveBeenCalled();
+    fireEvent.keyDown(progress, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Deleting Assets" })).toBeTruthy();
+    await waitFor(() => expect(deleteAsset).toHaveBeenCalledWith("tex-0"));
+
+    await act(async () => { finishDelete(); });
+    await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalled());
+    expect(screen.getByRole("dialog", { name: "Deleting Assets" }).textContent).toContain("Updating References");
+    await act(async () => { finishRepair(); });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Deleting Assets" })).toBeNull());
+    expect((screen.getByTestId("content-browser-new-asset") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("unblocks editing and reports a deletion failure", async () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([texture(0)]);
+    Object.assign(docs.assetRegistry as object, {
+      deleteAsset: async () => { throw new Error("Storage unavailable"); },
+    });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
+    expect(screen.getByRole("alertdialog", { name: "Delete Failed" }).textContent).toContain("Storage unavailable");
+    expect(screen.queryByRole("dialog", { name: "Deleting Assets" })).toBeNull();
+  });
+
+  it("refreshes the project after deleting an empty folder", async () => {
+    docs.thumbnailsEnabled = false;
+    installRegistry([], ["Empty"]);
+    Object.assign(docs.assetRegistry as object, { deleteFolder: async () => {} });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-folder-assets/Empty"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(
+      new Set(), new Set(), expect.any(Function),
+    ));
+  });
+
+  it("repairs only removed Class assets when a later deletion fails", async () => {
+    docs.thumbnailsEnabled = false;
+    const textureAsset = texture(0);
+    const classAsset = texture(1);
+    textureAsset.header.name = "Enemy";
+    classAsset.header.name = "Enemy";
+    classAsset.header.type = "Class";
+    installRegistry([textureAsset, classAsset]);
+    Object.assign(docs.assetRegistry as object, {
+      deleteAsset: async (guid: string) => {
+        if (guid === "tex-1") throw new Error("Class is locked");
+      },
+    });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
+    expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function));
   });
 
   it("mounts only viewport-near tiles for a large folder", () => {

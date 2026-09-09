@@ -355,6 +355,36 @@ describe("AssetRegistry", () => {
     expect(registry.showReferences("tex-1").inbound).toEqual([]);
   });
 
+  it("preserves folder assets and references when storage deletion fails, then permits retry", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", {
+      guid: "spark-1", type: "Texture", name: "Spark",
+    });
+    await writeAsset(storage, "assets/fx-extra/material.babasset", {
+      guid: "mat-1", type: "Material", name: "Material", dependencies: ["spark-1"],
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.createFolder("project", "fx/empty");
+    const remove = vi.spyOn(storage, "remove").mockRejectedValueOnce(new Error("Storage unavailable"));
+
+    await expect(registry.deleteFolder("project", "fx")).rejects.toThrow("Storage unavailable");
+
+    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.babasset");
+    expect(registry.showReferences("spark-1").inbound).toEqual(["mat-1"]);
+    expect(registry.folderTree("project").children.find((folder) => folder.name === "fx")?.children.some((folder) => folder.name === "empty")).toBe(true);
+    expect(await storage.exists("assets/fx/spark.babasset")).toBe(true);
+
+    remove.mockRestore();
+    await registry.deleteFolder("project", "fx");
+
+    expect(registry.getByGuid("spark-1")).toBeUndefined();
+    expect(registry.showReferences("spark-1").inbound).toEqual([]);
+    expect(registry.folderTree("project").children.map((folder) => folder.name)).toEqual(["fx-extra"]);
+    expect(await storage.exists("assets/fx/spark.babasset")).toBe(false);
+    expect(registry.getByGuid("mat-1")?.path).toBe("assets/fx-extra/material.babasset");
+  });
+
   it("builds a folder tree with nested assets", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/root.babasset", {

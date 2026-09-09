@@ -1035,7 +1035,10 @@ export class ProjectService {
    */
   async clearDeletedAssetReferences(
     deletedGuids: ReadonlySet<string>,
-    options: { deletedClassNames?: ReadonlySet<string> } = {},
+    options: {
+      deletedClassNames?: ReadonlySet<string>;
+      onProgress?: (path: string) => Promise<void>;
+    } = {},
   ): Promise<void> {
     const registry = this.assetRegistry;
     const deletedClassNames = options.deletedClassNames ?? new Set();
@@ -1049,6 +1052,8 @@ export class ProjectService {
       if (isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) continue;
       const kind = documentKindForAssetType(asset.header.type);
       if (!kind) continue;
+
+      await options.onProgress?.(asset.path);
 
       let content:
         | SerializedScene

@@ -74,6 +74,11 @@ export type ColliderTuning = {
   mask?: number;
 };
 
+export type LineTraceOptions = {
+  /** Exclude every collider owned by these actors before selecting a hit. */
+  ignoreActorIds?: readonly string[];
+};
+
 export type HitResult = {
   hit: boolean;
   location: Vec3 | null;

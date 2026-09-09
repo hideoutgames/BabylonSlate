@@ -213,6 +213,17 @@ describe("resolvePlayFrameCap", () => {
 });
 
 describe("Play HUD stats merge", () => {
+  it("keeps rendered FPS when worker timing updates arrive afterward", () => {
+    const rendered = applyPlayFpsSample(undefined, 30);
+    const next = applyWorkerPlayStats(rendered, {
+      fps: 60,
+      scriptMs: 4,
+      physicsMs: 2,
+      frameId: 99,
+    });
+    expect(next).toMatchObject({ fps: 30, scriptMs: 4, physicsMs: 2, frameId: 99 });
+  });
+
   it("keeps worker script and physics ms when the rAF pump only has fps", () => {
     const fromWorker = applyWorkerPlayStats(undefined, {
       fps: 0,
