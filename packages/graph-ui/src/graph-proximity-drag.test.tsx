@@ -185,6 +185,21 @@ describe("GraphEditor proximity dragging", () => {
     expect(graph.emitted.at(-1)?.edges).toHaveLength(1);
   });
 
+  it("requires a fresh preview after a host refresh before connecting on release", () => {
+    const graph = renderDragGraph();
+    graph.start();
+    graph.move();
+    expect(graph.previews()).toHaveLength(1);
+
+    const refreshed = graphWithFreePins();
+    refreshed.nodes[0]!.position = { x: 130, y: 0 };
+    refreshed.nodes[1]!.data.title = "Refreshed Target";
+    graph.setGraph(refreshed);
+    expect(graph.previews()).toHaveLength(0);
+    graph.stop();
+    expect(graph.emitted).toEqual([]);
+  });
+
   it("previews without saving, clears when moving away, and commits the final position on release", () => {
     const graph = renderDragGraph(undefined, {
       defaultEdgeOptions: { type: "smoothstep" },

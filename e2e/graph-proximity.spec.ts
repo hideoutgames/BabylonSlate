@@ -32,15 +32,15 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   const graph: SerializedGraph = {
     nodes: [
       {
-        id: "begin",
-        type: "flow.event.beginPlay",
+        id: "spawn",
+        type: "actor.spawn",
         position: { x: 80, y: 80 },
         data: {},
       },
       {
-        id: "print",
-        type: "debug.print",
-        position: { x: 900, y: 80 },
+        id: "destroy",
+        type: "actor.destroy",
+        position: { x: 2000, y: 80 },
         data: {},
       },
     ],
@@ -61,13 +61,13 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   const preview = editor.locator(".graph-proximity-preview");
   const edges = editor.locator(".react-flow__edge");
   const title = editor
-    .locator('.react-flow__node[data-id="print"]')
-    .getByText("Print", { exact: true });
+    .locator('.react-flow__node[data-id="destroy"]')
+    .getByText("Destroy Actor", { exact: true });
   const source = await center(
-    editor.locator('[data-id="begin"] [data-handleid="execOut"]'),
+    editor.locator('[data-id="spawn"] [data-handleid="execOut"]'),
   );
   const target = await center(
-    editor.locator('[data-id="print"] [data-handleid="execIn"]'),
+    editor.locator('[data-id="destroy"] [data-handleid="execIn"]'),
   );
   const start = await center(title);
   const near = {
@@ -89,13 +89,18 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
       requestAnimationFrame(() => resolve());
     }));
   }
-  await expect(preview).toHaveCount(1);
-  await expect(preview).toHaveCSS("opacity", "0.5");
-  await expect(preview).toHaveCSS("pointer-events", "none");
+  await expect(preview).toHaveCount(2);
+  await expect(preview.first()).toHaveCSS("opacity", "0.5");
+  await expect(preview.first()).toHaveCSS("pointer-events", "none");
   await expect(edges).toHaveCount(0);
 
   // A suggestion is cancelled when the node is moved away before releasing it.
   await page.mouse.move(start.x, start.y, { steps: 10 });
+  await expect(preview).toHaveCount(0);
+  // Re-enter connection range without releasing and picking the node up again.
+  await page.mouse.move(near.x, near.y, { steps: 30 });
+  await expect(preview).toHaveCount(2);
+  await page.mouse.move(start.x, start.y, { steps: 30 });
   await expect(preview).toHaveCount(0);
   await page.mouse.up();
   await expect(edges).toHaveCount(0);
@@ -105,19 +110,25 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
   await page.mouse.move(near.x, near.y, { steps: 10 });
-  await expect(preview).toHaveCount(1);
+  await expect(preview).toHaveCount(2);
   await expect(edges).toHaveCount(0);
   await page.mouse.up();
   await expect(preview).toHaveCount(0);
-  await expect(edges).toHaveCount(1);
+  await expect(edges).toHaveCount(2);
   await expect(page.getByTestId("save-all-project")).toBeEnabled();
   await saveAllIfEnabled(page);
   expect((await readSavedGraph(page)).edges).toEqual([
     expect.objectContaining({
-      source: "begin",
+      source: "spawn",
       sourceHandle: "execOut",
-      target: "print",
+      target: "destroy",
       targetHandle: "execIn",
+    }),
+    expect.objectContaining({
+      source: "spawn",
+      sourceHandle: "out",
+      target: "destroy",
+      targetHandle: "target",
     }),
   ]);
 });
