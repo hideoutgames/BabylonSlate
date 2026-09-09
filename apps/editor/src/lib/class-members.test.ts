@@ -154,6 +154,36 @@ describe("addClassMember", () => {
     expect(graph.nodes[1]?.data.title).toBe("Call On Hit");
   });
 
+  it("renames a custom event and its local calls without changing links or foreign bindings", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    graph = addCallEventNode(graph, { name: "On Hit" }, { idFactory: () => "local" });
+    graph = addCallEventNode(graph, { name: "On Hit" }, {
+      idFactory: () => "foreign", classId: "Other", implicitSelf: false,
+    });
+    graph = addCallEventNode(graph, { name: "On Hit" }, {
+      idFactory: () => "function-call", functionId: "fn-1",
+    });
+    graph.edges = [{ id: "edge", source: "evt-1", target: "local", sourceHandle: "then", targetHandle: "exec" }];
+    const next = patchClassMember(graph, "evt-1", { name: "onDamage" });
+    expect(next.members?.[0]?.name).toBe("On Damage");
+    expect(next.nodes[0]).toMatchObject({ id: "evt-1", data: { name: "On Damage", title: "Event On Damage" } });
+    expect(next.nodes[1]).toMatchObject({ id: "local", data: { name: "On Damage", title: "Call On Damage" } });
+    expect(next.nodes[2]).toEqual(graph.nodes[2]);
+    expect(next.functionGraphs?.["fn-1"]?.nodes[0]?.data.name).toBe("On Damage");
+    expect(next.edges).toEqual(graph.edges);
+    expect(graph.nodes[0]?.data.name).toBe("On Hit");
+  });
+
+  it("rejects empty, duplicate and inherited custom event renames", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    graph = addClassMember(graph, "event", "On Damage", () => "evt-2");
+    for (const name of [" ", "onDamage"]) {
+      expect(patchClassMember(graph, "evt-1", { name })).toBe(graph);
+    }
+    graph.nodes[0]!.data.eventQualifier = "Inherited";
+    expect(patchClassMember(graph, "evt-1", { name: "Different" })).toBe(graph);
+  });
+
   it("uses one id for the event member and node so Class tree remove matches", () => {
     let n = 0;
     const graph = addClassMember(emptyGraph(), "event", "On Hit", () => `id-${++n}`);

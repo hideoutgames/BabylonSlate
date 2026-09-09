@@ -106,6 +106,17 @@ afterEach(() => {
 });
 
 describe("Inspector custom event details", () => {
+  it("renames the selected custom event and its call from Details", () => {
+    renderEventInspector();
+    fireEvent.click(screen.getByRole("button", { name: "Rename Event" }));
+    fireEvent.change(screen.getByLabelText("Event Name"), { target: { value: "onDamage" } });
+    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(next?.members?.[0]?.name).toBe("On Damage");
+    expect(next?.nodes[0]?.data.title).toBe("Event On Damage");
+    expect(next?.nodes[1]?.data.name).toBe("On Damage");
+  });
+
   it("shows an Outputs pin list when the Class-panel event node is selected", () => {
     renderEventInspector();
     expect(screen.getByTestId("inspector-event-outputs")).toBeTruthy();
