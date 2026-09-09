@@ -95,8 +95,9 @@ export function HomepageProjectCard({
         variant="ghost"
         aria-label={`Open Project ${name}`}
         disabled={busy}
-        onClick={() => {
-          if (!busy && !holding.current) onOpen();
+        onClick={(event) => {
+          // Keyboard/assistive activation must not be swallowed by the hold release guard.
+          if (!busy && (event.detail === 0 || !holding.current)) onOpen();
         }}
       />
       <Button

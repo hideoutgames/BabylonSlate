@@ -13,7 +13,7 @@ describe("BrandIcon", () => {
     const { getByTestId } = render(<BrandIcon />);
     const icon = getByTestId("brand-icon");
     expect(icon.tagName).toBe("IMG");
-    expect(icon.getAttribute("alt")).toBe("BabylonSlate");
+    expect(icon.getAttribute("alt")).toBe("Slate");
     expect(icon.getAttribute("src")).toBe(brandIconSrc("light"));
     expect(icon.className).toContain("dark:hidden");
   });

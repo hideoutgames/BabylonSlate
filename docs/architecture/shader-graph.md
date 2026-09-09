@@ -206,7 +206,7 @@ Render would bind a dead GPU object and the preview would stay a white cube
 until the Material tab closed.
 
 The compact `material-preview-overlay` contains only the viewport-style mesh
-`ToggleGroup`. Cube is the document default and the runtime fallback for
+`ToggleGroup`. Preview icons resolve at render time so lazy production chunk initialization cannot leave stale, undefined icon entries. Cube is the document default and the runtime fallback for
 missing/invalid custom bytes. **Custom** opens the existing Model `AssetPicker`
 directly; selecting None or dismissing an initial pick returns to Cube. A
 picked custom Model can be re-picked from the same Custom icon. There is no

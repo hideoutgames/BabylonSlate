@@ -412,6 +412,7 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
             clientY: y,
             pointerId: 1,
             pointerType: "touch",
+            isPrimary: true,
           }),
         );
       });

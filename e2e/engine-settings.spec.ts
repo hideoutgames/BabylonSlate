@@ -63,6 +63,8 @@ test("create project dialog defaults to 1920×1080 stretch", async ({
   await page.goto("/?test=1");
   await expect(page.getByTestId("homepage")).toBeVisible();
   await page.getByTestId("create-project").click();
+  await page.getByTestId("create-project-empty").click();
+  await page.getByText("Options", { exact: true }).click();
   await expect(page.getByTestId("create-project-width")).toHaveValue("1920");
   await expect(page.getByTestId("create-project-height")).toHaveValue("1080");
   await expect(page.getByTestId("create-project-black-bars")).toBeVisible();

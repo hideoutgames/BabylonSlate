@@ -282,11 +282,15 @@ test.describe("Editor density and IA", () => {
       "violet",
     );
 
-    await listed.focus();
+    const openProject = listed.getByRole("button", {
+      name: "Open Project Renamed Game",
+      exact: true,
+    });
+    await openProject.focus();
     await page.keyboard.press("Shift+F10");
     await expect(page.getByTestId("homepage-project-open")).toBeFocused();
     await page.keyboard.press("Escape");
-    await expect(listed).toBeFocused();
+    await expect(openProject).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.locator("[data-slate-home-styles]")).toHaveCount(0);
@@ -308,7 +312,10 @@ test.describe("Editor density and IA", () => {
 
     const listed = page.getByTestId("open-listed-project-TestProject");
     await expect(listed).toBeVisible();
-    await page.getByTestId("remove-listed-project-TestProject").click();
+    await listed
+      .getByRole("button", { name: "Project Actions for TestProject" })
+      .click();
+    await page.getByTestId("homepage-project-remove").click();
     await expect(page.getByTestId("homepage-remove-dialog")).toBeVisible();
     await expect(page.getByTestId("homepage-remove-dialog")).toContainText(
       "Delete Project?",
@@ -316,7 +323,10 @@ test.describe("Editor density and IA", () => {
     await page.getByTestId("homepage-remove-cancel").click();
     await expect(listed).toBeVisible();
 
-    await page.getByTestId("remove-listed-project-TestProject").click();
+    await listed
+      .getByRole("button", { name: "Project Actions for TestProject" })
+      .click();
+    await page.getByTestId("homepage-project-remove").click();
     await page.getByTestId("homepage-remove-confirm").click();
     await expect(listed).toHaveCount(0);
   });

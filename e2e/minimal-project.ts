@@ -1,7 +1,7 @@
 import { defaultEngineSettings } from "../packages/vfs/src/app-settings";
 import { expect, type Page } from "@playwright/test";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
-import { clickListedTestProject } from "./open-test-project";
+import { clickListedTestProject, waitForEditorInteractive } from "./open-test-project";
 
 /** Fresh per-test OPFS fixture for generic chrome, history, and graph tests. */
 export async function openMinimalTestProject(
@@ -66,5 +66,5 @@ export async function openMinimalTestProject(
     page.getByTestId("open-listed-project-TestProject"),
   ).toBeVisible();
   await clickListedTestProject(page);
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+  await waitForEditorInteractive(page);
 }

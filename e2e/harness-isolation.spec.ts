@@ -29,7 +29,10 @@ test("independent contexts isolate OPFS projects and settings on the same owned 
       };
     });
     expect(other.projectExists).toBe(false);
-    expect(other.projects).toBeNull();
+    // The template library initializes its own storage in each context.
+    expect(JSON.parse(other.projects ?? "{}").projects ?? []).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "opfs:TestProject" })]),
+    );
     // App initialization may persist defaults; the first context's recent project must not leak.
     expect(JSON.parse(other.settings ?? "{}").recents ?? []).toEqual([]);
     await expect(firstPage.getByTestId("project-name")).toContainText(
