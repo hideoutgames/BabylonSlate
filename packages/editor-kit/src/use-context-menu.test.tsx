@@ -141,6 +141,34 @@ describe("useContextMenu", () => {
     expect(state()).toBe("closed");
   });
 
+  it("cancels a pending long press when a second finger touches the target", async () => {
+    vi.useFakeTimers();
+    const { target, state } = renderHost();
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    await advancePastLongPress(200);
+    dispatchPointerEvent(target, "pointerdown", {
+      ...ORIGIN,
+      pointerId: 2,
+      isPrimary: false,
+    });
+    await advancePastLongPress();
+    expect(state()).toBe("closed");
+  });
+
+  it("cancels a pending hold when project actions become disabled", async () => {
+    vi.useFakeTimers();
+    const { target, state, rerender } = renderHost();
+    dispatchPointerEvent(target, "pointerdown", ORIGIN);
+    rerender(
+      <TestHost
+        items={[{ id: "a", label: "Action", onSelect: vi.fn() }]}
+        enabled={false}
+      />,
+    );
+    await advancePastLongPress();
+    expect(state()).toBe("closed");
+  });
+
   it("cancels the press when the pointer moves past tolerance", async () => {
     vi.useFakeTimers();
     const { target, state } = renderHost();

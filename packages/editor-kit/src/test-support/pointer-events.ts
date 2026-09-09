@@ -8,6 +8,7 @@
 export interface PointerInit {
   pointerId?: number;
   pointerType?: "touch" | "mouse" | "pen";
+  isPrimary?: boolean;
   clientX?: number;
   clientY?: number;
   ctrlKey?: boolean;
@@ -23,6 +24,7 @@ export function dispatchPointerEvent(
   const {
     pointerId = 1,
     pointerType = "touch",
+    isPrimary = true,
     clientX = 0,
     clientY = 0,
     ctrlKey = false,
@@ -42,6 +44,7 @@ export function dispatchPointerEvent(
 
   Object.defineProperty(event, "pointerId", { value: pointerId });
   Object.defineProperty(event, "pointerType", { value: pointerType });
+  Object.defineProperty(event, "isPrimary", { value: isPrimary });
 
   target.dispatchEvent(event);
 }
