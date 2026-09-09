@@ -1147,21 +1147,6 @@ export function ContentBrowserWorkspace({
     const oursToRelease = oursLockPaths([...paths], (path) =>
       sourceControl.lockStateForPath(path),
     );
-    const deletedGuids = contentBrowserDeletingGuids({
-      extraGuids: deleteTarget.guids,
-      folderPaths: folders,
-      assets: allAssets,
-    });
-    const deletedClassNames = new Set<string>();
-    for (const guid of deletedGuids) {
-      const asset = assetRegistry.getByGuid(guid);
-      if (
-        asset &&
-        (asset.header.type === "Class" || asset.header.type === "Graph")
-      ) {
-        deletedClassNames.add(asset.header.name);
-      }
-    }
     const individualGuids = deleteTarget.kind === "folder"
       ? []
       : deleteTarget.guids.filter((guid) => {
@@ -1217,7 +1202,8 @@ export function ContentBrowserWorkspace({
             }
           }
           const removedClassNames = new Set(allAssets
-            .filter((asset) => removedGuids.has(asset.header.guid) && deletedClassNames.has(asset.header.name))
+            .filter((asset) => removedGuids.has(asset.header.guid) &&
+              (asset.header.type === "Class" || asset.header.type === "Graph"))
             .map((asset) => asset.header.name));
           await repairAfterAssetDelete(removedGuids, removedClassNames, (name) =>
             reportProgress(`Updating References: ${name}`),
