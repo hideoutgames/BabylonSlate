@@ -1,7 +1,7 @@
 import { Color3, Material, Mesh, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent } from "@babylonslate/core";
-import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
+import { createDefaultSpritePayload, createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
@@ -137,11 +137,19 @@ describe("tilemap rendering", () => {
     sync.dispose();
   });
 
-  it("releases old tilemap materials when painted content rebuilds", () => {
+  it("releases old tilemap and sprite materials when painted content rebuilds", () => {
     const { assets, actor, tilemap } = content();
+    const sprite = { ...createDefaultSpritePayload(), textureGuid: "atlas" };
+    assets.spritePayloads = new Map([["sprite", sprite]]);
+    const spriteActor = createActor("sprite", "Sprite", {
+      components: [{
+        id: "sprite-component", classId: "SpriteComponent",
+        properties: { assetGuid: "sprite" },
+      }],
+    });
     const sync = new EditorSceneSync(handle.scene);
     sync.setMeshAssets(assets);
-    sync.apply({ ...createDefaultScene(), actors: [actor] });
+    sync.apply({ ...createDefaultScene(), actors: [actor, spriteActor] });
     const count = handle.scene.materials.length;
 
     for (const tileId of [2, 1, 2]) {
