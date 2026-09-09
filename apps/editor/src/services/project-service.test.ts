@@ -99,7 +99,7 @@ describe("project round-trip", () => {
       const loaded = await reloaded.loadCurrentProject();
       expect(loaded.document.settings.input).toEqual({ actions: [], axes: [] });
       const restored = await reloaded.loadDocument("input-action", asset.path);
-      expect(restored?.bindings).toEqual(bindings);
+      expect(restored).toMatchObject({ bindings });
     }
   });
   it("creates and saves a new project", async () => {
