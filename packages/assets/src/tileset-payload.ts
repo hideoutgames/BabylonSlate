@@ -134,8 +134,8 @@ export function tilesetTileRect(
  * Normalized UVs for a 1-based atlas cell. Image-space row 0 is the top of the
  * texture; GL `v=0` is the bottom, so V is flipped. Inset by half a texel so
  * NEAREST sampling does not sit on a shared atlas edge (neighbor bleed /
- * alpha-test holes). Paint still uses `tilesetTileRect`. Pair with world-space
- * quad overlap in `tilemapChunkVertexData` so inset UVs do not open a crack.
+ * alpha-test holes). Paint still uses `tilesetTileRect`. The inset affects
+ * sampling only; tilemap geometry remains exactly on the shared grid edges.
  */
 export function tilesetTileUv(
   tileset: TilesetPayload,

@@ -179,6 +179,7 @@ export function applyAlbedoTexture(
   );
   const material = new StandardMaterial(`albedo:${textureGuid}`, scene);
   material.disableLighting = true;
+  texture.hasAlpha = true;
   material.diffuseTexture = texture;
   material.emissiveTexture = texture;
   material.emissiveColor = Color3.White();
@@ -187,6 +188,8 @@ export function applyAlbedoTexture(
   material.alphaCutOff = 0.4;
   mesh.material = material;
 }
+
+const tilemapMaterials = new WeakMap<AbstractMesh, StandardMaterial>();
 
 /** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */
 export function applyTilemapAlbedoTextures(
@@ -198,12 +201,22 @@ export function applyTilemapAlbedoTextures(
   imageProcessing.isEnabled = false;
   for (const child of mesh.getChildMeshes()) {
     const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
+    const before = child.material;
     applyAlbedoTexture(child, scene, guid, assets);
-    if (child.material instanceof StandardMaterial) {
-      // Tilemaps remain readable from either side, including inside 3D actors.
-      child.material.backFaceCulling = false;
-      child.material.fogEnabled = false;
-      child.material.imageProcessingConfiguration = imageProcessing;
+    const material = child.material;
+    if (material === before || !(material instanceof StandardMaterial)) continue;
+    const previous = tilemapMaterials.get(child);
+    previous?.dispose(false, false);
+    if (!previous) {
+      child.onDisposeObservable.addOnce(() => {
+        tilemapMaterials.get(child)?.dispose(false, false);
+        tilemapMaterials.delete(child);
+      });
     }
+    tilemapMaterials.set(child, material);
+    // Tilemaps remain readable from either side, including inside 3D actors.
+    material.backFaceCulling = false;
+    material.fogEnabled = false;
+    material.imageProcessingConfiguration = imageProcessing;
   }
 }
