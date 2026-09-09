@@ -25,7 +25,7 @@ export function PanelFrame({
       {showHeader ? (
         <header
           className={cn(
-            "flex min-h-[var(--chrome-row,28px)] shrink-0 items-center gap-1 border-b border-border bg-card px-2",
+            "flex min-h-[var(--chrome-row,28px)] shrink-0 items-center gap-1 border-b border-border bg-panel-header px-2",
             title ? "justify-between" : "justify-end",
           )}
         >

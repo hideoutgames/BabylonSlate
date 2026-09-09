@@ -83,15 +83,18 @@ Missing settings normalize to disabled (a stray `token` field is dropped and nev
 `SourceControlService` constructs Git LFS (native) or Fake (test mode) only when `enabled` **and** the host is ios/android/electron (or test mode). Dispose on Close Project.
 
 - **Auto-lock** on the first mutating `applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange` (after the plugin read-only check). Once per path per session. If verify already lists the path as ours, create is skipped. 201 / already-ours (409 then verify lists the path as ours): held. 409 theirs or network failure: edit still applies; persistent unlocked banner. Failure never blocks.
-- **Advisory open**: always succeeds. Theirs starts `lockEditMode: "readonly"` with holder + age banner and **Edit Anyway**. Ours / unlocked: normal edit.
-- **Release is explicit only.** **Release All My Locks** (confirm: unpushed work becomes editable by others) plus per-asset Release. Nothing on timer, close, or heuristic. **Force Unlock** is for stale / others’ locks.
+- **Advisory open**: always succeeds. Theirs starts `lockEditMode: "readonly"` with holder + age banner and **Edit Anyway**. The banner explains that editing may conflict with the owner's changes. Ours / unlocked: normal edit.
+- **Release is explicit only.** **Release All My Locks** (confirm: unpushed work becomes editable by others) plus per-asset Release. Nothing on timer, close, or heuristic. **Force Unlock** confirms the asset and owner before removing another person's lock.
+- **Failed lock actions** keep the affected cached locks and display the provider's error. Retrying a successful unlock clears the error; Release All keeps only locks that could not be released and identifies their paths.
 - **Moves / renames / deletes:** path-keyed. Asset rename, asset move, folder rename, folder move, and folder delete walk contained asset paths. Ours → unlock old + lock new (`transferLock`). Delete of ours unlocks the old path (`releasePath`) and does not create a new lock. Theirs → refuse with the holder name before mutating. Copy does not transfer locks.
 - **Content Browser:** reserved `data-lock-slot` — ours `data-lock-state="mine"`; theirs `data-lock-state="theirs"` plus owner name; unlocked empty. No git modified/untracked badges.
-- **Locks** DockView window (`id: "locks"`) is listed for every `DockviewDocumentKind` only when `sourceControl: true` is passed into `listDockWindows`. Off: zero Windows-menu difference. Empty list copy is **No Locks.**
+- **Locks** DockView window (`id: "locks"`) is listed for every `DockviewDocumentKind` only when `sourceControl: true` is passed into `listDockWindows`. Off: zero Windows-menu difference. **No Locks.** is shown only after a successful check. Refreshing, unavailable, and disabled states remain distinct; the last successful check time stays visible.
 
 ### Poll (`LockPollScheduler`)
 
 Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resume()`; no tick while paused. Editor: project open, Content Browser focus, manual Refresh, foreground = resume + immediate tick; background = pause.
+
+`SourceControlService.refreshState` exposes status, an error message, and `lastSuccessAt`. A failed check keeps the cached lock list and identifies it as the last known result. **Refresh** retries the check. A successful retry clears the error; superseded requests and replies after reconfiguration or disposal cannot replace current state.
 
 ## External change (mtime, not git)
 

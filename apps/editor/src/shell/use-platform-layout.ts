@@ -28,10 +28,14 @@ export function usePhoneLayout(): boolean {
   return useMediaQuery(PHONE_LAYOUT_QUERY);
 }
 
+export function useCoarsePointer(): boolean {
+  return useMediaQuery("(pointer: coarse)");
+}
+
 export function usePlatformLayoutOptions() {
   const mobile = isMobilePlatform();
   const singleWindow = usePhoneLayout();
-  const touch = useMediaQuery("(pointer: coarse)");
+  const touch = useCoarsePointer();
   return {
     singleWindow,
     disableFloatingGroups: mobile || singleWindow,

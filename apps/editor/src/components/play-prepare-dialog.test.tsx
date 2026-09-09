@@ -1,12 +1,21 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { PlayPrepareDialog } from "./play-prepare-dialog";
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe("PlayPrepareDialog", () => {
+  it("explains a long preparation without offering unsafe save cancellation", () => {
+    vi.useFakeTimers();
+    render(<PlayPrepareDialog open phase="saving" dirtyNames={["Main"]} />);
+    expect(screen.queryByText(/Taking longer than usual/)).toBeNull();
+    act(() => vi.advanceTimersByTime(10000));
+    expect(screen.getByText(/Taking longer than usual/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
   it("lists dirty document names and the current prepare phase", () => {
     const { getByTestId } = render(
       <PlayPrepareDialog

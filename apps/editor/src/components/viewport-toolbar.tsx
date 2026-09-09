@@ -1,5 +1,10 @@
-import { NestedMenu, NumberPromptDialog, type NestedMenuItem } from "@babylonslate/editor-kit";
+import {
+  NestedMenu,
+  NumberPromptDialog,
+  type NestedMenuItem,
+} from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { Badge } from "@babylonslate/ui/components/badge";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   ToggleGroup,
@@ -60,9 +65,9 @@ export function ViewportToolbar({
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
   const { flySpeed, gridSize } = useEditorViewportPrefs();
-  const [numberPrompt, setNumberPrompt] = useState<
-    null | "grid" | "camera"
-  >(null);
+  const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
+    null,
+  );
   const {
     gizmoTool,
     setGizmoTool,
@@ -92,6 +97,16 @@ export function ViewportToolbar({
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  const snapIncrement =
+    gizmoTool === "rotate"
+      ? `${scene?.settings.grid.snapRotateDeg ?? 15}°`
+      : gizmoTool === "scale"
+        ? (scene?.settings.grid.snapScale ?? 0.25)
+        : scene
+          ? viewportMode === "2d"
+            ? (scene.settings.grid.tileSize ?? 1)
+            : (scene.settings.grid.snapTranslate ?? 1)
+          : gridSize;
 
   const setMode = (next: "2d" | "3d") => {
     setViewportMode(next);
@@ -278,26 +293,21 @@ export function ViewportToolbar({
         >
           {TOOLS.map((tool) => {
             const Icon = tool.icon;
-            const active = gizmoTool === tool.id;
             return (
-              <ToggleGroupItem
-                key={tool.id}
-                value={tool.id}
-                aria-label={tool.label}
-                data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
-              >
-                <Icon />
-                <span
-                  data-testid="gizmo-tool-label"
-                  className="grid min-w-0 overflow-hidden transition-[grid-template-columns] duration-200 ease-out"
-                  style={{ gridTemplateColumns: active ? "1fr" : "0fr" }}
-                  aria-hidden={!active}
-                >
-                  <span className="min-w-0 overflow-hidden whitespace-nowrap">
-                    {tool.label}
-                  </span>
-                </span>
-              </ToggleGroupItem>
+              <Tooltip key={tool.id}>
+                <TooltipTrigger
+                  render={
+                    <ToggleGroupItem
+                      value={tool.id}
+                      aria-label={tool.label}
+                      data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
+                    >
+                      <Icon />
+                    </ToggleGroupItem>
+                  }
+                />
+                <TooltipContent>{tool.label}</TooltipContent>
+              </Tooltip>
             );
           })}
         </ToggleGroup>
@@ -315,10 +325,14 @@ export function ViewportToolbar({
               data-testid={`${testIdPrefix}gizmo-snap-toggle`}
             >
               <MagnetIcon />
+              <span className="tabular-nums">{snapIncrement}</span>
             </Toggle>
           }
         />
-        <TooltipContent>Snap Grid</TooltipContent>
+        <TooltipContent>
+          Snap {TOOLS.find((tool) => tool.id === gizmoTool)?.label} To{" "}
+          {snapIncrement}
+        </TooltipContent>
       </Tooltip>
       {showDragSelect ? (
         <Tooltip>
@@ -371,33 +385,41 @@ export function ViewportToolbar({
         <Settings2Icon />
       </NestedMenu>
       {showViewportModeToggle ? (
-      <ToggleGroup
-        variant="outline"
-        size="sm"
-        spacing={1}
-        value={[viewportMode]}
-        onValueChange={(value) => {
-          const next = value[0];
-          if (next === "2d" || next === "3d") setMode(next);
-        }}
-        aria-label="2D / 3D"
-        data-testid={`${testIdPrefix}viewport-mode-toggle`}
-      >
-        <ToggleGroupItem
-          value="3d"
-          aria-label="3D viewport"
-          data-testid={`${testIdPrefix}viewport-mode-3d`}
+        <ToggleGroup
+          variant="outline"
+          size="sm"
+          spacing={1}
+          value={[viewportMode]}
+          onValueChange={(value) => {
+            const next = value[0];
+            if (next === "2d" || next === "3d") setMode(next);
+          }}
+          aria-label="2D / 3D"
+          data-testid={`${testIdPrefix}viewport-mode-toggle`}
         >
-          3D
-        </ToggleGroupItem>
-        <ToggleGroupItem
-          value="2d"
-          aria-label="2D viewport"
-          data-testid={`${testIdPrefix}viewport-mode-2d`}
-        >
-          2D
-        </ToggleGroupItem>
-      </ToggleGroup>
+          <ToggleGroupItem
+            value="3d"
+            aria-label="3D viewport"
+            data-testid={`${testIdPrefix}viewport-mode-3d`}
+          >
+            3D
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="2d"
+            aria-label="2D viewport"
+            data-testid={`${testIdPrefix}viewport-mode-2d`}
+          >
+            2D
+          </ToggleGroupItem>
+        </ToggleGroup>
+      ) : null}
+      {viewportShadingMode !== "pbr" ? (
+        <Badge variant="secondary">
+          {viewportShadingMode === "wireframe" ? "Wireframe" : "Unlit"}
+        </Badge>
+      ) : null}
+      {previewGameCamera ? (
+        <Badge variant="secondary">Game Camera</Badge>
       ) : null}
       <NumberPromptDialog
         open={numberPrompt === "grid"}

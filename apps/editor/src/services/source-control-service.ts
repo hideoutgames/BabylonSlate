@@ -16,6 +16,12 @@ import type { SecretStore } from "@babylonslate/vfs";
 
 export type DocumentLockEditMode = "editable" | "readonly" | "edit-anyway";
 
+export interface LockRefreshState {
+  status: "idle" | "refreshing" | "ready" | "error";
+  error: string | null;
+  lastSuccessAt: number | null;
+}
+
 export type DocumentLockBanner =
   | { kind: "theirs"; lock: FileLock }
   | { kind: "unlocked"; message: string };
@@ -77,6 +83,18 @@ export class SourceControlService {
   private tokenSaved = false;
   private listeners = new Set<() => void>();
   private providerIdentity = "";
+  private refreshRevision = 0;
+  private providerRevision = 0;
+  private lockRefreshState: LockRefreshState = { status: "idle", error: null, lastSuccessAt: null };
+  private lastOperationError: string | null = null;
+
+  get refreshState(): Readonly<LockRefreshState> {
+    return this.lockRefreshState;
+  }
+
+  get operationError(): string | null {
+    return this.lastOperationError;
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -166,6 +184,9 @@ export class SourceControlService {
     ].join("|");
     if (!this.settings.enabled) {
       this.scheduler?.stop();
+      this.refreshRevision += 1;
+      this.providerRevision += 1;
+      this.lockRefreshState = { ...this.lockRefreshState, status: "idle", error: null };
       this.emit();
       return;
     }
@@ -183,6 +204,10 @@ export class SourceControlService {
       return;
     }
     this.providerIdentity = identity;
+    this.lastOperationError = null;
+    this.refreshRevision += 1;
+    this.providerRevision += 1;
+    this.lockRefreshState = { status: "idle", error: null, lastSuccessAt: null };
     this.scheduler?.stop();
     this.scheduler = null;
     this.provider = null;
@@ -232,6 +257,10 @@ export class SourceControlService {
   }
 
   dispose(): void {
+    this.lastOperationError = null;
+    this.refreshRevision += 1;
+    this.providerRevision += 1;
+    this.lockRefreshState = { status: "idle", error: null, lastSuccessAt: null };
     this.scheduler?.stop();
     this.scheduler = null;
     this.provider = null;
@@ -258,12 +287,34 @@ export class SourceControlService {
   }
 
   async refresh(): Promise<void> {
-    if (!this.provider) return;
-    const result = await this.provider.verify();
-    if (!isOk(result)) return;
-    this.locksByPath.clear();
-    for (const lock of [...result.value.ours, ...result.value.theirs]) {
-      this.locksByPath.set(lock.path, lock);
+    const provider = this.provider;
+    if (!provider || !this.settings.enabled) return;
+    const revision = ++this.refreshRevision;
+    this.lockRefreshState = { ...this.lockRefreshState, status: "refreshing", error: null };
+    this.emit();
+    try {
+      const result = await provider.verify();
+      if (revision !== this.refreshRevision) return;
+      if (!isOk(result)) {
+        this.lockRefreshState = {
+          ...this.lockRefreshState,
+          status: "error",
+          error: result.error.message || "Could not refresh locks. Check the connection and saved token.",
+        };
+      } else {
+        this.locksByPath.clear();
+        for (const lock of [...result.value.ours, ...result.value.theirs]) {
+          this.locksByPath.set(lock.path, lock);
+        }
+        this.lockRefreshState = { status: "ready", error: null, lastSuccessAt: Date.now() };
+      }
+    } catch (error) {
+      if (revision !== this.refreshRevision) return;
+      this.lockRefreshState = {
+        ...this.lockRefreshState,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
     this.emit();
   }
@@ -358,29 +409,53 @@ export class SourceControlService {
 
   async release(id: string): Promise<void> {
     if (!this.provider) return;
-    const result = await this.provider.unlock(id);
-    if (isOk(result)) {
-      this.removeLockId(id);
-      this.emit();
-    }
+    const revision = this.providerRevision;
+    this.lastOperationError = null;
+    this.emit();
+    const error = await this.releaseLock(id);
+    if (revision !== this.providerRevision) return;
+    this.lastOperationError = error;
+    this.emit();
   }
 
   async releaseAllMine(): Promise<void> {
     if (!this.provider) return;
+    const revision = this.providerRevision;
+    this.lastOperationError = null;
+    this.emit();
     const mine = this.locks.filter((lock) => lock.ours);
+    const errors: string[] = [];
     for (const lock of mine) {
-      const result = await this.provider.unlock(lock.id);
-      if (isOk(result)) this.removeLockId(lock.id);
+      const error = await this.releaseLock(lock.id);
+      if (error) errors.push(`${lock.path}: ${error}`);
     }
+    if (revision !== this.providerRevision) return;
+    this.lastOperationError = errors.length ? errors.join("; ") : null;
     this.emit();
   }
 
   async forceUnlock(id: string): Promise<void> {
     if (!this.provider) return;
-    const result = await this.provider.unlock(id, { force: true });
-    if (isOk(result)) {
-      this.removeLockId(id);
-      this.emit();
+    const revision = this.providerRevision;
+    this.lastOperationError = null;
+    this.emit();
+    const error = await this.releaseLock(id, true);
+    if (revision !== this.providerRevision) return;
+    this.lastOperationError = error;
+    this.emit();
+  }
+
+  private async releaseLock(id: string, force = false): Promise<string | null> {
+    const provider = this.provider;
+    const revision = this.providerRevision;
+    if (!provider) return "Source control is unavailable.";
+    try {
+      const result = await (force ? provider.unlock(id, { force: true }) : provider.unlock(id));
+      if (!isOk(result)) return result.error.message || "Could not release the lock. Try again.";
+      if (revision === this.providerRevision) this.removeLockId(id);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
     }
   }
 

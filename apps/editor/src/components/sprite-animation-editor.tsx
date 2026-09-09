@@ -34,6 +34,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
+import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-status";
 import { PauseIcon, PlayIcon, PlusIcon, RepeatIcon, Trash2Icon } from "lucide-react";
 
 type SpriteAnimationEditingValue = {
@@ -131,12 +132,9 @@ export function SpriteAnimationPreview({
   const animation = asPayload(payload);
   const { selectedFrameIndex, setSelectedFrameIndex } =
     useSpriteAnimationSelection(animation.frames.length);
-  const { assetRegistry, readAssetChunk } = useDocuments();
   const frame = animation.frames[selectedFrameIndex];
-  const texture = (assetRegistry?.list() ?? []).find(
-    (asset) => asset.header.guid === frame?.textureGuid,
-  );
-  const [url, setUrl] = useState<string | null>(null);
+  const preview = useTexturePreview(frame?.textureGuid);
+  const { url } = preview;
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
   const [timeMs, setTimeMs] = useState(0);
@@ -189,25 +187,6 @@ export function SpriteAnimationPreview({
     return () => cancelAnimationFrame(rafId);
   }, [playing, setSelectedFrameIndex]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setUrl(null);
-    if (!texture || !readAssetChunk) return;
-    void (async () => {
-      const bytes = await readAssetChunk(texture.path, "pixels");
-      if (!bytes || cancelled || bytes.byteLength === 0) return;
-      objectUrl = URL.createObjectURL(
-        new Blob([bytes], { type: "image/png" }),
-      );
-      if (!cancelled) setUrl(objectUrl);
-    })();
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [readAssetChunk, texture]);
-
   const pivot = parseSpritePivot(frame?.pivot);
   const collision = parseSpriteCollision(frame?.collision);
   const imageWidth = frame?.width && frame.width > 0 ? frame.width : 0;
@@ -249,11 +228,11 @@ export function SpriteAnimationPreview({
         }}
       >
         {url ? (
-          <img src={url} alt="" className="absolute inset-0 size-full object-contain" />
+          <img src={url} alt="" onError={preview.fail} className="absolute inset-0 size-full object-contain" />
         ) : (
-          <p className="absolute inset-0 flex items-center justify-center p-3 text-center text-sm text-muted-foreground">
-            {frame?.textureGuid ? "Loading texture…" : "No Texture"}
-          </p>
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/90">
+            <TexturePreviewStatus preview={preview} />
+          </div>
         )}
         <div
           data-testid="sprite-animation-image-box"
@@ -305,7 +284,7 @@ export function SpriteAnimationPreview({
           {playing ? (
             <PauseIcon className="icon-sm" />
           ) : (
-            <PlayIcon className="icon-sm" />
+            <PlayIcon fill="currentColor" />
           )}
         </IconActionButton>
         <Toggle

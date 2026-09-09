@@ -234,7 +234,7 @@ export function AudioPreview({
           {playing ? (
             <SquareIcon className="icon-sm" />
           ) : (
-            <PlayIcon className="icon-sm" />
+            <PlayIcon fill="currentColor" />
           )}
         </IconActionButton>
         <Toggle

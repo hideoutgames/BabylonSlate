@@ -58,6 +58,33 @@ const begin: PaletteNode = {
 };
 
 describe("NodePalette", () => {
+  it("adds the keyboard-selected search result without requiring row tabbing", () => {
+    const onAddNode = vi.fn();
+    const { getByPlaceholderText, getByTestId } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[log, begin]}
+        onAddNode={onAddNode}
+      />,
+    );
+    const input = getByPlaceholderText("Search nodes");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(
+      getByTestId("node-palette-item-flow.event.beginPlay").getAttribute(
+        "aria-selected",
+      ),
+    ).toBe("true");
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(onAddNode).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAddNode).toHaveBeenCalledWith(begin);
+    onAddNode.mockClear();
+    fireEvent.change(input, { target: { value: "no-such-node" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAddNode).not.toHaveBeenCalled();
+  });
   it("defaults the Context Sensitive switch to on", () => {
     const { getByTestId, getByText } = render(
       <NodePalette
@@ -229,7 +256,7 @@ describe("NodePalette", () => {
         "clientHeight",
         clientHeightDescriptor,
       );
-    }
+    } else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
   });
 
   it("mounts every palette item when the catalog body height is 0", () => {

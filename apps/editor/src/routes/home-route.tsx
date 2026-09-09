@@ -38,7 +38,7 @@ export default function HomeRoute() {
         onUpdateProject={updateListedProject}
         onRemoveFromList={removeListedProject}
         onReconnect={reconnectProject}
-        onRecover={() => void keepRecovery()}
+        onRecover={keepRecovery}
         onDismissRecovery={() => void dismissRecovery()}
         onSettingsChanged={refreshTemplates}
       />

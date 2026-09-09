@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { TREE_ROW_HEIGHT, WINDOWED_SLICE_OVERSCAN } from "@babylonslate/editor-kit";
 import { OutputLogPanel } from "./output-log-panel";
@@ -34,6 +34,24 @@ function stubScrollViewportHeight(height: number): () => void {
 }
 
 describe("OutputLogPanel", () => {
+  it("reserves separate touch targets for selectable log rows on coarse pointers", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(pointer: coarse)", media: query, onchange: null,
+      addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true,
+    }));
+    try {
+      render(<OutputLogPanel {...({} as IDockviewPanelProps)} />);
+      const row = screen.getAllByTestId("output-log-line")[0]!;
+      expect(Number.parseFloat(row.parentElement?.style.height ?? "0")).toBeGreaterThanOrEqual(44);
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it("opens a readable selected log message without expanding every row", () => {
+    render(<OutputLogPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getAllByTestId("output-log-line")[0]!);
+    const details = within(screen.getByRole("region", { name: "Log Details" }));
+    expect(details.getByText("log line 0")).toBeTruthy();
+    expect(details.getByRole("button", { name: "Copy" })).toBeTruthy();
+  });
   afterEach(() => {
     cleanup();
   });

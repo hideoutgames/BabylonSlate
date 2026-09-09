@@ -57,6 +57,13 @@ afterEach(() => {
 });
 
 describe("SpriteAnimation editor", () => {
+  it("identifies a missing frame texture without a loading dead end", () => {
+    const payload = createDefaultSpriteAnimationPayload();
+    payload.frames[0]!.textureGuid = "missing";
+    render(<SpriteAnimationPreview payload={payload as unknown as Record<string, unknown>} />);
+    expect(screen.getByText("Missing Texture")).toBeTruthy();
+    expect(screen.queryByText(/Loading texture/i)).toBeNull();
+  });
   it("lets the author pick a Texture for the current frame", async () => {
     const payload = createDefaultSpriteAnimationPayload();
     const onChange = vi.fn();

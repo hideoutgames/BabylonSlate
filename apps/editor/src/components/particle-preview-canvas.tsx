@@ -18,10 +18,12 @@ import {
 } from "@babylonslate/render";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
+import { Button } from "@babylonslate/ui/components/button";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import {
@@ -85,6 +87,7 @@ export function ParticlePreviewCanvas({
     useDocuments();
   const [engine, setEngine] = useState<Engine | null>(null);
   const [booted, setBooted] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [skipped, setSkipped] = useState<ParticleServiceDiagnostic | null>(
     null,
   );
@@ -121,6 +124,16 @@ export function ParticlePreviewCanvas({
     let materials: ReturnType<typeof createParticleMaterialResolver> | null =
       null;
     let frame = 0;
+    const disposePreview = () => {
+      service?.dispose();
+      service = null;
+      materials?.dispose();
+      materials = null;
+      presenter?.dispose();
+      presenter = null;
+      host?.dispose();
+      host = null;
+    };
     void (async () => {
       const bytes = new Map<string, Uint8Array>();
       const assets = assetRegistry?.list() ?? [];
@@ -173,10 +186,7 @@ export function ParticlePreviewCanvas({
           play: true,
         });
       } catch {
-        presenter?.dispose();
-        host?.dispose();
-        service?.dispose();
-        materials?.dispose();
+        disposePreview();
         if (!cancelled) {
           setSkipped({
             code: "particle.apply_failed",
@@ -187,17 +197,11 @@ export function ParticlePreviewCanvas({
         return;
       }
       if (cancelled) {
-        presenter?.dispose();
-        host?.dispose();
-        service?.dispose();
-        materials?.dispose();
+        disposePreview();
         return;
       }
       if ((service?.stats().systems ?? 0) === 0) {
-        presenter.dispose();
-        host.dispose();
-        service.dispose();
-        materials.dispose();
+        disposePreview();
         setSkipped(
           diagnostics[0] ?? {
             code: "particle.missing_texture",
@@ -214,14 +218,17 @@ export function ParticlePreviewCanvas({
         frame = window.requestAnimationFrame(tick);
       };
       frame = window.requestAnimationFrame(tick);
-    })();
+    })().catch((error: unknown) => {
+      disposePreview();
+      if (!cancelled) {
+        setSkipped({ code: "particle.apply_failed", message: error instanceof Error ? error.message : "The particle preview could not load." });
+        setBooted(true);
+      }
+    });
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
-      service?.dispose();
-      materials?.dispose();
-      presenter?.dispose();
-      host?.dispose();
+      disposePreview();
     };
   }, [
     assetRegistry,
@@ -232,9 +239,10 @@ export function ParticlePreviewCanvas({
     readAssetChunk,
     showSkybox,
     systemGuid,
+    attempt,
   ]);
 
-  if (look === "no-emitters" || skipped?.code === "particle.unknown_emitter") {
+  if (look === "no-emitters") {
     return (
       <PreviewStatusEmpty
         testId="particle-preview-empty"
@@ -243,12 +251,12 @@ export function ParticlePreviewCanvas({
       />
     );
   }
-  if (look === "no-texture" || skipped?.code === "particle.missing_texture") {
+  if (look === "no-texture") {
     return (
       <PreviewStatusEmpty
         testId="particle-preview-empty"
         title="No Texture"
-        description="Pick a Texture on the Particle Emitter. Billboard quads sample that Texture."
+        description="Pick a Texture in the Particle Emitter's Details to preview its particles."
       />
     );
   }
@@ -260,6 +268,19 @@ export function ParticlePreviewCanvas({
         className="h-full w-full"
         data-testid={testId}
       />
+      {skipped ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-background">
+          <Empty role="status">
+            <EmptyHeader>
+              <EmptyTitle>{skipped.code === "particle.missing_texture" ? "No Texture" : skipped.code === "particle.unknown_emitter" ? "Missing Emitter" : "Preview Failed"}</EmptyTitle>
+              <EmptyDescription>{skipped.message} Check the emitter settings and linked assets in Details.</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}>Retry</Button>
+            </EmptyContent>
+          </Empty>
+        </div>
+      ) : null}
       {!booted ? (
         <div className="absolute inset-0">
           <PreviewStatusEmpty

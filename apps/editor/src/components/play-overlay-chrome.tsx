@@ -63,7 +63,7 @@ export function PlayOverlayChrome({
           onClick={onPauseToggle}
         >
           {paused ? (
-            <PlayIcon data-icon="inline-start" />
+            <PlayIcon data-icon="inline-start" fill="currentColor" />
           ) : (
             <PauseIcon data-icon="inline-start" />
           )}

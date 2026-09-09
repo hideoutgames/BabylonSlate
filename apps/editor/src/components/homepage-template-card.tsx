@@ -80,6 +80,7 @@ export function TemplatePickCard({
       className={cn(
         "homepage-template-card w-52 shrink-0 cursor-pointer gap-0 py-0",
         selected ? "ring-2 ring-primary" : "",
+        disabled && "cursor-default opacity-50",
         className,
       )}
       onPointerDown={touch.onPointerDown}
