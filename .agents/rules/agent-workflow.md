@@ -12,6 +12,7 @@
 - Fix local failures before opening a PR. If verification cannot run, repair the local setup where possible; otherwise report the concrete blocker and do not open a PR.
 - For local tests, Verify CI, and slot waits, read and apply [wait-efficiently](../skills/wait-efficiently/SKILL.md). Launch one foreground `pnpm --silent agent:wait` helper, retain its session, and keep polling/full logs out of the conversation. Default to start/end reporting except for host-required updates. A timeout, cancellation, stale result, or changed source is not a pass.
 - Keep `BL_TEST_PROFILE=shared` when several agents are active. Admission allows three one-worker phases while enforcing aggregate memory, browser, and host-headroom limits; Node tooling and docs builds have smaller profiles than application builds. Use `fast` only for a single active agent with measured headroom.
+- Use the per-user resource configuration described in [local execution settings](../../docs/architecture/testing.md#local-test-execution). A configured low-memory profile serializes heavy jobs, permits bounded bypass by fitting lightweight checks, and shares matching build artifacts across worktrees. Honor this machine's available memory; do not ask the user to close apps as the routine solution, override reservations per checkout, or bypass source/configuration validation. Older worktrees adopt the runner through their normal integration of `main`.
 
 ## Documentation
 

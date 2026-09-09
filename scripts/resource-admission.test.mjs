@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -22,7 +23,12 @@ import { runCommand } from "./process-runner.mjs";
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), "test admission "));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  return { directory, pollMs: 5, freeMemory: () => 16 * 1024 ** 3 };
+  return {
+    directory,
+    env: { BL_LOCAL_RESOURCE_CONFIG: "" },
+    pollMs: 5,
+    freeMemory: () => 16 * 1024 ** 3,
+  };
 }
 const small = { workers: 1, memoryGiB: 1, browsers: 0 };
 
@@ -164,6 +170,265 @@ test("four independent callers admit three shared workers and preserve FIFO prog
   assert.deepEqual(await readdir(join(options.directory, "queue")), []);
 });
 
+test("lightweight work can bypass blocked older work only three times across processes", async (t) => {
+  const options = await fixture(t);
+  const browser = workloadFor("browser", {});
+  const first = await acquireResources(browser, options);
+  const abort = new AbortController();
+  let reportQueued;
+  const queued = new Promise((resolve) => {
+    reportQueued = resolve;
+  });
+  const older = acquireResources(browser, {
+    ...options,
+    signal: abort.signal,
+    onQueued: reportQueued,
+  });
+  // Keep rejection handled if a failed assertion cancels the queued owner.
+  older.catch(() => {});
+  const moduleUrl = new URL("./resource-admission.mjs", import.meta.url).href;
+  const script = `import {acquireResources} from ${JSON.stringify(moduleUrl)};
+    try {
+      const lease = await acquireResources(
+        {workers:1,browsers:0,memoryGiB:0.75},
+        {directory:process.argv[1],env:{BL_LOCAL_RESOURCE_CONFIG:''},pollMs:5,timeoutMs:1000,freeMemory:()=>16*1024**3});
+      await lease.release();
+      process.stdout.write('admitted');
+    } catch (error) {
+      if (!/deadline expired/.test(error.message)) throw error;
+      process.stdout.write('queued');
+    }`;
+  try {
+    await queued;
+    for (const expected of ["admitted", "admitted", "admitted", "queued"]) {
+      const result = await runCommand(
+        process.execPath,
+        ["--input-type=module", "-e", script, options.directory],
+        { capture: true },
+      );
+      assert.equal(result.code, 0, result.output);
+      assert.equal(result.output.trim(), expected);
+    }
+    // Protection does not prevent the old request progressing once it fits.
+    await first.release();
+    await (await older).release();
+  } finally {
+    abort.abort();
+    await first.release();
+    await (await older.catch(() => null))?.release();
+  }
+  assert.deepEqual(await readdir(join(options.directory, "queue")), []);
+});
+
+test("a fitting older ticket retains priority even when its owner is not polling", async (t) => {
+  const options = await fixture(t);
+  const queue = join(options.directory, "queue");
+  await mkdir(queue, { recursive: true });
+  // Older agents publish this shape without a bypass counter.
+  await publish(join(queue, "0000000000000000-older.json"), {
+    pid: process.pid,
+    token: "older",
+    request: small,
+    active: false,
+  });
+  await assert.rejects(
+    acquireResources(workloadFor("tooling", {}), {
+      ...options,
+      timeoutMs: 1000,
+    }),
+    /deadline expired/,
+  );
+  await rm(join(queue, "0000000000000000-older.json"));
+  await (await acquireResources(small, options)).release();
+});
+
+test("another heavy request cannot bypass an unfit older request", async (t) => {
+  const options = await fixture(t);
+  const browser = workloadFor("browser", {});
+  const first = await acquireResources(browser, options);
+  const abort = new AbortController();
+  let reportQueued;
+  const queued = new Promise((resolve) => {
+    reportQueued = resolve;
+  });
+  const older = acquireResources(browser, {
+    ...options,
+    signal: abort.signal,
+    onQueued: reportQueued,
+  });
+  older.catch(() => {});
+  try {
+    await queued;
+    await assert.rejects(
+      acquireResources(workloadFor("dom", {}), {
+        ...options,
+        timeoutMs: 1000,
+      }),
+      /deadline expired/,
+    );
+  } finally {
+    abort.abort();
+    await first.release();
+    await (await older.catch(() => null))?.release();
+  }
+});
+
+test("machine low-memory settings serialize heavy phases while lightweight work still fits", async (t) => {
+  const options = await fixture(t);
+  const config = join(options.directory, "machine.json");
+  await writeFile(
+    config,
+    JSON.stringify({
+      version: 1,
+      profile: "low-memory",
+      reserveGiB: 3,
+      maxHeavy: 1,
+      maxBypasses: 3,
+    }),
+  );
+  options.env = { BL_LOCAL_RESOURCE_CONFIG: config };
+  const first = await acquireResources(workloadFor("dom", {}), options);
+  const abort = new AbortController();
+  let reportQueued;
+  const queued = new Promise((resolve) => {
+    reportQueued = resolve;
+  });
+  let admitted = false;
+  const pending = acquireResources(workloadFor("browser", {}), {
+    ...options,
+    signal: abort.signal,
+    onQueued: reportQueued,
+  }).then((lease) => {
+    admitted = true;
+    return lease;
+  });
+  pending.catch(() => {});
+  try {
+    await Promise.race([queued, pending]);
+    assert.equal(
+      admitted,
+      false,
+      "a second heavy phase must wait for the first",
+    );
+    const light = await acquireResources(workloadFor("tooling", {}), {
+      ...options,
+      timeoutMs: 3000,
+    });
+    await light.release();
+    assert.equal(admitted, false);
+    await first.release();
+    await (await pending).release();
+  } finally {
+    abort.abort();
+    await first.release();
+    await (await pending.catch(() => null))?.release();
+  }
+  assert.deepEqual(await readdir(join(options.directory, "queue")), []);
+});
+
+for (const scenario of [
+  {
+    name: "original headroom",
+    initial: { profile: "standard" },
+    updated: { profile: "low-memory" },
+    freeGiB: 5,
+    older: "build",
+    first: null,
+    allowLight: true,
+  },
+  {
+    name: "original heavy-phase limit",
+    initial: { profile: "low-memory" },
+    updated: { profile: "standard" },
+    freeGiB: 16,
+    older: "browser",
+    first: "dom",
+    allowLight: true,
+  },
+  {
+    name: "original zero-bypass protection",
+    initial: { profile: "low-memory", maxBypasses: 0 },
+    updated: { profile: "low-memory", maxBypasses: 3 },
+    freeGiB: 16,
+    older: "browser",
+    first: "browser",
+    allowLight: false,
+  },
+]) {
+  test(`an older waiter keeps its ${scenario.name} when later callers change configuration`, async (t) => {
+    const options = await fixture(t);
+    const config = join(options.directory, "machine.json");
+    await writeFile(
+      config,
+      JSON.stringify({ version: 1, ...scenario.initial }),
+    );
+    options.env = { BL_LOCAL_RESOURCE_CONFIG: config };
+    options.freeMemory = () => scenario.freeGiB * 1024 ** 3;
+    const first = scenario.first
+      ? await acquireResources(workloadFor(scenario.first, {}), options)
+      : null;
+    const abort = new AbortController();
+    let reportQueued;
+    const queued = new Promise((resolve) => {
+      reportQueued = resolve;
+    });
+    const older = acquireResources(workloadFor(scenario.older, {}), {
+      ...options,
+      signal: abort.signal,
+      onQueued: reportQueued,
+    });
+    older.catch(() => {});
+    let light;
+    try {
+      await queued;
+      await writeFile(
+        config,
+        JSON.stringify({ version: 1, ...scenario.updated }),
+      );
+      const pending = acquireResources(workloadFor("tooling", {}), {
+        ...options,
+        timeoutMs: scenario.allowLight ? 3000 : 1000,
+      }).then((lease) => {
+        light = lease;
+        return lease;
+      });
+      if (scenario.allowLight) {
+        await pending;
+      } else {
+        await assert.rejects(pending, /deadline expired/);
+      }
+    } finally {
+      abort.abort();
+      await light?.release();
+      await first?.release();
+      await (await older.catch(() => null))?.release();
+    }
+    assert.deepEqual(await readdir(join(options.directory, "queue")), []);
+  });
+}
+
+test("legacy waiting tickets use standard headroom rather than a newer caller's capacity", async (t) => {
+  const options = await fixture(t);
+  const queue = join(options.directory, "queue");
+  await mkdir(queue, { recursive: true });
+  const older = join(queue, "0000000000000000-older.json");
+  await publish(older, {
+    pid: process.pid,
+    token: "older",
+    request: workloadFor("build", {}),
+    active: false,
+  });
+  const light = await acquireResources(workloadFor("tooling", {}), {
+    ...options,
+    capacity: { workers: 3, browsers: 1, memoryGiB: 6, reserveGiB: 3 },
+    freeMemory: () => 5 * 1024 ** 3,
+    timeoutMs: 3000,
+  });
+  await light.release();
+  await rm(older);
+  assert.deepEqual(await readdir(queue), []);
+});
+
 test("a queued browser cannot exceed the browser cap and cancellation releases its ticket", async (t) => {
   const options = await fixture(t);
   const browser = { ...small, browsers: 1 };
@@ -226,7 +491,7 @@ test("separate processes share one browser budget and release all tickets", asyn
   const script = `import {acquireResources} from ${JSON.stringify(moduleUrl)};
     import {appendFile} from 'node:fs/promises';
     import {setTimeout as delay} from 'node:timers/promises';
-    const lease = await acquireResources({workers:1,browsers:1,memoryGiB:1}, {directory:process.argv[1],pollMs:5,freeMemory:()=>16*1024**3});
+    const lease = await acquireResources({workers:1,browsers:1,memoryGiB:1}, {directory:process.argv[1],env:{BL_LOCAL_RESOURCE_CONFIG:''},pollMs:5,freeMemory:()=>16*1024**3});
     await appendFile(process.argv[2], JSON.stringify({event:'start',pid:process.pid})+'\\n');
     await delay(30);
     await appendFile(process.argv[2], JSON.stringify({event:'end',pid:process.pid})+'\\n');

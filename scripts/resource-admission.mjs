@@ -12,17 +12,17 @@ import {
 import { freemem, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import {
+  DEFAULT_RESOURCE_CAPACITY,
+  readLocalResourceConfig,
+} from "./local-resource-config.mjs";
 
 export const admissionDirectory = join(
   tmpdir(),
   "babylonslate-test-admission-v1",
 );
-export const capacity = {
-  workers: 3,
-  browsers: 1,
-  memoryGiB: 6,
-  reserveGiB: 4,
-};
+export const capacity = DEFAULT_RESOURCE_CAPACITY;
+const standardPolicy = { capacity, maxHeavy: 3, maxBypasses: 3 };
 export const workloads = {
   tooling: { workers: 1, browsers: 0, memoryGiB: 0.75 },
   unit: { workers: 1, browsers: 0, memoryGiB: 1.5 },
@@ -59,6 +59,12 @@ function alive(pid) {
   } catch (error) {
     return error.code === "EPERM";
   }
+}
+
+function isHeavy(request) {
+  return (
+    request.workers >= 2 || request.memoryGiB >= 2 || request.browsers > 0
+  );
 }
 
 async function readJson(path) {
@@ -109,7 +115,17 @@ async function locked(directory, check, operation) {
         continue;
       }
       if (error.code !== "EEXIST") throw error;
-      const owner = await readJson(path);
+      let owner;
+      try {
+        owner = await readJson(path);
+      } catch (readError) {
+        if (!["EPERM", "EACCES", "EBUSY"].includes(readError.code))
+          throw readError;
+        // A Windows sharing denial does not prove the lock is abandoned.
+        // Retry through the outer cancellation/deadline check before inspecting it.
+        await delay(20);
+        continue;
+      }
       // A killed owner may leave a lock; an unpublished owner gets a grace period.
       let age = 0;
       try {
@@ -135,7 +151,15 @@ async function locked(directory, check, operation) {
 /** Per-user admission shared by every worktree. Limits are reservations, not OS quotas. */
 export async function acquireResources(request, options = {}) {
   const directory = options.directory ?? admissionDirectory;
-  const limits = options.capacity ?? capacity;
+  const config = options.capacity
+    ? { ...standardPolicy, capacity: options.capacity }
+    : await readLocalResourceConfig(options.env ?? process.env);
+  const policy = {
+    capacity: { ...config.capacity },
+    maxHeavy: config.maxHeavy,
+    maxBypasses: config.maxBypasses,
+  };
+  const limits = policy.capacity;
   for (const key of ["workers", "browsers", "memoryGiB"]) {
     if (
       !Number.isFinite(request[key]) ||
@@ -156,12 +180,19 @@ export async function acquireResources(request, options = {}) {
   const token = randomUUID();
   let ticket;
   await locked(directory, check, async () => {
-    // Sequence allocation is inside the same lock as admission: FIFO even within one millisecond.
+    // Sequence allocation shares the admission lock: stable age even within one millisecond.
     const counterPath = join(directory, "sequence.json");
     const sequence = ((await readJson(counterPath))?.value ?? 0) + 1;
     await publish(counterPath, { value: sequence });
     ticket = join(queue, `${String(sequence).padStart(16, "0")}-${token}.json`);
-    await publish(ticket, { pid: process.pid, token, request, active: false });
+    await publish(ticket, {
+      pid: process.pid,
+      token,
+      request,
+      active: false,
+      bypasses: 0,
+      policy,
+    });
   });
   let announced = false;
   try {
@@ -180,23 +211,50 @@ export async function acquireResources(request, options = {}) {
           }
           rows.push({ ...row, path });
         }
-        if (rows.find((row) => !row.active)?.path !== ticket) return false;
         const active = rows.filter((row) => row.active);
-        if (
-          ["workers", "browsers", "memoryGiB"].some(
+        const waiting = rows.filter((row) => !row.active);
+        const position = waiting.findIndex((row) => row.path === ticket);
+        if (position < 0) return false;
+        const keys = ["workers", "browsers", "memoryGiB"];
+        const used = Object.fromEntries(
+          keys.map((key) => [
+            key,
+            active.reduce((sum, row) => sum + row.request[key], 0),
+          ]),
+        );
+        const heavyCount = active.filter((row) => isHeavy(row.request)).length;
+        const freeMemory = (options.freeMemory ?? freemem)();
+        const fits = (candidate, candidatePolicy) =>
+          keys.every(
             (key) =>
-              active.reduce(
-                (sum, row) => sum + row.request[key],
-                request[key],
-              ) > limits[key],
-          )
-        )
-          return false;
+              used[key] + candidate[key] <= candidatePolicy.capacity[key],
+          ) &&
+          (!isHeavy(candidate) || heavyCount < candidatePolicy.maxHeavy) &&
+          freeMemory >=
+            (candidatePolicy.capacity.reserveGiB + candidate.memoryGiB) *
+              1024 ** 3;
+        if (!fits(request, policy)) return false;
+        const older = waiting.slice(0, position);
         if (
-          (options.freeMemory ?? freemem)() <
-          (limits.reserveGiB + request.memoryGiB) * 1024 ** 3
+          older.length &&
+          (isHeavy(request) ||
+            older.some((row) => {
+              // Waiting commands retain the policy they started with. Tickets
+              // from older schedulers used the standard four-GiB headroom.
+              const olderPolicy = row.policy ?? standardPolicy;
+              return (
+                fits(row.request, olderPolicy) ||
+                (row.bypasses ?? 0) >= olderPolicy.maxBypasses
+              );
+            }))
         )
           return false;
+        // Only light work may use otherwise idle capacity. Charge every older
+        // ticket before admission so independent processes share starvation protection.
+        for (const row of older) {
+          const { path, ...value } = row;
+          await publish(path, { ...value, bypasses: (row.bypasses ?? 0) + 1 });
+        }
         await publish(ticket, {
           pid: process.pid,
           token,
