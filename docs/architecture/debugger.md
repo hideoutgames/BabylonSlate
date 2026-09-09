@@ -42,7 +42,7 @@ Every registered command has a tier. A non-debug registry **does not register de
 | Tier | Ships | Commands |
 | --- | --- | --- |
 | **core** | Every build | `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, `help`, plus user `BDebugCommand` classes |
-| **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `actorboundingbox`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `showaudiodebug`, `dumpactors`, `inspect`, `dumplog`, `snapshot start`, `snapshot stop` |
+| **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `debugphysics`, `showbounds`, `actorboundingbox`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `shownavdebug`, `showpathfinding`, `shownavagent`, `behaviourtreedebug`, `showaudiodebug`, `dumpactors`, `inspect`, `dumplog`, `snapshot start`, `snapshot stop` |
 
 Real export tree-shaking of the debug module is landed: the release player calls `createCommandRegistry({ includeDebug: false })` via `includeDebugCommands: manifest.bundleDebugger`. Preview Build and a **Bundle Debugger** export preset keep the debug tier. See [exporter.md](exporter.md).
 
@@ -91,7 +91,7 @@ The shared `ParameterListEditor` in `editor-kit` authors those rows (types, opti
 
 ## Console, inspector, and stats HUD
 
-Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`), which pauses the render scheduler **and** live AudioV2 voices. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples completed renders per elapsed second; Pause / Console / Inspector stay overlay-Play-only). When Preview Build is on, the chrome launch control reads **Preview**.
+Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`), which pauses the render scheduler **and** live AudioV2 voices. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples completed renders per elapsed second; the shared Console button also controls Preview Build; the separate Pause / Inspector buttons remain in overlay Play). When Preview Build is on, the chrome launch control reads **Preview**.
 
 **Debug menu** (next to Play) uses the same content-sized, minimum 14rem width as the viewport settings island so labels stay on one line. It persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Do not reuse unused `showFps` (defaults false).
 
@@ -113,6 +113,14 @@ Play overlay **extends** the existing FPS / `scriptMs` / `physicsMs` strip:
 - ~5 Hz `StatsHud`: tick-budget flag (`isTickOverBudget`), accounted resource-cache texture bytes, accounted Scene GLB geometry bytes (**Geo High** at `GEOMETRY_BYTE_CEILING`), mesh/texture counts, last-frame draw calls (Babylon `_drawCalls.current` snapshotted after Play `scene.render()` — not `engine.drawCalls`, which is unset), bridge messages/s. The worker **emits** `{ type: "stats" }` at `STATS_COMMAND_INTERVAL_MS` (200 ms, ~5 Hz) — it is not a per-tick command. Latest `scriptMs` / `physicsMs` / `tickIndex` also live on the **snapshot header** every tick. Overlay Play and the packaged player `setState` / HUD text from those ~5 Hz `stats` commands plus a **1 Hz** rendered-FPS sample; they must not React-update chrome at 60 Hz. Worker `stats` commands own `scriptMs` / `physicsMs`; the main-thread pump samples the Play scheduler for actual rendered FPS; neither source overwrites the other. Editor viewport FPS is not shown on the Debug menu (Always Render is always on). Testids `stats-hud` and `play-fps` stay mounted while collapsed so QA can poll attributes after opening Stats.
 
 Output Log, keyed Print, and the Preview session report are unchanged. Print HUD and Draw Debug wireframes are **not** debugger chrome: overlay Play and the packed player apply `{ type: "print" }` / `{ type: "debugDraw" }` even when `bundleDebugger` is false. Stats HUD, console, and inspect stay debugger-bundled. Print / Print String / Draw Debug still default to Inspector **Development Only**, so a release compile omits them unless the author unchecks the flag.
+
+## Live Play debugging
+
+- Both Play modes feed Log, Print, diagnostics, native console messages, uncaught window errors, and unhandled rejections into a capped console transcript. Native capture is removed when the session ends. `RuntimeDriver.reportLog` records native script messages in the runtime ring as well as forwarding them, so `dumplog` includes them.
+- Preview Build uses source-and-origin-checked iframe requests with correlated command replies, request timeouts, and pending-request cleanup. Its console includes the packed user commands and live actor completion context.
+- `debugphysics` shares `showcollision`; `shownavdebug` shares `shownav`. `showpathfinding` and `shownavagent` consume actual crowd telemetry at 5 Hz, with immediate updates when enabled. Shapes, paths, and labels are disposable runtime geometry.
+- `behaviourtreedebug on` opens the live inspector with `Actor Name (Tree Name)` choices. It shows active nodes, last results, child order, decorators/services, execution stack, and blackboard values. Full snapshots at 5 Hz replace old state; removed actors and stopped trees disappear. Closing the modal sends `behaviourtreedebug off`.
+- Console pause survives app background/foreground transitions in both modes. `showfps off` stays hidden after new samples; `stat <name> off` removes its highlight. Shared-material wireframe state is restored when disabled.
 
 ## Inspect protocol
 

@@ -45,12 +45,16 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
 | `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
 | `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls, including body rotation of local offsets and polyline points). Overlay meshes sit in `RENDERING_GROUP.world` (depth-tested, not a group-0 underlay). Reuse by id when pose changes. Skip helper/debug meshes. `actorboundingbox` is an alias of `showbounds`. |
-| `shownav` | yes | **yes** | `NavMeshDebugOverlay` on the Play scene (`RENDERING_GROUP.world`) with the session navmesh bytes **and** NavMesh Blocker volumes. Blocking Volumes are physics, not nav, and stay off this overlay. |
+| `shownav` / `shownavdebug` | yes | **yes** | Baked navmesh and NavMesh Blocker volumes in the world rendering group. Blocking Volumes belong to physics. |
+| `debugphysics [on\|off]` | yes | **yes** | Alias of `showcollision`: actual simulation collider shapes, including cylinders, triangle meshes, planar capsules, and closed chains. Reuses meshes as bodies move. |
+| `showpathfinding [on\|off]` | yes | **yes** | Active crowd path corners, waypoint markers, and destinations. Clears completed/removed paths; does not recompute a different path for display. |
+| `shownavagent [on\|off]` | yes | **yes** | Agent bounds, active paths, velocity lines, and camera-facing 3D labels with actor identity, crowd state, and speed. Independent of the baked navmesh display. |
+| `behaviourtreedebug [on\|off]` | yes | **yes** | Live modal with an `Actor Name (Tree Name)` selector, node results, active stack, decorators/services, and blackboard values. Closing disables telemetry. |
 | `showaudiodebug` | yes | **yes** | DOM voice overlay from `AudioService` `debugVoices` (`setShowAudioDebug`). Flag default is **on**. |
 | `dumpactors` | yes | **yes** | One line per actor from `inspectWorld()` (name, class, guid, position). |
 | `inspect` | yes | **yes** | Prints inspect-snapshot variables. No arg uses overlay Inspector selection when known, else usage. |
 | `dumplog` | yes | **yes** | Returns the log-ring messages. |
-| `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. |
+| `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. Both Play modes retain the trace and open its editor document when the session closes. |
 
 ### Overlay vs console (session control)
 
