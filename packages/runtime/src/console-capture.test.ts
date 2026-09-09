@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 import * as runtime from "./index";
 
 describe("captureConsoleLogs", () => {
+  it("includes captured native warnings in dumplog with one live log event", () => {
+    const messages: unknown[] = [];
+    const session = runtime.createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      onCommand: (command) => { if (command.type === "log") messages.push(command); },
+    });
+    const target: Pick<Console, "log" | "info" | "debug" | "warn" | "error"> = {
+      log: () => {}, info: () => {}, debug: () => {}, warn: () => {}, error: () => {},
+    };
+    const stop = runtime.captureConsoleLogs(target, (message, severity) => session.reportLog?.(message, severity));
+    target.warn("native warning", { count: 2 });
+    expect(session.executeConsoleCommand("dumplog").output).toContain('native warning {"count":2}');
+    expect(messages).toEqual([expect.objectContaining({ severity: "warning", message: 'native warning {"count":2}' })]);
+    stop();
+    session.stop();
+  });
+
   it("forwards raw console levels and objects, then restores the host console", () => {
     const native: unknown[][] = [];
     const write = (...args: unknown[]) => { native.push(args); };
