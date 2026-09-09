@@ -173,7 +173,8 @@ function GalleryNestedMenus() {
   );
 }
 
-const GALLERY_TREE_NODES: TreeViewNode[] = [
+// Resolve icons after the gallery mounts, once shared route modules are initialized.
+const createGalleryTreeNodes = (): TreeViewNode[] => [
   {
     id: "root",
     label: "Scene Root",
@@ -313,6 +314,7 @@ const GALLERY_TREE_NODES: TreeViewNode[] = [
 ];
 
 function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
+  const [treeNodes] = useState(createGalleryTreeNodes);
   const [selectedId, setSelectedId] = useState("player");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [hidden, setHidden] = useState<Set<string>>(new Set(["barrel"]));
@@ -321,7 +323,7 @@ function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
   const nodes: TreeViewNode[] = [];
   let collapsedDepth: number | null = null;
 
-  for (const node of GALLERY_TREE_NODES) {
+  for (const node of treeNodes) {
     if (collapsedDepth !== null && node.depth > collapsedDepth) continue;
     collapsedDepth = null;
     const expanded = node.hasChildren && !collapsed.has(node.id);
