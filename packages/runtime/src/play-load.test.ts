@@ -179,6 +179,25 @@ describe("runtimeOptionsFromLoadControl", () => {
 });
 
 describe("createRuntimeFromLoad", () => {
+  it("queries the configured frame cap, overrides it for the session, and restores it on reload", () => {
+    const message = { type: "load" as const, sceneAssetGuid: "empty", frameCap: 30 };
+    const runtime = createRuntimeFromLoad(message, () => {});
+    try {
+      expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 30");
+      expect(runtime.executeConsoleCommand("framecap 15").output).toBe("framecap 15");
+      expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 15");
+      expect(message.frameCap).toBe(30);
+    } finally {
+      runtime.stop();
+    }
+    const next = createRuntimeFromLoad(message, () => {});
+    try {
+      expect(next.executeConsoleCommand("framecap").output).toBe("framecap 30");
+    } finally {
+      next.stop();
+    }
+  });
+
   it.each([
     ["KeyF", "Fire"],
     ["KeyH", "Jump"],

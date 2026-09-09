@@ -30,6 +30,17 @@ describe("applyPlayerFpsSample", () => {
 });
 
 describe("applyWorkerPlayerStats", () => {
+  it("keeps rendered FPS when worker timing updates arrive afterward", () => {
+    const rendered = applyPlayerFpsSample(undefined, 30);
+    const next = applyWorkerPlayerStats(rendered, {
+      fps: 60,
+      scriptMs: 4,
+      physicsMs: 2,
+      ticks: 99,
+    });
+    expect(next).toMatchObject({ fps: 30, scriptMs: 4, physicsMs: 2, ticks: 99 });
+  });
+
   it("keeps sampled fps when the worker command reports 0", () => {
     const sampled = applyPlayerFpsSample(
       { ticks: 12, fps: 60, scriptMs: 1, physicsMs: 1, draws: 4 },

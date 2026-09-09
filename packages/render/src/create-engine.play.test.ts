@@ -331,17 +331,34 @@ describe("Play createEngine view", () => {
     expect(handle.drawCalls()).toBe(1);
   });
 
-  it("honors an explicit Play frame cap", () => {
+  it("honors live Play frame caps without adding render cost to the interval", () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
+      sharedEngine: engine,
       playMode: true,
       frameCap: 30,
     });
     handles.push(handle);
-    handle.scheduler.noteRendered(0);
-    expect(handle.scheduler.shouldRender(20)).toBe(false);
-    expect(handle.scheduler.shouldRender(34)).toBe(true);
+    const renderLoop = runRenderLoop.mock.calls[0]![0];
+    let renders = 0;
+    // Keep Babylon rendering real; only model its elapsed CPU cost.
+    handle.scene.onAfterRenderObservable.add(() => {
+      renders += 1;
+      now += 4;
+    });
+    for (const [second, cap] of [30, 60, 15, 30].entries()) {
+      handle.applyCommand({ type: "setFrameCap", fps: cap });
+      const before = renders;
+      for (let frame = 0; frame < 60; frame += 1) {
+        now = second * 1000 + frame * (1000 / 60);
+        renderLoop();
+      }
+      expect(renders - before).toBe(cap);
+    }
   });
 
   it("re-attaches the gizmo to the live mesh after setMeshAssets rebuilds", () => {
