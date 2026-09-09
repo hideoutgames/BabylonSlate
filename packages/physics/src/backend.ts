@@ -3,6 +3,7 @@ import type {
   ColliderDesc,
   ColliderTuning,
   HitResult,
+  LineTraceOptions,
   OverlapResult,
   PhysicsBackendOptions,
   PhysicsContactEvent,
@@ -56,7 +57,7 @@ export interface PhysicsBackend {
   /** Snapshot all dynamic/kinematic body transforms after step. */
   readTransforms(): ReadonlyMap<string, PhysicsTransform>;
 
-  lineTrace(start: Vec3, end: Vec3): HitResult;
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
   sphereOverlap(center: Vec3, radius: number): OverlapResult;
   shapeSweep(
     shape: ColliderDesc["shape"],

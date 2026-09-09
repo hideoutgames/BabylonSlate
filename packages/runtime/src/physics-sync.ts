@@ -1,4 +1,9 @@
-import type { PhysicsBackend, PhysicsTransform, Vec3 } from "@babylonslate/physics";
+import type {
+  LineTraceOptions,
+  PhysicsBackend,
+  PhysicsTransform,
+  Vec3,
+} from "@babylonslate/physics";
 import {
   decodeTileGid,
   parseMeshCollisionLayer,
@@ -228,8 +233,8 @@ export class PhysicsWorldSync {
     }
   }
 
-  lineTrace(start: Vec3, end: Vec3) {
-    return this.backend.lineTrace(start, end);
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions) {
+    return this.backend.lineTrace(start, end, options);
   }
 
   sphereOverlap(center: Vec3, radius: number) {

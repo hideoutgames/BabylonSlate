@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeScene } from "@babylonslate/core";
+import { createRuntimeFromLoad } from "@babylonslate/runtime";
 import {
   canonicalPlaySceneGuid,
   inProcessPlayRuntimeOptions,
@@ -12,6 +13,15 @@ import {
 } from "./play-physics";
 
 describe("playLoadControl", () => {
+  it("initializes console readback with the editor session frame cap", () => {
+    const runtime = createRuntimeFromLoad(playLoadControl({ frameCap: 30 }), () => {});
+    try {
+      expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 30");
+    } finally {
+      runtime.stop();
+    }
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();

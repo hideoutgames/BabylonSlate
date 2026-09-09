@@ -9,6 +9,7 @@ import {
   treeDropPlacement,
   type TreeViewNode,
 } from "./tree-view";
+import { treeGuideSegments } from "./tree-guides";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 import { CONTEXT_MENU_LONG_PRESS_MS, DRAG_ARM_MS } from "./use-context-menu";
 
@@ -18,9 +19,56 @@ const nodes: TreeViewNode[] = [
   { id: "other", label: "Other", depth: 0, hasChildren: false, expanded: false },
 ];
 
+describe("tree guide endpoints", () => {
+  it("ends the last sibling at its branch and omits finished ancestor guides below it", () => {
+    const depths = [0, 1, 2, 2, 1, 2, 3, 0];
+    expect(treeGuideSegments(depths.map((depth) => ({ depth })))).toEqual([
+      [],
+      ["full"],
+      ["full", "full"],
+      ["full", "end"],
+      ["end"],
+      [null, "end"],
+      [null, null, "end"],
+      [],
+    ]);
+  });
+
+  it("ends a collapsed sibling group without carrying its guides into the next root", () => {
+    expect(treeGuideSegments([{ depth: 0 }, { depth: 1 }, { depth: 0 }, { depth: 1 }])).toEqual([
+      [], ["end"], [], ["end"],
+    ]);
+  });
+});
+
 describe("TreeView", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("keeps the last keyboard destination mounted and visible in a windowed tree", () => {
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(56);
+    try {
+      const longTree = Array.from({ length: 100 }, (_, index) => ({
+        id: `item-${index}`,
+        label: `Item ${index}`,
+        depth: index === 0 ? 0 : 1,
+        hasChildren: index === 0,
+        expanded: index === 0,
+      }));
+      const onSelect = vi.fn();
+      render(<TreeView nodes={longTree} onSelect={onSelect} aria-label="Long Tree" />);
+      const tree = screen.getByRole("tree", { name: "Long Tree" });
+      tree.focus();
+      fireEvent.keyDown(tree, { key: "End" });
+      expect(onSelect).toHaveBeenLastCalledWith("item-99");
+      expect(document.getElementById(tree.getAttribute("aria-activedescendant")!))
+        .toBe(screen.getByRole("treeitem", { name: "Item 99" }));
+      expect(tree.scrollTop).toBe(100 * TREE_ROW_HEIGHT - 56);
+      expect(screen.getAllByRole("treeitem").length).toBeLessThan(15);
+    } finally {
+      height.mockRestore();
+    }
   });
 
   it("keeps keyboard navigation available after clicking a disclosure", () => {

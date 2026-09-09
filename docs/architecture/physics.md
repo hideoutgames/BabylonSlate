@@ -110,7 +110,7 @@ Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable in
 
 Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. Dragging off **Get Rigid Body** also Calls **Add Impulse** (`callComponentFunction` `addImpulse`) on that owner.
 
-- **Line Trace** returns Hit Result plus exploded Hit, Location, Normal, Distance, and a live Actor reference.
+- **Line Trace** returns Hit Result plus exploded Hit, Location, Normal, Distance, and a live Actor reference. **Draw Debug** defaults on: misses draw a red line to End; hits draw a green line to the impact and a red circle aligned to its surface. Draws last one frame. **Actors To Ignore** accepts an Actor array (default empty); every collider on those actors is excluded before selecting the closest hit, so ignored actors cannot hide a target behind them. Software, Havok, and Rapier use the same exclusion contract (`LineTraceOptions.ignoreActorIds`); Havok restores temporarily masked shapes after each synchronous query.
 - **Sphere Overlap Actors** keeps the `physics.sphereOverlap` id for existing graphs and returns a deterministic, de-duplicated live Actor array plus Int Count. Missing or destroyed actor ids are filtered.
 - **Sphere Shape Sweep** exposes Radius and returns the same Hit Result / exploded query fields as Line Trace.
 - Query misses return false, null vectors/Actor, and zero Distance rather than leaking backend ids or typed `undefined`. Radius defaults at or below zero emit `physics.radius`.

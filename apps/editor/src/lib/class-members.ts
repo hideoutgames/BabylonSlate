@@ -1343,12 +1343,108 @@ export function addClassMember(
   return { ...graph, members };
 }
 
+/** Only locally declared events own their names; overrides keep their binding. */
+export function canRenameCustomEvent(
+  graph: SerializedGraph,
+  nodeId: string,
+): boolean {
+  const node = graph.nodes.find((entry) => entry.id === nodeId);
+  return Boolean(
+    node?.type === "flow.event.custom" &&
+      !node.data.componentId &&
+      !node.data.eventQualifier &&
+      !String(node.data.title ?? "").endsWith("(Inherited)") &&
+      !graph.edges.some((edge) =>
+        edge.source === nodeId && graph.nodes.some(
+          (entry) => entry.id === edge.target && entry.type === "flow.event.callParent",
+        ),
+      ),
+  );
+}
+
+export function customEventRenameError(
+  graph: SerializedGraph,
+  nodeId: string,
+  name: string,
+): string | null {
+  if (!canRenameCustomEvent(graph, nodeId)) {
+    return "This Event Name Is Defined By Its Parent Or Component.";
+  }
+  const formatted = formatEventMemberName(name);
+  if (!formatted) return "Enter An Event Name.";
+  if (graph.nodes.some((node) =>
+    node.id !== nodeId &&
+    node.type === "flow.event.custom" &&
+    formatEventMemberName(String(node.data.name ?? node.data.title ?? ""))
+      .toLowerCase() === formatted.toLowerCase(),
+  )) {
+    return "An Event With This Name Already Exists.";
+  }
+  return null;
+}
+
+/** Rename a declaration and calls in this document as one undoable graph edit. */
+export function renameCustomEvent(
+  graph: SerializedGraph,
+  nodeId: string,
+  name: string,
+  classId?: string,
+): SerializedGraph {
+  if (customEventRenameError(graph, nodeId, name)) return graph;
+  const event = graph.nodes.find((node) => node.id === nodeId)!;
+  const previousName = formatEventMemberName(
+    String(event.data.name ?? event.data.title ?? ""),
+  );
+  const nextName = formatEventMemberName(name);
+  if (previousName === nextName) return graph;
+  const next = mapGraphNodes(graph, (node) => {
+    const isEvent = node === event;
+    const isCall =
+      node.type === "flow.event.call" &&
+      formatEventMemberName(String(node.data.name ?? "")) === previousName &&
+      !node.data.componentId &&
+      (node.data.implicitSelf === true ||
+        !node.data.classId || node.data.classId === classId);
+    if (!isEvent && !isCall) return node;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        name: nextName,
+        title: isEvent ? formatEventTitle(nextName) : `Call ${nextName}`,
+      },
+    };
+  });
+  return {
+    ...next,
+    ...(graph.members ? {
+      members: graph.members.map((member) =>
+        member.kind === "event" &&
+        (member.id === nodeId || formatEventMemberName(member.name) === previousName)
+          ? { ...member, name: nextName }
+          : member,
+      ),
+    } : {}),
+  };
+}
+
 export function patchClassMember(
   graph: SerializedGraph,
   memberId: string,
   patch: Partial<GraphClassMember>,
 ): SerializedGraph {
   const previous = (graph.members ?? []).find((member) => member.id === memberId);
+  if (previous?.kind === "event" && patch.name !== undefined) {
+    const event = graph.nodes.find((node) =>
+      node.type === "flow.event.custom" &&
+      (node.id === memberId ||
+        formatEventMemberName(String(node.data.name ?? "")) ===
+          formatEventMemberName(previous.name)),
+    );
+    if (!event || customEventRenameError(graph, event.id, patch.name)) return graph;
+    graph = renameCustomEvent(graph, event.id, patch.name);
+    patch = { ...patch, name: formatEventMemberName(patch.name) };
+  }
   const members = (graph.members ?? []).map((member) => {
     if (member.id !== memberId) return member;
     const next = { ...member, ...patch };

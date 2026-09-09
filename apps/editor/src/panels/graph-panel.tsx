@@ -5,7 +5,7 @@ import {
   GRAPH_DEFAULT_ZOOM,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
-import { PanelFrame } from "@babylonslate/editor-kit";
+import { formatEventMemberName, NamePromptDialog, PanelFrame } from "@babylonslate/editor-kit";
 import { type SerializedGraph } from "@babylonslate/core";
 import {
   Empty,
@@ -24,7 +24,7 @@ import {
   classParentLookup,
   materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
-import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
+import { canRenameCustomEvent, customEventRenameError, functionLibraryShowsEventGraphEmpty, renameCustomEvent } from "../lib/class-members";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -84,6 +84,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const { settings: appSettings } = useAppSettings();
   const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [renameEventId, setRenameEventId] = useState<string | null>(null);
   const paletteCacheRef = useRef(new ScriptPaletteCache());
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
@@ -387,6 +388,9 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           onCanvasApi={setCanvasDropApi}
           onNavigateRequest={() => setFocusDiagnostic(null)}
           onSelectionChange={setSelectedNodeIds}
+          contextMenuItemsForNode={(nodeId) => graphContent && canRenameCustomEvent(graphContent, nodeId)
+            ? [{ id: "rename-event", label: "Rename Event", onSelect: () => setRenameEventId(nodeId) }]
+            : []}
           onChange={(next) => {
             if (!doc) return;
             const current = graphContent ?? { nodes: [], edges: [] };
@@ -416,6 +420,25 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           }}
         />
       )}
+      <NamePromptDialog
+        open={renameEventId !== null}
+        onOpenChange={(open) => { if (!open) setRenameEventId(null); }}
+        title="Rename Event"
+        label="Event Name"
+        confirmLabel="Rename"
+        initialValue={(() => {
+          const node = graphContent?.nodes.find((entry) => entry.id === renameEventId);
+          return formatEventMemberName(String(node?.data.name ?? node?.data.title ?? ""));
+        })()}
+        validate={(name) => graphContent && renameEventId ? customEventRenameError(graphContent, renameEventId, name) : null}
+        onSubmit={(name) => {
+          if (!doc || !graphContent || !renameEventId) return;
+          const next = renameCustomEvent(graphContent, renameEventId, name, classId);
+          const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
+          if (commit.kind === "graph") void applyGraphChange(documentId, commit.graph);
+          else void applyAssetDocumentChange(documentId, commit.payload);
+        }}
+      />
     </PanelFrame>
   );
 }

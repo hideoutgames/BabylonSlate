@@ -6,7 +6,12 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
-import { humanizePropertyLabel, PinShapeGlyph } from "@babylonslate/editor-kit";
+import {
+  ContextMenuOverlay,
+  humanizePropertyLabel,
+  PinShapeGlyph,
+  useContextMenu,
+} from "@babylonslate/editor-kit";
 import { isDevelopmentOnlyNode } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
@@ -388,30 +393,42 @@ export function BlueprintNodeShell({
 }
 
 export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
+  const { contextMenuItemsForNode } = useGraphEditorContext();
+  const items = contextMenuItemsForNode?.(id) ?? [];
+  const menu = useContextMenu({ items, enabled: items.length > 0 });
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const { title, role } = visualFromData(data, type);
   const rows = zipPinRows(pins);
 
   return (
-    <BlueprintNodeShell
-      nodeId={id}
-      title={title}
-      role={role}
-      selected={selected}
-      data={data}
+    <div
+      {...menu.bind}
+      onContextMenu={(event) => {
+        if (items.length > 0) event.stopPropagation();
+        menu.bind.onContextMenu(event);
+      }}
     >
-      <div className="flex flex-col py-1">
-        {rows.map((row, index) => (
-          <PinRow
-            key={row.in?.id ?? row.out?.id ?? `row-${index}`}
-            nodeId={id}
-            data={data}
-            incoming={row.in}
-            outgoing={row.out}
-          />
-        ))}
-      </div>
-    </BlueprintNodeShell>
+      <BlueprintNodeShell
+        nodeId={id}
+        title={title}
+        role={role}
+        selected={selected}
+        data={data}
+      >
+        <div className="flex flex-col py-1">
+          {rows.map((row, index) => (
+            <PinRow
+              key={row.in?.id ?? row.out?.id ?? `row-${index}`}
+              nodeId={id}
+              data={data}
+              incoming={row.in}
+              outgoing={row.out}
+            />
+          ))}
+        </div>
+      </BlueprintNodeShell>
+      <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} />
+    </div>
   );
 }
 

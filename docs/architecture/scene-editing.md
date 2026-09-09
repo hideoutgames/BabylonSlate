@@ -89,6 +89,8 @@ Every scene Details / outliner / viewport mutation routes through `applySceneCha
 
 ## Gizmo + camera contracts
 
+An outside mouse, pen, or touch press on either viewport canvas closes open chrome dropdowns before native viewport input handles it. Pointer-anchored context menus also dismiss on a fresh outside press, while preserving the opening long-press release guard and menu-item taps.
+
 Camera Details retain the previous clipping value when an edit would make Near Clip greater than or equal to Far Clip (or Far Clip less than or equal to Near Clip). The field restores that value on blur and explains the ordering requirement. FOV remains bounded to 1–179 degrees, including both endpoints.
 
 Both systems are **mode-parametric** via `ViewportMode` from `@babylonslate/core`:

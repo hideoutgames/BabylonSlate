@@ -14,6 +14,7 @@ export type {
   RigidBodyDesc,
   ColliderDesc,
   HitResult,
+  LineTraceOptions,
   OverlapResult,
   CharacterControllerDesc,
   PhysicsContactEvent,

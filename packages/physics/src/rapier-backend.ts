@@ -1,9 +1,11 @@
+import type { InteractionGroups, QueryFilterFlags } from "@dimforge/rapier2d-compat";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
   ColliderDesc,
   ColliderTuning,
   HitResult,
+  LineTraceOptions,
   OverlapResult,
   PhysicsBackendOptions,
   PhysicsTransform,
@@ -42,6 +44,11 @@ type RapierApi = {
       ray: unknown,
       maxToi: number,
       solid: boolean,
+      filterFlags?: QueryFilterFlags,
+      filterGroups?: InteractionGroups,
+      filterExcludeCollider?: RapierCollider,
+      filterExcludeRigidBody?: RapierRigidBody,
+      filterPredicate?: (collider: RapierCollider) => boolean,
     ): { timeOfImpact: number; collider: RapierCollider } | null;
     intersectionsWithPoint(
       point: { x: number; y: number },
@@ -454,7 +461,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return out;
   }
 
-  lineTrace(start: Vec3, end: Vec3): HitResult {
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const len = Math.hypot(dx, dy);
@@ -463,7 +470,23 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       { x: start.x, y: start.y },
       { x: dx / len, y: dy / len },
     );
-    const hit = this.world.castRay(ray, len, true);
+    const ignored = new Set(options?.ignoreActorIds);
+    const hit = this.world.castRay(
+      ray,
+      len,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ignored.size
+        ? (collider) => {
+            const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
+            const actorId = bodyId ? this.bodies.get(bodyId)?.desc.actorId : undefined;
+            return actorId === undefined || !ignored.has(actorId);
+          }
+        : undefined,
+    );
     if (!hit) return miss();
     const point = ray.pointAt(hit.timeOfImpact);
     const bodyId = this.bodyIdByHandle.get(hit.collider.parent()?.handle ?? -1);

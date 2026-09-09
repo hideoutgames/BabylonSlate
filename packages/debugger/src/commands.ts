@@ -178,7 +178,7 @@ export function builtinCommands(): RegisteredCommand[] {
         }
         const fps = Number(args.fps);
         host.setFrameCap(fps);
-        return ok(`framecap ${fps}`);
+        return ok(`framecap ${host.getFrameCap?.() ?? fps}`);
       },
     },
     {
