@@ -505,6 +505,15 @@ export function TreeView({
                     style={{ left: level * 16 + (rowHeight >= 44 ? 30 : 18) }}
                   />
                 ))}
+                {!node.hasChildren && node.depth > 0 ? (
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute top-1/2 h-px w-4 bg-border/70"
+                    style={{
+                      left: (node.depth - 1) * 16 + (rowHeight >= 44 ? 30 : 18),
+                    }}
+                  />
+                ) : null}
                 {dropBefore ? (
                   <span
                     aria-hidden

@@ -349,15 +349,16 @@ function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
             {muted ? <EyeOffIcon /> : <EyeIcon />}
           </Button>
         ) : node.id === "ground" ? (
-          <Button
-            variant="ghost"
-            size={touch ? "touch-icon" : "icon-sm"}
+          <Toggle
+            variant={groundLocked ? "outline" : "default"}
+            size={touch ? "touch" : "sm"}
             aria-label={`${groundLocked ? "Unlock" : "Lock"} Ground`}
-            aria-pressed={groundLocked}
-            onClick={() => setGroundLocked((current) => !current)}
+            pressed={groundLocked}
+            onPressedChange={setGroundLocked}
           >
             {groundLocked ? <LockIcon /> : <UnlockIcon />}
-          </Button>
+            {groundLocked ? "Locked" : null}
+          </Toggle>
         ) : undefined,
     });
   }
