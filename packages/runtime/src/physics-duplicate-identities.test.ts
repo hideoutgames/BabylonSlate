@@ -247,4 +247,65 @@ describe("physics identities in previously duplicated scenes", () => {
       sync.dispose();
     }
   });
+
+  it.each([false, true])(
+    "rests five duplicated dynamic simple boxes on simple-only Ground (explicit collider: %s)",
+    async (explicitCollider) => {
+      const scene = legacyScene([
+        {
+          ...rigid,
+          properties: { motionType: "dynamic", mass: 1, gravityScale: 1 },
+        },
+        ...(explicitCollider
+          ? [{
+              ...collider,
+              properties: {
+                shape: { kind: "box", halfExtents: { x: 0.75, y: 0.75, z: 0.75 } },
+              },
+            }]
+          : []),
+        {
+          id: "shared-mesh",
+          classId: "MeshComponent",
+          properties: { meshKind: "box", collisionMode: "simple" },
+        },
+      ]);
+      scene.actors = scene.actors.slice(0, 5);
+      for (const [index, actor] of scene.actors.entries()) {
+        actor.transform.position = [(index - 2) * 2, 4, 0];
+      }
+      scene.actors.unshift(createActor("ground", "Ground", {
+        components: [{
+          id: "ground-mesh",
+          classId: "MeshComponent",
+          properties: { meshKind: "ground", collisionMode: "simple" },
+        }],
+      }));
+      const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+      const actors = createActorsFromSerializedScene(world, scene);
+      for (const actor of actors) world.spawnActorNow(actor);
+      const backend = await HavokPhysicsBackend.create({
+        kind: "3d",
+        gravity: { x: 0, y: -9.81, z: 0 },
+      });
+      const sync = new PhysicsWorldSync(backend);
+      try {
+        const touched = new Set<string>();
+        for (let tick = 0; tick < 180; tick++) {
+          sync.step(1 / 60, world);
+          for (const event of backend.pollContacts()) {
+            if (event.actorAId === "ground") touched.add(event.actorBId);
+            if (event.actorBId === "ground") touched.add(event.actorAId);
+          }
+        }
+        expect(touched.size).toBe(5);
+        for (const actor of actors.slice(1)) {
+          expect(actor.transform.position.y).toBeGreaterThan(0.7);
+          expect(actor.transform.position.y).toBeLessThan(0.85);
+        }
+      } finally {
+        sync.dispose();
+      }
+    },
+  );
 });
