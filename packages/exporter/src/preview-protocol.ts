@@ -15,6 +15,9 @@ export const PREVIEW_CONSOLE_EVENT_MESSAGE =
   "babylonslate-preview-console-event";
 export const PREVIEW_CONSOLE_CATALOG_MESSAGE =
   "babylonslate-preview-console-catalog";
+/** Editor → player: request current live actor completion values. */
+export const PREVIEW_CONSOLE_CONTEXT_MESSAGE =
+  "babylonslate-preview-console-context";
 
 export type PreviewConsoleRequest = {
   type: typeof PREVIEW_CONSOLE_REQUEST_MESSAGE;

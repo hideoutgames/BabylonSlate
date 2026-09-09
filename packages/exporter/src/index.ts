@@ -83,6 +83,7 @@ export {
   PREVIEW_CONSOLE_RESULT_MESSAGE,
   PREVIEW_CONSOLE_EVENT_MESSAGE,
   PREVIEW_CONSOLE_CATALOG_MESSAGE,
+  PREVIEW_CONSOLE_CONTEXT_MESSAGE,
   isPreviewConsoleRequest,
 } from "./preview-protocol";
 export type { PreviewConsoleRequest } from "./preview-protocol";

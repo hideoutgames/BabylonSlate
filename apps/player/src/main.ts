@@ -9,6 +9,7 @@ import {
   PREVIEW_CONSOLE_RESULT_MESSAGE,
   PREVIEW_CONSOLE_EVENT_MESSAGE,
   PREVIEW_CONSOLE_CATALOG_MESSAGE,
+  PREVIEW_CONSOLE_CONTEXT_MESSAGE,
   isPreviewConsoleRequest,
 } from "@babylonslate/exporter";
 import {
@@ -160,9 +161,7 @@ async function launchLoaded(
           guid,
           scene.name,
         ]),
-        actors: [...game.scenes.values()].flatMap((scene) =>
-          scene.actors.flatMap((actor) => [actor.id, actor.name]),
-        ),
+        actors: [],
       },
       previewHostOrigin,
     );
@@ -174,9 +173,36 @@ async function launchLoaded(
       previewHostOrigin,
     );
   }
+  let inspecting = false;
+  let stopped = false;
   window.addEventListener("message", (event) => {
     if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin))
       return;
+    if (stopped) return;
+    if (previewMode() && event.data?.type === PREVIEW_CONSOLE_CONTEXT_MESSAGE) {
+      if (inspecting) return;
+      inspecting = true;
+      void session
+        .inspectWorld()
+        .then((snapshot) => {
+          if (stopped) return;
+          const actors = [
+            ...new Set(
+              snapshot.nodes.flatMap((node) =>
+                node.kind === "actor" ? [node.label, node.id] : [],
+              ),
+            ),
+          ];
+          window.parent.postMessage(
+            { type: PREVIEW_CONSOLE_CATALOG_MESSAGE, actors },
+            previewHostOrigin,
+          );
+        })
+        .finally(() => {
+          inspecting = false;
+        });
+      return;
+    }
     if (
       previewMode() &&
       event.data?.type === PREVIEW_CONSOLE_REQUEST_MESSAGE &&
@@ -196,6 +222,7 @@ async function launchLoaded(
       typeof event.data === "object" &&
       (event.data as { type?: string }).type === PREVIEW_STOP_MESSAGE
     ) {
+      stopped = true;
       const result = session.stop();
       layoutObserver?.disconnect();
       stopAudioOverlays();

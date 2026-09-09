@@ -9,13 +9,14 @@ import {
   PREVIEW_CONSOLE_RESULT_MESSAGE,
   PREVIEW_CONSOLE_EVENT_MESSAGE,
   PREVIEW_CONSOLE_CATALOG_MESSAGE,
+  PREVIEW_CONSOLE_CONTEXT_MESSAGE,
 } from "@babylonslate/exporter";
 import {
   createUserCommand,
+  createCommandRegistry,
   type ConsoleCompletionContext,
   type TracePayload,
 } from "@babylonslate/debugger";
-import { playConsoleCommands } from "../lib/play-console";
 import {
   isExpectedPreviewMessage,
   previewTargetFromSrc,
@@ -71,21 +72,23 @@ export function PreviewBuildOverlay({
   );
   const origin = previewTargetFromSrc(src, window.location.href).origin;
   const commands = useMemo(() => {
-    const builtins = playConsoleCommands();
-    return [
-      ...builtins,
-      ...userCommands
-        .filter(
-          (entry) => !builtins.some((command) => command.name === entry.name),
-        )
-        .map((entry) =>
-          createUserCommand({
-            ...entry,
-            run: () => ({ success: true, output: "" }),
-          }),
-        ),
-    ];
+    const registry = createCommandRegistry({ includeDebug: true });
+    for (const entry of userCommands)
+      registry.register(
+        createUserCommand({
+          ...entry,
+          run: () => ({ success: true, output: "" }),
+        }),
+      );
+    return registry.list();
   }, [userCommands]);
+  const completionContext = useMemo(
+    () => ({
+      ...context,
+      commands: commands.map((command) => command.name),
+    }),
+    [commands, context],
+  );
   const execute = (line: string) =>
     new Promise<{ success: boolean; output: string }>((resolve) => {
       const frame = iframeRef.current?.contentWindow;
@@ -108,8 +111,14 @@ export function PreviewBuildOverlay({
       );
     });
   const finish = () => {
-    const close = () => { if (lastTrace.current) onTrace?.(lastTrace.current); onClose(); };
-    if (!ready.current || error) { close(); return; }
+    const close = () => {
+      if (lastTrace.current) onTrace?.(lastTrace.current);
+      onClose();
+    };
+    if (!ready.current || error) {
+      close();
+      return;
+    }
     setStopping(true);
     void execute("snapshot stop").finally(close);
   };
@@ -136,9 +145,14 @@ export function PreviewBuildOverlay({
         });
       }
       if (data?.type === PREVIEW_CONSOLE_CATALOG_MESSAGE) {
-        ready.current = true;
-        setUserCommands(data.commands ?? []);
-        setContext({ scenes: data.scenes ?? [], actors: data.actors ?? [] });
+        if (data.commands !== undefined) {
+          ready.current = true;
+          setUserCommands(data.commands);
+        }
+        setContext((previous) => ({
+          scenes: data.scenes ?? previous.scenes,
+          actors: data.actors ?? previous.actors,
+        }));
       }
       if (data?.type !== PREVIEW_CONSOLE_EVENT_MESSAGE) return;
       const command = data.command;
@@ -160,7 +174,8 @@ export function PreviewBuildOverlay({
         if (command.enabled) setConsoleOpen(false);
       }
       if (command?.type === "behaviourTreeSnapshot") setTrees(command.trees);
-      if (command?.type === "trace") lastTrace.current = command.payload as TracePayload;
+      if (command?.type === "trace")
+        lastTrace.current = command.payload as TracePayload;
     };
     window.addEventListener("message", receive);
     return () => {
@@ -172,6 +187,17 @@ export function PreviewBuildOverlay({
       requests.clear();
     };
   }, [iframeRef, origin]);
+  useEffect(() => {
+    if (!consoleOpen) return;
+    const refresh = () =>
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: PREVIEW_CONSOLE_CONTEXT_MESSAGE },
+        origin,
+      );
+    refresh();
+    const timer = setInterval(refresh, 500);
+    return () => clearInterval(timer);
+  }, [consoleOpen, iframeRef, origin]);
   return (
     <div
       className="fixed inset-0 z-50 bg-black"
@@ -226,7 +252,7 @@ export function PreviewBuildOverlay({
         open={consoleOpen}
         onOpenChange={setConsoleOpen}
         commands={commands}
-        completionContext={context}
+        completionContext={completionContext}
         logs={logs}
         onExecute={execute}
       />

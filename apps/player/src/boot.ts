@@ -48,6 +48,7 @@ import { playerSpawnListForScripts } from "./spawn-list";
 import { packedFontCssStacks } from "./fonts";
 import { createPlayerConsoleHost } from "./console-host";
 import { createPlayerPauseState } from "./console-pause";
+import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -83,6 +84,7 @@ export type PlayerBootHandle = {
   executeConsoleCommand: (
     line: string,
   ) => Promise<{ success: boolean; output: string }>;
+  inspectWorld: () => Promise<DebugInspectSnapshot>;
   stop: () => { diagnostics: PlayerDiagnostic[] };
 };
 
@@ -118,6 +120,7 @@ export function startPlayer(options: {
   const consoleHost = createPlayerConsoleHost({
     execute: () =>
       runtime ? (line) => runtime!.executeConsoleCommand(line) : undefined,
+    inspect: () => (runtime ? () => runtime!.inspectWorld() : undefined),
     post: (command) => worker?.postControl(command),
   });
 
@@ -584,6 +587,7 @@ export function startPlayer(options: {
     visuals: () => handle.playVisualStates(),
     meshMaterialNames: () => handle.playMeshMaterialNames(),
     executeConsoleCommand: (line) => consoleHost.execute(line),
+    inspectWorld: () => consoleHost.inspectWorld(),
     stop: () => {
       halted = true;
       detachLifecycle();
