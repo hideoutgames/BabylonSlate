@@ -29,6 +29,39 @@ function aiScene(properties: Record<string, unknown>): SerializedScene {
 }
 
 describe("runtime behaviour tree evaluation", () => {
+  it("safely inspects cyclic and bigint custom blackboard values without changing runtime values", async () => {
+    const commands: CommandMessage[] = [];
+    const tree = createDefaultBehaviourTree("Custom Logic");
+    tree.nodes.find((node) => node.kind === "task")!.classId = "CustomTask";
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false,
+      playScene: aiScene({ treeGuid: "tree-1" }),
+      behaviourTrees: { "tree-1": tree },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "custom-task", classId: "CustomTask", parentClassId: "BTTask",
+      source: `export function onBtTick(ctx) {
+        const prior = ctx.getBlackboard("cycle");
+        if (prior) ctx.setBlackboard("preserved", prior.self === prior && typeof ctx.getBlackboard("large") === "bigint");
+        else { const cycle = {}; cycle.self = cycle; ctx.setBlackboard("cycle", cycle); ctx.setBlackboard("large", 5n); }
+      }`,
+      anchors: [], entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }],
+    }]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.executeConsoleCommand("behaviourtreedebug on");
+    expect(() => runtime.tick()).not.toThrow();
+    runtime.tick();
+    runtime.executeConsoleCommand("behaviourtreedebug on");
+    const snapshot = commands.filter((command) => command.type === "behaviourTreeSnapshot").at(-1);
+    expect(snapshot).toMatchObject({ trees: [{ blackboard: { cycle: expect.stringContaining("self"), large: "5n", preserved: true } }] });
+    expect(() => JSON.stringify(snapshot)).not.toThrow();
+    const graphState = commands.filter((command) => command.type === "btState").at(-1);
+    expect(() => JSON.stringify(graphState)).not.toThrow();
+    runtime.stop();
+  });
+
   it("does not give a newly spawned tree the completed state of a despawned actor", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
