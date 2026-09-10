@@ -29,13 +29,16 @@ test(
     files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
     files.set(
       "assets/status.babasset",
-      await encodeAssetDocument({
-        guid: "00000000-0000-4000-8000-000000000003",
-        type: "Texture",
-        name: "Status Texture With A Long Name",
-        version: 1,
-        payload: { compressionState: "encode_failed", usage: "albedo" },
-      }),
+      await encodeAssetDocument(
+        {
+          guid: "00000000-0000-4000-8000-000000000003",
+          type: "Texture",
+          name: "Status Texture With A Long Name",
+          version: 1,
+          payload: { compressionState: "encode_failed", usage: "albedo" },
+        },
+        { headerPayload: { compressionState: "encode_failed", usage: "albedo" } },
+      ),
     );
     await openMinimalTestProject(page, files);
     await page.getByTestId("content-browser-new-folder").click();
