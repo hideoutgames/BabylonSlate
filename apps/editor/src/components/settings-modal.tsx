@@ -452,33 +452,33 @@ export function SettingsModal({
       onSearchChange={setSearch}
       searchPlaceholder="Search settings"
       data-testid={resolvedTestId}
-        footer={
-          <div className="flex items-center justify-end gap-2">
-            {scope === "project" && projectDocument && onCloseProject ? (
-              <Button
-                variant="outline"
-                data-testid="close-project"
-                id="close-project"
-                className="mr-auto min-h-[var(--chrome-row,28px)] w-fit"
-                onClick={() => {
-                  onOpenChange(false);
-                  onCloseProject();
-                }}
-              >
-                <LogOutIcon data-icon="inline-start" />
-                Close Project
-              </Button>
-            ) : null}
+      footer={
+        <div className="flex items-center justify-end gap-2">
+          {scope === "project" && projectDocument && onCloseProject ? (
             <Button
-              size="sm"
               variant="outline"
-              onClick={() => onOpenChange(false)}
+              data-testid="close-project"
+              id="close-project"
+              className="mr-auto min-h-[var(--chrome-row,28px)] w-fit"
+              onClick={() => {
+                onOpenChange(false);
+                onCloseProject();
+              }}
             >
-              Done
+              <LogOutIcon data-icon="inline-start" />
+              Close Project
             </Button>
-          </div>
-        }
-      >
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Done
+          </Button>
+        </div>
+      }
+    >
       {searching ? (
         searchResults.length === 0 ? (
           <Empty>
