@@ -14,13 +14,14 @@ import { Homepage } from "./homepage";
 import { AppSettingsProvider } from "../context/app-settings-context";
 import { EditorThemeProvider } from "../context/theme-context";
 
-const { getHostPlatform } = vi.hoisted(() => ({
+const { getHostPlatform, pickImportFiles } = vi.hoisted(() => ({
   getHostPlatform: vi.fn(() => "web"),
+  pickImportFiles: vi.fn(async () => []),
 }));
 
 vi.mock("@babylonslate/vfs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
-  return { ...actual, getHostPlatform };
+  return { ...actual, getHostPlatform, pickImportFiles };
 });
 
 vi.mock("./settings-modal", () => ({
@@ -51,6 +52,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   cleanup();
   getHostPlatform.mockReturnValue("web");
+  pickImportFiles.mockReset();
 });
 
 const noop = async () => {};
@@ -150,6 +152,39 @@ describe("Slate project browser", () => {
     );
     createDialog();
     expect(screen.getByTestId("create-project-dialog")).toBeTruthy();
+  });
+
+  it("locks template import without adding a status row and restores actions after failure", async () => {
+    let rejectImport!: (error: Error) => void;
+    pickImportFiles.mockImplementationOnce(
+      () =>
+        new Promise<never>((_, reject) => {
+          rejectImport = reject;
+        }),
+    );
+    renderHomepage();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Templates", exact: true }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add Template" }));
+    expect(screen.getByRole("button", { name: "Add Template" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(
+      screen.getByTestId("homepage-start-blank").getAttribute("aria-disabled"),
+    ).toBe("true");
+    expect(screen.queryByText(/Importing Template/i)).toBeNull();
+    fireEvent.click(screen.getByTestId("homepage-start-blank"));
+    expect(screen.queryByTestId("create-project-dialog")).toBeNull();
+    await act(async () => rejectImport(new Error("Template unavailable")));
+    expect(screen.getByTestId("homepage-error").textContent).toContain(
+      "Template unavailable",
+    );
+    expect(screen.getByRole("button", { name: "Add Template" })).toHaveProperty(
+      "disabled",
+      false,
+    );
   });
 
   it.each(["blank", "empty", "2d"])(
