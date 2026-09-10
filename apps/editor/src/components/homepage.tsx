@@ -251,7 +251,7 @@ export function Homepage({
 
   const run = async (
     action: () => void | Promise<void>,
-    label = "Opening Project",
+    label: string | null = "Opening Project",
   ) => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -298,7 +298,7 @@ export function Homepage({
       if (!files[0]) return;
       await importTemplateArchive(files[0].name, files[0].bytes);
       await onSettingsChanged();
-    }, "Importing Template");
+    }, null);
 
   return (
     <div

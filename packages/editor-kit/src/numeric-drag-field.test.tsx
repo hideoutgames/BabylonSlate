@@ -13,9 +13,11 @@ import { dispatchPointerEvent } from "./test-support/pointer-events";
 function StatefulField({
   initial,
   onChange,
+  onDragEnd,
 }: {
   initial: number;
   onChange?: (value: number) => void;
+  onDragEnd?: (value: number) => void;
 }) {
   const [value, setValue] = useState(initial);
   return (
@@ -26,6 +28,7 @@ function StatefulField({
         setValue(next);
         onChange?.(next);
       }}
+      onDragEnd={onDragEnd}
       data-testid="field"
     />
   );
@@ -228,6 +231,52 @@ describe("NumericDragField", () => {
 
     fireEvent.blur(input);
     expect(input.value).toBe("3");
+  });
+
+  it("shows the evaluated result on Enter and ends the edit once", () => {
+    const onDragEnd = vi.fn();
+    render(<StatefulField initial={30} onDragEnd={onDragEnd} />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "30/2" } });
+    expect(input.value).toBe("30/2");
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input.value).toBe("15");
+    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(15);
+
+    input.focus();
+    fireEvent.change(input, { target: { value: "/3" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input.value).toBe("5");
+    expect(onDragEnd).toHaveBeenLastCalledWith(5);
+  });
+
+  it("restores the last value with feedback when Enter finishes an invalid expression", () => {
+    const onChange = vi.fn();
+    render(<StatefulField initial={30} onChange={onChange} />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "30/" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(input.value).toBe("30");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByRole("alert").textContent).toMatch(/expression/i);
+  });
+
+  it("keeps editing when Enter confirms IME composition", () => {
+    const onDragEnd = vi.fn();
+    render(<StatefulField initial={30} onDragEnd={onDragEnd} />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "30/2" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+
+    expect(input.value).toBe("30/2");
+    expect(document.activeElement).toBe(input);
+    expect(onDragEnd).not.toHaveBeenCalled();
   });
 
   it("applies a leading * to the value from when editing started", () => {

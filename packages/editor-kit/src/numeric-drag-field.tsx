@@ -154,7 +154,7 @@ export function NumericDragField({
           spellCheck={false}
           id={id}
           className={cn(
-            "h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-control px-2 text-xs",
+            "h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-control px-1.5 py-0 text-xs",
             !label && "pr-6",
           )}
           aria-label={ariaLabel ?? (label || undefined)}
@@ -177,6 +177,16 @@ export function NumericDragField({
           onPointerDown={selectAll.onPointerDown}
           onPointerUp={selectAll.onPointerUp}
           onMouseUp={selectAll.onMouseUp}
+          onKeyDown={(event) => {
+            if (
+              event.key !== "Enter" ||
+              event.nativeEvent.isComposing ||
+              event.keyCode === 229
+            )
+              return;
+            event.preventDefault();
+            event.currentTarget.blur();
+          }}
           onBlur={() => {
             selectAll.onBlur();
             if (

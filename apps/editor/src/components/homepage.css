@@ -1281,6 +1281,11 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   flex-direction: column;
   width: 100%;
 }
+.homepage-template-browser .homepage-gallery,
+.homepage-template-browser .homepage-pages {
+  /* A definite remaining-height allocation keeps nested grids bounded in Safari. */
+  flex: 1 1 0px;
+}
 .homepage-template-toolbar {
   display: flex;
   align-items: center;
@@ -1356,10 +1361,14 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   outline-offset: 3px;
 }
 .homepage-template-browser .homepage-gallery-page {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
   padding-top: 24px;
   padding-bottom: 24px;
 }
 .homepage-template-browser .homepage-gallery-item {
+  min-height: 0;
   max-height: 100%;
 }
 @media (hover: hover) and (pointer: fine) {

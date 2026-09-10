@@ -141,11 +141,6 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     label: "Source Control",
     keywords: "git lfs lock token repository branch poll auto lock",
   },
-  {
-    id: "project",
-    label: "Session",
-    keywords: "close project homepage dirty save done",
-  },
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
@@ -164,7 +159,6 @@ const PROJECT_GROUPS: CatalogCategoryGroup[] = [
       "sourceControl",
     ],
   },
-  { label: "Session", ids: ["project"] },
 ];
 
 const ENGINE_CATEGORIES: Array<
@@ -458,18 +452,33 @@ export function SettingsModal({
       onSearchChange={setSearch}
       searchPlaceholder="Search settings"
       data-testid={resolvedTestId}
-        footer={
-          <div className="flex justify-end">
+      footer={
+        <div className="flex items-center justify-end gap-2">
+          {scope === "project" && projectDocument && onCloseProject ? (
             <Button
-              size="sm"
               variant="outline"
-              onClick={() => onOpenChange(false)}
+              data-testid="close-project"
+              id="close-project"
+              className="mr-auto min-h-[var(--chrome-row,28px)] w-fit"
+              onClick={() => {
+                onOpenChange(false);
+                onCloseProject();
+              }}
             >
-              Done
+              <LogOutIcon data-icon="inline-start" />
+              Close Project
             </Button>
-          </div>
-        }
-      >
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Done
+          </Button>
+        </div>
+      }
+    >
       {searching ? (
         searchResults.length === 0 ? (
           <Empty>
@@ -1479,29 +1488,6 @@ export function SettingsModal({
         </FieldGroup>
       ) : null}
 
-      {showProjectBody &&
-      projectDocument &&
-      activeCategoryId === "project" &&
-      onCloseProject ? (
-        <FieldGroup className="gap-4">
-          <FieldSet>
-            <FieldLegend>Close</FieldLegend>
-            <Button
-              variant="outline"
-              data-testid="close-project"
-              id="close-project"
-              className="min-h-[var(--chrome-row,28px)] w-fit"
-              onClick={() => {
-                onOpenChange(false);
-                onCloseProject();
-              }}
-            >
-              <LogOutIcon data-icon="inline-start" />
-              Close Project
-            </Button>
-          </FieldSet>
-        </FieldGroup>
-      ) : null}
       </div>}
     </CatalogDialog>
       {scope === "project" ? (

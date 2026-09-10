@@ -4,6 +4,5 @@ import type { Page } from "@playwright/test";
 export async function closeProjectViaSettings(page: Page): Promise<void> {
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
-  await page.getByTestId("settings-modal-category-project").click();
   await page.getByTestId("close-project").click();
 }

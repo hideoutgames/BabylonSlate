@@ -46,7 +46,7 @@ export function ContentBrowserFolderTile({
     <Card
       size="sm"
       className={cn(
-        "relative w-full gap-0 overflow-hidden py-0",
+        "relative h-full w-full gap-0 overflow-hidden py-0",
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
     >
@@ -55,7 +55,7 @@ export function ContentBrowserFolderTile({
         data-testid={`content-folder-${path}`}
         data-folder-path={path}
         data-selected={selected ? "true" : "false"}
-        className="flex w-full flex-col text-left hover:bg-accent/50"
+        className="flex h-full w-full flex-col text-left hover:bg-accent/50"
         onClick={(event) => {
           event.stopPropagation();
           if (event.button !== 0) return;
@@ -68,7 +68,7 @@ export function ContentBrowserFolderTile({
         }}
         {...bind}
       >
-        <div className="flex aspect-square w-full items-center justify-center bg-card">
+        <div className="flex aspect-square w-full shrink-0 items-center justify-center bg-card">
           <FolderIcon
             size={TYPE_VISUAL_ICON_TILE_SIZE}
             strokeWidth={TYPE_VISUAL_ICON_TILE_STROKE_WIDTH}
@@ -77,7 +77,7 @@ export function ContentBrowserFolderTile({
             aria-hidden
           />
         </div>
-        <CardHeader className="gap-0.5 p-1.5">
+        <CardHeader className="min-h-0 w-full flex-1 content-center gap-0.5 p-1.5">
           <CardTitle className="truncate text-xs font-medium">
             <SelectableText>{name}</SelectableText>
           </CardTitle>

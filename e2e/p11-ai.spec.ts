@@ -124,10 +124,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     test.setTimeout(90_000);
     await openTwoDProject(page);
     await openMainScene(page);
-    await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
     await placeActor(page, "navmesh");
     await page.getByTestId("outliner-tree").getByText("NavMesh", { exact: true }).click();
     const bake = page.getByRole("button", { name: "Bake NavMesh" });

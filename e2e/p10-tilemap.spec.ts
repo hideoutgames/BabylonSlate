@@ -240,10 +240,7 @@ test.describe("P10 tilemaps", () => {
 
     await showContentBrowser(page);
     await openMainScene(page);
-    await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
 
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
