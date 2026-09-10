@@ -3791,6 +3791,14 @@ class InProcessRuntime implements RuntimeDriver {
     this.running = false;
     this.pendingSceneFinish = null;
     this.finalizeTrace();
+    for (const actor of this.world.getActors()) {
+      for (const component of actor.components) {
+        if (component.logic && !component.logic.destroyed) {
+          component.logic.destroyed = true;
+          component.logic.callOnDestroyed();
+        }
+      }
+    }
     this.world.end();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();

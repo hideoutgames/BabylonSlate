@@ -202,7 +202,8 @@ export function createMaterialPreviewScene(
       }
       if (generation !== meshGeneration) return mesh;
       applyMaterialToVisualMeshes(mesh, currentMaterial);
-      aimPreviewCameraAtMesh(camera, mesh);
+      if (particlePlane) mesh.setEnabled(false);
+      else aimPreviewCameraAtMesh(camera, mesh);
       return mesh;
     },
     applyMaterial: (material) => {
@@ -525,7 +526,7 @@ export function createMaterialPreviewPresenter(
       const texture = ensureRtt(size.width, size.height);
       // Keep retrying at the caller's RAF cadence while textures/shaders load.
       // An empty warm-up frame must not consume a static preview's 1 fps slot.
-      if (!previewMeshesReady(host.mesh)) return;
+      if (!previewMeshesReady(host.scene.getMeshByName("materialPreviewParticlePlane") as Mesh ?? host.mesh)) return;
       pendingForce = false;
       lastPresentMs = at;
       host.scene.render();

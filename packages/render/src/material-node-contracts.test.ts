@@ -55,7 +55,9 @@ describe("material node contracts", () => {
     wire(doc, "camera", "position", "split", "value");
     // Camera information can drive any scalar effect parameter.
     node(doc, "color", "vector.combine");
-    doc.nodes = doc.nodes.filter((entry) => entry.id !== "color");
+    wire(doc, "split", "x", "color", "x");
+    doc.edges = doc.edges.filter((edge) => edge.targetNodeId !== "output");
+    wire(doc, "color", "xyzw", "output", "color");
     await compile(doc);
   });
   it("compiles nonadjacent VectorMask channels in RGBA order", async () => {
