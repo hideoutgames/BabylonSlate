@@ -864,10 +864,10 @@ test.describe("P9 content systems", () => {
     const target = graph.locator(
       '.react-flow__node[data-id="output"] [data-handleid="metallic"][data-handlepos="left"]',
     );
-    await source.click({ force: true });
-    await target.click({ force: true });
-    await graph.locator('.react-flow__node[data-id^="custom.glsl-"] [data-handleid^="p_"][data-handlepos="right"]').click({ force: true });
-    await graph.locator('.react-flow__node[data-id="output"] [data-handleid="roughness"][data-handlepos="left"]').click({ force: true });
+    await source.dragTo(target);
+    await expect(graph.locator('.react-flow__edge[data-id*=":out:output:metallic"]')).toHaveCount(1);
+    await graph.locator('.react-flow__node[data-id^="custom.glsl-"] [data-handleid^="p_"][data-handlepos="right"]').dragTo(graph.locator('.react-flow__node[data-id="output"] [data-handleid="roughness"][data-handlepos="left"]'));
+    await expect(graph.locator('.react-flow__edge[data-id$=":output:roughness"]')).toHaveCount(1);
     await expect(page.getByTestId("material-render")).toBeEnabled();
     await page.getByTestId("material-render").click();
     await expect(page.getByTestId("material-preview-canvas")).toHaveAttribute(
