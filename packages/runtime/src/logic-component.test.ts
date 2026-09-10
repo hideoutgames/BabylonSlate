@@ -14,6 +14,7 @@ it("runs separate ComponentLogic instances with their component and disposes the
       export function onDestroyed(ctx) { ctx.self.getVariable("component").setVariable("ended", true); }`,
   }]);
   runtime.realizePlayWorld();
+  runtime.start();
   const actor = runtime.getWorld().findActor("owner")!;
   const [a, b, invalid] = actor.components;
   expect(a!.getVariable("began")).toBe(true);

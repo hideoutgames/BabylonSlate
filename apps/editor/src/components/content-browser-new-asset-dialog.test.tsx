@@ -60,7 +60,7 @@ describe("ContentBrowserNewAssetDialog", () => {
       (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
     ).toBe("Hero");
     expect(
-      screen.getByRole("radiogroup", { name: "Parent Class" }),
+      screen.getByRole("tree", { name: "Parent Class" }),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Back To Types" }));
@@ -77,8 +77,8 @@ describe("ContentBrowserNewAssetDialog", () => {
     const { onTypeChange } = renderDialog();
     const scene = screen.getByTestId("new-asset-type-Scene");
     const klass = screen.getByTestId("new-asset-type-Class");
-    expect(scene.getAttribute("aria-selected")).toBe("true");
-    expect(klass.getAttribute("aria-selected")).toBe("false");
+    expect(scene.getAttribute("data-selected")).toBe("true");
+    expect(klass.getAttribute("data-selected")).toBe("false");
     fireEvent.click(klass);
     expect(onTypeChange).toHaveBeenCalledWith("Class");
   });
@@ -114,7 +114,8 @@ describe("ContentBrowserNewAssetDialog", () => {
         .getByTestId("tree-row-BObject")
         .getAttribute("aria-selected"),
     ).toBe("true");
-    fireEvent.click(screen.getByTestId("tree-row-Actor"));
+    fireEvent.keyDown(screen.getByRole("tree", { name: "Parent Class" }), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("tree", { name: "Parent Class" }), { key: "Enter" });
     expect(onParentClassChange).toHaveBeenCalledWith("Actor");
   });
 
