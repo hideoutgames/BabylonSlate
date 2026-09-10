@@ -27,7 +27,7 @@ The existing export/import binding nodes serialize player overrides for the game
 
 `InputAction` and `InputAxis` are version 1 `.babasset` documents with `valueType` and stable-ID `bindings`. Registry headers contain value type; full bindings live in the document chunk. Play uses open document changes first. Export includes all enabled input assets in startup reachability and carries the definitions into the player manifest and worker load message. An explicit empty catalog means no input defaults.
 
-New projects create the default Jump, Confirm, Move, and Look assets directly in `assets/Input`. Loading a project does not convert Project Settings mappings, synthesize input assets, or recreate deleted controls. Input identity is the asset GUID; there are no old-name aliases or conversion markers.
+The built-in 3D template includes Jump, Confirm, Move, and Look assets in `assets/Input`. Blank and 2D projects start without Input assets; custom templates supply their own authored controls. Loading a project does not convert Project Settings mappings, synthesize input assets, or recreate deleted controls. Input identity is the asset GUID; there are no old-name aliases or conversion markers.
 
 ## Mapping model (`@babylonslate/input`)
 

@@ -4,7 +4,7 @@ import {
   type InputAssetDefinition,
 } from "./input-assets";
 
-/** Authored controls seeded only when creating a new project. */
+/** Starter controls for the built-in 3D template and explicit test fixtures. */
 export function createDefaultInputAssets(): Array<
   Omit<InputAssetDefinition, "guid">
 > {

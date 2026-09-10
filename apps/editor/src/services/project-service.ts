@@ -1217,7 +1217,6 @@ export class ProjectService {
     } else {
       document.graphs = [];
     }
-    await this.createInputAssets();
     document.settings.input = { actions: [], axes: [] };
     document.settings.startupSceneGuid = await this.guidForAsset(MAIN_SCENE_FILE);
     await this.saveProject(document, createEmptyLayouts());
@@ -1231,6 +1230,7 @@ export class ProjectService {
     await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
     if (kind === "empty") {
+      await this.createInputAssets();
       await this.scaffoldKenneyMannequinEmpty(document);
     }
     return {

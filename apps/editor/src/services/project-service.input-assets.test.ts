@@ -4,6 +4,15 @@ import { installMinimalProject } from "../../../../packages/assets/src/test-supp
 import { ProjectService } from "./project-service";
 
 describe("default input assets", () => {
+  it.each(["blank", "2d"] as const)("creates %s projects without input assets", async (kind) => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    const { document } = await service.createEmptyProject(`NoInputs-${kind}`, { kind });
+    expect(service.registry!.list().filter((asset) => ["InputAction", "InputAxis"].includes(asset.header.type))).toEqual([]);
+    expect(await storage.exists("assets/Input")).toBe(false);
+    expect(document.settings.input).toEqual({ actions: [], axes: [] });
+  });
+
   it("loads authored controls and never recreates deleted inputs on project load", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Inputs.babproject");
