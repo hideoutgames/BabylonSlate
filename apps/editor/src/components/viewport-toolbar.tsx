@@ -31,6 +31,8 @@ import { useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
+import { GridSizeDialog } from "./grid-size-dialog";
+import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { IconActionButton } from "./icon-action-button";
 import {
   patchEngineViewportPrefs,
@@ -64,10 +66,15 @@ export function ViewportToolbar({
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
-  const { flySpeed, gridSize } = useEditorViewportPrefs();
+  const { flySpeed, gridSize, snapRotateDeg, snapScale } =
+    useEditorViewportPrefs();
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
     null,
   );
+  const snapMenu = useLongPressMenu({
+    suppressClickAfterHold: true,
+    onMenu: () => setNumberPrompt("grid"),
+  });
   const {
     gizmoTool,
     setGizmoTool,
@@ -99,9 +106,9 @@ export function ViewportToolbar({
     : null;
   const snapIncrement =
     gizmoTool === "rotate"
-      ? `${scene?.settings.grid.snapRotateDeg ?? 15}°`
+      ? `${scene?.settings.grid.snapRotateDeg ?? snapRotateDeg}°`
       : gizmoTool === "scale"
-        ? (scene?.settings.grid.snapScale ?? 0.25)
+        ? (scene?.settings.grid.snapScale ?? snapScale)
         : scene
           ? viewportMode === "2d"
             ? (scene.settings.grid.tileSize ?? 1)
@@ -319,6 +326,8 @@ export function ViewportToolbar({
               variant="outline"
               size="sm"
               aria-label="Snap Grid"
+              {...snapMenu}
+              aria-haspopup="dialog"
               pressed={snapEnabled}
               onPressedChange={toggleSnap}
               data-testid={`${testIdPrefix}gizmo-snap-toggle`}
@@ -330,7 +339,7 @@ export function ViewportToolbar({
         />
         <TooltipContent>
           Snap {TOOLS.find((tool) => tool.id === gizmoTool)?.label} To{" "}
-          {snapIncrement}
+          {snapIncrement}. Hold Or Right-Click For Grid Size.
         </TooltipContent>
       </Tooltip>
       {showDragSelect ? (
@@ -402,15 +411,16 @@ export function ViewportToolbar({
       {previewGameCamera ? (
         <Badge variant="secondary">Game Camera</Badge>
       ) : null}
-      <NumberPromptDialog
+      <GridSizeDialog
         open={numberPrompt === "grid"}
         onOpenChange={(open) => {
           if (!open) setNumberPrompt(null);
         }}
-        title="Grid Size"
-        label="Grid Size"
-        description="Visible size of one grid cell and the translate snap step."
-        initialValue={scene?.settings.grid.tileSize ?? gridSize}
+        initialValue={{
+          gridSize: scene?.settings.grid.tileSize ?? gridSize,
+          snapRotateDeg: scene?.settings.grid.snapRotateDeg ?? snapRotateDeg,
+          snapScale: scene?.settings.grid.snapScale ?? snapScale,
+        }}
         data-testid={`${testIdPrefix}viewport-grid-size-dialog`}
         onSubmit={(value) => {
           if (scene) {
@@ -420,14 +430,20 @@ export function ViewportToolbar({
                 ...scene.settings,
                 grid: {
                   ...scene.settings.grid,
-                  tileSize: value,
-                  snapTranslate: value,
+                  tileSize: value.gridSize,
+                  snapTranslate: value.gridSize,
+                  snapRotateDeg: value.snapRotateDeg,
+                  snapScale: value.snapScale,
                 },
               },
             });
             return;
           }
-          void patchEngineViewportPrefs({ viewportGridSize: value });
+          void patchEngineViewportPrefs({
+            viewportGridSize: value.gridSize,
+            viewportSnapRotateDeg: value.snapRotateDeg,
+            viewportSnapScale: value.snapScale,
+          });
         }}
       />
       <NumberPromptDialog

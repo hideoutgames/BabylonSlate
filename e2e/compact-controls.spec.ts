@@ -74,3 +74,52 @@ test(
     );
   },
 );
+
+test(
+  "snap settings open on hold and right-click without toggling",
+  { tag: IPAD_TEST_TAG },
+  async ({ page }) => {
+    await openMinimalTestProject(page);
+    await openMainScene(page);
+    const snap = page.getByTestId("gizmo-snap-toggle");
+    await expect(snap).toBeVisible();
+    const pressed = await snap.getAttribute("aria-pressed");
+    const box = (await snap.boundingBox())!;
+    const session = await page.context().newCDPSession(page);
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+    });
+    const dialog = page.getByTestId("viewport-grid-size-dialog");
+    await expect(dialog).toBeVisible();
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expect(dialog).toBeVisible();
+    await expect(snap).toHaveAttribute("aria-pressed", pressed!);
+    await dialog.getByRole("textbox", { name: "Grid Size", exact: true }).fill("2");
+    await dialog.getByLabel("Rotation Snap (Degrees)").fill("90/2");
+    await dialog.getByLabel("Scale Snap", { exact: true }).fill("0.5");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(snap).toHaveText("2");
+    await page.getByRole("button", { name: "Rotate", exact: true }).click();
+    await expect(snap).toHaveText("45\u00b0");
+    await page.getByRole("button", { name: "Scale", exact: true }).click();
+    await expect(snap).toHaveText("0.5");
+    await snap.click({ button: "right" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Rotation Snap (Degrees)")).toHaveValue(
+      "45",
+    );
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(snap).toHaveAttribute("aria-pressed", pressed!);
+    await snap.click();
+    await expect(snap).toHaveAttribute(
+      "aria-pressed",
+      pressed === "true" ? "false" : "true",
+    );
+    await session.detach();
+  },
+);

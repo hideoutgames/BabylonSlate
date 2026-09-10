@@ -246,9 +246,34 @@ vi.mock("../lib/viewport-render-gate", () => ({
 }));
 
 describe("PrefabViewportPanel engine", () => {
+  it("updates live gizmo snap steps from editor preferences", async () => {
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalled());
+    act(() =>
+      receiveActiveAppSettingsUpdate({
+        viewportGridSize: 3,
+        viewportSnapRotateDeg: 45,
+        viewportSnapScale: 0.5,
+      }),
+    );
+    await waitFor(() =>
+      expect(handle.editor.gizmos.setSnap).toHaveBeenLastCalledWith({
+        enabled: false,
+        translate: 3,
+        rotateDeg: 45,
+        scale: 0.5,
+      }),
+    );
+  });
+
   afterEach(() => {
     cleanup();
-    receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000 });
+    receiveActiveAppSettingsUpdate({
+      viewportDropDistance: 10_000,
+      viewportGridSize: 1,
+      viewportSnapRotateDeg: 15,
+      viewportSnapScale: 0.25,
+    });
     createEngineMock.mockClear();
     dispose.mockClear();
     handle.loadScene.mockClear();
@@ -304,7 +329,9 @@ describe("PrefabViewportPanel engine", () => {
     try {
       render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
       await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
-      act(() => receiveActiveAppSettingsUpdate({ viewportDropDistance: 25_000.5 }));
+      act(() =>
+        receiveActiveAppSettingsUpdate({ viewportDropDistance: 25_000.5 }),
+      );
       fireEvent.click(screen.getByRole("button", { name: "Drop" }));
       expect(requests).toEqual([["prefab-mesh", "second-mesh"]]);
       expect(commitComponentTransforms).toHaveBeenCalledExactlyOnceWith([

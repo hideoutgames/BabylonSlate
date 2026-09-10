@@ -85,6 +85,8 @@ export const engineSettingsSchema = z.object({
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);
   }, z.number().positive().default(1)),
+  viewportSnapRotateDeg: z.number().finite().positive().default(15),
+  viewportSnapScale: z.number().finite().positive().default(0.25),
   postProcessingEnabled: z.boolean().default(true),
   editorTextureLodEnabled: z.boolean().default(true),
   editorTextureLodQuality: z.preprocess((value) => {

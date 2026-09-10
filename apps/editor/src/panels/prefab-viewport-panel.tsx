@@ -123,6 +123,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const {
     flySpeed,
     gridSize,
+    snapRotateDeg,
+    snapScale,
     dropDistance,
     editorTextureLodEnabled,
     editorTextureLodQuality,
@@ -288,7 +290,11 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   const dropSelection = () => {
     if (dropDisabled) return;
-    const transforms = requestEditorDrop(dropViewportId, dropActorIds, dropDistance);
+    const transforms = requestEditorDrop(
+      dropViewportId,
+      dropActorIds,
+      dropDistance,
+    );
     if (transforms.length === 0) return;
     commitComponentTransforms(
       transforms.map(({ actorId, position, rotation, scale }) => ({
@@ -445,8 +451,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.gizmos.setSnap({
       enabled: snapEnabled,
       translate: gridSize,
-      rotateDeg: 15,
-      scale: 0.25,
+      rotateDeg: snapRotateDeg,
+      scale: snapScale,
     });
     engineRef.current?.editor?.setGridSettings({
       tileSize: gridSize,
@@ -454,7 +460,14 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       cameraBounds2D: { width: 16, height: 9 },
       showGrid: gridVisible,
     });
-  }, [snapEnabled, gridSize, gridVisible, engineEpoch]);
+  }, [
+    snapEnabled,
+    gridSize,
+    snapRotateDeg,
+    snapScale,
+    gridVisible,
+    engineEpoch,
+  ]);
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);
@@ -469,12 +482,11 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     handle.editor.syncSelectionDebug({
       sceneData: scene,
       selectedActorIds: selectedIds,
-      selectedComponentIds:
-        selectedIds.includes(PREFAB_ROOT_ID)
-          ? components.map((component) => component.id)
-          : selectedIds.length > 0
-            ? selectedIds
-            : undefined,
+      selectedComponentIds: selectedIds.includes(PREFAB_ROOT_ID)
+        ? components.map((component) => component.id)
+        : selectedIds.length > 0
+          ? selectedIds
+          : undefined,
     });
   }, [components, selectedId, selectedIds, prefabPhysicsWorld, engineEpoch]);
 
