@@ -146,6 +146,15 @@ not author:
 
 - **Surface**: position/normal/uv attributes, world and clip-space transforms,
   view direction, and a `PBRMetallicRoughnessBlock` unless the material is unlit.
+  **Emissive** (`vec3`, default black) adds self-illumination at each shaded
+  surface point, including curved meshes and texture masks. Connect a Texture
+  Sample's RGB output, optionally multiplied by a color or strength, to Emissive.
+  Black contributes nothing; values above one support bright emission. PBR adds
+  emission to linear lighting before display image processing. Other surface
+  channels still respond to lights. Unlit keeps its existing direct Base Color
+  output and adds Emissive to it. Emission does not create lights, illuminate
+  nearby objects, or automatically add bloom/glow. Existing materials with no
+  authored emission retain their previous rendering path.
   **World Position Offset** (`vec3`, default `[0, 0, 0]`) is added in world
   space after the world transform. A constant-zero channel is skipped. The
   compiler realizes that subgraph first so **World Position** nodes that feed

@@ -77,6 +77,80 @@ function multiplyMaterial(): MaterialDocument {
 }
 
 describe("material compiler", () => {
+  it.each(["pbr", "unlit"] as const)(
+    "keeps authored emissive color on the %s fragment path without creating lights",
+    (shadingModel) => {
+      const scene = host();
+      const doc = createDefaultMaterialDocument();
+      doc.shadingModel = shadingModel;
+      doc.nodes.find((node) => node.id === "output")!.properties[
+        "default:emissive"
+      ] = [4, 0.25, 0];
+      const result = compileMaterialPlan(planFor(doc), {
+        scene,
+        name: "emission",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok)
+        throw new Error(result.diagnostics.map((d) => d.message).join(", "));
+      disposers.push(result.dispose);
+      const fragment = result.material.attachedBlocks.find(
+        (block) => block.getClassName() === "FragmentOutputBlock",
+      )!;
+      const visited = new Set<typeof fragment>();
+      const visit = (block: typeof fragment) => {
+        if (visited.has(block)) return;
+        visited.add(block);
+        for (const input of block.inputs) {
+          if (input.connectedPoint) visit(input.connectedPoint.ownerBlock);
+        }
+      };
+      visit(fragment);
+      const colors = [...visited]
+        .filter((block) => block.getClassName() === "InputBlock")
+        .map((block) => (block as import("@babylonjs/core").InputBlock).value);
+      expect(colors).toContainEqual(
+        expect.objectContaining({ r: 4, g: 0.25, b: 0 }),
+      );
+      expect(scene.lights).toHaveLength(0);
+    },
+  );
+
+  it("keeps an emissive texture mask connected through the fragment shader", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "mask",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "mask" },
+    });
+    doc.edges.push({
+      id: "mask-emission",
+      sourceNodeId: "mask",
+      sourcePinId: "rgb",
+      targetNodeId: "output",
+      targetPinId: "emissive",
+    });
+    const texture = new Texture(null, scene);
+    disposers.push(() => texture.dispose());
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "masked-emission",
+      resolveTexture: () => texture,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok)
+      throw new Error(result.diagnostics.map((d) => d.message).join(", "));
+    disposers.push(result.dispose);
+    const sample = result.material.attachedBlocks.find(
+      (block) => block instanceof TextureBlock,
+    ) as TextureBlock;
+    expect(sample.texture).toBe(texture);
+    expect(sample.rgb.hasEndpoints).toBe(true);
+    expect(sample.uv.isConnected).toBe(true);
+  });
+
   it("builds a real NodeMaterial for a surface graph", () => {
     const scene = host();
     const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
