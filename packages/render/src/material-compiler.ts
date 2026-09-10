@@ -1,14 +1,22 @@
 import {
   AddBlock,
+  BonesBlock,
+  InstancesBlock,
+  MorphTargetsBlock,
+  Constants,
+  DiscardBlock,
   FragmentOutputBlock,
   ImageProcessingBlock,
   InputBlock,
   Material,
+  MeshBuilder,
+  ParticleSystem,
   NodeMaterial,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   NodeMaterialSystemValues,
   PBRMetallicRoughnessBlock,
+  ReflectionBlock,
   RemapBlock,
   TransformBlock,
   VectorMergerBlock,
@@ -16,6 +24,8 @@ import {
   VertexOutputBlock,
   ViewDirectionBlock,
   type Mesh,
+  type Effect,
+  type PostProcess,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
   type NodeMaterialDefines,
@@ -32,6 +42,7 @@ import type {
   MaterialValueType,
 } from "@babylonslate/shader-graph";
 import { materialNodeDefinition } from "@babylonslate/shader-graph";
+import { materialGlslDiagnostic } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
   createConstantBlock,
@@ -58,6 +69,9 @@ export interface CompileMaterialOptions {
 export interface CompiledMaterial {
   ok: true;
   material: NodeMaterial;
+  /** Assembly succeeded. Await ready before publishing the material. */
+  ready: Promise<readonly MaterialDiagnostic[]>;
+  readonly buildState: "pending" | "ready" | "failed";
   setParameter: (name: string, parameter: MaterialParameterValue) => boolean;
   /** Idempotent: disposes the material and every block it created. */
   dispose: () => void;
@@ -69,6 +83,8 @@ export interface FailedMaterial {
 }
 
 export type CompileMaterialResult = CompiledMaterial | FailedMaterial;
+
+const materialBuilds = new WeakMap<NodeMaterial, Promise<readonly MaterialDiagnostic[]>>();
 
 function isEngineErrorSampler(texture: Texture): boolean {
   const engine =
@@ -147,6 +163,7 @@ export function compileMaterialPlan(
 ): CompileMaterialResult {
   const { scene } = options;
   const material = new NodeMaterial(options.name, scene);
+  material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
     plan.domain === "postProcess"
       ? NodeMaterialModes.PostProcess
@@ -428,6 +445,15 @@ export function compileMaterialPlan(
       outputNodes.push(
         attachSurfaceShading(plan, options, created, plumbing, outputPoint),
       );
+      if (plan.blendMode === "masked") {
+        const discard = new DiscardBlock(`${options.name}_alphaClip`);
+        const cutoff = createConstantBlock(`${options.name}_alphaCutoff`, "float", [plan.alphaCutoff]);
+        const mask = outputPoint(plan.outputs.alphaClip ? "alphaClip" : "opacity", `${options.name}_clipMask`, false);
+        mask?.connectTo(discard.value);
+        cutoff.output.connectTo(discard.cutoff);
+        created.push(discard, cutoff);
+        outputNodes.push(discard);
+      }
     }
     for (const node of outputNodes) material.addOutputNode(node);
   } catch (error) {
@@ -443,23 +469,110 @@ export function compileMaterialPlan(
   // Babylon reports build failures through an observable rather than throwing,
   // so a silent failure would otherwise look like a successful compile.
   let buildError: string | null = null;
+  let buildState: CompiledMaterial["buildState"] = "pending";
+  let disposed = false;
+  let checkingShader = false;
+  let shaderTimer: ReturnType<typeof setTimeout> | undefined;
+  let shaderProbe: Mesh | null = null;
+  let failedShaderEffect: Effect | null = null;
+  material.onError = (effect) => { failedShaderEffect = effect; };
+  let shaderPostProcess: PostProcess | null = null;
+  let shaderParticles: ParticleSystem | null = null;
+  const finishShaderCheck = () => {
+    if (shaderTimer !== undefined) clearTimeout(shaderTimer);
+    shaderProbe?.dispose();
+    shaderPostProcess?.dispose();
+    shaderParticles?.dispose();
+    shaderProbe = null;
+    shaderPostProcess = null;
+    shaderParticles = null;
+  };
+  let settleBuild!: (errors: readonly MaterialDiagnostic[]) => void;
+  const ready = new Promise<readonly MaterialDiagnostic[]>((resolve) => { settleBuild = resolve; });
+  materialBuilds.set(material, ready);
   const errorObserver = material.onBuildErrorObservable.add((message) => {
     buildError = message;
+    const diagnostic: MaterialDiagnostic = { code: "material.compile.buildFailed", message, severity: "error" };
+    if (buildState === "pending") {
+      buildState = "failed";
+      settleBuild([diagnostic]);
+    } else {
+      options.onTextureError?.(diagnostic);
+    }
+  });
+  const buildObserver = material.onBuildObservable.add(() => {
+    applyAuthoredSurfaceBlend(material, plan);
+    syncSceneLighting(scene);
+    if (buildState === "pending") {
+      if (checkingShader) return;
+      if (plan.cost.customBlocks > 0 && scene.getEngine().getClassName() !== "NullEngine") {
+        checkingShader = true;
+        try {
+        if (plan.domain === "surface") {
+          shaderProbe = MeshBuilder.CreateBox(`${options.name}_compileProbe`, { size: 1 }, scene);
+          shaderProbe.setEnabled(false);
+          shaderProbe.material = material;
+        } else if (plan.domain === "postProcess") {
+          shaderPostProcess = material.createPostProcess(null, 1, undefined, scene.getEngine());
+        } else {
+          shaderParticles = new ParticleSystem(`${options.name}_compileProbe`, 1, scene);
+          material.createEffectForParticles(shaderParticles);
+        }
+        } catch (error) {
+          finishShaderCheck();
+          buildState = "failed";
+          settleBuild([materialGlslDiagnostic(String(error), plan.operations)]);
+          return;
+        }
+        const started = Date.now();
+        const check = () => {
+          if (disposed) return;
+          try {
+            const subMesh = shaderProbe?.subMeshes[0];
+            const effects = shaderParticles
+              ? [shaderParticles.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE), shaderParticles.getCustomEffect(ParticleSystem.BLENDMODE_MULTIPLY)]
+              : [shaderPostProcess?.getEffect()];
+            const ready = shaderProbe && subMesh ? material.isReadyForSubMesh(shaderProbe, subMesh) : effects.every((effect) => effect?.isReady());
+            if (ready) {
+              finishShaderCheck();
+              buildState = "ready";
+              settleBuild([]);
+              return;
+            }
+            const effect = subMesh?.effect ?? effects.find((entry) => entry?.getCompilationError());
+            const error = effect?.getCompilationError();
+            if (error && effect?.allFallbacksProcessed()) throw new Error(error);
+            if (Date.now() - started > 15000) throw new Error("Custom GLSL shader compilation timed out");
+            shaderTimer = setTimeout(check, 16);
+          } catch (error) {
+            const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, failedShaderEffect ?? shaderProbe?.subMeshes[0]?.effect ?? shaderPostProcess?.getEffect() ?? shaderParticles?.getCustomEffect());
+            finishShaderCheck();
+            buildState = "failed";
+            settleBuild([diagnostic]);
+          }
+        };
+        check();
+        return;
+      }
+      buildState = "ready";
+      settleBuild([]);
+    }
   });
   try {
     material.build();
   } catch (error) {
     buildError =
       error instanceof Error ? error.message : "Material failed to build";
-  } finally {
-    material.onBuildErrorObservable.remove(errorObserver);
   }
   if (buildError !== null) {
+    material.onBuildErrorObservable.remove(errorObserver);
+    material.onBuildObservable.remove(buildObserver);
     diagnostics.push({
       code: "material.compile.buildFailed",
       message: buildError,
       severity: "error",
     });
+    settleBuild(diagnostics);
     return fail();
   }
 
@@ -467,7 +580,6 @@ export function compileMaterialPlan(
   syncSceneLighting(scene);
 
   const loadObservers: Array<() => void> = [];
-  let disposed = false;
   const rebuildWhenReady = (): void => {
     if (disposed) return;
     const wasFrozen = material.isFrozen;
@@ -531,10 +643,19 @@ export function compileMaterialPlan(
   return {
     ok: true,
     material,
+    ready,
+    get buildState() { return buildState; },
     setParameter: parameters.setParameter,
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      finishShaderCheck();
+      if (buildState === "pending") {
+        buildState = "failed";
+        settleBuild([{ code: "material.compile.cancelled", message: "Material build was cancelled", severity: "error" }]);
+      }
+      material.onBuildErrorObservable.remove(errorObserver);
+      material.onBuildObservable.remove(buildObserver);
       parameters.dispose();
       for (const unsubscribe of loadObservers) unsubscribe();
       detachEngineOwnedTextures(material);
@@ -552,13 +673,6 @@ function detachEngineOwnedTextures(material: NodeMaterial): void {
     }
     textured.texture = null;
   }
-}
-
-/** NodeMaterial has no typed `alphaCutOff`; StandardMaterial / PBR do. */
-type MaterialAlphaCutOff = { alphaCutOff: number };
-
-function applyAlphaCutOff(material: Material, cutoff: number): void {
-  (material as Material & MaterialAlphaCutOff).alphaCutOff = cutoff;
 }
 
 type GpuTextureErrorObservable = {
@@ -597,11 +711,11 @@ function applyAuthoredSurfaceBlend(
     return;
   }
   material.backFaceCulling = plan.twoSided !== true;
+  material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : Constants.ALPHA_COMBINE;
   material.needDepthPrePass = false;
   switch (plan.blendMode) {
     case "masked":
       material.transparencyMode = Material.MATERIAL_ALPHATEST;
-      applyAlphaCutOff(material, plan.alphaCutoff);
       return;
     case "translucent":
     case "additive":
@@ -762,6 +876,14 @@ function createSurfacePlumbing(
   uv.setAsAttribute("uv");
 
   const world = matrixInput(`${name}_world`, NodeMaterialSystemValues.World);
+  const instances = new InstancesBlock(`${name}_instances`);
+  world.output.connectTo(instances.world);
+  const bones = new BonesBlock(`${name}_bones`);
+  instances.output.connectTo(bones.world);
+  const morph = new MorphTargetsBlock(`${name}_morphTargets`);
+  position.output.connectTo(morph.position);
+  normal.output.connectTo(morph.normal);
+  uv.output.connectTo(morph.uv);
   const viewProjection = matrixInput(
     `${name}_viewProjection`,
     NodeMaterialSystemValues.ViewProjection,
@@ -775,16 +897,16 @@ function createSurfacePlumbing(
   cameraPosition.setAsSystemValue(NodeMaterialSystemValues.CameraPosition);
 
   const worldPosition = new TransformBlock(`${name}_worldPos`);
-  position.output.connectTo(worldPosition.vector);
-  world.output.connectTo(worldPosition.transform);
+  morph.positionOutput.connectTo(worldPosition.vector);
+  bones.output.connectTo(worldPosition.transform);
 
   const clipPosition = new TransformBlock(`${name}_clipPos`);
   viewProjection.output.connectTo(clipPosition.transform);
 
   const worldNormal = new TransformBlock(`${name}_worldNormal`);
   worldNormal.transformAsDirection = true;
-  normal.output.connectTo(worldNormal.vector);
-  world.output.connectTo(worldNormal.transform);
+  morph.normalOutput.connectTo(worldNormal.vector);
+  bones.output.connectTo(worldNormal.transform);
 
   const viewDirection = new ViewDirectionBlock(`${name}_viewDirection`);
   worldPosition.output.connectTo(viewDirection.worldPosition);
@@ -798,6 +920,9 @@ function createSurfacePlumbing(
     normal,
     uv,
     world,
+    instances,
+    bones,
+    morph,
     viewProjection,
     view,
     cameraPosition,
@@ -809,12 +934,15 @@ function createSurfacePlumbing(
   );
 
   plumbing.worldPosition = worldPosition.output;
+  plumbing.position = morph.positionOutput;
+  plumbing.world = bones.output;
+  plumbing.localTangent = morph.tangentOutput;
   plumbing.clipPosition = clipPosition.vector;
   plumbing.worldNormal = worldNormal.xyz;
   plumbing.worldNormal4 = worldNormal.output;
   plumbing.cameraPosition = cameraPosition.output;
   plumbing.viewDirection = viewDirection.output;
-  plumbing.uv = uv.output;
+  plumbing.uv = morph.uvOutput;
   plumbing.view = view.output;
   return [vertexOutput];
 }
@@ -934,6 +1062,13 @@ function attachSurfaceShading(
   }
 
   const pbr = new PBRMetallicRoughnessBlock(`${options.name}_pbr`);
+  pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
+  pbr.alpha.connectTo(fragment.a);
+  const reflection = new ReflectionBlock(`${options.name}_reflection`);
+  plumbing.position?.connectTo(reflection.position);
+  plumbing.world?.connectTo(reflection.world);
+  reflection.reflection.connectTo(pbr.reflection);
+  created.push(reflection);
   created.push(pbr);
   plumbing.worldPosition?.connectTo(pbr.worldPosition);
   plumbing.worldNormal4?.connectTo(pbr.worldNormal);
@@ -978,7 +1113,8 @@ function attachSurfaceShading(
     // used for an additive linear emissive contribution.
     const diffuse = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
     const lit = addColor(diffuse, pbr.specularDir, "litColor");
-    const color = addColor(lit, emissive, "surfaceEmission");
+    const indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
+    const color = addColor(addColor(lit, indirect, "totalLighting"), emissive, "surfaceEmission");
     const imageProcessing = new LinearSurfaceImageProcessingBlock(
       `${options.name}_imageProcessing`,
     );
@@ -1000,6 +1136,8 @@ export async function prewarmMaterial(
   material: NodeMaterial,
   mesh: Mesh | null,
 ): Promise<void> {
+  const errors = await materialBuilds.get(material);
+  if (errors?.length) throw new Error(errors[0]!.message);
   if (!mesh) return;
   if (material.mode === NodeMaterialModes.Particle) return;
   if (!nodeMaterialTexturesSampleReady(material)) return;

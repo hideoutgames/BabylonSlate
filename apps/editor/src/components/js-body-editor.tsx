@@ -3,12 +3,19 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
+import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
+import { Button } from "@babylonslate/ui/components/button";
+import { codeHighlight, glslLanguage } from "./code-highlighting";
 
 export type JsBodyEditorProps = {
   value: string;
   onChange: (value: string) => void;
   bodyLine?: number;
 };
+
+export function JsBodyEditor(props: JsBodyEditorProps) {
+  return <CodeBodyEditor {...props} language="javascript" />;
+}
 
 const ACCESSORY = [
   "{",
@@ -30,7 +37,7 @@ const ACCESSORY = [
  * Touch-friendly ExecuteJavaScript body editor (CodeMirror 6).
  * Loaded only when the Details panel needs it.
  */
-export function JsBodyEditor({ value, onChange, bodyLine }: JsBodyEditorProps) {
+export function CodeBodyEditor({ value, onChange, bodyLine, language }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -43,7 +50,10 @@ export function JsBodyEditor({ value, onChange, bodyLine }: JsBodyEditorProps) {
       extensions: [
         lineNumbers(),
         history(),
-        javascript(),
+        language === "glsl" ? glslLanguage : javascript(),
+        syntaxHighlighting(codeHighlight),
+        bracketMatching(),
+        EditorView.contentAttributes.of({ "aria-label": language === "glsl" ? "GLSL Function Body" : "JavaScript Function Body" }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -104,23 +114,25 @@ export function JsBodyEditor({ value, onChange, bodyLine }: JsBodyEditorProps) {
   };
 
   return (
-    <div className="flex flex-col gap-2" data-testid="js-body-editor">
+    <div className="flex min-h-0 flex-1 flex-col gap-2" data-testid={language === "glsl" ? "glsl-body-editor" : "js-body-editor"}>
       <div
         ref={hostRef}
-        className="overflow-hidden rounded-lg border border-border bg-card text-left [&_.cm-editor]:outline-none"
+        className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-card text-left [&_.cm-editor]:outline-none"
         // Selection intentionally enabled for code editing.
         style={{ userSelect: "text", WebkitUserSelect: "text" }}
       />
-      <div className="flex flex-wrap gap-1" data-testid="js-accessory-bar">
+      <div className="hidden flex-wrap gap-1 [@media(pointer:coarse)]:flex" data-testid="js-accessory-bar">
         {ACCESSORY.map((token) => (
-          <button
+          <Button
             key={token}
             type="button"
-            className="min-h-11 min-w-11 rounded-md border border-border bg-secondary px-2 text-sm"
+            variant="outline"
+            size="touch"
+            onPointerDown={(event) => event.preventDefault()}
             onClick={() => insert(token)}
           >
             {token === "Tab" ? "⇥" : token}
-          </button>
+          </Button>
         ))}
       </div>
     </div>

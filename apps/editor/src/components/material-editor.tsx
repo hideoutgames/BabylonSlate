@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageDetails } from "./message-details";
+import { MaterialCustomGlsl } from "./material-custom-glsl";
+import { GlslCodePreview } from "./glsl-code-preview";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
   AssetPickerControl,
-  MultilineTextField,
+  EntryListEditor,
   NamePromptDialog,
   PanelFrame,
   PinListEditor,
@@ -20,11 +22,6 @@ import {
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import {
   ToggleGroup,
@@ -37,6 +34,9 @@ import {
   classifyMaterialCost,
   isMaterialParameterNode,
   materialParameterName,
+  materialGradientStops,
+  materialNodeDefinition,
+  customGlslInterface,
   hydrateMaterialGraphForEditor,
   listUnconnectedMaterialPinDefaults,
   lowerMaterialDocument,
@@ -97,6 +97,10 @@ function previewMeshIcon(mesh: MaterialPreviewMesh): LucideIcon {
 }
 
 type MaterialGraphDocument = MaterialDocument | MaterialFunctionDocument;
+
+function renderMaterialNodeBody(_id: string, data: Record<string, unknown>) {
+  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "a + b")} /></div> : null;
+}
 
 function materialPinDefaultRows(
   document: MaterialGraphDocument,
@@ -299,6 +303,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
         data-testid="material-graph-editor"
       >
         <GraphEditor
+          renderNodeBody={renderMaterialNodeBody}
           initialGraph={initialGraph}
           diagnostics={diagnostics}
           paletteNodes={materialPaletteNodes(document.domain)}
@@ -361,6 +366,7 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
         data-testid="material-function-graph-editor"
       >
         <GraphEditor
+          renderNodeBody={renderMaterialNodeBody}
           initialGraph={initialGraph}
           diagnostics={diagnostics}
           paletteNodes={materialPaletteNodes("surface")}
@@ -495,7 +501,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
       <div className="relative flex h-full min-h-0 flex-col">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        {document.domain !== "particle" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
             data-testid="material-preview-overlay"
@@ -543,7 +549,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
               })}
             </ToggleGroup>
           </div>
-        </div>
+        </div> : null}
         <canvas
           ref={canvasRef}
           data-testid="material-preview-canvas"
@@ -670,7 +676,11 @@ function MaterialDocumentDetails() {
       onChange: (value) => commit({ ...document, twoSided: value }),
     },
   ];
-  if (document.blendMode === "masked") {
+  if (document.domain === "surface") rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }) });
+  if (document.domain !== "surface") {
+    for (let i = rows.length - 1; i >= 0; i--) if (["shadingModel", "twoSided"].includes(rows[i]!.id)) rows.splice(i, 1);
+  }
+  if (document.domain === "surface" && document.blendMode === "masked") {
     rows.push({
       id: "alphaCutoff",
       kind: "slider",
@@ -747,8 +757,10 @@ function MaterialNodeDetails({
   if (!node) return null;
 
   const setProperties = (properties: Record<string, unknown>) => {
+    const pins = node.type === "custom.glsl" && (properties.inputs || properties.outputs) ? customGlslInterface({ ...node.properties, ...properties }) : null;
     commit({
       ...document,
+      ...(pins ? { edges: document.edges.filter((edge) => (edge.sourceNodeId !== node.id || pins.outputs.some((pin) => pin.id === edge.sourcePinId)) && (edge.targetNodeId !== node.id || pins.inputs.some((pin) => pin.id === edge.targetPinId))) } : {}),
       nodes: document.nodes.map((entry) =>
         entry.id === node.id
           ? { ...entry, properties: { ...entry.properties, ...properties } }
@@ -819,9 +831,9 @@ function MaterialNodeDetails({
       id: "vector",
       kind: "vector3",
       label: "Value",
-      value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0],
-      axes: width === 2 ? ["X", "Y"] : ["X", "Y", "Z"],
-      onChange: (next) => setProperties({ value: next }),
+      value: width === 4 ? [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 0] : [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0],
+      axes: ["X", "Y", "Z", "W"].slice(0, width),
+      onChange: (next) => setProperties({ value: next.slice(0, width) }),
     });
   }
 
@@ -834,32 +846,28 @@ function MaterialNodeDetails({
       path: asset.path,
     }));
 
+  if (node.type === "texture.sample" || node.type === "texture.sampleLod") rows.push({
+    id: "colorSpace", kind: "enum", label: "Color Space", value: String(node.properties.colorSpace ?? "legacy"),
+    options: [{ value: "color", label: "Color (sRGB)" }, { value: "data", label: "Data (Linear)" }, { value: "legacy", label: "Legacy (Unconverted)" }],
+    onChange: (colorSpace) => setProperties({ colorSpace }),
+  });
+
   return (
     <div className="flex flex-col gap-2" data-testid="material-node-details">
-      <p className="px-3 text-xs text-muted-foreground">{node.type}</p>
+      <p className="px-3 text-xs text-muted-foreground">{materialNodeDefinition(node.type)?.title ?? node.type}</p>
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
+      {node.type === "color.gradient" ? <div className="px-3"><EntryListEditor
+        title="Gradient Stops" items={materialGradientStops(node.properties.stops)}
+        minItems={2} maxItems={32}
+        onCreate={() => ({ position: 0.5, color: [1, 1, 1] as [number, number, number] })}
+        onChange={(stops) => setProperties({ stops })}
+        renderItem={({ item, onChange }) => <PropertyGrid rows={[
+          { id: "position", kind: "number", label: "Position", value: item.position, min: 0, max: 1, onChange: (position) => onChange({ ...item, position }) },
+          { id: "color", kind: "color", label: "Color", value: item.color, onChange: (color) => onChange({ ...item, color: [color[0], color[1], color[2]] }) },
+        ]} />}
+      /></div> : null}
       {node.type === "custom.glsl" ? (
-        <div className="px-3" data-testid="material-node-glsl-field">
-          <Field>
-            <FieldLabel htmlFor="material-node-glsl">Expression</FieldLabel>
-            <MultilineTextField
-              id="material-node-glsl"
-              title="Expression"
-              editorClassName="min-h-24 font-mono text-sm"
-              value={
-                typeof node.properties.body === "string"
-                  ? node.properties.body
-                  : "a + b"
-              }
-              onChange={(body) => setProperties({ body })}
-              data-testid="material-node-glsl"
-            />
-            <FieldDescription data-testid="material-node-glsl-signature">
-              Generated signature: result = fn(a, b). Expression-only GLSL over
-              A and B. WebGPU is not supported.
-            </FieldDescription>
-          </Field>
-        </div>
+        <MaterialCustomGlsl node={node} document={document} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
       ) : null}
       {node.type === "param.texture" ||
       node.type === "texture.sample" ||
@@ -1045,11 +1053,13 @@ function toPinRows(pins: readonly MaterialFunctionPin[]): PinListRow[] {
 function fromPinRows(
   rows: readonly PinListRow[],
   prefix: "in" | "out",
+  previous: readonly MaterialFunctionPin[],
 ): MaterialFunctionPin[] {
   return rows.map((row, index) => ({
+    ...previous.find((pin) => pin.id === row.id),
     id: row.id || `${prefix}_${index}`,
     name: row.name,
-    type: (MATERIAL_FUNCTION_PIN_TYPES as readonly string[]).includes(
+    type: row.type === "texture" ? "texture" : (MATERIAL_FUNCTION_PIN_TYPES as readonly string[]).includes(
       String(row.type),
     )
       ? (row.type as MaterialFunctionPin["type"])
@@ -1061,6 +1071,10 @@ function fromPinRows(
 export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, commit } = useMaterialFunctionDocument();
+  const [selectedInput, selectInput] = useState<string | null>(null);
+  const [selectedOutput, selectOutput] = useState<string | null>(null);
+  const input = document.inputs.find((pin) => pin.id === selectedInput);
+  const setDefault = (defaultValue: number[]) => commit({ ...document, inputs: document.inputs.map((pin) => pin.id === selectedInput ? { ...pin, defaultValue } : pin) });
   return (
     <PanelFrame
       className="flex-1"
@@ -1071,19 +1085,32 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
         <PinListEditor
           title="Inputs"
           rows={toPinRows(document.inputs)}
+          selectedId={selectedInput}
+          onSelect={selectInput}
+          showDefault={false}
+          showOptional={false}
           types={MATERIAL_FUNCTION_PIN_TYPES}
           onChange={(rows) =>
-            commit({ ...document, inputs: fromPinRows(rows, "in") })
+            commit({ ...document, inputs: fromPinRows(rows, "in", document.inputs) })
           }
           testIdPrefix="material-function-input"
           data-testid="material-function-inputs"
         />
+        {input && input.type !== "texture" ? <PropertyGrid rows={input.type === "float" ? [
+          { id: "default", kind: "number", label: "Default Value", value: input.defaultValue?.[0] ?? 0, onChange: (value) => setDefault([value]) },
+        ] : [
+          { id: "default", kind: "vector3", label: "Default Value", axes: ["X", "Y", "Z", "W"].slice(0, Number(input.type.slice(-1))), value: input.type === "vec4" ? [input.defaultValue?.[0] ?? 0, input.defaultValue?.[1] ?? 0, input.defaultValue?.[2] ?? 0, input.defaultValue?.[3] ?? 0] : [input.defaultValue?.[0] ?? 0, input.defaultValue?.[1] ?? 0, input.defaultValue?.[2] ?? 0], onChange: (value) => setDefault(value.slice(0, Number(input.type.slice(-1)))) },
+        ]} /> : null}
         <PinListEditor
           title="Outputs"
           rows={toPinRows(document.outputs)}
+          selectedId={selectedOutput}
+          onSelect={selectOutput}
+          showDefault={false}
+          showOptional={false}
           types={MATERIAL_FUNCTION_PIN_TYPES}
           onChange={(rows) =>
-            commit({ ...document, outputs: fromPinRows(rows, "out") })
+            commit({ ...document, outputs: fromPinRows(rows, "out", document.outputs) })
           }
           testIdPrefix="material-function-output"
           data-testid="material-function-outputs"

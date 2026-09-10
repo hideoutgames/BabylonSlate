@@ -1,4 +1,5 @@
 import "./gltf-loader";
+import { applyMaterialBounds } from "./material-bounds";
 import type {
   AbstractMesh,
   AnimationGroup,
@@ -103,10 +104,11 @@ export function applyModelMaterialSlots(
     const guid = byIndex.get(slotIndex) ?? null;
     if (!guid) {
       mesh.material = construction;
+      applyMaterialBounds(mesh);
       continue;
     }
     const resolved = resolveMaterial(guid);
-    if (resolved) mesh.material = resolved;
+    if (resolved) { mesh.material = resolved; applyMaterialBounds(mesh); }
   }
 }
 

@@ -68,12 +68,15 @@ export function visualHierarchyBoundingVectors(root: AbstractMesh): {
   return { min, max };
 }
 
+import { applyMaterialBounds } from "./material-bounds";
+
 export function applyMaterialToVisualMeshes(
   root: AbstractMesh,
   material: Material | null,
 ): void {
   for (const mesh of visualMeshes(root)) {
     mesh.material = material;
+    applyMaterialBounds(mesh);
   }
 }
 

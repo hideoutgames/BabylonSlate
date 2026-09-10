@@ -31,6 +31,37 @@ function tinted(value: number): MaterialDocument {
 }
 
 describe("material library", () => {
+  it("retains the displayed material while dependencies are marked dirty", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    expect(library.isReady(scene, "material", tinted(1))).toBe(true);
+    library.markDirty();
+    expect(library.isReady(scene, "material", tinted(1))).toBe(false);
+    expect(library.materialFor(scene, "material")).toBe(first.material);
+    expect(library.isCompiled(scene, "material", tinted(1))).toBe(false);
+    library.release(scene, "material");
+    expect(scene.materials).not.toContain(first.material);
+  });
+  it("retains the last good material when a replacement fails asynchronously", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(await first.ready).toEqual([]);
+    const invalid = tinted(0.2);
+    invalid.nodes.push({ id: "normal", type: "shading.normalMap", position: { x: 0, y: 0 }, properties: {} });
+    invalid.edges.push({ id: "normal-output", sourceNodeId: "normal", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
+    const replacement = library.acquire(scene, "material", invalid);
+    if (replacement.ok) expect((await replacement.ready).length).toBeGreaterThan(0);
+    expect(library.materialFor(scene, "material")).toBe(first.material);
+    expect(scene.materials).toContain(first.material);
+  });
   it("compiles a material document for a scene", () => {
     const scene = host();
     const library = new MaterialLibrary();

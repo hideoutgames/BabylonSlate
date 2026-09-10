@@ -63,6 +63,7 @@ export interface MaterialDocument {
   blendMode: MaterialBlendMode;
   twoSided: boolean;
   alphaCutoff: number;
+  boundsPadding?: number;
   preview: MaterialPreviewSettings;
   nodes: MaterialGraphNode[];
   edges: MaterialGraphEdge[];
@@ -385,6 +386,7 @@ export function normalizeMaterialDocument(
         : "opaque",
     twoSided: record.twoSided === true,
     alphaCutoff: asNumber(record.alphaCutoff, 0.5),
+    ...(asNumber(record.boundsPadding, 0) > 0 ? { boundsPadding: asNumber(record.boundsPadding, 0) } : {}),
     preview: normalizePreview(record.preview),
     nodes,
     edges: normalizeColorParameterEdges(record, nodes, MATERIAL_SCHEMA_VERSION),

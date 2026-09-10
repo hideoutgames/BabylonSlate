@@ -15,6 +15,8 @@ export type EntryListEditorProps<T> = {
   onCreate: () => T;
   renderItem: (args: EntryListItemRenderArgs<T>) => ReactNode;
   title?: string;
+  minItems?: number;
+  maxItems?: number;
   addLabel?: string;
   /** Count copy next to Add (`1 item` / `2 items`). Map uses entry/entries. */
   countNoun?: { one: string; other: string };
@@ -38,6 +40,8 @@ export function EntryListEditor<T>({
   onCreate,
   renderItem,
   title,
+  minItems = 0,
+  maxItems = Number.POSITIVE_INFINITY,
   addLabel = "Add",
   countNoun = { one: "item", other: "items" },
   "data-testid": testId,
@@ -70,6 +74,7 @@ export function EntryListEditor<T>({
             <ListRowActions
               index={index}
               count={items.length}
+              removeDisabled={items.length <= minItems}
               testIdPrefix={rootId}
               onMove={(delta) => onChange(moveItem(items, index, delta))}
               onRemove={() =>
@@ -86,6 +91,7 @@ export function EntryListEditor<T>({
           size="touch"
           className="w-fit"
           data-testid={`${rootId}-add`}
+          disabled={items.length >= maxItems}
           onClick={() => onChange([...items, onCreate()])}
         >
           {addLabel}

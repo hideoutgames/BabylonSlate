@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Engine } from "@babylonjs/core";
+import type { Engine, Texture } from "@babylonjs/core";
 import {
   MaterialLibrary,
   attachMaterialPreviewGestures,
@@ -86,7 +86,7 @@ export function MaterialEditingProvider({
   active?: boolean;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, projectDocument, readAssetChunk } =
+  const { openDocuments, assetRegistry, registryVersion, projectDocument, readAssetChunk } =
     useDocuments();
   const play = usePlay();
   const { register: registerRenderControl } = useMaterialRenderControl();
@@ -112,6 +112,7 @@ export function MaterialEditingProvider({
   const libraryRef = useRef<MaterialLibrary | null>(null);
   const functionsRef = useRef<Record<string, MaterialFunctionDocument>>({});
   const textureBytesRef = useRef(new Map<string, Uint8Array>());
+  const retainedTexturesRef = useRef(new Map<string, { bytes: Uint8Array; texture: Texture; engine: Engine }>());
   const engineRef = useRef<Engine | null>(null);
   const generationRef = useRef(0);
   const manualRenderPendingRef = useRef(false);
@@ -135,20 +136,45 @@ export function MaterialEditingProvider({
   const frameBudgetMs =
     1000 / Math.max(1, projectDocument?.settings.playFrameCap ?? 60);
 
-  /** Material Functions the graph can call, read from open tabs or headers. */
+  const functionAssets = useMemo(() => {
+    void registryVersion; // Registry contents mutate without replacing its instance.
+    return (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "MaterialFunction");
+  }, [assetRegistry, registryVersion]);
+  const [savedFunctions, setSavedFunctions] = useState<Record<string, MaterialFunctionDocument>>({});
+  const [loadedFunctionAssets, setLoadedFunctionAssets] = useState<typeof functionAssets | null>(null);
+  const functionsReady = functionAssets.length === 0 || loadedFunctionAssets === functionAssets;
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const next: Record<string, MaterialFunctionDocument> = {};
+      for (const asset of functionAssets) {
+        try {
+          const bytes = await readAssetChunk?.(asset.path, "document");
+          const content = bytes?.length ? JSON.parse(new TextDecoder().decode(bytes)) : asset.header.payload;
+          // Missing bodies stay missing so validation can report the call site.
+          if (content && typeof content === "object" && Array.isArray((content as Record<string, unknown>).nodes)) {
+            next[asset.header.guid] = normalizeMaterialFunctionDocument(content);
+          }
+        } catch {
+          // An unavailable function is diagnosed by graph validation.
+        }
+      }
+      if (!cancelled) { setSavedFunctions(next); setLoadedFunctionAssets(functionAssets); }
+    })();
+    return () => { cancelled = true; };
+  }, [functionAssets, readAssetChunk]);
+
+  /** Open edits override saved document chunks; headers are only legacy fallback. */
   const functions = useMemo(() => {
-    const map: Record<string, MaterialFunctionDocument> = {};
-    for (const asset of assetRegistry?.list() ?? []) {
-      if (asset.header.type !== "MaterialFunction") continue;
+    const map: Record<string, MaterialFunctionDocument> = { ...savedFunctions };
+    for (const asset of functionAssets) {
       const open = openDocuments.find(
         (entry) => entry.ref.path === asset.path && entry.content,
       );
-      map[asset.header.guid] = normalizeMaterialFunctionDocument(
-        open?.content ?? asset.header.payload,
-      );
+      if (open?.content) map[asset.header.guid] = normalizeMaterialFunctionDocument(open.content);
     }
     return map;
-  }, [assetRegistry, openDocuments]);
+  }, [functionAssets, openDocuments, savedFunctions]);
   functionsRef.current = functions;
   engineRef.current = sharedEngine;
 
@@ -173,12 +199,18 @@ export function MaterialEditingProvider({
         const bytes = textureBytesRef.current.get(guid);
         const engine = engineRef.current;
         if (!bytes || !engine) return null;
-        return getMaterialTexture(
+        const previous = retainedTexturesRef.current.get(guid);
+        if (previous?.bytes === bytes && previous.engine === engine) return previous.texture;
+        const texture = getMaterialTexture(
           resourceCacheForEngine(engine),
           guid,
           engine,
           bytes,
         );
+        if (previous) resourceCacheForEngine(previous.engine).release(guid);
+        if (texture) retainedTexturesRef.current.set(guid, { bytes, engine, texture });
+        else retainedTexturesRef.current.delete(guid);
+        return texture;
       },
     });
   }, []);
@@ -241,7 +273,7 @@ export function MaterialEditingProvider({
   // Keep the preview primitive in step with the document.
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || !document) return;
+    if (!host || !document || document.domain === "particle") return;
     const mesh = document.preview.mesh;
     const guid = document.preview.customMeshGuid;
     let cancelled = false;
@@ -303,6 +335,7 @@ export function MaterialEditingProvider({
       return;
     }
     let cancelled = false;
+    setLoadedTextureGuidsKey("");
     void (async () => {
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
@@ -318,12 +351,14 @@ export function MaterialEditingProvider({
       }
       if (cancelled) return;
       textureBytesRef.current = next;
+      libraryRef.current?.markDirty();
       setLoadedTextureGuidsKey(textureGuidsKey);
+      dispatch({ type: "edit", cost: costClassRef.current });
     })();
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, readAssetChunk, textureGuidsKey]);
+  }, [assetRegistry, registryVersion, readAssetChunk, textureGuidsKey]);
 
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;
@@ -332,6 +367,8 @@ export function MaterialEditingProvider({
     const restored = sharedEngine?.onContextRestoredObservable;
     if (!restored?.add) return;
     const observer = restored.add(() => {
+      for (const [guid, entry] of retainedTexturesRef.current) resourceCacheForEngine(entry.engine).release(guid);
+      retainedTexturesRef.current.clear();
       libraryRef.current?.invalidate();
       if (!compileKey) return;
       dispatch({ type: "edit", cost: costClassRef.current });
@@ -345,8 +382,10 @@ export function MaterialEditingProvider({
   useEffect(() => {
     if (!compileKey) return;
     generationRef.current += 1;
+    const host = hostRef.current;
+    if (host) libraryRef.current?.cancelPending(host.scene, documentId);
     dispatch({ type: "edit", cost: costClassRef.current });
-  }, [compileKey, previewSceneEpoch]);
+  }, [compileKey, documentId, previewSceneEpoch]);
 
   // Trailing debounce so the final edit still compiles.
   useEffect(() => {
@@ -356,27 +395,33 @@ export function MaterialEditingProvider({
   }, [previewState.status, previewState.generation]);
 
   const compile = useCallback(
-    (generation: number) => {
+    async (generation: number) => {
       const host = hostRef.current;
       const library = libraryRef.current;
       if (!host || !library || !document) return;
       dispatch({ type: "compileStart", generation });
       const started = performance.now();
+      const editGeneration = generationRef.current;
+      const previous = library.materialFor(host.scene, documentId);
       const result = library.acquire(host.scene, documentId, document);
+      if (previous && !materialUnavailable(result)) library.release(host.scene, documentId);
+      const errors = materialUnavailable(result) ? result.diagnostics : await result.ready;
+      if (hostRef.current !== host || generationRef.current !== editGeneration) return;
       const durationMs = performance.now() - started;
-      if (materialUnavailable(result)) {
-        setCompileDiagnostics(result.diagnostics);
+      if (materialUnavailable(result) || errors.length) {
+        setCompileDiagnostics([...errors]);
         dispatch({
           type: "result",
           generation,
           ok: false,
           durationMs,
-          error: result.diagnostics[0]?.message,
+          error: errors[0]?.message,
         });
         finishManualRender();
         return;
       }
       setCompileDiagnostics([]);
+      host.applyParticleMaterial?.(document.domain === "particle" ? result.material : null);
       if (document.domain === "postProcess") {
         host.applyMaterial(null);
         host.applyPostProcess(result.material);
@@ -397,6 +442,7 @@ export function MaterialEditingProvider({
   useEffect(() => {
     if (previewState.status !== "queued") return;
     if (!texturesReady) return;
+    if (!functionsReady) return;
     if (!hostRef.current) return;
     const generation = previewState.queuedGeneration ?? previewState.generation;
     // Yield so the pointer/keyboard event that queued this can finish first.
@@ -409,15 +455,19 @@ export function MaterialEditingProvider({
     previewState.queuedGeneration,
     previewState.status,
     texturesReady,
+    functionsReady,
   ]);
 
   useEffect(() => {
+    const retainedTextures = retainedTexturesRef.current;
     return () => {
       if (renderCooldownTimerRef.current !== null) {
         window.clearTimeout(renderCooldownTimerRef.current);
       }
       libraryRef.current?.dispose();
       libraryRef.current = null;
+      for (const [guid, entry] of retainedTextures) resourceCacheForEngine(entry.engine).release(guid);
+      retainedTextures.clear();
     };
   }, []);
 

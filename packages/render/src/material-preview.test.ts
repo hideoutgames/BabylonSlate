@@ -3,6 +3,7 @@ import {
   ArcRotateCamera,
   MeshBuilder,
   NullEngine,
+  NodeMaterial,
   RenderTargetTexture,
   Scene,
   StandardMaterial,
@@ -129,6 +130,20 @@ function engine(): NullEngine {
 }
 
 describe("material preview scene", () => {
+  it("previews particle materials on an emitting system and disposes it when leaving the domain", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(host.dispose);
+    const material = new NodeMaterial("particle-preview", host.scene);
+    const compile = vi.spyOn(material, "createEffectForParticles").mockImplementation(() => undefined);
+    host.applyParticleMaterial(material);
+    expect(host.mesh.isVisible).toBe(false);
+    expect(host.scene.particleSystems).toHaveLength(1);
+    expect(host.scene.particleSystems[0]!.isStarted()).toBe(true);
+    expect(compile).toHaveBeenCalledWith(host.scene.particleSystems[0]);
+    host.applyParticleMaterial(null);
+    expect(host.scene.particleSystems).toHaveLength(0);
+    expect(host.mesh.isVisible).toBe(true);
+  });
   it("builds a mesh for every preview primitive", () => {
     const scene = new Scene(engine());
     disposers.push(() => scene.dispose());

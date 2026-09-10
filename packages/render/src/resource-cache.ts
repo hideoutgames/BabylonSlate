@@ -65,11 +65,7 @@ export function createEngineTextureFromUrl(
   return texture;
 }
 
-function contentKey(bytes: Uint8Array | Blob): string {
-  if (bytes instanceof Blob) return `blob:${bytes.size}`;
-  const length = bytes.byteLength;
-  return `${length}:${bytes[0] ?? 0}:${bytes[Math.floor(length / 2)] ?? 0}:${bytes[length - 1] ?? 0}`;
-}
+import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 
 function asUint8Array(bytes: Uint8Array | Blob): Uint8Array | null {
   return bytes instanceof Uint8Array ? bytes : null;
@@ -277,7 +273,7 @@ export class ResourceCache {
       blobUrl: url,
       extraBlobUrls: [],
       bytes: 0,
-      refCount: 1,
+      refCount: (existing?.refCount ?? 0) + 1,
       lastUsed: ++this.clock,
       contentKey: nextKey,
       textures: new Map(),
@@ -299,7 +295,7 @@ export class ResourceCache {
   ): Texture | CubeTexture {
     const key = samplingKey(options);
     const existing = this.entries.get(assetGuid);
-    const reused = existing ? liveTexture(existing, key) : undefined;
+    const reused = existing?.contentKey === contentKey(bytes) ? liveTexture(existing, key) : undefined;
     if (reused) {
       existing!.refCount += 1;
       existing!.lastUsed = ++this.clock;

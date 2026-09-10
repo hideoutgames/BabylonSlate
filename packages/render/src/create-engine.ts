@@ -839,6 +839,12 @@ export function createEngine(
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
     },
+    onMaterialReady: () => {
+      rebuildPostProcessStack();
+      const serialized = editorSync?.serializedScene();
+      if (editorSync && serialized) editorSync.apply(serialized);
+      scheduler.invalidate("asset");
+    },
   });
   binding.resolveMaterial = (guid, options) => {
     const host = options?.scene ?? scene;
@@ -846,7 +852,8 @@ export function createEngine(
     if (!document) return null;
     const material = materialLibrary.resolve(host, guid, document, options);
     if (!material) return null;
-    compiledMaterialGuids.add(guid);
+    if (materialLibrary.isReady(host, guid, document, options)) compiledMaterialGuids.add(guid);
+    else compiledMaterialGuids.delete(guid);
     return material;
   };
   binding.releaseMaterialInstance = (key) =>

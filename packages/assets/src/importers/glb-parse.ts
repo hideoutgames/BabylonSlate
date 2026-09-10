@@ -16,6 +16,8 @@ export interface GlbBrowseImage {
 }
 
 export interface GlbBrowseMaterial {
+  source?: Record<string, unknown>;
+  textureImages?: Array<number | null>;
   name: string;
   /** Index into `images` when a baseColor / metallicRoughness texture is present. */
   albedoImageIndex: number | null;
@@ -555,6 +557,11 @@ function browseFromGltfJson(
     return {
       name,
       albedoImageIndex,
+      source: material,
+      textureImages: texturesJson.map((texture) => {
+        const source = (texture as Record<string, unknown>)?.source;
+        return typeof source === "number" ? source : null;
+      }),
       unlit: Boolean(
         (material.extensions as Record<string, unknown> | undefined)
           ?.KHR_materials_unlit,

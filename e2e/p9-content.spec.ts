@@ -824,9 +824,10 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("play-preview")).toBeEnabled();
   });
 
-  test("Custom GLSL node compiles an expression in the Material editor", async ({
+  test("Custom GLSL node compiles a function body in the Material editor @ipad", async ({
     page,
-  }) => {
+  }, testInfo) => {
+    test.setTimeout(90_000);
     await openMinimalTestProject(page);
     await createAsset(page, "Material", "Glsl");
     await page
@@ -835,20 +836,23 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await expect(page.getByTestId("material-details-panel")).toBeVisible();
     await addMaterialPaletteNode(page, "Custom GLSL", "custom.glsl");
+    await page.getByTestId("custom-glsl-output-add-name").fill("Mask");
+    await page.getByTestId("custom-glsl-output-add").click();
     const glsl = page.getByTestId("material-node-glsl");
     await expect(glsl).toBeVisible();
     await expect(
       page.getByTestId("material-node-glsl-signature"),
-    ).toContainText("result = fn(a, b)");
+    ).toContainText("Return the primary output");
     await glsl.click();
-    const glslEditor = page.getByTestId("material-node-glsl-editor");
+    const glslEditor = page.getByRole("textbox", { name: "GLSL Function Body" });
     await glslEditor.fill("#define X 1");
     await page.getByTestId("material-node-glsl-done").click();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),
     ).toBeVisible({ timeout: 10_000 });
     await glsl.click();
-    await glslEditor.fill("a + b");
+    await glslEditor.fill("Mask = 0.5;\nreturn A + B;");
+    await page.screenshot({ path: testInfo.outputPath("custom-glsl-editor.png") });
     await page.getByTestId("material-node-glsl-done").click();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),
@@ -860,8 +864,10 @@ test.describe("P9 content systems", () => {
     const target = graph.locator(
       '.react-flow__node[data-id="output"] [data-handleid="metallic"][data-handlepos="left"]',
     );
-    await source.click({ force: true });
-    await target.click({ force: true });
+    await source.dragTo(target);
+    await expect(graph.locator('.react-flow__edge[data-id*=":out:output:metallic"]')).toHaveCount(1);
+    await graph.locator('.react-flow__node[data-id^="custom.glsl-"] [data-handleid^="p_"][data-handlepos="right"]').dragTo(graph.locator('.react-flow__node[data-id="output"] [data-handleid="roughness"][data-handlepos="left"]'));
+    await expect(graph.locator('.react-flow__edge[data-id$=":output:roughness"]')).toHaveCount(1);
     await expect(page.getByTestId("material-render")).toBeEnabled();
     await page.getByTestId("material-render").click();
     await expect(page.getByTestId("material-preview-canvas")).toHaveAttribute(
@@ -869,6 +875,39 @@ test.describe("P9 content systems", () => {
       "ready",
       { timeout: 15_000 },
     );
+    await graph.locator('.react-flow__node[data-id^="custom.glsl-"]').click();
+    await glsl.click();
+    await glslEditor.fill("Mask = 0.5;\nreturn UndefinedSymbol;");
+    await page.getByTestId("material-node-glsl-done").click();
+    await expect(page.getByTestId("material-render")).toBeEnabled();
+    await page.getByTestId("material-render").click();
+    await expect(page.getByTestId("material-diagnostic-material.compile.glsl")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("material-diagnostic-material.compile.glsl")).toContainText("line 2");
+    await glsl.click();
+    await glslEditor.fill("Mask = 0.5;\nreturn A + B;");
+    await page.getByTestId("material-node-glsl-done").click();
+    await expect(page.getByTestId("material-render")).toBeEnabled();
+    await page.getByTestId("material-render").click();
+    await expect(page.getByTestId("material-preview-canvas")).toHaveAttribute("data-status", "ready", { timeout: 15_000 });
+  });
+
+  for (const domain of ["Post Process", "Particle"]) test(`Custom GLSL node compiles for ${domain}`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await openMinimalTestProject(page);
+    await createAsset(page, "Material", "DomainGlsl");
+    await openAssetFromBrowser(page, "assets/DomainGlsl.material.babasset");
+    await page.getByTestId("property-domain").click();
+    await page.getByRole("option", { name: domain, exact: true }).click();
+    await addMaterialPaletteNode(page, "Custom GLSL", "custom.glsl");
+    await page.getByTestId("property-result-type").click();
+    await page.getByRole("option", { name: "Vector 4", exact: true }).click();
+    await page.getByTestId("material-node-glsl").click();
+    await page.getByRole("textbox", { name: "GLSL Function Body" }).fill("return vec4(1.0, 0.2, 0.1, 1.0);");
+    await page.getByTestId("material-node-glsl-done").click();
+    const graph = page.getByTestId("material-graph-editor");
+    await graph.locator('.react-flow__node[data-id^="custom.glsl-"] [data-handleid="out"][data-handlepos="right"]').dragTo(graph.locator('.react-flow__node[data-id="output"] [data-handleid="color"][data-handlepos="left"]'));
+    await expect(graph.locator('.react-flow__edge[data-id*=":out:output:color"]')).toHaveCount(1);
+    await compileMaterialPreview(page);
   });
 
   test("Texture Sample node can pick an inline Texture asset", async ({

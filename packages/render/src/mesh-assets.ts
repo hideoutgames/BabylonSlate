@@ -72,16 +72,14 @@ function payloadMapFingerprint(map: ReadonlyMap<string, unknown> | undefined): s
   return JSON.stringify([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
-function assetByteLength(bytes: Uint8Array | Blob): number {
-  return bytes instanceof Uint8Array ? bytes.byteLength : bytes.size;
-}
+import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 
 function byteMapFingerprint(
   map: ReadonlyMap<string, Uint8Array | Blob> | undefined,
 ): string {
   if (!map || map.size === 0) return "";
   return [...map.entries()]
-    .map(([guid, bytes]) => `${guid}:${assetByteLength(bytes)}`)
+    .map(([guid, bytes]) => `${guid}:${snapshotByteFingerprint(bytes)}`)
     .sort()
     .join(",");
 }

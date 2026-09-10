@@ -12,9 +12,13 @@ import {
 } from "./document";
 import { isNumericType, typesAreAssignable, type MaterialValueType } from "./types";
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
+import { customGlslDefinition, newCustomGlslProperties } from "./custom-glsl";
+import { createTypeResolver } from "./resolve";
 
 /** Pin shape the shared graph shell renders and connects. */
 export interface MaterialGraphPin {
+  typeLabel?: string;
+  group?: string;
   id: string;
   name: string;
   kind: "data";
@@ -25,6 +29,7 @@ export interface MaterialGraphPin {
 }
 
 export interface MaterialPinContext {
+  properties?: Record<string, unknown>;
   functions?: Record<string, MaterialFunctionDocument>;
   /** Interface used to hydrate `function.input` / `function.output` nodes. */
   functionInterface?: MaterialFunctionDocument;
@@ -90,7 +95,10 @@ export function pinsForMaterialNode(
       ),
     );
   }
-  const definition = materialNodeDefinition(type);
+  let definition = materialNodeDefinition(type);
+  if (definition && type === "custom.glsl" && context.properties) {
+    definition = customGlslDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties }, definition);
+  }
   if (!definition) return [];
   return [
     ...definition.inputs.map((pin) => toPin(pin, "in")),
@@ -99,6 +107,7 @@ export function pinsForMaterialNode(
 }
 
 export interface MaterialPaletteNode {
+  defaultData?: Record<string, unknown>;
   id: string;
   title: string;
   category: string;
@@ -112,7 +121,8 @@ export function materialPaletteNodes(
     id: definition.type,
     title: definition.title,
     category: definition.category,
-    pins: pinsForMaterialNode(definition.type),
+    pins: pinsForMaterialNode(definition.type, { properties: newNodeDefaults(definition.type, {}) }),
+    defaultData: newNodeDefaults(definition.type, {}),
   }));
 }
 
@@ -134,6 +144,14 @@ function propertiesFromNodeData(
     if (!EDITOR_NODE_KEYS.has(key)) properties[key] = value;
   }
   return properties;
+}
+
+function newNodeDefaults(type: string, data: Record<string, unknown>): Record<string, unknown> {
+  if (type === "custom.glsl" && typeof data.body !== "string" && typeof data.glsl !== "string") return newCustomGlslProperties();
+  if (type === "input.time") return { timeMode: "seconds", ...data };
+  if (type === "math.divide" || type === "math.mod") return { "default:b": [1], ...data };
+  if (type === "math.pow") return { "default:exponent": [1], ...data };
+  return {};
 }
 
 export function materialGraphToSerialized(
@@ -216,13 +234,24 @@ export function hydrateMaterialGraphForEditor(
   graph: SerializedGraph,
   context: MaterialPinContext = {},
 ): SerializedGraph {
+  const resolver = createTypeResolver({
+    nodes: graph.nodes.map((node) => ({ ...node, properties: propertiesFromNodeData(node.data) })),
+    edges: graph.edges.map((edge) => ({ id: edge.id, sourceNodeId: edge.source, sourcePinId: edge.sourceHandle ?? "out", targetNodeId: edge.target, targetPinId: edge.targetHandle ?? "in" })),
+  }, context);
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
       const data = { ...(node.data as Record<string, unknown>) };
       const functionGuid =
         typeof data.functionGuid === "string" ? data.functionGuid : undefined;
-      const pins = pinsForMaterialNode(node.type, { ...context, functionGuid });
+      const pins = pinsForMaterialNode(node.type, { ...context, functionGuid, properties: data });
+      for (const pin of pins) {
+        if (node.type === "output.surface") pin.group = ({ baseColor: "Surface", emissive: "Emission", opacity: "Transparency", worldPositionOffset: "Geometry" } as Record<string, string>)[pin.id];
+        const resolved = pin.direction === "in" ? resolver.inputType(node.id, pin.id) : resolver.outputType(node.id, pin.id);
+        if (pin.type.kind === "generic" && resolved && resolved !== "float") pin.type = { kind: resolved };
+        const kind = resolved ?? pin.type.kind;
+        pin.typeLabel = kind === "float" ? "Float" : kind === "texture" ? "Texture" : /^vec[234]$/.test(kind) ? `V${kind.slice(-1)}` : "Numeric";
+      }
       const definition = materialNodeDefinition(node.type);
       const calledFunction = functionGuid
         ? context.functions?.[functionGuid]

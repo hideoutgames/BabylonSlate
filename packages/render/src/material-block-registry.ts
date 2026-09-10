@@ -15,6 +15,7 @@ import {
   DotBlock,
   FresnelBlock,
   GradientBlock,
+  GradientBlockColorStep,
   InputBlock,
   LengthBlock,
   LerpBlock,
@@ -38,6 +39,7 @@ import {
   StepBlock,
   SubtractBlock,
   TextureBlock,
+  TransformBlock,
   TrigonometryBlock,
   TrigonometryBlockOperations,
   Vector2,
@@ -56,6 +58,8 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@babylonslate/shader-graph";
+import { customGlslInterface, materialGradientStops } from "@babylonslate/shader-graph";
+import { customGlslFunctionName } from "./material-glsl-diagnostics";
 
 /**
  * One lowered operation realised as Babylon blocks.
@@ -76,6 +80,9 @@ export interface BlockRealization {
  * post-process materials.
  */
 export interface MaterialPlumbing {
+  localTangent?: NodeMaterialConnectionPoint;
+  position?: NodeMaterialConnectionPoint;
+  world?: NodeMaterialConnectionPoint;
   worldPosition?: NodeMaterialConnectionPoint;
   view?: NodeMaterialConnectionPoint;
   /** Vector 3 for graph pins. */
@@ -153,7 +160,10 @@ function constantInput(
       ? NodeMaterialBlockConnectionPointTypes.Color3
       : NodeMaterialBlockConnectionPointTypes.Color4
     : babylonTypeFor(type);
-  const block = new InputBlock(name, undefined, babylonType);
+  // Babylon removes digits from uniform names. Collapse separators first so
+  // IDs such as custom_glsl_123_a cannot become reserved double underscores.
+  const uniformName = name.replace(/[^A-Za-z]+/g, "_").replace(/^_+|_+$/g, "") || "value";
+  const block = new InputBlock(uniformName, undefined, babylonType);
   block.value = babylonValueFor(type, components, asColor);
   return block;
 }
@@ -220,7 +230,27 @@ function trigonometry(operation: TrigonometryBlockOperations): BlockAdapter {
 }
 
 function conditional(condition: ConditionalBlockConditions): BlockAdapter {
-  return ({ name }) => {
+  return ({ name, operation }) => {
+    const width = operation.resolvedType === "vec2" ? 2 : operation.resolvedType === "vec3" ? 3 : operation.resolvedType === "vec4" ? 4 : 1;
+    if (width > 1) {
+      const a = new VectorSplitterBlock(`${name}_a`);
+      const b = new VectorSplitterBlock(`${name}_b`);
+      const result = new VectorMergerBlock(`${name}_result`);
+      const blocks: NodeMaterialBlock[] = [a, b, result];
+      const axes = ["x", "y", "z", "w"] as const;
+      for (const axis of axes.slice(0, width)) {
+        const part = conditional(condition)({ name: `${name}_${axis}`, operation: { ...operation, resolvedType: "float" }, plumbing: {} });
+        blocks.push(...part.blocks);
+        a[axis].connectTo(part.inputs.a!);
+        b[axis].connectTo(part.inputs.b!);
+        part.outputs.out!.connectTo(result[axis]);
+      }
+      return {
+        blocks,
+        inputs: { a: width === 2 ? a.xyIn : width === 3 ? a.xyzIn : a.xyzw, b: width === 2 ? b.xyIn : width === 3 ? b.xyzIn : b.xyzw },
+        outputs: { out: width === 2 ? result.xyOut : width === 3 ? result.xyzOut : result.xyzw },
+      };
+    }
     const block = new ConditionalBlock(name);
     block.condition = condition;
     const trueValue = constantInput(`${name}_true`, "float", [1]);
@@ -288,16 +318,12 @@ const saturateAdapter: BlockAdapter = ({ name }) => {
   return single(clamp, { value: clamp.value }, { out: clamp.output });
 };
 
-/** Clamp exposes min/max as block properties, not pins. */
-const clampAdapter: BlockAdapter = ({ name, operation }) => {
-  const clamp = new ClampBlock(name);
-  const min = operation.inputs.min;
-  const max = operation.inputs.max;
-  clamp.minimum =
-    min?.kind === "constant" ? (min.value[0] ?? 0) : 0;
-  clamp.maximum =
-    max?.kind === "constant" ? (max.value[0] ?? 1) : 1;
-  return single(clamp, { value: clamp.value }, { out: clamp.output });
+/** Dynamic bounds need graph inputs; Babylon ClampBlock only has properties. */
+const clampAdapter: BlockAdapter = ({ name }) => {
+  const lower = new MaxBlock(`${name}_lower`);
+  const upper = new MinBlock(`${name}_upper`);
+  lower.output.connectTo(upper.left);
+  return { blocks: [lower, upper], inputs: { value: lower.left, min: lower.right, max: upper.right }, outputs: { out: upper.output } };
 };
 
 const systemInput = (
@@ -451,7 +477,13 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       },
     };
   },
-  "vector.split": ({ name, operation }) => {
+  "vector.split": ({ name, operation }): BlockRealization => {
+    if (operation.resolvedType === "float") {
+      const block = new AddBlock(name);
+      const zero = constantInput(`${name}_zero`, "float", [0]);
+      zero.output.connectTo(block.right);
+      return { blocks: [block, zero], inputs: { value: block.left }, outputs: { x: block.output } };
+    }
     const block = new VectorSplitterBlock(name);
     // VectorSplitter exposes one input per width; pick the one that matches
     // so a Vector 2 is not offered to a Vector 4 connector.
@@ -525,14 +557,22 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       outputs: { rgba: block.rgba, rgb: block.rgb, a: block.a },
     };
   },
-  "input.time": ({ name }) => {
+  "input.time": ({ name, operation }) => {
     const block = new InputBlock(
       name,
       undefined,
       NodeMaterialBlockConnectionPointTypes.Float,
     );
-    // Babylon advances this uniform per frame, matching the runtime clock.
+    // Babylon's Time animation advances 0.01 at 60fps, i.e. 0.6 per second.
     block.animationType = 1;
+    if (operation.properties.timeMode === "seconds") {
+      const scale = new MultiplyBlock(`${name}_seconds`);
+      const factor = new InputBlock(`${name}_secondsFactor`);
+      factor.value = 1 / 0.6;
+      block.output.connectTo(scale.left);
+      factor.output.connectTo(scale.right);
+      return { blocks: [block, factor, scale], inputs: {}, outputs: { time: scale.output } };
+    }
     return single(block, {}, { time: block.output });
   },
   "input.cameraPosition": ({ name, plumbing }) => {
@@ -582,8 +622,11 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       { out: block.output },
     );
   },
-  "color.gradient": ({ name }) => {
+  "color.gradient": ({ name, operation }) => {
     const block = new GradientBlock(name);
+    const stops = [...new Map(materialGradientStops(operation.properties.stops).map((stop) => [stop.position, stop])).values()];
+    if (stops.length === 1) stops.push({ position: stops[0]!.position === 1 ? 0 : 1, color: stops[0]!.color });
+    block.colorSteps = stops.sort((a, b) => a.position - b.position).map((stop) => new GradientBlockColorStep(stop.position, Color3.FromArray(stop.color)));
     return single(block, { value: block.gradient }, { out: block.output });
   },
   "shading.fresnel": ({ name, plumbing }) => {
@@ -596,17 +639,17 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       { out: block.fresnel },
     );
   },
-  "shading.normalMap": ({ name, plumbing }) => {
+  "shading.normalMap": ({ name, plumbing, operation }) => {
     const block = new PerturbNormalBlock(name);
     plumbing.worldPosition?.connectTo(block.worldPosition);
     plumbing.worldNormal4?.connectTo(block.worldNormal);
-    plumbing.uv?.connectTo(block.uv);
+    if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
     // Babylon emits a Vector 4 normal; the graph pin is a Vector 3.
     const split = new VectorSplitterBlock(`${name}_xyz`);
     block.output.connectTo(split.xyzw);
     return {
       blocks: [block, split],
-      inputs: { packed: block.normalMapColor },
+      inputs: { packed: block.normalMapColor, uv: block.uv, strength: block.strength },
       outputs: { normal: split.xyzOut },
     };
   },
@@ -617,8 +660,9 @@ const ADAPTERS: Record<string, BlockAdapter> = {
  * adapter table.
  */
 function textureSampleAdapter(lod: boolean): BlockAdapter {
-  return ({ name }) => {
+  return ({ name, operation }) => {
     const block = new TextureBlock(name, true);
+    block.convertToLinearSpace = operation.properties.colorSpace === "color";
     const inputs: Record<string, NodeMaterialConnectionPoint> = {
       uv: block.uv,
     };
@@ -662,8 +706,17 @@ ADAPTERS["input.worldTangent"] = ({ name, plumbing }) => {
   if (plumbing.worldTangent) {
     return { blocks: [], inputs: {}, outputs: { tangent: plumbing.worldTangent } };
   }
-  const block = attributeVector(name, "tangent", 3);
-  return single(block, {}, { tangent: block.output });
+  const block = attributeVector(name, "tangent", 4);
+  const split = new VectorSplitterBlock(`${name}_xyz`);
+  const direction = new VectorMergerBlock(`${name}_direction`);
+  const world = new TransformBlock(`${name}_world`);
+  const normal = new NormalizeBlock(`${name}_unit`);
+  (plumbing.localTangent ?? block.output).connectTo(split.xyzw);
+  split.xyzOut.connectTo(direction.xyzIn);
+  direction.xyzw.connectTo(world.vector);
+  plumbing.world?.connectTo(world.transform);
+  world.xyz.connectTo(normal.input);
+  return { blocks: [block, split, direction, world, normal], inputs: {}, outputs: { tangent: normal.output } };
 };
 
 ADAPTERS["input.viewDirection"] = ({ name, plumbing }) => {
@@ -702,6 +755,39 @@ ADAPTERS["input.sceneNormal"] = ({ name }) => {
 };
 
 ADAPTERS["custom.glsl"] = ({ name, operation }) => {
+  const pins = customGlslInterface(operation.properties);
+  if (pins) {
+    const primary = pins.outputs[0]!;
+    const additional = pins.outputs.slice(1);
+    const functionName = customGlslFunctionName(operation.id);
+    const helper = `${functionName}_body`;
+    const block = new CustomBlock(name);
+    const blockType = { float: "Float", vec2: "Vector2", vec3: "Vector3", vec4: "Vector4" };
+    const parameters = [...pins.inputs.map((pin) => `${pin.type} ${pin.name}`), ...additional.map((pin) => `out ${pin.type} ${pin.name}`)];
+    const wrapperParameters = [...pins.inputs.map((pin, i) => `${pin.type} input${i}`), ...pins.outputs.map((pin, i) => `out ${pin.type} output${i}`)];
+    block.options = {
+      name,
+      target: "Neutral",
+      functionName,
+      inParameters: pins.inputs.map((pin, i) => ({ name: `input${i}`, type: blockType[pin.type] })),
+      outParameters: pins.outputs.map((pin, i) => ({ name: `output${i}`, type: blockType[pin.type] })),
+      code: [
+        `${primary.type} ${helper}(${parameters.join(", ")}) {`,
+        ...additional.map((pin) => `${pin.name} = ${pin.type}(0.0);`),
+        `// CUSTOM_BODY_${functionName}`,
+        String(operation.properties.body ?? ""),
+        `}`,
+        `void ${functionName}(${wrapperParameters.join(", ")}) {`,
+        `output0 = ${helper}(${[...pins.inputs.map((_, i) => `input${i}`), ...additional.map((_, i) => `output${i + 1}`)].join(", ")});`,
+        `}`,
+      ],
+    };
+    return {
+      blocks: [block],
+      inputs: Object.fromEntries(pins.inputs.map((pin, i) => [pin.id, block.inputs[i]!])),
+      outputs: Object.fromEntries(pins.outputs.map((pin, i) => [pin.id, block.outputs[i]!])),
+    };
+  }
   const raw =
     typeof operation.properties.body === "string"
       ? operation.properties.body.trim()

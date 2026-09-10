@@ -27,9 +27,11 @@ import type {
   MaterialGraphNode,
 } from "./document";
 import { createTypeResolver } from "./resolve";
+import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceError } from "./custom-glsl";
 import { validateMaterialParameterNames } from "./parameters";
 import {
   materialTypeLabel,
+  componentCount,
   typesAreAssignable,
   type MaterialValueType,
 } from "./types";
@@ -44,6 +46,8 @@ export interface MaterialDiagnostic {
   nodeId?: string;
   pinId?: string;
   edgeId?: string;
+  line?: number;
+  stage?: "vertex" | "fragment";
 }
 
 export type MaterialCapabilities = Partial<Record<MaterialCapability, boolean>>;
@@ -208,7 +212,7 @@ export function collectFunctionDependencies(
 }
 
 interface ValidateGraphOptions extends MaterialValidationContext {
-  domain: MaterialDomain;
+  domain?: MaterialDomain;
   /** Function graphs use their interface pins instead of a terminal node. */
   functionInterface?: MaterialFunctionDocument;
 }
@@ -223,7 +227,8 @@ function definitionForNode(
   if (node.type === "function.input" || node.type === "function.output") {
     return functionPlumbingDefinition(node.type, options.functionInterface);
   }
-  return materialNodeDefinition(node.type);
+  const definition = materialNodeDefinition(node.type);
+  return definition && node.type === "custom.glsl" ? customGlslDefinition(node, definition) : definition;
 }
 
 /** Call node pins mirror the target function's declared interface. */
@@ -307,6 +312,7 @@ function validateGraph(
       node.type !== "function.call" &&
       node.type !== "function.input" &&
       node.type !== "function.output" &&
+      options.domain !== undefined &&
       !nodeIsLegalInDomain(node.type, options.domain)
     ) {
       diagnostics.push({
@@ -334,7 +340,12 @@ function validateGraph(
     }
 
     if (node.type === "custom.glsl") {
-      const custom = validateCustomGlslBody(customGlslBody(node));
+      const message = node.properties.customVersion === 2
+        ? customGlslInterfaceError(node.properties) ?? customGlslFunctionBodyError(customGlslBody(node))
+        : null;
+      const custom = node.properties.customVersion === 2
+        ? message ? { code: "material.customGlsl", message, severity: "error" as const } : null
+        : validateCustomGlslBody(customGlslBody(node));
       if (custom) {
         diagnostics.push({ ...custom, nodeId: node.id });
       }
@@ -464,6 +475,14 @@ function validateGraph(
       const source = nodesById.get(edge.sourceNodeId);
       const target = nodesById.get(edge.targetNodeId);
       if (!source || !target) continue;
+      if (source.type === "vector.split") {
+        const inputType = resolver.inputType(source.id, "value");
+        const axis = ["x", "y", "z", "w"].indexOf(edge.sourcePinId);
+        if (inputType && axis >= componentCount(inputType)) {
+          diagnostics.push({ code: "material.invalidComponent", message: `${materialTypeLabel(inputType)} has no ${edge.sourcePinId.toUpperCase()} component`, severity: "error", nodeId: source.id, pinId: edge.sourcePinId, edgeId: edge.id });
+          continue;
+        }
+      }
       const sourceDefinition = definitions.get(source.id);
       const targetDefinition = definitions.get(target.id);
       if (!sourceDefinition || !targetDefinition) continue;
@@ -525,7 +544,8 @@ export function validateMaterialDocument(
   doc: MaterialDocument,
   context: MaterialValidationContext = {},
 ): MaterialDiagnostic[] {
-  const diagnostics = validateGraph(doc, { ...context, domain: doc.domain });
+  const diagnostics = validateGraph(doc, { ...context, functions: context.functions ?? {}, domain: doc.domain });
+  diagnostics.push(...validateCalledFunctions(doc, context, doc.domain));
   const terminalType = terminalNodeTypeFor(doc.domain);
   const terminals = doc.nodes.filter((node) => node.type === terminalType);
   if (terminals.length === 0) {
@@ -557,7 +577,7 @@ export function validateMaterialDocument(
     });
   }
 
-  if (doc.domain === "surface") {
+  if (doc.domain === "surface" && !dependencies.recursion) {
     diagnostics.push(
       ...validateWorldPositionOffsetStage(doc, context.functions ?? {}),
     );
@@ -687,11 +707,11 @@ function walkWorldPositionOffsetNode(
     return;
   }
 
-  const definition = materialNodeDefinition(node.type);
+  const definition = definitionForNode(node, { functions: frame.functions });
   if (
     definition &&
     node.type !== "function.output" &&
-    !nodeIsLegalInStage(node.type, "vertex")
+    (definition.stages ? !definition.stages.includes("vertex") : !nodeIsLegalInStage(node.type, "vertex"))
   ) {
     diagnostics.push({
       code: "material.stageMismatch",
@@ -719,10 +739,54 @@ export function validateMaterialFunctionDocument(
 ): MaterialDiagnostic[] {
   const diagnostics = validateGraph(fn, {
     ...context,
-    // Functions must stay domain-neutral so either material kind can call them.
-    domain: "surface",
+    // The caller supplies the domain; standalone functions may use any domain.
     functionInterface: fn,
   });
+  diagnostics.push(...validateFunctionInterface(fn));
+  diagnostics.push(...validateCalledFunctions(fn, context));
+
+  const dependencies = collectFunctionDependencies(fn, context.functions ?? {});
+  if (dependencies.recursion) {
+    diagnostics.push({
+      code: "material.function.recursive",
+      message: `Material Functions call each other in a loop: ${dependencies.recursion.join(" → ")}`,
+      severity: "error",
+    });
+  }
+  return diagnostics;
+}
+
+function validateCalledFunctions(
+  graph: GraphLike,
+  context: MaterialValidationContext,
+  domain?: MaterialDomain,
+  visiting: readonly string[] = [],
+  prefix = "",
+): MaterialDiagnostic[] {
+  const functions = context.functions ?? {};
+  const diagnostics: MaterialDiagnostic[] = [];
+  for (const call of graph.nodes) {
+    if (call.type !== "function.call") continue;
+    const guid = call.properties.functionGuid;
+    if (typeof guid !== "string" || visiting.includes(guid)) continue;
+    const fn = functions[guid];
+    if (!fn) continue; // validateGraph reports the missing call at this level.
+    const callPrefix = `${prefix}${call.id}/`;
+    const local = [
+      ...validateGraph(fn, { ...context, functions, domain, functionInterface: fn }),
+      ...validateFunctionInterface(fn),
+    ];
+    diagnostics.push(...local.map((diagnostic) => ({
+      ...diagnostic,
+      nodeId: diagnostic.nodeId ? `${callPrefix}${diagnostic.nodeId}` : `${prefix}${call.id}`,
+    })));
+    diagnostics.push(...validateCalledFunctions(fn, context, domain, [...visiting, guid], callPrefix));
+  }
+  return diagnostics;
+}
+
+function validateFunctionInterface(fn: MaterialFunctionDocument): MaterialDiagnostic[] {
+  const diagnostics: MaterialDiagnostic[] = [];
 
   if (fn.outputs.length === 0) {
     diagnostics.push({
@@ -761,20 +825,6 @@ export function validateMaterialFunctionDocument(
       });
     }
     seen.add(pin.id);
-  }
-
-  const dependencies = collectFunctionDependencies(
-    fn,
-    context.functions ?? {},
-  );
-  if (dependencies.recursion) {
-    diagnostics.push({
-      code: "material.function.recursive",
-      message: `Material Functions call each other in a loop: ${dependencies.recursion.join(
-        " → ",
-      )}`,
-      severity: "error",
-    });
   }
 
   return diagnostics;

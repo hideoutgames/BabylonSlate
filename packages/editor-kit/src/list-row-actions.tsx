@@ -11,6 +11,7 @@ export type ListRowActionsProps = {
   rowId?: string;
   onMove: (delta: number) => void;
   onRemove: () => void;
+  removeDisabled?: boolean;
 };
 
 /** Compact up / down / trash cluster matching PinListEditor row actions. */
@@ -22,6 +23,7 @@ export function ListRowActions({
   rowId,
   onMove,
   onRemove,
+  removeDisabled,
 }: ListRowActionsProps) {
   const label = name ?? `row ${index + 1}`;
   const id = rowId ?? String(index);
@@ -60,6 +62,7 @@ export function ListRowActions({
         aria-label={`Remove ${label}`}
         data-testid={`${testIdPrefix}-${id}-remove`}
         onClick={onRemove}
+        disabled={removeDisabled}
       >
         <Trash2Icon />
       </Button>

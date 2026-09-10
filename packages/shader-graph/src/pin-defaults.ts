@@ -8,6 +8,8 @@ import type {
   MaterialGraphNode,
 } from "./document";
 import { componentCount, isNumericType, type MaterialValueType } from "./types";
+import { customGlslDefinition } from "./custom-glsl";
+import { createTypeResolver } from "./resolve";
 
 export function materialPinDefaultPropertyKey(pinId: string): string {
   return `default:${pinId}`;
@@ -63,7 +65,8 @@ function inputPins(
       ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
     }));
   }
-  return [...(materialNodeDefinition(node.type)?.inputs ?? [])];
+  const definition = materialNodeDefinition(node.type);
+  return [...(definition && node.type === "custom.glsl" ? customGlslDefinition(node, definition).inputs : definition?.inputs ?? [])];
 }
 
 export function listUnconnectedMaterialPinDefaults(
@@ -79,6 +82,7 @@ export function listUnconnectedMaterialPinDefaults(
       .map((edge) => edge.targetPinId),
   );
   const listed: MaterialPinDefault[] = [];
+  const resolver = createTypeResolver(graph, context);
   for (const pin of inputPins(node, context)) {
     if (connected.has(pin.id)) continue;
     const kind = pin.type.kind;
@@ -86,13 +90,14 @@ export function listUnconnectedMaterialPinDefaults(
     if (kind !== "generic" && !isNumericType(kind as MaterialValueType)) continue;
     const authored = readMaterialPinDefault(node.properties, pin.id);
     if (authored === undefined && pin.defaultValue === undefined) continue;
-    const type = kind as MaterialValueType | "generic";
+    const type = kind === "generic" ? resolver.inputType(node.id, pin.id) ?? "generic" : kind as MaterialValueType;
+    const value = authored ?? pin.defaultValue ?? zeroComponents(type);
     listed.push({
       pinId: pin.id,
       name: pin.name,
       type,
       ...(pin.colorHint ? { colorHint: true } : {}),
-      value: authored ?? pin.defaultValue ?? zeroComponents(type),
+      value: value.length === 1 && type !== "generic" && componentCount(type) > 1 ? Array(componentCount(type)).fill(value[0]) as number[] : value,
     });
   }
   return listed;

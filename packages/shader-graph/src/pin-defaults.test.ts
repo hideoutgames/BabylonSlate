@@ -18,6 +18,13 @@ describe("material pin defaults", () => {
     expect(readMaterialPinDefault({}, "roughness")).toBeUndefined();
   });
 
+  it("uses the resolved vector width for an unconnected generic default", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "vector", type: "const.vec3", position: { x: 0, y: 0 }, properties: { value: [1, 2, 3] } }, { id: "add", type: "math.add", position: { x: 0, y: 0 }, properties: { "default:b": [0.5] } });
+    doc.edges.push({ id: "vector-add", sourceNodeId: "vector", sourcePinId: "out", targetNodeId: "add", targetPinId: "a" });
+    expect(listUnconnectedMaterialPinDefaults(doc, "add")).toEqual([expect.objectContaining({ pinId: "b", type: "vec3", value: [0.5, 0.5, 0.5] })]);
+  });
+
   it("lists catalog defaults for unconnected numeric and color pins", () => {
     const doc = createDefaultMaterialDocument();
     const listed = listUnconnectedMaterialPinDefaults(doc, "output");

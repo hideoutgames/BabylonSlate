@@ -117,6 +117,18 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 ## App wrappers
 
+`MultilineTextField` accepts optional `renderPreview` and `renderEditor` slots,
+retaining its draft/Done contract and viewport-bounded dialog. Material GLSL
+uses these slots for highlighted code. `GraphEditor.renderNodeBody` adds host
+content below the shared pin rows; material graphs use a bounded four-line
+static code preview. `CodeBodyEditor` (shared with `JsBodyEditor`) supports GLSL
+and JavaScript, syntax colors, line numbers and a coarse-pointer symbol bar.
+Serialized graph pins may supply a compact `typeLabel` and a `group` heading;
+Material graphs use these for numeric widths and Material Output channel groups.
+`EntryListEditor.minItems` / `maxItems` bound list actions (Gradient uses 2–32
+stops). `PinListEditor` uses unique pin IDs and prefix-scoped Add Pin labels so
+multiple input/output lists can share a Details panel without label collisions.
+
 Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 
 | Component | What it does | Used for |

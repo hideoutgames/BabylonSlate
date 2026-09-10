@@ -1,3 +1,4 @@
+import { applyMaterialBounds } from "./material-bounds";
 import {
   Color3,
   DirectionalLight,
@@ -416,7 +417,7 @@ export function applyMaterialToActorMeshes(
       guid,
       componentId,
     );
-    if (material) target.material = material;
+    if (material) { target.material = material; applyMaterialBounds(target); }
   }
 }
 

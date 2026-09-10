@@ -12,6 +12,11 @@ import { getMaterialTexture, ResourceCache } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 
 describe("meshAssetFingerprint", () => {
+  it("detects same-size texture replacements while retaining equal-content snapshot keys", () => {
+    const original = meshAssetFingerprint({ textureBytes: new Map([["texture", new Uint8Array([1, 2, 3, 4, 5])]]) });
+    expect(meshAssetFingerprint({ textureBytes: new Map([["texture", new Uint8Array([1, 2, 3, 4, 5])]]) })).toBe(original);
+    expect(meshAssetFingerprint({ textureBytes: new Map([["texture", new Uint8Array([1, 9, 3, 4, 5])]]) })).not.toBe(original);
+  });
   it("includes compiled CSS stack values so a fallback change rebuilds 2D text", () => {
     expect(meshAssetFingerprint({ fontCssStack: "A, sans-serif" })).not.toBe(
       meshAssetFingerprint({ fontCssStack: "B, sans-serif" }),

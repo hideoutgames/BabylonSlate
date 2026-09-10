@@ -107,7 +107,7 @@ function addPin(
   return [
     ...rows,
     {
-      id: `p_${Date.now()}`,
+      id: `p_${crypto.randomUUID()}`,
       name,
       type: "float",
       ...(direction ? { direction } : {}),
@@ -374,10 +374,11 @@ export function PinListEditor({
       })}
       {readOnly ? null : (
       <Field>
-        <FieldLabel htmlFor="pin-add-name">Add Pin</FieldLabel>
+        <FieldLabel htmlFor={`${testIdPrefix}-add-name`}>Add Pin</FieldLabel>
         <div className="flex flex-wrap gap-2">
           <Input
-            id="pin-add-name"
+            id={`${testIdPrefix}-add-name`}
+            data-testid={`${testIdPrefix}-add-name`}
             className="h-8 min-h-8 min-w-0 flex-1"
             value={draftName}
             onChange={(event) => setDraftName(event.target.value)}

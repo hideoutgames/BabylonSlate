@@ -182,6 +182,22 @@ Babylon lacks are composed from existing ones rather than raw source — `fwidth
 is derivatives plus absolute values plus an add, `log2` is a scaled natural log,
 `inversesqrt` is a reciprocal square root.
 
+Compiled graph assembly exposes `ready`, which settles after Babylon finishes
+loading block shader code and building the graph. Preview awaits this result;
+the library retains the previous generation until a replacement succeeds.
+Deferred failures retain diagnostics instead of publishing a broken replacement.
+Function validation follows nested calls in the caller's domain and capabilities,
+with call-path diagnostics. Recursive calls never enter the WPO stage walker.
+
+Surface opacity reaches fragment alpha. Masked surfaces discard pixels whose
+**Alpha Clip** value is below **Alpha Cutoff**; an unwired Alpha Clip uses
+Opacity. Additive uses additive blending. PBR surfaces include the Scene's
+environment reflection and irradiance, including when emission is connected.
+Clamp supports connected scalar/vector bounds; comparisons return component-wise
+numeric masks. Refract uses Vector 3 directions and scalar Eta. Split connections
+to components absent from the input vector produce diagnostics. World Tangent
+is transformed as a direction by the mesh world matrix.
+
 `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
 refcounts instances. A Babylon material belongs to one Scene, so the editor
 viewport, a preview tab and a Play session each hold their own. A new material
@@ -283,16 +299,17 @@ Details is selection-aware:
 
 ## Custom GLSL
 
-`custom.glsl` is an **expression-only** fragment helper. The selected-node
-Details panel edits a persisted `body` (Textarea) with a generated typed
-signature `result = fn(a, b)`. The validator rejects empty bodies, oversized
-source, declarations, preprocessor directives and forbidden globals, and
-reports `material.capability` on WebGPU (`customGlsl: false`). Compiler
-Results show `material.customGlsl`. Playwright wires the validated node
-into Metallic with tap-to-connect (force-click so the dock sash cannot
-steal the pin) and asserts the preview compiles to `data-status="ready"`.
-Render realises the node through Babylon `CustomBlock`; the expression
-participates in the plan hash so a body edit invalidates the cache.
+`custom.glsl` uses a typed function body on new nodes. Define named numeric
+inputs and additional outputs in Details, return the primary output, and assign
+additional outputs by name. The expanded editor provides GLSL highlighting and
+line numbers; the node shows four read-only code lines. Existing expression
+nodes retain `result = fn(a, b)` until explicitly converted.
+
+The validator checks interfaces, function boundaries, stage restrictions and
+GLSL/WebGL capability. GPU errors appear as `material.compile.glsl`, with body
+line mapping when available. Babylon `CustomBlock` generates the function
+signature. Body and interface edits participate in the plan hash. Custom nodes
+use manual **Render** and retain the last good material on compilation failure.
 
 ## Inline Texture Sample
 
@@ -390,6 +407,77 @@ editor Play and the packaged player call `loadScene` / `applySceneEnvironment`
 so the destination stack and environment replace the previous scene's. Engine Settings
 `postProcessingEnabled` is not applied to exported games — omitted means the
 authored stack runs.
+
+## Authoring and runtime behavior
+
+GPU diagnostics map driver line numbers to Custom GLSL body lines when the
+processed shader still contains an unambiguous source marker, including inlined
+function call paths. Otherwise the original driver message is retained without
+an invented line number. Opening the GLSL editor selects a mapped error line.
+New edits cancel pending preview builds; dependency refresh marks existing
+materials dirty without discarding the displayed generation.
+Imported-model texture optimization uses published material readiness rather
+than accepting a pending build as proof that replacement textures are bound.
+
+Material pins display compact Float / V2 / V3 / V4 / Texture hints. Bound generic
+vectors use the resolved width for connections and default editors. Scalar Split
+supports X only. Scene snapshots memoize hashes of immutable byte objects so
+transform-only edits do not repeatedly hash texture files; replace the byte object
+when an asset changes. Material Output groups Surface,
+Emission, Transparency and Geometry pins. Non-surface Details omit surface-only
+controls. **Bounds Padding (Local)** expands mesh culling bounds for authored
+displacement and restores original bounds on material reassignment; it does not
+alter collision shapes. Particle materials preview on a disposable particle
+system rather than an unrelated static mesh.
+
+Imported glTF graphs retain base-color/alpha factors, metallic and roughness
+factors and packed B/G channels, emissive factors/textures, normal maps, alpha
+mode/cutoff and double-sidedness. Color texture samples convert sRGB to linear;
+normal and packed data samples remain unconverted. Texture Details exposes the
+color-space choice, with legacy graphs retaining their original behavior.
+Unsupported material extensions, occlusion or texture-coordinate transforms keep
+the Model slot on Babylon's source material instead of substituting a partial
+graph. Unrelated images are never borrowed as albedo. Extracted graphs remain
+available for explicit editing/assignment.
+
+Custom GLSL readiness includes a bounded GPU shader check on a hidden surface
+probe, unattached post-process or inactive particle system before the library
+publishes a replacement. GLSL failures retain the
+previous material. NullEngine unit tests check graph construction only; browser
+checks exercise the GPU compiler.
+
+Surface vertex plumbing applies Morph Targets, Instances and Bones before world
+position/normal transforms and authored World Position Offset. Normal Map exposes
+UV (mesh UV when unwired) and Strength. Gradient Details edits up to 32 normalized
+color stops. Material Function interface edits preserve typed defaults and pin
+IDs; selecting an input exposes its numeric default. Byte fingerprints examine
+all bytes, so same-size texture replacements refresh dependent meshes.
+
+Material Preview loads closed Material Functions from their `document` chunk,
+with unsaved open tabs taking precedence. Registry changes refresh saved bodies
+and texture bytes. Texture cache reuse compares content as well as GUID and
+sampling settings, preserving outstanding retains when bytes are replaced.
+Preview texture references are retained once per byte revision and released on
+tab teardown. Newly added Divide / Modulo nodes start with divisor 1 and Power
+starts with exponent 1. New Time nodes expose seconds of Babylon scene animation;
+legacy nodes preserve the previous 0.6-units-per-second rate.
+
+Custom GLSL nodes created by the editor use node-local `customVersion: 2`, with
+stable pin IDs, GLSL variable names and explicit Float / Vector 2 / Vector 3 /
+Vector 4 types. The body returns the first output and assigns named additional
+outputs, initialized to zero before the body runs. Inputs have ordinary editable
+pin defaults. Direct sampler pins and WebGPU are not supported. Derivatives and
+discard restrict the node to the fragment stage. Graph validation checks the
+interface and function boundary; the GPU compiler checks GLSL syntax and types.
+Legacy expression nodes keep their original generic A/B behavior. **Convert to
+Function Body** preserves link IDs and the currently inferred vector width.
+Changing a variable name does not rewrite authored GLSL; update its references.
+
+Custom nodes display four highlighted read-only lines below their pins. Details
+opens the existing expanded multiline dialog with GLSL syntax highlighting,
+line numbers, keyboard undo, bracket matching and a coarse-pointer symbol bar.
+The return name labels its pin; only input and additional output names are
+variables inside the function. Use **Render** to compile Custom GLSL changes.
 
 ## Not implemented
 

@@ -1,4 +1,5 @@
 import { Mesh, type Camera, type Material, type Scene } from "@babylonjs/core";
+import { applyMaterialBounds } from "./material-bounds";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -487,6 +488,7 @@ export class EditorSceneSync {
         if (isColliderVisualTree(target) || isTilemapChunkMesh(target)) continue;
         if (!this.constructionMaterials.has(target)) continue;
         target.material = this.constructionMaterials.get(target) ?? null;
+        applyMaterialBounds(target);
       }
     }
   }
@@ -544,6 +546,7 @@ export class EditorSceneSync {
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;
       target.material = material;
+      applyMaterialBounds(target);
     }
   }
 

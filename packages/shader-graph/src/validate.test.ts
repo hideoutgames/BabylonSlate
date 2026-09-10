@@ -469,9 +469,36 @@ describe("material validation", () => {
       position: { x: 0, y: 0 },
       properties: { functionGuid: "fn-outer" },
     });
+    outer.edges = [{ id: "recursive-result", sourceNodeId: "call-inner", sourcePinId: "out_value", targetNodeId: "outputs", targetPinId: "out_value" }];
+    doc.edges.push({ id: "recursive-wpo", sourceNodeId: "call", sourcePinId: "out_value", targetNodeId: "output", targetPinId: "worldPositionOffset" });
     expect(codes(doc, { functions: { "fn-outer": outer } })).toContain(
       "material.function.recursive",
     );
+  });
+
+  it("reports invalid nested function bodies at their call path instead of lowering a fallback", () => {
+    const inner = createDefaultMaterialFunctionDocument("Inner");
+    inner.nodes.push({ id: "invalid", type: "unknown.node", position: { x: 0, y: 0 }, properties: {} });
+    inner.edges = [{ id: "invalid-result", sourceNodeId: "invalid", sourcePinId: "out", targetNodeId: "outputs", targetPinId: "out_value" }];
+    const outer = createDefaultMaterialFunctionDocument("Outer");
+    outer.nodes.push({ id: "nested", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "inner" } });
+    outer.edges = [{ id: "nested-result", sourceNodeId: "nested", sourcePinId: "out_value", targetNodeId: "outputs", targetPinId: "out_value" }];
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "outer" } });
+    expect(validateMaterialDocument(doc, { functions: { inner, outer } })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "material.unknownNode", nodeId: "call/nested/invalid" }),
+    ]));
+  });
+
+  it("checks function nodes against the calling material domain", () => {
+    const fn = createDefaultMaterialFunctionDocument();
+    fn.nodes.push({ id: "world", type: "input.worldPosition", position: { x: 0, y: 0 }, properties: {} });
+    fn.edges = [{ id: "world-result", sourceNodeId: "world", sourcePinId: "position", targetNodeId: "outputs", targetPinId: "out_value" }];
+    const doc = createDefaultMaterialDocument("Post", "postProcess");
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn" } });
+    expect(validateMaterialDocument(doc, { functions: { fn } })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "material.domainMismatch", nodeId: "call/world" }),
+    ]));
   });
 
   it("anchors every diagnostic to a node or edge id", () => {

@@ -2,6 +2,9 @@ import type { SerializedGraph } from "@babylonslate/core";
 
 /** Pin metadata embedded in node data by @babylonslate/scripting serialize. */
 export type SerializedPin = {
+  /** Optional compact display hint supplied by a typed graph host. */
+  typeLabel?: string;
+  group?: string;
   id: string;
   name: string;
   kind: "exec" | "data";
