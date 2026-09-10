@@ -60,6 +60,7 @@ test.describe("3D Empty Kenney Mannequin", () => {
   }) => {
     await openTestProject(page);
     await openAssetFromBrowser(page, "assets/Mannequin/mannequin.babasset");
+    await expect(page.getByTestId("model-preview-canvas")).toBeVisible();
     await openContentBrowser(page);
     for (const path of [
       "assets/Mannequin/mannequin.babasset",
