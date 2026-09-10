@@ -14,6 +14,8 @@ export interface NumberFieldProps extends Omit<
 > {
   value: number;
   onChange: (value: number) => void;
+  /** Enter confirms only valid drafts, after clamping to the configured range. */
+  onEnter?: (value: number) => void;
   min?: number;
   max?: number;
 }
@@ -43,6 +45,7 @@ export function NumberField({
   max,
   onBlur,
   onKeyDown,
+  onEnter,
   ...props
 }: NumberFieldProps) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -55,6 +58,27 @@ export function NumberField({
   const parseDraft = (raw: string) =>
     parseNumberInput(raw) ??
     evaluateNumericExpression(raw, baselineRef.current);
+  const finishDraft = (): number | undefined => {
+    const parsed = parseDraft(draft ?? String(value));
+    setDraft(null);
+    if (parsed === undefined) {
+      if (draft?.trim())
+        setFeedback({
+          message:
+            "Enter a number or expression. Restored the last valid value.",
+          invalid: true,
+        });
+      return undefined;
+    }
+    const next = clamp(parsed, min, max);
+    if (next !== parsed)
+      setFeedback({
+        message: `Adjusted to ${next} to stay within the allowed range.`,
+        invalid: false,
+      });
+    if (next !== value) onChange(next);
+    return next;
+  };
 
   return (
     <div
@@ -87,25 +111,7 @@ export function NumberField({
           onChange(parsed);
         }}
         onBlur={(event) => {
-          const parsed = parseDraft(draft ?? "");
-          if (parsed === undefined) {
-            if (draft?.trim())
-              setFeedback({
-                message:
-                  "Enter a number or expression. Restored the last valid value.",
-                invalid: true,
-              });
-            setDraft(null);
-          } else {
-            const next = clamp(parsed, min, max);
-            if (next !== parsed)
-              setFeedback({
-                message: `Adjusted to ${next} to stay within the allowed range.`,
-                invalid: false,
-              });
-            if (next !== value) onChange(next);
-            setDraft(null);
-          }
+          finishDraft();
           onBlur?.(event);
         }}
         onKeyDown={(event) => {
@@ -118,7 +124,12 @@ export function NumberField({
           )
             return;
           event.preventDefault();
-          event.currentTarget.blur();
+          if (onEnter) {
+            const next = finishDraft();
+            if (next !== undefined) onEnter(next);
+          } else {
+            event.currentTarget.blur();
+          }
         }}
       />
       {feedback?.invalid ? (

@@ -44,9 +44,9 @@ export function NumberPromptDialog({
     if (open) setValue(initialValue);
   }, [open, initialValue]);
 
-  const submit = () => {
-    if (!Number.isFinite(value) || value < min) return;
-    onSubmit(value);
+  const submit = (next = value) => {
+    if (!Number.isFinite(next) || next < min) return;
+    onSubmit(next);
     onOpenChange(false);
   };
 
@@ -68,12 +68,7 @@ export function NumberPromptDialog({
             data-testid="number-prompt-input"
             value={value}
             onChange={setValue}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                submit();
-              }
-            }}
+            onEnter={submit}
           />
         </Field>
         <AlertDialogFooter>

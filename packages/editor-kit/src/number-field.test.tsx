@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -180,5 +180,30 @@ describe("NumberField", () => {
 
     expect(input.value).toBe("30/2");
     expect(document.activeElement).toBe(input);
+  });
+
+  it("lets a keyboard handler prevent Enter finalization", () => {
+    const onEnter = vi.fn();
+    const onKeyDown = vi.fn((event: KeyboardEvent<HTMLInputElement>) =>
+      event.preventDefault(),
+    );
+    render(
+      <NumberField
+        value={30}
+        onChange={() => {}}
+        onKeyDown={onKeyDown}
+        onEnter={onEnter}
+        data-testid="field"
+      />,
+    );
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "30/2" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(input.value).toBe("30/2");
+    expect(document.activeElement).toBe(input);
+    expect(onKeyDown).toHaveBeenCalledOnce();
+    expect(onEnter).not.toHaveBeenCalled();
   });
 });
