@@ -418,7 +418,10 @@ New edits cancel pending preview builds; dependency refresh marks existing
 materials dirty without discarding the displayed generation.
 
 Material pins display compact Float / V2 / V3 / V4 / Texture hints. Bound generic
-vectors use the resolved width for connections. Material Output groups Surface,
+vectors use the resolved width for connections and default editors. Scalar Split
+supports X only. Scene snapshots memoize hashes of immutable byte objects so
+transform-only edits do not repeatedly hash texture files; replace the byte object
+when an asset changes. Material Output groups Surface,
 Emission, Transparency and Geometry pins. Non-surface Details omit surface-only
 controls. **Bounds Padding (Local)** expands mesh culling bounds for authored
 displacement and restores original bounds on material reassignment; it does not

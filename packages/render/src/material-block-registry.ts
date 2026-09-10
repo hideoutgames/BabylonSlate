@@ -475,6 +475,12 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     };
   },
   "vector.split": ({ name, operation }) => {
+    if (operation.resolvedType === "float") {
+      const block = new AddBlock(name);
+      const zero = constantInput(`${name}_zero`, "float", [0]);
+      zero.output.connectTo(block.right);
+      return { blocks: [block, zero], inputs: { value: block.left }, outputs: { x: block.output } };
+    }
     const block = new VectorSplitterBlock(name);
     // VectorSplitter exposes one input per width; pick the one that matches
     // so a Vector 2 is not offered to a Vector 4 connector.

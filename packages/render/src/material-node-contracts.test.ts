@@ -27,6 +27,12 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it("allows a scalar Split X output without inventing vector components", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "split", "vector.split", { "default:value": [0.7] });
+    wire(doc, "split", "x", "output", "roughness");
+    await compile(doc);
+  });
   it("compiles a typed Custom GLSL return and an independently typed additional output", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "custom", "custom.glsl", {
