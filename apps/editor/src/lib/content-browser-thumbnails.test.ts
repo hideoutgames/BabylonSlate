@@ -92,7 +92,8 @@ describe("syncContentBrowserThumbnailUrls", () => {
     let cancelled = false;
     const syncing = syncContentBrowserThumbnailUrls({
       mountedTextureGuids: ["borrowed", "new", "pending", "unrequested"],
-      urls: { borrowed: "blob:borrowed", old: "blob:old" },
+      urls: { borrowed: "blob:borrowed", new: "blob:previous", old: "blob:old" },
+      refreshGuids: new Set(["new"]),
       hidden: false,
       load,
       createObjectURL,

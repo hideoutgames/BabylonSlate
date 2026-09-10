@@ -41,7 +41,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     loadAssetThumbnail,
     loadAssetDocument: vi.fn(async () => ({})),
     thumbnailsEnabled: true,
-    thumbnailEpoch: 0,
+    thumbnailVersions: {} as Record<string, number>,
     pluginDescriptors: [] as unknown[],
     showPluginContent: false,
     sourceControl: {
@@ -164,7 +164,7 @@ afterEach(async () => {
   await Promise.resolve();
   loadAssetThumbnail.mockClear();
   docs.thumbnailsEnabled = true;
-  docs.thumbnailEpoch = 0;
+  docs.thumbnailVersions = {};
   layout.phone = false;
   docs.openDocument.mockClear();
   docs.openDocuments = [];
@@ -610,11 +610,11 @@ describe("ContentBrowserWorkspace grid window", () => {
       await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith(animation.header.guid));
       expect(screen.getByTestId(`content-item-${model.path}`).querySelector("img")).toBeNull();
       available = true;
-      docs.thumbnailEpoch++;
+      docs.thumbnailVersions = { [model.header.guid]: 1, [animation.header.guid]: 1 };
       rerender(<ContentBrowserWorkspace />);
       await waitFor(() => expect(screen.getByTestId(`content-item-${animation.path}`).querySelector("img")).not.toBeNull());
       const oldUrl = screen.getByTestId(`content-item-${model.path}`).querySelector("img")!.getAttribute("src");
-      docs.thumbnailEpoch++;
+      docs.thumbnailVersions = { ...docs.thumbnailVersions, [model.header.guid]: 2 };
       rerender(<ContentBrowserWorkspace />);
       await waitFor(() => {
         const image = screen.getByTestId(`content-item-${model.path}`).querySelector("img");
@@ -622,6 +622,63 @@ describe("ContentBrowserWorkspace grid window", () => {
         expect(image!.getAttribute("src")).not.toBe(oldUrl);
       });
       expect(revokeUrl).toHaveBeenCalledWith(oldUrl);
+    } finally {
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+      loadAssetThumbnail.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    }
+  });
+
+  it("keeps existing images mounted through consecutive captures and a delayed replacement", async () => {
+    const model = texture(0);
+    model.header.type = "Model";
+    const animation = texture(1);
+    animation.header.type = "Animation";
+    const unchanged = texture(2);
+    installRegistry([model, animation, unchanged]);
+    let sequence = 0;
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:stable-${++sequence}`);
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
+    const imageFor = (path: string) => screen.getByTestId(`content-item-${path}`).querySelector("img");
+    try {
+      const { rerender } = render(<ContentBrowserWorkspace />);
+      await waitFor(() => expect(imageFor(unchanged.path)).not.toBeNull());
+      const modelImage = imageFor(model.path)!;
+      const modelUrl = modelImage.getAttribute("src");
+      const animationImage = imageFor(animation.path)!;
+      const animationUrl = animationImage.getAttribute("src");
+      const textureImage = imageFor(unchanged.path)!;
+      const textureUrl = textureImage.getAttribute("src");
+      let resolveReplacement!: (bytes: Uint8Array) => void;
+      const replacement = new Promise<Uint8Array>((resolve) => { resolveReplacement = resolve; });
+      loadAssetThumbnail.mockImplementation((guid) => guid === model.header.guid
+        ? replacement : Promise.resolve(new Uint8Array([1, 2, 3])));
+      loadAssetThumbnail.mockClear();
+      docs.thumbnailVersions = { [model.header.guid]: 1 };
+      rerender(<ContentBrowserWorkspace />);
+      await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith(model.header.guid));
+      expect(imageFor(model.path)).toBe(modelImage);
+      expect(modelImage.getAttribute("src")).toBe(modelUrl);
+      expect(imageFor(animation.path)).toBe(animationImage);
+      expect(animationImage.getAttribute("src")).toBe(animationUrl);
+      expect(revokeUrl).not.toHaveBeenCalled();
+
+      // Another completion supersedes the pending refresh without blanking any tile.
+      docs.thumbnailVersions = { ...docs.thumbnailVersions, [animation.header.guid]: 1 };
+      rerender(<ContentBrowserWorkspace />);
+      expect(imageFor(model.path)).toBe(modelImage);
+      expect(modelImage.getAttribute("src")).toBe(modelUrl);
+      expect(imageFor(unchanged.path)).toBe(textureImage);
+      await act(async () => { resolveReplacement(new Uint8Array([137, 80, 78, 71])); });
+      await waitFor(() => expect(modelImage.getAttribute("src")).not.toBe(modelUrl));
+      expect(imageFor(animation.path)).toBe(animationImage);
+      expect(animationImage.getAttribute("src")).not.toBe(animationUrl);
+      expect(imageFor(unchanged.path)).toBe(textureImage);
+      expect(textureImage.getAttribute("src")).toBe(textureUrl);
+      expect(loadAssetThumbnail).not.toHaveBeenCalledWith(unchanged.header.guid);
+      expect(revokeUrl).toHaveBeenCalledWith(modelUrl);
+      expect(revokeUrl).toHaveBeenCalledWith(animationUrl);
+      expect(revokeUrl).not.toHaveBeenCalledWith(textureUrl);
     } finally {
       createUrl.mockRestore();
       revokeUrl.mockRestore();
@@ -641,7 +698,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     try {
       const { rerender } = render(<ContentBrowserWorkspace />);
       await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith(model.header.guid));
-      docs.thumbnailEpoch++;
+      docs.thumbnailVersions = { [model.header.guid]: 1 };
       rerender(<ContentBrowserWorkspace />);
       await waitFor(() => {
         expect(screen.getByTestId(`content-item-${model.path}`).querySelector("img")?.getAttribute("src")).toBe("blob:current");

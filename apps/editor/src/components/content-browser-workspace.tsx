@@ -230,7 +230,7 @@ export function ContentBrowserWorkspace({
     tabOrder,
     loadAssetThumbnail,
     loadAssetDocument,
-    thumbnailEpoch,
+    thumbnailVersions,
     thumbnailsEnabled,
     pluginDescriptors,
     showPluginContent,
@@ -727,11 +727,7 @@ export function ContentBrowserWorkspace({
           )
         : false;
 
-  useEffect(() => {
-    for (const url of Object.values(thumbnailUrlsRef.current)) URL.revokeObjectURL(url);
-    thumbnailUrlsRef.current = {};
-    setThumbnailUrls({});
-  }, [thumbnailEpoch]);
+  const loadedThumbnailVersionsRef = useRef<Readonly<Record<string, number>>>({});
 
   useEffect(() => {
     if (!thumbnailsEnabled) return;
@@ -739,12 +735,16 @@ export function ContentBrowserWorkspace({
     void syncContentBrowserThumbnailUrls({
       mountedTextureGuids,
       urls: thumbnailUrlsRef.current,
+      refreshGuids: new Set(mountedTextureGuids.filter((guid) =>
+        thumbnailVersions[guid] !== loadedThumbnailVersionsRef.current[guid],
+      )),
       hidden,
       load: loadAssetThumbnail,
       createObjectURL: (blob) => URL.createObjectURL(blob),
       revokeObjectURL: (url) => URL.revokeObjectURL(url),
       isCancelled: () => cancelled,
       commit: (next) => {
+        loadedThumbnailVersionsRef.current = thumbnailVersions;
         thumbnailUrlsRef.current = next;
         setThumbnailUrls(next);
       },
@@ -752,7 +752,7 @@ export function ContentBrowserWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [hidden, loadAssetThumbnail, mountedTextureGuids, thumbnailEpoch, thumbnailsEnabled]);
+  }, [hidden, loadAssetThumbnail, mountedTextureGuids, thumbnailVersions, thumbnailsEnabled]);
 
   useEffect(() => {
     return () => {
