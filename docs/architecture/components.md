@@ -166,3 +166,5 @@ Not kit (single call site): `BrandLogo` (docs / wordmark), `BrandIcon` (landing 
 Input Action and Input Axis documents use the standard DockView document shell with Bindings and Details panels. `InputBindingsPanel` composes `PanelFrame`, `SearchDropdown`, `BindingCodePicker`, and compact Buttons; `InputBindingDetailsPanel` uses `PropertyGrid`. Shared document selection lives in `InputAssetEditingProvider`. Input authoring is reached through Content Browser > Input, not Project Settings. See [input assets and events](input.md).
 
 New Asset uses the shared TreeView for parent classes, including expansion, search, and keyboard/touch selection. SceneLayer descendants are excluded from Class creation; use the Scene Layer asset type.
+
+Graph Engine Settings control the Node Connection Assistant (enabled by default, 48 screen pixels, adjustable from 8?200) and Shake Nodes To Disconnect. Assistant links and shake disconnections commit on release. Shake requires three deliberate direction reversals; Escape, pointer cancellation, or a second touch cancels the gesture.

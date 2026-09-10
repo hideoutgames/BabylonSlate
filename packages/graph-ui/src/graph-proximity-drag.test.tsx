@@ -169,6 +169,17 @@ function renderDragGraph(
 }
 
 describe("GraphEditor proximity dragging", () => {
+  it("breaks a shaken node's links only on release", () => {
+    const document = graphWithFreePins();
+    document.edges = [{ id: "link", source: "source", sourceHandle: "value", target: "target", targetHandle: "input" }];
+    const graph = renderDragGraph(document);
+    graph.start();
+    for (const x of [30, -30, 30, -30]) graph.move({ x, y: 0 });
+    expect(graph.emitted).toEqual([]);
+    graph.stop();
+    expect(graph.emitted.at(-1)?.edges).toEqual([]);
+  });
+
   it("keeps discovering nearby pins after the host refreshes a drag that started out of range", () => {
     const graph = renderDragGraph(undefined, { commitPositionsOnDragEnd: false });
     graph.start();
