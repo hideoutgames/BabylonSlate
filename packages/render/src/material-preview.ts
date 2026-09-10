@@ -28,6 +28,7 @@ import {
 } from "./visual-meshes";
 import { installEngineDefaultMaterial } from "./default-material";
 import { createPreviewLighting } from "./preview-lighting";
+import { previewMeshesReady } from "./preview-readiness";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -508,7 +509,7 @@ export function createMaterialPreviewPresenter(
       const texture = ensureRtt(size.width, size.height);
       // Keep retrying at the caller's RAF cadence while textures/shaders load.
       // An empty warm-up frame must not consume a static preview's 1 fps slot.
-      if (!host.scene.isReady()) return;
+      if (!previewMeshesReady(host.mesh)) return;
       pendingForce = false;
       lastPresentMs = at;
       host.scene.render();

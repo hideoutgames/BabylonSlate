@@ -435,10 +435,19 @@ describe("material preview orbit gestures", () => {
 });
 
 describe("material preview presenter", () => {
-  it("waits for shader readiness without consuming the static preview frame interval", () => {
-    const host = createMaterialPreviewScene(engine() as never);
+  async function previewHost(created = engine()) {
+    const host = createMaterialPreviewScene(created as never);
     disposers.push(() => host.dispose());
-    const ready = vi.spyOn(host.scene, "isReady").mockReturnValue(false);
+    // Pixel/readback tests need a renderable material; NullEngine cannot upload
+    // the editor default checker's RawTexture.
+    host.applyMaterial(new StandardMaterial("preview-fixture", host.scene));
+    await host.scene.whenReadyAsync();
+    return host;
+  }
+
+  it("waits for shader readiness without consuming the static preview frame interval", async () => {
+    const host = await previewHost();
+    const ready = vi.spyOn(host.mesh, "isReady").mockReturnValue(false);
     const render = vi.spyOn(host.scene, "render");
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -465,8 +474,7 @@ describe("material preview presenter", () => {
       )
       .mockResolvedValue(new Uint8Array(4));
     disposers.push(() => read.mockRestore());
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const render = vi.spyOn(host.scene, "render");
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -484,10 +492,9 @@ describe("material preview presenter", () => {
     expect(render).toHaveBeenCalledTimes(2);
   });
 
-  it("renders through an output RenderTargetTexture instead of the default framebuffer", () => {
+  it("renders through an output RenderTargetTexture instead of the default framebuffer", async () => {
     const created = engine();
-    const host = createMaterialPreviewScene(created as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost(created);
     const canvas = new FakeCanvas();
     const registerView = vi.spyOn(created, "registerView");
     const resize = vi.spyOn(created, "resize");
@@ -505,9 +512,8 @@ describe("material preview presenter", () => {
     expect(host.camera.inputs.attachedToElement).toBeFalsy();
   });
 
-  it("clears the preview RTT on every scene render", () => {
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+  it("clears the preview RTT on every scene render", async () => {
+    const host = await previewHost();
     expect(host.scene.autoClear).toBe(true);
   });
 
@@ -517,8 +523,7 @@ describe("material preview presenter", () => {
       .spyOn(RenderTargetTexture.prototype, "readPixels")
       .mockResolvedValue(pixels);
     disposers.push(() => readPixels.mockRestore());
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     canvas.width = 1;
     canvas.height = 1;
@@ -539,13 +544,12 @@ describe("material preview presenter", () => {
     expect(canvas.widthAssigns + canvas.heightAssigns).toBe(assigns);
   });
 
-  it("skips scene.render while a blit is in flight", () => {
+  it("skips scene.render while a blit is in flight", async () => {
     const hang = vi
       .spyOn(RenderTargetTexture.prototype, "readPixels")
       .mockReturnValue(new Promise(() => {}));
     disposers.push(() => hang.mockRestore());
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     let now = 0;
     const presenter = createMaterialPreviewPresenter(
@@ -566,8 +570,7 @@ describe("material preview presenter", () => {
       .mockResolvedValue(new Uint8Array(4));
     disposers.push(() => readPixels.mockRestore());
     let now = 0;
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -597,8 +600,7 @@ describe("material preview presenter", () => {
       .mockResolvedValue(new Uint8Array(4));
     disposers.push(() => readPixels.mockRestore());
     let now = 0;
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -617,9 +619,8 @@ describe("material preview presenter", () => {
     expect(render).toHaveBeenCalledTimes(1);
   });
 
-  it("skips scene.render when frozen or the preview canvas has no size", () => {
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+  it("skips scene.render when frozen or the preview canvas has no size", async () => {
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -675,8 +676,7 @@ describe("material preview presenter", () => {
         delete (globalThis as { ImageData?: unknown }).ImageData;
       }
     });
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -695,9 +695,8 @@ describe("material preview presenter", () => {
     ]).toEqual([255, 0, 0, 255]);
   });
 
-  it("clears the camera output target on dispose", () => {
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+  it("clears the camera output target on dispose", async () => {
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
