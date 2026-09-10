@@ -39,7 +39,6 @@ import {
 } from "@babylonslate/behaviour-tree";
 import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import type { ScenePostProcessEntry } from "@babylonslate/core";
-import { shouldSpawnScriptedActor } from "@babylonslate/runtime";
 import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -397,14 +396,13 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
 export function packedBootControls(
   content: PackedGameContent,
   scripts: readonly ScriptBundleEntry[],
-  spawn: readonly { classId: string }[] = [],
 ): ControlMessage[] {
   const controls: ControlMessage[] = [];
   if (scripts.length > 0) {
     controls.push({
       type: "loadScripts",
       scripts: [...scripts],
-      spawn: spawn.filter((entry) => shouldSpawnScriptedActor(entry.classId)),
+      spawn: [],
     });
   }
   controls.push(...packedPlayControls(content));

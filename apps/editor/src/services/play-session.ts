@@ -60,7 +60,6 @@ import {
   type ControlMessage,
   type ScriptBundleEntry,
 } from "@babylonslate/bridge";
-import { spawnListForScripts } from "./script-compiler";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
@@ -232,7 +231,6 @@ export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
 export function playSessionBootControls(options: {
   load: Extract<ControlMessage, { type: "load" }>;
   scripts?: readonly ScriptBundleEntry[];
-  spawn?: Array<{ classId: string; variables?: Record<string, unknown> }>;
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
@@ -247,7 +245,7 @@ export function playSessionBootControls(options: {
     controls.push({
       type: "loadScripts",
       scripts: [...(options.scripts ?? [])],
-      spawn: options.spawn,
+      spawn: [],
     });
   }
   if ((options.animGraphs?.length ?? 0) > 0) {
@@ -317,7 +315,7 @@ export interface PlaySession {
   pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
-  /** Actor guids spawned this session (authored scene + unmatched scripts). */
+  /** Actor guids spawned this session (authored scene + explicit runtime spawns). */
   spawnedActorGuids: () => readonly string[];
   executeConsoleCommand: (
     line: string,
@@ -784,7 +782,6 @@ export function startPlaySession(options: {
   };
 
   const scripts = options.scripts ?? [];
-  const spawn = spawnListForScripts(scripts);
   const physics = options.physics ?? {
     physicsWorld: "3d" as const,
     gravity: [0, -9.81, 0] as [number, number, number],
@@ -820,7 +817,6 @@ export function startPlaySession(options: {
     for (const control of playSessionBootControls({
       load: loadControl,
       scripts,
-      spawn,
       animGraphs: options.animGraphs,
       behaviourTrees: options.behaviourTrees,
       blackboards: options.blackboards,
@@ -865,7 +861,7 @@ export function startPlaySession(options: {
       resume: () => inProcess.resume(),
     });
     if (scripts.length > 0) {
-      boot.queueScripts(inProcess, scripts, spawn);
+      boot.queueScripts(inProcess, scripts, []);
     }
     for (const entry of options.animGraphs ?? []) {
       const document = parseAnimGraphDocument(entry.document);

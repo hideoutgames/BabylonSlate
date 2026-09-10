@@ -11,7 +11,6 @@ import {
   GraphScriptCompileCache,
   graphCompileSignature,
   graphsNeedCompile,
-  spawnListForScripts,
 } from "./script-compiler";
 
 const tickToLog: SerializedGraph = {
@@ -788,21 +787,7 @@ describe("script compiler service", () => {
     expect(exported[0]?.source).not.toContain("checkInfiniteLoop");
   });
 
-  it("only spawns actors for scripts bound to a lifecycle event", () => {
-    const withEvent = compileGraphDocument(tickToLog, {
-      path: "assets/main.graph.babasset",
-    })!;
-    const withoutEvent = {
-      ...withEvent,
-      classId: "loose",
-      entryPoints: [{ name: "run", isAsync: false }],
-    };
-    expect(spawnListForScripts([withEvent, withoutEvent])).toEqual([
-      { classId: "main" },
-    ]);
-  });
-
-  it("compiles OnCommandRun into a core console command and does not spawn an actor", () => {
+  it("compiles OnCommandRun into a core console command", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -845,7 +830,6 @@ describe("script compiler service", () => {
     expect(script?.entryPoints.some((entry) => entry.event === "onCommandRun")).toBe(
       true,
     );
-    expect(spawnListForScripts([script!])).toEqual([]);
   });
 
   it("binds leftover On Hit to the sole prefab collider at Play compile", () => {
