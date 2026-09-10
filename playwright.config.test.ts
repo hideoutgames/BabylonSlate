@@ -94,7 +94,6 @@ describe("Playwright iPad project filter", () => {
     for (const file of [
       "p2-accept.spec.ts",
       "p5-scripting.spec.ts",
-      "p9-content.spec.ts",
       "editor-smoke.spec.ts",
       "editor-theme.spec.ts",
       "engine-settings.spec.ts",
@@ -103,6 +102,10 @@ describe("Playwright iPad project filter", () => {
     ]) {
       expect(ipadFiles, `${file} is desktop-only`).not.toContain(file);
     }
+
+    expect(landscape.filter((test) => test.file === "p9-content.spec.ts")).toEqual([
+      expect.objectContaining({ title: expect.stringMatching(/Custom GLSL node compiles a function body in the Material editor @ipad$/) }),
+    ]);
 
     expect(landscape.filter((test) => test.file === "p4-play.spec.ts")).toEqual([
       expect.objectContaining({
