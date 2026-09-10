@@ -6,6 +6,8 @@ import { ENGINE_BASE_CLASSES } from "./content-browser-helpers";
 export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   ...ENGINE_BASE_CLASSES,
   ...ENGINE_BT_BUILTIN_CLASSES.map((entry) => entry.id),
+  "SceneLayer",
+  "LogicComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
