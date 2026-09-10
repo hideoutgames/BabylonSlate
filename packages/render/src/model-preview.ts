@@ -1,5 +1,10 @@
 import "./gltf-loader";
-import type { AbstractMesh, AnimationGroup, Material, TransformNode } from "@babylonjs/core";
+import type {
+  AbstractMesh,
+  AnimationGroup,
+  Material,
+  TransformNode,
+} from "@babylonjs/core";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { ModelMaterialSlot } from "@babylonslate/assets";
@@ -9,8 +14,16 @@ import {
   type MaterialPreviewScene,
 } from "./material-preview";
 import { applyModelImportScale } from "./glb-anim";
-import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
-import { constructionMaterialOf, visualHierarchyBoundingVectors, visualMeshes } from "./visual-meshes";
+import {
+  gltfLoaderExtension,
+  isGltfModelBytes,
+  packedGltfBytes,
+} from "./model-mesh";
+import {
+  constructionMaterialOf,
+  visualHierarchyBoundingVectors,
+  visualMeshes,
+} from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 
 export { applyMaterialToVisualMeshes, visualMeshes } from "./visual-meshes";
@@ -27,7 +40,9 @@ function gltfPointers(material: Material): string[] {
   const raw =
     host._internalMetadata?.gltf?.pointers ?? host.metadata?.gltf?.pointers;
   if (!Array.isArray(raw)) return [];
-  return raw.filter((pointer): pointer is string => typeof pointer === "string");
+  return raw.filter(
+    (pointer): pointer is string => typeof pointer === "string",
+  );
 }
 
 /** glTF `materials` array index from the loader’s `/materials/N` pointer. */
@@ -104,6 +119,9 @@ export function createModelPreviewScene(
   host.mesh.isPickable = false;
   host.camera.lowerRadiusLimit = 0.25;
   host.camera.upperRadiusLimit = 400;
+  // Imported models can be much smaller than the material preview primitive.
+  // Keep the near plane inside the closest allowed orbit distance.
+  host.camera.minZ = 0.01;
   if (options.transparent) {
     host.scene.clearColor = new Color4(0, 0, 0, 0);
   }
@@ -112,9 +130,9 @@ export function createModelPreviewScene(
 
 /** glTF container root under the hidden preview placeholder (not the placeholder mesh). */
 export function previewRigRoot(host: MaterialPreviewScene): TransformNode {
-  const child = host.mesh.getChildTransformNodes(true).find(
-    (node) => !node.name.endsWith("_overlay"),
-  );
+  const child = host.mesh
+    .getChildTransformNodes(true)
+    .find((node) => !node.name.endsWith("_overlay"));
   return child ?? host.mesh;
 }
 

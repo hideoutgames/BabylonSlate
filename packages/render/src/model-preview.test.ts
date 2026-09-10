@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import {
+  Frustum,
+  MeshBuilder,
+  StandardMaterial,
+  VertexBuffer,
+} from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   decodeBabasset,
@@ -10,8 +15,15 @@ import {
 } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { isEngineDefaultMaterial } from "./default-material";
-import { encodeTriangleGlb, encodeUvHierarchyGlb, isGltfModelBytes } from "./model-mesh";
-import { attachSkeletonPreview, createLinkedSkeletonFromNodeRig } from "./node-rig";
+import {
+  encodeTriangleGlb,
+  encodeUvHierarchyGlb,
+  isGltfModelBytes,
+} from "./model-mesh";
+import {
+  attachSkeletonPreview,
+  createLinkedSkeletonFromNodeRig,
+} from "./node-rig";
 import { MATERIAL_PREVIEW_MESH_NAME } from "./material-preview";
 import {
   applyModelMaterialSlots,
@@ -36,27 +48,26 @@ function kenneyMannequinGlb(): Uint8Array {
   return embedGlbExternalImages(glb, { "Textures/texture-d.png": png });
 }
 
-function visualNamed(
-  root: Parameters<typeof visualMeshes>[0],
-  name: string,
-) {
+function visualNamed(root: Parameters<typeof visualMeshes>[0], name: string) {
   return visualMeshes(root).find((part) => part.name === name);
 }
 
 describe("isGltfModelBytes", () => {
   it("accepts GLB bytes and rejects OBJ stubs", () => {
     expect(isGltfModelBytes(encodeTriangleGlb())).toBe(true);
-    expect(isGltfModelBytes(new TextEncoder().encode("o cube\nv 0 0 0\n"))).toBe(
-      false,
-    );
+    expect(
+      isGltfModelBytes(new TextEncoder().encode("o cube\nv 0 0 0\n")),
+    ).toBe(false);
     expect(isGltfModelBytes(new Uint8Array([1, 2, 3]))).toBe(false);
     expect(isGltfModelBytes(null)).toBe(false);
   });
 });
 
 describe("applyModelMaterialSlots", () => {
-  const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
-    [];
+  const handles: Array<{
+    engine: { dispose: () => void };
+    scene: { dispose: () => void };
+  }> = [];
 
   afterEach(() => {
     while (handles.length > 0) {
@@ -206,7 +217,8 @@ describe("applyModelMaterialSlots", () => {
         { index: 0, name: "Skin", materialGuid: "mat-skin" },
         { index: 1, name: "Trim", materialGuid: "mat-trim" },
       ],
-      (guid) => (guid === "mat-skin" ? slot0 : guid === "mat-trim" ? slot1 : null),
+      (guid) =>
+        guid === "mat-skin" ? slot0 : guid === "mat-trim" ? slot1 : null,
     );
 
     expect(partA.material).toBe(slot0);
@@ -215,8 +227,10 @@ describe("applyModelMaterialSlots", () => {
 });
 
 describe("loadModelPreviewSource", () => {
-  const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
-    [];
+  const handles: Array<{
+    engine: { dispose: () => void };
+    scene: { dispose: () => void };
+  }> = [];
 
   afterEach(() => {
     while (handles.length > 0) {
@@ -235,6 +249,25 @@ describe("loadModelPreviewSource", () => {
     expect(host.mesh.visibility).toBe(0);
     expect(host.mesh.getChildMeshes().length).toBeGreaterThan(0);
     loaded?.dispose();
+  });
+
+  it("frames small imported models inside the camera frustum before interaction", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createModelPreviewScene(handle.engine);
+    const loaded = await loadModelPreviewSource(
+      host,
+      encodeUvHierarchyGlb(),
+      0.01,
+    );
+    host.scene.updateTransformMatrix(true);
+    const planes = Frustum.GetPlanes(host.scene.getTransformMatrix());
+
+    const parts = visualMeshes(host.mesh);
+    expect(parts).toHaveLength(2);
+    expect(parts.every((part) => part.isInFrustum(planes))).toBe(true);
+    loaded?.dispose();
+    host.dispose();
   });
 
   it("loads a hierarchy-rig pack GLB (KHR_materials_unlit) and attaches an overlay", async () => {
@@ -259,8 +292,9 @@ describe("loadModelPreviewSource", () => {
       host.scene.meshes.some((mesh) => mesh.name.endsWith("_overlay")),
     ).toBe(true);
     expect(
-      host.scene.transformNodes.some((node) => node.name === MATERIAL_PREVIEW_MESH_NAME) ||
-        host.mesh.name === MATERIAL_PREVIEW_MESH_NAME,
+      host.scene.transformNodes.some(
+        (node) => node.name === MATERIAL_PREVIEW_MESH_NAME,
+      ) || host.mesh.name === MATERIAL_PREVIEW_MESH_NAME,
     ).toBe(true);
     preview.dispose();
     loaded?.dispose();
@@ -275,9 +309,9 @@ describe("loadModelPreviewSource", () => {
     const visuals = visualMeshes(host.mesh);
     expect(visuals).toHaveLength(2);
     for (const part of visuals) {
-      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
-        0,
-      );
+      expect(
+        part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0,
+      ).toBeGreaterThan(0);
     }
     const override = new StandardMaterial("slot-0", handle.scene);
     applyModelMaterialSlots(
