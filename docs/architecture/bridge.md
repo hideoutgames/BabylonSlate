@@ -72,7 +72,7 @@ Structural and resource changes **never** go through the snapshot buffer.
 
 `load` may set `deferSceneModelsReady`. Overlay Play and the packaged player then post `{ type: "sceneModelsReady", sceneAssetGuid }` after `whenEditorModelsReady()` so Game Instance **On Scene Finish Loading** waits for mesh/model instantiation. Headless in-process tests omit the flag so finish is synchronous. Runtime emits `activeScene` before spawn; the host reloads and resets audio/particles only when the guid differs from the scene already on the handle.
 
-`loadScripts.spawn` is filtered with `shouldSpawnScriptedActor` so `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, and `Scene` never become Actors.
+`loadScripts` registers classes without creating Actors when `spawn` is omitted or empty. Editor Play and the player send an empty list; actors come from the authored scene or explicit Spawn Actor calls. Explicit `loadScripts.spawn` requests are filtered with `shouldSpawnScriptedActor` so `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, and `Scene` never become Actors.
 
 ## Typed RPC
 
