@@ -560,7 +560,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1);
     return single(block, {}, { color: block.output });
   },
-  "input.particleTexture": ({ name, plumbing }) => {
+  "input.particleTexture": ({ name, plumbing }): BlockRealization => {
     if (plumbing.particlePreview) {
       const rgba = new InputBlock(name); rgba.value = new Color4(1, 1, 1, 1);
       const rgb = new InputBlock(`${name}_rgb`); rgb.value = new Color3(1, 1, 1);
