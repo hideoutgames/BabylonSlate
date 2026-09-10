@@ -318,7 +318,6 @@ export function ViewportToolbar({
             <Toggle
               variant="outline"
               size="sm"
-              className="pointer-coarse:min-h-[var(--touch-target,44px)] pointer-coarse:min-w-[var(--touch-target,44px)]"
               aria-label="Snap Grid"
               pressed={snapEnabled}
               onPressedChange={toggleSnap}
@@ -357,7 +356,6 @@ export function ViewportToolbar({
         <IconActionButton
           type="button"
           size="sm"
-          className="pointer-coarse:min-h-[var(--touch-target,44px)] pointer-coarse:min-w-[var(--touch-target,44px)]"
           label="Drop"
           disabled={dropDisabled}
           onClick={onDrop}
@@ -385,33 +383,16 @@ export function ViewportToolbar({
         <Settings2Icon />
       </NestedMenu>
       {showViewportModeToggle ? (
-        <ToggleGroup
+        <Button
+          type="button"
           variant="outline"
           size="sm"
-          spacing={1}
-          value={[viewportMode]}
-          onValueChange={(value) => {
-            const next = value[0];
-            if (next === "2d" || next === "3d") setMode(next);
-          }}
-          aria-label="2D / 3D"
+          onClick={() => setMode(viewportMode === "3d" ? "2d" : "3d")}
+          aria-label={`${viewportMode.toUpperCase()} Viewport; Switch To ${viewportMode === "3d" ? "2D" : "3D"}`}
           data-testid={`${testIdPrefix}viewport-mode-toggle`}
         >
-          <ToggleGroupItem
-            value="3d"
-            aria-label="3D viewport"
-            data-testid={`${testIdPrefix}viewport-mode-3d`}
-          >
-            3D
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="2d"
-            aria-label="2D viewport"
-            data-testid={`${testIdPrefix}viewport-mode-2d`}
-          >
-            2D
-          </ToggleGroupItem>
-        </ToggleGroup>
+          {viewportMode.toUpperCase()}
+        </Button>
       ) : null}
       {viewportShadingMode !== "pbr" ? (
         <Badge variant="secondary">

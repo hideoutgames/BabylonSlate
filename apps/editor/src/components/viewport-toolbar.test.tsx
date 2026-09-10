@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { createDefaultScene, type SerializedScene } from "@babylonslate/core";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
 import { ViewportToolbar } from "./viewport-toolbar";
@@ -193,7 +199,9 @@ describe("ViewportToolbar", () => {
     harness.scene = null;
     harness.gridSize = 4;
     renderToolbar();
-    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe("4");
+    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe(
+      "4",
+    );
   });
 
   it("shows 2D tile snapping and the selected tool increment", () => {
@@ -203,21 +211,27 @@ describe("ViewportToolbar", () => {
     harness.scene!.settings.grid.snapRotateDeg = 30;
     harness.scene!.settings.grid.snapScale = 0.5;
     const { rerender } = renderToolbar();
-    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe("3");
+    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe(
+      "3",
+    );
     harness.gizmoTool = "rotate";
     rerender(
       <TooltipProvider>
         <ViewportToolbar />
       </TooltipProvider>,
     );
-    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe("30°");
+    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe(
+      "30°",
+    );
     harness.gizmoTool = "scale";
     rerender(
       <TooltipProvider>
         <ViewportToolbar />
       </TooltipProvider>,
     );
-    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe("0.5");
+    expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe(
+      "0.5",
+    );
   });
 
   it.each(GIZMO_LABELS)(
@@ -238,8 +252,36 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-settings").textContent).not.toContain(
       "Viewport Settings",
     );
-    expect(screen.getByTestId("viewport-mode-3d").textContent).toContain("3D");
-    expect(screen.getByTestId("viewport-mode-2d").textContent).toContain("2D");
+    expect(screen.getByTestId("viewport-mode-toggle").textContent).toBe("3D");
+  });
+
+  it("toggles viewport mode in both directions with one current-mode button", () => {
+    const { rerender } = renderToolbar();
+    const mode = screen.getByRole("button", {
+      name: "3D Viewport; Switch To 2D",
+    });
+    fireEvent.click(mode);
+    expect(harness.setViewportMode).toHaveBeenCalledWith("2d");
+    expect(harness.applySceneChange).toHaveBeenLastCalledWith(
+      "scene:assets/Main.scene.babasset",
+      expect.objectContaining({ viewportMode: "2d" }),
+    );
+
+    harness.viewportMode = "2d";
+    harness.scene!.viewportMode = "2d";
+    rerender(
+      <TooltipProvider>
+        <ViewportToolbar />
+      </TooltipProvider>,
+    );
+    expect(mode.textContent).toBe("2D");
+    expect(mode.getAttribute("aria-label")).toBe("2D Viewport; Switch To 3D");
+    fireEvent.click(mode);
+    expect(harness.setViewportMode).toHaveBeenLastCalledWith("3d");
+    expect(harness.applySceneChange).toHaveBeenLastCalledWith(
+      "scene:assets/Main.scene.babasset",
+      expect.objectContaining({ viewportMode: "3d" }),
+    );
   });
 
   it("places Snap Grid before Drag Select and Drop immediately before settings", () => {
@@ -294,26 +336,31 @@ describe("ViewportToolbar", () => {
     expect(screen.queryByRole("button", { name: "Drop" })).toBeNull();
   });
 
-  it.each([undefined, true])("blocks Drop when dropDisabled is %s", (dropDisabled) => {
-    const onDrop = vi.fn();
-    renderToolbar({
-      testIdPrefix: "prefab-",
-      showDragSelect: false,
-      onDrop,
-      dropDisabled,
-    });
-    const drop = screen.getByRole("button", { name: "Drop" });
-    expect(drop).toHaveProperty("disabled", true);
-    fireEvent.click(drop);
-    expect(onDrop).not.toHaveBeenCalled();
-  });
+  it.each([undefined, true])(
+    "blocks Drop when dropDisabled is %s",
+    (dropDisabled) => {
+      const onDrop = vi.fn();
+      renderToolbar({
+        testIdPrefix: "prefab-",
+        showDragSelect: false,
+        onDrop,
+        dropDisabled,
+      });
+      const drop = screen.getByRole("button", { name: "Drop" });
+      expect(drop).toHaveProperty("disabled", true);
+      fireEvent.click(drop);
+      expect(onDrop).not.toHaveBeenCalled();
+    },
+  );
 
   it("opens a settings menu with Viewport Mode, Show Grid, Show Navmesh, Show Collisions, Joystick, Pivot Around Center, Game Camera, and Settings", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     expect(screen.getByTestId("viewport-shading-mode")).toBeTruthy();
     expect(
-      within(screen.getByTestId("viewport-settings-menu")).queryByTestId("gizmo-snap-toggle"),
+      within(screen.getByTestId("viewport-settings-menu")).queryByTestId(
+        "gizmo-snap-toggle",
+      ),
     ).toBeNull();
     expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-navmesh-toggle")).toBeTruthy();
@@ -450,7 +497,7 @@ describe("ViewportToolbar", () => {
     expect(screen.queryByTestId("viewport-shading-points-cloud")).toBeNull();
     expect(
       screen.getByTestId("viewport-mode-toggle").getAttribute("aria-label"),
-    ).toBe("2D / 3D");
+    ).toBe("3D Viewport; Switch To 2D");
   });
 
   it("sets Unlit shading without writing the scene document", () => {
