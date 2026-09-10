@@ -21,7 +21,7 @@ Complete taps between ticks retain both Started and Released. A release/repress 
 
 **Get Input Bindings** takes an Input Type dropdown and returns native **Input Binding** values. Break Input Binding exposes a readable Label for menus, the Input Type, and the typed Control. Use the existing array nodes to select a binding, then **Listen for Input Binding** to capture a replacement keyboard chord. **Get Input Rebind Status** returns the native Input Rebind Status enum; use its enum switch to handle listening, completed, and cancelled. **Cancel Input Rebind** cancels capture. **Set Input Control** takes an Input Binding and a native Input Control with device/control dropdowns, including mouse and gamepad choices. **Reset Input Bindings** restores one asset; **Reset All Input Bindings** restores all defaults.
 
-The existing export/import binding nodes serialize player overrides for the game's own profile storage. They do not automatically save browser data. Profiles use asset GUIDs and stable binding IDs, so renames and reordering preserve overrides while retaining current axis tuning. Missing bindings reject import atomically. Capture consumes held and newly captured keys until release to avoid activating gameplay.
+The existing export/import binding nodes serialize player overrides for the game's own profile storage. They do not automatically save browser data. Profiles use asset GUIDs and stable binding IDs, so renames and reordering preserve overrides while retaining current axis tuning. Missing bindings or asset/binding IDs reject import atomically; asset profiles are never inferred from display names or authored controls. Capture consumes held and newly captured keys until release to avoid activating gameplay.
 
 ## Storage and defaults
 

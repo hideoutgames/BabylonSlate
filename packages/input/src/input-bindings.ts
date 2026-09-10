@@ -417,9 +417,12 @@ export class InputBindingProfile implements InputBindingControls {
         return false;
       const mappings =
         row.kind === "action" ? this.defaults.actions : this.defaults.axes;
-      const candidates = matchingMappings(mappings, row.mapping);
+      const candidates = mappings.filter(
+        (entry) => (entry.id ?? entry.name) === row.mapping,
+      );
       if (candidates.length !== 1) return false;
       const mapping = candidates[0]!;
+      if (mapping.id && typeof row.bindingId !== "string") return false;
       const originalAuthored = row.defaultBinding as AxisBinding | undefined;
       const matching = mapping.bindings
         .map((binding, index) => ({ binding, index }))
@@ -429,12 +432,10 @@ export class InputBindingProfile implements InputBindingControls {
             : originalAuthored &&
               authoredSignature(binding) ===
                 authoredSignature(originalAuthored) &&
-              (!mapping.id ? index === row.index : true),
+              index === row.index,
         );
       if (matching.length !== 1) return false;
       const { binding: original, index } = matching[0]!;
-      row.mapping = mapping.id ?? mapping.name;
-      row.index = index;
       if (
         modifiers.some(
           (name) => row[name] !== undefined && typeof row[name] !== "boolean",

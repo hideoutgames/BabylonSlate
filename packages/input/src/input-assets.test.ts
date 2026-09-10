@@ -111,6 +111,16 @@ describe("asset input runtime", () => {
       ]),
     );
     expect(renamed.bindings.importBindings(saved)).toBe(true);
+    const missingBindingId = JSON.parse(saved);
+    delete missingBindingId.overrides[0].bindingId;
+    expect(
+      renamed.bindings.importBindings(JSON.stringify(missingBindingId)),
+    ).toBe(false);
+    const displayNameProfile = JSON.parse(saved);
+    displayNameProfile.overrides[0].mapping = "Movement";
+    expect(
+      renamed.bindings.importBindings(JSON.stringify(displayNameProfile)),
+    ).toBe(false);
     expect(renamed.resolve([key("KeyH", "down")]).inputs.move).toMatchObject({
       input: { Name: "Movement", Asset: "move" },
       value: { x: -1, y: 0 },
