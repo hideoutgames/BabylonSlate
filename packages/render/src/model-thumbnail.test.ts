@@ -16,6 +16,7 @@ describe("captureModelThumbnailPng", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
     while (handles.length > 0) {
       const handle = handles.pop();
       handle?.scene.dispose();
@@ -142,6 +143,24 @@ describe("captureModelThumbnailPng", () => {
       expect(handle.engine.scenes).toEqual([handle.scene]);
     },
   );
+
+  it("releases the capture scene when a material never becomes ready", async () => {
+    vi.useFakeTimers();
+    const handle = createTestEngine();
+    handles.push(handle);
+    vi.spyOn(PBRMaterial.prototype, "isReadyForSubMesh").mockReturnValue(false);
+    const readback = vi.spyOn(RenderTargetTexture.prototype, "readPixels");
+    const capture = captureModelThumbnailPng(
+      handle.engine,
+      encodeTriangleGlb(),
+      [],
+      () => null,
+    );
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await capture).toBeNull();
+    expect(readback).not.toHaveBeenCalled();
+    expect(handle.engine.scenes).toEqual([handle.scene]);
+  });
 
   it("does not cache a rest pose when the requested animation is absent", async () => {
     const handle = createTestEngine();

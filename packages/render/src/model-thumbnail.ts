@@ -15,7 +15,7 @@ import {
   type MaterialPreviewScene,
 } from "./material-preview";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
-import { SCENE_SHADER_WARM_TIMEOUT_MS, settleOrTimeout } from "./scene-perf";
+import { waitForPreviewMeshesReady } from "./preview-readiness";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
 
@@ -108,11 +108,7 @@ export async function captureModelThumbnailPng(
     host.camera.outputRenderTarget = rtt;
     // A one-shot render cannot rely on a later gesture/frame to finish shader
     // compilation. Include imported PBR materials and textures in readiness.
-    await settleOrTimeout(
-      host.scene.whenReadyAsync(),
-      SCENE_SHADER_WARM_TIMEOUT_MS,
-    );
-    if (!host.scene.isReady()) return null;
+    if (!(await waitForPreviewMeshesReady(host.mesh))) return null;
     host.scene.render();
     const buffer = await rtt.readPixels();
     if (!buffer) return null;
