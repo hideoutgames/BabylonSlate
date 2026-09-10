@@ -164,7 +164,7 @@ describe("Slate project browser", () => {
     );
     renderHomepage();
     fireEvent.click(
-      screen.getByRole("button", { name: "Templates", exact: true }),
+      screen.getByRole("button", { name: "Templates" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Add Template" }));
     expect(screen.getByRole("button", { name: "Add Template" })).toHaveProperty(
