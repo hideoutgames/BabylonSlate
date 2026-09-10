@@ -1,9 +1,12 @@
-import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "@babylonslate/editor-kit";
+import {
+  WINDOWED_SLICE_OVERSCAN,
+  windowedSlice,
+} from "@babylonslate/editor-kit";
 
 /** Matches `grid-cols-[repeat(auto-fill,9rem)]` at a 16px root. */
 export const CONTENT_BROWSER_TILE_WIDTH_PX = 144;
-/** Thumb square plus title, type line, and badges — taller than the 9rem well. */
-export const CONTENT_BROWSER_TILE_HEIGHT_PX = 220;
+/** Square thumb plus a 52px title/type panel; statuses overlay the thumb. */
+export const CONTENT_BROWSER_TILE_HEIGHT_PX = 196;
 /** Matches `gap-2`. */
 export const CONTENT_BROWSER_GRID_GAP_PX = 8;
 /** Matches `p-3`. */
@@ -25,7 +28,9 @@ export type WindowedGridSlice = {
 
 export function contentBrowserColumnCount(viewportWidth: number): number {
   const inner =
-    viewportWidth - CONTENT_BROWSER_GRID_PAD_PX * 2 + CONTENT_BROWSER_GRID_GAP_PX;
+    viewportWidth -
+    CONTENT_BROWSER_GRID_PAD_PX * 2 +
+    CONTENT_BROWSER_GRID_GAP_PX;
   const stride = CONTENT_BROWSER_TILE_WIDTH_PX + CONTENT_BROWSER_GRID_GAP_PX;
   return Math.max(1, Math.floor(inner / stride));
 }
@@ -72,7 +77,13 @@ export function contentBrowserGridHeight(
 export function contentBrowserTileStyle(
   index: number,
   columnCount: number,
-): { position: "absolute"; left: number; top: number; width: number } {
+): {
+  position: "absolute";
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+} {
   const columns = Math.max(1, columnCount);
   const col = index % columns;
   const row = Math.floor(index / columns);
@@ -85,5 +96,6 @@ export function contentBrowserTileStyle(
       CONTENT_BROWSER_GRID_PAD_PX +
       row * (CONTENT_BROWSER_TILE_HEIGHT_PX + CONTENT_BROWSER_GRID_GAP_PX),
     width: CONTENT_BROWSER_TILE_WIDTH_PX,
+    height: CONTENT_BROWSER_TILE_HEIGHT_PX,
   };
 }

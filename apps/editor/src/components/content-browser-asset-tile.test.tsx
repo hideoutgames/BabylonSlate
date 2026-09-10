@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
@@ -183,8 +189,12 @@ describe("ContentBrowserAssetTile", () => {
     const thumb = glyph.parentElement as HTMLElement;
     expect(thumb.style.backgroundImage).toBe("");
     expect(thumb.style.border).toBe("2px solid var(--asset-texture)");
-    expect(thumb.style.borderTopLeftRadius).toBe("calc(var(--radius-xl) - 2px)");
-    expect(thumb.style.borderTopRightRadius).toBe("calc(var(--radius-xl) - 2px)");
+    expect(thumb.style.borderTopLeftRadius).toBe(
+      "calc(var(--radius-xl) - 2px)",
+    );
+    expect(thumb.style.borderTopRightRadius).toBe(
+      "calc(var(--radius-xl) - 2px)",
+    );
     expect(thumb.style.boxShadow).toBe("");
     expect(thumb.className).toContain("bg-card");
     expect(thumb.className).toContain("absolute");
@@ -211,6 +221,7 @@ describe("ContentBrowserAssetTile", () => {
     expect(slot?.classList.contains("hidden")).toBe(false);
     expect(slot?.getAttribute("data-lock-state")).toBe("mine");
     expect(slot?.querySelector("svg")).not.toBeNull();
+    expect(slot?.getAttribute("aria-label")).toBe("Locked By You");
   });
 
   it("shows the holder name for someone else's lock", () => {
@@ -222,5 +233,7 @@ describe("ContentBrowserAssetTile", () => {
     const slot = document.querySelector("[data-lock-slot]");
     expect(slot?.getAttribute("data-lock-state")).toBe("theirs");
     expect(slot?.textContent).toContain("Bob");
+    expect(slot?.getAttribute("aria-label")).toBe("Locked By Bob");
+    expect(slot?.getAttribute("title")).toBe("Locked By Bob");
   });
 });
