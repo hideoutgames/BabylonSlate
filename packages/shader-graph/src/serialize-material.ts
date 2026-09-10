@@ -107,6 +107,7 @@ export function pinsForMaterialNode(
 }
 
 export interface MaterialPaletteNode {
+  defaultData?: Record<string, unknown>;
   id: string;
   title: string;
   category: string;
@@ -120,7 +121,8 @@ export function materialPaletteNodes(
     id: definition.type,
     title: definition.title,
     category: definition.category,
-    pins: pinsForMaterialNode(definition.type),
+    pins: pinsForMaterialNode(definition.type, { properties: newNodeDefaults(definition.type, {}) }),
+    defaultData: newNodeDefaults(definition.type, {}),
   }));
 }
 
@@ -189,7 +191,6 @@ export function serializedToMaterialGraph(
       position: node.position,
       properties: {
         ...propertiesFromNodeData(node.data),
-        ...(previous && !previous.nodes.some((entry) => entry.id === node.id) ? newNodeDefaults(node.type, propertiesFromNodeData(node.data)) : {}),
         ...(previous && isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
       },
     })),
@@ -215,7 +216,6 @@ export function serializedToMaterialFunctionGraph(
       position: node.position,
       properties: {
         ...propertiesFromNodeData(node.data),
-        ...(!previous.nodes.some((entry) => entry.id === node.id) ? newNodeDefaults(node.type, propertiesFromNodeData(node.data)) : {}),
         ...(isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
       },
     })),

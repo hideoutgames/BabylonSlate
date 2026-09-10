@@ -10,6 +10,7 @@ import {
   InputBlock,
   Material,
   MeshBuilder,
+  ParticleSystem,
   NodeMaterial,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
@@ -23,6 +24,7 @@ import {
   VertexOutputBlock,
   ViewDirectionBlock,
   type Mesh,
+  type PostProcess,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
   type NodeMaterialDefines,
@@ -471,10 +473,16 @@ export function compileMaterialPlan(
   let checkingShader = false;
   let shaderTimer: ReturnType<typeof setTimeout> | undefined;
   let shaderProbe: Mesh | null = null;
+  let shaderPostProcess: PostProcess | null = null;
+  let shaderParticles: ParticleSystem | null = null;
   const finishShaderCheck = () => {
     if (shaderTimer !== undefined) clearTimeout(shaderTimer);
     shaderProbe?.dispose();
+    shaderPostProcess?.dispose();
+    shaderParticles?.dispose();
     shaderProbe = null;
+    shaderPostProcess = null;
+    shaderParticles = null;
   };
   let settleBuild!: (errors: readonly MaterialDiagnostic[]) => void;
   const ready = new Promise<readonly MaterialDiagnostic[]>((resolve) => { settleBuild = resolve; });
@@ -494,28 +502,47 @@ export function compileMaterialPlan(
     syncSceneLighting(scene);
     if (buildState === "pending") {
       if (checkingShader) return;
-      if (plan.domain === "surface" && plan.cost.customBlocks > 0 && scene.getEngine().getClassName() !== "NullEngine") {
+      if (plan.cost.customBlocks > 0 && scene.getEngine().getClassName() !== "NullEngine") {
         checkingShader = true;
-        shaderProbe = MeshBuilder.CreateBox(`${options.name}_compileProbe`, { size: 1 }, scene);
-        shaderProbe.setEnabled(false);
-        shaderProbe.material = material;
+        try {
+        if (plan.domain === "surface") {
+          shaderProbe = MeshBuilder.CreateBox(`${options.name}_compileProbe`, { size: 1 }, scene);
+          shaderProbe.setEnabled(false);
+          shaderProbe.material = material;
+        } else if (plan.domain === "postProcess") {
+          shaderPostProcess = material.createPostProcess(null, 1, undefined, scene.getEngine());
+        } else {
+          shaderParticles = new ParticleSystem(`${options.name}_compileProbe`, 1, scene);
+          material.createEffectForParticles(shaderParticles);
+        }
+        } catch (error) {
+          finishShaderCheck();
+          buildState = "failed";
+          settleBuild([materialGlslDiagnostic(String(error), plan.operations)]);
+          return;
+        }
         const started = Date.now();
         const check = () => {
-          if (disposed || !shaderProbe) return;
+          if (disposed) return;
           try {
-            const subMesh = shaderProbe.subMeshes[0]!;
-            if (material.isReadyForSubMesh(shaderProbe, subMesh)) {
+            const subMesh = shaderProbe?.subMeshes[0];
+            const effects = shaderParticles
+              ? [shaderParticles.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE), shaderParticles.getCustomEffect(ParticleSystem.BLENDMODE_MULTIPLY)]
+              : [shaderPostProcess?.getEffect()];
+            const ready = shaderProbe && subMesh ? material.isReadyForSubMesh(shaderProbe, subMesh) : effects.every((effect) => effect?.isReady());
+            if (ready) {
               finishShaderCheck();
               buildState = "ready";
               settleBuild([]);
               return;
             }
-            const error = subMesh.effect?.getCompilationError();
-            if (error && subMesh.effect?.allFallbacksProcessed()) throw new Error(error);
+            const effect = subMesh?.effect ?? effects.find((entry) => entry?.getCompilationError());
+            const error = effect?.getCompilationError();
+            if (error && effect?.allFallbacksProcessed()) throw new Error(error);
             if (Date.now() - started > 15000) throw new Error("Custom GLSL shader compilation timed out");
             shaderTimer = setTimeout(check, 16);
           } catch (error) {
-            const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, shaderProbe?.subMeshes[0]?.effect);
+            const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, shaderProbe?.subMeshes[0]?.effect ?? shaderPostProcess?.getEffect() ?? shaderParticles?.getCustomEffect());
             finishShaderCheck();
             buildState = "failed";
             settleBuild([diagnostic]);

@@ -434,8 +434,9 @@ the Model slot on Babylon's source material instead of substituting a partial
 graph. Unrelated images are never borrowed as albedo. Extracted graphs remain
 available for explicit editing/assignment.
 
-Surface Custom GLSL readiness includes a bounded GPU shader check on a hidden
-probe mesh before the library publishes a replacement. GLSL failures retain the
+Custom GLSL readiness includes a bounded GPU shader check on a hidden surface
+probe, unattached post-process or inactive particle system before the library
+publishes a replacement. GLSL failures retain the
 previous material. NullEngine unit tests check graph construction only; browser
 checks exercise the GPU compiler.
 

@@ -13,6 +13,14 @@ import {
 } from "./serialize-material";
 
 describe("material graph serialization", () => {
+  it("uses seconds for new Time nodes without changing copied legacy nodes", () => {
+    expect(materialPaletteNodes("surface").find((node) => node.id === "input.time")?.defaultData).toMatchObject({ timeMode: "seconds" });
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "time", type: "input.time", position: { x: 0, y: 0 }, properties: {} });
+    const graph = materialGraphToSerialized(doc);
+    graph.nodes.push({ ...graph.nodes.find((node) => node.id === "time")!, id: "copy" });
+    expect(serializedToMaterialGraph(graph, doc).nodes.find((node) => node.id === "copy")?.properties.timeMode).toBeUndefined();
+  });
   it("requires a new name when pasting a parameter while retaining the original name", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({ id: "roughness", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [0.4] } });
