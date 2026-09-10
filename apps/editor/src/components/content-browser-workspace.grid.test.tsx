@@ -19,7 +19,8 @@ import {
 } from "../lib/content-browser-grid";
 
 const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
-  const loadAssetThumbnail = vi.fn(async (): Promise<Uint8Array | null> => new Uint8Array([1, 2, 3]));
+  const loadAssetThumbnail = vi.fn<(guid: string) => Promise<Uint8Array | null>>()
+    .mockResolvedValue(new Uint8Array([1, 2, 3]));
   const docs = {
     projectDocument: { settings: {
       pluginOverrides: {},
