@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { Position, useStoreApi, type Node } from "@xyflow/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { GraphEditor, type GraphEditorProps } from "./graph-editor";
+import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import type { GraphDocument, SerializedPin } from "./graph-types";
 
 afterEach(cleanup);
@@ -47,6 +48,7 @@ type MeasuredPin = Pick<SerializedPin, "id" | "direction"> & {
 function renderDragGraph(
   graph = graphWithFreePins(),
   props: Partial<GraphEditorProps> = {},
+  interactions = { assistantEnabled: true, assistantDistance: 48, shakeEnabled: true },
 ) {
   let store!: ReturnType<typeof useStoreApi>;
   let currentProps = props;
@@ -60,6 +62,7 @@ function renderDragGraph(
 
   function editor() {
     return (
+      <GraphInteractionSettingsContext.Provider value={interactions}>
       <GraphEditor
         commitPositionsOnDragEnd
         sessionViewport={{ x: 0, y: 0, zoom: 1 }}
@@ -68,6 +71,7 @@ function renderDragGraph(
         onChange={(next) => emitted.push(next)}
         toolbarExtra={<StoreProbe />}
       />
+      </GraphInteractionSettingsContext.Provider>
     );
   }
 
@@ -169,6 +173,32 @@ function renderDragGraph(
 }
 
 describe("GraphEditor proximity dragging", () => {
+  it("honors disabled assistance and shake settings", () => {
+    const document = graphWithFreePins();
+    const graph = renderDragGraph(document, {}, { assistantEnabled: false, assistantDistance: 48, shakeEnabled: false });
+    graph.start(); graph.move();
+    expect(graph.previews()).toHaveLength(0);
+    graph.stop();
+    expect(graph.emitted.at(-1)?.edges ?? []).toEqual([]);
+    document.edges = [{ id: "link", source: "source", sourceHandle: "value", target: "target", targetHandle: "input" }];
+    graph.setGraph(document);
+    graph.start();
+    for (const x of [30, -30, 30, -30]) graph.move({ x, y: 0 });
+    graph.stop();
+    expect(graph.emitted.at(-1)?.edges ?? document.edges).toHaveLength(1);
+  });
+
+  it("breaks a shaken node's links only on release", () => {
+    const document = graphWithFreePins();
+    document.edges = [{ id: "link", source: "source", sourceHandle: "value", target: "target", targetHandle: "input" }];
+    const graph = renderDragGraph(document);
+    graph.start();
+    for (const x of [30, -30, 30, -30]) graph.move({ x, y: 0 });
+    expect(graph.emitted).toEqual([]);
+    graph.stop();
+    expect(graph.emitted.at(-1)?.edges).toEqual([]);
+  });
+
   it("keeps discovering nearby pins after the host refreshes a drag that started out of range", () => {
     const graph = renderDragGraph(undefined, { commitPositionsOnDragEnd: false });
     graph.start();

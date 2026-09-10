@@ -107,6 +107,8 @@ const ENGINE_PARENT: Record<string, string | null> = {
   BTComposite_Selector: "BTComposite",
   BTComposite_Sequence: "BTComposite",
   BTComposite_Parallel: "BTComposite",
+  ComponentLogic: "BObject",
+  LogicComponent: "ActorComponent",
   MeshComponent: "ActorComponent",
   SpriteComponent: "ActorComponent",
   TilemapComponent: "ActorComponent",

@@ -174,6 +174,9 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
 ];
 
 const INPUT_NODES: MaterialNodeDefinition[] = [
+  { type: "input.vertexNormalWS", title: "VertexNormalWS", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
+  { type: "input.vertexNormal", title: "Vertex Normal (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
+  { type: "input.vertexPosition", title: "Vertex Position (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "position", name: "Position", type: VEC3 }] },
   {
     type: "input.uv",
     title: "UV",
@@ -239,7 +242,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     type: "input.cameraPosition",
     title: "Camera Position",
     category: "Input",
-    domains: ["surface"],
+    domains: ["surface", "postProcess"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "position", name: "Position", type: VEC3 }],
@@ -439,6 +442,11 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
       { id: "xyz", name: "XYZ", type: VEC3 },
       { id: "xyzw", name: "XYZW", type: VEC4 },
     ],
+  },
+  {
+    type: "vector.mask", title: "VectorMask(R)", category: "Vector", cost: 0,
+    inputs: [{ id: "value", name: "Value", type: GENERIC, defaultValue: [0, 0, 0, 0] }],
+    outputs: [{ id: "out", name: "Out", type: FLOAT }],
   },
   {
     type: "vector.split",

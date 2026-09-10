@@ -140,6 +140,7 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
+  { classId: "ComponentLogic", variables: [{ name: "Component", typeId: "object", typeClassId: "LogicComponent", propertyKey: "component", getOnly: true }] },
   {
     classId: "GameInstance",
     functions: [

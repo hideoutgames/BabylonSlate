@@ -26,8 +26,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./graph-editor.css";
+import { GraphInteractionSettingsContext, NodeShakeTracker } from "./graph-interaction-settings";
 import {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -543,6 +545,9 @@ function GraphEditorCanvas({
     [nodeTypesProp],
   );
   const nodesDraggable = nodesDraggableProp ?? !readOnly;
+  const interactions = useContext(GraphInteractionSettingsContext);
+  const shakeTracker = useRef(new NodeShakeTracker());
+  const shakenRef = useRef(false);
   const graphViewport = useMemo(
     () => resolveGraphViewport(defaultZoom),
     [defaultZoom],
@@ -920,7 +925,7 @@ function GraphEditorCanvas({
 
   const collectProximityConnections = useCallback(
     (dragged: CanvasNode[]) => {
-      if (readOnly || !nodesDraggable || !proximityDragRef.current) return [];
+      if (readOnly || !nodesDraggable || !proximityDragRef.current || !interactions.assistantEnabled || shakenRef.current) return [];
       const moving = new Map(dragged.map((node) => [node.id, node]));
       const pins: ProximityPin[] = [];
       const store = storeApi.getState();
@@ -964,7 +969,7 @@ function GraphEditorCanvas({
         pins,
         edges: graphStateRef.current.edges,
         movingNodeIds: new Set(moving.keys()),
-        maxDistance: 96 / store.transform[2],
+        maxDistance: interactions.assistantDistance / store.transform[2],
         resolveConnection: (connection) =>
           finalizeOrientedConnection(
             connection,
@@ -1065,6 +1070,7 @@ function GraphEditorCanvas({
     },
     [
       isValidConnection,
+      interactions,
       nodesDraggable,
       normalizeConnection,
       readOnly,
@@ -1076,6 +1082,7 @@ function GraphEditorCanvas({
 
   const cancelProximityConnections = useCallback(() => {
     proximityDragRef.current = false;
+    shakenRef.current = false;
     proximityPathsRef.current = [];
     setProximityPaths([]);
   }, []);
@@ -1124,18 +1131,32 @@ function GraphEditorCanvas({
 
   const handleNodeDrag: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
+      const zoom = storeApi.getState().transform[2];
+      if (interactions.shakeEnabled && !readOnly && nodesDraggable && proximityDragRef.current) {
+        shakenRef.current ||= shakeTracker.current.move(node.position.x * zoom, node.position.y * zoom, performance.now());
+      }
       const paths = collectProximityConnections(
         dragged.length ? dragged : [node],
       );
       proximityPathsRef.current = paths;
       setProximityPaths(paths);
     },
-    [collectProximityConnections],
+    [collectProximityConnections, interactions.shakeEnabled, nodesDraggable, readOnly, storeApi],
   );
 
   const handleNodeDragStop: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
       const moving = dragged.length ? dragged : [node];
+      if (shakenRef.current && interactions.shakeEnabled && !readOnly && nodesDraggable) {
+        const ids = new Set(moving.map((entry) => entry.id));
+        const nextEdges = graphStateRef.current.edges.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target));
+        const positions = new Map(moving.map((entry) => [entry.id, entry.position]));
+        const nextNodes = graphStateRef.current.nodes.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry);
+        cancelProximityConnections();
+        graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
+        setNodes(nextNodes); setEdges(nextEdges); emitChange(nextNodes, nextEdges);
+        return;
+      }
       const previewed = new Set(
         proximityPathsRef.current.map(({ connection }) =>
           createEdgeId(
@@ -1222,6 +1243,9 @@ function GraphEditorCanvas({
       cancelProximityConnections,
       collectProximityConnections,
       defaultEdgeOptions.type,
+      interactions.shakeEnabled,
+      nodesDraggable,
+      readOnly,
       emitChange,
       isValidConnection,
       replaceIncomingOnConnect,
@@ -2253,7 +2277,7 @@ function GraphEditorCanvas({
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}
           onNodesChange={handleNodesChange}
-          onNodeDragStart={() => { proximityDragRef.current = !readOnly && nodesDraggable; }}
+          onNodeDragStart={(_event, node) => { proximityDragRef.current = !readOnly && nodesDraggable; shakenRef.current = false; const zoom = storeApi.getState().transform[2]; shakeTracker.current.reset(node.position.x * zoom, node.position.y * zoom, performance.now()); }}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onEdgesChange={handleEdgesChange}

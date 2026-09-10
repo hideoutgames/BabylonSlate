@@ -542,6 +542,18 @@ export function EngineSettingsForm({
       {categoryId === "graph" ? (
         <FieldSet>
           <FieldLegend>Graph</FieldLegend>
+          <Field orientation="horizontal" className="settings-field">
+            <FieldLabel htmlFor="setting-graph-assistant">Node Connection Assistant</FieldLabel>
+            <Switch id="setting-graph-assistant" checked={settings.graphAssistantEnabled} onCheckedChange={(checked) => void onChange({ graphAssistantEnabled: checked === true })} />
+          </Field>
+          <Field className="settings-field">
+            <FieldLabel htmlFor="setting-graph-distance">Connection Distance (Pixels)</FieldLabel>
+            <NumberField id="setting-graph-distance" min={8} max={200} step={1} value={settings.graphAssistantDistance} onChange={(graphAssistantDistance) => void onChange({ graphAssistantDistance })} />
+          </Field>
+          <Field orientation="horizontal" className="settings-field">
+            <FieldLabel htmlFor="setting-graph-shake">Shake Nodes To Disconnect</FieldLabel>
+            <Switch id="setting-graph-shake" checked={settings.graphShakeEnabled} onCheckedChange={(checked) => void onChange({ graphShakeEnabled: checked === true })} />
+          </Field>
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-graph-default-zoom">
               Graph Default Zoom

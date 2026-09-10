@@ -51,6 +51,7 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
+  engineComponent("LogicComponent", "Logic Component", "Run a ComponentLogic class during Play", "Logic"),
   engineComponent(
     "MeshComponent",
     "Mesh",
@@ -176,6 +177,7 @@ export function defaultPropertiesFor(
   viewportMode: ViewportMode = "3d",
 ): Record<string, unknown> {
   switch (classId) {
+    case "LogicComponent": return { logicClass: "ComponentLogic" };
     case "MeshComponent":
       return {
         meshKind: "box",

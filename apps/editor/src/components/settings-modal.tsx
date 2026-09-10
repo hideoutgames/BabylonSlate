@@ -193,7 +193,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "graph",
     label: "Graph",
-    keywords: "graph default zoom node canvas fit view",
+    keywords: "graph default zoom node canvas fit view assistant connection distance shake disconnect",
   },
   {
     id: "thumbnails",

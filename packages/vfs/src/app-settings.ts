@@ -114,6 +114,9 @@ export const engineSettingsSchema = z.object({
     return Math.min(128, Math.max(8, Math.round(value)));
   }, z.number().int().min(8).max(128).default(32)),
   thumbnailsEnabled: z.boolean().default(true),
+  graphAssistantEnabled: z.boolean().default(true),
+  graphShakeEnabled: z.boolean().default(true),
+  graphAssistantDistance: z.number().min(8).max(200).default(48),
   graphDefaultZoom: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(1.5, Math.max(0.1, value));

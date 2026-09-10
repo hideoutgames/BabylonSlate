@@ -194,6 +194,7 @@ export function MaterialEditingProvider({
   useEffect(() => {
     if (libraryRef.current) return;
     libraryRef.current = new MaterialLibrary({
+      particlePreview: true,
       functions: () => functionsRef.current,
       resolveTexture: (guid) => {
         const bytes = textureBytesRef.current.get(guid);
@@ -386,6 +387,11 @@ export function MaterialEditingProvider({
     if (host) libraryRef.current?.cancelPending(host.scene, documentId);
     dispatch({ type: "edit", cost: costClassRef.current });
   }, [compileKey, documentId, previewSceneEpoch]);
+
+  useEffect(() => {
+    hostRef.current?.applyParticleMaterial?.(null);
+    hostRef.current?.applyPostProcess(null);
+  }, [document?.domain]);
 
   // Trailing debounce so the final edit still compiles.
   useEffect(() => {

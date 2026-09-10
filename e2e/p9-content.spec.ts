@@ -845,6 +845,11 @@ test.describe("P9 content systems", () => {
     ).toContainText("Return the primary output");
     await glsl.click();
     const glslEditor = page.getByRole("textbox", { name: "GLSL Function Body" });
+    await glslEditor.fill("norm");
+    await glslEditor.press("End");
+    await glslEditor.press("Control+Space");
+    await expect(page.getByRole("option", { name: "normalize", exact: true })).toBeVisible();
+    await glslEditor.press("Escape");
     await glslEditor.fill("#define X 1");
     await page.getByTestId("material-node-glsl-done").click();
     await expect(

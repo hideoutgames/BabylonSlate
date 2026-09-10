@@ -86,7 +86,7 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
 export const ENGINE_BASE_CLASSES = [
   "BObject",
   "Actor",
-  "SceneLayer",
+  "ComponentLogic",
   "SceneLayerActor",
   "ActorComponent",
   "GameInstance",
@@ -161,6 +161,7 @@ export function buildParentClassTreeRows(
   const walk = (id: string, depth: number) => {
     if (visited.has(id)) return;
     visited.add(id);
+    if (walkAncestry(id, parentOf).includes("SceneLayer")) return;
     const ancestryLen = walkAncestry(id, parentOf).length;
     const group: "Engine" | "Project" = (
       ENGINE_BASE_CLASSES as readonly string[]
@@ -1469,6 +1470,9 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Class") {
+    if (walkAncestry(parentClass ?? "BObject", options.parentOf ?? engineParentOf).includes("SceneLayer")) {
+      throw new Error("SceneLayer classes must be created as Scene Layer assets.");
+    }
     const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry, {
       parentClass,
       parentOf: options.parentOf,

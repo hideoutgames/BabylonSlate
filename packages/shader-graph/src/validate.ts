@@ -28,6 +28,7 @@ import type {
 } from "./document";
 import { createTypeResolver } from "./resolve";
 import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceError } from "./custom-glsl";
+import { vectorMaskDefinition, vectorMaskError } from "./vector-mask";
 import { validateMaterialParameterNames } from "./parameters";
 import {
   materialTypeLabel,
@@ -228,6 +229,7 @@ function definitionForNode(
     return functionPlumbingDefinition(node.type, options.functionInterface);
   }
   const definition = materialNodeDefinition(node.type);
+  if (definition && node.type === "vector.mask") return vectorMaskDefinition(node, definition);
   return definition && node.type === "custom.glsl" ? customGlslDefinition(node, definition) : definition;
 }
 
@@ -339,6 +341,11 @@ function validateGraph(
       }
     }
 
+    if (node.type === "vector.mask") {
+      const resolver = createTypeResolver(graph, { functions: options.functions, functionInterface: options.functionInterface });
+      const message = vectorMaskError(node.properties, resolver.inputType(node.id, "value"));
+      if (message) diagnostics.push({ code: "material.vectorMask", message, severity: "error", nodeId: node.id, pinId: "value" });
+    }
     if (node.type === "custom.glsl") {
       const message = node.properties.customVersion === 2
         ? customGlslInterfaceError(node.properties) ?? customGlslFunctionBodyError(customGlslBody(node))

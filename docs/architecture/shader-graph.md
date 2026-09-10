@@ -1,5 +1,15 @@
 # Materials and Material Functions
 
+Material headers distinguish outputs (red), constants (green), parameters and
+inputs (teal), textures (amber), functions (blue), custom code (brown), and
+math/vector operations (muted). Palette markers use the same roles.
+
+**VectorMask** selects R/G/B/A in Details (R by default). At least one channel
+must remain selected. The output is Float, V2, V3, or V4/Color according to the
+selected count, in RGBA order; the title displays the selection. Vector inputs
+must contain every selected channel: a V2 cannot supply B or A. A disconnected
+input defaults to a zero V4 and remains connectable to any vector width.
+
 One authored asset type covers what used to be split between an empty imported
 `Material` stub and an authored `Shader` graph. A **Material** is a node graph
 with a `domain`, and a **Material Function** is a reusable typed subgraph.
@@ -483,3 +493,9 @@ variables inside the function. Use **Render** to compile Custom GLSL changes.
 
 - Decal domain is not implemented.
 - Motion vectors and object IDs are deferred.
+
+### Geometry information and particle previews
+
+VertexNormalWS provides a normalized transformed mesh normal, usable for vertex displacement and fragment effects on curved meshes. World Normal remains available for existing graphs. Vertex Position (Local) and Vertex Normal (Local) expose morph-adjusted local geometry; these are Surface-only. Camera Position is available in Surface and Post Processing. Post Processing uses Screen UV, Scene Color, Scene Depth, Scene Normal, and Screen Size; it has no mesh vertex attributes.
+
+Particle materials preview on one stationary plane with no particle system. The preview compiler supplies white Particle Color and Particle Texture defaults; the Particle Emitter supplies these values during Play. Texture Sample and UV masks still run on the plane. Domain changes immediately clear the previous preview effect, including when the next shader fails compilation.

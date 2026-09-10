@@ -68,10 +68,20 @@ export function nodeVisualRole(input: {
   category?: string;
   pure?: boolean;
   latent?: boolean;
+  material?: boolean;
 }): NodeVisualRole {
   const nodeType = input.nodeType ?? "";
   const title = input.title ?? "";
   const category = (input.category ?? "").toLowerCase();
+  if (input.material) {
+    if (nodeType.startsWith("output.")) return "event";
+    if (nodeType.startsWith("const.")) return "pure";
+    if (nodeType.startsWith("param.") || category === "input") return "variable";
+    if (category === "texture") return "latent";
+    if (nodeType === "custom.glsl") return "call-parent";
+    if (nodeType.startsWith("function.")) return "function";
+    return "flow";
+  }
 
   if (nodeType === "flow.event.callParent") {
     return "call-parent";

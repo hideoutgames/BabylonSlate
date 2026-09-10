@@ -140,6 +140,7 @@ function PaletteWindowedList({
                       title: node.title,
                       category: node.category,
                       pure: node.pure,
+                      material: node.defaultData?.__material === true,
                       latent: node.latent,
                     }),
                   ),

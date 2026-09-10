@@ -103,7 +103,7 @@ Reusable by script, shader, animation, and behaviour-tree graphs.
 
 Repeated toolbar Add Node insertions stagger when their insertion points coincide, keeping earlier nodes independently selectable without moving them. Pin-drag additions retain the chosen drop position.
 
-`GraphEditor` node drags preview nearby unused, compatible right-output/left-input pins with grey, 50%-opacity wires. Previews use measured handle centers and a 96px screen radius, remain outside graph state, and commit together on release after validation. Occupied pins (including multi-connect exec/output pins), disabled nodes, and links within the dragged selection are excluded. Moving away, Escape, pointer cancellation, focus loss, or external graph replacement clears suggestions. Host graph refreshes discard stale previews without ending assistance: the next movement checks the refreshed pins, even when the drag began out of range. Releasing before a fresh preview appears does not connect. Read-only and fixed-node canvases do not offer them.
+`GraphEditor` node drags preview nearby unused, compatible right-output/left-input pins with grey, 50%-opacity wires. Previews use measured handle centers and a configurable screen radius (48px by default), remain outside graph state, and commit together on release after validation. Occupied pins (including multi-connect exec/output pins), disabled nodes, and links within the dragged selection are excluded. Moving away, Escape, pointer cancellation, focus loss, or external graph replacement clears suggestions. Host graph refreshes discard stale previews without ending assistance: the next movement checks the refreshed pins, even when the drag began out of range. Releasing before a fresh preview appears does not connect. Read-only and fixed-node canvases do not offer them.
 
 **Format** keeps execution paths aligned, places joins after incoming branches, and reserves nested branch lanes. Small pure trees retain their diagonal placement; tall parameter trees use compact horizontal rows with extra room before their consumer. Whole parameter blocks and independent selected chains are separated while unrelated nodes remain in place.
 
@@ -152,8 +152,19 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | **SpriteCollisionOverlay** ([`sprite-collision-overlay.tsx`](../../apps/editor/src/components/sprite-collision-overlay.tsx)) | Dashed normalized AABB with 8 resize handles (`Resize Collision East`, …) and interior drag-to-move. Sprite Animation Preview hosts it on the `object-contain` image box so pivot/AABB match non-square textures. | Sprite Preview and Sprite Animation Preview. |
 | **NineSlicePreview** ([`nine-slice-preview.tsx`](../../apps/editor/src/components/nine-slice-preview.tsx)) | Read-only still frame of a 2D Panel Texture (or first Material Texture Sample) on a checkerboard, with dashed `--pin-transform` margin lines and orange intersection dots on the `object-contain` image box. Margins stay on PropertyGrid 0–1 sliders (`0.5` = 50% of the source edge; values above 1 stay legacy pixels). `data-testid="panel-nine-slice-preview"`. | Scene Details and Prefab Inspector `2DPanelComponent`. |
 
-Not kit (single call site): `BrandLogo` (docs / wordmark), `BrandIcon` (landing header and native account screen), `JsBodyEditor` (Inspector Execute JavaScript body).
+The shared code editor uses a compact desktop dialog with edge-to-edge code,
+line gutters, syntax colors, and Ctrl+Space completion. GLSL suggests numeric
+types, built-ins, local declarations, and authored pins; JavaScript combines
+language completion with its pins and local declarations. Coarse pointers also
+get a Complete button and symbol keys. Execute JavaScript uses the same dialog
+and a static four-line node-body preview as Custom GLSL.
+
+Not kit (single call site): `BrandLogo` (docs / wordmark), `BrandIcon` (landing header and native account screen).
 
 ### Input asset editors
 
 Input Action and Input Axis documents use the standard DockView document shell with Bindings and Details panels. `InputBindingsPanel` composes `PanelFrame`, `SearchDropdown`, `BindingCodePicker`, and compact Buttons; `InputBindingDetailsPanel` uses `PropertyGrid`. Shared document selection lives in `InputAssetEditingProvider`. Input authoring is reached through Content Browser > Input, not Project Settings. See [input assets and events](input.md).
+
+New Asset uses the shared TreeView for parent classes, including expansion, search, and keyboard/touch selection. SceneLayer descendants are excluded from Class creation; use the Scene Layer asset type.
+
+Graph Engine Settings control the Node Connection Assistant (enabled by default, 48 screen pixels, adjustable from 8?200) and Shake Nodes To Disconnect. Assistant links and shake disconnections commit on release. Shake requires three deliberate direction reversals; Escape, pointer cancellation, or a second touch cancels the gesture.

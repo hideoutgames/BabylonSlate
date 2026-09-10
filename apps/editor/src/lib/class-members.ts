@@ -260,7 +260,7 @@ export function nativeEventStubs(
     return [];
   }
   const types: string[] = [];
-  if (chain.includes("Actor")) {
+  if (chain.includes("Actor") || chain.includes("ComponentLogic")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
   }
   if (chain.includes("GameInstance")) {
@@ -269,7 +269,7 @@ export function nativeEventStubs(
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
   }
-  return eventStubsForTypes(types);
+  return eventStubsForTypes(types).map((stub) => chain.includes("ComponentLogic") && stub.eventType === "flow.event.destroyed" ? { ...stub, name: "Event Destroyed" } : stub);
 }
 
 /** Whether a script catalog node is legal on a Class graph for this parent. */
@@ -442,10 +442,10 @@ export function isScriptCatalogNodeAllowed(
     nodeId === "flow.event.beginPlay" ||
     nodeId === "flow.event.destroyed"
   ) {
-    return chain.includes("Actor");
+    return chain.includes("Actor") || chain.includes("ComponentLogic");
   }
   if (nodeId === "flow.event.tick") {
-    return chain.includes("Actor") || chain.includes("GameInstance");
+    return chain.includes("Actor") || chain.includes("GameInstance") || chain.includes("ComponentLogic");
   }
   if (nodeId === "flow.event.commandRun") {
     return chain.includes("Actor") || chain.includes("BDebugCommand");

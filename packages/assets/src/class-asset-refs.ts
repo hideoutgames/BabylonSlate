@@ -10,7 +10,7 @@ export interface ClassAssetReplacement extends ClassAssetReference {
 const CLASS_FIELDS = new Set([
   "class", "classId", "classRef", "actorClass", "componentClass",
   "typeClassId", "keyTypeClassId", "valueTypeClassId", "parentClass",
-  "gameInstanceClass", "editorUtilityObjects",
+  "gameInstanceClass", "editorUtilityObjects", "logicClass",
 ]);
 
 /** Finds actual Class identifiers without matching display names or source text. */

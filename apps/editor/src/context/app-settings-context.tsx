@@ -17,6 +17,8 @@ import {
   type EngineSettings,
 } from "@babylonslate/vfs";
 
+import { GraphInteractionSettingsContext } from "@babylonslate/graph-ui";
+
 export type AppSettingsSnapshot = {
   settings: EngineSettings;
   version: number;
@@ -207,7 +209,9 @@ export function AppSettingsProvider({
   );
   return (
     <AppSettingsContext.Provider value={value}>
-      {children}
+      <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled }}>
+        {children}
+      </GraphInteractionSettingsContext.Provider>
     </AppSettingsContext.Provider>
   );
 }

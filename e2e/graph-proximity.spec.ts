@@ -71,7 +71,7 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   );
   const start = await center(title);
   const near = {
-    x: start.x + source.x + 50 - target.x,
+    x: start.x + source.x + 24 - target.x,
     y: start.y + source.y - target.y,
   };
   await expect(preview).toHaveCount(0);
@@ -117,7 +117,7 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   await page.mouse.move(secondStart.x, secondStart.y);
   await page.mouse.down();
   await page.mouse.move(
-    secondStart.x + secondSource.x + 50 - secondTarget.x,
+    secondStart.x + secondSource.x + 24 - secondTarget.x,
     secondStart.y + secondSource.y - secondTarget.y,
     { steps: 30 },
   );
@@ -142,4 +142,28 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
       targetHandle: "target",
     }),
   ]);
+});
+
+
+test("Class JavaScript shares the colored editor and read-only node preview", async ({ page }, testInfo) => {
+  await openTestProject(page);
+  await page.evaluate(async () => {
+    const host = globalThis as unknown as { __babylonslateTest: { setMainGraphContent: (graph: SerializedGraph) => Promise<boolean> } };
+    await host.__babylonslateTest.setMainGraphContent({ nodes: [{ id: "custom-js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: { body: "const amount = 1;\nreturn amount;" } }], edges: [] });
+  });
+  await openAssetFromBrowser(page, GRAPH_PATH);
+  const node = page.getByTestId("graph-editor").locator('[data-id="custom-js"]');
+  await expect(node.getByTestId("js-code-preview")).toContainText("const amount");
+  await node.click();
+  await page.getByTestId("class-node-code").click();
+  const editor = page.getByRole("textbox", { name: "JavaScript Function Body" });
+  await editor.fill("const amount = 2;\nret");
+  await editor.press("End");
+  await editor.press("Control+Space");
+  await expect(page.getByRole("option", { name: "return", exact: true })).toBeVisible();
+  await editor.press("Escape");
+  await editor.fill("const amount = 2;\nreturn amount;");
+  await page.screenshot({ path: testInfo.outputPath("class-code-editor.png") });
+  await page.getByTestId("class-node-code-done").click();
+  await expect(node.getByTestId("js-code-preview")).toContainText("const amount = 2");
 });

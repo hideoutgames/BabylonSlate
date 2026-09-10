@@ -3,8 +3,6 @@ import {
   ArcRotateCamera,
   Color4,
   MeshBuilder,
-  ParticleSystem,
-  RawTexture,
   RenderTargetTexture,
   Scene,
   Vector3,
@@ -150,8 +148,8 @@ export function createMaterialPreviewScene(
   aimPreviewCameraAtMesh(camera, mesh);
   let postProcess: PostProcess | null = null;
   let currentMaterial: Material | null = mesh.material;
-  let particles: ParticleSystem | null = null;
-  const disposeParticles = () => { particles?.dispose(); particles = null; mesh.isVisible = true; };
+  let particlePlane: Mesh | null = null;
+  const disposeParticles = () => { particlePlane?.dispose(); particlePlane = null; mesh.setEnabled(true); };
   let customContainer: AssetContainer | null = null;
   let meshGeneration = 0;
 
@@ -204,36 +202,30 @@ export function createMaterialPreviewScene(
       }
       if (generation !== meshGeneration) return mesh;
       applyMaterialToVisualMeshes(mesh, currentMaterial);
-      aimPreviewCameraAtMesh(camera, mesh);
+      if (particlePlane) mesh.setEnabled(false);
+      else aimPreviewCameraAtMesh(camera, mesh);
       return mesh;
     },
     applyMaterial: (material) => {
+      if (material) disposeParticles();
       currentMaterial = material;
       applyMaterialToVisualMeshes(mesh, material);
     },
     applyPostProcess: (material) => {
       disposePostProcess();
       if (!material) return;
+      disposeParticles();
       postProcess = material.createPostProcess(camera) ?? null;
     },
     applyParticleMaterial: (material) => {
       disposeParticles();
       if (!material) return;
-      mesh.isVisible = false;
-      particles = new ParticleSystem("materialPreviewParticles", 128, scene);
-      particles.particleTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene, false, false);
-      particles.emitter = Vector3.Zero();
-      particles.minEmitBox = new Vector3(-0.4, -0.5, 0);
-      particles.maxEmitBox = new Vector3(0.4, -0.5, 0);
-      particles.direction1 = new Vector3(-0.1, 1, 0);
-      particles.direction2 = new Vector3(0.1, 1, 0);
-      particles.minSize = 0.15;
-      particles.maxSize = 0.3;
-      particles.minLifeTime = 1;
-      particles.maxLifeTime = 2;
-      particles.emitRate = 32;
-      material.createEffectForParticles(particles);
-      particles.start();
+      mesh.setEnabled(false);
+      particlePlane = MeshBuilder.CreatePlane("materialPreviewParticlePlane", { size: 1.6 }, scene);
+      particlePlane.material = material;
+      camera.alpha = -Math.PI / 2;
+      camera.beta = Math.PI / 2;
+      camera.setTarget(Vector3.Zero());
     },
     dispose: () => {
       meshGeneration += 1;
@@ -534,7 +526,7 @@ export function createMaterialPreviewPresenter(
       const texture = ensureRtt(size.width, size.height);
       // Keep retrying at the caller's RAF cadence while textures/shaders load.
       // An empty warm-up frame must not consume a static preview's 1 fps slot.
-      if (!previewMeshesReady(host.mesh)) return;
+      if (!previewMeshesReady(host.scene.getMeshByName("materialPreviewParticlePlane") as Mesh ?? host.mesh)) return;
       pendingForce = false;
       lastPresentMs = at;
       host.scene.render();

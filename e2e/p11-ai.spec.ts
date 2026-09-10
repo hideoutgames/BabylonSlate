@@ -270,7 +270,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await page.getByTestId("new-asset-type-Class").click();
     await page.getByTestId("new-asset-name").fill("Alert");
     await page.getByTestId("new-asset-parent").click();
-    await page.getByTestId("new-asset-parent-BTDecorator").click();
+    await page.getByTestId("tree-row-BTDecorator").click();
     await page.getByTestId("content-browser-new-asset-create").click();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
 

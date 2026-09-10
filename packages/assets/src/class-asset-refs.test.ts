@@ -5,6 +5,11 @@ const hero = { guid: "hero-guid", classId: "Hero" };
 const replacement = { guid: "npc-guid", classId: "NPC" };
 
 describe("Class reference replacement", () => {
+  it("tracks and retargets the class selected by a Logic Component", () => {
+    const component = { classId: "LogicComponent", properties: { logicClass: "Hero" } };
+    expect(findClassAssetReferences(component, [hero])).toEqual(["hero-guid"]);
+    expect(replaceClassAssetReferences(component, [{ ...hero, replacement }]).value.properties.logicClass).toBe("NPC");
+  });
   it("replaces every instance and typed or GUID reference without changing display text", () => {
     const value = {
       actors: [{ id: "one", name: "Hero", classId: "Hero", components: [] },

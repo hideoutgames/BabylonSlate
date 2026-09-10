@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import {
   SearchInput,
+  TreeView,
   TypeVisualIcon,
   resolveTypeVisual,
   walkAncestry,
@@ -97,6 +98,7 @@ export function ContentBrowserNewAssetDialog({
   const [phoneStep, setPhoneStep] = useState<"type" | "details">("type");
   const [search, setSearch] = useState("");
   const [parentSearch, setParentSearch] = useState("");
+  const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   const bodyRef = useRef<HTMLDivElement>(null);
   const detailsRef = useRef<HTMLElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
@@ -305,66 +307,28 @@ export function ContentBrowserNewAssetDialog({
                       data-testid="new-asset-parent-search"
                     />
                   </div>
-                  <div
-                    role="radiogroup"
-                    aria-label="Parent Class"
-                    onKeyDown={navigateChoice}
-                    data-testid="new-asset-parent"
-                    className={cn(
-                      "p-2",
-                      !phone && "min-h-0 flex-1 overflow-y-auto",
-                    )}
-                  >
-                    {parentRows.length === 0 ? (
-                      <Empty>
-                        <EmptyHeader>
-                          <EmptyTitle>No Classes</EmptyTitle>
-                          <EmptyDescription>
-                            No parent classes match the search.
-                          </EmptyDescription>
-                        </EmptyHeader>
-                      </Empty>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        {parentRows.map((row) => {
-                          const selected = parentClass === row.id;
-                          return (
-                            <Button
-                              key={row.id}
-                              type="button"
-                              variant={selected ? "secondary" : "ghost"}
-                              size={phone ? "touch" : "default"}
-                              disabled={!row.selectable}
-                              className={cn(
-                                "h-auto w-full justify-start",
-                                phone
-                                  ? "min-h-11"
-                                  : "min-h-[var(--chrome-row,28px)]",
-                              )}
-                              style={{ paddingLeft: 8 + row.depth * 12 }}
-                              role="radio"
-                              tabIndex={selected ? 0 : -1}
-                              aria-checked={selected}
-                              data-selected={selected ? "true" : "false"}
-                              data-depth={row.depth}
-                              data-group={row.group}
-                              data-testid={`new-asset-parent-${row.id}`}
-                              onClick={() => onParentClassChange(row.id)}
-                            >
-                              <TypeVisualIcon
-                                visual={resolveTypeVisual({
-                                  classId: row.id,
-                                  parentClass: row.parentClassId,
-                                  ancestry: walkAncestry(row.id, parentOf),
-                                  family: "class",
-                                })}
-                              />
-                              <span className="truncate">{row.id}</span>
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    )}
+                  <div className={cn("min-h-40 flex-1", phone && "h-72 shrink-0")}>
+                    <TreeView
+                      data-testid="new-asset-parent"
+                      aria-label="Parent Class"
+                      selectedId={parentClass}
+                      emptyLabel="No parent classes match the search."
+                      nodes={parentRows.filter((row) => parentSearch || !walkAncestry(row.id, parentOf).slice(1).some((id) => collapsedParents.has(id))).map((row) => ({
+                        id: row.id,
+                        label: row.id,
+                        depth: row.depth,
+                        hasChildren: parentRows.some((child) => child.parentClassId === row.id),
+                        expanded: Boolean(parentSearch) || !collapsedParents.has(row.id),
+                        muted: !row.selectable,
+                        icon: <TypeVisualIcon visual={resolveTypeVisual({ classId: row.id, parentClass: row.parentClassId, ancestry: walkAncestry(row.id, parentOf), family: "class" })} />,
+                      }))}
+                      onSelect={(id) => { if (parentRows.find((row) => row.id === id)?.selectable) onParentClassChange(id); }}
+                      onToggleExpanded={(id) => setCollapsedParents((previous) => {
+                        const next = new Set(previous);
+                        if (next.has(id)) next.delete(id); else next.add(id);
+                        return next;
+                      })}
+                    />
                   </div>
                 </div>
               ) : null}

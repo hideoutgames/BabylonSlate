@@ -60,7 +60,7 @@ describe("ContentBrowserNewAssetDialog", () => {
       (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
     ).toBe("Hero");
     expect(
-      screen.getByRole("radiogroup", { name: "Parent Class" }),
+      screen.getByRole("tree", { name: "Parent Class" }),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Back To Types" }));
@@ -111,10 +111,11 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(screen.getByTestId("new-asset-parent-search")).toBeTruthy();
     expect(
       screen
-        .getByTestId("new-asset-parent-BObject")
-        .getAttribute("data-selected"),
+        .getByTestId("tree-row-BObject")
+        .getAttribute("aria-selected"),
     ).toBe("true");
-    fireEvent.click(screen.getByTestId("new-asset-parent-Actor"));
+    fireEvent.keyDown(screen.getByRole("tree", { name: "Parent Class" }), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("tree", { name: "Parent Class" }), { key: "Enter" });
     expect(onParentClassChange).toHaveBeenCalledWith("Actor");
   });
 
@@ -154,19 +155,19 @@ describe("ContentBrowserNewAssetDialog", () => {
     });
     expect(
       screen
-        .getByTestId("new-asset-parent-Hero")
+        .getByTestId("tree-row-Hero")
         .querySelector("[data-type-icon]")
         ?.getAttribute("data-type-icon"),
     ).toBe("Actor");
     expect(
       screen
-        .getByTestId("new-asset-parent-Warrior")
+        .getByTestId("tree-row-Warrior")
         .querySelector("[data-type-icon]")
         ?.getAttribute("data-type-icon"),
     ).toBe("Actor");
     expect(
       screen
-        .getByTestId("new-asset-parent-Actor")
+        .getByTestId("tree-row-Actor")
         .querySelector("[data-type-icon]")
         ?.getAttribute("data-type-icon"),
     ).toBe("Actor");
@@ -182,15 +183,15 @@ describe("ContentBrowserNewAssetDialog", () => {
         },
       ],
     });
-    expect(screen.getByTestId("new-asset-parent-Hero")).toBeTruthy();
+    expect(screen.getByTestId("tree-row-Hero")).toBeTruthy();
     expect(
-      screen.getByTestId("new-asset-parent-Hero").getAttribute("data-depth"),
+      screen.getByTestId("tree-row-Hero").getAttribute("data-depth"),
     ).toBe("2");
     fireEvent.change(screen.getByTestId("new-asset-parent-search"), {
       target: { value: "Hero" },
     });
-    expect(screen.getByTestId("new-asset-parent-Hero")).toBeTruthy();
-    expect(screen.queryByTestId("new-asset-parent-GameInstance")).toBeNull();
+    expect(screen.getByTestId("tree-row-Hero")).toBeTruthy();
+    expect(screen.queryByTestId("tree-row-GameInstance")).toBeNull();
   });
 
   it("disables Create when the name is empty or taken", () => {

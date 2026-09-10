@@ -34,3 +34,5 @@ export {
   GraphEditorProvider,
   useGraphEditorContext,
 } from "./graph-editor-context";
+
+export { GraphInteractionSettingsContext } from "./graph-interaction-settings";
