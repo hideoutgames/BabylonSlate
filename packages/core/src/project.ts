@@ -180,8 +180,6 @@ export interface ProjectSettings {
   twoD: TwoDProjectSettings;
   physics: PhysicsProjectSettings;
   input: ProjectInputSettings;
-  /** Input assets own defaults after the one-time project conversion. */
-  inputAssetsVersion?: 1;
   fonts: FontProjectSettings;
   audio: AudioProjectSettings;
   render: RenderProjectSettings;
@@ -712,8 +710,7 @@ export function normalizeProjectSettings(
         settings?.textures?.autoRequeueUncompressed ??
         DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
     },
-    input: settings?.inputAssetsVersion === 1 ? { actions: [], axes: [] } : normalizeProjectInput(settings?.input),
-    ...(settings?.inputAssetsVersion === 1 ? { inputAssetsVersion: 1 as const } : {}),
+    input: normalizeProjectInput(settings?.input),
     fonts: {
       defaultFontGuid:
         typeof settings?.fonts?.defaultFontGuid === "string" &&

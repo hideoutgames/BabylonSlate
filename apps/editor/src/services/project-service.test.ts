@@ -96,8 +96,7 @@ describe("project round-trip", () => {
       await service.saveDocument("input-action", asset.path, { ...payload, bindings });
       await service.saveProject(document, layouts);
       const reloaded = new ProjectService(storage);
-      const loaded = await reloaded.loadCurrentProject();
-      expect(loaded.document.settings.input).toEqual({ actions: [], axes: [] });
+      await reloaded.loadCurrentProject();
       const restored = await reloaded.loadDocument("input-action", asset.path);
       expect(restored).toMatchObject({ bindings });
     }

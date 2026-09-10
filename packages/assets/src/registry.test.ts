@@ -533,45 +533,6 @@ describe("AssetRegistry", () => {
     expect(copy.header.guid).not.toBe("dup-1");
   });
 
-  it.each(["InputAction", "InputAxis"])(
-    "duplicates %s controls without stealing the original legacy alias",
-    async (type) => {
-      const storage = await createStorage();
-      await storage.mkdir("assets", true);
-      const payload = {
-        valueType: type === "InputAction" ? "button" : "1d",
-        legacyName: "Jump",
-        bindings: [{ id: "keyboard", device: "key", code: "Space" }],
-      };
-      await storage.writeBinary(
-        "assets/Jump.babasset",
-        await encodeAssetDocument(
-          { type, name: "Jump", guid: "original", version: 1, payload },
-          { headerMeta: { valueType: payload.valueType, legacyName: "Jump" } },
-        ),
-      );
-      const registry = new AssetRegistry(storage);
-      await registry.mountRoot(projectContentRoot());
-      const copy = await registry.duplicateAsset("original", "project", "");
-      const copyDoc = await decodeAssetDocument(
-        await storage.readBinary(copy.path),
-      );
-      expect(copy.header.payload.legacyName).toBeUndefined();
-      expect(copyDoc.payload.legacyName).toBeUndefined();
-      expect(copyDoc.payload.bindings).toEqual(payload.bindings);
-      expect(registry.getByGuid("original")?.header.payload.legacyName).toBe(
-        "Jump",
-      );
-      expect(
-        (
-          await decodeAssetDocument(
-            await storage.readBinary("assets/Jump.babasset"),
-          )
-        ).payload.legacyName,
-      ).toBe("Jump");
-    },
-  );
-
   it("preserves .scene.babasset when duplicating a scene", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);

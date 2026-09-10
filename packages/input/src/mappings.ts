@@ -19,14 +19,12 @@ export type {
 
 export interface ActionMapping {
   id?: string;
-  legacyName?: string;
   name: string;
   bindings: ActionBinding[];
 }
 
 export interface AxisMapping {
   id?: string;
-  legacyName?: string;
   name: string;
   /** `2d` folds x/y bindings into one `getAxis2D` result. */
   kind?: "1d" | "2d";
@@ -230,12 +228,8 @@ export function normalizeInputMappings(
 
 function mappingIdentity(row: Record<string, unknown>): {
   id?: string;
-  legacyName?: string;
 } {
   return {
     ...(typeof row.id === "string" && row.id ? { id: row.id } : {}),
-    ...(typeof row.legacyName === "string" && row.legacyName
-      ? { legacyName: row.legacyName }
-      : {}),
   };
 }

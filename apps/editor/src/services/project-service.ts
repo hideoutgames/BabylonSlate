@@ -1,3 +1,4 @@
+import { createDefaultInputAssets } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
@@ -133,7 +134,7 @@ function headerMetaForSave(
 ): Record<string, unknown> | undefined {
   if (isInputAssetType(type)) {
     const input = normalizeInputAssetPayload(type, content);
-    return { valueType: input.valueType, ...(input.legacyName ? { legacyName: input.legacyName } : {}) };
+    return { valueType: input.valueType };
   }
   const materialMeta = materialHeaderMeta(
     type,
@@ -729,7 +730,7 @@ export class ProjectService {
       this.migrationPending.push(migrated.pending);
     }
 
-    const withDocuments = await this.copyLegacyInputAssets(await this.ensureDocuments(document), raw as unknown as Record<string, unknown>);
+    const withDocuments = await this.ensureDocuments(document);
     const scenePayloads: SerializedScene[] = [];
     if (!withDocuments.settings.gameInstanceClass) {
       for (const path of withDocuments.scenes) {
@@ -1216,7 +1217,7 @@ export class ProjectService {
     } else {
       document.graphs = [];
     }
-    await this.copyLegacyInputAssets(document);
+    document.settings.input = { actions: [], axes: [] };
     document.settings.startupSceneGuid = await this.guidForAsset(MAIN_SCENE_FILE);
     await this.saveProject(document, createEmptyLayouts());
     const stored = JSON.parse(
@@ -1229,6 +1230,7 @@ export class ProjectService {
     await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
     if (kind === "empty") {
+      await this.createInputAssets();
       await this.scaffoldKenneyMannequinEmpty(document);
     }
     return {
@@ -1238,41 +1240,12 @@ export class ProjectService {
     };
   }
 
-  /** Copy first; the original project mappings stay on disk until the next successful project save.
-   * Header aliases make retrying an interrupted conversion idempotent without overwriting edits.
-   */
-  private async copyLegacyInputAssets(document: ProjectDocument, originalManifest?: Record<string, unknown>): Promise<ProjectDocument> {
-    if (document.settings.inputAssetsVersion === 1) return document;
-    const existing = this.assetRegistry?.list({ rootId: "project" }) ?? [];
-    const mappings = [
-      ...document.settings.input.actions.map((mapping) => ({ type: "InputAction" as const, mapping })),
-      ...document.settings.input.axes.map((mapping) => ({ type: "InputAxis" as const, mapping })),
-    ];
-    for (const { type, mapping } of mappings) {
-      if (existing.some((asset) => asset.header.type === type && asset.header.payload.legacyName === mapping.name)) continue;
-      const payload = normalizeInputAssetPayload(type, { ...mapping, legacyName: mapping.name });
-      const suffix = type === "InputAction" ? ".inputaction.babasset" : ".inputaxis.babasset";
-      const filename = newAssetFileName(type, mapping.name) || `Input${suffix}`;
-      const stem = filename.slice(0, -suffix.length);
-      let path = `assets/Input/${filename}`;
-      for (let index = 2; await this.storage.exists(path); index++) path = `assets/Input/${stem}_${index}${suffix}`;
-      await this.storage.mkdir("assets/Input", true);
-      const bytes = await encodeAssetDocument({
-        type, name: mapping.name, guid: await this.guidForAsset(path),
-        version: this.migrations.currentVersion(type), payload: payload as unknown as Record<string, unknown>,
-      }, { blobs: this.blobs, headerMeta: headerMetaForSave(type, payload as unknown as Record<string, unknown>) });
-      await this.storage.writeBinary(path, bytes);
-      const indexed = await this.assetRegistry?.reindexPath(path);
-      if (indexed) existing.push(indexed);
+  private async createInputAssets(): Promise<void> {
+    await this.storage.mkdir("assets/Input", true);
+    for (const { type, name, ...payload } of createDefaultInputAssets()) {
+      const path = `assets/Input/${newAssetFileName(type, name)}`;
+      await this.saveDocument(type === "InputAction" ? "input-action" : "input-axis", path, payload);
     }
-    if (originalManifest) {
-      await this.storage.writeText(PROJECT_FILE, JSON.stringify({
-        ...originalManifest, guid: this.projectGuid,
-        settings: { ...(originalManifest.settings as Record<string, unknown> ?? {}), input: document.settings.input, inputAssetsVersion: 1 },
-      }, null, 2));
-    }
-    document.settings = { ...document.settings, inputAssetsVersion: 1, input: { actions: [], axes: [] } };
-    return document;
   }
 
   private async scaffoldKenneyMannequinEmpty(
