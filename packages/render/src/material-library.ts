@@ -69,6 +69,7 @@ function documentForPlan(
 }
 
 export interface MaterialLibraryOptions {
+  particlePreview?: boolean;
   resolveTexture?: (guid: string) => Texture | null;
   functions?: () => Record<string, MaterialFunctionDocument>;
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
@@ -175,6 +176,7 @@ export class MaterialLibrary {
     const compiled = compileMaterialPlan(lowered.plan, {
       scene,
       name: unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`,
+      particlePreview: this.options.particlePreview,
       resolveTexture: this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
     });

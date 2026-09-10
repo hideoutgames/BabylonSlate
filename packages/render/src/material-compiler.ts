@@ -58,6 +58,8 @@ import { syncSceneLighting } from "./scene-lighting";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
+  /** Editor-only single-quad preview; live particle systems retain Particle mode. */
+  particlePreview?: boolean;
   scene: Scene;
   name: string;
   /** Texture asset guid to a live Babylon texture (through `ResourceCache`). */
@@ -167,7 +169,7 @@ export function compileMaterialPlan(
   material.mode =
     plan.domain === "postProcess"
       ? NodeMaterialModes.PostProcess
-      : plan.domain === "particle"
+      : plan.domain === "particle" && !options.particlePreview
         ? NodeMaterialModes.Particle
         : NodeMaterialModes.Material;
 
@@ -175,7 +177,7 @@ export function compileMaterialPlan(
   const pendingTextures: Texture[] = [];
   const diagnostics: MaterialDiagnostic[] = [];
   const realized = new Map<string, BlockRealization>();
-  const plumbing: MaterialPlumbing = {};
+  const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview };
   const outputNodes: NodeMaterialBlock[] = [];
 
   const fail = (): CompileMaterialResult => {
@@ -197,7 +199,7 @@ export function compileMaterialPlan(
       outputNodes.push(
         ...createPostProcessPlumbing(options.name, created, plumbing),
       );
-    } else if (plan.domain !== "particle") {
+    } else if (plan.domain !== "particle" || options.particlePreview) {
       outputNodes.push(
         ...createSurfacePlumbing(options.name, created, plumbing),
       );
@@ -420,7 +422,11 @@ export function compileMaterialPlan(
     return fail();
   }
 
-  if (plan.domain === "particle") {
+  if (plan.domain === "particle" && options.particlePreview) {
+    plumbing.worldPosition?.connectTo(plumbing.clipPosition!);
+    material.backFaceCulling = false;
+  }
+  if (plan.domain === "particle" && !options.particlePreview) {
     ensureParticleTextureUvs(options.name, created);
   }
 
@@ -935,6 +941,7 @@ function createSurfacePlumbing(
 
   plumbing.worldPosition = worldPosition.output;
   plumbing.position = morph.positionOutput;
+  plumbing.localNormal = morph.normalOutput;
   plumbing.world = bones.output;
   plumbing.localTangent = morph.tangentOutput;
   plumbing.clipPosition = clipPosition.vector;

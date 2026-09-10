@@ -6,13 +6,13 @@ import { compileMaterialPlan } from "./material-compiler";
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); });
 
-async function compile(doc: MaterialDocument) {
+async function compile(doc: MaterialDocument, particlePreview = false) {
   const engine = new NullEngine();
   const scene = new Scene(engine);
   dispose.push(() => { scene.dispose(); engine.dispose(); });
   const plan = lowerMaterialDocument(doc);
   if (!plan.ok) throw new Error(JSON.stringify(plan.diagnostics));
-  const result = compileMaterialPlan(plan.plan, { scene, name: "contract" });
+  const result = compileMaterialPlan(plan.plan, { scene, name: "contract", particlePreview });
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   dispose.push(result.dispose);
   expect(await result.ready).toEqual([]);
@@ -27,6 +27,37 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it("compiles VertexNormalWS in vertex displacement and fragment color", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "normal", "input.vertexNormalWS");
+    wire(doc, "normal", "normal", "output", "worldPositionOffset");
+    wire(doc, "normal", "normal", "output", "emissive");
+    await compile(doc);
+  });
+  it.each(["input.vertexPosition", "input.vertexNormal"])("compiles local geometry %s", async (type) => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "geometry", type);
+    wire(doc, "geometry", type.endsWith("Position") ? "position" : "normal", "output", "emissive");
+    await compile(doc);
+  });
+  it("compiles particle preview as a mesh shader while preserving live Particle mode", async () => {
+    const doc = createDefaultMaterialDocument("Particle", "particle");
+    const preview = await compile(doc, true);
+    const live = await compile(doc);
+    expect(preview.material.mode).toBe(0);
+    expect(live.material.mode).toBe(2);
+    expect(preview.material.compiledShaders).not.toContain("particle_color");
+  });
+  it("compiles Camera Position for Post Processing", async () => {
+    const doc = createDefaultMaterialDocument("PP", "postProcess");
+    node(doc, "camera", "input.cameraPosition");
+    node(doc, "split", "vector.split");
+    wire(doc, "camera", "position", "split", "value");
+    // Camera information can drive any scalar effect parameter.
+    node(doc, "color", "vector.combine");
+    doc.nodes = doc.nodes.filter((entry) => entry.id !== "color");
+    await compile(doc);
+  });
   it("compiles nonadjacent VectorMask channels in RGBA order", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "value", "const.vec3", { value: [0.2, 0.5, 0.8] });

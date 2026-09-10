@@ -130,19 +130,23 @@ function engine(): NullEngine {
 }
 
 describe("material preview scene", () => {
-  it("previews particle materials on an emitting system and disposes it when leaving the domain", () => {
+  it("previews one particle plane and removes it when leaving the domain", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(host.dispose);
     const material = new NodeMaterial("particle-preview", host.scene);
-    const compile = vi.spyOn(material, "createEffectForParticles").mockImplementation(() => undefined);
     host.applyParticleMaterial(material);
-    expect(host.mesh.isVisible).toBe(false);
-    expect(host.scene.particleSystems).toHaveLength(1);
-    expect(host.scene.particleSystems[0]!.isStarted()).toBe(true);
-    expect(compile).toHaveBeenCalledWith(host.scene.particleSystems[0]);
-    host.applyParticleMaterial(null);
+    expect(host.mesh.isEnabled()).toBe(false);
     expect(host.scene.particleSystems).toHaveLength(0);
-    expect(host.mesh.isVisible).toBe(true);
+    const plane = host.scene.getMeshByName("materialPreviewParticlePlane")!;
+    expect(plane.getTotalIndices()).toBe(6);
+    expect(plane.material).toBe(material);
+    host.applyMaterial(new StandardMaterial("surface", host.scene));
+    expect(plane.isDisposed()).toBe(true);
+    expect(host.mesh.isEnabled()).toBe(true);
+    host.applyParticleMaterial(material);
+    host.applyParticleMaterial(null);
+    expect(host.scene.getMeshByName("materialPreviewParticlePlane")).toBeNull();
+    expect(host.scene.particleSystems).toHaveLength(0);
   });
   it("builds a mesh for every preview primitive", () => {
     const scene = new Scene(engine());

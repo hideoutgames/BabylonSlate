@@ -493,3 +493,9 @@ variables inside the function. Use **Render** to compile Custom GLSL changes.
 
 - Decal domain is not implemented.
 - Motion vectors and object IDs are deferred.
+
+### Geometry information and particle previews
+
+VertexNormalWS provides a normalized transformed mesh normal, usable for vertex displacement and fragment effects on curved meshes. World Normal remains available for existing graphs. Vertex Position (Local) and Vertex Normal (Local) expose morph-adjusted local geometry; these are Surface-only. Camera Position is available in Surface and Post Processing. Post Processing uses Screen UV, Scene Color, Scene Depth, Scene Normal, and Screen Size; it has no mesh vertex attributes.
+
+Particle materials preview on one stationary plane with no particle system. The preview compiler supplies white Particle Color and Particle Texture defaults; the Particle Emitter supplies these values during Play. Texture Sample and UV masks still run on the plane. Domain changes immediately clear the previous preview effect, including when the next shader fails compilation.

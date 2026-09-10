@@ -80,6 +80,8 @@ export interface BlockRealization {
  * post-process materials.
  */
 export interface MaterialPlumbing {
+  particlePreview?: boolean;
+  localNormal?: NodeMaterialConnectionPoint;
   localTangent?: NodeMaterialConnectionPoint;
   position?: NodeMaterialConnectionPoint;
   world?: NodeMaterialConnectionPoint;
@@ -553,12 +555,18 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     NodeMaterialBlockConnectionPointTypes.Color4,
     "color",
   ),
-  "input.particleColor": attributeInput(
-    "particle_color",
-    NodeMaterialBlockConnectionPointTypes.Color4,
-    "color",
-  ),
-  "input.particleTexture": ({ name }) => {
+  "input.particleColor": (context) => {
+    if (!context.plumbing.particlePreview) return attributeInput("particle_color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
+    const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1);
+    return single(block, {}, { color: block.output });
+  },
+  "input.particleTexture": ({ name, plumbing }) => {
+    if (plumbing.particlePreview) {
+      const rgba = new InputBlock(name); rgba.value = new Color4(1, 1, 1, 1);
+      const rgb = new InputBlock(`${name}_rgb`); rgb.value = new Color3(1, 1, 1);
+      const alpha = new InputBlock(`${name}_alpha`); alpha.value = 1;
+      return { blocks: [rgba, rgb, alpha], inputs: {}, outputs: { rgba: rgba.output, rgb: rgb.output, a: alpha.output } };
+    }
     const block = new ParticleTextureBlock(name);
     return {
       blocks: [block],
@@ -701,6 +709,22 @@ ADAPTERS["input.worldPosition"] = ({ name, plumbing }) => {
   const split = new VectorSplitterBlock(`${name}_xyz`);
   plumbing.worldPosition.connectTo(split.xyzw);
   return { blocks: [split], inputs: {}, outputs: { position: split.xyzOut } };
+};
+
+ADAPTERS["input.vertexPosition"] = ({ name, plumbing }) => {
+  if (plumbing.position) return { blocks: [], inputs: {}, outputs: { position: plumbing.position } };
+  const block = attributeVector(name, "position", 3);
+  return single(block, {}, { position: block.output });
+};
+ADAPTERS["input.vertexNormal"] = ({ name, plumbing }) => {
+  if (plumbing.localNormal) return { blocks: [], inputs: {}, outputs: { normal: plumbing.localNormal } };
+  const block = attributeVector(name, "normal", 3);
+  return single(block, {}, { normal: block.output });
+};
+ADAPTERS["input.vertexNormalWS"] = ({ name, plumbing }) => {
+  const unit = new NormalizeBlock(name);
+  plumbing.worldNormal?.connectTo(unit.input);
+  return single(unit, {}, { normal: unit.output });
 };
 
 ADAPTERS["input.worldNormal"] = ({ name, plumbing }) => {
