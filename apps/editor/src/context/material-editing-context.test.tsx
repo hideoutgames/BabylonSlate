@@ -172,7 +172,9 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
       }
       acquire() {
         harness.acquireCalls += 1;
-        return harness.acquireResult;
+        return harness.acquireResult.ok
+          ? { ...harness.acquireResult, ready: Promise.resolve([]) }
+          : harness.acquireResult;
       }
       dispose() {}
       releaseScene() {}
