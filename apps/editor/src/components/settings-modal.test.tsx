@@ -543,20 +543,42 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("keeps Close Project available in the Session category", () => {
+  it("keeps Close Project beside Done when browsing or searching settings", () => {
+    const onOpenChange = vi.fn();
+    const onCloseProject = vi.fn();
+    render(
+      <SettingsModal
+        open
+        onOpenChange={onOpenChange}
+        scope="project"
+        onCloseProject={onCloseProject}
+      />,
+    );
+    const close = screen.getByRole("button", { name: "Close Project" });
+    const done = screen.getByRole("button", { name: "Done" });
+    expect(close.parentElement).toBe(done.parentElement);
+    fireEvent.click(screen.getByTestId("settings-modal-category-twoD"));
+    expect(screen.getByRole("button", { name: "Close Project" })).toBe(close);
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), {
+      target: { value: "no-such-setting" },
+    });
+    expect(screen.getByText("No Matching Settings")).toBeTruthy();
+    fireEvent.click(close);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onCloseProject).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer Close Project in Engine Settings", () => {
     render(
       <SettingsModal
         open
         onOpenChange={() => {}}
-        scope="project"
+        scope="engine"
         onCloseProject={() => {}}
       />,
     );
-    fireEvent.click(screen.getByTestId("settings-modal-category-project"));
-    expect(screen.getByTestId("settings-modal-category-project").textContent).toBe(
-      "Session",
-    );
-    expect(screen.getByTestId("close-project").textContent).toMatch(/Close Project/);
+    expect(screen.queryByRole("button", { name: "Close Project" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
   });
 
   it("confirms before turning Source Control Enable off", () => {

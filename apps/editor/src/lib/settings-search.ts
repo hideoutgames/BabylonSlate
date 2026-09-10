@@ -68,7 +68,6 @@ export const PROJECT_SETTING_FIELDS = fields([
   ],
   ["sourceControl", "Poll Interval", "settings-source-control-poll"],
   ["sourceControl", "Token", "settings-source-control-token"],
-  ["project", "Close Project", "close-project"],
 ]);
 
 export const ENGINE_SETTING_FIELDS = fields([
