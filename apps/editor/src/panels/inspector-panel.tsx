@@ -83,6 +83,7 @@ import {
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
+import { GlslCodePreview } from "../components/glsl-code-preview";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
@@ -1596,10 +1597,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
                 });
               }}
             />
-            <JsBodyEditor
+            <MultilineTextField code title="JavaScript Function Body" data-testid="class-node-code"
               value={String(selectedNode.data.body ?? "")}
-              bodyLine={focusDiagnostic?.bodyLine}
               onChange={(body) => updateNodeData({ body })}
+              renderPreview={(value) => <GlslCodePreview value={value} language="javascript" />}
+              renderEditor={(value, onChange) => <JsBodyEditor value={value} onChange={onChange} bodyLine={focusDiagnostic?.bodyLine} names={[...inputs, ...outputs].map((pin) => pin.name)} />}
             />
           </>
         ) : null}

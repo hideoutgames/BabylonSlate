@@ -22,6 +22,7 @@ export type MultilineTextFieldProps = {
   id?: string;
   className?: string;
   editorClassName?: string;
+  code?: boolean;
   renderPreview?: (value: string) => ReactNode;
   renderEditor?: (value: string, onChange: (value: string) => void) => ReactNode;
   "data-testid"?: string;
@@ -38,6 +39,7 @@ export function MultilineTextField({
   id,
   className,
   editorClassName,
+  code,
   renderPreview,
   renderEditor,
   "data-testid": testId,
@@ -83,16 +85,16 @@ export function MultilineTextField({
         }}
       >
         <DialogContent
-          className="editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+          className={cn("flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none", code ? "h-[min(720px,80dvh)] w-[min(960px,calc(100vw-32px))] rounded-md" : "editor-dialog-large")}
           data-testid={testId ? `${testId}-dialog` : undefined}
         >
-          <DialogHeader className="min-h-14 shrink-0 border-b px-4 py-3 pr-14">
+          <DialogHeader className={cn("shrink-0 border-b pr-14", code ? "min-h-11 px-3 py-2" : "min-h-14 px-4 py-3")}>
             <DialogTitle>{title}</DialogTitle>
             {description ? (
               <DialogDescription>{description}</DialogDescription>
             ) : null}
           </DialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col p-4">
+          <div className={cn("flex min-h-0 flex-1 flex-col", !code && "p-4")}>
             {renderEditor ? renderEditor(draft, setDraft) : markup ? (
               <MarkupAutocompleteTextarea
                 id={id ? `${id}-editor` : undefined}

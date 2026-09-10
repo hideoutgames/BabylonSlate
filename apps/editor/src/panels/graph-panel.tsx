@@ -1,6 +1,7 @@
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { GlslCodePreview } from "../components/glsl-code-preview";
 import {
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
@@ -380,6 +381,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         </Empty>
       ) : (
         <GraphEditor
+          renderNodeBody={(nodeId, data) => graph.nodes.find((node) => node.id === nodeId)?.type === "debug.executeJavaScript" ? <div className="w-88 border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "")} language="javascript" /></div> : null}
           key={`${documentId}:${activeFunctionId ?? "event"}`}
           initialGraph={graph}
           colorMode="dark"

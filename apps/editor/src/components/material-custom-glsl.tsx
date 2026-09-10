@@ -40,10 +40,10 @@ export function MaterialCustomGlsl({ node, document, setProperties, bodyLine }: 
     }}>Convert to Function Body</Button>}
     <Field data-invalid={!!error}>
       <FieldLabel htmlFor="material-node-glsl">{pins ? "Function Body" : "Expression"}</FieldLabel>
-      <MultilineTextField id="material-node-glsl" title={pins ? "GLSL Function Body" : "GLSL Expression"}
+      <MultilineTextField code id="material-node-glsl" title={pins ? "GLSL Function Body" : "GLSL Expression"}
         value={body} onChange={(body) => setProperties({ body })} data-testid="material-node-glsl"
         renderPreview={(value) => <GlslCodePreview value={value} />}
-        renderEditor={(value, onChange) => <CodeBodyEditor value={value} onChange={onChange} language="glsl" bodyLine={bodyLine} />}
+        renderEditor={(value, onChange) => <CodeBodyEditor value={value} onChange={onChange} language="glsl" bodyLine={bodyLine} names={pins ? [...pins.inputs, ...pins.outputs.slice(1)].map((pin) => pin.name) : ["a", "b"]} />}
       />
       <FieldDescription data-testid="material-node-glsl-signature">
         {pins ? "Use input names as variables. Return the primary output; assign additional output names before returning. Pin names are case sensitive. Renaming a pin requires updating its references in the code." : "Legacy expression: result = fn(a, b). Convert to add typed pins and statements."} GLSL/WebGL only. Use Render to compile.
