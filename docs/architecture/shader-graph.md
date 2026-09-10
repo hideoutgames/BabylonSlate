@@ -409,6 +409,13 @@ authored stack runs.
 
 ## Not implemented
 
+Surface vertex plumbing applies Morph Targets, Instances and Bones before world
+position/normal transforms and authored World Position Offset. Normal Map exposes
+UV (mesh UV when unwired) and Strength. Gradient Details edits up to 32 normalized
+color stops. Material Function interface edits preserve typed defaults and pin
+IDs; selecting an input exposes its numeric default. Byte fingerprints examine
+all bytes, so same-size texture replacements refresh dependent meshes.
+
 Material Preview loads closed Material Functions from their `document` chunk,
 with unsaved open tabs taking precedence. Registry changes refresh saved bodies
 and texture bytes. Texture cache reuse compares content as well as GUID and

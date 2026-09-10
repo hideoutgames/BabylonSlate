@@ -15,6 +15,7 @@ import {
   DotBlock,
   FresnelBlock,
   GradientBlock,
+  GradientBlockColorStep,
   InputBlock,
   LengthBlock,
   LerpBlock,
@@ -57,7 +58,7 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@babylonslate/shader-graph";
-import { customGlslInterface } from "@babylonslate/shader-graph";
+import { customGlslInterface, materialGradientStops } from "@babylonslate/shader-graph";
 
 /**
  * One lowered operation realised as Babylon blocks.
@@ -78,6 +79,7 @@ export interface BlockRealization {
  * post-process materials.
  */
 export interface MaterialPlumbing {
+  localTangent?: NodeMaterialConnectionPoint;
   position?: NodeMaterialConnectionPoint;
   world?: NodeMaterialConnectionPoint;
   worldPosition?: NodeMaterialConnectionPoint;
@@ -610,8 +612,9 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       { out: block.output },
     );
   },
-  "color.gradient": ({ name }) => {
+  "color.gradient": ({ name, operation }) => {
     const block = new GradientBlock(name);
+    block.colorSteps = materialGradientStops(operation.properties.stops).map((stop) => new GradientBlockColorStep(stop.position, Color3.FromArray(stop.color)));
     return single(block, { value: block.gradient }, { out: block.output });
   },
   "shading.fresnel": ({ name, plumbing }) => {
@@ -624,17 +627,17 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       { out: block.fresnel },
     );
   },
-  "shading.normalMap": ({ name, plumbing }) => {
+  "shading.normalMap": ({ name, plumbing, operation }) => {
     const block = new PerturbNormalBlock(name);
     plumbing.worldPosition?.connectTo(block.worldPosition);
     plumbing.worldNormal4?.connectTo(block.worldNormal);
-    plumbing.uv?.connectTo(block.uv);
+    if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
     // Babylon emits a Vector 4 normal; the graph pin is a Vector 3.
     const split = new VectorSplitterBlock(`${name}_xyz`);
     block.output.connectTo(split.xyzw);
     return {
       blocks: [block, split],
-      inputs: { packed: block.normalMapColor },
+      inputs: { packed: block.normalMapColor, uv: block.uv, strength: block.strength },
       outputs: { normal: split.xyzOut },
     };
   },
@@ -695,7 +698,7 @@ ADAPTERS["input.worldTangent"] = ({ name, plumbing }) => {
   const direction = new VectorMergerBlock(`${name}_direction`);
   const world = new TransformBlock(`${name}_world`);
   const normal = new NormalizeBlock(`${name}_unit`);
-  block.output.connectTo(split.xyzw);
+  (plumbing.localTangent ?? block.output).connectTo(split.xyzw);
   split.xyzOut.connectTo(direction.xyzIn);
   direction.xyzw.connectTo(world.vector);
   plumbing.world?.connectTo(world.transform);

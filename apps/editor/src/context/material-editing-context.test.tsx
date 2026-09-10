@@ -116,6 +116,11 @@ vi.mock("./play-context", () => ({
   usePlay: () => playValue,
 }));
 
+const assetRegistry = {
+  list: () => [harness.textureAsset],
+  getByGuid: (guid: string) => guid === harness.textureAsset.header.guid ? harness.textureAsset : null,
+};
+
 vi.mock("./document-context", () => ({
   useDocuments: () => ({
     openDocuments: [
@@ -127,20 +132,16 @@ vi.mock("./document-context", () => ({
         },
       },
     ],
-    assetRegistry: {
-      list: () => [harness.textureAsset],
-      getByGuid: (guid: string) =>
-        guid === harness.textureAsset.header.guid ? harness.textureAsset : null,
-    },
+    assetRegistry,
     projectDocument: { settings: { playFrameCap: 60 } },
-    readAssetChunk: (path: string, chunkId: string) =>
-      harness.readAssetChunk(path, chunkId),
+    readAssetChunk: harness.readAssetChunk,
   }),
 }));
 
 vi.mock("@babylonslate/render", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/render")>();
   const cache = {
+    release: vi.fn(),
     getTexture(guid: string, _engine: unknown, bytes: Uint8Array) {
       harness.cachedTextures.push({ guid, bytes });
       return {

@@ -1,5 +1,8 @@
 import {
   AddBlock,
+  BonesBlock,
+  InstancesBlock,
+  MorphTargetsBlock,
   Constants,
   DiscardBlock,
   FragmentOutputBlock,
@@ -800,6 +803,14 @@ function createSurfacePlumbing(
   uv.setAsAttribute("uv");
 
   const world = matrixInput(`${name}_world`, NodeMaterialSystemValues.World);
+  const instances = new InstancesBlock(`${name}_instances`);
+  world.output.connectTo(instances.world);
+  const bones = new BonesBlock(`${name}_bones`);
+  instances.output.connectTo(bones.world);
+  const morph = new MorphTargetsBlock(`${name}_morphTargets`);
+  position.output.connectTo(morph.position);
+  normal.output.connectTo(morph.normal);
+  uv.output.connectTo(morph.uv);
   const viewProjection = matrixInput(
     `${name}_viewProjection`,
     NodeMaterialSystemValues.ViewProjection,
@@ -813,16 +824,16 @@ function createSurfacePlumbing(
   cameraPosition.setAsSystemValue(NodeMaterialSystemValues.CameraPosition);
 
   const worldPosition = new TransformBlock(`${name}_worldPos`);
-  position.output.connectTo(worldPosition.vector);
-  world.output.connectTo(worldPosition.transform);
+  morph.positionOutput.connectTo(worldPosition.vector);
+  bones.output.connectTo(worldPosition.transform);
 
   const clipPosition = new TransformBlock(`${name}_clipPos`);
   viewProjection.output.connectTo(clipPosition.transform);
 
   const worldNormal = new TransformBlock(`${name}_worldNormal`);
   worldNormal.transformAsDirection = true;
-  normal.output.connectTo(worldNormal.vector);
-  world.output.connectTo(worldNormal.transform);
+  morph.normalOutput.connectTo(worldNormal.vector);
+  bones.output.connectTo(worldNormal.transform);
 
   const viewDirection = new ViewDirectionBlock(`${name}_viewDirection`);
   worldPosition.output.connectTo(viewDirection.worldPosition);
@@ -836,6 +847,9 @@ function createSurfacePlumbing(
     normal,
     uv,
     world,
+    instances,
+    bones,
+    morph,
     viewProjection,
     view,
     cameraPosition,
@@ -847,14 +861,15 @@ function createSurfacePlumbing(
   );
 
   plumbing.worldPosition = worldPosition.output;
-  plumbing.position = position.output;
-  plumbing.world = world.output;
+  plumbing.position = morph.positionOutput;
+  plumbing.world = bones.output;
+  plumbing.localTangent = morph.tangentOutput;
   plumbing.clipPosition = clipPosition.vector;
   plumbing.worldNormal = worldNormal.xyz;
   plumbing.worldNormal4 = worldNormal.output;
   plumbing.cameraPosition = cameraPosition.output;
   plumbing.viewDirection = viewDirection.output;
-  plumbing.uv = uv.output;
+  plumbing.uv = morph.uvOutput;
   plumbing.view = view.output;
   return [vertexOutput];
 }

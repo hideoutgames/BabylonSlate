@@ -65,11 +65,7 @@ export function createEngineTextureFromUrl(
   return texture;
 }
 
-function contentKey(bytes: Uint8Array | Blob): string {
-  if (bytes instanceof Blob) return `blob:${bytes.size}`;
-  const length = bytes.byteLength;
-  return `${length}:${bytes[0] ?? 0}:${bytes[Math.floor(length / 2)] ?? 0}:${bytes[length - 1] ?? 0}`;
-}
+import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 
 function asUint8Array(bytes: Uint8Array | Blob): Uint8Array | null {
   return bytes instanceof Uint8Array ? bytes : null;

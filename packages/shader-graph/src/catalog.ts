@@ -580,7 +580,11 @@ const SHADING_NODES: MaterialNodeDefinition[] = [
     domains: ["surface"],
     stages: ["fragment"],
     cost: 5,
-    inputs: [{ id: "packed", name: "Packed", type: VEC3 }],
+    inputs: [
+      { id: "packed", name: "Packed", type: VEC3 },
+      { id: "uv", name: "UV", type: VEC2 },
+      { id: "strength", name: "Strength", type: FLOAT, defaultValue: [1] },
+    ],
     outputs: [{ id: "normal", name: "Normal", type: VEC3 }],
   },
   {

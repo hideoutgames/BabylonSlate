@@ -6,6 +6,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
   AssetPickerControl,
+  EntryListEditor,
   NamePromptDialog,
   PanelFrame,
   PinListEditor,
@@ -33,6 +34,7 @@ import {
   classifyMaterialCost,
   isMaterialParameterNode,
   materialParameterName,
+  materialGradientStops,
   hydrateMaterialGraphForEditor,
   listUnconnectedMaterialPinDefaults,
   lowerMaterialDocument,
@@ -840,6 +842,15 @@ function MaterialNodeDetails({
     <div className="flex flex-col gap-2" data-testid="material-node-details">
       <p className="px-3 text-xs text-muted-foreground">{node.type}</p>
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
+      {node.type === "color.gradient" ? <div className="px-3"><EntryListEditor
+        title="Gradient Stops" items={materialGradientStops(node.properties.stops)}
+        onCreate={() => ({ position: 0.5, color: [1, 1, 1] as [number, number, number] })}
+        onChange={(stops) => setProperties({ stops })}
+        renderItem={({ item, onChange }) => <PropertyGrid rows={[
+          { id: "position", kind: "number", label: "Position", value: item.position, min: 0, max: 1, onChange: (position) => onChange({ ...item, position }) },
+          { id: "color", kind: "color", label: "Color", value: item.color, onChange: (color) => onChange({ ...item, color: [color[0], color[1], color[2]] }) },
+        ]} />}
+      /></div> : null}
       {node.type === "custom.glsl" ? (
         <MaterialCustomGlsl node={node} document={document} setProperties={setProperties} />
       ) : null}
@@ -1027,11 +1038,13 @@ function toPinRows(pins: readonly MaterialFunctionPin[]): PinListRow[] {
 function fromPinRows(
   rows: readonly PinListRow[],
   prefix: "in" | "out",
+  previous: readonly MaterialFunctionPin[],
 ): MaterialFunctionPin[] {
   return rows.map((row, index) => ({
+    ...previous.find((pin) => pin.id === row.id),
     id: row.id || `${prefix}_${index}`,
     name: row.name,
-    type: (MATERIAL_FUNCTION_PIN_TYPES as readonly string[]).includes(
+    type: row.type === "texture" ? "texture" : (MATERIAL_FUNCTION_PIN_TYPES as readonly string[]).includes(
       String(row.type),
     )
       ? (row.type as MaterialFunctionPin["type"])
@@ -1043,6 +1056,10 @@ function fromPinRows(
 export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, commit } = useMaterialFunctionDocument();
+  const [selectedInput, selectInput] = useState<string | null>(null);
+  const [selectedOutput, selectOutput] = useState<string | null>(null);
+  const input = document.inputs.find((pin) => pin.id === selectedInput);
+  const setDefault = (defaultValue: number[]) => commit({ ...document, inputs: document.inputs.map((pin) => pin.id === selectedInput ? { ...pin, defaultValue } : pin) });
   return (
     <PanelFrame
       className="flex-1"
@@ -1053,19 +1070,30 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
         <PinListEditor
           title="Inputs"
           rows={toPinRows(document.inputs)}
+          selectedId={selectedInput}
+          onSelect={selectInput}
+          showDefault={false}
           types={MATERIAL_FUNCTION_PIN_TYPES}
           onChange={(rows) =>
-            commit({ ...document, inputs: fromPinRows(rows, "in") })
+            commit({ ...document, inputs: fromPinRows(rows, "in", document.inputs) })
           }
           testIdPrefix="material-function-input"
           data-testid="material-function-inputs"
         />
+        {input && input.type !== "texture" ? <PropertyGrid rows={input.type === "float" ? [
+          { id: "default", kind: "number", label: "Default Value", value: input.defaultValue?.[0] ?? 0, onChange: (value) => setDefault([value]) },
+        ] : [
+          { id: "default", kind: "vector3", label: "Default Value", axes: ["X", "Y", "Z", "W"].slice(0, Number(input.type.slice(-1))), value: input.type === "vec4" ? [input.defaultValue?.[0] ?? 0, input.defaultValue?.[1] ?? 0, input.defaultValue?.[2] ?? 0, input.defaultValue?.[3] ?? 0] : [input.defaultValue?.[0] ?? 0, input.defaultValue?.[1] ?? 0, input.defaultValue?.[2] ?? 0], onChange: (value) => setDefault(value.slice(0, Number(input.type.slice(-1)))) },
+        ]} /> : null}
         <PinListEditor
           title="Outputs"
           rows={toPinRows(document.outputs)}
+          selectedId={selectedOutput}
+          onSelect={selectOutput}
+          showDefault={false}
           types={MATERIAL_FUNCTION_PIN_TYPES}
           onChange={(rows) =>
-            commit({ ...document, outputs: fromPinRows(rows, "out") })
+            commit({ ...document, outputs: fromPinRows(rows, "out", document.outputs) })
           }
           testIdPrefix="material-function-output"
           data-testid="material-function-outputs"
