@@ -826,7 +826,7 @@ test.describe("P9 content systems", () => {
 
   test("Custom GLSL node compiles a function body in the Material editor @ipad", async ({
     page,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(90_000);
     await openMinimalTestProject(page);
     await createAsset(page, "Material", "Glsl");
@@ -852,6 +852,7 @@ test.describe("P9 content systems", () => {
     ).toBeVisible({ timeout: 10_000 });
     await glsl.click();
     await glslEditor.fill("Mask = 0.5;\nreturn A + B;");
+    await page.screenshot({ path: testInfo.outputPath("custom-glsl-editor.png") });
     await page.getByTestId("material-node-glsl-done").click();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),

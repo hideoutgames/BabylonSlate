@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageDetails } from "./message-details";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
-import { GlslCodePreview } from "./code-highlighting";
+import { GlslCodePreview } from "./glsl-code-preview";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -500,7 +500,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
       <div className="relative flex h-full min-h-0 flex-col">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        {document.domain !== "particle" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
             data-testid="material-preview-overlay"
@@ -548,7 +548,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
               })}
             </ToggleGroup>
           </div>
-        </div>
+        </div> : null}
         <canvas
           ref={canvasRef}
           data-testid="material-preview-canvas"

@@ -136,7 +136,10 @@ export function MaterialEditingProvider({
   const frameBudgetMs =
     1000 / Math.max(1, projectDocument?.settings.playFrameCap ?? 60);
 
-  const functionAssets = useMemo(() => (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "MaterialFunction"), [assetRegistry, registryVersion]);
+  const functionAssets = useMemo(() => {
+    void registryVersion; // Registry contents mutate without replacing its instance.
+    return (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "MaterialFunction");
+  }, [assetRegistry, registryVersion]);
   const [savedFunctions, setSavedFunctions] = useState<Record<string, MaterialFunctionDocument>>({});
   const [loadedFunctionAssets, setLoadedFunctionAssets] = useState<typeof functionAssets | null>(null);
   const functionsReady = functionAssets.length === 0 || loadedFunctionAssets === functionAssets;
@@ -270,7 +273,7 @@ export function MaterialEditingProvider({
   // Keep the preview primitive in step with the document.
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || !document) return;
+    if (!host || !document || document.domain === "particle") return;
     const mesh = document.preview.mesh;
     const guid = document.preview.customMeshGuid;
     let cancelled = false;
@@ -454,14 +457,15 @@ export function MaterialEditingProvider({
   ]);
 
   useEffect(() => {
+    const retainedTextures = retainedTexturesRef.current;
     return () => {
       if (renderCooldownTimerRef.current !== null) {
         window.clearTimeout(renderCooldownTimerRef.current);
       }
       libraryRef.current?.dispose();
       libraryRef.current = null;
-      for (const [guid, entry] of retainedTexturesRef.current) resourceCacheForEngine(entry.engine).release(guid);
-      retainedTexturesRef.current.clear();
+      for (const [guid, entry] of retainedTextures) resourceCacheForEngine(entry.engine).release(guid);
+      retainedTextures.clear();
     };
   }, []);
 

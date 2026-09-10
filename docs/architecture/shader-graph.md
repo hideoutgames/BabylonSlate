@@ -299,16 +299,17 @@ Details is selection-aware:
 
 ## Custom GLSL
 
-`custom.glsl` is an **expression-only** fragment helper. The selected-node
-Details panel edits a persisted `body` (Textarea) with a generated typed
-signature `result = fn(a, b)`. The validator rejects empty bodies, oversized
-source, declarations, preprocessor directives and forbidden globals, and
-reports `material.capability` on WebGPU (`customGlsl: false`). Compiler
-Results show `material.customGlsl`. Playwright wires the validated node
-into Metallic with tap-to-connect (force-click so the dock sash cannot
-steal the pin) and asserts the preview compiles to `data-status="ready"`.
-Render realises the node through Babylon `CustomBlock`; the expression
-participates in the plan hash so a body edit invalidates the cache.
+`custom.glsl` uses a typed function body on new nodes. Define named numeric
+inputs and additional outputs in Details, return the primary output, and assign
+additional outputs by name. The expanded editor provides GLSL highlighting and
+line numbers; the node shows four read-only code lines. Existing expression
+nodes retain `result = fn(a, b)` until explicitly converted.
+
+The validator checks interfaces, function boundaries, stage restrictions and
+GLSL/WebGL capability. GPU errors appear as `material.compile.glsl`, with body
+line mapping when available. Babylon `CustomBlock` generates the function
+signature. Body and interface edits participate in the plan hash. Custom nodes
+use manual **Render** and retain the last good material on compilation failure.
 
 ## Inline Texture Sample
 

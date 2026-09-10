@@ -4,7 +4,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { Field, FieldLabel, FieldDescription } from "@babylonslate/ui/components/field";
 import { customGlslInterface, customGlslInterfaceError, createTypeResolver, type CustomGlslPin, type MaterialDocument, type MaterialFunctionDocument, type MaterialGraphNode } from "@babylonslate/shader-graph";
 import { CodeBodyEditor } from "./js-body-editor";
-import { GlslCodePreview } from "./code-highlighting";
+import { GlslCodePreview } from "./glsl-code-preview";
 
 const TYPES = ["float", "vec2", "vec3", "vec4"] as const;
 const LABELS = ["Float", "Vector 2", "Vector 3", "Vector 4"];

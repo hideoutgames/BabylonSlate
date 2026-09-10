@@ -1,16 +1,6 @@
-import { StreamLanguage } from "@codemirror/language";
-import { shader } from "@codemirror/legacy-modes/mode/clike";
-import { highlightTree, tags, tagHighlighter } from "@lezer/highlight";
+import { highlightTree } from "@lezer/highlight";
 import type { ReactNode } from "react";
-
-export const glslLanguage = StreamLanguage.define(shader);
-export const codeHighlight = tagHighlighter([
-  { tag: [tags.keyword, tags.typeName], class: "text-primary" },
-  { tag: tags.comment, class: "text-muted-foreground italic" },
-  { tag: [tags.number, tags.bool], class: "text-[var(--pin-float)]" },
-  { tag: tags.string, class: "text-[var(--pin-string)]" },
-  { tag: tags.function(tags.variableName), class: "text-[var(--pin-vector)]" },
-]);
+import { codeHighlight, glslLanguage } from "./code-highlighting";
 
 /** Static spans: graph nodes never allocate an editable CodeMirror view. */
 export function GlslCodePreview({ value }: { value: string }) {
