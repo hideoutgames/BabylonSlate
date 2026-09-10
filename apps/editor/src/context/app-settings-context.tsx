@@ -109,7 +109,13 @@ export function receiveActiveAppSettingsUpdate(
 }
 
 export function updateActiveViewportPrefs(
-  patch: Pick<Partial<EngineSettings>, "viewportFlySpeed" | "viewportGridSize" | "viewportSnapRotateDeg" | "viewportSnapScale">,
+  patch: Pick<
+    Partial<EngineSettings>,
+    | "viewportFlySpeed"
+    | "viewportGridSize"
+    | "viewportSnapRotateDeg"
+    | "viewportSnapScale"
+  >,
 ): Promise<void> {
   return activeOwner.update((settings) => Object.assign(settings, patch));
 }
@@ -119,7 +125,10 @@ type AppSettingsContextValue = AppSettingsSnapshot & {
   updateViewportPrefs: (
     patch: Pick<
       Partial<EngineSettings>,
-      "viewportFlySpeed" | "viewportGridSize" | "viewportSnapRotateDeg" | "viewportSnapScale"
+      | "viewportFlySpeed"
+      | "viewportGridSize"
+      | "viewportSnapRotateDeg"
+      | "viewportSnapScale"
     >,
   ) => Promise<void>;
   updateDebuggerDefaults: (
@@ -172,7 +181,10 @@ export function AppSettingsProvider({
     (
       patch: Pick<
         Partial<EngineSettings>,
-        "viewportFlySpeed" | "viewportGridSize" | "viewportSnapRotateDeg" | "viewportSnapScale"
+        | "viewportFlySpeed"
+        | "viewportGridSize"
+        | "viewportSnapRotateDeg"
+        | "viewportSnapScale"
       >,
     ) => owner.update((settings) => Object.assign(settings, patch)),
     [owner],
@@ -207,13 +219,15 @@ export function useAppSettings(): AppSettingsContextValue {
     getActiveAppSettingsSnapshot,
     getActiveAppSettingsSnapshot,
   );
-  return value ?? {
-    ...snapshot,
-    updateSettings: (mutate) => activeOwner.update(mutate),
-    updateViewportPrefs: (patch) => updateActiveViewportPrefs(patch),
-    updateDebuggerDefaults: (patch) =>
-      activeOwner.update((settings) =>
-        Object.assign(settings.debuggerDefaults, patch),
-      ),
-  };
+  return (
+    value ?? {
+      ...snapshot,
+      updateSettings: (mutate) => activeOwner.update(mutate),
+      updateViewportPrefs: (patch) => updateActiveViewportPrefs(patch),
+      updateDebuggerDefaults: (patch) =>
+        activeOwner.update((settings) =>
+          Object.assign(settings.debuggerDefaults, patch),
+        ),
+    }
+  );
 }

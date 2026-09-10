@@ -57,12 +57,15 @@ export function useLongPressMenu(options: {
     if (!enabled) clearPress();
   }, [enabled, clearPress]);
 
-  const onClickCapture = useCallback((event: ReactMouseEvent) => {
-    if (!suppressClickAfterHold || !suppressClickRef.current) return;
-    suppressClickRef.current = false;
-    event.preventDefault();
-    event.stopPropagation();
-  }, [suppressClickAfterHold]);
+  const onClickCapture = useCallback(
+    (event: ReactMouseEvent) => {
+      if (!suppressClickAfterHold || !suppressClickRef.current) return;
+      suppressClickRef.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [suppressClickAfterHold],
+  );
 
   const onContextMenu = useCallback(
     (event: ReactMouseEvent) => {
@@ -81,7 +84,12 @@ export function useLongPressMenu(options: {
       event.stopPropagation();
       suppressClickRef.current = false;
       clearPress();
-      if (!enabled || event.pointerType === "mouse" || event.isPrimary === false) return;
+      if (
+        !enabled ||
+        event.pointerType === "mouse" ||
+        event.isPrimary === false
+      )
+        return;
       const { clientX, clientY, pointerId } = event;
       const timerId = setTimeout(() => {
         clearPress();
@@ -89,7 +97,12 @@ export function useLongPressMenu(options: {
         onMenuRef.current(clientX, clientY);
       }, CONTEXT_MENU_LONG_PRESS_MS);
       const cancelOnMove = (next: PointerEvent) => {
-        if (next.pointerId === pointerId && distance(clientX, clientY, next.clientX, next.clientY) > CONTEXT_MENU_MOVE_TOLERANCE_PX) clearPress();
+        if (
+          next.pointerId === pointerId &&
+          distance(clientX, clientY, next.clientX, next.clientY) >
+            CONTEXT_MENU_MOVE_TOLERANCE_PX
+        )
+          clearPress();
       };
       const cancelOnRelease = (next: PointerEvent) => {
         if (next.pointerId === pointerId) clearPress();

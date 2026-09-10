@@ -66,7 +66,8 @@ export function ViewportToolbar({
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
-  const { flySpeed, gridSize, snapRotateDeg, snapScale } = useEditorViewportPrefs();
+  const { flySpeed, gridSize, snapRotateDeg, snapScale } =
+    useEditorViewportPrefs();
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
     null,
   );

@@ -192,9 +192,14 @@ describe("ViewportToolbar", () => {
     renderToolbar();
     const snap = screen.getByTestId("gizmo-snap-toggle");
     fireEvent.contextMenu(snap);
-    expect(screen.getByLabelText("Rotation Snap (Degrees)")).toHaveProperty("value", "45");
+    expect(screen.getByLabelText("Rotation Snap (Degrees)")).toHaveProperty(
+      "value",
+      "45",
+    );
     expect(screen.getByLabelText("Scale Snap")).toHaveProperty("value", "0.1");
-    fireEvent.change(screen.getByLabelText("Scale Snap"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Scale Snap"), {
+      target: { value: "2" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(harness.setSnapEnabled).not.toHaveBeenCalled();
     expect(harness.applySceneChange).not.toHaveBeenCalled();
@@ -206,7 +211,12 @@ describe("ViewportToolbar", () => {
     vi.useFakeTimers();
     renderToolbar();
     const snap = screen.getByTestId("gizmo-snap-toggle");
-    fireEvent.pointerDown(snap, { pointerType: "touch", pointerId: 4, clientX: 20, clientY: 20 });
+    fireEvent.pointerDown(snap, {
+      pointerType: "touch",
+      pointerId: 4,
+      clientX: 20,
+      clientY: 20,
+    });
     act(() => vi.advanceTimersByTime(500));
     expect(screen.getByRole("alertdialog")).toBeTruthy();
     fireEvent.pointerUp(snap, { pointerType: "touch", pointerId: 4 });
@@ -215,20 +225,34 @@ describe("ViewportToolbar", () => {
     expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
 
-  it.each(["move", "cancel", "release", "scroll", "unmount"])("cancels a pending hold on %s", (reason) => {
-    vi.useFakeTimers();
-    const { unmount } = renderToolbar();
-    const snap = screen.getByTestId("gizmo-snap-toggle");
-    fireEvent.pointerDown(snap, { pointerType: "touch", pointerId: 4, clientX: 20, clientY: 20 });
-    if (reason === "move") fireEvent.pointerMove(document, { pointerId: 4, clientX: 40, clientY: 20 });
-    if (reason === "cancel") fireEvent.pointerCancel(document, { pointerId: 4 });
-    if (reason === "release") fireEvent.pointerUp(document, { pointerId: 4 });
-    if (reason === "scroll") fireEvent.scroll(document);
-    if (reason === "unmount") unmount();
-    act(() => vi.advanceTimersByTime(600));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(harness.setSnapEnabled).not.toHaveBeenCalled();
-  });
+  it.each(["move", "cancel", "release", "scroll", "unmount"])(
+    "cancels a pending hold on %s",
+    (reason) => {
+      vi.useFakeTimers();
+      const { unmount } = renderToolbar();
+      const snap = screen.getByTestId("gizmo-snap-toggle");
+      fireEvent.pointerDown(snap, {
+        pointerType: "touch",
+        pointerId: 4,
+        clientX: 20,
+        clientY: 20,
+      });
+      if (reason === "move")
+        fireEvent.pointerMove(document, {
+          pointerId: 4,
+          clientX: 40,
+          clientY: 20,
+        });
+      if (reason === "cancel")
+        fireEvent.pointerCancel(document, { pointerId: 4 });
+      if (reason === "release") fireEvent.pointerUp(document, { pointerId: 4 });
+      if (reason === "scroll") fireEvent.scroll(document);
+      if (reason === "unmount") unmount();
+      act(() => vi.advanceTimersByTime(600));
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(harness.setSnapEnabled).not.toHaveBeenCalled();
+    },
+  );
 
   it("saves prefab snap steps to editor preferences without changing a scene", () => {
     harness.documentKind = "graph";
@@ -236,15 +260,28 @@ describe("ViewportToolbar", () => {
     harness.snapScale = 0.2;
     renderToolbar({ testIdPrefix: "prefab-" });
     fireEvent.contextMenu(screen.getByTestId("prefab-gizmo-snap-toggle"));
-    expect(screen.getByLabelText("Rotation Snap (Degrees)")).toHaveProperty("value", "60");
-    fireEvent.change(screen.getByLabelText("Grid Size"), { target: { value: "2" } });
-    fireEvent.change(screen.getByLabelText("Rotation Snap (Degrees)"), { target: { value: "45" } });
-    fireEvent.change(screen.getByLabelText("Scale Snap"), { target: { value: "0.5" } });
+    expect(screen.getByLabelText("Rotation Snap (Degrees)")).toHaveProperty(
+      "value",
+      "60",
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Grid Size", exact: true }),
+      { target: { value: "2" } },
+    );
+    fireEvent.change(screen.getByLabelText("Rotation Snap (Degrees)"), {
+      target: { value: "45" },
+    });
+    fireEvent.change(screen.getByLabelText("Scale Snap"), {
+      target: { value: "0.5" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(harness.patchPrefs).toHaveBeenCalledWith({ viewportGridSize: 2, viewportSnapRotateDeg: 45, viewportSnapScale: 0.5 });
+    expect(harness.patchPrefs).toHaveBeenCalledWith({
+      viewportGridSize: 2,
+      viewportSnapRotateDeg: 45,
+      viewportSnapScale: 0.5,
+    });
     expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
-
 
   it("exposes current snap increment and nondefault view state without opening settings", () => {
     harness.snapEnabled = true;
@@ -481,9 +518,15 @@ describe("ViewportToolbar", () => {
     fireEvent.change(screen.getByTestId("number-prompt-input"), {
       target: { value: "4" },
     });
-    fireEvent.change(screen.getByTestId("scale-snap-input"), { target: { value: "0.5" } });
-    fireEvent.change(screen.getByTestId("rotation-snap-input"), { target: { value: "30/2" } });
-    fireEvent.keyDown(screen.getByTestId("rotation-snap-input"), { key: "Enter" });
+    fireEvent.change(screen.getByTestId("scale-snap-input"), {
+      target: { value: "0.5" },
+    });
+    fireEvent.change(screen.getByTestId("rotation-snap-input"), {
+      target: { value: "30/2" },
+    });
+    fireEvent.keyDown(screen.getByTestId("rotation-snap-input"), {
+      key: "Enter",
+    });
     expect(harness.applySceneChange).toHaveBeenCalledWith(
       "scene:assets/Main.scene.babasset",
       expect.objectContaining({
