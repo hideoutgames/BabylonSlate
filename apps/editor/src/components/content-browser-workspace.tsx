@@ -736,17 +736,19 @@ export function ContentBrowserWorkspace({
   useEffect(() => {
     if (!thumbnailsEnabled) return;
     let cancelled = false;
-    void (async () => {
-      const next = await syncContentBrowserThumbnailUrls({
-        mountedTextureGuids,
-        urls: thumbnailUrlsRef.current,
-        hidden,
-        load: loadAssetThumbnail,
-        createObjectURL: (blob) => URL.createObjectURL(blob),
-        revokeObjectURL: (url) => URL.revokeObjectURL(url),
-      });
-      if (!cancelled) setThumbnailUrls(next);
-    })();
+    void syncContentBrowserThumbnailUrls({
+      mountedTextureGuids,
+      urls: thumbnailUrlsRef.current,
+      hidden,
+      load: loadAssetThumbnail,
+      createObjectURL: (blob) => URL.createObjectURL(blob),
+      revokeObjectURL: (url) => URL.revokeObjectURL(url),
+      isCancelled: () => cancelled,
+      commit: (next) => {
+        thumbnailUrlsRef.current = next;
+        setThumbnailUrls(next);
+      },
+    });
     return () => {
       cancelled = true;
     };

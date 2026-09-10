@@ -629,6 +629,33 @@ describe("ContentBrowserWorkspace grid window", () => {
     }
   });
 
+  it("abandons a deferred thumbnail when a newer capture replaces it", async () => {
+    const model = texture(0);
+    model.header.type = "Model";
+    installRegistry([model]);
+    let resolveOld!: (bytes: Uint8Array) => void;
+    const oldLoad = new Promise<Uint8Array>((resolve) => { resolveOld = resolve; });
+    loadAssetThumbnail.mockImplementationOnce(() => oldLoad);
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:current");
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
+    try {
+      const { rerender } = render(<ContentBrowserWorkspace />);
+      await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith(model.header.guid));
+      docs.thumbnailEpoch++;
+      rerender(<ContentBrowserWorkspace />);
+      await waitFor(() => {
+        expect(screen.getByTestId(`content-item-${model.path}`).querySelector("img")?.getAttribute("src")).toBe("blob:current");
+      });
+      await act(async () => { resolveOld(new Uint8Array([1, 2, 3])); });
+      expect(createUrl).toHaveBeenCalledTimes(1);
+      expect(revokeUrl).not.toHaveBeenCalledWith("blob:current");
+      expect(screen.getByTestId(`content-item-${model.path}`).querySelector("img")?.getAttribute("src")).toBe("blob:current");
+    } finally {
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+    }
+  });
+
   it("uses an on-demand folder drawer on phones and returns to the chosen folder", async () => {
     layout.phone = true;
     docs.thumbnailsEnabled = false;
