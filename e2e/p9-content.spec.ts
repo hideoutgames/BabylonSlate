@@ -891,6 +891,25 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("material-preview-canvas")).toHaveAttribute("data-status", "ready", { timeout: 15_000 });
   });
 
+  for (const domain of ["Post Process", "Particle"]) test(`Custom GLSL node compiles for ${domain}`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await openMinimalTestProject(page);
+    await createAsset(page, "Material", "DomainGlsl");
+    await openAssetFromBrowser(page, "assets/DomainGlsl.material.babasset");
+    await page.getByTestId("property-domain").click();
+    await page.getByRole("option", { name: domain, exact: true }).click();
+    await addMaterialPaletteNode(page, "Custom GLSL", "custom.glsl");
+    await page.getByTestId("property-result-type").click();
+    await page.getByRole("option", { name: "Vector 4", exact: true }).click();
+    await page.getByTestId("material-node-glsl").click();
+    await page.getByRole("textbox", { name: "GLSL Function Body" }).fill("return vec4(1.0, 0.2, 0.1, 1.0);");
+    await page.getByTestId("material-node-glsl-done").click();
+    const graph = page.getByTestId("material-graph-editor");
+    await graph.locator('.react-flow__node[data-id^="custom.glsl-"] [data-handleid="out"][data-handlepos="right"]').dragTo(graph.locator('.react-flow__node[data-id="output"] [data-handleid="color"][data-handlepos="left"]'));
+    await expect(graph.locator('.react-flow__edge[data-id*=":out:output:color"]')).toHaveCount(1);
+    await compileMaterialPreview(page);
+  });
+
   test("Texture Sample node can pick an inline Texture asset", async ({
     page,
   }) => {

@@ -35,6 +35,7 @@ import {
   isMaterialParameterNode,
   materialParameterName,
   materialGradientStops,
+  materialNodeDefinition,
   customGlslInterface,
   hydrateMaterialGraphForEditor,
   listUnconnectedMaterialPinDefaults,
@@ -853,7 +854,7 @@ function MaterialNodeDetails({
 
   return (
     <div className="flex flex-col gap-2" data-testid="material-node-details">
-      <p className="px-3 text-xs text-muted-foreground">{node.type}</p>
+      <p className="px-3 text-xs text-muted-foreground">{materialNodeDefinition(node.type)?.title ?? node.type}</p>
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
       {node.type === "color.gradient" ? <div className="px-3"><EntryListEditor
         title="Gradient Stops" items={materialGradientStops(node.properties.stops)}

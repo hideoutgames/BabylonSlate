@@ -9,5 +9,7 @@ describe("Custom GLSL source diagnostics", () => {
     const effect = { vertexSourceCode: "", fragmentSourceCode: `header\n// CUSTOM_BODY_${customGlslFunctionName(operation.id)}\nfloat x = 1.0;\nreturn Bad;\n}` };
     expect(materialGlslDiagnostic("ERROR: 0:4: unknown identifier", [operation], effect)).toMatchObject({ nodeId: "call/node", line: 2, stage: "fragment" });
     expect(materialGlslDiagnostic("Link error", [operation], effect).line).toBeUndefined();
+    const released = { ...effect, defines: "#define TEST", getPipelineContext: () => null };
+    expect(materialGlslDiagnostic("FRAGMENT SHADER ERROR: 0:5: unknown identifier", [operation], released)).toMatchObject({ line: 2, stage: "fragment" });
   });
 });
