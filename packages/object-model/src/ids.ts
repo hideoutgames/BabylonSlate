@@ -2,6 +2,7 @@
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
   "MaterialObject",
+  "ComponentLogic",
   "Actor",
   "Scene",
   "SceneLayer",
@@ -22,6 +23,7 @@ export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
 
 /** Engine component class ids registered from P3 (behaviour filled later). */
 export const ENGINE_COMPONENT_CLASS_IDS = [
+  "LogicComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",

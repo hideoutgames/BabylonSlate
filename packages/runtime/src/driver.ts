@@ -23,6 +23,8 @@ import {
   Actor,
   ActorComponent,
   BObject,
+  ComponentLogic,
+  hydrateClassVariableValue,
   SceneLayer,
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
@@ -3218,6 +3220,25 @@ class InProcessRuntime implements RuntimeDriver {
 
 
   private applyActorDefaults(actor: Actor): void {
+    for (const component of actor.components) {
+      if (component.classId !== "LogicComponent" || component.logic) continue;
+      const classId = component.getVariable("logicClass");
+      if (typeof classId !== "string" || !this.world.classRegistry.isA(classId, "ComponentLogic")) continue;
+      const hooks = this.scriptHost.hooksFor(classId);
+      const logic = new ComponentLogic(component, {
+        classId, guid: `${component.guid}:logic`,
+        variables: Object.fromEntries(this.world.classRegistry.inheritedVariables(classId).map((variable) => [variable.name, hydrateClassVariableValue(variable)])),
+        implementedInterfaces: this.world.classRegistry.inheritedInterfaces(classId),
+        hooks: {
+          onCreation: (self) => this.guardScript(() => hooks?.onCreation?.(self)),
+          onTick: (self, ctx) => this.guardScript(() => hooks?.onTick?.(self, ctx)),
+          onDestroyed: (self) => this.guardScript(() => hooks?.onDestroyed?.(self)),
+        },
+      });
+      component.logic = logic;
+      this.scriptHost.bindInterfaceHandlers(logic);
+      logic.callOnCreation();
+    }
     const script = this.scriptHost.scriptsFor(actor.classId)[0];
     const defaults = script?.actorDefaults;
     if (!defaults) return;

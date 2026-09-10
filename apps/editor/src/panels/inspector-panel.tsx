@@ -825,6 +825,7 @@ function PrefabComponentDetails({
   onUpdate: (property: string, value: unknown) => void;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
+  const { assetRegistry } = useDocuments();
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   return (
     <div
@@ -853,6 +854,7 @@ function PrefabComponentDetails({
         </div>
         <PropertyGrid
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
+            logicClasses: subclassClassEntries("ComponentLogic", assetRegistry?.list() ?? []),
             sortingLayers,
             collisionLayers,
             assetLabel,

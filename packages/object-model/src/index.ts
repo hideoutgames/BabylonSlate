@@ -48,6 +48,7 @@ export {
   Actor,
   ActorComponent,
   BObject,
+  ComponentLogic,
   MaterialObject,
   GameInstance,
   Scene,

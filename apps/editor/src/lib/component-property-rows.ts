@@ -62,6 +62,7 @@ export type AssetPickRequest = {
 };
 
 export type ComponentPropertyContext = {
+  logicClasses?: ClassPickerEntry[];
   sortingLayers: readonly string[];
   collisionLayers: readonly string[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
@@ -462,6 +463,12 @@ export function componentPropertyRows(
   context: ComponentPropertyContext,
 ): PropertyRow[] {
   switch (component.classId) {
+    case "LogicComponent": return [{
+      kind: "enum", id: rowId(actorId, component.id, "logicClass"), label: "Logic Class",
+      value: typeof component.properties.logicClass === "string" ? component.properties.logicClass : "ComponentLogic",
+      options: (context.logicClasses ?? [{ id: "ComponentLogic", name: "Component Logic" }]).map((entry) => ({ value: entry.id, label: entry.name })),
+      onChange: (value) => update("logicClass", value),
+    }];
     case "MeshComponent": {
       const assetGuid =
         typeof component.properties.assetGuid === "string"

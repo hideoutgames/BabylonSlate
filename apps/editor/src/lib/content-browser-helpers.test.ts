@@ -1098,6 +1098,12 @@ describe("content-browser-helpers", () => {
     expect(ENGINE_BASE_CLASSES).toContain("BTComposite");
   });
 
+  it("excludes SceneLayer descendants from Class creation", () => {
+    const parentOf = (id: string) => id === "Overlay" ? "SceneLayer" : id === "SceneLayer" ? "BObject" : null;
+    expect(buildParentClassTreeRows([{ header: { type: "Class", name: "Overlay", parentClass: "SceneLayer" } }]).map((row) => row.id)).not.toContain("Overlay");
+    expect(() => buildNewAssetResult({ type: "Class", name: "Child", guid: "child", parentClass: "Overlay", parentOf })).toThrow("Scene Layer");
+  });
+
   it("builds a searchable Parent Class tree with project Classes nested", () => {
     const rows = buildParentClassTreeRows([
       {

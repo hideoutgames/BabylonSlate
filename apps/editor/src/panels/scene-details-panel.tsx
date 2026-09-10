@@ -66,6 +66,7 @@ import {
   applyPrefabPropertyDefaults,
   componentPropertyRows,
   gameInstanceClassEntries,
+  subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import {
@@ -959,6 +960,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
+            logicClasses: subclassClassEntries("ComponentLogic", assetRegistry?.list() ?? []),
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
           },
