@@ -821,9 +821,9 @@ function MaterialNodeDetails({
       id: "vector",
       kind: "vector3",
       label: "Value",
-      value: Array.from({ length: width }, (_, i) => value[i] ?? 0),
+      value: width === 4 ? [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 0] : [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0],
       axes: ["X", "Y", "Z", "W"].slice(0, width),
-      onChange: (next) => setProperties({ value: next }),
+      onChange: (next) => setProperties({ value: next.slice(0, width) }),
     });
   }
 

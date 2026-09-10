@@ -141,6 +141,14 @@ function propertiesFromNodeData(
   return properties;
 }
 
+function newNodeDefaults(type: string, data: Record<string, unknown>): Record<string, unknown> {
+  if (type === "custom.glsl" && typeof data.body !== "string" && typeof data.glsl !== "string") return newCustomGlslProperties();
+  if (type === "input.time") return { timeMode: "seconds", ...data };
+  if (type === "math.divide" || type === "math.mod") return { "default:b": [1], ...data };
+  if (type === "math.pow") return { "default:exponent": [1], ...data };
+  return {};
+}
+
 export function materialGraphToSerialized(
   doc: MaterialDocument | MaterialFunctionDocument,
 ): SerializedGraph {
@@ -178,7 +186,7 @@ export function serializedToMaterialGraph(
       position: node.position,
       properties: {
         ...propertiesFromNodeData(node.data),
-        ...(node.type === "custom.glsl" && previous && !previous.nodes.some((entry) => entry.id === node.id) ? newCustomGlslProperties() : {}),
+        ...(previous && !previous.nodes.some((entry) => entry.id === node.id) ? newNodeDefaults(node.type, propertiesFromNodeData(node.data)) : {}),
         ...(previous && isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
       },
     })),
@@ -204,7 +212,7 @@ export function serializedToMaterialFunctionGraph(
       position: node.position,
       properties: {
         ...propertiesFromNodeData(node.data),
-        ...(node.type === "custom.glsl" && !previous.nodes.some((entry) => entry.id === node.id) ? newCustomGlslProperties() : {}),
+        ...(!previous.nodes.some((entry) => entry.id === node.id) ? newNodeDefaults(node.type, propertiesFromNodeData(node.data)) : {}),
         ...(isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
       },
     })),

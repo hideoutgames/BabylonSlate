@@ -409,6 +409,15 @@ authored stack runs.
 
 ## Not implemented
 
+Material Preview loads closed Material Functions from their `document` chunk,
+with unsaved open tabs taking precedence. Registry changes refresh saved bodies
+and texture bytes. Texture cache reuse compares content as well as GUID and
+sampling settings, preserving outstanding retains when bytes are replaced.
+Preview texture references are retained once per byte revision and released on
+tab teardown. Newly added Divide / Modulo nodes start with divisor 1 and Power
+starts with exponent 1. New Time nodes expose seconds of Babylon scene animation;
+legacy nodes preserve the previous 0.6-units-per-second rate.
+
 Custom GLSL nodes created by the editor use node-local `customVersion: 2`, with
 stable pin IDs, GLSL variable names and explicit Float / Vector 2 / Vector 3 /
 Vector 4 types. The body returns the first output and assigns named additional

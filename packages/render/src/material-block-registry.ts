@@ -545,14 +545,22 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       outputs: { rgba: block.rgba, rgb: block.rgb, a: block.a },
     };
   },
-  "input.time": ({ name }) => {
+  "input.time": ({ name, operation }) => {
     const block = new InputBlock(
       name,
       undefined,
       NodeMaterialBlockConnectionPointTypes.Float,
     );
-    // Babylon advances this uniform per frame, matching the runtime clock.
+    // Babylon's Time animation advances 0.01 at 60fps, i.e. 0.6 per second.
     block.animationType = 1;
+    if (operation.properties.timeMode === "seconds") {
+      const scale = new MultiplyBlock(`${name}_seconds`);
+      const factor = new InputBlock(`${name}_secondsFactor`);
+      factor.value = 1 / 0.6;
+      block.output.connectTo(scale.left);
+      factor.output.connectTo(scale.right);
+      return { blocks: [block, factor, scale], inputs: {}, outputs: { time: scale.output } };
+    }
     return single(block, {}, { time: block.output });
   },
   "input.cameraPosition": ({ name, plumbing }) => {

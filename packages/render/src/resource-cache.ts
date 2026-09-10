@@ -277,7 +277,7 @@ export class ResourceCache {
       blobUrl: url,
       extraBlobUrls: [],
       bytes: 0,
-      refCount: 1,
+      refCount: (existing?.refCount ?? 0) + 1,
       lastUsed: ++this.clock,
       contentKey: nextKey,
       textures: new Map(),
@@ -299,7 +299,7 @@ export class ResourceCache {
   ): Texture | CubeTexture {
     const key = samplingKey(options);
     const existing = this.entries.get(assetGuid);
-    const reused = existing ? liveTexture(existing, key) : undefined;
+    const reused = existing?.contentKey === contentKey(bytes) ? liveTexture(existing, key) : undefined;
     if (reused) {
       existing!.refCount += 1;
       existing!.lastUsed = ++this.clock;
