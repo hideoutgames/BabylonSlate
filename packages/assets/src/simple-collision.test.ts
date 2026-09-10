@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildBoxGlbFixture } from "./glb-geometry";
 import { extractGltfPositions } from "./glb-geometry";
+import { encodeGlbJsonBin, splitGlbJsonBin } from "./importers/glb-parse";
 import {
   cookGeneratedCollisionFromGltf,
   generateSimpleCollisionFromPoints,
@@ -68,6 +69,27 @@ describe("generateSimpleCollisionFromPoints", () => {
 });
 
 describe("cookGeneratedCollisionFromGltf", () => {
+  it("cooks rotated nested glTF nodes in the loaded model coordinate system", () => {
+    const { json, bin } = splitGlbJsonBin(buildBoxGlbFixture(2))!;
+    json.nodes = [
+      { translation: [3, 2, 1], rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2], children: [1] },
+      { mesh: 0, translation: [1, 0, 0], scale: [1, 2, 3] },
+    ];
+    const cooked = cookGeneratedCollisionFromGltf(encodeGlbJsonBin(json, bin), { importScale: 2 });
+    expect(cooked.kind).toBe("generated");
+    expect(cooked.rotation).toEqual([0, 0, 0, 1]);
+    expect(cooked.points).toHaveLength(8);
+    // Parent Y quarter-turn maps local Z to X; loader conversion negates X.
+    for (const [x, y, z] of [
+      [-12, 0, -2], [-12, 0, 2], [-12, 8, -2], [-12, 8, 2],
+      [0, 0, -2], [0, 0, 2], [0, 8, -2], [0, 8, 2],
+    ]) {
+      expect(cooked.points).toContainEqual({
+        x: expect.closeTo(x, 5), y: expect.closeTo(y, 5), z: expect.closeTo(z, 5),
+      });
+    }
+  });
+
   it("extracts world-space cube corners from a unit box GLB", () => {
     const glb = buildBoxGlbFixture(2);
     const points = extractGltfPositions(glb);

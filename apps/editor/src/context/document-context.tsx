@@ -464,7 +464,7 @@ interface DocumentContextValue {
   /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
   loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
   writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array) => Promise<void>;
-  thumbnailEpoch: number;
+  thumbnailVersions: Readonly<Record<string, number>>;
   thumbnailsEnabled: boolean;
   /**
    * Compile every project graph into runtime script bundles.
@@ -730,7 +730,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(64));
   const thumbnailsEnabledRef = useRef(true);
-  const [thumbnailEpoch, setThumbnailEpoch] = useState(0);
+  const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
 
   const [route, setRoute] = useState<AppRoute>("home");
   const [projectDocument, setProjectDocument] = useState<ProjectDocument | null>(
@@ -3326,7 +3326,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const key = type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;
       await writeThumbnail(derived, guid, key, bytes);
       thumbnailLruRef.current.delete(assetGuid);
-      setThumbnailEpoch((epoch) => epoch + 1);
+      setThumbnailVersions((versions) => ({
+        ...versions,
+        [assetGuid]: (versions[assetGuid] ?? 0) + 1,
+      }));
     },
     [ensureDerived, projectService],
   );
@@ -4146,7 +4149,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sessionDiagnostics: projectService.sessionDiagnostics,
       loadAssetThumbnail,
       writeAssetThumbnail,
-      thumbnailEpoch,
+      thumbnailVersions,
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
@@ -4210,7 +4213,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       onSessionDiagnostic,
       loadAssetThumbnail,
       writeAssetThumbnail,
-      thumbnailEpoch,
+      thumbnailVersions,
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,

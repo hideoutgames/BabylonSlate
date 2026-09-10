@@ -6,9 +6,14 @@ import {
   MeshBuilder,
   StandardMaterial,
   VertexBuffer,
+  Vector3,
 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  buildBoxGlbFixture,
+  cookGeneratedCollisionFromGltf,
+  encodeGlbJsonBin,
+  splitGlbJsonBin,
   decodeBabasset,
   embedGlbExternalImages,
   encodeBabasset,
@@ -249,6 +254,37 @@ describe("loadModelPreviewSource", () => {
     expect(host.mesh.visibility).toBe(0);
     expect(host.mesh.getChildMeshes().length).toBeGreaterThan(0);
     loaded?.dispose();
+  });
+
+  it("aligns generated collision points with a rotated imported model without manual rotation", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createModelPreviewScene(handle.engine);
+    const { json, bin } = splitGlbJsonBin(buildBoxGlbFixture(2))!;
+    json.nodes = [
+      { translation: [3, 2, 1], rotation: [0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)], children: [1] },
+      { mesh: 0, translation: [1, 0, 0], scale: [1, 2, 3] },
+    ];
+    const bytes = encodeGlbJsonBin(json, bin);
+    const loaded = await loadModelPreviewSource(host, bytes, 0.25);
+    try {
+      expect(loaded).not.toBeNull();
+      const collider = cookGeneratedCollisionFromGltf(bytes, { importScale: 0.25 });
+      expect(collider.rotation).toEqual([0, 0, 0, 1]);
+      const [mesh] = visualMeshes(host.mesh);
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      const world = mesh.computeWorldMatrix(true);
+      expect(collider.points).toHaveLength(8);
+      for (let index = 0; index < positions.length; index += 3) {
+        const point = Vector3.TransformCoordinates(Vector3.FromArray(positions, index), world);
+        expect(collider.points).toContainEqual({
+          x: expect.closeTo(point.x, 5), y: expect.closeTo(point.y, 5), z: expect.closeTo(point.z, 5),
+        });
+      }
+    } finally {
+      loaded?.dispose();
+      host.dispose();
+    }
   });
 
   it("frames small imported models inside the camera frustum before interaction", async () => {

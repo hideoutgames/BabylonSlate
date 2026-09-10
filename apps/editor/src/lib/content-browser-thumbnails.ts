@@ -6,6 +6,7 @@ export type SyncContentBrowserThumbnailUrlsInput = {
   mountedTextureGuids: readonly string[];
   urls: ThumbnailUrlMap;
   hidden: boolean;
+  refreshGuids?: ReadonlySet<string>;
   load: (guid: string) => Promise<Uint8Array | null>;
   createObjectURL: (blob: Blob) => string;
   revokeObjectURL: (url: string) => void;
@@ -16,12 +17,14 @@ export type SyncContentBrowserThumbnailUrlsInput = {
 /**
  * Decode Texture JPEG and Model/Animation PNG thumbs for mounted grid cells only.
  * Blob URLs for tiles that left the window are revoked. A CSS-hidden
- * Content Browser skips decode. Cancelled loads release only their new URLs.
+ * Content Browser skips decode. Recaptures retain the old image until commit;
+ * unrelated cells keep their URLs. Cancelled loads release only their new URLs.
  */
 export async function syncContentBrowserThumbnailUrls({
   mountedTextureGuids,
   urls,
   hidden,
+  refreshGuids = new Set(),
   load,
   createObjectURL,
   revokeObjectURL,
@@ -43,13 +46,14 @@ export async function syncContentBrowserThumbnailUrls({
   let committed = false;
   try {
     for (const guid of mountedTextureGuids) {
-      if (next[guid]) continue;
+      if (next[guid] && !refreshGuids.has(guid)) continue;
       const bytes = await load(guid);
       if (isCancelled()) return;
       if (!bytes) continue;
       const url = createObjectURL(
         new Blob([bytes], { type: thumbnailMime(bytes) }),
       );
+      if (next[guid]) evicted.push(next[guid]);
       created.push(url);
       next[guid] = url;
     }

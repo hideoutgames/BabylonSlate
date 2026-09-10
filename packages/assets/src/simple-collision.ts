@@ -252,7 +252,12 @@ export function cookGeneratedCollisionFromGltf(
   bytes: Uint8Array,
   options?: { importScale?: number; id?: string; name?: string },
 ): ModelSimpleCollider {
-  const points = extractGltfPositions(bytes, options?.importScale ?? 1);
+  // Babylon's glTF loader converts to our left-handed model space with a
+  // Y half-turn and negative Z scale (together an X reflection). Apply it
+  // after node transforms, before cooking, so saved hulls match loaded models.
+  const points = extractGltfPositions(bytes, options?.importScale ?? 1).map(
+    ({ x, y, z }) => ({ x: -x, y, z }),
+  );
   return generateSimpleCollisionFromPoints(points, {
     id: options?.id,
     name: options?.name ?? SIMPLE_COLLIDER_KIND_LABELS.generated,
