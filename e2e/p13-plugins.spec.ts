@@ -157,7 +157,7 @@ test.describe("P13 plugins", () => {
     await page.getByTestId("new-asset-type").click();
     await page.getByTestId("new-asset-type-Class").click();
     await page.getByTestId("new-asset-parent").click();
-    await page.getByTestId("new-asset-parent-Actor").click();
+    await page.getByTestId("tree-row-Actor").click();
     await page.getByTestId("new-asset-name").fill("Hero");
     await page.getByTestId("content-browser-new-asset-create").click();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(
