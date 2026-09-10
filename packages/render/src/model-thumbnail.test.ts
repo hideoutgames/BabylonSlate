@@ -87,7 +87,7 @@ describe("captureModelThumbnailPng", () => {
     const isReady = PBRMaterial.prototype.isReadyForSubMesh;
     const readiness = vi
       .spyOn(PBRMaterial.prototype, "isReadyForSubMesh")
-      .mockImplementation(function (...args) {
+      .mockImplementation(function (this: PBRMaterial, ...args) {
         return materialReady && isReady.apply(this, args);
       });
     const readback = vi
@@ -123,7 +123,7 @@ describe("captureModelThumbnailPng", () => {
       view.setFloat32(binOffset + 60, 6, true);
       let capturedY: number | undefined;
       vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockImplementation(
-        function () {
+        function (this: RenderTargetTexture) {
           capturedY = (this.getScene()!.getMeshByName("part") as Mesh).position
             .y;
           return Promise.resolve(new Uint8Array(128 * 128 * 4));
