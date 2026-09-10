@@ -37,7 +37,7 @@ describe("material node contracts", () => {
     wire(doc, "clamp", "out", "output", "roughness");
     const result = await compile(doc);
     for (const id of ["minimum", "maximum"]) {
-      const input = result.material.getInputBlockByPredicate((block) => block.name.endsWith(`_${id}`));
+      const input = result.material.getInputBlockByPredicate((block) => block.name === id);
       expect(input?.output.hasEndpoints).toBe(true);
     }
     expect(result.setParameter("Minimum", { kind: "float", value: 0.2 })).toBe(true);
