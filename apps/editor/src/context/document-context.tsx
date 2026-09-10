@@ -1418,7 +1418,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       captureAllLayouts();
       const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
-      const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model");
+      const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model" || doc.ref.kind === "animation");
       for (const doc of dirtyDocs) {
         if (
           isAssetDocumentKind(doc.ref.kind) &&
@@ -1485,6 +1485,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               guid,
               path: doc.ref.path,
               payload: doc.content as Record<string, unknown>,
+              type: doc.ref.kind === "animation" ? "Animation" as const : "Model" as const,
             },
           ];
         }),
@@ -3295,8 +3296,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const guid = projectService.guid;
       if (!guid) return null;
       const derived = await ensureDerived();
-      const bytes = await readThumbnail(derived, guid, assetGuid);
+      const asset = projectService.registry?.getByGuid(assetGuid);
+      const rendered = asset?.header.type === "Model" || asset?.header.type === "Animation";
+      // Regenerate old one-frame captures that may have been cached before
+      // their materials were ready. Texture thumbnail keys stay unchanged.
+      const key = rendered ? `${assetGuid}.render-v2` : assetGuid;
+      const bytes = await readThumbnail(derived, guid, key);
       if (bytes) thumbnailLruRef.current.set(assetGuid, bytes);
+      else if (asset && rendered) {
+        enqueueModelThumbnailJobs([{
+          guid: assetGuid,
+          path: asset.path,
+          payload: asset.header.payload ?? {},
+          type: asset.header.type as "Model" | "Animation",
+          onlyIfMissing: true,
+        }]);
+      }
       return bytes;
     },
     [ensureDerived, projectService],
@@ -3307,7 +3322,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const guid = projectService.guid;
       if (!guid) return;
       const derived = await ensureDerived();
-      await writeThumbnail(derived, guid, assetGuid, bytes);
+      const type = projectService.registry?.getByGuid(assetGuid)?.header.type;
+      const key = type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;
+      await writeThumbnail(derived, guid, key, bytes);
       thumbnailLruRef.current.delete(assetGuid);
       setThumbnailEpoch((epoch) => epoch + 1);
     },

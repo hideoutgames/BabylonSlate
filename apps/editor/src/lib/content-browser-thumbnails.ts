@@ -12,7 +12,7 @@ export type SyncContentBrowserThumbnailUrlsInput = {
 };
 
 /**
- * Decode Texture JPEG and Model PNG thumbs for mounted grid cells only.
+ * Decode Texture JPEG and Model/Animation PNG thumbs for mounted grid cells only.
  * Blob URLs for tiles that left the window are revoked. A CSS-hidden
  * Content Browser skips decode.
  */

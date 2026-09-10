@@ -9,7 +9,13 @@ const captureModelThumbnailPng = vi.fn<
     bytes: Uint8Array,
     slots: unknown,
     resolveMaterial: (guid: string) => unknown,
-  ) => Promise<Uint8Array>
+    maxEdge?: number,
+    options?: {
+      importScale?: number;
+      clipName?: string;
+      sourceClipBytes?: Uint8Array | null;
+    },
+  ) => Promise<Uint8Array | null>
 >(async () => new Uint8Array([137, 80, 78, 71]));
 const MaterialLibrary = vi.fn();
 const resourceCacheForEngine = vi.fn(() => ({}));
@@ -20,7 +26,14 @@ const collectPlayMaterialLibrary = vi.fn(async () => ({
 }));
 const collectPlayTextureBytes = vi.fn(async () => new Map());
 const writeAssetThumbnail = vi.fn(async () => undefined);
-const readAssetChunk = vi.fn(async () => new Uint8Array([1, 2, 3, 4]));
+const readAssetChunk = vi.fn(
+  async (_path: string, _kind: string): Promise<Uint8Array | null> =>
+    new Uint8Array([1, 2, 3, 4]),
+);
+const assets = new Map<
+  string,
+  { path: string; header: { type: string; payload: Record<string, unknown> } }
+>();
 
 vi.mock("@babylonslate/render", () => ({
   captureModelThumbnailPng: (
@@ -28,7 +41,21 @@ vi.mock("@babylonslate/render", () => ({
     bytes: Uint8Array,
     slots: unknown,
     resolveMaterial: (guid: string) => unknown,
-  ) => captureModelThumbnailPng(engine, bytes, slots, resolveMaterial),
+    maxEdge?: number,
+    options?: {
+      importScale?: number;
+      clipName?: string;
+      sourceClipBytes?: Uint8Array | null;
+    },
+  ) =>
+    captureModelThumbnailPng(
+      engine,
+      bytes,
+      slots,
+      resolveMaterial,
+      maxEdge,
+      options,
+    ),
   MaterialLibrary: class {
     constructor() {
       MaterialLibrary();
@@ -52,6 +79,7 @@ vi.mock("../context/play-context", () => ({
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     thumbnailsEnabled: true,
+    assetRegistry: { getByGuid: (guid: string) => assets.get(guid) },
     readAssetChunk,
     collectPlayMaterialLibrary,
     collectPlayTextureBytes,
@@ -61,16 +89,102 @@ vi.mock("../context/document-context", () => ({
 
 afterEach(() => {
   cleanup();
-  captureModelThumbnailPng.mockClear();
+  captureModelThumbnailPng
+    .mockReset()
+    .mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
   MaterialLibrary.mockClear();
   resourceCacheForEngine.mockClear();
   collectPlayMaterialLibrary.mockClear();
   collectPlayTextureBytes.mockClear();
   writeAssetThumbnail.mockClear();
-  readAssetChunk.mockClear();
+  readAssetChunk.mockReset().mockResolvedValue(new Uint8Array([1, 2, 3, 4]));
+  assets.clear();
 });
 
 describe("ModelThumbnailCaptureHost", () => {
+  it("captures an Animation from its owning Model and retarget source", async () => {
+    assets.set("hero-model", {
+      path: "assets/hero.babasset",
+      header: { type: "Model", payload: { importScale: 0.5 } },
+    });
+    assets.set("source-anim", {
+      path: "assets/source-idle.babasset",
+      header: { type: "Animation", payload: { modelGuid: "source-model" } },
+    });
+    assets.set("source-model", {
+      path: "assets/source.babasset",
+      header: { type: "Model", payload: {} },
+    });
+    const targetBytes = new Uint8Array([1]);
+    const sourceBytes = new Uint8Array([2]);
+    readAssetChunk.mockImplementation(async (path) =>
+      path === "assets/hero.babasset" ? targetBytes : sourceBytes,
+    );
+    render(<ModelThumbnailCaptureHost />);
+    enqueueModelThumbnailJobs([
+      {
+        guid: "idle",
+        path: "assets/idle.babasset",
+        type: "Animation",
+        payload: {
+          modelGuid: "hero-model",
+          clipName: "Idle",
+          sourceAnimationGuid: "source-anim",
+        },
+      },
+    ]);
+    await waitFor(() =>
+      expect(writeAssetThumbnail).toHaveBeenCalledWith(
+        "idle",
+        expect.any(Uint8Array),
+      ),
+    );
+    expect(readAssetChunk.mock.calls).toEqual([
+      ["assets/hero.babasset", "source"],
+      ["assets/source.babasset", "source"],
+    ]);
+    expect(captureModelThumbnailPng.mock.calls[0]![1]).toBe(targetBytes);
+    expect(captureModelThumbnailPng.mock.calls[0]![5]).toEqual({
+      importScale: 0.5,
+      clipName: "Idle",
+      sourceClipBytes: sourceBytes,
+    });
+  });
+
+  it("serializes batches, deduplicates backfill, and continues after a missing source fails", async () => {
+    let release!: (value: Uint8Array | null) => void;
+    readAssetChunk.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    render(<ModelThumbnailCaptureHost />);
+    const missing = {
+      guid: "missing",
+      path: "assets/missing.babasset",
+      payload: {},
+      onlyIfMissing: true,
+    };
+    const good = { guid: "good", path: "assets/good.babasset", payload: {} };
+    enqueueModelThumbnailJobs([missing]);
+    enqueueModelThumbnailJobs([missing, good]);
+    await waitFor(() => expect(readAssetChunk).toHaveBeenCalledTimes(1));
+    expect(writeAssetThumbnail).not.toHaveBeenCalled();
+    release(null);
+    await waitFor(() =>
+      expect(writeAssetThumbnail).toHaveBeenCalledWith(
+        "good",
+        expect.any(Uint8Array),
+      ),
+    );
+    enqueueModelThumbnailJobs([missing, good]);
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(2));
+    expect(
+      readAssetChunk.mock.calls.filter(([path]) => path === missing.path),
+    ).toHaveLength(1);
+  });
+
   it("captures the packed GLB without a slot MaterialLibrary or extra ResourceCache", async () => {
     render(<ModelThumbnailCaptureHost />);
     enqueueModelThumbnailJobs([

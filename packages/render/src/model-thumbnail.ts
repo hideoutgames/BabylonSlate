@@ -1,11 +1,21 @@
-import type { Engine, Material, Scene } from "@babylonjs/core";
+import type { AnimationGroup, Engine, Material, Scene } from "@babylonjs/core";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
-import { DEFAULT_THUMBNAIL_MAX_EDGE, type ModelMaterialSlot } from "@babylonslate/assets";
+import {
+  DEFAULT_THUMBNAIL_MAX_EDGE,
+  type ModelMaterialSlot,
+} from "@babylonslate/assets";
 import {
   applyModelMaterialSlots,
   createModelPreviewScene,
   loadModelPreviewSource,
+  previewRigRoot,
 } from "./model-preview";
+import {
+  aimPreviewCameraAtMesh,
+  type MaterialPreviewScene,
+} from "./material-preview";
+import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
+import { SCENE_SHADER_WARM_TIMEOUT_MS, settleOrTimeout } from "./scene-perf";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
 
@@ -20,7 +30,9 @@ function rgbaBytesFromReadback(
         ? buffer
         : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   if (bytes.byteLength < byteLength) return null;
-  return bytes.byteLength === byteLength ? bytes : bytes.subarray(0, byteLength);
+  return bytes.byteLength === byteLength
+    ? bytes
+    : bytes.subarray(0, byteLength);
 }
 
 /**
@@ -36,13 +48,53 @@ export async function captureModelThumbnailPng(
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string, scene: Scene) => Material | null,
   maxEdge: number = DEFAULT_THUMBNAIL_MAX_EDGE,
+  options: {
+    importScale?: number;
+    clipName?: string;
+    sourceClipBytes?: Uint8Array | null;
+  } = {},
 ): Promise<Uint8Array | null> {
   const host = createModelPreviewScene(engine, { transparent: true });
-  let loaded: { dispose: () => void } | null = null;
+  let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
+  let sourceHost: MaterialPreviewScene | null = null;
+  let sourceLoaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
+  let retargeted: AnimationGroup | null = null;
   let rtt: RenderTargetTexture | null = null;
   try {
-    loaded = await loadModelPreviewSource(host, bytes);
+    loaded = await loadModelPreviewSource(host, bytes, options.importScale);
     if (!loaded) return null;
+    for (const group of loaded.animationGroups) group.stop();
+    if (options.clipName !== undefined) {
+      let group: AnimationGroup | null = null;
+      if (options.sourceClipBytes?.byteLength) {
+        sourceHost = createModelPreviewScene(engine);
+        sourceLoaded = await loadModelPreviewSource(
+          sourceHost,
+          options.sourceClipBytes,
+        );
+        const sourceGroup = sourceLoaded?.animationGroups.find(
+          (entry) => entry.name === options.clipName,
+        );
+        if (sourceGroup) {
+          retargeted = retargetAnimationGroupWithMeshProxy(
+            sourceGroup,
+            previewRigRoot(host),
+          );
+          group = retargeted;
+        }
+      } else {
+        group =
+          loaded.animationGroups.find(
+            (entry) => entry.name === options.clipName,
+          ) ?? null;
+      }
+      // A missing clip must not be cached as an unrelated rest-pose thumbnail.
+      if (!group) return null;
+      group.start(false);
+      group.pause();
+      group.goToFrame(group.from);
+      aimPreviewCameraAtMesh(host.camera, host.mesh);
+    }
     applyModelMaterialSlots(host.mesh, slots, (guid) =>
       resolveMaterial(guid, host.scene),
     );
@@ -54,6 +106,13 @@ export async function captureModelThumbnailPng(
       false,
     );
     host.camera.outputRenderTarget = rtt;
+    // A one-shot render cannot rely on a later gesture/frame to finish shader
+    // compilation. Include imported PBR materials and textures in readiness.
+    await settleOrTimeout(
+      host.scene.whenReadyAsync(),
+      SCENE_SHADER_WARM_TIMEOUT_MS,
+    );
+    if (!host.scene.isReady()) return null;
     host.scene.render();
     const buffer = await rtt.readPixels();
     if (!buffer) return null;
@@ -69,6 +128,9 @@ export async function captureModelThumbnailPng(
   } finally {
     host.camera.outputRenderTarget = null;
     rtt?.dispose();
+    retargeted?.dispose();
+    sourceLoaded?.dispose();
+    sourceHost?.dispose();
     loaded?.dispose();
     host.dispose();
   }

@@ -72,6 +72,7 @@ describe("thumbnails I/O", () => {
     );
     expect(isThumbnailableAssetType("Texture")).toBe(true);
     expect(isThumbnailableAssetType("Model")).toBe(true);
+    expect(isThumbnailableAssetType("Animation")).toBe(true);
     expect(isThumbnailableAssetType("Audio")).toBe(false);
   });
 });
