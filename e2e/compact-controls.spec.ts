@@ -58,5 +58,19 @@ test(
     await expect(position).toHaveValue("15");
     await position.focus();
     await expect(position).toHaveValue("15");
+
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    const close = page.getByTestId("close-project");
+    const done = page.getByRole("button", { name: "Done", exact: true });
+    await expect(close).toBeVisible();
+    await expect(done).toBeVisible();
+    const closeBox = (await close.boundingBox())!;
+    const doneBox = (await done.boundingBox())!;
+    expect(closeBox.x + closeBox.width).toBeLessThan(doneBox.x);
+    expect(closeBox.y + closeBox.height / 2).toBeCloseTo(
+      doneBox.y + doneBox.height / 2,
+      0,
+    );
   },
 );
