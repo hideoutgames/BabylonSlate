@@ -160,7 +160,10 @@ function constantInput(
       ? NodeMaterialBlockConnectionPointTypes.Color3
       : NodeMaterialBlockConnectionPointTypes.Color4
     : babylonTypeFor(type);
-  const block = new InputBlock(name, undefined, babylonType);
+  // Babylon removes digits from uniform names. Collapse separators first so
+  // IDs such as custom_glsl_123_a cannot become reserved double underscores.
+  const uniformName = name.replace(/[^A-Za-z]+/g, "_").replace(/^_+|_+$/g, "") || "value";
+  const block = new InputBlock(uniformName, undefined, babylonType);
   block.value = babylonValueFor(type, components, asColor);
   return block;
 }
