@@ -189,6 +189,15 @@ Deferred failures retain diagnostics instead of publishing a broken replacement.
 Function validation follows nested calls in the caller's domain and capabilities,
 with call-path diagnostics. Recursive calls never enter the WPO stage walker.
 
+Surface opacity reaches fragment alpha. Masked surfaces discard pixels whose
+**Alpha Clip** value is below **Alpha Cutoff**; an unwired Alpha Clip uses
+Opacity. Additive uses additive blending. PBR surfaces include the Scene's
+environment reflection and irradiance, including when emission is connected.
+Clamp supports connected scalar/vector bounds; comparisons return component-wise
+numeric masks. Refract uses Vector 3 directions and scalar Eta. Split connections
+to components absent from the input vector produce diagnostics. World Tangent
+is transformed as a direction by the mesh world matrix.
+
 `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
 refcounts instances. A Babylon material belongs to one Scene, so the editor
 viewport, a preview tab and a Play session each hold their own. A new material

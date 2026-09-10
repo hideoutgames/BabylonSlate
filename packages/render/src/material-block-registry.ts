@@ -38,6 +38,7 @@ import {
   StepBlock,
   SubtractBlock,
   TextureBlock,
+  TransformBlock,
   TrigonometryBlock,
   TrigonometryBlockOperations,
   Vector2,
@@ -76,6 +77,8 @@ export interface BlockRealization {
  * post-process materials.
  */
 export interface MaterialPlumbing {
+  position?: NodeMaterialConnectionPoint;
+  world?: NodeMaterialConnectionPoint;
   worldPosition?: NodeMaterialConnectionPoint;
   view?: NodeMaterialConnectionPoint;
   /** Vector 3 for graph pins. */
@@ -220,7 +223,27 @@ function trigonometry(operation: TrigonometryBlockOperations): BlockAdapter {
 }
 
 function conditional(condition: ConditionalBlockConditions): BlockAdapter {
-  return ({ name }) => {
+  return ({ name, operation }) => {
+    const width = operation.resolvedType === "vec2" ? 2 : operation.resolvedType === "vec3" ? 3 : operation.resolvedType === "vec4" ? 4 : 1;
+    if (width > 1) {
+      const a = new VectorSplitterBlock(`${name}_a`);
+      const b = new VectorSplitterBlock(`${name}_b`);
+      const result = new VectorMergerBlock(`${name}_result`);
+      const blocks: NodeMaterialBlock[] = [a, b, result];
+      const axes = ["x", "y", "z", "w"] as const;
+      for (const axis of axes.slice(0, width)) {
+        const part = conditional(condition)({ name: `${name}_${axis}`, operation: { ...operation, resolvedType: "float" }, plumbing: {} });
+        blocks.push(...part.blocks);
+        a[axis].connectTo(part.inputs.a!);
+        b[axis].connectTo(part.inputs.b!);
+        part.outputs.out!.connectTo(result[axis]);
+      }
+      return {
+        blocks,
+        inputs: { a: width === 2 ? a.xyIn : width === 3 ? a.xyzIn : a.xyzw, b: width === 2 ? b.xyIn : width === 3 ? b.xyzIn : b.xyzw },
+        outputs: { out: width === 2 ? result.xyOut : width === 3 ? result.xyzOut : result.xyzw },
+      };
+    }
     const block = new ConditionalBlock(name);
     block.condition = condition;
     const trueValue = constantInput(`${name}_true`, "float", [1]);
@@ -288,16 +311,12 @@ const saturateAdapter: BlockAdapter = ({ name }) => {
   return single(clamp, { value: clamp.value }, { out: clamp.output });
 };
 
-/** Clamp exposes min/max as block properties, not pins. */
-const clampAdapter: BlockAdapter = ({ name, operation }) => {
-  const clamp = new ClampBlock(name);
-  const min = operation.inputs.min;
-  const max = operation.inputs.max;
-  clamp.minimum =
-    min?.kind === "constant" ? (min.value[0] ?? 0) : 0;
-  clamp.maximum =
-    max?.kind === "constant" ? (max.value[0] ?? 1) : 1;
-  return single(clamp, { value: clamp.value }, { out: clamp.output });
+/** Dynamic bounds need graph inputs; Babylon ClampBlock only has properties. */
+const clampAdapter: BlockAdapter = ({ name }) => {
+  const lower = new MaxBlock(`${name}_lower`);
+  const upper = new MinBlock(`${name}_upper`);
+  lower.output.connectTo(upper.left);
+  return { blocks: [lower, upper], inputs: { value: lower.left, min: lower.right, max: upper.right }, outputs: { out: upper.output } };
 };
 
 const systemInput = (
@@ -662,8 +681,17 @@ ADAPTERS["input.worldTangent"] = ({ name, plumbing }) => {
   if (plumbing.worldTangent) {
     return { blocks: [], inputs: {}, outputs: { tangent: plumbing.worldTangent } };
   }
-  const block = attributeVector(name, "tangent", 3);
-  return single(block, {}, { tangent: block.output });
+  const block = attributeVector(name, "tangent", 4);
+  const split = new VectorSplitterBlock(`${name}_xyz`);
+  const direction = new VectorMergerBlock(`${name}_direction`);
+  const world = new TransformBlock(`${name}_world`);
+  const normal = new NormalizeBlock(`${name}_unit`);
+  block.output.connectTo(split.xyzw);
+  split.xyzOut.connectTo(direction.xyzIn);
+  direction.xyzw.connectTo(world.vector);
+  plumbing.world?.connectTo(world.transform);
+  world.xyz.connectTo(normal.input);
+  return { blocks: [block, split, direction, world, normal], inputs: {}, outputs: { tangent: normal.output } };
 };
 
 ADAPTERS["input.viewDirection"] = ({ name, plumbing }) => {

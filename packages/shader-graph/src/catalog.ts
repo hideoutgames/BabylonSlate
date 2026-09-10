@@ -414,13 +414,15 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
   },
   unaryGeneric("vector.normalize", "Normalize", "Vector", 3),
   generic("vector.reflect", "Reflect", "Vector", ["incident", "normal"], 3),
-  generic(
-    "vector.refract",
-    "Refract",
-    "Vector",
-    ["incident", "normal", "eta"],
-    4,
-  ),
+  {
+    type: "vector.refract", title: "Refract", category: "Vector", cost: 4,
+    inputs: [
+      { id: "incident", name: "Incident", type: VEC3, defaultValue: [0, 0, -1] },
+      { id: "normal", name: "Normal", type: VEC3, defaultValue: [0, 0, 1] },
+      { id: "eta", name: "Eta", type: FLOAT, defaultValue: [1] },
+    ],
+    outputs: [{ id: "out", name: "Out", type: VEC3 }],
+  },
   {
     type: "vector.combine",
     title: "Combine",

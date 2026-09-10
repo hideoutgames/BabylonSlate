@@ -215,7 +215,7 @@ describe("material compiler", () => {
     disposers.push(() => masked.material.dispose());
     expect(masked.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
     expect(
-      (masked.material as unknown as { alphaCutOff: number }).alphaCutOff,
+      masked.material.getInputBlockByPredicate((block) => block.name.endsWith("_alphaCutoff"))?.value,
     ).toBeCloseTo(0.4);
 
     const glassDoc = createDefaultMaterialDocument();
@@ -1092,7 +1092,7 @@ describe("material compiler", () => {
     resolved.onLoadObservable.notifyObservers(resolved);
     expect(result.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
     expect(
-      (result.material as unknown as { alphaCutOff: number }).alphaCutOff,
+      result.material.getInputBlockByPredicate((block) => block.name.endsWith("_alphaCutoff"))?.value,
     ).toBeCloseTo(0.4);
   });
 

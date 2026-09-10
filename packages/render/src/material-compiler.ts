@@ -1,5 +1,7 @@
 import {
   AddBlock,
+  Constants,
+  DiscardBlock,
   FragmentOutputBlock,
   ImageProcessingBlock,
   InputBlock,
@@ -9,6 +11,7 @@ import {
   NodeMaterialModes,
   NodeMaterialSystemValues,
   PBRMetallicRoughnessBlock,
+  ReflectionBlock,
   RemapBlock,
   TransformBlock,
   VectorMergerBlock,
@@ -433,6 +436,15 @@ export function compileMaterialPlan(
       outputNodes.push(
         attachSurfaceShading(plan, options, created, plumbing, outputPoint),
       );
+      if (plan.blendMode === "masked") {
+        const discard = new DiscardBlock(`${options.name}_alphaClip`);
+        const cutoff = createConstantBlock(`${options.name}_alphaCutoff`, "float", [plan.alphaCutoff]);
+        const mask = outputPoint(plan.outputs.alphaClip ? "alphaClip" : "opacity", `${options.name}_clipMask`, false);
+        mask?.connectTo(discard.value);
+        cutoff.output.connectTo(discard.cutoff);
+        created.push(discard, cutoff);
+        outputNodes.push(discard);
+      }
     }
     for (const node of outputNodes) material.addOutputNode(node);
   } catch (error) {
@@ -587,13 +599,6 @@ function detachEngineOwnedTextures(material: NodeMaterial): void {
   }
 }
 
-/** NodeMaterial has no typed `alphaCutOff`; StandardMaterial / PBR do. */
-type MaterialAlphaCutOff = { alphaCutOff: number };
-
-function applyAlphaCutOff(material: Material, cutoff: number): void {
-  (material as Material & MaterialAlphaCutOff).alphaCutOff = cutoff;
-}
-
 type GpuTextureErrorObservable = {
   addOnce: (callback: (payload: unknown) => void) => unknown;
   remove: (observer: unknown) => void;
@@ -630,11 +635,11 @@ function applyAuthoredSurfaceBlend(
     return;
   }
   material.backFaceCulling = plan.twoSided !== true;
+  material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : Constants.ALPHA_COMBINE;
   material.needDepthPrePass = false;
   switch (plan.blendMode) {
     case "masked":
       material.transparencyMode = Material.MATERIAL_ALPHATEST;
-      applyAlphaCutOff(material, plan.alphaCutoff);
       return;
     case "translucent":
     case "additive":
@@ -842,6 +847,8 @@ function createSurfacePlumbing(
   );
 
   plumbing.worldPosition = worldPosition.output;
+  plumbing.position = position.output;
+  plumbing.world = world.output;
   plumbing.clipPosition = clipPosition.vector;
   plumbing.worldNormal = worldNormal.xyz;
   plumbing.worldNormal4 = worldNormal.output;
@@ -967,6 +974,13 @@ function attachSurfaceShading(
   }
 
   const pbr = new PBRMetallicRoughnessBlock(`${options.name}_pbr`);
+  pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
+  pbr.alpha.connectTo(fragment.a);
+  const reflection = new ReflectionBlock(`${options.name}_reflection`);
+  plumbing.position?.connectTo(reflection.position);
+  plumbing.world?.connectTo(reflection.world);
+  reflection.reflection.connectTo(pbr.reflection);
+  created.push(reflection);
   created.push(pbr);
   plumbing.worldPosition?.connectTo(pbr.worldPosition);
   plumbing.worldNormal4?.connectTo(pbr.worldNormal);
@@ -1011,7 +1025,8 @@ function attachSurfaceShading(
     // used for an additive linear emissive contribution.
     const diffuse = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
     const lit = addColor(diffuse, pbr.specularDir, "litColor");
-    const color = addColor(lit, emissive, "surfaceEmission");
+    const indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
+    const color = addColor(addColor(lit, indirect, "totalLighting"), emissive, "surfaceEmission");
     const imageProcessing = new LinearSurfaceImageProcessingBlock(
       `${options.name}_imageProcessing`,
     );
