@@ -543,6 +543,21 @@
     padding-right: calc(var(--touch-target) + 0.5rem);
   }
 
+  :is(
+    [data-slot="dropdown-menu-item"],
+    [data-slot="dropdown-menu-checkbox-item"],
+    [data-slot="dropdown-menu-radio-item"],
+    [data-slot="dropdown-menu-sub-trigger"],
+    [data-slot="select-item"],
+    .catalog-sidebar [data-slot="button"]
+  ) {
+    min-height: var(--touch-target);
+  }
+}
+
+/* Matches the editor phone layout, including phones held in landscape. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* Tablet Details retain compact axis fields; phones use larger entry targets. */
   .numeric-drag-field [data-numeric-scrub] {
     display: flex;
     align-items: center;
@@ -560,20 +575,6 @@
     padding-right: calc(var(--touch-target) + 0.25rem);
   }
 
-  :is(
-    [data-slot="dropdown-menu-item"],
-    [data-slot="dropdown-menu-checkbox-item"],
-    [data-slot="dropdown-menu-radio-item"],
-    [data-slot="dropdown-menu-sub-trigger"],
-    [data-slot="select-item"],
-    .catalog-sidebar [data-slot="button"]
-  ) {
-    min-height: var(--touch-target);
-  }
-}
-
-/* Matches the editor phone layout, including phones held in landscape. */
-@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
   :is(.editor-dialog, .phone-dockview)
     :is(
       [data-slot="input"],
