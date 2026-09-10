@@ -24,6 +24,7 @@ import {
   VertexOutputBlock,
   ViewDirectionBlock,
   type Mesh,
+  type Effect,
   type PostProcess,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
@@ -473,6 +474,8 @@ export function compileMaterialPlan(
   let checkingShader = false;
   let shaderTimer: ReturnType<typeof setTimeout> | undefined;
   let shaderProbe: Mesh | null = null;
+  let failedShaderEffect: Effect | null = null;
+  material.onError = (effect) => { failedShaderEffect = effect; };
   let shaderPostProcess: PostProcess | null = null;
   let shaderParticles: ParticleSystem | null = null;
   const finishShaderCheck = () => {
@@ -542,7 +545,7 @@ export function compileMaterialPlan(
             if (Date.now() - started > 15000) throw new Error("Custom GLSL shader compilation timed out");
             shaderTimer = setTimeout(check, 16);
           } catch (error) {
-            const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, shaderProbe?.subMeshes[0]?.effect ?? shaderPostProcess?.getEffect() ?? shaderParticles?.getCustomEffect());
+            const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, failedShaderEffect ?? shaderProbe?.subMeshes[0]?.effect ?? shaderPostProcess?.getEffect() ?? shaderParticles?.getCustomEffect());
             finishShaderCheck();
             buildState = "failed";
             settleBuild([diagnostic]);
