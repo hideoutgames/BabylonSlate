@@ -477,6 +477,15 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       },
     };
   },
+  "vector.mask": ({ name, operation }): BlockRealization => {
+    const split = new VectorSplitterBlock(`${name}_split`);
+    const value = operation.resolvedType === "vec2" ? split.xyIn : operation.resolvedType === "vec3" ? split.xyzIn : split.xyzw;
+    const channels = vectorMaskChannels(operation.properties).map((channel) => [split.x, split.y, split.z, split.w][VECTOR_MASK_CHANNELS.indexOf(channel)]!);
+    if (channels.length === 1) return { blocks: [split], inputs: { value }, outputs: { out: channels[0]! } };
+    const merge = new VectorMergerBlock(`${name}_merge`);
+    channels.forEach((channel, index) => channel.connectTo([merge.x, merge.y, merge.z, merge.w][index]!));
+    return { blocks: [split, merge], inputs: { value }, outputs: { out: channels.length === 2 ? merge.xyOut : channels.length === 3 ? merge.xyzOut : merge.xyzw } };
+  },
   "vector.split": ({ name, operation }): BlockRealization => {
     if (operation.resolvedType === "float") {
       const block = new AddBlock(name);
@@ -828,3 +837,4 @@ export function hasBlockAdapter(nodeType: string): boolean {
   return nodeType in ADAPTERS || nodeType.startsWith("const.") ||
     nodeType.startsWith("param.");
 }
+import { vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@babylonslate/shader-graph";

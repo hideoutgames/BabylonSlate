@@ -56,6 +56,7 @@ function visualFromData(
       category:
         typeof data.__category === "string" ? data.__category : undefined,
       pure: data.__pure === true,
+      material: data.__material === true,
       latent: data.__latent === true,
     }),
   };

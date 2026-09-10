@@ -9,6 +9,7 @@ import type {
 } from "./document";
 import { resolveGenericType, type MaterialValueType } from "./types";
 import { customGlslDefinition } from "./custom-glsl";
+import { vectorMaskDefinition } from "./vector-mask";
 
 export interface ResolverGraph {
   nodes: MaterialGraphNode[];
@@ -93,6 +94,7 @@ export function createTypeResolver(
     let definition = node ? materialNodeDefinition(node.type) : undefined;
     if (node && definition) {
       if (node.type === "custom.glsl") definition = customGlslDefinition(node, definition);
+      if (node.type === "vector.mask") definition = vectorMaskDefinition(node, definition);
       if (node.type === "function.call") {
         const guid = node.properties.functionGuid;
         const fn = typeof guid === "string" ? functions[guid] : undefined;
@@ -139,7 +141,7 @@ export function createTypeResolver(
       if (sourceType) connected.push(sourceType);
     }
     inProgress.delete(nodeId);
-    const resolution = resolveGenericType(connected);
+    const resolution = resolveGenericType(connected.length === 0 && nodesById.get(nodeId)?.type === "vector.mask" ? ["vec4"] : connected);
     const value = resolution.ok ? resolution.type : "conflict";
     generics.set(nodeId, value);
     return value;

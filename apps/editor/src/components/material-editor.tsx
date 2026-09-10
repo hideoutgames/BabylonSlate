@@ -35,6 +35,8 @@ import {
   isMaterialParameterNode,
   materialParameterName,
   materialGradientStops,
+  vectorMaskChannels,
+  VECTOR_MASK_CHANNELS,
   materialNodeDefinition,
   customGlslInterface,
   hydrateMaterialGraphForEditor,
@@ -846,6 +848,10 @@ function MaterialNodeDetails({
       path: asset.path,
     }));
 
+  if (node.type === "vector.mask") {
+    const selected = vectorMaskChannels(node.properties);
+    for (const channel of VECTOR_MASK_CHANNELS) rows.push({ id: `mask-${channel}`, kind: "boolean", label: channel.toUpperCase(), value: selected.includes(channel), disabled: selected.length === 1 && selected.includes(channel), onChange: (value) => setProperties({ [channel]: value }) });
+  }
   if (node.type === "texture.sample" || node.type === "texture.sampleLod") rows.push({
     id: "colorSpace", kind: "enum", label: "Color Space", value: String(node.properties.colorSpace ?? "legacy"),
     options: [{ value: "color", label: "Color (sRGB)" }, { value: "data", label: "Data (Linear)" }, { value: "legacy", label: "Legacy (Unconverted)" }],

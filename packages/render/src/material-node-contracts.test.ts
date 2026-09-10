@@ -27,6 +27,19 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it("compiles nonadjacent VectorMask channels in RGBA order", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "value", "const.vec3", { value: [0.2, 0.5, 0.8] });
+    node(doc, "mask", "vector.mask", { b: true });
+    node(doc, "split-mask", "vector.split");
+    wire(doc, "value", "out", "mask", "value");
+    wire(doc, "mask", "out", "split-mask", "value");
+    wire(doc, "split-mask", "y", "output", "roughness");
+    const result = await compile(doc);
+    const merge = result.material.getBlockByName("mask_merge");
+    expect(merge?.getInputByName("x")?.connectedPoint?.name).toBe("x");
+    expect(merge?.getInputByName("y")?.connectedPoint?.name).toBe("z");
+  });
   it("allows a scalar Split X output without inventing vector components", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "split", "vector.split", { "default:value": [0.7] });

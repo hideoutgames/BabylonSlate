@@ -14,6 +14,7 @@ import { isNumericType, typesAreAssignable, type MaterialValueType } from "./typ
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
 import { customGlslDefinition, newCustomGlslProperties } from "./custom-glsl";
 import { createTypeResolver } from "./resolve";
+import { vectorMaskDefinition } from "./vector-mask";
 
 /** Pin shape the shared graph shell renders and connects. */
 export interface MaterialGraphPin {
@@ -96,6 +97,7 @@ export function pinsForMaterialNode(
     );
   }
   let definition = materialNodeDefinition(type);
+  if (definition && type === "vector.mask") definition = vectorMaskDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties ?? {} }, definition);
   if (definition && type === "custom.glsl" && context.properties) {
     definition = customGlslDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties }, definition);
   }
@@ -122,12 +124,13 @@ export function materialPaletteNodes(
     title: definition.title,
     category: definition.category,
     pins: pinsForMaterialNode(definition.type, { properties: newNodeDefaults(definition.type, {}) }),
-    defaultData: newNodeDefaults(definition.type, {}),
+    defaultData: { ...newNodeDefaults(definition.type, {}), __material: true },
   }));
 }
 
 const EDITOR_NODE_KEYS = new Set([
   "__pins",
+  "__material",
   "__nodeType",
   "__category",
   "__pure",
@@ -248,11 +251,12 @@ export function hydrateMaterialGraphForEditor(
       for (const pin of pins) {
         if (node.type === "output.surface") pin.group = ({ baseColor: "Surface", emissive: "Emission", opacity: "Transparency", worldPositionOffset: "Geometry" } as Record<string, string>)[pin.id];
         const resolved = pin.direction === "in" ? resolver.inputType(node.id, pin.id) : resolver.outputType(node.id, pin.id);
-        if (pin.type.kind === "generic" && resolved && resolved !== "float") pin.type = { kind: resolved };
+        const unconnectedMask = node.type === "vector.mask" && pin.direction === "in" && !graph.edges.some((edge) => edge.target === node.id && edge.targetHandle === pin.id);
+        if (pin.type.kind === "generic" && resolved && resolved !== "float" && !unconnectedMask) pin.type = { kind: resolved };
         const kind = resolved ?? pin.type.kind;
         pin.typeLabel = kind === "float" ? "Float" : kind === "texture" ? "Texture" : /^vec[234]$/.test(kind) ? `V${kind.slice(-1)}` : "Numeric";
       }
-      const definition = materialNodeDefinition(node.type);
+      const definition = resolver.definitionOf(node.id);
       const calledFunction = functionGuid
         ? context.functions?.[functionGuid]
         : undefined;
@@ -261,6 +265,7 @@ export function hydrateMaterialGraphForEditor(
         data: {
           ...data,
           __pins: pins,
+          __material: true,
           __nodeType: node.type,
           ...(definition ? { __category: definition.category } : {}),
           title: isMaterialParameterNode(node.type)
