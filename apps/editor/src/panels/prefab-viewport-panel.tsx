@@ -123,6 +123,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const {
     flySpeed,
     gridSize,
+    snapRotateDeg,
+    snapScale,
     dropDistance,
     editorTextureLodEnabled,
     editorTextureLodQuality,
@@ -445,8 +447,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.gizmos.setSnap({
       enabled: snapEnabled,
       translate: gridSize,
-      rotateDeg: 15,
-      scale: 0.25,
+      rotateDeg: snapRotateDeg,
+      scale: snapScale,
     });
     engineRef.current?.editor?.setGridSettings({
       tileSize: gridSize,
@@ -454,7 +456,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       cameraBounds2D: { width: 16, height: 9 },
       showGrid: gridVisible,
     });
-  }, [snapEnabled, gridSize, gridVisible, engineEpoch]);
+  }, [snapEnabled, gridSize, snapRotateDeg, snapScale, gridVisible, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);

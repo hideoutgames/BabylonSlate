@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -15,8 +16,13 @@ if (
   typeof window.PointerEvent === "undefined"
 ) {
   class PointerEventPolyfill extends MouseEvent {
-    constructor(type: string, init?: MouseEventInit) {
+    constructor(type: string, init?: PointerEventInit) {
       super(type, init);
+      Object.defineProperties(this, {
+        pointerId: { value: init?.pointerId ?? 1 },
+        pointerType: { value: init?.pointerType ?? "mouse" },
+        isPrimary: { value: init?.isPrimary ?? true },
+      });
     }
   }
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
@@ -48,6 +54,9 @@ const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
   documentKind: "scene" as "scene" | "scene-layer" | "graph",
   gridSize: 1,
+  snapRotateDeg: 15,
+  snapScale: 0.25,
+  patchPrefs: vi.fn(async () => {}),
   applySceneChange: vi.fn(async () => true),
 }));
 
@@ -59,8 +68,11 @@ vi.mock("../context/document-workspace-context", () => ({
 
 vi.mock("../lib/viewport-engine-prefs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/viewport-engine-prefs")>()),
+  patchEngineViewportPrefs: harness.patchPrefs,
   useEditorViewportPrefs: () => ({
     gridSize: harness.gridSize,
+    snapRotateDeg: harness.snapRotateDeg,
+    snapScale: harness.snapScale,
     flySpeed: 8,
     editorTextureLodEnabled: true,
     editorTextureLodQuality: 1,
@@ -128,6 +140,9 @@ beforeEach(() => {
   harness.scene = createDefaultScene();
   harness.documentKind = "scene";
   harness.gridSize = 1;
+  harness.snapRotateDeg = 15;
+  harness.snapScale = 0.25;
+  harness.patchPrefs.mockClear();
   harness.setGizmoTool.mockClear();
   harness.setSnapEnabled.mockClear();
   harness.setJoystickEnabled.mockClear();
@@ -144,6 +159,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 function renderToolbar(
@@ -170,6 +186,66 @@ const GIZMO_LABELS = [
 ] as const;
 
 describe("ViewportToolbar", () => {
+  it("opens snap settings by right-click without toggling, and Cancel discards edits", () => {
+    harness.scene!.settings.grid.snapRotateDeg = 45;
+    harness.scene!.settings.grid.snapScale = 0.1;
+    renderToolbar();
+    const snap = screen.getByTestId("gizmo-snap-toggle");
+    fireEvent.contextMenu(snap);
+    expect(screen.getByLabelText("Rotation Snap (Degrees)")).toHaveProperty("value", "45");
+    expect(screen.getByLabelText("Scale Snap")).toHaveProperty("value", "0.1");
+    fireEvent.change(screen.getByLabelText("Scale Snap"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(harness.setSnapEnabled).not.toHaveBeenCalled();
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    fireEvent.contextMenu(snap);
+    expect(screen.getByLabelText("Scale Snap")).toHaveProperty("value", "0.1");
+  });
+
+  it("opens on a stationary touch hold and consumes its release click", () => {
+    vi.useFakeTimers();
+    renderToolbar();
+    const snap = screen.getByTestId("gizmo-snap-toggle");
+    fireEvent.pointerDown(snap, { pointerType: "touch", pointerId: 4, clientX: 20, clientY: 20 });
+    act(() => vi.advanceTimersByTime(500));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    fireEvent.pointerUp(snap, { pointerType: "touch", pointerId: 4 });
+    fireEvent.click(snap);
+    expect(harness.setSnapEnabled).not.toHaveBeenCalled();
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+  });
+
+  it.each(["move", "cancel", "release", "scroll", "unmount"])("cancels a pending hold on %s", (reason) => {
+    vi.useFakeTimers();
+    const { unmount } = renderToolbar();
+    const snap = screen.getByTestId("gizmo-snap-toggle");
+    fireEvent.pointerDown(snap, { pointerType: "touch", pointerId: 4, clientX: 20, clientY: 20 });
+    if (reason === "move") fireEvent.pointerMove(document, { pointerId: 4, clientX: 40, clientY: 20 });
+    if (reason === "cancel") fireEvent.pointerCancel(document, { pointerId: 4 });
+    if (reason === "release") fireEvent.pointerUp(document, { pointerId: 4 });
+    if (reason === "scroll") fireEvent.scroll(document);
+    if (reason === "unmount") unmount();
+    act(() => vi.advanceTimersByTime(600));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(harness.setSnapEnabled).not.toHaveBeenCalled();
+  });
+
+  it("saves prefab snap steps to editor preferences without changing a scene", () => {
+    harness.documentKind = "graph";
+    harness.snapRotateDeg = 60;
+    harness.snapScale = 0.2;
+    renderToolbar({ testIdPrefix: "prefab-" });
+    fireEvent.contextMenu(screen.getByTestId("prefab-gizmo-snap-toggle"));
+    expect(screen.getByLabelText("Rotation Snap (Degrees)")).toHaveProperty("value", "60");
+    fireEvent.change(screen.getByLabelText("Grid Size"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Rotation Snap (Degrees)"), { target: { value: "45" } });
+    fireEvent.change(screen.getByLabelText("Scale Snap"), { target: { value: "0.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(harness.patchPrefs).toHaveBeenCalledWith({ viewportGridSize: 2, viewportSnapRotateDeg: 45, viewportSnapScale: 0.5 });
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+  });
+
+
   it("exposes current snap increment and nondefault view state without opening settings", () => {
     harness.snapEnabled = true;
     harness.previewGameCamera = true;
@@ -397,7 +473,7 @@ describe("ViewportToolbar", () => {
     );
   });
 
-  it("writes Grid Size to tileSize and snapTranslate", () => {
+  it("saves all snap steps together, including arithmetic on Enter", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     fireEvent.click(screen.getByTestId("viewport-settings-submenu"));
@@ -405,7 +481,9 @@ describe("ViewportToolbar", () => {
     fireEvent.change(screen.getByTestId("number-prompt-input"), {
       target: { value: "4" },
     });
-    fireEvent.click(screen.getByTestId("number-prompt-confirm"));
+    fireEvent.change(screen.getByTestId("scale-snap-input"), { target: { value: "0.5" } });
+    fireEvent.change(screen.getByTestId("rotation-snap-input"), { target: { value: "30/2" } });
+    fireEvent.keyDown(screen.getByTestId("rotation-snap-input"), { key: "Enter" });
     expect(harness.applySceneChange).toHaveBeenCalledWith(
       "scene:assets/Main.scene.babasset",
       expect.objectContaining({
@@ -413,6 +491,8 @@ describe("ViewportToolbar", () => {
           grid: expect.objectContaining({
             tileSize: 4,
             snapTranslate: 4,
+            snapRotateDeg: 15,
+            snapScale: 0.5,
           }),
         }),
       }),

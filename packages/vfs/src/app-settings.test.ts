@@ -300,6 +300,8 @@ describe("app settings", () => {
       stores[1]!.update((settings) => {
         settings.viewportFlySpeed = 18;
         settings.viewportGridSize = 2;
+        settings.viewportSnapRotateDeg = 45;
+        settings.viewportSnapScale = 0.5;
       }),
       stores[2]!.update((settings) => {
         settings.appearance.theme = "dark";
@@ -318,6 +320,8 @@ describe("app settings", () => {
     expect([settings.viewportFlySpeed, settings.viewportGridSize]).toEqual([
       18, 2,
     ]);
+    expect(settings.viewportSnapRotateDeg).toBe(45);
+    expect(settings.viewportSnapScale).toBe(0.5);
     expect(settings.appearance.theme).toBe("dark");
     expect(settings.recents[0]?.id).toBe("opfs:Concurrent.babproject");
   });
