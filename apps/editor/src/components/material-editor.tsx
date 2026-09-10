@@ -674,7 +674,11 @@ function MaterialDocumentDetails() {
       onChange: (value) => commit({ ...document, twoSided: value }),
     },
   ];
-  if (document.blendMode === "masked") {
+  if (document.domain === "surface") rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }) });
+  if (document.domain !== "surface") {
+    for (let i = rows.length - 1; i >= 0; i--) if (["shadingModel", "twoSided"].includes(rows[i]!.id)) rows.splice(i, 1);
+  }
+  if (document.domain === "surface" && document.blendMode === "masked") {
     rows.push({
       id: "alphaCutoff",
       kind: "slider",

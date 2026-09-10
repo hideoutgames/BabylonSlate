@@ -407,7 +407,15 @@ so the destination stack and environment replace the previous scene's. Engine Se
 `postProcessingEnabled` is not applied to exported games — omitted means the
 authored stack runs.
 
-## Not implemented
+## Authoring and runtime behavior
+
+Material pins display compact Float / V2 / V3 / V4 / Texture hints. Bound generic
+vectors use the resolved width for connections. Material Output groups Surface,
+Emission, Transparency and Geometry pins. Non-surface Details omit surface-only
+controls. **Bounds Padding (Local)** expands mesh culling bounds for authored
+displacement and restores original bounds on material reassignment; it does not
+alter collision shapes. Particle materials preview on a disposable particle
+system rather than an unrelated static mesh.
 
 Imported glTF graphs retain base-color/alpha factors, metallic and roughness
 factors and packed B/G channels, emissive factors/textures, normal maps, alpha
@@ -456,6 +464,8 @@ opens the existing expanded multiline dialog with GLSL syntax highlighting,
 line numbers, keyboard undo, bracket matching and a coarse-pointer symbol bar.
 The return name labels its pin; only input and additional output names are
 variables inside the function. Use **Render** to compile Custom GLSL changes.
+
+## Not implemented
 
 - Decal domain is not implemented.
 - Motion vectors and object IDs are deferred.

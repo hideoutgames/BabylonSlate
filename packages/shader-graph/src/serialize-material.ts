@@ -13,9 +13,12 @@ import {
 import { isNumericType, typesAreAssignable, type MaterialValueType } from "./types";
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
 import { customGlslDefinition, newCustomGlslProperties } from "./custom-glsl";
+import { createTypeResolver } from "./resolve";
 
 /** Pin shape the shared graph shell renders and connects. */
 export interface MaterialGraphPin {
+  typeLabel?: string;
+  group?: string;
   id: string;
   name: string;
   kind: "data";
@@ -231,6 +234,10 @@ export function hydrateMaterialGraphForEditor(
   graph: SerializedGraph,
   context: MaterialPinContext = {},
 ): SerializedGraph {
+  const resolver = createTypeResolver({
+    nodes: graph.nodes.map((node) => ({ ...node, properties: propertiesFromNodeData(node.data) })),
+    edges: graph.edges.map((edge) => ({ id: edge.id, sourceNodeId: edge.source, sourcePinId: edge.sourceHandle ?? "out", targetNodeId: edge.target, targetPinId: edge.targetHandle ?? "in" })),
+  }, context);
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
@@ -238,6 +245,13 @@ export function hydrateMaterialGraphForEditor(
       const functionGuid =
         typeof data.functionGuid === "string" ? data.functionGuid : undefined;
       const pins = pinsForMaterialNode(node.type, { ...context, functionGuid, properties: data });
+      for (const pin of pins) {
+        if (node.type === "output.surface") pin.group = ({ baseColor: "Surface", emissive: "Emission", opacity: "Transparency", worldPositionOffset: "Geometry" } as Record<string, string>)[pin.id];
+        const resolved = pin.direction === "in" ? resolver.inputType(node.id, pin.id) : resolver.outputType(node.id, pin.id);
+        if (pin.type.kind === "generic" && resolved && resolved !== "float") pin.type = { kind: resolved };
+        const kind = resolved ?? pin.type.kind;
+        pin.typeLabel = kind === "float" ? "Float" : kind === "texture" ? "Texture" : /^vec[234]$/.test(kind) ? `V${kind.slice(-1)}` : "Numeric";
+      }
       const definition = materialNodeDefinition(node.type);
       const calledFunction = functionGuid
         ? context.functions?.[functionGuid]

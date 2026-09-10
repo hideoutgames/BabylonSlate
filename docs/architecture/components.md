@@ -123,6 +123,8 @@ uses these slots for highlighted code. `GraphEditor.renderNodeBody` adds host
 content below the shared pin rows; material graphs use a bounded four-line
 static code preview. `CodeBodyEditor` (shared with `JsBodyEditor`) supports GLSL
 and JavaScript, syntax colors, line numbers and a coarse-pointer symbol bar.
+Serialized graph pins may supply a compact `typeLabel` and a `group` heading;
+Material graphs use these for numeric widths and Material Output channel groups.
 
 Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 

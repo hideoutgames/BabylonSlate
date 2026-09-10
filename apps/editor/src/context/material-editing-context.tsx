@@ -412,6 +412,7 @@ export function MaterialEditingProvider({
         return;
       }
       setCompileDiagnostics([]);
+      host.applyParticleMaterial?.(document.domain === "particle" ? result.material : null);
       if (document.domain === "postProcess") {
         host.applyMaterial(null);
         host.applyPostProcess(result.material);

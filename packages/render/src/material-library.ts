@@ -8,6 +8,7 @@ import {
 } from "@babylonslate/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
+import { applyMaterialBounds } from "./material-bounds";
 import {
   compileMaterialPlan,
   materialCompileFailed,
@@ -193,7 +194,7 @@ export class MaterialLibrary {
       if (existing) {
         // Runtime assignments can already point at the previous generation.
         for (const mesh of scene.meshes) {
-          if (mesh.material === existing.material) mesh.material = candidate.material;
+          if (mesh.material === existing.material) { mesh.material = candidate.material; applyMaterialBounds(mesh); }
         }
         existing.dispose();
       }

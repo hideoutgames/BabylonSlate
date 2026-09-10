@@ -159,6 +159,7 @@ export function compileMaterialPlan(
 ): CompileMaterialResult {
   const { scene } = options;
   const material = new NodeMaterial(options.name, scene);
+  material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
     plan.domain === "postProcess"
       ? NodeMaterialModes.PostProcess

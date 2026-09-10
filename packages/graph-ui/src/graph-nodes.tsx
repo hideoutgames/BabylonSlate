@@ -248,6 +248,7 @@ function PinRow({
               className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
             >
               {humanizePropertyLabel(incoming.name)}
+              {incoming.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{incoming.typeLabel}</span> : null}
             </span>
           </>
         ) : (
@@ -262,6 +263,7 @@ function PinRow({
               className="shrink-0 whitespace-nowrap text-right text-base leading-snug text-foreground"
             >
               {humanizePropertyLabel(outgoing.name)}
+              {outgoing.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{outgoing.typeLabel}</span> : null}
             </span>
             <PinHandle
               nodeId={nodeId}
@@ -417,13 +419,15 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
       >
         <div className="flex flex-col py-1">
           {rows.map((row, index) => (
+            <div key={row.in?.id ?? row.out?.id ?? `row-${index}`}>
+            {row.in?.group ? <div className="border-t px-3 py-1 text-xs text-muted-foreground">{row.in.group}</div> : null}
             <PinRow
-              key={row.in?.id ?? row.out?.id ?? `row-${index}`}
               nodeId={id}
               data={data}
               incoming={row.in}
               outgoing={row.out}
             />
+            </div>
           ))}
         </div>
         {renderNodeBody?.(id, data)}

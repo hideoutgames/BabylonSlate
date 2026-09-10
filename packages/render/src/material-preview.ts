@@ -3,6 +3,8 @@ import {
   ArcRotateCamera,
   Color4,
   MeshBuilder,
+  ParticleSystem,
+  RawTexture,
   RenderTargetTexture,
   Scene,
   Vector3,
@@ -101,6 +103,7 @@ export interface MaterialPreviewScene {
   ) => Promise<Mesh>;
   applyMaterial: (material: Material | null) => void;
   applyPostProcess: (material: NodeMaterial | null) => void;
+  applyParticleMaterial: (material: NodeMaterial | null) => void;
   dispose: () => void;
 }
 
@@ -147,6 +150,8 @@ export function createMaterialPreviewScene(
   aimPreviewCameraAtMesh(camera, mesh);
   let postProcess: PostProcess | null = null;
   let currentMaterial: Material | null = mesh.material;
+  let particles: ParticleSystem | null = null;
+  const disposeParticles = () => { particles?.dispose(); particles = null; mesh.isVisible = true; };
   let customContainer: AssetContainer | null = null;
   let meshGeneration = 0;
 
@@ -211,8 +216,28 @@ export function createMaterialPreviewScene(
       if (!material) return;
       postProcess = material.createPostProcess(camera) ?? null;
     },
+    applyParticleMaterial: (material) => {
+      disposeParticles();
+      if (!material) return;
+      mesh.isVisible = false;
+      particles = new ParticleSystem("materialPreviewParticles", 128, scene);
+      particles.particleTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene, false, false);
+      particles.emitter = Vector3.Zero();
+      particles.minEmitBox = new Vector3(-0.4, -0.5, 0);
+      particles.maxEmitBox = new Vector3(0.4, -0.5, 0);
+      particles.direction1 = new Vector3(-0.1, 1, 0);
+      particles.direction2 = new Vector3(0.1, 1, 0);
+      particles.minSize = 0.15;
+      particles.maxSize = 0.3;
+      particles.minLifeTime = 1;
+      particles.maxLifeTime = 2;
+      particles.emitRate = 32;
+      material.createEffectForParticles(particles);
+      particles.start();
+    },
     dispose: () => {
       meshGeneration += 1;
+      disposeParticles();
       disposePostProcess();
       disposeCustomContainer();
       scene.dispose();
