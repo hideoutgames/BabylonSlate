@@ -335,6 +335,12 @@ export class MaterialLibrary {
     for (const scene of [...this.tracked]) this.releaseScene(scene);
   }
 
+  isReady(scene: Scene, assetGuid: string, doc: MaterialDocument, options?: MaterialAcquireOptions): boolean {
+    const plan = this.planFor(doc, options?.unlit);
+    const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey));
+    return plan.ok && !!entry && entry.hash === plan.plan.hash && !isDisposedNodeMaterial(entry.material, scene);
+  }
+
   /** Recompile changed dependencies while retaining the last usable generation. */
   markDirty(): void {
     for (const scene of this.tracked) {

@@ -367,6 +367,8 @@ export function MaterialEditingProvider({
     const restored = sharedEngine?.onContextRestoredObservable;
     if (!restored?.add) return;
     const observer = restored.add(() => {
+      for (const [guid, entry] of retainedTexturesRef.current) resourceCacheForEngine(entry.engine).release(guid);
+      retainedTexturesRef.current.clear();
       libraryRef.current?.invalidate();
       if (!compileKey) return;
       dispatch({ type: "edit", cost: costClassRef.current });

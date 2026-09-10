@@ -38,7 +38,9 @@ describe("material library", () => {
     const first = library.acquire(scene, "material", tinted(1));
     if (!first.ok) throw new Error("Expected a compiled material");
     await first.ready;
+    expect(library.isReady(scene, "material", tinted(1))).toBe(true);
     library.markDirty();
+    expect(library.isReady(scene, "material", tinted(1))).toBe(false);
     expect(library.materialFor(scene, "material")).toBe(first.material);
     expect(library.isCompiled(scene, "material", tinted(1))).toBe(false);
     library.release(scene, "material");

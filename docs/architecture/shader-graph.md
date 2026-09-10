@@ -416,6 +416,8 @@ function call paths. Otherwise the original driver message is retained without
 an invented line number. Opening the GLSL editor selects a mapped error line.
 New edits cancel pending preview builds; dependency refresh marks existing
 materials dirty without discarding the displayed generation.
+Imported-model texture optimization uses published material readiness rather
+than accepting a pending build as proof that replacement textures are bound.
 
 Material pins display compact Float / V2 / V3 / V4 / Texture hints. Bound generic
 vectors use the resolved width for connections and default editors. Scalar Split
