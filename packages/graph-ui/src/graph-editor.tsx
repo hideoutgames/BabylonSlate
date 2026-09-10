@@ -137,6 +137,7 @@ export {
 export { selectVisibleGraphElements } from "./graph-virtualize";
 
 export interface GraphEditorProps {
+  renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
   initialGraph: GraphDocument;
   onChange?: (graph: GraphDocument, meta?: GraphChangeMeta) => void;
   /**
@@ -501,6 +502,7 @@ function GraphEditorCanvas({
   onNavigateRequest,
   onNodeDoubleClick,
   onEdgeDoubleClick,
+  renderNodeBody,
   onEdgeSelectionChange,
   paletteNodes,
   onPaletteOpenChange,
@@ -2108,6 +2110,7 @@ function GraphEditorCanvas({
       contextMenuItemsForNode,
       contextMenuItemsForAttachment,
       onEdgeDoubleClick,
+      renderNodeBody,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -2130,6 +2133,7 @@ function GraphEditorCanvas({
       contextMenuItemsForNode,
       contextMenuItemsForAttachment,
       onEdgeDoubleClick,
+      renderNodeBody,
       defaultEdgeOptions.type,
     ],
   );

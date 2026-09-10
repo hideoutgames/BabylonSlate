@@ -27,6 +27,7 @@ import type {
   MaterialGraphNode,
 } from "./document";
 import { createTypeResolver } from "./resolve";
+import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceError } from "./custom-glsl";
 import { validateMaterialParameterNames } from "./parameters";
 import {
   materialTypeLabel,
@@ -224,7 +225,8 @@ function definitionForNode(
   if (node.type === "function.input" || node.type === "function.output") {
     return functionPlumbingDefinition(node.type, options.functionInterface);
   }
-  return materialNodeDefinition(node.type);
+  const definition = materialNodeDefinition(node.type);
+  return definition && node.type === "custom.glsl" ? customGlslDefinition(node, definition) : definition;
 }
 
 /** Call node pins mirror the target function's declared interface. */
@@ -336,7 +338,12 @@ function validateGraph(
     }
 
     if (node.type === "custom.glsl") {
-      const custom = validateCustomGlslBody(customGlslBody(node));
+      const message = node.properties.customVersion === 2
+        ? customGlslInterfaceError(node.properties) ?? customGlslFunctionBodyError(customGlslBody(node))
+        : null;
+      const custom = node.properties.customVersion === 2
+        ? message ? { code: "material.customGlsl", message, severity: "error" as const } : null
+        : validateCustomGlslBody(customGlslBody(node));
       if (custom) {
         diagnostics.push({ ...custom, nodeId: node.id });
       }
@@ -698,11 +705,11 @@ function walkWorldPositionOffsetNode(
     return;
   }
 
-  const definition = materialNodeDefinition(node.type);
+  const definition = definitionForNode(node, { functions: frame.functions });
   if (
     definition &&
     node.type !== "function.output" &&
-    !nodeIsLegalInStage(node.type, "vertex")
+    (definition.stages ? !definition.stages.includes("vertex") : !nodeIsLegalInStage(node.type, "vertex"))
   ) {
     diagnostics.push({
       code: "material.stageMismatch",

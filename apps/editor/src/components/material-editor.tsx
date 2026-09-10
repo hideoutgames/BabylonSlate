@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageDetails } from "./message-details";
+import { MaterialCustomGlsl } from "./material-custom-glsl";
+import { GlslCodePreview } from "./code-highlighting";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
   AssetPickerControl,
-  MultilineTextField,
   NamePromptDialog,
   PanelFrame,
   PinListEditor,
@@ -20,11 +21,6 @@ import {
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import {
   ToggleGroup,
@@ -97,6 +93,10 @@ function previewMeshIcon(mesh: MaterialPreviewMesh): LucideIcon {
 }
 
 type MaterialGraphDocument = MaterialDocument | MaterialFunctionDocument;
+
+function renderMaterialNodeBody(_id: string, data: Record<string, unknown>) {
+  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "a + b")} /></div> : null;
+}
 
 function materialPinDefaultRows(
   document: MaterialGraphDocument,
@@ -299,6 +299,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
         data-testid="material-graph-editor"
       >
         <GraphEditor
+          renderNodeBody={renderMaterialNodeBody}
           initialGraph={initialGraph}
           diagnostics={diagnostics}
           paletteNodes={materialPaletteNodes(document.domain)}
@@ -361,6 +362,7 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
         data-testid="material-function-graph-editor"
       >
         <GraphEditor
+          renderNodeBody={renderMaterialNodeBody}
           initialGraph={initialGraph}
           diagnostics={diagnostics}
           paletteNodes={materialPaletteNodes("surface")}
@@ -819,8 +821,8 @@ function MaterialNodeDetails({
       id: "vector",
       kind: "vector3",
       label: "Value",
-      value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0],
-      axes: width === 2 ? ["X", "Y"] : ["X", "Y", "Z"],
+      value: Array.from({ length: width }, (_, i) => value[i] ?? 0),
+      axes: ["X", "Y", "Z", "W"].slice(0, width),
       onChange: (next) => setProperties({ value: next }),
     });
   }
@@ -839,27 +841,7 @@ function MaterialNodeDetails({
       <p className="px-3 text-xs text-muted-foreground">{node.type}</p>
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
       {node.type === "custom.glsl" ? (
-        <div className="px-3" data-testid="material-node-glsl-field">
-          <Field>
-            <FieldLabel htmlFor="material-node-glsl">Expression</FieldLabel>
-            <MultilineTextField
-              id="material-node-glsl"
-              title="Expression"
-              editorClassName="min-h-24 font-mono text-sm"
-              value={
-                typeof node.properties.body === "string"
-                  ? node.properties.body
-                  : "a + b"
-              }
-              onChange={(body) => setProperties({ body })}
-              data-testid="material-node-glsl"
-            />
-            <FieldDescription data-testid="material-node-glsl-signature">
-              Generated signature: result = fn(a, b). Expression-only GLSL over
-              A and B. WebGPU is not supported.
-            </FieldDescription>
-          </Field>
-        </div>
+        <MaterialCustomGlsl node={node} document={document} setProperties={setProperties} />
       ) : null}
       {node.type === "param.texture" ||
       node.type === "texture.sample" ||

@@ -6,6 +6,7 @@ import type { PinTypeNames } from "./pin-default-preview";
 import type { ConnectEndMode, PinCompatibilityRule } from "./graph-connect";
 
 export type GraphEditorContextValue = {
+  renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
   pendingPin: { nodeId: string; pinId: string } | null;
   onPinTap: (nodeId: string, pinId: string, direction: "in" | "out") => void;
   nodeErrorCount: (nodeId: string) => number;

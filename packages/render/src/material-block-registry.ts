@@ -57,6 +57,7 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@babylonslate/shader-graph";
+import { customGlslInterface } from "@babylonslate/shader-graph";
 
 /**
  * One lowered operation realised as Babylon blocks.
@@ -730,6 +731,39 @@ ADAPTERS["input.sceneNormal"] = ({ name }) => {
 };
 
 ADAPTERS["custom.glsl"] = ({ name, operation }) => {
+  const pins = customGlslInterface(operation.properties);
+  if (pins) {
+    const primary = pins.outputs[0]!;
+    const additional = pins.outputs.slice(1);
+    const functionName = `custom_${Array.from(name, (char) => char.codePointAt(0)!.toString(16)).join("_")}`;
+    const helper = `${functionName}_body`;
+    const block = new CustomBlock(name);
+    const blockType = { float: "Float", vec2: "Vector2", vec3: "Vector3", vec4: "Vector4" };
+    const parameters = [...pins.inputs.map((pin) => `${pin.type} ${pin.name}`), ...additional.map((pin) => `out ${pin.type} ${pin.name}`)];
+    const wrapperParameters = [...pins.inputs.map((pin, i) => `${pin.type} input${i}`), ...pins.outputs.map((pin, i) => `out ${pin.type} output${i}`)];
+    block.options = {
+      name,
+      target: "Neutral",
+      functionName,
+      inParameters: pins.inputs.map((pin, i) => ({ name: `input${i}`, type: blockType[pin.type] })),
+      outParameters: pins.outputs.map((pin, i) => ({ name: `output${i}`, type: blockType[pin.type] })),
+      code: [
+        `${primary.type} ${helper}(${parameters.join(", ")}) {`,
+        ...additional.map((pin) => `${pin.name} = ${pin.type}(0.0);`),
+        `// Authored Custom GLSL body`,
+        String(operation.properties.body ?? ""),
+        `}`,
+        `void ${functionName}(${wrapperParameters.join(", ")}) {`,
+        `output0 = ${helper}(${[...pins.inputs.map((_, i) => `input${i}`), ...additional.map((_, i) => `output${i + 1}`)].join(", ")});`,
+        `}`,
+      ],
+    };
+    return {
+      blocks: [block],
+      inputs: Object.fromEntries(pins.inputs.map((pin, i) => [pin.id, block.inputs[i]!])),
+      outputs: Object.fromEntries(pins.outputs.map((pin, i) => [pin.id, block.outputs[i]!])),
+    };
+  }
   const raw =
     typeof operation.properties.body === "string"
       ? operation.properties.body.trim()

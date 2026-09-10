@@ -8,6 +8,7 @@ import type {
   MaterialGraphNode,
 } from "./document";
 import { resolveGenericType, type MaterialValueType } from "./types";
+import { customGlslDefinition } from "./custom-glsl";
 
 export interface ResolverGraph {
   nodes: MaterialGraphNode[];
@@ -91,6 +92,7 @@ export function createTypeResolver(
     const node = nodesById.get(nodeId);
     let definition = node ? materialNodeDefinition(node.type) : undefined;
     if (node && definition) {
+      if (node.type === "custom.glsl") definition = customGlslDefinition(node, definition);
       if (node.type === "function.call") {
         const guid = node.properties.functionGuid;
         const fn = typeof guid === "string" ? functions[guid] : undefined;

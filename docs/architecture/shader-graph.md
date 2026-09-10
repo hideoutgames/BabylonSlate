@@ -409,5 +409,22 @@ authored stack runs.
 
 ## Not implemented
 
+Custom GLSL nodes created by the editor use node-local `customVersion: 2`, with
+stable pin IDs, GLSL variable names and explicit Float / Vector 2 / Vector 3 /
+Vector 4 types. The body returns the first output and assigns named additional
+outputs, initialized to zero before the body runs. Inputs have ordinary editable
+pin defaults. Direct sampler pins and WebGPU are not supported. Derivatives and
+discard restrict the node to the fragment stage. Graph validation checks the
+interface and function boundary; the GPU compiler checks GLSL syntax and types.
+Legacy expression nodes keep their original generic A/B behavior. **Convert to
+Function Body** preserves link IDs and the currently inferred vector width.
+Changing a variable name does not rewrite authored GLSL; update its references.
+
+Custom nodes display four highlighted read-only lines below their pins. Details
+opens the existing expanded multiline dialog with GLSL syntax highlighting,
+line numbers, keyboard undo, bracket matching and a coarse-pointer symbol bar.
+The return name labels its pin; only input and additional output names are
+variables inside the function. Use **Render** to compile Custom GLSL changes.
+
 - Decal domain is not implemented.
 - Motion vectors and object IDs are deferred.

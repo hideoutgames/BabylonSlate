@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -22,6 +22,8 @@ export type MultilineTextFieldProps = {
   id?: string;
   className?: string;
   editorClassName?: string;
+  renderPreview?: (value: string) => ReactNode;
+  renderEditor?: (value: string, onChange: (value: string) => void) => ReactNode;
   "data-testid"?: string;
 };
 
@@ -36,6 +38,8 @@ export function MultilineTextField({
   id,
   className,
   editorClassName,
+  renderPreview,
+  renderEditor,
   "data-testid": testId,
 }: MultilineTextFieldProps) {
   const [open, setOpen] = useState(false);
@@ -69,7 +73,7 @@ export function MultilineTextField({
         onClick={() => setOpen(true)}
         data-testid={testId}
       >
-        <span className="line-clamp-4 break-words">{preview}</span>
+        {renderPreview ? renderPreview(value) : <span className="line-clamp-4 break-words">{preview}</span>}
       </Button>
       <Dialog
         open={open}
@@ -89,7 +93,7 @@ export function MultilineTextField({
             ) : null}
           </DialogHeader>
           <div className="flex min-h-0 flex-1 flex-col p-4">
-            {markup ? (
+            {renderEditor ? renderEditor(draft, setDraft) : markup ? (
               <MarkupAutocompleteTextarea
                 id={id ? `${id}-editor` : undefined}
                 value={draft}

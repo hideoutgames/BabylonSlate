@@ -117,6 +117,13 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 ## App wrappers
 
+`MultilineTextField` accepts optional `renderPreview` and `renderEditor` slots,
+retaining its draft/Done contract and viewport-bounded dialog. Material GLSL
+uses these slots for highlighted code. `GraphEditor.renderNodeBody` adds host
+content below the shared pin rows; material graphs use a bounded four-line
+static code preview. `CodeBodyEditor` (shared with `JsBodyEditor`) supports GLSL
+and JavaScript, syntax colors, line numbers and a coarse-pointer symbol bar.
+
 Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 
 | Component | What it does | Used for |

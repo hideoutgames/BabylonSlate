@@ -393,7 +393,7 @@ export function BlueprintNodeShell({
 }
 
 export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
-  const { contextMenuItemsForNode } = useGraphEditorContext();
+  const { contextMenuItemsForNode, renderNodeBody } = useGraphEditorContext();
   const items = contextMenuItemsForNode?.(id) ?? [];
   const menu = useContextMenu({ items, enabled: items.length > 0 });
   const pins = hasSerializedPins(data) ? data.__pins : [];
@@ -426,6 +426,7 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
             />
           ))}
         </div>
+        {renderNodeBody?.(id, data)}
       </BlueprintNodeShell>
       <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} />
     </div>

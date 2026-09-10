@@ -12,6 +12,7 @@ import {
 } from "./document";
 import { isNumericType, typesAreAssignable, type MaterialValueType } from "./types";
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
+import { customGlslDefinition, newCustomGlslProperties } from "./custom-glsl";
 
 /** Pin shape the shared graph shell renders and connects. */
 export interface MaterialGraphPin {
@@ -25,6 +26,7 @@ export interface MaterialGraphPin {
 }
 
 export interface MaterialPinContext {
+  properties?: Record<string, unknown>;
   functions?: Record<string, MaterialFunctionDocument>;
   /** Interface used to hydrate `function.input` / `function.output` nodes. */
   functionInterface?: MaterialFunctionDocument;
@@ -90,7 +92,10 @@ export function pinsForMaterialNode(
       ),
     );
   }
-  const definition = materialNodeDefinition(type);
+  let definition = materialNodeDefinition(type);
+  if (definition && type === "custom.glsl" && context.properties) {
+    definition = customGlslDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties }, definition);
+  }
   if (!definition) return [];
   return [
     ...definition.inputs.map((pin) => toPin(pin, "in")),
@@ -173,6 +178,7 @@ export function serializedToMaterialGraph(
       position: node.position,
       properties: {
         ...propertiesFromNodeData(node.data),
+        ...(node.type === "custom.glsl" && previous && !previous.nodes.some((entry) => entry.id === node.id) ? newCustomGlslProperties() : {}),
         ...(previous && isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
       },
     })),
@@ -198,6 +204,7 @@ export function serializedToMaterialFunctionGraph(
       position: node.position,
       properties: {
         ...propertiesFromNodeData(node.data),
+        ...(node.type === "custom.glsl" && !previous.nodes.some((entry) => entry.id === node.id) ? newCustomGlslProperties() : {}),
         ...(isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
       },
     })),
@@ -222,7 +229,7 @@ export function hydrateMaterialGraphForEditor(
       const data = { ...(node.data as Record<string, unknown>) };
       const functionGuid =
         typeof data.functionGuid === "string" ? data.functionGuid : undefined;
-      const pins = pinsForMaterialNode(node.type, { ...context, functionGuid });
+      const pins = pinsForMaterialNode(node.type, { ...context, functionGuid, properties: data });
       const definition = materialNodeDefinition(node.type);
       const calledFunction = functionGuid
         ? context.functions?.[functionGuid]

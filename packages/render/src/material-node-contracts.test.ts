@@ -27,6 +27,22 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it("compiles a typed Custom GLSL return and an independently typed additional output", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "custom", "custom.glsl", {
+      customVersion: 2,
+      inputs: [{ id: "uv", name: "UV", type: "vec2" }],
+      outputs: [{ id: "out", name: "Result", type: "vec3" }, { id: "mask", name: "Mask", type: "float" }],
+      body: "Mask = step(0.5, UV.x);\nreturn vec3(UV, Mask);",
+    });
+    wire(doc, "custom", "out", "output", "emissive");
+    wire(doc, "custom", "mask", "output", "roughness");
+    const result = await compile(doc);
+    const source = result.material.compiledShaders;
+    expect(source).toContain("Mask = step(0.5, UV.x)");
+    expect(source).toContain("out float Mask");
+    expect(source).toContain("return vec3(UV, Mask)");
+  });
   it("keeps dynamic Clamp bounds in the shader and exposes them to runtime setters", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "minimum", "param.float", { name: "Minimum", value: [0.3] });

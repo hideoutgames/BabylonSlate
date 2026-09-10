@@ -8,6 +8,7 @@ import type {
   MaterialGraphNode,
 } from "./document";
 import { componentCount, isNumericType, type MaterialValueType } from "./types";
+import { customGlslDefinition } from "./custom-glsl";
 
 export function materialPinDefaultPropertyKey(pinId: string): string {
   return `default:${pinId}`;
@@ -63,7 +64,8 @@ function inputPins(
       ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
     }));
   }
-  return [...(materialNodeDefinition(node.type)?.inputs ?? [])];
+  const definition = materialNodeDefinition(node.type);
+  return [...(definition && node.type === "custom.glsl" ? customGlslDefinition(node, definition).inputs : definition?.inputs ?? [])];
 }
 
 export function listUnconnectedMaterialPinDefaults(
