@@ -45,7 +45,7 @@ export function MaterialCustomGlsl({ node, document, setProperties }: {
         renderEditor={(value, onChange) => <CodeBodyEditor value={value} onChange={onChange} language="glsl" />}
       />
       <FieldDescription data-testid="material-node-glsl-signature">
-        {pins ? "Use input names as variables. Return the primary output; assign additional output names before returning. Pin names are case sensitive. Renaming a pin requires updating its references in the code." : "Legacy expression over a and b. Convert to add typed pins and statements."} GLSL/WebGL only. Use Render to compile.
+        {pins ? "Use input names as variables. Return the primary output; assign additional output names before returning. Pin names are case sensitive. Renaming a pin requires updating its references in the code." : "Legacy expression: result = fn(a, b). Convert to add typed pins and statements."} GLSL/WebGL only. Use Render to compile.
       </FieldDescription>
       {error ? <FieldDescription role="alert">{error}</FieldDescription> : null}
     </Field>
