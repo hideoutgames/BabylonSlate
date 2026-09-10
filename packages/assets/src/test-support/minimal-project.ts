@@ -78,7 +78,8 @@ export async function minimalProjectFiles(
       `assets/Input/${inputName}.${extension}.babasset`,
       await encodeAssetDocument(
         {
-          guid: `00000000-0000-4000-8000-${String(index + 3).padStart(12, "0")}`,
+          // Keep Input IDs separate from assets added by specialized fixtures.
+          guid: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
           type,
           name: inputName,
           version: 1,
