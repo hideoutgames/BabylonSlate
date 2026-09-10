@@ -514,7 +514,7 @@ export function compileMaterialPlan(
       if (plan.cost.customBlocks > 0 && scene.getEngine().getClassName() !== "NullEngine") {
         checkingShader = true;
         try {
-        if (plan.domain === "surface") {
+        if (material.mode === NodeMaterialModes.Material) {
           shaderProbe = MeshBuilder.CreateBox(`${options.name}_compileProbe`, { size: 1 }, scene);
           shaderProbe.setEnabled(false);
           shaderProbe.material = material;

@@ -24,6 +24,13 @@ describe("nativeEventStubs", () => {
     ]);
   });
 
+  it("exposes lifecycle events on ComponentLogic descendants without Actor collision events", () => {
+    const options = { parentClass: "Counter", parentOf: (id: string) => id === "Counter" ? "ComponentLogic" : id === "ComponentLogic" ? "BObject" : null };
+    expect(nativeEventStubs(options).map((stub) => stub.eventType)).toEqual(["flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]);
+    for (const event of nativeEventStubs(options)) expect(isScriptCatalogNodeAllowed(event.eventType, options)).toBe(true);
+    expect(isScriptCatalogNodeAllowed("flow.event.hit", options)).toBe(false);
+  });
+
   it("lists no Begin Play or Tick on BObject or ActorComponent", () => {
     expect(nativeEventStubs({ parentClass: "BObject" })).toEqual([]);
     expect(nativeEventStubs({ parentClass: "ActorComponent" })).toEqual([]);
