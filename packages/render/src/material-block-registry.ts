@@ -474,7 +474,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       },
     };
   },
-  "vector.split": ({ name, operation }) => {
+  "vector.split": ({ name, operation }): BlockRealization => {
     if (operation.resolvedType === "float") {
       const block = new AddBlock(name);
       const zero = constantInput(`${name}_zero`, "float", [0]);
