@@ -26,10 +26,9 @@ const collectPlayMaterialLibrary = vi.fn(async () => ({
 }));
 const collectPlayTextureBytes = vi.fn(async () => new Map());
 const writeAssetThumbnail = vi.fn(async () => undefined);
-const readAssetChunk = vi.fn(
-  async (_path: string, _kind: string): Promise<Uint8Array | null> =>
-    new Uint8Array([1, 2, 3, 4]),
-);
+const readAssetChunk = vi.fn<
+  (path: string, kind: string) => Promise<Uint8Array | null>
+>(async () => new Uint8Array([1, 2, 3, 4]));
 const assets = new Map<
   string,
   { path: string; header: { type: string; payload: Record<string, unknown> } }
