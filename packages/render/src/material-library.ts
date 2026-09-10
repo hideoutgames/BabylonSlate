@@ -184,7 +184,7 @@ export class MaterialLibrary {
     const candidate: CacheEntry = {
       material: compiled.material,
       hash: lowered.plan.hash,
-      refCount: (existing?.refCount ?? 0) + 1,
+      refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
       dispose: compiled.dispose,
       setParameter: compiled.setParameter,
       instanceKey: options?.instanceKey,
@@ -207,6 +207,7 @@ export class MaterialLibrary {
         if (pending.get(key) !== candidate) return;
         pending.delete(key);
         if (errors.length) {
+          if (existing) existing.refCount = candidate.refCount;
           candidate.dispose();
           for (const error of errors) this.options.onTextureError?.(error);
           return;
@@ -228,7 +229,14 @@ export class MaterialLibrary {
     const waiting = this.pending.get(scene)?.get(key);
     if (waiting) {
       waiting.refCount -= 1;
-      if (waiting.refCount <= 0) { this.pending.get(scene)!.delete(key); waiting.dispose(); }
+      const previous = entries?.get(key);
+      if (previous) previous.refCount = waiting.refCount;
+      if (waiting.refCount <= 0) {
+        this.pending.get(scene)!.delete(key);
+        waiting.dispose();
+        previous?.dispose();
+        entries?.delete(key);
+      }
       return;
     }
     const entry = entries?.get(key);
@@ -261,7 +269,10 @@ export class MaterialLibrary {
     let material = this.materialFor(scene, assetGuid, options);
     if (!material || !this.isCompiled(scene, assetGuid, doc, options)) {
       const acquired = this.acquire(scene, assetGuid, doc, options);
-      if (materialAvailable(acquired)) material = this.materialFor(scene, assetGuid, options) ?? acquired.material;
+      if (materialAvailable(acquired)) {
+        if (material) this.release(scene, assetGuid, options);
+        material = this.materialFor(scene, assetGuid, options) ?? acquired.material;
+      }
     }
     if (!material) return null;
     for (const [name, value] of options?.parameters ?? []) {
@@ -324,13 +335,37 @@ export class MaterialLibrary {
     for (const scene of [...this.tracked]) this.releaseScene(scene);
   }
 
+  /** Recompile changed dependencies while retaining the last usable generation. */
+  markDirty(): void {
+    for (const scene of this.tracked) {
+      for (const entry of this.scenes.get(scene)?.values() ?? []) entry.hash = "";
+      const pending = this.pending.get(scene);
+      for (const [key, entry] of pending ?? []) {
+        const previous = this.scenes.get(scene)?.get(key);
+        if (previous) previous.refCount = entry.refCount;
+        entry.dispose();
+      }
+      pending?.clear();
+    }
+  }
+
+  cancelPending(scene: Scene, assetGuid: string): void {
+    const pending = this.pending.get(scene);
+    const entry = pending?.get(assetGuid);
+    if (!entry) return;
+    pending!.delete(assetGuid);
+    const previous = this.scenes.get(scene)?.get(assetGuid);
+    if (previous) previous.refCount = entry.refCount;
+    entry.dispose();
+  }
+
   /** Compile shaders before first draw so a mobile GPU does not stall. */
   async prewarm(
     scene: Scene,
     assetGuid: string,
     mesh: Mesh | null,
   ): Promise<void> {
-    const entry = this.scenes.get(scene)?.get(assetGuid);
+    const entry = this.pending.get(scene)?.get(assetGuid) ?? this.scenes.get(scene)?.get(assetGuid);
     if (!entry) return;
     await prewarmMaterial(entry.material, mesh);
   }

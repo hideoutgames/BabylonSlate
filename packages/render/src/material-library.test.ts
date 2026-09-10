@@ -31,6 +31,19 @@ function tinted(value: number): MaterialDocument {
 }
 
 describe("material library", () => {
+  it("retains the displayed material while dependencies are marked dirty", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    library.markDirty();
+    expect(library.materialFor(scene, "material")).toBe(first.material);
+    expect(library.isCompiled(scene, "material", tinted(1))).toBe(false);
+    library.release(scene, "material");
+    expect(scene.materials).not.toContain(first.material);
+  });
   it("retains the last good material when a replacement fails asynchronously", async () => {
     const scene = host();
     const library = new MaterialLibrary();

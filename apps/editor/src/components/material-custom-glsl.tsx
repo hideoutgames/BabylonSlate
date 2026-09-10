@@ -9,7 +9,8 @@ import { GlslCodePreview } from "./code-highlighting";
 const TYPES = ["float", "vec2", "vec3", "vec4"] as const;
 const LABELS = ["Float", "Vector 2", "Vector 3", "Vector 4"];
 
-export function MaterialCustomGlsl({ node, document, setProperties }: {
+export function MaterialCustomGlsl({ node, document, setProperties, bodyLine }: {
+  bodyLine?: number;
   node: MaterialGraphNode;
   document: MaterialDocument | MaterialFunctionDocument;
   setProperties: (properties: Record<string, unknown>) => void;
@@ -30,8 +31,8 @@ export function MaterialCustomGlsl({ node, document, setProperties }: {
         { id: "result-name", kind: "text", label: "Return Name", value: primary.name, onChange: (name) => setProperties({ outputs: [{ ...primary, name }, ...pins.outputs.slice(1)] }) },
         { id: "result-type", kind: "enum", label: "Return Type", value: primary.type, options: TYPES.map((value, i) => ({ value, label: LABELS[i]! })), onChange: (type) => setProperties({ outputs: [{ ...primary, type }, ...pins.outputs.slice(1)] }) },
       ]} /> : null}
-      <PinListEditor title="Inputs" rows={pins.inputs} types={TYPES} showDefault={false} selectedId={selectedInput} onSelect={selectInput} onChange={(rows) => setPins("inputs", rows)} testIdPrefix="custom-glsl-input" />
-      <PinListEditor title="Additional Outputs" rows={pins.outputs.slice(1)} types={TYPES} showDefault={false} selectedId={selectedOutput} onSelect={selectOutput} onChange={(rows) => setPins("outputs", rows)} testIdPrefix="custom-glsl-output" />
+      <PinListEditor title="Inputs" rows={pins.inputs} types={TYPES} showDefault={false} showOptional={false} selectedId={selectedInput} onSelect={selectInput} onChange={(rows) => setPins("inputs", rows)} testIdPrefix="custom-glsl-input" />
+      <PinListEditor title="Additional Outputs" rows={pins.outputs.slice(1)} types={TYPES} showDefault={false} showOptional={false} selectedId={selectedOutput} onSelect={selectOutput} onChange={(rows) => setPins("outputs", rows)} testIdPrefix="custom-glsl-output" />
     </> : <Button variant="outline" onClick={() => {
       const resolved = createTypeResolver(document).genericOf(node.id);
       if (!resolved || resolved === "conflict" || resolved === "texture") return;
@@ -42,7 +43,7 @@ export function MaterialCustomGlsl({ node, document, setProperties }: {
       <MultilineTextField id="material-node-glsl" title={pins ? "GLSL Function Body" : "GLSL Expression"}
         value={body} onChange={(body) => setProperties({ body })} data-testid="material-node-glsl"
         renderPreview={(value) => <GlslCodePreview value={value} />}
-        renderEditor={(value, onChange) => <CodeBodyEditor value={value} onChange={onChange} language="glsl" />}
+        renderEditor={(value, onChange) => <CodeBodyEditor value={value} onChange={onChange} language="glsl" bodyLine={bodyLine} />}
       />
       <FieldDescription data-testid="material-node-glsl-signature">
         {pins ? "Use input names as variables. Return the primary output; assign additional output names before returning. Pin names are case sensitive. Renaming a pin requires updating its references in the code." : "Legacy expression: result = fn(a, b). Convert to add typed pins and statements."} GLSL/WebGL only. Use Render to compile.

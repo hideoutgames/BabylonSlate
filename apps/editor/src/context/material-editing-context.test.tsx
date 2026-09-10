@@ -39,6 +39,7 @@ function sampledRock() {
 }
 
 const harness = vi.hoisted(() => ({
+  functionAssets: [] as Array<{ path: string; header: { guid: string; type: string; payload: unknown } }>,
   playing: false,
   engine: {
     registerView: vi.fn(),
@@ -117,7 +118,7 @@ vi.mock("./play-context", () => ({
 }));
 
 const assetRegistry = {
-  list: () => [harness.textureAsset],
+  list: () => [harness.textureAsset, ...harness.functionAssets],
   getByGuid: (guid: string) => guid === harness.textureAsset.header.guid ? harness.textureAsset : null,
 };
 
@@ -178,6 +179,10 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
           : harness.acquireResult;
       }
       dispose() {}
+      materialFor() { return null; }
+      release() {}
+      markDirty() {}
+      cancelPending() {}
       releaseScene() {}
       invalidate() {
         harness.invalidateCalls += 1;
@@ -235,6 +240,7 @@ function mount(active = true, children?: ReactNode) {
 
 describe("MaterialEditingProvider preview isolation", () => {
   beforeEach(() => {
+    harness.functionAssets = [];
     harness.playing = false;
     harness.engine.registerView.mockReset();
     harness.engine.unRegisterView.mockReset();
@@ -267,6 +273,13 @@ describe("MaterialEditingProvider preview isolation", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("loads a closed Material Function from its saved document chunk", async () => {
+    harness.functionAssets = [{ path: "assets/Wave.material-function.babasset", header: { guid: "wave", type: "MaterialFunction", payload: {} } }];
+    harness.readAssetChunk.mockImplementation(async (_path, chunkId) => chunkId === "document" ? new TextEncoder().encode(JSON.stringify({ name: "Saved Wave", nodes: [], edges: [], inputs: [], outputs: [] })) : null);
+    mount();
+    await waitFor(() => expect(harness.libraryOptions?.functions?.()).toMatchObject({ wave: { name: "Saved Wave" } }));
   });
 
   it("does not registerView, attachControl, resize, or runRenderLoop on the shared Engine", async () => {

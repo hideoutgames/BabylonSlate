@@ -59,6 +59,7 @@ import type {
   MaterialValueType,
 } from "@babylonslate/shader-graph";
 import { customGlslInterface, materialGradientStops } from "@babylonslate/shader-graph";
+import { customGlslFunctionName } from "./material-glsl-diagnostics";
 
 /**
  * One lowered operation realised as Babylon blocks.
@@ -614,7 +615,9 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   },
   "color.gradient": ({ name, operation }) => {
     const block = new GradientBlock(name);
-    block.colorSteps = materialGradientStops(operation.properties.stops).map((stop) => new GradientBlockColorStep(stop.position, Color3.FromArray(stop.color)));
+    const stops = [...new Map(materialGradientStops(operation.properties.stops).map((stop) => [stop.position, stop])).values()];
+    if (stops.length === 1) stops.push({ position: stops[0]!.position === 1 ? 0 : 1, color: stops[0]!.color });
+    block.colorSteps = stops.sort((a, b) => a.position - b.position).map((stop) => new GradientBlockColorStep(stop.position, Color3.FromArray(stop.color)));
     return single(block, { value: block.gradient }, { out: block.output });
   },
   "shading.fresnel": ({ name, plumbing }) => {
@@ -747,7 +750,7 @@ ADAPTERS["custom.glsl"] = ({ name, operation }) => {
   if (pins) {
     const primary = pins.outputs[0]!;
     const additional = pins.outputs.slice(1);
-    const functionName = `custom_${Array.from(name, (char) => char.codePointAt(0)!.toString(16)).join("_")}`;
+    const functionName = customGlslFunctionName(operation.id);
     const helper = `${functionName}_body`;
     const block = new CustomBlock(name);
     const blockType = { float: "Float", vec2: "Vector2", vec3: "Vector3", vec4: "Vector4" };
@@ -762,7 +765,7 @@ ADAPTERS["custom.glsl"] = ({ name, operation }) => {
       code: [
         `${primary.type} ${helper}(${parameters.join(", ")}) {`,
         ...additional.map((pin) => `${pin.name} = ${pin.type}(0.0);`),
-        `// Authored Custom GLSL body`,
+        `// CUSTOM_BODY_${functionName}`,
         String(operation.properties.body ?? ""),
         `}`,
         `void ${functionName}(${wrapperParameters.join(", ")}) {`,

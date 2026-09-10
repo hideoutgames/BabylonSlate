@@ -39,6 +39,7 @@ import type {
   MaterialValueType,
 } from "@babylonslate/shader-graph";
 import { materialNodeDefinition } from "@babylonslate/shader-graph";
+import { materialGlslDiagnostic } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
   createConstantBlock,
@@ -514,9 +515,10 @@ export function compileMaterialPlan(
             if (Date.now() - started > 15000) throw new Error("Custom GLSL shader compilation timed out");
             shaderTimer = setTimeout(check, 16);
           } catch (error) {
+            const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, shaderProbe?.subMeshes[0]?.effect);
             finishShaderCheck();
             buildState = "failed";
-            settleBuild([{ code: "material.compile.glsl", message: error instanceof Error ? error.message : String(error), severity: "error", nodeId: plan.operations.find((operation) => operation.nodeType === "custom.glsl")?.source.nodeId }]);
+            settleBuild([diagnostic]);
           }
         };
         check();

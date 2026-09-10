@@ -348,7 +348,7 @@ export function MaterialEditingProvider({
       }
       if (cancelled) return;
       textureBytesRef.current = next;
-      libraryRef.current?.invalidate();
+      libraryRef.current?.markDirty();
       setLoadedTextureGuidsKey(textureGuidsKey);
       dispatch({ type: "edit", cost: costClassRef.current });
     })();
@@ -377,8 +377,10 @@ export function MaterialEditingProvider({
   useEffect(() => {
     if (!compileKey) return;
     generationRef.current += 1;
+    const host = hostRef.current;
+    if (host) libraryRef.current?.cancelPending(host.scene, documentId);
     dispatch({ type: "edit", cost: costClassRef.current });
-  }, [compileKey, previewSceneEpoch]);
+  }, [compileKey, documentId, previewSceneEpoch]);
 
   // Trailing debounce so the final edit still compiles.
   useEffect(() => {
@@ -395,7 +397,9 @@ export function MaterialEditingProvider({
       dispatch({ type: "compileStart", generation });
       const started = performance.now();
       const editGeneration = generationRef.current;
+      const previous = library.materialFor(host.scene, documentId);
       const result = library.acquire(host.scene, documentId, document);
+      if (previous && !materialUnavailable(result)) library.release(host.scene, documentId);
       const errors = materialUnavailable(result) ? result.diagnostics : await result.ready;
       if (hostRef.current !== host || generationRef.current !== editGeneration) return;
       const durationMs = performance.now() - started;

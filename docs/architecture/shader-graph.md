@@ -409,6 +409,13 @@ authored stack runs.
 
 ## Authoring and runtime behavior
 
+GPU diagnostics map driver line numbers to Custom GLSL body lines when the
+processed shader still contains an unambiguous source marker, including inlined
+function call paths. Otherwise the original driver message is retained without
+an invented line number. Opening the GLSL editor selects a mapped error line.
+New edits cancel pending preview builds; dependency refresh marks existing
+materials dirty without discarding the displayed generation.
+
 Material pins display compact Float / V2 / V3 / V4 / Texture hints. Bound generic
 vectors use the resolved width for connections. Material Output groups Surface,
 Emission, Transparency and Geometry pins. Non-surface Details omit surface-only

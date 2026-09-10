@@ -35,6 +35,7 @@ import {
   isMaterialParameterNode,
   materialParameterName,
   materialGradientStops,
+  customGlslInterface,
   hydrateMaterialGraphForEditor,
   listUnconnectedMaterialPinDefaults,
   lowerMaterialDocument,
@@ -755,8 +756,10 @@ function MaterialNodeDetails({
   if (!node) return null;
 
   const setProperties = (properties: Record<string, unknown>) => {
+    const pins = node.type === "custom.glsl" && (properties.inputs || properties.outputs) ? customGlslInterface({ ...node.properties, ...properties }) : null;
     commit({
       ...document,
+      ...(pins ? { edges: document.edges.filter((edge) => (edge.sourceNodeId !== node.id || pins.outputs.some((pin) => pin.id === edge.sourcePinId)) && (edge.targetNodeId !== node.id || pins.inputs.some((pin) => pin.id === edge.targetPinId))) } : {}),
       nodes: document.nodes.map((entry) =>
         entry.id === node.id
           ? { ...entry, properties: { ...entry.properties, ...properties } }
@@ -854,6 +857,7 @@ function MaterialNodeDetails({
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
       {node.type === "color.gradient" ? <div className="px-3"><EntryListEditor
         title="Gradient Stops" items={materialGradientStops(node.properties.stops)}
+        minItems={2} maxItems={32}
         onCreate={() => ({ position: 0.5, color: [1, 1, 1] as [number, number, number] })}
         onChange={(stops) => setProperties({ stops })}
         renderItem={({ item, onChange }) => <PropertyGrid rows={[
@@ -862,7 +866,7 @@ function MaterialNodeDetails({
         ]} />}
       /></div> : null}
       {node.type === "custom.glsl" ? (
-        <MaterialCustomGlsl node={node} document={document} setProperties={setProperties} />
+        <MaterialCustomGlsl node={node} document={document} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
       ) : null}
       {node.type === "param.texture" ||
       node.type === "texture.sample" ||
@@ -1083,6 +1087,7 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
           selectedId={selectedInput}
           onSelect={selectInput}
           showDefault={false}
+          showOptional={false}
           types={MATERIAL_FUNCTION_PIN_TYPES}
           onChange={(rows) =>
             commit({ ...document, inputs: fromPinRows(rows, "in", document.inputs) })
@@ -1101,6 +1106,7 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
           selectedId={selectedOutput}
           onSelect={selectOutput}
           showDefault={false}
+          showOptional={false}
           types={MATERIAL_FUNCTION_PIN_TYPES}
           onChange={(rows) =>
             commit({ ...document, outputs: fromPinRows(rows, "out", document.outputs) })

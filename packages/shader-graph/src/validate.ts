@@ -46,6 +46,8 @@ export interface MaterialDiagnostic {
   nodeId?: string;
   pinId?: string;
   edgeId?: string;
+  line?: number;
+  stage?: "vertex" | "fragment";
 }
 
 export type MaterialCapabilities = Partial<Record<MaterialCapability, boolean>>;
