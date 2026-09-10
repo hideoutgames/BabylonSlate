@@ -804,7 +804,8 @@ describe("material compiler", () => {
     ) as TextureBlock | undefined;
     expect(sample?.texture).toBe(resolved);
     expect(sample?.uv.isConnected).toBe(true);
-    const uvSource = sample?.uv.connectedPoint?.ownerBlock as
+    const morph = sample?.uv.connectedPoint?.ownerBlock as unknown as { uv?: { connectedPoint?: { ownerBlock?: unknown } } };
+    const uvSource = morph?.uv?.connectedPoint?.ownerBlock as
       | { isAttribute?: boolean; name?: string }
       | undefined;
     expect(uvSource?.isAttribute).toBe(true);

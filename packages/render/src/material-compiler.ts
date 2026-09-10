@@ -9,6 +9,7 @@ import {
   ImageProcessingBlock,
   InputBlock,
   Material,
+  MeshBuilder,
   NodeMaterial,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
@@ -464,6 +465,15 @@ export function compileMaterialPlan(
   // so a silent failure would otherwise look like a successful compile.
   let buildError: string | null = null;
   let buildState: CompiledMaterial["buildState"] = "pending";
+  let disposed = false;
+  let checkingShader = false;
+  let shaderTimer: ReturnType<typeof setTimeout> | undefined;
+  let shaderProbe: Mesh | null = null;
+  const finishShaderCheck = () => {
+    if (shaderTimer !== undefined) clearTimeout(shaderTimer);
+    shaderProbe?.dispose();
+    shaderProbe = null;
+  };
   let settleBuild!: (errors: readonly MaterialDiagnostic[]) => void;
   const ready = new Promise<readonly MaterialDiagnostic[]>((resolve) => { settleBuild = resolve; });
   materialBuilds.set(material, ready);
@@ -481,6 +491,36 @@ export function compileMaterialPlan(
     applyAuthoredSurfaceBlend(material, plan);
     syncSceneLighting(scene);
     if (buildState === "pending") {
+      if (checkingShader) return;
+      if (plan.domain === "surface" && plan.cost.customBlocks > 0 && scene.getEngine().getClassName() !== "NullEngine") {
+        checkingShader = true;
+        shaderProbe = MeshBuilder.CreateBox(`${options.name}_compileProbe`, { size: 1 }, scene);
+        shaderProbe.setEnabled(false);
+        shaderProbe.material = material;
+        const started = Date.now();
+        const check = () => {
+          if (disposed || !shaderProbe) return;
+          try {
+            const subMesh = shaderProbe.subMeshes[0]!;
+            if (material.isReadyForSubMesh(shaderProbe, subMesh)) {
+              finishShaderCheck();
+              buildState = "ready";
+              settleBuild([]);
+              return;
+            }
+            const error = subMesh.effect?.getCompilationError();
+            if (error && subMesh.effect?.allFallbacksProcessed()) throw new Error(error);
+            if (Date.now() - started > 15000) throw new Error("Custom GLSL shader compilation timed out");
+            shaderTimer = setTimeout(check, 16);
+          } catch (error) {
+            finishShaderCheck();
+            buildState = "failed";
+            settleBuild([{ code: "material.compile.glsl", message: error instanceof Error ? error.message : String(error), severity: "error", nodeId: plan.operations.find((operation) => operation.nodeType === "custom.glsl")?.source.nodeId }]);
+          }
+        };
+        check();
+        return;
+      }
       buildState = "ready";
       settleBuild([]);
     }
@@ -507,7 +547,6 @@ export function compileMaterialPlan(
   syncSceneLighting(scene);
 
   const loadObservers: Array<() => void> = [];
-  let disposed = false;
   const rebuildWhenReady = (): void => {
     if (disposed) return;
     const wasFrozen = material.isFrozen;
@@ -577,6 +616,7 @@ export function compileMaterialPlan(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      finishShaderCheck();
       if (buildState === "pending") {
         buildState = "failed";
         settleBuild([{ code: "material.compile.cancelled", message: "Material build was cancelled", severity: "error" }]);

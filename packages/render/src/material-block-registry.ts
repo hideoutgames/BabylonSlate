@@ -648,8 +648,9 @@ const ADAPTERS: Record<string, BlockAdapter> = {
  * adapter table.
  */
 function textureSampleAdapter(lod: boolean): BlockAdapter {
-  return ({ name }) => {
+  return ({ name, operation }) => {
     const block = new TextureBlock(name, true);
+    block.convertToLinearSpace = operation.properties.colorSpace === "color";
     const inputs: Record<string, NodeMaterialConnectionPoint> = {
       uv: block.uv,
     };

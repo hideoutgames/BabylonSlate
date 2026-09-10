@@ -8,6 +8,7 @@ import { normalizeSkeletonPayload } from "../skeleton-payload";
 import { nextCopyName } from "../unique-names";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
+import { importedGltfMaterial } from "./gltf-material";
 import {
   ingestGltfForImport,
   parseGlbForBrowse,
@@ -124,6 +125,7 @@ function importFromBrowse(
   }
 
   const materialGuids: string[] = [];
+  const preservedMaterialSlots = new Set<number>();
   if (browse.materials.length === 0) {
     const textureGuid = imageGuids[0] ?? newAssetGuid();
     if (imageGuids.length === 0) {
@@ -156,28 +158,24 @@ function importFromBrowse(
     for (const [i, material] of browse.materials.entries()) {
       const materialGuid = newAssetGuid();
       materialGuids.push(materialGuid);
-      const dep =
-        material.albedoImageIndex != null &&
-        imageGuids[material.albedoImageIndex]
-          ? [imageGuids[material.albedoImageIndex]!]
-          : imageGuids[0]
-            ? [imageGuids[0]]
-            : [];
       const materialName = uniqueImportName(
         `${name}_${material.name}`,
         usedNames,
       );
+      const imported = importedGltfMaterial(materialName, material, imageGuids);
+      if (imported.preserveSource) preservedMaterialSlots.add(i);
       results.push({
         type: "Material",
         name: materialName,
         guid: materialGuid,
         version: MATERIAL_PAYLOAD_VERSION,
-        dependencies: dep,
+        dependencies: imported.dependencies,
         parentClass: null,
         // The slot index keeps model-to-material assignment stable across
         // re-imports even when material names change.
         payload: {
-          ...importedMaterialPayload(materialName, dep[0], material.unlit),
+          ...imported.document,
+          ...(imported.preserveSource ? { importNotice: "The Model retains its glTF material because this graph does not represent every imported feature." } : {}),
           slotIndex: i,
         },
         chunks: [],
@@ -263,7 +261,7 @@ function importFromBrowse(
         materialSlots: materialGuids.map((guid, index) => ({
           index,
           name: slotNames[index],
-          materialGuid: guid,
+          materialGuid: preservedMaterialSlots.has(index) ? null : guid,
         })),
         skeletonGuid,
         importScale,

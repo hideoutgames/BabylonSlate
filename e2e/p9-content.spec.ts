@@ -824,7 +824,7 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("play-preview")).toBeEnabled();
   });
 
-  test("Custom GLSL node compiles an expression in the Material editor", async ({
+  test("Custom GLSL node compiles a function body in the Material editor", async ({
     page,
   }) => {
     await openMinimalTestProject(page);
@@ -839,16 +839,16 @@ test.describe("P9 content systems", () => {
     await expect(glsl).toBeVisible();
     await expect(
       page.getByTestId("material-node-glsl-signature"),
-    ).toContainText("result = fn(a, b)");
+    ).toContainText("Return the primary output");
     await glsl.click();
-    const glslEditor = page.getByTestId("material-node-glsl-editor");
+    const glslEditor = page.getByRole("textbox", { name: "GLSL Function Body" });
     await glslEditor.fill("#define X 1");
     await page.getByTestId("material-node-glsl-done").click();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),
     ).toBeVisible({ timeout: 10_000 });
     await glsl.click();
-    await glslEditor.fill("a + b");
+    await glslEditor.fill("return A + B;");
     await page.getByTestId("material-node-glsl-done").click();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),

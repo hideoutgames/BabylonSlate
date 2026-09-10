@@ -838,6 +838,12 @@ function MaterialNodeDetails({
       path: asset.path,
     }));
 
+  if (node.type === "texture.sample" || node.type === "texture.sampleLod") rows.push({
+    id: "colorSpace", kind: "enum", label: "Color Space", value: String(node.properties.colorSpace ?? "legacy"),
+    options: [{ value: "color", label: "Color (sRGB)" }, { value: "data", label: "Data (Linear)" }, { value: "legacy", label: "Legacy (Unconverted)" }],
+    onChange: (colorSpace) => setProperties({ colorSpace }),
+  });
+
   return (
     <div className="flex flex-col gap-2" data-testid="material-node-details">
       <p className="px-3 text-xs text-muted-foreground">{node.type}</p>

@@ -409,6 +409,21 @@ authored stack runs.
 
 ## Not implemented
 
+Imported glTF graphs retain base-color/alpha factors, metallic and roughness
+factors and packed B/G channels, emissive factors/textures, normal maps, alpha
+mode/cutoff and double-sidedness. Color texture samples convert sRGB to linear;
+normal and packed data samples remain unconverted. Texture Details exposes the
+color-space choice, with legacy graphs retaining their original behavior.
+Unsupported material extensions, occlusion or texture-coordinate transforms keep
+the Model slot on Babylon's source material instead of substituting a partial
+graph. Unrelated images are never borrowed as albedo. Extracted graphs remain
+available for explicit editing/assignment.
+
+Surface Custom GLSL readiness includes a bounded GPU shader check on a hidden
+probe mesh before the library publishes a replacement. GLSL failures retain the
+previous material. NullEngine unit tests check graph construction only; browser
+checks exercise the GPU compiler.
+
 Surface vertex plumbing applies Morph Targets, Instances and Bones before world
 position/normal transforms and authored World Position Offset. Normal Map exposes
 UV (mesh UV when unwired) and Strength. Gradient Details edits up to 32 normalized
