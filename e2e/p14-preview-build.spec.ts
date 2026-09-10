@@ -308,7 +308,7 @@ test.describe("P14 Preview Build", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
-  test("Preview Build Main Scene Mannequin is not slim-stub red or the error sampler", async ({
+  test("Preview Build preserves Mannequin source material without slim-stub red or the error sampler", async ({
     page,
   }) => {
     test.setTimeout(180_000);
@@ -328,7 +328,9 @@ test.describe("P14 Preview Build", () => {
       .poll(
         async () => {
           const names = await previewSlotMaterialNames(page);
-          return names.some((name) => name.startsWith("material:"))
+          // The fixture declares KHR_texture_transform. Until graph import
+          // supports it, retain its loader material and embedded texture.
+          return names.includes("texture-d")
             ? "bound"
             : names.join(",") || "none";
         },
