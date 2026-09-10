@@ -208,7 +208,7 @@ export function collectFunctionDependencies(
 }
 
 interface ValidateGraphOptions extends MaterialValidationContext {
-  domain: MaterialDomain;
+  domain?: MaterialDomain;
   /** Function graphs use their interface pins instead of a terminal node. */
   functionInterface?: MaterialFunctionDocument;
 }
@@ -307,6 +307,7 @@ function validateGraph(
       node.type !== "function.call" &&
       node.type !== "function.input" &&
       node.type !== "function.output" &&
+      options.domain !== undefined &&
       !nodeIsLegalInDomain(node.type, options.domain)
     ) {
       diagnostics.push({
@@ -525,7 +526,8 @@ export function validateMaterialDocument(
   doc: MaterialDocument,
   context: MaterialValidationContext = {},
 ): MaterialDiagnostic[] {
-  const diagnostics = validateGraph(doc, { ...context, domain: doc.domain });
+  const diagnostics = validateGraph(doc, { ...context, functions: context.functions ?? {}, domain: doc.domain });
+  diagnostics.push(...validateCalledFunctions(doc, context, doc.domain));
   const terminalType = terminalNodeTypeFor(doc.domain);
   const terminals = doc.nodes.filter((node) => node.type === terminalType);
   if (terminals.length === 0) {
@@ -557,7 +559,7 @@ export function validateMaterialDocument(
     });
   }
 
-  if (doc.domain === "surface") {
+  if (doc.domain === "surface" && !dependencies.recursion) {
     diagnostics.push(
       ...validateWorldPositionOffsetStage(doc, context.functions ?? {}),
     );
@@ -719,10 +721,54 @@ export function validateMaterialFunctionDocument(
 ): MaterialDiagnostic[] {
   const diagnostics = validateGraph(fn, {
     ...context,
-    // Functions must stay domain-neutral so either material kind can call them.
-    domain: "surface",
+    // The caller supplies the domain; standalone functions may use any domain.
     functionInterface: fn,
   });
+  diagnostics.push(...validateFunctionInterface(fn));
+  diagnostics.push(...validateCalledFunctions(fn, context));
+
+  const dependencies = collectFunctionDependencies(fn, context.functions ?? {});
+  if (dependencies.recursion) {
+    diagnostics.push({
+      code: "material.function.recursive",
+      message: `Material Functions call each other in a loop: ${dependencies.recursion.join(" → ")}`,
+      severity: "error",
+    });
+  }
+  return diagnostics;
+}
+
+function validateCalledFunctions(
+  graph: GraphLike,
+  context: MaterialValidationContext,
+  domain?: MaterialDomain,
+  visiting: readonly string[] = [],
+  prefix = "",
+): MaterialDiagnostic[] {
+  const functions = context.functions ?? {};
+  const diagnostics: MaterialDiagnostic[] = [];
+  for (const call of graph.nodes) {
+    if (call.type !== "function.call") continue;
+    const guid = call.properties.functionGuid;
+    if (typeof guid !== "string" || visiting.includes(guid)) continue;
+    const fn = functions[guid];
+    if (!fn) continue; // validateGraph reports the missing call at this level.
+    const callPrefix = `${prefix}${call.id}/`;
+    const local = [
+      ...validateGraph(fn, { ...context, functions, domain, functionInterface: fn }),
+      ...validateFunctionInterface(fn),
+    ];
+    diagnostics.push(...local.map((diagnostic) => ({
+      ...diagnostic,
+      nodeId: diagnostic.nodeId ? `${callPrefix}${diagnostic.nodeId}` : `${prefix}${call.id}`,
+    })));
+    diagnostics.push(...validateCalledFunctions(fn, context, domain, [...visiting, guid], callPrefix));
+  }
+  return diagnostics;
+}
+
+function validateFunctionInterface(fn: MaterialFunctionDocument): MaterialDiagnostic[] {
+  const diagnostics: MaterialDiagnostic[] = [];
 
   if (fn.outputs.length === 0) {
     diagnostics.push({
@@ -761,20 +807,6 @@ export function validateMaterialFunctionDocument(
       });
     }
     seen.add(pin.id);
-  }
-
-  const dependencies = collectFunctionDependencies(
-    fn,
-    context.functions ?? {},
-  );
-  if (dependencies.recursion) {
-    diagnostics.push({
-      code: "material.function.recursive",
-      message: `Material Functions call each other in a loop: ${dependencies.recursion.join(
-        " → ",
-      )}`,
-      severity: "error",
-    });
   }
 
   return diagnostics;

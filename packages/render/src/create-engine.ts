@@ -839,6 +839,12 @@ export function createEngine(
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
     },
+    onMaterialReady: () => {
+      rebuildPostProcessStack();
+      const serialized = editorSync?.serializedScene();
+      if (editorSync && serialized) editorSync.apply(serialized);
+      scheduler.invalidate("asset");
+    },
   });
   binding.resolveMaterial = (guid, options) => {
     const host = options?.scene ?? scene;

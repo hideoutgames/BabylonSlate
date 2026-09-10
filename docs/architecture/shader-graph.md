@@ -182,6 +182,13 @@ Babylon lacks are composed from existing ones rather than raw source — `fwidth
 is derivatives plus absolute values plus an add, `log2` is a scaled natural log,
 `inversesqrt` is a reciprocal square root.
 
+Compiled graph assembly exposes `ready`, which settles after Babylon finishes
+loading block shader code and building the graph. Preview awaits this result;
+the library retains the previous generation until a replacement succeeds.
+Deferred failures retain diagnostics instead of publishing a broken replacement.
+Function validation follows nested calls in the caller's domain and capabilities,
+with call-path diagnostics. Recursive calls never enter the WPO stage walker.
+
 `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
 refcounts instances. A Babylon material belongs to one Scene, so the editor
 viewport, a preview tab and a Play session each hold their own. A new material

@@ -356,22 +356,25 @@ export function MaterialEditingProvider({
   }, [previewState.status, previewState.generation]);
 
   const compile = useCallback(
-    (generation: number) => {
+    async (generation: number) => {
       const host = hostRef.current;
       const library = libraryRef.current;
       if (!host || !library || !document) return;
       dispatch({ type: "compileStart", generation });
       const started = performance.now();
+      const editGeneration = generationRef.current;
       const result = library.acquire(host.scene, documentId, document);
+      const errors = materialUnavailable(result) ? result.diagnostics : await result.ready;
+      if (hostRef.current !== host || generationRef.current !== editGeneration) return;
       const durationMs = performance.now() - started;
-      if (materialUnavailable(result)) {
-        setCompileDiagnostics(result.diagnostics);
+      if (materialUnavailable(result) || errors.length) {
+        setCompileDiagnostics([...errors]);
         dispatch({
           type: "result",
           generation,
           ok: false,
           durationMs,
-          error: result.diagnostics[0]?.message,
+          error: errors[0]?.message,
         });
         finishManualRender();
         return;

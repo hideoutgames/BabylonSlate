@@ -58,6 +58,9 @@ export interface CompileMaterialOptions {
 export interface CompiledMaterial {
   ok: true;
   material: NodeMaterial;
+  /** Assembly succeeded. Await ready before publishing the material. */
+  ready: Promise<readonly MaterialDiagnostic[]>;
+  readonly buildState: "pending" | "ready" | "failed";
   setParameter: (name: string, parameter: MaterialParameterValue) => boolean;
   /** Idempotent: disposes the material and every block it created. */
   dispose: () => void;
@@ -69,6 +72,8 @@ export interface FailedMaterial {
 }
 
 export type CompileMaterialResult = CompiledMaterial | FailedMaterial;
+
+const materialBuilds = new WeakMap<NodeMaterial, Promise<readonly MaterialDiagnostic[]>>();
 
 function isEngineErrorSampler(texture: Texture): boolean {
   const engine =
@@ -443,23 +448,43 @@ export function compileMaterialPlan(
   // Babylon reports build failures through an observable rather than throwing,
   // so a silent failure would otherwise look like a successful compile.
   let buildError: string | null = null;
+  let buildState: CompiledMaterial["buildState"] = "pending";
+  let settleBuild!: (errors: readonly MaterialDiagnostic[]) => void;
+  const ready = new Promise<readonly MaterialDiagnostic[]>((resolve) => { settleBuild = resolve; });
+  materialBuilds.set(material, ready);
   const errorObserver = material.onBuildErrorObservable.add((message) => {
     buildError = message;
+    const diagnostic: MaterialDiagnostic = { code: "material.compile.buildFailed", message, severity: "error" };
+    if (buildState === "pending") {
+      buildState = "failed";
+      settleBuild([diagnostic]);
+    } else {
+      options.onTextureError?.(diagnostic);
+    }
+  });
+  const buildObserver = material.onBuildObservable.add(() => {
+    applyAuthoredSurfaceBlend(material, plan);
+    syncSceneLighting(scene);
+    if (buildState === "pending") {
+      buildState = "ready";
+      settleBuild([]);
+    }
   });
   try {
     material.build();
   } catch (error) {
     buildError =
       error instanceof Error ? error.message : "Material failed to build";
-  } finally {
-    material.onBuildErrorObservable.remove(errorObserver);
   }
   if (buildError !== null) {
+    material.onBuildErrorObservable.remove(errorObserver);
+    material.onBuildObservable.remove(buildObserver);
     diagnostics.push({
       code: "material.compile.buildFailed",
       message: buildError,
       severity: "error",
     });
+    settleBuild(diagnostics);
     return fail();
   }
 
@@ -531,10 +556,18 @@ export function compileMaterialPlan(
   return {
     ok: true,
     material,
+    ready,
+    get buildState() { return buildState; },
     setParameter: parameters.setParameter,
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      if (buildState === "pending") {
+        buildState = "failed";
+        settleBuild([{ code: "material.compile.cancelled", message: "Material build was cancelled", severity: "error" }]);
+      }
+      material.onBuildErrorObservable.remove(errorObserver);
+      material.onBuildObservable.remove(buildObserver);
       parameters.dispose();
       for (const unsubscribe of loadObservers) unsubscribe();
       detachEngineOwnedTextures(material);
@@ -1000,6 +1033,8 @@ export async function prewarmMaterial(
   material: NodeMaterial,
   mesh: Mesh | null,
 ): Promise<void> {
+  const errors = await materialBuilds.get(material);
+  if (errors?.length) throw new Error(errors[0]!.message);
   if (!mesh) return;
   if (material.mode === NodeMaterialModes.Particle) return;
   if (!nodeMaterialTexturesSampleReady(material)) return;
