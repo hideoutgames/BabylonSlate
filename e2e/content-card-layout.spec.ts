@@ -44,6 +44,7 @@ test(
     await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(
       0,
     );
+    await page.getByTestId("tree-row-assets").click();
 
     const folder = page.getByTestId("content-folder-assets/Folder");
     const scene = page.locator(
