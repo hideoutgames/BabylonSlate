@@ -22,7 +22,7 @@ import {
   type ControlMessage,
 } from "@babylonslate/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
-import { createRuntimeFromLoad, shouldSpawnScriptedActor } from "./play-load";
+import { createRuntimeFromLoad } from "./play-load";
 import { createPlayBootCoordinator } from "./play-boot";
 import { createPlayPauseGate } from "./play-pause-gate";
 import { applyInspectControl } from "./inspect-control";
@@ -85,12 +85,7 @@ function handleControl(msg: ControlMessage): void {
     }
     case "loadScripts": {
       const rt = ensureRuntime();
-      const spawn =
-        msg.spawn ??
-        msg.scripts
-          .filter((script) => shouldSpawnScriptedActor(script.classId))
-          .map((script) => ({ classId: script.classId }));
-      boot.queueScripts(rt, msg.scripts, spawn);
+      boot.queueScripts(rt, msg.scripts, msg.spawn ?? []);
       return;
     }
     case "loadAnimGraphs": {

@@ -703,7 +703,7 @@ describe("packedContentFromGame", () => {
     expect(content.audioReverbByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));
   });
 
-  it("queues loadScripts before play and drops GameInstance from spawn", async () => {
+  it("loads lifecycle classes without spawning unplaced actors", async () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -737,14 +737,14 @@ describe("packedContentFromGame", () => {
     if (!packed.ok) return;
     const game = await loadGameFromFiles(packed.value.files);
     const content = packedContentFromGame(game);
-    const boot = packedBootControls(content, game.scripts, [
-      { classId: "HudHost" },
-      { classId: "GameInstance" },
-    ]);
+    const boot = packedBootControls(content, game.scripts);
     expect(boot.map((entry) => entry.type)).toEqual(["loadScripts", "play"]);
     const scripts = boot.find((entry) => entry.type === "loadScripts");
-    expect(scripts && scripts.type === "loadScripts" ? scripts.spawn : undefined).toEqual([
-      { classId: "HudHost" },
-    ]);
+    expect(
+      scripts?.type === "loadScripts"
+        ? scripts.scripts.map((script) => script.classId)
+        : undefined,
+    ).toEqual(["HudHost", "GameInstance"]);
+    expect(scripts?.type === "loadScripts" ? scripts.spawn : undefined).toEqual([]);
   });
 });

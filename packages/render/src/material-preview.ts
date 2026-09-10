@@ -17,10 +17,18 @@ import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { MaterialPreviewMesh } from "@babylonslate/shader-graph";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
-import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
-import { applyMaterialToVisualMeshes, visualHierarchyBoundingVectors } from "./visual-meshes";
+import {
+  gltfLoaderExtension,
+  isGltfModelBytes,
+  packedGltfBytes,
+} from "./model-mesh";
+import {
+  applyMaterialToVisualMeshes,
+  visualHierarchyBoundingVectors,
+} from "./visual-meshes";
 import { installEngineDefaultMaterial } from "./default-material";
 import { createPreviewLighting } from "./preview-lighting";
+import { previewMeshesReady } from "./preview-readiness";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -427,6 +435,8 @@ export function createMaterialPreviewPresenter(
   let rtt: RenderTargetTexture | null = null;
   let blitInFlight = false;
   let lastPresentMs = Number.NEGATIVE_INFINITY;
+  let pendingForce = false;
+  let disposed = false;
 
   const releaseRtt = () => {
     host.camera.outputRenderTarget = null;
@@ -436,7 +446,12 @@ export function createMaterialPreviewPresenter(
 
   const ensureRtt = (width: number, height: number): RenderTargetTexture => {
     const current = rtt?.getSize();
-    if (rtt && current && current.width === width && current.height === height) {
+    if (
+      rtt &&
+      current &&
+      current.width === width &&
+      current.height === height
+    ) {
       return rtt;
     }
     releaseRtt();
@@ -456,7 +471,7 @@ export function createMaterialPreviewPresenter(
     void (async () => {
       try {
         const buffer = await texture.readPixels();
-        if (!buffer || !canvas.getContext) return;
+        if (disposed || !buffer || !canvas.getContext) return;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         const { width, height } = texture.getSize();
@@ -465,7 +480,11 @@ export function createMaterialPreviewPresenter(
         const bytes =
           buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
         ctx.putImageData(
-          new ImageData(flipReadPixelsRgba(bytes, width, height), width, height),
+          new ImageData(
+            flipReadPixelsRgba(bytes, width, height),
+            width,
+            height,
+          ),
           0,
           0,
         );
@@ -479,14 +498,20 @@ export function createMaterialPreviewPresenter(
 
   return {
     present: (options) => {
+      if (disposed) return;
+      pendingForce ||= options?.force === true;
       canvas.dataset.cameraRadius = String(host.camera.radius);
       if (frozen || blitInFlight) return;
       const at = now();
-      if (!options?.force && at - lastPresentMs < minIntervalMs) return;
+      if (!pendingForce && at - lastPresentMs < minIntervalMs) return;
       const size = previewBufferSize(canvas, maxSize);
       if (!size) return;
-      lastPresentMs = at;
       const texture = ensureRtt(size.width, size.height);
+      // Keep retrying at the caller's RAF cadence while textures/shaders load.
+      // An empty warm-up frame must not consume a static preview's 1 fps slot.
+      if (!previewMeshesReady(host.mesh)) return;
+      pendingForce = false;
+      lastPresentMs = at;
       host.scene.render();
       blit(texture);
     },
@@ -494,6 +519,7 @@ export function createMaterialPreviewPresenter(
       frozen = value;
     },
     dispose: () => {
+      disposed = true;
       releaseRtt();
     },
   };

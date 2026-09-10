@@ -728,30 +728,31 @@ export function ContentBrowserWorkspace({
         : false;
 
   useEffect(() => {
-    setThumbnailUrls((current) => {
-      for (const url of Object.values(current)) URL.revokeObjectURL(url);
-      return {};
-    });
+    for (const url of Object.values(thumbnailUrlsRef.current)) URL.revokeObjectURL(url);
+    thumbnailUrlsRef.current = {};
+    setThumbnailUrls({});
   }, [thumbnailEpoch]);
 
   useEffect(() => {
     if (!thumbnailsEnabled) return;
     let cancelled = false;
-    void (async () => {
-      const next = await syncContentBrowserThumbnailUrls({
-        mountedTextureGuids,
-        urls: thumbnailUrlsRef.current,
-        hidden,
-        load: loadAssetThumbnail,
-        createObjectURL: (blob) => URL.createObjectURL(blob),
-        revokeObjectURL: (url) => URL.revokeObjectURL(url),
-      });
-      if (!cancelled) setThumbnailUrls(next);
-    })();
+    void syncContentBrowserThumbnailUrls({
+      mountedTextureGuids,
+      urls: thumbnailUrlsRef.current,
+      hidden,
+      load: loadAssetThumbnail,
+      createObjectURL: (blob) => URL.createObjectURL(blob),
+      revokeObjectURL: (url) => URL.revokeObjectURL(url),
+      isCancelled: () => cancelled,
+      commit: (next) => {
+        thumbnailUrlsRef.current = next;
+        setThumbnailUrls(next);
+      },
+    });
     return () => {
       cancelled = true;
     };
-  }, [hidden, loadAssetThumbnail, mountedTextureGuids, thumbnailsEnabled]);
+  }, [hidden, loadAssetThumbnail, mountedTextureGuids, thumbnailEpoch, thumbnailsEnabled]);
 
   useEffect(() => {
     return () => {
@@ -1366,6 +1367,7 @@ export function ContentBrowserWorkspace({
         guid: string;
         path: string;
         payload: Record<string, unknown>;
+        type: "Model" | "Animation";
       }> = [];
       await runWithContentBrowserImportBusy(
         setBusy,
@@ -1408,11 +1410,12 @@ export function ContentBrowserWorkspace({
                 );
                 importedCount += 1;
                 for (const asset of created) {
-                  if (asset.header.type !== "Model") continue;
+                  if (asset.header.type !== "Model" && asset.header.type !== "Animation") continue;
                   createdModels.push({
                     guid: asset.header.guid,
                     path: asset.path,
                     payload: asset.header.payload ?? {},
+                    type: asset.header.type,
                   });
                 }
               } catch (err) {

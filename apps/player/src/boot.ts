@@ -44,7 +44,6 @@ import {
   loopGuardLoadFields,
   shouldHaltPlayerOnDiagnostic,
 } from "./debug-load";
-import { playerSpawnListForScripts } from "./spawn-list";
 import { packedFontCssStacks } from "./fonts";
 import { createPlayerConsoleHost } from "./console-host";
 import { createPlayerPauseState } from "./console-pause";
@@ -338,7 +337,6 @@ export function startPlayer(options: {
     deferSceneModelsReady: true,
   };
 
-  const spawn = playerSpawnListForScripts(game.scripts);
   let ticks = 0;
   let lastWorkerTickIndex = 0;
   let raf = 0;
@@ -461,7 +459,7 @@ export function startPlayer(options: {
       handle.pushSnapshot(buffer);
     });
     worker.postControl(loadControl);
-    for (const control of packedBootControls(content, game.scripts, spawn)) {
+    for (const control of packedBootControls(content, game.scripts)) {
       worker.postControl(control);
     }
   } catch {
@@ -476,7 +474,7 @@ export function startPlayer(options: {
     });
     const boot = createPlayBootCoordinator();
     if (game.scripts.length > 0) {
-      boot.queueScripts(inProcess, game.scripts, spawn);
+      boot.queueScripts(inProcess, game.scripts, []);
     }
     for (const entry of content.animGraphs) {
       const document = parseAnimGraphDocument(entry.document);

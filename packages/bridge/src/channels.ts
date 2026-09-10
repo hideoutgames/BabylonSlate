@@ -122,7 +122,7 @@ export type ControlMessage =
   | {
       type: "loadScripts";
       scripts: ScriptBundleEntry[];
-      /** Actors to spawn once the scripts are loaded. */
+      /** Explicit boot spawn requests. Omitted or empty only loads the classes. */
       spawn?: Array<{ classId: string; variables?: Record<string, unknown> }>;
     }
   | {

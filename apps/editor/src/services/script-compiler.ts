@@ -33,7 +33,6 @@ import {
 } from "./graph-validation";
 import { mergedPrefabComponentsForClass } from "../lib/prefab-instance-sync";
 
-const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
 
 type ClassPrefabContext = {
@@ -329,27 +328,6 @@ function classMetadataFromGraph(
     ...(variables.length > 0 ? { variables } : {}),
     ...(actorDefaults ? { actorDefaults } : {}),
   };
-}
-
-/** Scripts whose entry points bind to a lifecycle event get a live actor. */
-export function spawnListForScripts(
-  scripts: readonly ScriptBundleEntry[],
-): Array<{ classId: string }> {
-  const seen = new Set<string>();
-  const spawn: Array<{ classId: string }> = [];
-  for (const script of scripts) {
-    if (
-      !script.entryPoints.some(
-        (entry) => entry.event && ACTOR_LIFECYCLE_EVENTS.has(entry.event),
-      )
-    ) {
-      continue;
-    }
-    if (seen.has(script.classId)) continue;
-    seen.add(script.classId);
-    spawn.push({ classId: script.classId });
-  }
-  return spawn;
 }
 
 export type GraphCompileDocument = {

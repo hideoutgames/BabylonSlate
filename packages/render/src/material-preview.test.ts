@@ -69,7 +69,12 @@ class FakeCanvas {
   }
 
   getBoundingClientRect() {
-    return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight };
+    return {
+      left: 0,
+      top: 0,
+      width: this.clientWidth,
+      height: this.clientHeight,
+    };
   }
 
   capturedImages: Array<{ data: Uint8ClampedArray }> = [];
@@ -85,7 +90,11 @@ class FakeCanvas {
         this.capturedImages.push(image);
       },
       createImageData: (width, height) =>
-        ({ data: new Uint8ClampedArray(width * height * 4), width, height }) as ImageData,
+        ({
+          data: new Uint8ClampedArray(width * height * 4),
+          width,
+          height,
+        }) as ImageData,
     };
   }
 
@@ -165,9 +174,9 @@ describe("material preview scene", () => {
     const visuals = visualMeshes(host.mesh);
     expect(visuals).toHaveLength(2);
     for (const part of visuals) {
-      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
-        0,
-      );
+      expect(
+        part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0,
+      ).toBeGreaterThan(0);
     }
     const preview = new StandardMaterial("preview", host.scene);
     host.applyMaterial(preview);
@@ -262,7 +271,11 @@ describe("material preview scene", () => {
       Vector3.Zero(),
       scene,
     );
-    const placeholder = MeshBuilder.CreateBox("placeholder", { size: 10 }, scene);
+    const placeholder = MeshBuilder.CreateBox(
+      "placeholder",
+      { size: 10 },
+      scene,
+    );
     placeholder.visibility = 0;
     const part = MeshBuilder.CreateBox("part", { size: 1 }, scene);
     part.position.set(0, 8, 0);
@@ -321,9 +334,9 @@ describe("material preview orbit gestures", () => {
     expect(host.camera.target.x).toBeCloseTo(targetBefore.x, 5);
     expect(host.camera.target.y).toBeCloseTo(targetBefore.y, 5);
     expect(host.camera.target.z).toBeCloseTo(targetBefore.z, 5);
-    expect(host.camera.position.subtract(positionBefore).length()).toBeGreaterThan(
-      0.01,
-    );
+    expect(
+      host.camera.position.subtract(positionBefore).length(),
+    ).toBeGreaterThan(0.01);
   });
 
   it("does not orbit when blockOrbit is true", () => {
@@ -422,10 +435,66 @@ describe("material preview orbit gestures", () => {
 });
 
 describe("material preview presenter", () => {
-  it("renders through an output RenderTargetTexture instead of the default framebuffer", () => {
-    const created = engine();
+  async function previewHost(created = engine()) {
     const host = createMaterialPreviewScene(created as never);
     disposers.push(() => host.dispose());
+    // Pixel/readback tests need a renderable material; NullEngine cannot upload
+    // the editor default checker's RawTexture.
+    host.applyMaterial(new StandardMaterial("preview-fixture", host.scene));
+    await host.scene.whenReadyAsync();
+    return host;
+  }
+
+  it("waits for shader readiness without consuming the static preview frame interval", async () => {
+    const host = await previewHost();
+    const ready = vi.spyOn(host.mesh, "isReady").mockReturnValue(false);
+    const render = vi.spyOn(host.scene, "render");
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      new FakeCanvas() as unknown as HTMLCanvasElement,
+      { maxFps: 1, now: () => 0 },
+    );
+    disposers.push(() => presenter.dispose());
+
+    presenter.present({ force: true });
+    expect(render).not.toHaveBeenCalled();
+    ready.mockReturnValue(true);
+    presenter.present();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains forced redraws requested while the previous frame is being read", async () => {
+    let finishRead!: (pixels: Uint8Array) => void;
+    const read = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+      )
+      .mockResolvedValue(new Uint8Array(4));
+    disposers.push(() => read.mockRestore());
+    const host = await previewHost();
+    const render = vi.spyOn(host.scene, "render");
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      new FakeCanvas() as unknown as HTMLCanvasElement,
+      { maxFps: 1, now: () => 0 },
+    );
+    disposers.push(() => presenter.dispose());
+
+    presenter.present();
+    presenter.present({ force: true });
+    expect(render).toHaveBeenCalledTimes(1);
+    finishRead(new Uint8Array(4));
+    await Promise.resolve();
+    presenter.present();
+    expect(render).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders through an output RenderTargetTexture instead of the default framebuffer", async () => {
+    const created = engine();
+    const host = await previewHost(created);
     const canvas = new FakeCanvas();
     const registerView = vi.spyOn(created, "registerView");
     const resize = vi.spyOn(created, "resize");
@@ -443,9 +512,8 @@ describe("material preview presenter", () => {
     expect(host.camera.inputs.attachedToElement).toBeFalsy();
   });
 
-  it("clears the preview RTT on every scene render", () => {
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+  it("clears the preview RTT on every scene render", async () => {
+    const host = await previewHost();
     expect(host.scene.autoClear).toBe(true);
   });
 
@@ -455,8 +523,7 @@ describe("material preview presenter", () => {
       .spyOn(RenderTargetTexture.prototype, "readPixels")
       .mockResolvedValue(pixels);
     disposers.push(() => readPixels.mockRestore());
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     canvas.width = 1;
     canvas.height = 1;
@@ -477,13 +544,12 @@ describe("material preview presenter", () => {
     expect(canvas.widthAssigns + canvas.heightAssigns).toBe(assigns);
   });
 
-  it("skips scene.render while a blit is in flight", () => {
+  it("skips scene.render while a blit is in flight", async () => {
     const hang = vi
       .spyOn(RenderTargetTexture.prototype, "readPixels")
       .mockReturnValue(new Promise(() => {}));
     disposers.push(() => hang.mockRestore());
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     let now = 0;
     const presenter = createMaterialPreviewPresenter(
@@ -504,8 +570,7 @@ describe("material preview presenter", () => {
       .mockResolvedValue(new Uint8Array(4));
     disposers.push(() => readPixels.mockRestore());
     let now = 0;
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -535,8 +600,7 @@ describe("material preview presenter", () => {
       .mockResolvedValue(new Uint8Array(4));
     disposers.push(() => readPixels.mockRestore());
     let now = 0;
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -555,9 +619,8 @@ describe("material preview presenter", () => {
     expect(render).toHaveBeenCalledTimes(1);
   });
 
-  it("skips scene.render when frozen or the preview canvas has no size", () => {
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+  it("skips scene.render when frozen or the preview canvas has no size", async () => {
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -613,8 +676,7 @@ describe("material preview presenter", () => {
         delete (globalThis as { ImageData?: unknown }).ImageData;
       }
     });
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,
@@ -623,7 +685,9 @@ describe("material preview presenter", () => {
     );
     disposers.push(() => presenter.dispose());
     presenter.present({ force: true });
-    await vi.waitFor(() => expect(canvas.capturedImages.length).toBeGreaterThan(0));
+    await vi.waitFor(() =>
+      expect(canvas.capturedImages.length).toBeGreaterThan(0),
+    );
     const image = canvas.capturedImages[0]!;
     expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
     expect([
@@ -631,9 +695,8 @@ describe("material preview presenter", () => {
     ]).toEqual([255, 0, 0, 255]);
   });
 
-  it("clears the camera output target on dispose", () => {
-    const host = createMaterialPreviewScene(engine() as never);
-    disposers.push(() => host.dispose());
+  it("clears the camera output target on dispose", async () => {
+    const host = await previewHost();
     const canvas = new FakeCanvas();
     const presenter = createMaterialPreviewPresenter(
       host,

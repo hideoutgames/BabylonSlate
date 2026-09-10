@@ -2,6 +2,8 @@ export type ModelThumbnailJob = {
   guid: string;
   path: string;
   payload: Record<string, unknown>;
+  type?: "Model" | "Animation";
+  onlyIfMissing?: boolean;
 };
 
 type Listener = (jobs: ModelThumbnailJob[]) => void;
