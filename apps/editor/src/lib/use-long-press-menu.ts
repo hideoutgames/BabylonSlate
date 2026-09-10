@@ -61,6 +61,8 @@ export function useLongPressMenu(options: {
     (event: ReactMouseEvent) => {
       if (!suppressClickAfterHold || !suppressClickRef.current) return;
       suppressClickRef.current = false;
+      // Keyboard activation has no pointer release click to consume.
+      if (event.detail === 0) return;
       event.preventDefault();
       event.stopPropagation();
     },

@@ -205,6 +205,9 @@ describe("ViewportToolbar", () => {
     expect(harness.applySceneChange).not.toHaveBeenCalled();
     fireEvent.contextMenu(snap);
     expect(screen.getByLabelText("Scale Snap")).toHaveProperty("value", "0.1");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(snap, { detail: 0 });
+    expect(harness.setSnapEnabled).toHaveBeenCalledWith(true);
   });
 
   it("opens on a stationary touch hold and consumes its release click", () => {
@@ -220,7 +223,7 @@ describe("ViewportToolbar", () => {
     act(() => vi.advanceTimersByTime(500));
     expect(screen.getByRole("alertdialog")).toBeTruthy();
     fireEvent.pointerUp(snap, { pointerType: "touch", pointerId: 4 });
-    fireEvent.click(snap);
+    fireEvent.click(snap, { detail: 1 });
     expect(harness.setSnapEnabled).not.toHaveBeenCalled();
     expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
@@ -265,7 +268,7 @@ describe("ViewportToolbar", () => {
       "60",
     );
     fireEvent.change(
-      screen.getByRole("textbox", { name: "Grid Size", exact: true }),
+      screen.getByRole("textbox", { name: "Grid Size" }),
       { target: { value: "2" } },
     );
     fireEvent.change(screen.getByLabelText("Rotation Snap (Degrees)"), {
