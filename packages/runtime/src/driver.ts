@@ -3237,7 +3237,6 @@ class InProcessRuntime implements RuntimeDriver {
       });
       component.logic = logic;
       this.scriptHost.bindInterfaceHandlers(logic);
-      logic.callOnCreation();
     }
     const script = this.scriptHost.scriptsFor(actor.classId)[0];
     const defaults = script?.actorDefaults;

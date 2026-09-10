@@ -9,7 +9,7 @@ it("runs separate ComponentLogic instances with their component and disposes the
   });
   await runtime.loadScripts([{ assetGuid: "counter", classId: "Counter", parentClassId: "ComponentLogic", anchors: [],
     entryPoints: ["onBeginPlay", "onTick", "onDestroyed"].map((name) => ({ name, event: name, isAsync: false })),
-    source: `export function onBeginPlay(ctx) { ctx.self.setVariable("count", 0); ctx.self.getVariable("component").setVariable("began", true); }
+    source: `export function onBeginPlay(ctx) { ctx.self.setVariable("count", 0); if (!ctx.self.getVariable("component").owner.world) throw new Error("Owner must be spawned"); ctx.self.getVariable("component").setVariable("began", true); }
       export function onTick(ctx) { ctx.self.setVariable("count", ctx.self.getVariable("count") + 1); }
       export function onDestroyed(ctx) { ctx.self.getVariable("component").setVariable("ended", true); }`,
   }]);

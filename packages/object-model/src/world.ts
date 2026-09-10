@@ -240,6 +240,7 @@ export class World {
     actor.spawnIndex = this.actors.length;
     this.actors.push(actor);
     actor.callOnCreation();
+    for (const component of actor.components) component.logic?.callOnCreation();
   }
 
   private flushDeferred(): void {

@@ -71,7 +71,7 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   );
   const start = await center(title);
   const near = {
-    x: start.x + source.x + 50 - target.x,
+    x: start.x + source.x + 24 - target.x,
     y: start.y + source.y - target.y,
   };
   await expect(preview).toHaveCount(0);
@@ -117,7 +117,7 @@ test("nearby unused graph pins preview during a node drag and connect only on dr
   await page.mouse.move(secondStart.x, secondStart.y);
   await page.mouse.down();
   await page.mouse.move(
-    secondStart.x + secondSource.x + 50 - secondTarget.x,
+    secondStart.x + secondSource.x + 24 - secondTarget.x,
     secondStart.y + secondSource.y - secondTarget.y,
     { steps: 30 },
   );

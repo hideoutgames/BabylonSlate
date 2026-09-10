@@ -6,7 +6,7 @@ import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
 import { Button } from "@babylonslate/ui/components/button";
 import { codeHighlight, glslLanguage } from "./code-highlighting";
-import { autocompletion, completionKeymap, startCompletion } from "@codemirror/autocomplete";
+import { autocompletion, closeCompletion, completionKeymap, startCompletion } from "@codemirror/autocomplete";
 import { codeCompletions } from "./code-completion";
 
 export type JsBodyEditorProps = {
@@ -61,7 +61,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         autocompletion(),
         (language === "glsl" ? glslLanguage : javascript().language).data.of({ autocomplete: (context: import("@codemirror/autocomplete").CompletionContext) => codeCompletions(context, language, namesRef.current) }),
         EditorView.contentAttributes.of({ "aria-label": language === "glsl" ? "GLSL Function Body" : "JavaScript Function Body" }),
-        keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
+        keymap.of([{ key: "Escape", run: closeCompletion, stopPropagation: true }, ...completionKeymap, ...defaultKeymap, ...historyKeymap]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChangeRef.current(update.state.doc.toString());
