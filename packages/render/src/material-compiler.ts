@@ -1,6 +1,7 @@
 import {
   AddBlock,
   FragmentOutputBlock,
+  ImageProcessingBlock,
   InputBlock,
   Material,
   NodeMaterial,
@@ -17,9 +18,11 @@ import {
   type Mesh,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
+  type NodeMaterialDefines,
   type Scene,
   type Texture,
 } from "@babylonjs/core";
+import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import type {
   MaterialBuildPlan,
@@ -860,6 +863,28 @@ function createPostProcessPlumbing(
  * Wire the authored surface channels into either the PBR shading block or a
  * direct fragment write for unlit materials.
  */
+// ImageProcessingBlock normally expects display-space input and skips processing
+// when no effects are enabled. Our PBR sum is linear, so it still needs the
+// standard gamma conversion in that case, just like Babylon's PBR final output.
+class LinearSurfaceImageProcessingBlock extends ImageProcessingBlock {
+  override getClassName(): string {
+    return "LinearSurfaceImageProcessingBlock";
+  }
+
+  override prepareDefines(
+    defines: NodeMaterialDefines,
+    material: NodeMaterial,
+  ): void {
+    super.prepareDefines(defines, material);
+    if (!defines.IMAGEPROCESSINGPOSTPROCESS) defines.IMAGEPROCESSING = true;
+  }
+}
+
+RegisterClass(
+  "BABYLON.LinearSurfaceImageProcessingBlock",
+  LinearSurfaceImageProcessingBlock,
+);
+
 function attachSurfaceShading(
   plan: MaterialBuildPlan,
   options: CompileMaterialOptions,
@@ -875,9 +900,34 @@ function attachSurfaceShading(
   created.push(fragment);
 
   const baseColor = outputPoint("baseColor", `${options.name}_baseColor`, true);
+  const emissionOperand = plan.outputs.emissive;
+  const hasEmission =
+    emissionOperand &&
+    !(
+      emissionOperand.kind === "constant" &&
+      emissionOperand.value.every((value) => value === 0)
+    );
+  const emissive = hasEmission
+    ? outputPoint("emissive", `${options.name}_emissive`, true)
+    : null;
+  const addColor = (
+    left: NodeMaterialConnectionPoint,
+    right: NodeMaterialConnectionPoint,
+    suffix: string,
+  ) => {
+    const add = new AddBlock(`${options.name}_${suffix}`);
+    created.push(add);
+    left.connectTo(add.left);
+    right.connectTo(add.right);
+    return add.output;
+  };
 
   if (plan.shadingModel === "unlit") {
-    if (baseColor) baseColor.connectTo(fragment.rgb);
+    const color =
+      baseColor && emissive
+        ? addColor(baseColor, emissive, "unlitEmission")
+        : (baseColor ?? emissive);
+    if (color) color.connectTo(fragment.rgb);
     const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
     if (opacity) opacity.connectTo(fragment.a);
     return fragment;
@@ -922,7 +972,23 @@ function attachSurfaceShading(
   const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
   if (opacity) opacity.connectTo(pbr.opacity);
 
-  pbr.lighting.connectTo(fragment.rgb);
+  if (emissive) {
+    // These are the linear contributions supported by our surface compiler.
+    // pbr.lighting has already passed through image processing and must not be
+    // used for an additive linear emissive contribution.
+    const diffuse = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
+    const lit = addColor(diffuse, pbr.specularDir, "litColor");
+    const color = addColor(lit, emissive, "surfaceEmission");
+    const imageProcessing = new LinearSurfaceImageProcessingBlock(
+      `${options.name}_imageProcessing`,
+    );
+    imageProcessing.convertInputToLinearSpace = false;
+    created.push(imageProcessing);
+    color.connectTo(imageProcessing.color);
+    imageProcessing.rgb.connectTo(fragment.rgb);
+  } else {
+    pbr.lighting.connectTo(fragment.rgb);
+  }
   return fragment;
 }
 
