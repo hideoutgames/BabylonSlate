@@ -9,7 +9,7 @@ export function exportOptions(teamId, profileUuid) {
 }
 
 export function validateAppleBundle(identity, info, entitlements, teamId) {
-  if (info.CFBundleIdentifier !== APPLE_BUNDLE_ID || info.CFBundleShortVersionString !== identity.appleMarketingVersion || info.CFBundleVersion !== identity.appleBuildNumber || JSON.stringify(info.UIDeviceFamily) !== "[2]" || info.CFBundleDisplayName !== "BabylonSlate" || !/^iphoneos(?:2[6-9]|[3-9]\d)\./.test(info.DTSDKName) || typeof info.ITSAppUsesNonExemptEncryption !== "boolean") throw new Error("Exported Apple bundle identity, target, SDK or encryption declaration is invalid");
+  if (info.CFBundleIdentifier !== APPLE_BUNDLE_ID || info.CFBundleShortVersionString !== identity.appleMarketingVersion || info.CFBundleVersion !== identity.appleBuildNumber || JSON.stringify(info.UIDeviceFamily) !== "[1,2]" || info.CFBundleDisplayName !== "BabylonSlate" || !/^iphoneos(?:2[6-9]|[3-9]\d)\./.test(info.DTSDKName) || typeof info.ITSAppUsesNonExemptEncryption !== "boolean") throw new Error("Exported Apple bundle identity, target, SDK or encryption declaration is invalid");
   if (entitlements["application-identifier"] !== `${teamId}.${APPLE_BUNDLE_ID}` || entitlements["com.apple.developer.team-identifier"] !== teamId || entitlements["get-task-allow"] !== false || entitlements["beta-reports-active"] !== true) throw new Error("Exported Apple distribution entitlements are invalid");
   const allowed = new Set(["application-identifier", "com.apple.developer.team-identifier", "get-task-allow", "beta-reports-active", "keychain-access-groups"]);
   if (Object.keys(entitlements).some(key => !allowed.has(key))) throw new Error("Unexpected entitlement; audit it before distribution");

@@ -3,6 +3,9 @@
 <!--
   Merge these keys into ios/App/App/Info.plist after `npx cap add ios`.
   Required by BabylonSlateScopedStoragePlugin for iOS Files App access.
+  Also keep UISupportedInterfaceOrientations (iPhone: portrait + both
+  landscapes) and UISupportedInterfaceOrientations~ipad (landscape only),
+  and TARGETED_DEVICE_FAMILY = "1,2" in the pbxproj — the app is universal.
 -->
 <plist version="1.0">
 <dict>

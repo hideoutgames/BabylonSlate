@@ -15,11 +15,11 @@ test("archive targets Release generic iOS devices and export never changes the a
   assert.equal(options.testFlightInternalTestingOnly, false);
 });
 
-test("exported app must have the intended identity, iPad family and distribution entitlements", () => {
-  const info = { CFBundleIdentifier: "no.hideout.babylonslate", CFBundleShortVersionString: "0.0.1", CFBundleVersion: "417.0.1", UIDeviceFamily: [2], CFBundleDisplayName: "BabylonSlate", DTSDKName: "iphoneos26.5", ITSAppUsesNonExemptEncryption: false };
+test("exported app must have the intended identity, universal device family and distribution entitlements", () => {
+  const info = { CFBundleIdentifier: "no.hideout.babylonslate", CFBundleShortVersionString: "0.0.1", CFBundleVersion: "417.0.1", UIDeviceFamily: [1, 2], CFBundleDisplayName: "BabylonSlate", DTSDKName: "iphoneos26.5", ITSAppUsesNonExemptEncryption: false };
   const entitlements = { "application-identifier": "TEAM123456.no.hideout.babylonslate", "com.apple.developer.team-identifier": "TEAM123456", "get-task-allow": false, "beta-reports-active": true };
   assert.doesNotThrow(() => validateAppleBundle(identity, info, entitlements, "TEAM123456"));
-  for (const patch of [{ UIDeviceFamily: [1, 2] }, { CFBundleVersion: "418.0.1" }, { CFBundleIdentifier: "other" }, { DTSDKName: "iphoneos18.5" }, { CFBundleDisplayName: "BabylonSlate TEST" }]) {
+  for (const patch of [{ UIDeviceFamily: [2] }, { CFBundleVersion: "418.0.1" }, { CFBundleIdentifier: "other" }, { DTSDKName: "iphoneos18.5" }, { CFBundleDisplayName: "BabylonSlate TEST" }]) {
     assert.throws(() => validateAppleBundle(identity, { ...info, ...patch }, entitlements, "TEAM123456"));
   }
   assert.throws(() => validateAppleBundle(identity, info, { ...entitlements, "get-task-allow": true }, "TEAM123456"));

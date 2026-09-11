@@ -162,7 +162,7 @@ describe("Capacitor 8 iOS host", () => {
     );
   });
 
-  it("enforces the Capacitor 8 deployment and iPad-only project settings", () => {
+  it("enforces the Capacitor 8 deployment and universal iPhone/iPad project settings", () => {
     const deploymentTargets = [
       ...pbxproj.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);/g),
     ].map((match) => Number(match[1]));
@@ -173,16 +173,26 @@ describe("Capacitor 8 iOS host", () => {
       ...pbxproj.matchAll(/TARGETED_DEVICE_FAMILY = "([^"]+)";/g),
     ].map((match) => match[1]);
     expect(deviceFamilies.length).toBeGreaterThan(0);
-    expect(deviceFamilies.every((family) => family === "2")).toBe(true);
+    expect(deviceFamilies.every((family) => family === "1,2")).toBe(true);
 
     const requiredCapabilities = plist.match(
       /<key>UIRequiredDeviceCapabilities<\/key>\s*<array>([\s\S]*?)<\/array>/,
     )?.[1];
     expect(requiredCapabilities).toContain("<string>arm64</string>");
     expect(plist).not.toContain("armv7");
-    expect(plist).not.toMatch(
-      /<key>UISupportedInterfaceOrientations<\/key>\s*<array>[\s\S]*?<\/array>/,
+    const iphoneOrientations = plist.match(
+      /<key>UISupportedInterfaceOrientations<\/key>\s*<array>([\s\S]*?)<\/array>/,
+    )?.[1];
+    expect(iphoneOrientations).toContain(
+      "<string>UIInterfaceOrientationPortrait</string>",
     );
+    expect(iphoneOrientations).toContain(
+      "<string>UIInterfaceOrientationLandscapeLeft</string>",
+    );
+    expect(iphoneOrientations).toContain(
+      "<string>UIInterfaceOrientationLandscapeRight</string>",
+    );
+    expect(iphoneOrientations).not.toContain("PortraitUpsideDown");
 
     const ipadOrientations = plist.match(
       /<key>UISupportedInterfaceOrientations~ipad<\/key>\s*<array>([\s\S]*?)<\/array>/,
