@@ -1,4 +1,8 @@
 import type { GameManifest } from "@babylonslate/exporter";
+import {
+  getHostMemoryStats,
+  type HostMemoryStats,
+} from "@babylonslate/vfs";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayer } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
@@ -83,6 +87,20 @@ async function launchLoaded(
     ticks: 0,
     startupScene: game.manifest.startupSceneGuid,
   });
+  let hostMemory: HostMemoryStats | null = null;
+  const refreshHostMemory = () => {
+    void getHostMemoryStats()
+      .then((stats) => {
+        hostMemory = stats;
+      })
+      .catch(() => {
+        hostMemory = null;
+      });
+  };
+  refreshHostMemory();
+  // Session-scoped HUD feed; cleared with the page, same as the render loop.
+  window.setInterval(refreshHostMemory, 1000);
+
   const session = startPlayer({
     canvas,
     game,
@@ -106,7 +124,7 @@ async function launchLoaded(
       }
     },
     onStats: (stats) => {
-      hud.setStats(stats);
+      hud.setStats({ ...stats, ...hostMemory });
       setRootState({
         booted: stats.ticks > 0,
         ticks: stats.ticks,

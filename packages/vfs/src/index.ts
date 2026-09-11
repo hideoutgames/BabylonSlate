@@ -4,6 +4,7 @@ export * from "./capacitor-audio-lifecycle";
 export * from "./create-app-settings";
 export * from "./create-storage";
 export * from "./derived-storage";
+export * from "./device-memory";
 export * from "./documents-adapter";
 export * from "./electron-app-settings";
 export * from "./electron-storage-adapter";

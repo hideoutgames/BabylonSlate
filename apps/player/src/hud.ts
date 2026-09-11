@@ -17,6 +17,14 @@ export type PlayerHudStats = {
   geometryBytes?: number;
   liveActors?: number;
   snapshotCapacity?: number;
+  /** Real JS heap (Chromium/Electron); absent on WKWebView. */
+  jsHeapBytes?: number;
+  /** Host app-process footprint on iOS; excludes the WebContent process. */
+  appFootprintBytes?: number;
+  /** Bytes until jetsam would kill the app process (iOS). */
+  appAvailableBytes?: number;
+  /** Device-wide free + inactive + purgeable memory (iOS). */
+  systemAvailableBytes?: number;
 };
 
 /** Worker `stats` commands are the source of truth for script/physics ms. */
@@ -41,6 +49,10 @@ export function applyWorkerPlayerStats(
     liveActors: command.liveActors ?? previous?.liveActors ?? 0,
     snapshotCapacity:
       command.snapshotCapacity ?? previous?.snapshotCapacity ?? 0,
+    jsHeapBytes: previous?.jsHeapBytes,
+    appFootprintBytes: previous?.appFootprintBytes,
+    appAvailableBytes: previous?.appAvailableBytes,
+    systemAvailableBytes: previous?.systemAvailableBytes,
   };
 }
 
@@ -58,6 +70,10 @@ export function applyPlayerFpsSample(
     geometryBytes: previous?.geometryBytes,
     liveActors: previous?.liveActors ?? 0,
     snapshotCapacity: previous?.snapshotCapacity ?? 0,
+    jsHeapBytes: previous?.jsHeapBytes,
+    appFootprintBytes: previous?.appFootprintBytes,
+    appAvailableBytes: previous?.appAvailableBytes,
+    systemAvailableBytes: previous?.systemAvailableBytes,
   };
 }
 
@@ -112,9 +128,16 @@ export function mountPlayerHud(
     fields.get("unit")!.textContent = `script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms`;
     fields.get("actors")!.textContent = `actors ${stats.liveActors ?? 0}/${stats.snapshotCapacity ?? 0}`;
     fields.get("draws")!.textContent = `draws ${stats.draws}`;
-    fields.get("memory")!.textContent = stats.geometryBytes != null
-      ? `geo ${(stats.geometryBytes / (1024 * 1024)).toFixed(1)}MB`
-      : "";
+    const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+    fields.get("memory")!.textContent = [
+      stats.geometryBytes != null ? `geo ${mb(stats.geometryBytes)}` : null,
+      stats.jsHeapBytes != null ? `js ${mb(stats.jsHeapBytes)}` : null,
+      stats.appFootprintBytes != null ? `app ${mb(stats.appFootprintBytes)}` : null,
+      stats.appAvailableBytes != null ? `headroom ${mb(stats.appAvailableBytes)}` : null,
+      stats.systemAvailableBytes != null ? `free ${mb(stats.systemAvailableBytes)}` : null,
+    ]
+      .filter((segment) => segment !== null)
+      .join("  ");
     fields.get("ticks")!.textContent = `ticks ${stats.ticks}`;
     fields.get("warnings")!.textContent = `${warn ? "DRAWS HIGH" : ""}${geoWarn ? "  GEO HIGH" : ""}`;
   };
