@@ -45,6 +45,10 @@ const audioLifecyclePlugin = readFileSync(
   join(repoRoot, "apps/editor/ios/App/App/BabylonSlateAudioLifecyclePlugin.swift"),
   "utf8",
 );
+const memoryPlugin = readFileSync(
+  join(repoRoot, "apps/editor/ios/App/App/BabylonSlateMemoryPlugin.swift"),
+  "utf8",
+);
 
 const skippedDirectories = new Set([
   "public",
@@ -208,9 +212,16 @@ describe("Capacitor 8 iOS host", () => {
     expect(iosSyncScript).toMatch(
       /packageClassList\.add\("BabylonSlateAudioLifecyclePlugin"\)/,
     );
+    expect(iosSyncScript).toMatch(
+      /packageClassList\.add\("BabylonSlateMemoryPlugin"\)/,
+    );
     expect(audioLifecyclePlugin).toContain("AVAudioSession");
     expect(audioLifecyclePlugin).toContain("interruptionNotification");
     expect(audioLifecyclePlugin).toContain("routeChangeNotification");
+    expect(memoryPlugin).toContain("task_vm_info_data_t");
+    expect(memoryPlugin).toContain("os_proc_available_memory");
+    expect(memoryPlugin).toContain("host_statistics64");
+    expect(memoryPlugin).toContain('CAPPluginMethod(name: "stats"');
     expect(editorPkg.scripts["ios:sync"]).toBe("node scripts/ios-sync.mjs");
     expect(iosSyncScript).toMatch(/"cap",\s*"sync",\s*"ios"/s);
     expect(editorPkg.scripts["ios:build"]).toContain(
@@ -227,6 +238,10 @@ describe("Capacitor 8 iOS host", () => {
     expect(pbxproj).toMatch(/BabylonSlateAudioLifecyclePlugin\.swift in Sources/);
     expect(pbxproj).toMatch(
       /BabylonSlateAudioLifecyclePlugin\.swift \*\/ = \{isa = PBXFileReference/,
+    );
+    expect(pbxproj).toMatch(/BabylonSlateMemoryPlugin\.swift in Sources/);
+    expect(pbxproj).toMatch(
+      /BabylonSlateMemoryPlugin\.swift \*\/ = \{isa = PBXFileReference/,
     );
     expect(pbxproj).not.toContain("CODE_SIGN_IDENTITY");
 

@@ -70,6 +70,10 @@ import type {
 } from "@babylonslate/shader-graph";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import {
+  getHostMemoryStats,
+  type HostMemoryStats,
+} from "@babylonslate/vfs";
+import {
   audioDebugOverlayText,
   audioStats,
   type FontAssetEntry,
@@ -223,6 +227,7 @@ export function PlayOverlay({
   const [scriptMs, setScriptMs] = useState(0);
   const [physicsMs, setPhysicsMs] = useState(0);
   const [memoryBytes, setMemoryBytes] = useState(0);
+  const [hostMemory, setHostMemory] = useState<HostMemoryStats | null>(null);
   const [geometryBytes, setGeometryBytes] = useState(0);
   const [meshCount, setMeshCount] = useState(0);
   const [textureCount, setTextureCount] = useState(0);
@@ -246,6 +251,7 @@ export function PlayOverlay({
   const [statsHighlight, setStatsHighlight] =
     useState<StatsHudHighlight | null>(null);
   const inspectSelectionRef = useRef<string | null>(null);
+  const hostMemoryInFlight = useRef(false);
   const userPausedRef = useRef(pauseOnPlay);
   const [postProcessPasses, setPostProcessPasses] = useState(0);
   const [assignedMaterials, setAssignedMaterials] = useState("");
@@ -587,6 +593,15 @@ export function PlayOverlay({
       setAudioUnlocked(audioStats.unlocked);
       if (current) {
         setMemoryBytes(current.accountedBytes());
+        if (!hostMemoryInFlight.current) {
+          hostMemoryInFlight.current = true;
+          void getHostMemoryStats()
+            .then(setHostMemory)
+            .catch(() => setHostMemory(null))
+            .finally(() => {
+              hostMemoryInFlight.current = false;
+            });
+        }
         setGeometryBytes(current.handle.accountedGeometryBytes());
         const counts = current.liveObjectCounts();
         setMeshCount(counts.meshes);
@@ -701,6 +716,7 @@ export function PlayOverlay({
             scriptMs={scriptMs}
             physicsMs={physicsMs}
             memoryBytes={memoryBytes}
+            hostMemory={hostMemory}
             geometryBytes={geometryBytes}
             meshCount={meshCount}
             textureCount={textureCount}

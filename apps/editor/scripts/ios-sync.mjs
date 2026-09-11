@@ -39,6 +39,7 @@ const packageClassList = new Set(config.packageClassList ?? []);
 packageClassList.add("BabylonSlateSecretsPlugin");
 packageClassList.add("BabylonSlateScopedStoragePlugin");
 packageClassList.add("BabylonSlateAudioLifecyclePlugin");
+packageClassList.add("BabylonSlateMemoryPlugin");
 config.packageClassList = [...packageClassList];
 await writeFile(configPath, `${JSON.stringify(config, null, "\t")}\n`);
 

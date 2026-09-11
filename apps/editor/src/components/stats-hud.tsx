@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isTickOverBudget } from "@babylonslate/debugger";
+import type { HostMemoryStats } from "@babylonslate/vfs";
 import { drawCallCeilingWarning, geometryByteCeilingWarning } from "@babylonslate/render";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
@@ -12,6 +13,7 @@ export type StatsHudProps = {
   scriptMs: number;
   physicsMs: number;
   memoryBytes?: number;
+  hostMemory?: HostMemoryStats | null;
   geometryBytes?: number;
   meshCount?: number;
   textureCount?: number;
@@ -37,6 +39,7 @@ export function StatsHud({
   scriptMs,
   physicsMs,
   memoryBytes,
+  hostMemory,
   geometryBytes,
   meshCount,
   textureCount,
@@ -114,6 +117,38 @@ export function StatsHud({
             className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
           >
             <SelectableText>mem {formatBytes(memoryBytes)}</SelectableText>
+          </span>
+        ) : null}
+        {hostMemory?.jsHeapBytes != null ? (
+          <span
+            data-testid="stats-hud-js-heap"
+            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
+          >
+            <SelectableText>js {formatBytes(hostMemory.jsHeapBytes)}</SelectableText>
+          </span>
+        ) : null}
+        {hostMemory?.appFootprintBytes != null ? (
+          <span
+            data-testid="stats-hud-app-footprint"
+            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
+          >
+            <SelectableText>app {formatBytes(hostMemory.appFootprintBytes)}</SelectableText>
+          </span>
+        ) : null}
+        {hostMemory?.appAvailableBytes != null ? (
+          <span
+            data-testid="stats-hud-app-headroom"
+            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
+          >
+            <SelectableText>headroom {formatBytes(hostMemory.appAvailableBytes)}</SelectableText>
+          </span>
+        ) : null}
+        {hostMemory?.systemAvailableBytes != null ? (
+          <span
+            data-testid="stats-hud-system-memory"
+            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
+          >
+            <SelectableText>free {formatBytes(hostMemory.systemAvailableBytes)}</SelectableText>
           </span>
         ) : null}
         {geometryBytes != null ? (
