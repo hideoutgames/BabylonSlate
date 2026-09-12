@@ -386,8 +386,10 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   // Keep both primitives in contact with the receiver: sphere radius 1.875,
   // box half-height 1.5. Intersections must not masquerade as shadow artifacts.
   subjects[0]!.transform.position[1] = 0.375;
+  subjects[0]!.transform.position[0] = -2;
   const sun = createActor("shadow-sun", "Shadow Sun", {
-    transform: { position: [0, 5, -3], rotation: [0.353553, 0.353553, -0.146447, 0.853553], scale: [1, 1, 1] },
+    // No sideways component: neither test subject should cast onto the other.
+    transform: { position: [0, 5, -3], rotation: [0.382683, 0, 0, 0.923880], scale: [1, 1, 1] },
     components: [{ id: "sun-light", classId: "LightComponent", properties: {
       lightKind: "directional", color: [1, 1, 1], intensity: 1.5, castShadows: false,
     } }],
@@ -456,6 +458,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   }).toBeLessThan(0.01);
   await viewport.screenshot({ path: testInfo.outputPath("cel-large-map-shadows.png") });
   subjects[0]!.transform.position[1] = 0;
+  subjects[0]!.transform.position[0] = -1.5;
 
   scene.actors = [...subjects, fill];
   scene.settings.celShading = { specularStrength: 1, specularSize: 1 };

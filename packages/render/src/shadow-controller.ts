@@ -174,7 +174,12 @@ export class SceneShadowController {
       if (settings.autoBias && generator instanceof CascadedShadowGenerator) map?.onBeforeRenderObservable.add((layer) => {
         const min = generator.getCascadeMinExtents(layer);
         const max = generator.getCascadeMaxExtents(layer);
-        if (min && max) generator.bias = calibratedShadowBias(mapSize, Math.max(max.x - min.x, max.y - min.y), max.z - min.z, settings.filterQuality, settings.depthBias);
+        if (min && max) {
+          const extent = Math.max(max.x - min.x, max.y - min.y);
+          generator.bias = calibratedShadowBias(mapSize, extent, max.z - min.z, settings.filterQuality, settings.depthBias);
+          const kernelRadius = settings.filterQuality === "high" ? 2.5 : settings.filterQuality === "medium" ? 1.5 : 0.5;
+          generator.normalBias = Math.max(settings.normalBias, kernelRadius * extent / mapSize);
+        }
       });
       let activePlanes: Plane[] | null = null;
       if (map) map.getCustomRenderList = (layer) => {
