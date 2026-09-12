@@ -2,6 +2,7 @@ import type { PlayPreviewProjectSettings } from "@babylonslate/core";
 import { NumberField } from "@babylonslate/editor-kit";
 import {
   Field,
+  FieldContent,
   FieldDescription,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
@@ -18,11 +19,17 @@ export function PlayPreviewSettingsFields({
   return (
     <>
       <Field orientation="horizontal">
-        <FieldLabel htmlFor="setting-play-follow-system">
-          Follow System
-        </FieldLabel>
+        <FieldContent>
+          <FieldLabel htmlFor="setting-play-follow-system">
+            Follow System
+          </FieldLabel>
+          <FieldDescription id="setting-play-follow-system-description">
+            Off uses a fixed aspect ratio.
+          </FieldDescription>
+        </FieldContent>
         <Switch
           id="setting-play-follow-system"
+          aria-describedby="setting-play-follow-system-description"
           checked={settings.followSystem}
           onCheckedChange={(checked) =>
             onChange({ ...settings, followSystem: checked === true })
@@ -30,7 +37,6 @@ export function PlayPreviewSettingsFields({
           data-testid="setting-play-follow-system"
         />
       </Field>
-      <FieldDescription>Off uses a fixed aspect ratio.</FieldDescription>
       <Field>
         <FieldLabel htmlFor="setting-play-aspect-width">
           Aspect Ratio

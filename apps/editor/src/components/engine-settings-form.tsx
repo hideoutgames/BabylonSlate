@@ -1,4 +1,5 @@
 import { TemplateLibrarySettings } from "./template-library-settings";
+import { EnginePluginsSettings } from "./engine-plugins-settings";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import type { EngineSettings } from "@babylonslate/vfs";
@@ -132,6 +133,7 @@ export type EngineSettingsCategoryId =
   | "assets"
   | "thumbnails"
   | "templates"
+  | "plugins"
   | "focus"
   | "graph";
 
@@ -604,6 +606,7 @@ export function EngineSettingsForm({
         : null}
 
       {categoryId === "templates" ? <TemplateLibrarySettings /> : null}
+      {categoryId === "plugins" ? <EnginePluginsSettings /> : null}
     </FieldGroup>
   );
 }

@@ -9,7 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { projectContentRoot } from "@babylonslate/assets";
+import { createDefaultPluginSettings, projectContentRoot } from "@babylonslate/assets";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import {
   CONTENT_BROWSER_GRID_GAP_PX,
@@ -169,6 +169,8 @@ afterEach(async () => {
   layout.phone = false;
   docs.openDocument.mockClear();
   docs.openDocuments = [];
+  docs.pluginDescriptors = [];
+  docs.showPluginContent = false;
   docs.projectDocument.settings.gameInstanceClass = null;
   docs.projectDocument.settings.editorUtilityObjects = [];
   docs.projectDocument.settings.startupSceneGuid = "";
@@ -332,6 +334,55 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
 });
 
 describe("ContentBrowserWorkspace grid window", () => {
+  it("uses the plugin icon only on its base folder and keeps nested folders unchanged", () => {
+    docs.thumbnailsEnabled = false;
+    docs.showPluginContent = true;
+    const plugin = {
+      pluginGuid: "tools",
+      source: "project",
+      folderName: "tools",
+      readOnly: false,
+      folderPath: "plugins/tools",
+      contentPath: "plugins/tools/assets",
+      settingsPath: "plugins/tools/tools.plugin.babasset",
+      settings: {
+        ...createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tool Pack" }),
+        enabledByDefault: true,
+        iconKey: "Star",
+      },
+    };
+    docs.pluginDescriptors = [plugin];
+    const root = projectContentRoot();
+    docs.assetRegistry = {
+      getRoot: (id: string) => id === "project" ? root : { ...root, id, pathPrefix: plugin.contentPath },
+      list: () => [],
+      folderTree: (id: string) => id === "project" ? {
+        name: "assets", path: "assets", children: [], assets: [],
+      } : {
+        name: "assets", path: plugin.contentPath, assets: [],
+        children: [{ name: "Nested", path: `${plugin.contentPath}/Nested`, children: [], assets: [] }],
+      },
+    };
+    const { rerender } = render(<ContentBrowserWorkspace />);
+    const base = screen.getByTestId("tree-row-plugins/tools/assets");
+    expect(base.querySelector("svg.lucide-star")).not.toBeNull();
+    expect(base.querySelector("svg.lucide-folder")).toBeNull();
+    expect(screen.getByTestId("tree-row-assets").querySelector("svg.lucide-folder")).not.toBeNull();
+    const nested = screen.getByTestId("tree-row-plugins/tools/assets/Nested");
+    expect(nested.querySelector("svg.lucide-folder")).not.toBeNull();
+    expect(nested.querySelector("svg.lucide-star")).toBeNull();
+
+    fireEvent.pointerDown(base, { pointerId: 1, pointerType: "mouse", button: 0 });
+    fireEvent.pointerUp(base, { pointerId: 1, pointerType: "mouse", button: 0 });
+    const tile = screen.getByTestId("content-folder-plugins/tools/assets/Nested");
+    expect(tile.querySelector("svg.lucide-folder")).not.toBeNull();
+    expect(tile.querySelector("svg.lucide-star")).toBeNull();
+
+    docs.pluginDescriptors = [{ ...plugin, settings: { ...plugin.settings, iconKey: "Unrecognized" } }];
+    rerender(<ContentBrowserWorkspace />);
+    expect(screen.getByTestId("tree-row-plugins/tools/assets").querySelector("svg.lucide-folder")).not.toBeNull();
+  });
+
   it("reports a selected file read failure and releases the import busy state", async () => {
     installRegistry([]);
     let failRead!: (error: Error) => void;

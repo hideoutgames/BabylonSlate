@@ -104,8 +104,7 @@ export function isPluginContentFolderPath(
   pluginPathPrefixes: readonly string[],
 ): boolean {
   return pluginPathPrefixes.some(
-    (prefix) =>
-      folderPath === prefix || folderPath.startsWith(`${prefix}/`),
+    (prefix) => folderPath === prefix || folderPath.startsWith(`${prefix}/`),
   );
 }
 
@@ -211,9 +210,7 @@ export function sceneAssetPaths(
   }>,
 ): string[] {
   return assets
-    .filter(
-      (asset) => !asset.placeholder && asset.header.type === "Scene",
-    )
+    .filter((asset) => !asset.placeholder && asset.header.type === "Scene")
     .map((asset) => asset.path)
     .sort();
 }
@@ -229,10 +226,7 @@ export function playSceneLibraryPaths(
 ): string[] {
   const fromRegistry = sceneAssetPaths(assets);
   const seen = new Set(fromRegistry);
-  return [
-    ...fromRegistry,
-    ...projectScenes.filter((path) => !seen.has(path)),
-  ];
+  return [...fromRegistry, ...projectScenes.filter((path) => !seen.has(path))];
 }
 
 export function isPluginDocumentReadOnly(
@@ -251,13 +245,16 @@ export function isPluginDocumentReadOnly(
   );
 }
 
-export function isPluginSettingsReadOnly(source: "project" | "engine"): boolean {
+export function isPluginSettingsReadOnly(
+  source: "project" | "engine",
+): boolean {
   return source === "engine";
 }
 
 export type PluginDependencyStatusLabel =
   | "ok"
   | "Missing Dependency"
+  | "Blocked Dependency"
   | "Dependency Cycle"
   | "Engine Range"
   | "Unsatisfiable Range";
@@ -280,6 +277,13 @@ export function pluginDependencyStatus(
   }
   if (forPlugin.some((diagnostic) => diagnostic.code === "plugin.missing")) {
     return "Missing Dependency";
+  }
+  if (
+    forPlugin.some(
+      (diagnostic) => diagnostic.code === "plugin.dependency_blocked",
+    )
+  ) {
+    return "Blocked Dependency";
   }
   if (
     forPlugin.some((diagnostic) => diagnostic.code === "plugin.unsatisfiable")

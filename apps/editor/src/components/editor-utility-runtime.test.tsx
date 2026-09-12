@@ -20,14 +20,21 @@ const { invokeEvent, load, docs } = vi.hoisted(() => ({
       pluginGuid: string;
       settings: { editorUtilityObjects: string[]; enabledByDefault: boolean };
     }>,
+    assetRegistry: {
+      getRoot: vi.fn<(rootId: string) => object | undefined>(() => undefined),
+    },
   },
 }));
 
 vi.mock("@babylonslate/runtime", () => ({
   ScriptHost: class {
-    load = load;
+    private loadedClasses: string[] = [];
+    load = async (script: { classId: string }) => {
+      this.loadedClasses.push(script.classId);
+      await load();
+    };
     invokeEvent = invokeEvent;
-    classIds = () => ["Tools"];
+    classIds = () => this.loadedClasses;
   },
 }));
 
@@ -50,9 +57,52 @@ afterEach(() => {
   docs.openDocuments = [];
   docs.collectEditorUtilityScripts.mockClear();
   docs.pluginDescriptors = [];
+  docs.assetRegistry.getRoot.mockReset();
 });
 
 describe("EditorUtilityRuntime", () => {
+  it("shuts down plugin utilities when their root becomes blocked despite staying enabled", async () => {
+    docs.projectDocument = { settings: { editorUtilityObjects: [] } };
+    docs.collectEditorUtilityScripts
+      .mockResolvedValueOnce([{ classId: "PluginTools" }])
+      .mockResolvedValueOnce([]);
+    docs.pluginDescriptors = [
+      {
+        pluginGuid: "tools",
+        settings: {
+          enabledByDefault: true,
+          editorUtilityObjects: ["PluginTools"],
+        },
+      },
+    ];
+    docs.assetRegistry.getRoot.mockImplementation((rootId) =>
+      rootId === "plugin:tools" ? {} : undefined,
+    );
+    const view = render(<EditorUtilityRuntime />);
+    await waitFor(() =>
+      expect(invokeEvent).toHaveBeenCalledWith(
+        "PluginTools",
+        EDITOR_UTILITY_EVENTS.startup,
+      ),
+    );
+    invokeEvent.mockClear();
+
+    docs.assetRegistry.getRoot.mockReturnValue(undefined);
+    view.rerender(<EditorUtilityRuntime />);
+
+    await waitFor(() =>
+      expect(invokeEvent).toHaveBeenCalledWith(
+        "PluginTools",
+        EDITOR_UTILITY_EVENTS.shutdown,
+      ),
+    );
+    expect(invokeEvent).not.toHaveBeenCalledWith(
+      "PluginTools",
+      EDITOR_UTILITY_EVENTS.startup,
+    );
+    expect(docs.collectEditorUtilityScripts).toHaveBeenCalledTimes(2);
+  });
+
   it("boots On Editor Startup then On Scene Open when a scene tab is already open", async () => {
     docs.openDocuments = [{ ref: { kind: "scene" } }];
     render(<EditorUtilityRuntime />);

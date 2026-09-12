@@ -76,6 +76,7 @@ import {
   type MigrationPending,
   type PluginDescriptor,
   type PluginDiagnostic,
+  type IndexedAsset,
   type ProjectTreeFile,
   createDefaultPluginSettings,
   discoverEnginePlugins,
@@ -111,6 +112,7 @@ import {
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
 import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
+import { ENGINE_PLUGIN_LIBRARY_ROOT } from "../lib/engine-plugin-library";
 import {
   normalizeProjectFolderName,
   type CreateProjectOptions,
@@ -455,6 +457,30 @@ export class ProjectService {
     return this.pluginDiagnostics;
   }
 
+  /** Export presets scan their selected plugin roots without changing editor mounts. */
+  async listExportAssets(
+    enabledPluginGuids: ReadonlySet<string>,
+  ): Promise<IndexedAsset[]> {
+    const exportRegistry = new AssetRegistry(this.storage, {
+      blobs: this.blobs,
+    });
+    await mountEnabledPlugins(exportRegistry, this.pluginDescriptors, {
+      enabledGuids: enabledPluginGuids,
+      storageFor: (plugin) =>
+        plugin.source === "engine"
+          ? (this.enginePluginStorage ?? undefined)
+          : undefined,
+    });
+    const byGuid = new Map(
+      (this.assetRegistry?.list() ?? [])
+        .filter((asset) => !asset.rootId.startsWith("plugin:"))
+        .map((asset) => [asset.header.guid, asset]),
+    );
+    for (const asset of exportRegistry.list())
+      byGuid.set(asset.header.guid, asset);
+    return [...byGuid.values()];
+  }
+
   setEnginePluginStorage(storage: ProjectStorage | null): void {
     this.enginePluginStorage = storage;
   }
@@ -491,7 +517,9 @@ export class ProjectService {
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
-    return this.storage.listProjects();
+    return (await this.storage.listProjects()).filter(
+      (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== "__slate_templates__",
+    );
   }
 
   async deleteListedProject(handle: ProjectFolderHandle): Promise<void> {
@@ -880,7 +908,9 @@ export class ProjectService {
           ? (this.enginePluginStorage ?? undefined)
           : undefined,
     });
-    const { diagnostics } = resolvePluginGraph(this.pluginDescriptors);
+    const { diagnostics } = resolvePluginGraph(
+      this.pluginDescriptors.filter((plugin) => enabledGuids.has(plugin.pluginGuid)),
+    );
     this.pluginDiagnostics = diagnostics;
     const discoveredGuids = new Set(
       this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
@@ -997,6 +1027,14 @@ export class ProjectService {
     return { status: "imported", descriptor };
   }
 
+  private pluginForPath(path: string): PluginDescriptor | undefined {
+    return this.pluginDescriptors.find(
+      (entry) =>
+        path === entry.settingsPath ||
+        path.startsWith(`${entry.folderPath}/`),
+    );
+  }
+
   private storageForPath(path: string): ProjectStorage {
     if (isTracePath(path)) {
       if (!this.derivedStorage) {
@@ -1010,11 +1048,7 @@ export class ProjectService {
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.storageFor(indexed.rootId);
     }
-    const plugin = this.pluginDescriptors.find(
-      (entry) =>
-        path === entry.settingsPath ||
-        path.startsWith(`${entry.folderPath}/`),
-    );
+    const plugin = this.pluginForPath(path);
     if (plugin?.source === "engine" && this.enginePluginStorage) {
       return this.enginePluginStorage;
     }
@@ -1028,7 +1062,10 @@ export class ProjectService {
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.blobsFor(indexed.rootId);
     }
-    return this.blobs;
+    const storage = this.storageForPath(path);
+    const plugin = this.pluginForPath(path);
+    if (plugin) return createVfsBlobStore(storage, `${plugin.contentPath}/.blobs`);
+    return storage === this.storage ? this.blobs : createVfsBlobStore(storage);
   }
 
   /** Re-scan project assets after registry file operations (import, create, delete). */
@@ -1473,6 +1510,10 @@ export class ProjectService {
       );
     }
     this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
+    if (type === "PluginSettings") {
+      await this.syncPlugins();
+      this.emitRegistryChange();
+    }
   }
 
   /** Binary chunk (font source, pixels, …) without decoding the document JSON. */

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
-import { openContentBrowser, openMainScene, openTestProject } from "./open-test-project";
+import { openContentBrowser, openMainScene, openTestProject, waitForEditorInteractive } from "./open-test-project";
+import { openMinimalTestProject } from "./minimal-project";
 
 const STARTER_CONTENT_PLUGIN_GUID = "c0ffee00-0000-4000-8000-000000000001";
 const STARTER_ACTOR_PATH =
@@ -17,12 +18,27 @@ async function openPluginsSettings(page: Page): Promise<void> {
   await expect(page.getByTestId("settings-plugins-panel")).toBeVisible();
 }
 
-async function closeSettings(page: Page): Promise<void> {
+async function closeSettings(page: Page, testId = "settings-modal"): Promise<void> {
   await page
-    .getByTestId("settings-modal")
+    .getByTestId(testId)
     .locator('[data-slot="dialog-close"]')
     .click();
-  await expect(page.getByTestId("settings-modal")).toHaveCount(0);
+  await expect(page.getByTestId(testId)).toHaveCount(0);
+}
+
+async function openEnginePluginsSettings(page: Page): Promise<void> {
+  await page.getByTestId("engine-settings").click();
+  await expect(page.getByTestId("engine-settings-modal")).toBeVisible();
+  await page.getByTestId("engine-settings-modal-category-plugins").click();
+  await expect(page.getByTestId("engine-plugins-settings")).toBeVisible();
+}
+
+async function returnToHomepage(page: Page): Promise<void> {
+  await closeProjectViaSettings(page);
+  const discard = page.getByTestId("dirty-discard");
+  await expect(page.getByTestId("homepage").or(discard)).toBeVisible();
+  if (await discard.isVisible()) await discard.click();
+  await expect(page.getByTestId("homepage")).toBeVisible();
 }
 
 async function guidForPath(page: Page, path: string): Promise<string> {
@@ -181,20 +197,14 @@ test.describe("P13 plugins", () => {
     await openPluginsSettings(page);
     const downloadPromise = page.waitForEvent("download");
     await page.getByTestId(`settings-plugin-export-${pluginGuid}`).click();
+    await expect(page.getByTestId("plugin-export-dialog")).toBeVisible();
+    await page.getByRole("button", { name: "Export To Download", exact: true }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toBe("shared-pack.babplugin");
     const pluginFile = await download.path();
     expect(pluginFile).toBeTruthy();
     await closeSettings(page);
-    await closeProjectViaSettings(page);
-    const discard = page.getByTestId("dirty-discard");
-    await expect(
-      page.getByTestId("homepage").or(discard),
-    ).toBeVisible();
-    if (await discard.isVisible()) {
-      await discard.click();
-    }
-    await expect(page.getByTestId("homepage")).toBeVisible();
+    await returnToHomepage(page);
 
     await page.getByTestId("create-project").click();
     await expect(page.getByTestId("create-project-dialog")).toBeVisible();
@@ -229,6 +239,76 @@ test.describe("P13 plugins", () => {
     await expect(
       page.getByTestId(`place-actors-item-asset-${classGuid}`),
     ).toBeVisible();
+  });
+
+  test("engine plugin defaults persist and clone into new projects without changing existing copies", async ({ page }) => {
+    test.setTimeout(120_000);
+    await openMinimalTestProject(page);
+    await openPluginsSettings(page);
+    await page.getByTestId("settings-plugin-new").click();
+    await page.getByTestId("name-prompt-input").fill("Engine Shared Pack");
+    await page.getByTestId("name-prompt-confirm").click();
+    const projectRow = page.locator('[data-testid^="settings-plugin-row-"]')
+      .filter({ hasText: "Engine Shared Pack" });
+    await expect(projectRow).toBeVisible();
+    const pluginGuid = (await projectRow.getAttribute("data-testid"))!
+      .replace("settings-plugin-row-", "");
+    const projectToggle = page.getByTestId(`settings-plugin-enable-${pluginGuid}`);
+    await expect(projectToggle).toHaveAttribute("aria-checked", "false");
+    await page.getByTestId(`settings-plugin-export-${pluginGuid}`).click();
+    await page.getByRole("button", { name: "Export To Engine Plugins", exact: true }).click();
+    await expect(page.getByTestId("plugin-export-dialog")).toHaveCount(0);
+    await closeSettings(page);
+
+    await page.getByTestId("settings-menu").click();
+    await openEnginePluginsSettings(page);
+    const engineRow = page.getByTestId(`engine-plugin-row-${pluginGuid}`);
+    await expect(engineRow).toContainText("User Added");
+    await expect(engineRow.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+    const bundledRow = page.getByTestId(`engine-plugin-row-${STARTER_CONTENT_PLUGIN_GUID}`);
+    await expect(bundledRow).toContainText("Bundled");
+    await expect(bundledRow.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+    const downloadPromise = page.waitForEvent("download");
+    await engineRow.getByRole("button", { name: "Export", exact: true }).click();
+    expect((await downloadPromise).suggestedFilename()).toBe("engine-shared-pack.babplugin");
+    await expect(page.getByTestId("plugin-export-dialog")).toHaveCount(0);
+    const defaultToggle = engineRow.getByRole("switch", { name: "Enabled By Default", exact: true });
+    await expect(defaultToggle).toHaveAttribute("aria-checked", "false");
+    await defaultToggle.click();
+    await expect(defaultToggle).toHaveAttribute("aria-checked", "true");
+    await closeSettings(page, "engine-settings-modal");
+
+    await openPluginsSettings(page);
+    await expect(projectToggle).toHaveAttribute("aria-checked", "false");
+    await closeSettings(page);
+    await returnToHomepage(page);
+    await page.reload();
+    await expect(page.getByTestId("homepage")).toBeVisible();
+    await openEnginePluginsSettings(page);
+    await expect(defaultToggle).toHaveAttribute("aria-checked", "true");
+    await closeSettings(page, "engine-settings-modal");
+
+    await page.getByTestId("create-project").click();
+    await page.getByTestId("create-project-empty").click();
+    await page.getByTestId("create-project-name").fill("EnginePluginTarget");
+    await page.getByTestId("create-project-submit").click();
+    await waitForEditorInteractive(page);
+    await openPluginsSettings(page);
+    await expect(projectRow).toBeVisible();
+    await expect(page.getByTestId(`settings-plugin-source-${pluginGuid}`)).toHaveText("Project");
+    await expect(projectToggle).toHaveAttribute("aria-checked", "true");
+    await closeSettings(page);
+
+    await page.getByTestId("settings-menu").click();
+    await openEnginePluginsSettings(page);
+    await engineRow.getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("alertdialog", { name: "Delete Engine Plugin" })
+      .getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(engineRow).toHaveCount(0);
+    await closeSettings(page, "engine-settings-modal");
+    await openPluginsSettings(page);
+    await expect(projectRow).toBeVisible();
+    await expect(projectToggle).toHaveAttribute("aria-checked", "true");
   });
 
   test("a missing plugin override keeps an Unresolved placeholder guid", async ({

@@ -88,28 +88,6 @@ function isPluginManifestPath(path: string): boolean {
   return path === PLUGIN_MANIFEST_FILE || path.endsWith(`/${PLUGIN_MANIFEST_FILE}`);
 }
 
-async function copyEnginePluginFileData(
-  data: Uint8Array,
-  relativePath: string,
-): Promise<Uint8Array> {
-  if (!relativePath || relativePath.startsWith(`${ASSETS_DIR}/`)) {
-    return data;
-  }
-  try {
-    const header = readBabassetHeader(data);
-    if (header.type !== PLUGIN_SETTINGS_TYPE) return data;
-    const document = await decodeAssetDocument(data);
-    const settings = normalizePluginSettings(document.payload, {
-      pluginGuid: document.guid,
-      displayName: document.name,
-    });
-    settings.enabledByDefault = false;
-    return encodePluginSettingsDocument(settings);
-  } catch {
-    return data;
-  }
-}
-
 function parseManifest(data: Uint8Array, fallback: BabprojectManifest): BabprojectManifest {
   try {
     const parsed = JSON.parse(new TextDecoder().decode(data)) as Record<string, unknown>;
@@ -386,7 +364,7 @@ export async function installEnginePluginDefaults(
       const path = relative ? `${destRoot}/${relative}` : destRoot;
       remapped.push({
         path,
-        data: await copyEnginePluginFileData(file.data, relative),
+        data: file.data,
       });
     }
     await writeProjectTree(projectStorage, remapped);

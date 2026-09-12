@@ -504,7 +504,7 @@ describe("installEnginePluginDefaults", () => {
     expect(await discoverProjectPlugins(project)).toHaveLength(1);
   });
 
-  it("forces enabledByDefault false on the project copy", async () => {
+  it("preserves the engine library enabled default on the project copy", async () => {
     const engine = new MemoryStorageAdapter("opfs");
     await engine.openDocumentsProject("engine-plugins");
     const settings = createDefaultPluginSettings({
@@ -520,13 +520,13 @@ describe("installEnginePluginDefaults", () => {
     const project = await projectStorage();
     const installed = await installEnginePluginDefaults(project, engine);
     expect(installed).toHaveLength(1);
-    expect(installed[0]!.settings.enabledByDefault).toBe(false);
+    expect(installed[0]!.settings.enabledByDefault).toBe(true);
     const copied = await decodeAssetDocument(
       await project.readBinary(
         "plugins/on-by-default/on-by-default.plugin.babasset",
       ),
     );
-    expect(copied.payload.enabledByDefault).toBe(false);
+    expect(copied.payload.enabledByDefault).toBe(true);
   });
 });
 

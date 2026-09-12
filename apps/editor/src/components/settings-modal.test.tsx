@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
+import { createDefaultPluginSettings, type PluginDescriptor } from "@babylonslate/assets";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -22,6 +23,8 @@ const {
   importPlugin,
   sourceControlEnabled,
   lastProjectInput,
+  pluginDescriptors,
+  applyPluginOverrides,
 } = vi.hoisted(() => {
   const lastProjectInput = { current: null as unknown };
   return {
@@ -42,6 +45,8 @@ const {
     importPlugin: vi.fn(),
     sourceControlEnabled: { current: false },
     lastProjectInput,
+    pluginDescriptors: [] as PluginDescriptor[],
+    applyPluginOverrides: vi.fn(async () => undefined),
   };
 });
 
@@ -125,11 +130,11 @@ vi.mock("../context/document-context", async () => {
             : undefined,
       },
       openDocuments: [],
-      pluginDescriptors: [],
+      pluginDescriptors,
       pluginDiagnostics: [],
       showPluginContent: false,
       setShowPluginContent,
-      applyPluginOverrides: vi.fn(),
+      applyPluginOverrides,
       createProjectPlugin: vi.fn(),
       deleteProjectPlugin: vi.fn(),
       exportPlugin: vi.fn(),
@@ -156,6 +161,8 @@ afterEach(() => {
   exportProject.mockReset();
   importPlugin.mockReset();
   sourceControlEnabled.current = false;
+  pluginDescriptors.length = 0;
+  applyPluginOverrides.mockClear();
 });
 
 it("hides unrelated settings when search has no matching section", () => {
@@ -412,6 +419,76 @@ describe("SettingsModal project authoring", () => {
     expect(updateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({ infiniteLoopDetection: false }),
     );
+  });
+
+  it.each([
+    ["general", "settings-infinite-loop-detection", /Stops runaway scripts/],
+    ["twoD", "settings-pixel-perfect", /Keeps pixels sharp/],
+    ["twoD", "settings-integer-zoom", /Applies to game cameras/],
+    ["audio", "settings-audio-occlusion", /Wall muffling/],
+    ["rendering", "setting-render-custom", /Sets the design size/],
+    ["rendering", "setting-render-black-bars", /Adds bars to preserve/],
+    ["rendering", "setting-play-follow-system", /Off uses a fixed aspect ratio/],
+  ])("keeps the %s %s description inside its setting before the separator", (category, controlId, descriptionText) => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId(`settings-modal-category-${category}`));
+    const control = screen.getByTestId(controlId);
+    const description = screen.getByText(descriptionText);
+    expect(control.closest('[data-slot="field"]')?.contains(description)).toBe(true);
+    expect(control.getAttribute("aria-describedby")).toBe(description.id);
+  });
+
+  it("shows both maturity flags and the selected icon to the right of a plugin name", () => {
+    pluginDescriptors.push({
+      pluginGuid: "tools",
+      source: "project",
+      folderName: "tools",
+      readOnly: false,
+      folderPath: "plugins/tools",
+      contentPath: "plugins/tools/assets",
+      settingsPath: "plugins/tools/tools.plugin.babasset",
+      settings: {
+        ...createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tool Pack" }),
+        iconKey: "Star",
+        experimental: true,
+        beta: true,
+      },
+    });
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-plugins"));
+    const name = screen.getByText("Tool Pack");
+    expect(name.nextElementSibling?.matches("svg.lucide-star")).toBe(true);
+    expect(screen.getByText("Experimental")).toBeTruthy();
+    expect(screen.getByText("Beta")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("settings-plugin-export-tools"));
+    expect(screen.getByRole("button", { name: "Export To Download" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export To Engine Plugins" })).toBeTruthy();
+  });
+
+  it("identifies Beta when confirming enablement and enables only after confirmation", async () => {
+    pluginDescriptors.push({
+      pluginGuid: "tools",
+      source: "project",
+      folderName: "tools",
+      readOnly: false,
+      folderPath: "plugins/tools",
+      contentPath: "plugins/tools/assets",
+      settingsPath: "plugins/tools/tools.plugin.babasset",
+      settings: {
+        ...createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tool Pack" }),
+        beta: true,
+      },
+    });
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-plugins"));
+    fireEvent.click(screen.getByTestId("settings-plugin-enable-tools"));
+    expect(screen.getByRole("heading", { name: "Enable Beta Plugin" })).toBeTruthy();
+    expect(applyPluginOverrides).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Enable" }));
+    await waitFor(() => expect(updateProjectSettings).toHaveBeenCalledWith({
+      pluginOverrides: { tools: { enabled: true } },
+    }));
+    expect(applyPluginOverrides).toHaveBeenCalledWith({ tools: { enabled: true } });
   });
 
   it("registers EditorUtilityObject classes from a ClassPicker list", async () => {

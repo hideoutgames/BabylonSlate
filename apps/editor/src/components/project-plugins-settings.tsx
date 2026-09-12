@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { OctagonAlertIcon } from "lucide-react";
+import { OctagonAlertIcon, PuzzleIcon } from "lucide-react";
 import { NamePromptDialog } from "@babylonslate/editor-kit";
 import type { PluginDescriptor } from "@babylonslate/assets";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
@@ -8,6 +8,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
   Field,
+  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -32,16 +33,18 @@ import {
   inboundRefsFromOtherRoots,
   isBabpluginFile,
   pluginDependencyStatus,
-  pluginDownloadFileName,
   pluginEnableNeedsConfirm,
   pluginRootId,
 } from "../lib/plugin-ui";
 import { resolvePluginEnabled } from "@babylonslate/assets";
+import { resolvePluginIcon } from "../lib/plugin-icons";
+import { PluginExportDialog } from "./plugin-export-dialog";
 
-function maturityBadge(plugin: PluginDescriptor) {
-  if (plugin.settings.experimental) return "Experimental";
-  if (plugin.settings.beta) return "Beta";
-  return null;
+function maturityLabels(plugin: PluginDescriptor) {
+  return [
+    ...(plugin.settings.experimental ? ["Experimental"] : []),
+    ...(plugin.settings.beta ? ["Beta"] : []),
+  ];
 }
 
 export function ProjectPluginsSettings() {
@@ -61,6 +64,7 @@ export function ProjectPluginsSettings() {
     setShowPluginContent,
   } = useDocuments();
   const [newOpen, setNewOpen] = useState(false);
+  const [exportTarget, setExportTarget] = useState<PluginDescriptor | null>(null);
   const [confirmEnable, setConfirmEnable] = useState<PluginDescriptor | null>(
     null,
   );
@@ -145,19 +149,6 @@ export function ProjectPluginsSettings() {
     void run(enabled ? "Enabling Plugin" : "Disabling Plugin", () => setEnabled(plugin, enabled));
   };
 
-  const downloadPlugin = async (plugin: PluginDescriptor) => {
-    const bytes = await exportPlugin(plugin.pluginGuid);
-    const blob = new Blob([bytes.buffer as ArrayBuffer], {
-      type: "application/zip",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = pluginDownloadFileName(plugin.settings.displayName);
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
   const runImport = async (
     bytes: Uint8Array,
     decision?: "keep" | "replace",
@@ -204,11 +195,18 @@ export function ProjectPluginsSettings() {
           </Alert>
         ) : null}
         <Field orientation="horizontal">
-          <FieldLabel htmlFor="settings-show-plugin-content">
-            Show Plugin Content
-          </FieldLabel>
+          <FieldContent>
+            <FieldLabel htmlFor="settings-show-plugin-content">
+              Show Plugin Content
+            </FieldLabel>
+            <FieldDescription id="settings-show-plugin-content-description">
+              Show plugin folders in the Content Browser. Hiding them keeps their
+              assets available.
+            </FieldDescription>
+          </FieldContent>
           <Switch
             id="settings-show-plugin-content"
+            aria-describedby="settings-show-plugin-content-description"
             checked={showPluginContent}
             onCheckedChange={(checked) =>
               setShowPluginContent(checked === true)
@@ -217,12 +215,9 @@ export function ProjectPluginsSettings() {
             aria-label="Show Plugin Content"
           />
         </Field>
-        <FieldDescription>
-          Show plugin folders in the Content Browser. Hiding them keeps their
-          assets available.
-        </FieldDescription>
         {rows.map(({ plugin, enabled }) => {
-          const maturity = maturityBadge(plugin);
+          const maturity = maturityLabels(plugin);
+          const Icon = resolvePluginIcon(plugin.settings.iconKey) ?? PuzzleIcon;
           const status = pluginDependencyStatus(
             plugin.pluginGuid,
             pluginDiagnostics,
@@ -239,15 +234,19 @@ export function ProjectPluginsSettings() {
                     <span className="font-medium">
                       {plugin.settings.displayName}
                     </span>
+                    <Icon
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
                     <Badge
                       variant="outline"
                       data-testid={`settings-plugin-source-${plugin.pluginGuid}`}
                     >
                       {plugin.source === "engine" ? "Engine" : "Project"}
                     </Badge>
-                    {maturity ? (
-                      <Badge variant="secondary">{maturity}</Badge>
-                    ) : null}
+                    {maturity.map((label) => (
+                      <Badge key={label} variant="secondary">{label}</Badge>
+                    ))}
                   </div>
                   <p className="text-sm text-muted-foreground">
                     v{plugin.settings.version}
@@ -290,7 +289,7 @@ export function ProjectPluginsSettings() {
                     className="min-h-[var(--chrome-row,28px)]"
                     data-testid={`settings-plugin-export-${plugin.pluginGuid}`}
                     disabled={Boolean(pending)}
-                    onClick={() => void run("Exporting Plugin", () => downloadPlugin(plugin))}
+                    onClick={() => setExportTarget(plugin)}
                   >
                     Export
                   </Button>
@@ -350,6 +349,13 @@ export function ProjectPluginsSettings() {
           }}
         />
       </FieldSet>
+      {exportTarget ? (
+        <PluginExportDialog
+          plugin={exportTarget}
+          onClose={() => setExportTarget(null)}
+          exportPlugin={exportPlugin}
+        />
+      ) : null}
       <NamePromptDialog
         open={newOpen}
         onOpenChange={setNewOpen}
@@ -369,10 +375,12 @@ export function ProjectPluginsSettings() {
       >
         <AlertDialogContent data-testid="settings-plugin-experimental-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Enable Experimental Plugin</AlertDialogTitle>
+            <AlertDialogTitle>
+              Enable {confirmEnable ? maturityLabels(confirmEnable).join(" / ") : "Experimental"} Plugin
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmEnable?.settings.displayName} is marked experimental or
-              beta.
+              {confirmEnable?.settings.displayName} is marked{" "}
+              {confirmEnable ? maturityLabels(confirmEnable).join(" and ") : "Experimental"}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

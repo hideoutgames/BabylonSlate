@@ -142,9 +142,9 @@ describe("isPluginContentFolderPath", () => {
         "starter-content/assets",
       ]),
     ).toBe(true);
-    expect(isPluginContentFolderPath("assets/fx", ["plugins/pack/assets"])).toBe(
-      false,
-    );
+    expect(
+      isPluginContentFolderPath("assets/fx", ["plugins/pack/assets"]),
+    ).toBe(false);
     expect(isPluginContentFolderPath("assets", ["plugins/pack/assets"])).toBe(
       false,
     );
@@ -200,7 +200,14 @@ describe("plugin enablement UI", () => {
       ]),
     ).toBe("Missing Dependency");
     expect(
-      pluginDependencyStatus("a", [{ code: "plugin.cycle", plugins: ["a", "b"] }]),
+      pluginDependencyStatus("a", [
+        { code: "plugin.dependency_blocked", pluginGuid: "a" },
+      ]),
+    ).toBe("Blocked Dependency");
+    expect(
+      pluginDependencyStatus("a", [
+        { code: "plugin.cycle", plugins: ["a", "b"] },
+      ]),
     ).toBe("Dependency Cycle");
     expect(
       pluginDependencyStatus("a", [
@@ -243,10 +250,13 @@ describe("plugin enablement UI", () => {
 describe("plugin editor utilities and class paths", () => {
   it("merges enabled plugin EUO class ids with project registrations", () => {
     expect(
-      mergePluginEditorUtilityObjects(["Tools"], [
-        { editorUtilityObjects: ["PackTools", "Tools"] },
-        { editorUtilityObjects: ["More"] },
-      ]),
+      mergePluginEditorUtilityObjects(
+        ["Tools"],
+        [
+          { editorUtilityObjects: ["PackTools", "Tools"] },
+          { editorUtilityObjects: ["More"] },
+        ],
+      ),
     ).toEqual(["Tools", "PackTools", "More"]);
   });
 
@@ -273,19 +283,22 @@ describe("plugin editor utilities and class paths", () => {
 
   it("lists Scene assets from every mounted root for Play changescene", () => {
     expect(
-      playSceneLibraryPaths(["assets/main.scene.babasset"], [
-        { path: "assets/main.scene.babasset", header: { type: "Scene" } },
-        {
-          path: "plugins/pack/assets/Arena.scene.babasset",
-          header: { type: "Scene" },
-        },
-        {
-          path: "__unresolved__/missing",
-          placeholder: true,
-          header: { type: "Scene" },
-        },
-        { path: "assets/Hero.class.babasset", header: { type: "Class" } },
-      ]),
+      playSceneLibraryPaths(
+        ["assets/main.scene.babasset"],
+        [
+          { path: "assets/main.scene.babasset", header: { type: "Scene" } },
+          {
+            path: "plugins/pack/assets/Arena.scene.babasset",
+            header: { type: "Scene" },
+          },
+          {
+            path: "__unresolved__/missing",
+            placeholder: true,
+            header: { type: "Scene" },
+          },
+          { path: "assets/Hero.class.babasset", header: { type: "Class" } },
+        ],
+      ),
     ).toEqual([
       "assets/main.scene.babasset",
       "plugins/pack/assets/Arena.scene.babasset",
@@ -312,7 +325,10 @@ describe("plugin editor utilities and class paths", () => {
       ),
     ).toBe(true);
     expect(
-      isPluginDocumentReadOnly(plugins, "plugins/pack/assets/Hero.class.babasset"),
+      isPluginDocumentReadOnly(
+        plugins,
+        "plugins/pack/assets/Hero.class.babasset",
+      ),
     ).toBe(false);
   });
 });

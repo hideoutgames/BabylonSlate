@@ -13,6 +13,7 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
+import { createDefaultPluginSettings } from "@babylonslate/assets";
 import {
   MISSING_STARTUP_SCENE_MESSAGE,
   parseScriptRegistry,
@@ -383,46 +384,105 @@ describe("collectAndExportGame", () => {
     expect(phases).toEqual(["Compiling", "Writing Pack"]);
   });
 
-  it("export-preset layer 3 can disable a plugin that is enabled in the editor", async () => {
-    const scene = {
-      ...createDefaultScene(),
-      actors: [createActor("a", "Starter", { classId: "StarterActor" })],
-    };
+  it.each([false, true])(
+    "export-preset layer 3 sets plugin enablement to %s independently of the editor",
+    async (enabled) => {
+      const scene = {
+        ...createDefaultScene(),
+        actors: [createActor("a", "Starter", { classId: "StarterActor" })],
+      };
+      const result = await collectAndExportGame({
+        startupSceneGuid: "scene-1",
+        assets: [
+          asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+          asset({
+            guid: "plug-class",
+            type: "Class",
+            name: "StarterActor",
+            parentClass: "Actor",
+            rootId: "plugin:plug-1",
+          }),
+        ],
+        plugins: [
+          {
+            pluginGuid: "plug-1",
+            settings: {
+              ...createDefaultPluginSettings({
+                pluginGuid: "plug-1",
+                displayName: "Starter",
+              }),
+              enabledByDefault: !enabled,
+            },
+          },
+        ],
+        projectPluginOverrides: { "plug-1": { enabled: !enabled } },
+        preset: {
+          ...defaultExportPreset(),
+          pluginOverrides: { "plug-1": { enabled } },
+        },
+        parentOf: () => "Actor",
+        sceneByGuid: () => scene,
+        graphByGuid: () => null,
+        bytesByGuid: (guid) =>
+          guid === "scene-1"
+            ? new TextEncoder().encode(JSON.stringify(scene))
+            : new TextEncoder().encode("{}"),
+        customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+        playFrameCap: 60,
+        physicsWorld: "3d",
+        playerFiles,
+      });
+      expect(result.ok).toBe(true);
+      if (!isOk(result)) return;
+      expect(
+        result.value.manifest.assets.some(
+          (entry) => entry.guid === "plug-class",
+        ),
+      ).toBe(enabled);
+    },
+  );
+
+  it("rejects an export preset that disables an enabled plugin's required dependency", async () => {
+    const dependent = createDefaultPluginSettings({
+      pluginGuid: "dependent",
+      displayName: "Gameplay Tools",
+    });
+    const dependency = createDefaultPluginSettings({
+      pluginGuid: "dependency",
+      displayName: "Shared Content",
+    });
+    dependent.enabledByDefault = true;
+    dependency.enabledByDefault = true;
+    dependent.pluginDependencies = [
+      { guid: "dependency", versionRange: "^1.0.0" },
+    ];
+    const scene = createDefaultScene();
     const result = await collectAndExportGame({
       startupSceneGuid: "scene-1",
-      assets: [
-        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({
-          guid: "plug-class",
-          type: "Class",
-          name: "StarterActor",
-          parentClass: "Actor",
-          rootId: "plugin:plug-1",
-        }),
+      assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
+      plugins: [
+        { pluginGuid: "dependent", settings: dependent },
+        { pluginGuid: "dependency", settings: dependency },
       ],
-      plugins: [{ pluginGuid: "plug-1", enabledByDefault: true }],
-      projectPluginOverrides: { "plug-1": { enabled: true } },
+      projectPluginOverrides: {},
       preset: {
         ...defaultExportPreset(),
-        pluginOverrides: { "plug-1": { enabled: false } },
+        pluginOverrides: { dependency: { enabled: false } },
       },
-      parentOf: () => "Actor",
+      parentOf: () => null,
       sceneByGuid: () => scene,
       graphByGuid: () => null,
-      bytesByGuid: (guid) =>
-        guid === "scene-1"
-          ? new TextEncoder().encode(JSON.stringify(scene))
-          : new TextEncoder().encode("{}"),
+      bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
       customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
     });
-    expect(result.ok).toBe(true);
-    if (!isOk(result)) return;
-    expect(
-      result.value.manifest.assets.some((entry) => entry.guid === "plug-class"),
-    ).toBe(false);
+    expect(result).toEqual({
+      ok: false,
+      error:
+        'Enable or install "Shared Content", required by "Gameplay Tools", or disable "Gameplay Tools" in the export preset.',
+    });
   });
 
   it("compiles AnimationGraph lifecycle and transition rules into packed scripts", async () => {
