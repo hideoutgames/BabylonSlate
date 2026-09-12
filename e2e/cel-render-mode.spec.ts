@@ -376,7 +376,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   // A large receiver makes a fixed world-space shadow offset sub-texel.
   // Enabling shadows must cast onto the floor without mottling the sphere.
   const sun = createActor("shadow-sun", "Shadow Sun", {
-    transform: { position: [0, 5, -3], rotation: [0.382683, 0, 0, 0.92388], scale: [1, 1, 1] },
+    transform: { position: [0, 5, -3], rotation: [0.353553, 0.353553, -0.146447, 0.853553], scale: [1, 1, 1] },
     components: [{ id: "sun-light", classId: "LightComponent", properties: {
       lightKind: "directional", color: [1, 1, 1], intensity: 1.5, castShadows: false,
     } }],
