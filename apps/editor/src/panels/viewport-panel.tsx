@@ -717,6 +717,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           const bounds = visual.getBoundingInfo().boundingBox;
           const textureStates = visual.material?.getActiveTextures().map((texture) => ({
             ready: texture.isReady(),
+            pixels: texture.isReady() ? Array.from(new Uint8Array(texture._readPixelsSync()?.buffer ?? new ArrayBuffer(0))).slice(0, 4) : null,
             size: texture.getSize(),
             error: texture.loadingError,
             internal: {
@@ -726,6 +727,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
               mipmaps: texture.getInternalTexture()?.generateMipMaps,
             },
           }));
+          if (actor.id === "ground" && visual.isReady(true)) {
+            engineRef.current?.scene.unfreezeActiveMeshes();
+          }
           return [
             {
               ...materialViewportTestSnapshot(visual),
@@ -735,6 +739,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
               textureStates,
               meshReady: visual.isReady(true),
               enabled: visual.isEnabled(),
+              visible: visual.isVisible,
+              visibility: visual.visibility,
+              group: visual.renderingGroupId,
               bounds: [bounds.minimumWorld.asArray(), bounds.maximumWorld.asArray()],
               active: engineRef.current?.scene.getActiveMeshes().data.map((mesh) => mesh?.name),
             },
