@@ -1,4 +1,4 @@
-import { Frustum, Vector3, type AbstractMesh, type Matrix, type Plane } from "@babylonjs/core";
+import { Frustum, TransformNode, Vector3, type AbstractMesh, type Matrix, type Plane } from "@babylonjs/core";
 
 type Bounds = { min: Vector3; max: Vector3 };
 type Node = Bounds & { parent?: Node; left?: Node; right?: Node; mesh?: AbstractMesh };
@@ -15,14 +15,25 @@ export class ShadowSpatialIndex {
     mesh.computeWorldMatrix(true);
     const box = mesh.getBoundingInfo().boundingBox;
     this.leaves.set(mesh, { min: box.minimumWorld.clone(), max: box.maximumWorld.clone(), mesh });
-    const update = () => { this.dirty.add(mesh); };
+    let parent: TransformNode | null = null;
+    const updateFromParent = () => { mesh.computeWorldMatrix(); };
+    const update = () => {
+      this.dirty.add(mesh);
+      if (mesh.parent === parent) return;
+      parent?.onAfterWorldMatrixUpdateObservable.removeCallback(updateFromParent);
+      parent = mesh.parent instanceof TransformNode ? mesh.parent : null;
+      parent?.onAfterWorldMatrixUpdateObservable.add(updateFromParent);
+    };
     mesh.onAfterWorldMatrixUpdateObservable.add(update);
-    this.observers.set(mesh, update);
+    update();
+    this.observers.set(mesh, () => {
+      mesh.onAfterWorldMatrixUpdateObservable.removeCallback(update);
+      parent?.onAfterWorldMatrixUpdateObservable.removeCallback(updateFromParent);
+    });
     this.rebuild = true;
   }
   remove(mesh: AbstractMesh): void {
-    const update = this.observers.get(mesh);
-    if (update) mesh.onAfterWorldMatrixUpdateObservable.removeCallback(update);
+    this.observers.get(mesh)?.();
     this.observers.delete(mesh);
     this.leaves.delete(mesh); this.dirty.delete(mesh); this.rebuild = true;
   }

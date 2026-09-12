@@ -1409,5 +1409,4 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
     // visit them before the shadow hierarchy is queried.
     mesh.computeWorldMatrix();
   }
-  for (const child of mesh.getChildMeshes()) child.computeWorldMatrix();
 }

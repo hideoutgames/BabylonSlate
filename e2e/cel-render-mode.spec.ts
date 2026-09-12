@@ -349,7 +349,11 @@ test("CEL preserves authored and texture colors, supports every light, and resto
         message: `${kind} colored light`,
         timeout: 20_000,
       })
-      .toBeGreaterThan(100);
+      .toBeGreaterThan(100)
+      .catch(async (error: unknown) => {
+        await viewport.screenshot({ path: testInfo.outputPath(`cel-${kind}-failure.png`) });
+        throw error;
+      });
     scene.settings.celShading.lightColorInfluence = 0;
     await setPreviewScene(page, scene);
     await expect
