@@ -507,7 +507,7 @@ export function attachSingleShadowGenerator(
         : Math.max(light.orthoRight - light.orthoLeft, light.orthoTop - light.orthoBottom)
           * (1 + 2 * light.shadowOrthoScale);
       generator.normalBias = sceneRenderingSettings(scene).mode === "cel" && Number.isFinite(extent)
-        ? Math.max(SHADOW_NORMAL_BIAS, extent / mapSize)
+        ? Math.max(SHADOW_NORMAL_BIAS, 2 * extent / mapSize)
         : SHADOW_NORMAL_BIAS;
     });
   }

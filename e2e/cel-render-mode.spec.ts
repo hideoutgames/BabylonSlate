@@ -389,6 +389,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   await setPreviewScene(page, scene);
   await expect.poll(() => pixelsNear(viewport, authored)).toBeGreaterThan(100);
   const withoutShadows = await framePixels(viewport);
+  const frameSize = await viewport.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
   await viewport.screenshot({ path: testInfo.outputPath("cel-shadow-receiver-unshadowed.png") });
   sun.components[0]!.properties.castShadows = true;
   await setPreviewScene(page, scene);
@@ -398,11 +399,20 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     let receiverChanges = 0;
     let surfaceChanges = 0;
     let surfacePixels = 0;
+    let nativePixels = 0;
+    let nativeChanges = 0;
     for (let i = 0; i < withoutShadows.length; i += 4) {
       const r = withoutShadows[i]!;
       const g = withoutShadows[i + 1]!;
       const b = withoutShadows[i + 2]!;
       const changed = Math.abs(g - withShadows[i + 1]!) > 15;
+      const x = (i / 4 % frameSize.width) / frameSize.width;
+      const y = Math.floor(i / 4 / frameSize.width) / frameSize.height;
+      // Interior of the checker-textured box's front face in this fixed camera.
+      if (x > 0.53 && x < 0.69 && y > 0.43 && y < 0.61) {
+        nativePixels++;
+        if (changed) nativeChanges++;
+      }
       if (g > r * 1.7 && g > b * 1.3 && g > 35) {
         surfacePixels++;
         if (changed) surfaceChanges++;
@@ -410,8 +420,8 @@ test("CEL preserves authored and texture colors, supports every light, and resto
         receiverChanges++;
       }
     }
-    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.05, receiverChanges, surfacePixels, surfaceChanges };
-  }).toMatchObject({ castsShadow: true, cleanSurface: true });
+    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.05, cleanNativeSurface: nativePixels > 500 && nativeChanges / nativePixels < 0.02 };
+  }).toEqual({ castsShadow: true, cleanSurface: true, cleanNativeSurface: true });
   await viewport.screenshot({ path: testInfo.outputPath("cel-cast-shadows.png") });
 
   scene.actors = [...subjects, fill];
