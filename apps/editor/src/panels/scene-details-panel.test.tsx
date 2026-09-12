@@ -614,6 +614,56 @@ describe("SceneDetailsPanel authoring", () => {
     expect(next.actors.map((actor) => actor.id)).toEqual(actorIds);
   });
 
+  it("moves and removes repeated post-process assets with their own enabled state", () => {
+    scene().settings.postProcessStack = [
+      { materialGuid: "pp-blur", enabled: true },
+      { materialGuid: "pp-blur", enabled: false },
+    ];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("scene-post-process-stack-1-move-up"));
+    expect(
+      harness.applySceneChange.mock.calls.at(-1)![1].settings.postProcessStack,
+    ).toEqual([
+      { materialGuid: "pp-blur", enabled: false },
+      { materialGuid: "pp-blur", enabled: true },
+    ]);
+    fireEvent.click(screen.getByTestId("scene-post-process-stack-0-remove"));
+    expect(
+      harness.applySceneChange.mock.calls.at(-1)![1].settings.postProcessStack,
+    ).toEqual([{ materialGuid: "pp-blur", enabled: false }]);
+  });
+
+  it("keeps repeated layers' Z-Order and enabled state when moving and editing them", () => {
+    scene().settings.sceneLayers = [
+      { assetGuid: "layer-hud", zOrder: 2, enabled: true },
+      { assetGuid: "layer-hud", zOrder: 8, enabled: false },
+    ];
+    const { rerender } = render(
+      <SceneDetailsPanel {...({} as IDockviewPanelProps)} />,
+    );
+    fireEvent.click(screen.getByTestId("scene-layers-stack-1-move-up"));
+    const reordered = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(reordered.settings.sceneLayers).toEqual([
+      { assetGuid: "layer-hud", zOrder: 8, enabled: false },
+      { assetGuid: "layer-hud", zOrder: 2, enabled: true },
+    ]);
+    harness.scene = reordered;
+    rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Layer 1 Z-Order" }), {
+      target: { value: "12" },
+    });
+    expect(
+      harness.applySceneChange.mock.calls.at(-1)![1].settings.sceneLayers,
+    ).toEqual([
+      { assetGuid: "layer-hud", zOrder: 12, enabled: false },
+      { assetGuid: "layer-hud", zOrder: 2, enabled: true },
+    ]);
+    fireEvent.click(screen.getByRole("switch", { name: "Layer 1 Enabled" }));
+    expect(
+      harness.applySceneChange.mock.calls.at(-1)![1].settings.sceneLayers[0],
+    ).toEqual({ assetGuid: "layer-hud", zOrder: 8, enabled: true });
+  });
+
   it("shows overlay Details with gravity and post-process only", () => {
     harness.documentKind = "scene-layer";
     harness.documentId = "scene-layer:assets/Hud.scenelayer.babasset";

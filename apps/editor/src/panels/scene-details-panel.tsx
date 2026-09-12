@@ -4,7 +4,7 @@ import {
   AssetPicker,
   AssetPickerControl,
   MultilineTextField,
-  NamedListEditor,
+  EntryListEditor,
   NumberField,
   PanelFrame,
   PropertyGrid,
@@ -46,7 +46,11 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { Switch } from "@babylonslate/ui/components/switch";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
@@ -176,6 +180,40 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     return (
       assetRegistry?.getByGuid?.(guid)?.header.type ??
       pickerAssets.find((asset) => asset.guid === guid)?.type
+    );
+  };
+  const stackAssetPicker = (
+    guid: string,
+    id: string,
+    label: string,
+    onPick: () => void,
+  ) => {
+    const asset = pickerAssets.find((entry) => entry.guid === guid);
+    return (
+      <Field className="min-w-0 gap-0">
+        <FieldLabel className="sr-only" htmlFor={id}>
+          {label}
+        </FieldLabel>
+        <AssetPickerControl value={guid}>
+          <Button
+            type="button"
+            id={id}
+            variant="outline"
+            size="sm"
+            className="w-full min-w-0 justify-start pointer-coarse:min-h-11"
+            title={
+              asset ? `${asset.name} — ${asset.path}` : `Missing Asset: ${guid}`
+            }
+            data-testid={id}
+            onClick={onPick}
+          >
+            {selectedPickerIdentity(
+              { ...assetRowIdentity(asset), displayType: undefined },
+              "Missing Asset",
+            )}
+          </Button>
+        </AssetPickerControl>
+      </Field>
     );
   };
   const fontHasFacetype = (guid: string | null | undefined) => {
@@ -565,181 +603,119 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         ) : null}
         {showPostProcess ? (
           <div className="px-2 pb-3">
-            <NamedListEditor
+            <EntryListEditor
               title="Post Process"
               data-testid="scene-post-process-stack"
-              values={scene.settings.postProcessStack.map(
-                (entry) => entry.materialGuid,
-              )}
+              items={scene.settings.postProcessStack}
               addLabel="Add Pass"
+              countNoun={{ one: "pass", other: "passes" }}
               onAdd={() => setPostProcessPick("add")}
-              onChange={(guids) =>
+              onChange={(postProcessStack) =>
                 mutate({
                   ...scene,
                   settings: {
                     ...scene.settings,
-                    postProcessStack: stackFromGuids(
-                      guids,
-                      scene.settings.postProcessStack,
-                    ),
+                    postProcessStack,
                   },
                 })
               }
-              renderItem={({ value, index }) => (
-                <>
-                  <Field className="min-w-32 flex-1">
-                    <FieldLabel
-                      htmlFor={`scene-post-process-${index}-material`}
-                    >
-                      Material
-                    </FieldLabel>
-                    <AssetPickerControl value={value}>
-                      <Button
-                        type="button"
-                        id={`scene-post-process-${index}-material`}
-                        variant="outline"
-                        className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                        data-testid={`scene-post-process-${index}-material`}
-                        onClick={() => setPostProcessPick(index)}
-                      >
-                        {selectedPickerIdentity(
-                          assetRowIdentity(
-                            pickerAssets.find((asset) => asset.guid === value),
-                          ),
-                          "Pick Material",
-                        )}
-                      </Button>
-                    </AssetPickerControl>
-                  </Field>
-                  <Field orientation="horizontal" className="w-auto">
-                    <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
-                      Enabled
-                    </FieldLabel>
-                    <Switch
-                      id={`scene-post-process-${index}-enabled`}
-                      data-testid={`scene-post-process-${index}-enabled`}
-                      className="min-h-[var(--touch-target,44px)]"
-                      checked={
-                        scene.settings.postProcessStack[index]?.enabled !==
-                        false
-                      }
-                      onCheckedChange={(checked) =>
-                        mutate({
-                          ...scene,
-                          settings: {
-                            ...scene.settings,
-                            postProcessStack:
-                              scene.settings.postProcessStack.map(
-                                (entry, row) =>
-                                  row === index
-                                    ? { ...entry, enabled: checked === true }
-                                    : entry,
-                              ),
-                          },
-                        })
-                      }
-                    />
-                  </Field>
-                </>
+              renderItemHeader={({ item, index }) =>
+                stackAssetPicker(
+                  item.materialGuid,
+                  `scene-post-process-${index}-material`,
+                  `Pass ${index + 1} Material`,
+                  () => setPostProcessPick(index),
+                )
+              }
+              renderItem={({ item, index, onChange }) => (
+                <Field
+                  orientation="horizontal"
+                  className="w-fit min-h-7 gap-3 px-3 pointer-coarse:min-h-11"
+                >
+                  <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
+                    Enabled
+                  </FieldLabel>
+                  <Switch
+                    size="sm"
+                    id={`scene-post-process-${index}-enabled`}
+                    data-testid={`scene-post-process-${index}-enabled`}
+                    aria-label={`Pass ${index + 1} Enabled`}
+                    checked={item.enabled !== false}
+                    onCheckedChange={(enabled) =>
+                      onChange({ ...item, enabled })
+                    }
+                  />
+                </Field>
               )}
             />
           </div>
         ) : null}
         {showSceneLayers ? (
           <div className="px-2 pb-3">
-            <NamedListEditor
+            <EntryListEditor
               title="Scene Layers"
               data-testid="scene-layers-stack"
-              values={scene.settings.sceneLayers.map(
-                (entry) => entry.assetGuid,
-              )}
+              items={scene.settings.sceneLayers}
               addLabel="Add Layer"
+              countNoun={{ one: "layer", other: "layers" }}
               onAdd={() => setSceneLayerPick("add")}
-              onChange={(guids) =>
+              onChange={(sceneLayers) =>
                 mutate({
                   ...scene,
                   settings: {
                     ...scene.settings,
-                    sceneLayers: sceneLayerStackFromGuids(
-                      guids,
-                      scene.settings.sceneLayers,
-                    ),
+                    sceneLayers,
                   },
                 })
               }
-              renderItem={({ value, index }) => (
-                <>
-                  <Field className="min-w-32 flex-1">
-                    <FieldLabel htmlFor={`scene-layer-${index}-asset`}>
-                      Scene Layer
+              renderItemHeader={({ item, index }) =>
+                stackAssetPicker(
+                  item.assetGuid,
+                  `scene-layer-${index}-asset`,
+                  `Layer ${index + 1} Asset`,
+                  () => setSceneLayerPick(index),
+                )
+              }
+              renderItem={({ item, index, onChange }) => (
+                <FieldGroup className="flex-row flex-wrap items-center gap-1">
+                  <Field
+                    orientation="horizontal"
+                    className="w-fit min-h-7 px-3 pointer-coarse:min-h-11"
+                  >
+                    <FieldLabel
+                      className="sr-only"
+                      htmlFor={`scene-layer-${index}-enabled`}
+                    >
+                      Layer {index + 1} Enabled
                     </FieldLabel>
-                    <AssetPickerControl value={value}>
-                      <Button
-                        type="button"
-                        id={`scene-layer-${index}-asset`}
-                        variant="outline"
-                        className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                        data-testid={`scene-layer-${index}-asset`}
-                        onClick={() => setSceneLayerPick(index)}
-                      >
-                        {selectedPickerIdentity(
-                          assetRowIdentity(
-                            pickerAssets.find((asset) => asset.guid === value),
-                          ),
-                          "Pick Scene Layer",
-                        )}
-                      </Button>
-                    </AssetPickerControl>
+                    <Switch
+                      size="sm"
+                      id={`scene-layer-${index}-enabled`}
+                      data-testid={`scene-layer-${index}-enabled`}
+                      title={item.enabled !== false ? "Enabled" : "Disabled"}
+                      checked={item.enabled !== false}
+                      onCheckedChange={(enabled) =>
+                        onChange({ ...item, enabled })
+                      }
+                    />
                   </Field>
-                  <Field className="w-24">
+                  <Field
+                    orientation="horizontal"
+                    className="w-auto min-w-0 gap-1"
+                  >
                     <FieldLabel htmlFor={`scene-layer-${index}-z`}>
                       Z-Order
                     </FieldLabel>
                     <NumberField
                       id={`scene-layer-${index}-z`}
                       data-testid={`scene-layer-${index}-z-order`}
-                      value={scene.settings.sceneLayers[index]?.zOrder ?? index}
-                      onChange={(zOrder) =>
-                        mutate({
-                          ...scene,
-                          settings: {
-                            ...scene.settings,
-                            sceneLayers: scene.settings.sceneLayers.map(
-                              (entry, row) =>
-                                row === index ? { ...entry, zOrder } : entry,
-                            ),
-                          },
-                        })
-                      }
+                      className="h-7 w-12 px-1.5 pointer-coarse:h-11"
+                      aria-label={`Layer ${index + 1} Z-Order`}
+                      value={item.zOrder}
+                      onChange={(zOrder) => onChange({ ...item, zOrder })}
                     />
                   </Field>
-                  <Field orientation="horizontal" className="w-auto">
-                    <FieldLabel htmlFor={`scene-layer-${index}-enabled`}>
-                      Enabled
-                    </FieldLabel>
-                    <Switch
-                      id={`scene-layer-${index}-enabled`}
-                      data-testid={`scene-layer-${index}-enabled`}
-                      checked={
-                        scene.settings.sceneLayers[index]?.enabled !== false
-                      }
-                      onCheckedChange={(checked) =>
-                        mutate({
-                          ...scene,
-                          settings: {
-                            ...scene.settings,
-                            sceneLayers: scene.settings.sceneLayers.map(
-                              (entry, row) =>
-                                row === index
-                                  ? { ...entry, enabled: checked === true }
-                                  : entry,
-                            ),
-                          },
-                        })
-                      }
-                    />
-                  </Field>
-                </>
+                </FieldGroup>
               )}
             />
           </div>
@@ -960,7 +936,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
-            logicClasses: subclassClassEntries("ComponentLogic", assetRegistry?.list() ?? []),
+            logicClasses: subclassClassEntries(
+              "ComponentLogic",
+              assetRegistry?.list() ?? [],
+            ),
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
           },
@@ -1325,32 +1304,4 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       />
     </PanelFrame>
   );
-}
-
-function stackFromGuids(
-  guids: readonly string[],
-  previous: readonly { materialGuid: string; enabled: boolean }[],
-): { materialGuid: string; enabled: boolean }[] {
-  const remaining = [...previous];
-  return guids.map((guid) => {
-    const index = remaining.findIndex((entry) => entry.materialGuid === guid);
-    const prev = index >= 0 ? remaining.splice(index, 1)[0] : undefined;
-    return { materialGuid: guid, enabled: prev?.enabled !== false };
-  });
-}
-
-function sceneLayerStackFromGuids(
-  guids: readonly string[],
-  previous: readonly { assetGuid: string; zOrder: number; enabled: boolean }[],
-): { assetGuid: string; zOrder: number; enabled: boolean }[] {
-  const remaining = [...previous];
-  return guids.map((guid, index) => {
-    const found = remaining.findIndex((entry) => entry.assetGuid === guid);
-    const prev = found >= 0 ? remaining.splice(found, 1)[0] : undefined;
-    return {
-      assetGuid: guid,
-      zOrder: prev?.zOrder ?? index,
-      enabled: prev?.enabled !== false,
-    };
-  });
 }

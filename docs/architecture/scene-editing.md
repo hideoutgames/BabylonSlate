@@ -6,6 +6,8 @@ SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world
 
 ## SerializedScene v3
 
+Scene Defaults lists Post Process passes and Scene Layers as compact two-line entries: a single-line asset picker with Open Asset, followed by Enabled, layer Z-Order, and reorder/remove controls. Names truncate with full names and paths available on hover. Desktop controls are 28px; coarse-pointer controls expand and wrap without overlapping. Counts appear beside Add. Reordering moves the complete entry, preserving independent Enabled and Z-Order values even when an asset appears more than once.
+
 | Field          | Role                                                                                                 |
 | -------------- | ---------------------------------------------------------------------------------------------------- |
 | `name`         | Scene display name                                                                                   |
