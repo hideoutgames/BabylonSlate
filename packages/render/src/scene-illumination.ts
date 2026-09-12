@@ -219,11 +219,12 @@ function setAuthoredCameraAspect(camera: Camera, aspect: number): void {
       // Babylon has populated its projection cache before this notification.
       // Keep its depth calculation live: skybox draws temporarily set maxZ to 0.
       const projection = current.getProjectionMatrix();
+      const m = projection.m;
       const authoredAspect = authoredCameraAspects.get(current)!;
       if (current.fovMode === Camera.FOVMODE_VERTICAL_FIXED) {
-        projection.setAtIndex(0, projection.m[5]! / authoredAspect);
+        projection.setRowFromFloats(0, m[5]! / authoredAspect, m[1]!, m[2]!, m[3]!);
       } else {
-        projection.setAtIndex(5, projection.m[0]! * authoredAspect);
+        projection.setRowFromFloats(1, m[4]!, m[0]! * authoredAspect, m[6]!, m[7]!);
       }
     });
   }
