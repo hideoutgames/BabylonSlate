@@ -29,7 +29,7 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 describe("material node contracts", () => {
   it.each(["a", "b"])("compiles animated normal displacement with Time on Multiply %s", async (timePin) => {
     const doc = createDefaultMaterialDocument();
-    node(doc, "time", "input.time");
+    node(doc, "time", "input.time", { timeMode: "seconds" });
     node(doc, "sine", "math.sin");
     node(doc, "normal", "input.vertexNormalWS");
     node(doc, "multiply", "math.multiply");

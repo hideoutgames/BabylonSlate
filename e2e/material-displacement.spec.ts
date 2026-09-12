@@ -17,7 +17,7 @@ test("animated normal displacement keeps the Material preview rendering", async 
   const doc = createDefaultMaterialDocument();
   doc.preview.mesh = "sphere";
   doc.nodes.push(
-    { id: "time", type: "input.time", position: { x: -500, y: 0 }, properties: {} },
+    { id: "time", type: "input.time", position: { x: -500, y: 0 }, properties: { timeMode: "seconds" } },
     { id: "sine", type: "math.sin", position: { x: -250, y: 0 }, properties: {} },
     { id: "normal", type: "input.vertexNormalWS", position: { x: -250, y: 250 }, properties: {} },
     { id: "multiply", type: "math.multiply", position: { x: 0, y: 250 }, properties: {} },
@@ -43,5 +43,7 @@ test("animated normal displacement keeps the Material preview rendering", async 
   const first = await canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL());
   await expect.poll(() => errors).toEqual([]);
   await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL()), { timeout: 10_000 }).not.toBe(first);
+  const second = await canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL());
+  await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL()), { timeout: 10_000 }).not.toBe(second);
   expect(errors).toEqual([]);
 });
