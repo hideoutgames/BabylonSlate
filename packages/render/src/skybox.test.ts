@@ -1,4 +1,4 @@
-import { Mesh, PBRMaterial, Texture } from "@babylonjs/core";
+import { Mesh, PBRMaterial, Texture, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createSkyboxComponent } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
@@ -14,6 +14,7 @@ import {
   skyboxCubeCacheGuid,
 } from "./skybox";
 import { RENDERING_GROUP } from "./sorting";
+import { applyAuthoredCameraLens } from "./scene-illumination";
 
 describe("editor skybox mesh", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -70,6 +71,38 @@ describe("editor skybox mesh", () => {
     expect(mesh.position.x).toBeCloseTo(4);
     expect(mesh.position.y).toBeCloseTo(5);
     expect(mesh.position.z).toBeCloseTo(6);
+  });
+
+  it("draws a large skybox beyond the authored far clip and restores normal clipping", () => {
+    const { scene } = createHandle();
+    const actor = createActor("sky", "Skybox", {
+      components: [createSkyboxComponent("sky-comp", 10000)],
+    });
+    applySceneToBabylonScene(scene, { ...createDefaultScene(), actors: [actor] });
+    const mesh = scene.getMeshByName(editorMeshName("sky")) as Mesh;
+    const camera = new UniversalCamera("possessed", Vector3.Zero(), scene);
+    applyAuthoredCameraLens(camera, {
+      projectionMode: "perspective", nearClip: 0.1, farClip: 1000,
+    }, 16 / 9);
+    scene.activeCamera = camera;
+    const faceCenter = new Vector3(0, 0, 5000);
+    const projectedDepth = () =>
+      Vector3.TransformCoordinates(faceCenter, camera.getProjectionMatrix()).z;
+    expect(projectedDepth()).toBeGreaterThan(1);
+    let skyDepth: number | undefined;
+    let skyAspect: number | undefined;
+    mesh.onBeforeRenderObservable.add(() => {
+      skyDepth = projectedDepth();
+      const matrix = camera.getProjectionMatrix().m;
+      skyAspect = matrix[5]! / matrix[0]!;
+    });
+    // Exercise Babylon's actual per-mesh clip exemption, including restoration.
+    mesh.render(mesh.subMeshes[0]!, false);
+    expect(skyDepth).toBeGreaterThan(0);
+    expect(skyDepth).toBeLessThan(1);
+    expect(skyAspect).toBeCloseTo(16 / 9);
+    expect(camera.maxZ).toBe(1000);
+    expect(projectedDepth()).toBeGreaterThan(1);
   });
 
   it("keys the default cubemap separately from authored face combinations", () => {
