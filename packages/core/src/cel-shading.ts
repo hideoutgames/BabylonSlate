@@ -10,7 +10,7 @@ export interface CelShadingSettings {
   specularSize: number;
   specularSoftness: number;
   lightColorInfluence: number;
-  lightFalloff: "smooth" | "banded";
+  lightMixing: "strongest" | "additive" | "blend";
 }
 
 /** Missing scene keys inherit independently, including after project edits. */
@@ -25,7 +25,7 @@ export const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
   specularSize: 0.2,
   specularSoftness: 0,
   lightColorInfluence: 1,
-  lightFalloff: "banded",
+  lightMixing: "strongest",
 };
 
 export const CEL_SHADING_LIMITS = {
@@ -57,9 +57,12 @@ export function normalizeCelShadingOverrides(
       Math.max(min, key === "shadowBands" ? Math.round(number) : number),
     );
   }
-  if (source.lightFalloff === "smooth" || source.lightFalloff === "banded") {
-    result.lightFalloff = source.lightFalloff;
-  }
+  if (
+    source.lightMixing === "strongest" ||
+    source.lightMixing === "additive" ||
+    source.lightMixing === "blend"
+  )
+    result.lightMixing = source.lightMixing;
   return result;
 }
 

@@ -12,6 +12,7 @@ import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import {
   bindCelSettings,
   celFunctions,
+  celLightAccumulators,
   celLightingFunctions,
   CEL_UNIFORMS,
 } from "./cel-shader";
@@ -68,11 +69,15 @@ export class CelLightBlock extends LightBlock {
         )
         .replace(
           /(vec3 diffuseBase|var diffuseBase: vec3f)/,
-          `${state.shaderLanguage === 1 ? "var slateCelUnattenuated: vec3f=vec3f(0.0);" : "vec3 slateCelUnattenuated=vec3(0.0);"}$1`,
+          `${celLightAccumulators(state.shaderLanguage === 1)}$1`,
         )
         .replace(
           " = diffuseBase",
-          " = slateCelSurfaceLight(diffuseBase, slateCelUnattenuated)",
+          " = slateCelSurfaceLight(diffuseBase, slateCelPeak)",
+        )
+        .replace(
+          " = specularBase",
+          " = slateCelSurfaceSpecular(specularBase, slateCelPeak, slateCelTotal)",
         )
         .replace(
           ` = ${this.worldNormal.associatedVariableName}.xyz;`,

@@ -165,12 +165,12 @@ test("CEL preserves authored and texture colors, supports every light, and resto
 
   // Overlapping fractional lights must share one ramp. Quantizing each light
   // separately produces extra brightness levels even with zero softness.
-  for (const lightFalloff of ["banded", "smooth"] as const) {
+  for (const lightMixing of ["strongest", "additive", "blend"] as const) {
     scene.settings.celShading = {
       shadowStrength: 1,
       shadowBands: 3,
       bandSoftness: 0,
-      lightFalloff,
+      lightMixing,
     };
     scene.actors = [
       ...subjects,
@@ -199,9 +199,12 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     await expect
       .poll(() => pixelsNear(viewport, [26, 77, 39]))
       .toBeGreaterThan(100);
-    await expect
-      .poll(() => pixelsNear(viewport, authored))
-      .toBeGreaterThan(100);
+    if (lightMixing === "additive")
+      await expect
+        .poll(() => pixelsNear(viewport, authored))
+        .toBeGreaterThan(100);
+    else
+      await expect.poll(() => pixelsNear(viewport, authored)).toBeLessThan(30);
     await expect
       .poll(() =>
         viewport.evaluate((node: HTMLCanvasElement) => {
@@ -237,8 +240,40 @@ test("CEL preserves authored and texture colors, supports every light, and resto
       .toBeLessThan(0.03);
   }
 
+  // Different colored fills distinguish choosing one light from mixing hues.
+  const coloredFills = [
+    [1, 0, 0],
+    [0, 1, 0],
+  ].map((color, index) =>
+    createActor(`tint-${index}`, "Tint", {
+      components: [
+        {
+          id: `tint-light-${index}`,
+          classId: "HemisphericFillLightComponent",
+          properties: {
+            color,
+            groundColor: color,
+            intensity: index === 0 ? 0.9 : 0.6,
+          },
+        },
+      ],
+    }),
+  );
+  scene.actors = [...subjects, ...coloredFills];
+  for (const [lightMixing, color] of [
+    ["strongest", [51, 0, 0]],
+    ["blend", [51, 102, 0]],
+    ["additive", [51, 102, 0]],
+  ] as const) {
+    scene.settings.celShading = { shadowStrength: 1, lightMixing };
+    await setPreviewScene(page, scene);
+    await expect
+      .poll(() => pixelsNear(viewport, [...color]))
+      .toBeGreaterThan(500);
+  }
+
   for (const kind of ["directional", "point", "spot"] as const) {
-    scene.settings.celShading = { shadowStrength: 1, lightFalloff: "banded" };
+    scene.settings.celShading = { shadowStrength: 1 };
     const light = createActor("key", "Key", {
       transform: {
         position: [0, 3, -6],

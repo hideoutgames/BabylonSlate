@@ -11,7 +11,11 @@ import { defaultVertexShader } from "@babylonjs/core/Shaders/default.vertex";
 import { defaultPixelShader } from "@babylonjs/core/Shaders/default.fragment";
 import { defaultVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.vertex";
 import { defaultPixelShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.fragment";
-import { bindCelSettings, CEL_UNIFORMS } from "./cel-shader";
+import {
+  bindCelSettings,
+  celLightAccumulators,
+  CEL_UNIFORMS,
+} from "./cel-shader";
 
 const NATIVE_CEL_UNIFORMS = [...CEL_UNIFORMS, "slateCelTextures"];
 for (const wgsl of [false, true]) {
@@ -37,7 +41,7 @@ for (const wgsl of [false, true]) {
     .replaceAll("#include<lightFragment>", "#include<slateCelLightFragment>")
     .replace(
       /(vec3 diffuseBase|var diffuseBase: vec3f)/,
-      `${wgsl ? "var slateCelUnattenuated: vec3f=vec3f(0.0);" : "vec3 slateCelUnattenuated=vec3(0.0);"}$1`,
+      `${celLightAccumulators(wgsl)}$1`,
     )
     .replace(
       "#define CUSTOM_FRAGMENT_UPDATE_DIFFUSE",
@@ -49,7 +53,7 @@ for (const wgsl of [false, true]) {
     )
     .replace(
       "#ifdef EMISSIVEASILLUMINATION",
-      "diffuseBase=slateCelSurfaceLight(diffuseBase,slateCelUnattenuated);\n#ifdef EMISSIVEASILLUMINATION",
+      "diffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\nspecularBase=slateCelSurfaceSpecular(specularBase,slateCelPeak,slateCelTotal);\n#ifdef EMISSIVEASILLUMINATION",
     );
 }
 
