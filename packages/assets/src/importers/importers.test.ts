@@ -158,7 +158,7 @@ describe("importers", () => {
     expect(pickerImportAccept()).toMatch(/\.obj/);
     expect(pickerImportAccept()).toMatch(/\.bin/);
     expect(pickerImportAccept()).toMatch(/\.mtl/);
-    expect(pickerImportAccept()).not.toMatch(/\.fbx/);
+    expect(pickerImportAccept()).toMatch(/\.fbx/);
   });
 
   it("imports audio", async () => {

@@ -24,6 +24,7 @@ import {
   convertObjImportBatch,
   animationRetargetHasMatches,
 } from "@babylonslate/render";
+import { convertFbxImportBatch } from "@babylonslate/render/fbx-import";
 import {
   ContextMenuOverlay,
   FolderBreadcrumbs,
@@ -1383,13 +1384,15 @@ export function ContentBrowserWorkspace({
         () => setImportProgress(null),
         async () => {
           try {
+            const fbx = await convertFbxImportBatch(incoming);
+            errors.push(...fbx.errors);
             const { files: converted, errors: convertErrors } =
-              await convertObjImportBatch(incoming, {
+              await convertObjImportBatch(fbx.files, {
                 engine: play?.ensureSharedEngine() ?? undefined,
               });
             errors.push(...convertErrors);
             const prepared = groupMsdfImportBatch(
-              embedGltfImportBatch(converted),
+              embedGltfImportBatch(converted).filter((file) => !fbx.consumedSidecars.includes(file.name)),
             );
             if (prepared.length === 0) return;
             setImportProgress({

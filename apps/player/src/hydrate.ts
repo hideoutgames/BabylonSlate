@@ -5,6 +5,7 @@ import {
 } from "@babylonslate/anim-graph";
 import {
   hydrateSpriteAnimationPixelSizes,
+  resolveModelAnimationDurations,
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   retargetAnimationLoadsFromAnimations,
@@ -258,7 +259,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     game.textureBytes,
   );
 
-  const clipCatalog: AnimClipCatalogEntry[] = [
+  const clipCatalog = resolveModelAnimationDurations<AnimClipCatalogEntry>([
     ...[...animationPayloads.entries()].map(([guid, payload]) => ({
       guid,
       type: "Animation",
@@ -274,7 +275,9 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       name: guid,
       durationMs: spriteAnimationDurationMs(payload),
     })),
-  ];
+  ], game.modelBytes, retargetAnimationLoadsFromAnimations(
+    [...animationPayloads].map(([guid, payload]) => ({ guid, payload })),
+  ));
   const resolvedAnimGraphs = animGraphs.map((entry) => {
     const document = parseAnimGraphDocument(entry.document);
     if (!document) return entry;

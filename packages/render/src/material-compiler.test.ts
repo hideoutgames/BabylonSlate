@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -26,6 +26,42 @@ function host(): Scene {
   });
   return scene;
 }
+
+it("rebinds each mesh's bone palette when sharing a frozen compiled material", async () => {
+  const scene = host();
+  scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+  const caps = scene.getEngine().getCaps();
+  caps.textureFloat = true;
+  caps.maxVertexTextureImageUnits = 16;
+  const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "shared-skins" });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const meshes = [1, 3].map((count, index) => {
+    const mesh = MeshBuilder.CreateBox(`skin-${index}`, {}, scene);
+    const skeleton = new Skeleton(`rig-${index}`, `rig-${index}`, scene);
+    for (let i = 0; i < count; i++) new Bone(`bone-${i}`, skeleton, null, Matrix.Translation(index, 0, 0));
+    mesh.skeleton = skeleton;
+    mesh.setVerticesData("matricesIndices", new Float32Array(mesh.getTotalVertices() * 4));
+    const weights = new Float32Array(mesh.getTotalVertices() * 4);
+    for (let i = 0; i < weights.length; i += 4) weights[i] = 1;
+    mesh.setVerticesData("matricesWeights", weights);
+    mesh.material = result.material;
+    skeleton.prepare(true);
+    return mesh;
+  });
+  await result.material.forceCompilationAsync(meshes[0]!);
+  await result.material.forceCompilationAsync(meshes[1]!);
+  for (const mesh of meshes) expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes![0]!)).toBe(true);
+  result.material.freeze();
+  const effect = meshes[0]!.subMeshes![0]!.effect!;
+  expect(meshes[1]!.subMeshes![0]!.effect).toBe(effect);
+  const setTexture = vi.spyOn(effect, "setTexture");
+  for (const mesh of meshes) result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes![0]!);
+  const palettes = setTexture.mock.calls.filter(([name]) => name === "boneSampler").map(([, texture]) => texture);
+  expect(palettes.at(-1)).toBe(meshes[1]!.skeleton!.getTransformMatrixTexture(meshes[1]!));
+  expect(palettes).toContain(meshes[0]!.skeleton!.getTransformMatrixTexture(meshes[0]!));
+  expect(palettes[0]).not.toBe(palettes.at(-1));
+});
 
 function planFor(doc: MaterialDocument, functions = {}) {
   const lowered = lowerMaterialDocument(doc, { functions });

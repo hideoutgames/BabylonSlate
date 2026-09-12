@@ -1,5 +1,6 @@
 import {
   parseAnimGraphDocument,
+  resolveAnimGraphClips,
   type AnimClipCatalogEntry,
 } from "@babylonslate/anim-graph";
 import {
@@ -17,6 +18,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import { resolveModelAnimationDurations } from "@babylonslate/assets";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   printHudCssColor,
@@ -786,6 +788,15 @@ export function startPlaySession(options: {
     physicsWorld: "3d" as const,
     gravity: [0, -9.81, 0] as [number, number, number],
   };
+  const animClipCatalog = options.animClipCatalog
+    ? resolveModelAnimationDurations(options.animClipCatalog, options.modelBytes ?? new Map(), options.retargetAnimationLoads)
+    : undefined;
+  const animGraphs = options.animGraphs?.map((entry) => {
+    const document = parseAnimGraphDocument(entry.document);
+    return document && animClipCatalog
+      ? { ...entry, document: resolveAnimGraphClips(document, animClipCatalog) }
+      : entry;
+  });
   const loadControl = playLoadControl({
     frameCap: resolvePlayFrameCap(options.frameCap),
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
@@ -801,9 +812,7 @@ export function startPlaySession(options: {
     inputAssets: options.inputAssets,
     inputMappings: options.inputMappings,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
-    animClipCatalog: options.animClipCatalog
-      ? [...options.animClipCatalog]
-      : undefined,
+    animClipCatalog,
   });
 
   try {
@@ -817,7 +826,7 @@ export function startPlaySession(options: {
     for (const control of playSessionBootControls({
       load: loadControl,
       scripts,
-      animGraphs: options.animGraphs,
+      animGraphs,
       behaviourTrees: options.behaviourTrees,
       blackboards: options.blackboards,
       tilemaps: playLoadTilemapsControl(
@@ -863,7 +872,7 @@ export function startPlaySession(options: {
     if (scripts.length > 0) {
       boot.queueScripts(inProcess, scripts, []);
     }
-    for (const entry of options.animGraphs ?? []) {
+    for (const entry of animGraphs ?? []) {
       const document = parseAnimGraphDocument(entry.document);
       if (document) inProcess.registerAnimGraph(entry.guid, document);
     }

@@ -47,6 +47,7 @@ export function AnimationPreviewCanvas({
     if (!canvas || !engine) return;
     let cancelled = false;
     let host: MaterialPreviewScene | null = null;
+    let sourceHost: MaterialPreviewScene | null = null;
     let presenter: MaterialPreviewPresenter | null = null;
     let gestures: { dispose: () => void } | null = null;
     let loaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
@@ -63,15 +64,18 @@ export function AnimationPreviewCanvas({
           loaded?.dispose();
           return;
         }
-        let group =
-          loaded.animationGroups.find((entry) => entry.name === clipName) ??
-          null;
-        if (!group && sourceClipBytes && sourceClipBytes.byteLength > 0) {
-          const sourceHost = createModelPreviewScene(engine);
+        let group: AnimationGroup | null = null;
+        if (sourceClipBytes && sourceClipBytes.byteLength > 0) {
+          sourceHost = createModelPreviewScene(engine);
           sourceLoaded = await loadModelPreviewSource(
             sourceHost,
             sourceClipBytes,
           );
+          if (cancelled) {
+            sourceLoaded?.dispose();
+            sourceHost.dispose();
+            return;
+          }
           const sourceGroup = sourceLoaded?.animationGroups.find(
             (entry) => entry.name === clipName,
           );
@@ -84,6 +88,9 @@ export function AnimationPreviewCanvas({
           sourceLoaded?.dispose();
           sourceLoaded = null;
           sourceHost.dispose();
+          sourceHost = null;
+        } else {
+          group = loaded.animationGroups.find((entry) => entry.name === clipName) ?? null;
         }
         group?.play(true);
         playingRef.current = group;
@@ -112,12 +119,14 @@ export function AnimationPreviewCanvas({
           raf.id = window.requestAnimationFrame(tick);
         };
         raf.id = window.requestAnimationFrame(tick);
-      } catch {
+      } catch (error) {
+        console.warn("[render] Animation preview failed", error);
         playingRef.current?.stop();
         presenter?.dispose();
         gestures?.dispose();
         loaded?.dispose();
         sourceLoaded?.dispose();
+        sourceHost?.dispose();
         host?.dispose();
         hostRef.current = null;
         presenterRef.current = null;
@@ -136,6 +145,7 @@ export function AnimationPreviewCanvas({
       presenter?.dispose();
       loaded?.dispose();
       sourceLoaded?.dispose();
+      sourceHost?.dispose();
       host?.dispose();
       hostRef.current = null;
       presenterRef.current = null;

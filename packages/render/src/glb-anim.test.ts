@@ -1,4 +1,6 @@
-import { MeshBuilder, TransformNode } from "@babylonjs/core";
+import { FreeCamera, Vector3, MeshBuilder, TransformNode } from "@babylonjs/core";
+import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
+import type { NamedSeekableGroup } from "./anim-apply";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -109,6 +111,49 @@ describe("animationRetargetHasMatches", () => {
 });
 
 describe("beginSlotModelAnimLoad", () => {
+  it("restores the authored values after lazily starting an overlapping clip", async () => {
+    const handle = createTestEngine();
+    new FreeCamera("camera", new Vector3(0, 0, -5), handle.scene);
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(handle.scene, "actor");
+    const split = splitGlbJsonBin(encodeParentedAnimatedTriangleGlb("First"))!;
+    const animations = split.json.animations as Record<string, unknown>[];
+    animations.push({ ...animations[0], name: "Second" });
+    try {
+      await beginSlotModelAnimLoad(handle.scene, binding, 1, "model", encodeGlbJsonBin(split.json, split.bin), root);
+      const [first, second] = binding.slotAnimationGroups!.get(1)! as NamedSeekableGroup[];
+      first!.goToFrame(30);
+      first!.setWeightForAllAnimatables?.(1);
+      handle.scene.render();
+      const part = visualMeshes(root)[0]!;
+      expect(part.position.y).toBeCloseTo(0.5);
+      second!.goToFrame(45);
+      second!.reset?.();
+      expect(part.position.y).toBeCloseTo(0);
+    } finally { handle.scene.dispose(); handle.engine.dispose(); }
+  });
+
+  it("coalesces concurrent actor loads and leaves static instances free of animation work", async () => {
+    const handle = createTestEngine();
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(handle.scene, "actor");
+    const bytes = encodeParentedAnimatedTriangleGlb("Idle");
+    try {
+      await Promise.all([
+        beginSlotModelAnimLoad(handle.scene, binding, 1, "model", bytes, root),
+        beginSlotModelAnimLoad(handle.scene, binding, 2, "model", bytes, root),
+      ]);
+      expect(visualMeshes(root)).toHaveLength(1);
+      expect(handle.scene.animatables).toHaveLength(0);
+      const clip = binding.slotAnimationGroups!.get(1)![0]!;
+      clip.goToFrame((clip.from + clip.to) / 2);
+      expect(handle.scene.animatables.length).toBeGreaterThan(0);
+      root.dispose();
+      expect(handle.scene.animatables).toHaveLength(0);
+      expect(handle.scene.animationGroups).toHaveLength(0);
+    } finally { handle.scene.dispose(); handle.engine.dispose(); }
+  });
+
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
     [];
 
