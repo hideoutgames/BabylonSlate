@@ -363,7 +363,6 @@ export function TilesetEditor({
       label: "Frame Duration MS",
       value: selected?.animationFrameDurationMs ?? DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS,
       min: 1,
-      step: 1,
       onChange: (value) => patchTile({ animationFrameDurationMs: Math.max(1, Math.floor(value)) }),
     },
   ];

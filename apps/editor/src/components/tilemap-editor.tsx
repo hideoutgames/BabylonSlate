@@ -759,7 +759,7 @@ export function TilemapPaint({
     pointerType: "down" | "move",
   ) => {
     if (!layer || !isTilemapPaintStrokeTool(tool)) return;
-    if (tool !== "eraser" && tool !== "picker" && (selectedGid < 0 || (selectedGid > 0 && !decoded))) return;
+    if (tool !== "eraser" && (selectedGid < 0 || (selectedGid > 0 && !decoded))) return;
     if (pointerType === "down") {
       strokeRef.current = {
         id: newStrokeId(),
