@@ -29,7 +29,7 @@ describe("snapshot layout", () => {
   it("uses the locked header and stride sizes from bridge.md", () => {
     expect(SNAPSHOT_HEADER_FLOATS).toBe(16);
     expect(SNAPSHOT_ACTOR_STRIDE).toBe(16);
-    expect(SNAPSHOT_LAYOUT_VERSION).toBe(1);
+    expect(SNAPSHOT_LAYOUT_VERSION).toBe(2);
     expect(actorSlotOffset(0)).toBe(16);
     expect(actorSlotOffset(2)).toBe(48);
     expect(snapshotFloatCount(8)).toBe(16 + 8 * 16);
