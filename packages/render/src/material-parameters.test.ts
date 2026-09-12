@@ -263,14 +263,14 @@ describe("material parameter bindings", () => {
     ).toBe(true);
     // On WebGL a null TextureBlock skips binding and can leave the prior sampler active.
     let bound: Texture | null = second;
-    sample.bind({
+    sample.source.connectedPoint!.ownerBlock.bind({
       getEngine: () => scene.getEngine(),
       setFloat: () => undefined,
       setMatrix: () => undefined,
       setTexture: (_name: string, value: Texture) => {
         bound = value;
       },
-    } as unknown as import("@babylonjs/core").Effect);
+    } as unknown as import("@babylonjs/core").Effect, compiled.material);
     expect(bound).not.toBe(second);
     expect(bound).not.toBeNull();
     expect(bound!.getSize()).toMatchObject({ width: 1, height: 1 });

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, type NodeMaterialConnectionPoint } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
 
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); vi.restoreAllMocks(); });
@@ -27,6 +29,42 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it.each(["parameter", "inline", "forwarded"])("compiles and binds a %s texture sampler for custom UV sampling", async (source) => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    dispose.push(() => { scene.dispose(); engine.dispose(); });
+    const texture = new Texture(null, scene);
+    vi.spyOn(texture, "isReady").mockReturnValue(true);
+    const doc = createDefaultMaterialDocument();
+    node(doc, "custom", "custom.glsl", {
+      customVersion: 2,
+      inputs: [{ id: "image", name: "Albedo", type: "texture" }, { id: "uv", name: "UV", type: "vec2" }],
+      outputs: [{ id: "out", name: "Result", type: "vec3" }],
+      body: "return texture2D(Albedo, UV * 2.0).rgb;",
+    });
+    if (source !== "inline") node(doc, "image", "param.texture", { name: "Image", textureGuid: "image" });
+    if (source !== "parameter") {
+      node(doc, "sample", "texture.sample", source === "inline" ? { textureGuid: "image" } : {});
+      if (source === "forwarded") wire(doc, "image", "out", "sample", "texture");
+    }
+    wire(doc, source === "parameter" ? "image" : "sample", source === "parameter" ? "out" : "textureOut", "custom", "image");
+    wire(doc, "custom", "out", "output", "emissive");
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+    const result = compileMaterialPlan(lowered.plan, { scene, name: "sampler", resolveTexture: () => texture });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    dispose.push(result.dispose);
+    expect(await result.ready).toEqual([]);
+    expect(result.material.compiledShaders).toContain("sampler2D Albedo");
+    expect(result.material.compiledShaders).toContain("texture2D(Albedo, UV * 2.0)");
+    const sampler = result.material.getBlockByName("custom")!.inputs[0]!.connectedPoint!.ownerBlock as ImageSourceBlock;
+    expect(sampler.texture).toBe(texture);
+    if (source !== "inline") {
+      expect(result.setParameter("Image", { kind: "texture", textureAssetGuid: null })).toBe(true);
+      expect(sampler.texture).not.toBe(texture);
+      expect(sampler.texture?.getSize()).toMatchObject({ width: 1, height: 1 });
+    }
+  });
   it("advances Seconds-mode Time when previews render without fresh engine frame deltas", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "time", "input.time", { timeMode: "seconds" });

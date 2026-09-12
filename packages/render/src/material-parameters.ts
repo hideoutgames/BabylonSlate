@@ -96,22 +96,11 @@ export function createMaterialParameterBindings(
         const texture = parameter.textureAssetGuid
           ? (resolveTexture?.(parameter.textureAssetGuid) ?? null)
           : whiteTexture();
-        const samples = plan.operations.filter((sample) => {
-          const operand = sample.inputs.texture;
-          return (
-            operand?.kind === "operation" &&
-            operand.operationId === operation.id
-          );
-        });
-        let changed = false;
-        for (const sample of samples) {
-          const block = realized.get(sample.id)?.blocks[0] as
-            { texture?: Texture | null } | undefined;
-          if (!block || block.texture === texture) continue;
-          block.texture = texture;
-          changed = true;
-        }
-        if (!changed) return true;
+        const block = realized.get(operation.id)?.outputs.out?.ownerBlock as
+          { texture?: Texture | null } | undefined;
+        if (!block) return false;
+        if (block.texture === texture) return true;
+        block.texture = texture;
         textureObservers.get(name)?.();
         textureObservers.delete(name);
         if (texture && texture !== emptyTexture && !texture.isReady()) {

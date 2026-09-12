@@ -60,6 +60,22 @@ describe("hydrateClassDocumentPayload", () => {
 });
 
 describe("hydrateSerializedGraphForEditor", () => {
+  it("refreshes edited JavaScript pins and removes links to deleted pins", () => {
+    const graph: SerializedGraph = {
+      nodes: [{ id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: {
+        inputs: [{ name: "items", type: { kind: "array", element: { kind: "float" } } }],
+        outputs: [{ name: "result", type: { kind: "map", key: { kind: "string" }, value: { kind: "float" } } }],
+        __pins: registry.get("debug.executeJavaScript")!.pins({ outputs: [{ name: "old", type: { kind: "float" } }] }),
+      } }, { id: "log", type: "debug.log", position: { x: 0, y: 0 }, data: {} }],
+      edges: [{ id: "stale", source: "js", sourceHandle: "out_old", target: "log", targetHandle: "message" }],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]!.data.__pins).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "in_items", type: { kind: "array", element: { kind: "float" } } }),
+      expect.objectContaining({ id: "out_result", type: { kind: "map", key: { kind: "string" }, value: { kind: "float" } } }),
+    ]));
+    expect(hydrated.edges).toEqual([]);
+  });
   it("injects __pins from the registry when missing", () => {
     const graph: SerializedGraph = {
       nodes: [

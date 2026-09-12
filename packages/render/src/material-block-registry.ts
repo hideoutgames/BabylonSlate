@@ -52,6 +52,7 @@ import {
   type NodeMaterialConnectionPoint,
 } from "@babylonjs/core";
 import { CustomBlock } from "@babylonjs/core/Materials/Node/Blocks/customBlock";
+import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
 import { SceneDepthBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/sceneDepthBlock";
 import { PrePassTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/prePassTextureBlock";
 import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
@@ -679,6 +680,7 @@ function textureSampleAdapter(lod: boolean): BlockAdapter {
     block.convertToLinearSpace = operation.properties.colorSpace === "color";
     const inputs: Record<string, NodeMaterialConnectionPoint> = {
       uv: block.uv,
+      texture: block.source,
     };
     if (lod) inputs.lod = block.lod;
     const outputs: Record<string, NodeMaterialConnectionPoint> = {
@@ -689,7 +691,14 @@ function textureSampleAdapter(lod: boolean): BlockAdapter {
       b: block.b,
       a: block.a,
     };
-    return { blocks: [block], inputs, outputs };
+    const blocks: NodeMaterialBlock[] = [block];
+    if (!operation.inputs.texture) {
+      const source = new ImageSourceBlock(`${name}_texture`);
+      source.source.connectTo(block.source);
+      outputs.textureOut = source.source;
+      blocks.push(source);
+    }
+    return { blocks, inputs, outputs };
   };
 }
 
@@ -792,9 +801,10 @@ ADAPTERS["custom.glsl"] = ({ name, operation }) => {
     const functionName = customGlslFunctionName(operation.id);
     const helper = `${functionName}_body`;
     const block = new CustomBlock(name);
-    const blockType = { float: "Float", vec2: "Vector2", vec3: "Vector3", vec4: "Vector4" };
-    const parameters = [...pins.inputs.map((pin) => `${pin.type} ${pin.name}`), ...additional.map((pin) => `out ${pin.type} ${pin.name}`)];
-    const wrapperParameters = [...pins.inputs.map((pin, i) => `${pin.type} input${i}`), ...pins.outputs.map((pin, i) => `out ${pin.type} output${i}`)];
+    const blockType = { float: "Float", vec2: "Vector2", vec3: "Vector3", vec4: "Vector4", texture: "sampler2D" };
+    const glslType = (type: MaterialValueType) => type === "texture" ? "sampler2D" : type;
+    const parameters = [...pins.inputs.map((pin) => `${glslType(pin.type)} ${pin.name}`), ...additional.map((pin) => `out ${pin.type} ${pin.name}`)];
+    const wrapperParameters = [...pins.inputs.map((pin, i) => `${glslType(pin.type)} input${i}`), ...pins.outputs.map((pin, i) => `out ${pin.type} output${i}`)];
     block.options = {
       name,
       target: "Neutral",

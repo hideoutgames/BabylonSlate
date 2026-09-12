@@ -39,7 +39,7 @@ function asParameterRows(rows: PinListRow[]): ParameterRow[] {
   }));
 }
 
-/** Thin PinListEditor wrapper for Execute JavaScript / On Command Run. */
+/** Scalar-only PinListEditor wrapper for console command parameters. */
 export function ParameterListEditor({
   rows,
   onChange,

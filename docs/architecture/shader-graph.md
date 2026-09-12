@@ -480,7 +480,13 @@ Custom GLSL nodes created by the editor use node-local `customVersion: 2`, with
 stable pin IDs, GLSL variable names and explicit Float / Vector 2 / Vector 3 /
 Vector 4 types. The body returns the first output and assigns named additional
 outputs, initialized to zero before the body runs. Inputs have ordinary editable
-pin defaults. Direct sampler pins and WebGPU are not supported. Derivatives and
+pin defaults for numeric values. Texture inputs expose `sampler2D` variables:
+connect a Texture Parameter or the Texture output of Texture Sample / Texture
+Sample LOD, then sample with `texture2D(Albedo, UV)`. Texture outputs forward the
+underlying sampler; RGBA/RGB outputs remain sampled colors. Samplers require a
+connection and cannot be return/additional outputs. Runtime texture parameter
+updates also reach Custom GLSL, including forwarded sample textures. WebGPU is
+not supported. Derivatives and
 discard restrict the node to the fragment stage. Graph validation checks the
 interface and function boundary; the GPU compiler checks GLSL syntax and types.
 Legacy expression nodes keep their original generic A/B behavior. **Convert to

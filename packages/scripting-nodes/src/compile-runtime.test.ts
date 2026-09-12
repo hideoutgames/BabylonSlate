@@ -53,6 +53,44 @@ const jsProps = (
 });
 
 describe("compiler emits runnable JavaScript", () => {
+  it.each([false, true])("passes objects, arrays and Maps through named JavaScript variables (async=%s)", async (async) => {
+    const registry = createDefaultNodeRegistry();
+    const types = [
+      { kind: "objectRef", classId: "BObject" },
+      { kind: "array", element: { kind: "float" } },
+      { kind: "map", key: { kind: "string" }, value: { kind: "float" } },
+    ];
+    const names = ["record", "items", "lookup"];
+    const graph: LogicGraph = { id: "g", kind: "event", nodes: [
+      node(registry, "entry", "flow.entry"),
+      node(registry, "source", "debug.executeJavaScript", {
+        outputs: names.map((name, i) => ({ name, type: types[i] })),
+        body: "record = ctx.record; items = ctx.items; lookup = ctx.lookup;",
+      }),
+      node(registry, "pass", "debug.executeJavaScript", {
+        async,
+        inputs: names.map((name, i) => ({ name, type: types[i] })),
+        outputs: names.map((name, i) => ({ name: `${name}Out`, type: types[i] })),
+        body: `${async ? "await Promise.resolve();" : ""} record.count += items[0] + lookup.get('bonus'); recordOut = record; itemsOut = items; lookupOut = lookup;`,
+      }),
+      node(registry, "sink", "debug.executeJavaScript", {
+        inputs: names.map((name, i) => ({ name, type: types[i] })),
+        body: "ctx.received = [record, items, lookup];",
+      }),
+    ], edges: [
+      edge("start", "entry", "execOut", "source", "execIn"),
+      edge("pass", "source", "execOut", "pass", "execIn"),
+      edge("sink", "pass", "execOut", "sink", "execIn"),
+      ...names.flatMap((name) => [edge(`in-${name}`, "source", `out_${name}`, "pass", `in_${name}`), edge(`out-${name}`, "pass", `out_${name}Out`, "sink", `in_${name}`)]),
+    ] };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const ctx = { record: { count: 1 }, items: [2], lookup: new Map([["bonus", 3]]), received: [] as unknown[] };
+    await (loadModule(compiled.source).run as (ctx: unknown) => unknown)(ctx);
+    expect(ctx.record.count).toBe(6);
+    expect(ctx.received[0]).toBe(ctx.record);
+    expect(ctx.received[1]).toBe(ctx.items);
+    expect(ctx.received[2]).toBe(ctx.lookup);
+  });
   it("supports two ExecuteJavaScript nodes in one exec chain", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

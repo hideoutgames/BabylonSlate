@@ -33,6 +33,7 @@ import {
   type Texture,
 } from "@babylonjs/core";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
 import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import type {
   MaterialBuildPlan,
@@ -247,10 +248,11 @@ export function compileMaterialPlan(
       operation.nodeType.startsWith("param.");
     if (isConstant) {
       if (operation.nodeType === "param.texture") {
-        // Texture parameters have no block of their own; the sampling node
-        // owns the Babylon TextureBlock and reads the guid from here.
-        realized.set(operation.id, { blocks: [], inputs: {}, outputs: {} });
-        return true;
+        const block = new ImageSourceBlock(operation.id);
+        created.push(block);
+        const realization = { blocks: [block], inputs: {}, outputs: { out: block.source } };
+        realized.set(operation.id, realization);
+        return bindTexture(operation, plan, realization, options, diagnostics, pendingTextures);
       }
       const value = Array.isArray(operation.properties.value)
         ? (operation.properties.value as number[])
@@ -329,8 +331,8 @@ export function compileMaterialPlan(
     realized.set(operation.id, realization);
 
     if (
-      operation.nodeType === "texture.sample" ||
-      operation.nodeType === "texture.sampleLod"
+      (operation.nodeType === "texture.sample" ||
+      operation.nodeType === "texture.sampleLod") && !operation.inputs.texture
     ) {
       if (
         !bindTexture(
@@ -358,6 +360,9 @@ export function compileMaterialPlan(
       if (!point) continue;
       try {
         point.connectTo(target);
+        if (pinId === "texture" && (operation.nodeType === "texture.sample" || operation.nodeType === "texture.sampleLod")) {
+          realization.outputs.textureOut = point;
+        }
       } catch (error) {
         diagnostics.push({
           code: "material.compile.connectionFailed",
@@ -753,7 +758,7 @@ function applyAuthoredSurfaceBlend(
   }
 }
 
-/** Prefer a wired `param.texture`; otherwise use the sample's inline asset. */
+/** Bind the shared sampler source for a parameter or an inline sample. */
 function bindTexture(
   operation: MaterialOperation,
   plan: MaterialBuildPlan,
@@ -779,7 +784,7 @@ function bindTexture(
     });
     return false;
   }
-  const block = realization.blocks[0] as unknown as {
+  const block = (realization.outputs.textureOut?.ownerBlock ?? realization.blocks[0]) as unknown as {
     texture?: Texture | null;
   };
   block.texture = texture;

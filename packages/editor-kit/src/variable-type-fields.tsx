@@ -32,6 +32,7 @@ export type VariableTypeFieldsValue = {
 };
 
 export type VariableTypeFieldsProps = {
+  showType?: boolean;
   value: VariableTypeFieldsValue;
   onChange: (next: VariableTypeFieldsValue) => void;
   classEntries?: readonly ClassPickerEntry[];
@@ -49,6 +50,7 @@ function needsTypeAsset(typeId: string): boolean {
 
 /** Type picker, Map Key Type, then Single/Array/Map container. */
 export function VariableTypeFields({
+  showType = true,
   value,
   onChange,
   classEntries = [],
@@ -74,7 +76,7 @@ export function VariableTypeFields({
 
   return (
     <div className="flex flex-col gap-3" data-testid={testId}>
-      <Field>
+      {showType ? <Field>
         <FieldLabel>Type</FieldLabel>
         <PinTypePicker
           value={value.typeId}
@@ -87,7 +89,7 @@ export function VariableTypeFields({
           }}
           data-testid="inspector-member-type"
         />
-      </Field>
+      </Field> : null}
       {container === "map" ? (
         <Field>
           <FieldLabel>Key Type</FieldLabel>
