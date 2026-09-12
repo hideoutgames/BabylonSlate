@@ -883,7 +883,7 @@ A plugin is a folder with its own content root and exactly one `PluginSettings` 
 ### 10.1 Where plugins live
 
 - **Project plugins** sit in `plugins/` inside the project folder, one folder each, editable in place.
-- **Engine plugins** sit in `engine-plugins/` at the repo root, ship with the editor build, and mount read-only. They exist so that first-party content built during development (starter content, a debug command set, a UI widget library) rides the same code path everything else does, which keeps the plugin system honest rather than letting it rot as an untested feature.
+- **Engine plugins** include protected bundles from repo `engine-plugins/` and user exports in the app-owned library. Engine Settings lists them with global enabled defaults for new projects, download export, and confirmed deletion for user-added entries. Project creation clones the library into editable project plugins; later library changes leave those copies intact. Existing projects retain bundled read-only fallback without importing new user library entries. Bundled plugins cannot be deleted or replaced.
 
 Both mount identically, and each plugin folder looks like a miniature project: a `PluginSettings` asset at its root and an `assets/` tree beneath it.
 
@@ -900,11 +900,11 @@ Two consequences to handle explicitly:
 ### 10.3 The PluginSettings asset
 
 Opened in the editor as its own document tab. It defines:
-- **Identity**: display name, stable plugin guid, semver version, description, author, category, icon. The guid rather than the folder name is the identity, so renaming a folder never loses project state.
+- **Identity**: display name, stable plugin guid, semver version, description, author, category, icon selected from a searchable Lucide dropdown. The guid rather than the folder name is the identity, so renaming a folder never loses project state. The icon appears beside the Project Settings name and on the base plugin folder only.
 - **Maturity**: experimental and beta flags, surfaced as a badge in the plugin list and a confirmation when enabling.
 - **Editor startup**: the EditorUtilityObjects this plugin runs on editor launch. Plugin-provided editor objects register through the plugin rather than through the project's own registered-objects list, so enabling the plugin is the single switch.
 - **Export defaults**: whether the plugin is enabled by default in an exported build.
-- **Dependencies**: a required engine version range and other plugin guids with version ranges. The loader topologically sorts by dependency and reports cycles and unsatisfiable ranges as diagnostics.
+- **Dependencies**: an automatically initialized, read-only engine version range and other plugins selected by name with editable version ranges. Imported engine constraints are preserved. The loader topologically sorts enabled plugins, reports cycles and unsatisfiable ranges, and blocks dependents of missing, disabled, or invalid prerequisites.
 
 ### 10.4 Enabling and precedence
 

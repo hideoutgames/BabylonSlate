@@ -110,6 +110,7 @@ import {
   spillRecordedTraceDocument,
 } from "../lib/play-trace-spill";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
+import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
 import { loadTemplateCards } from "../services/template-service";
 import {
   compileAnimGraphScripts,
@@ -1261,8 +1262,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  const attachEnginePlugins = useCallback(async () => {
-    const storage = await ensureEnginePluginStorage();
+  const attachEnginePlugins = useCallback(async (forNewProject = false) => {
+    const storage = forNewProject
+      ? await (await ensureEnginePluginLibrary()).createStorageSnapshot()
+      : await ensureEnginePluginStorage();
     projectService.setEnginePluginStorage(storage);
   }, [projectService]);
 
@@ -1284,7 +1287,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const createEmptyProject = useCallback(
     async (name: string, options?: CreateProjectOptions) => {
-      await attachEnginePlugins();
+      await attachEnginePlugins(true);
       const { document, layouts, migrationPending: pending } =
         await projectService.createEmptyProject(name, options);
       await enterEditor(document, layouts, pending);
@@ -1302,7 +1305,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!template) {
         throw new Error(`Unknown template: ${templateId}`);
       }
-      await attachEnginePlugins();
+      await attachEnginePlugins(true);
       const { document, layouts, migrationPending: pending } =
         await projectService.createFromTemplate({
           templateFiles: template.files,
