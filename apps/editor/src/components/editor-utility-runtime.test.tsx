@@ -21,7 +21,7 @@ const { invokeEvent, load, docs } = vi.hoisted(() => ({
       settings: { editorUtilityObjects: string[]; enabledByDefault: boolean };
     }>,
     assetRegistry: {
-      getRoot: vi.fn((_rootId: string): object | undefined => undefined),
+      getRoot: vi.fn<(rootId: string) => object | undefined>(() => undefined),
     },
   },
 }));
