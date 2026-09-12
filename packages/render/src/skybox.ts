@@ -140,6 +140,8 @@ export function createSkyboxMesh(
   material.backFaceCulling = false;
   material.disableLighting = true;
   material.twoSidedLighting = true;
+  // Infinite-far sky depth is not comparable with ordinary camera depth.
+  material.disableDepthWrite = true;
   cubeTexture.coordinatesMode = Texture.SKYBOX_MODE;
   material.reflectionTexture = cubeTexture;
   material.onDisposeObservable.add(() => {
