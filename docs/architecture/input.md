@@ -6,7 +6,7 @@ Create **Input Action** or **Input Axis** from the Content Browser's **Input** c
 
 The **Input** category contains **Event Input Action**, **Event Input Axis**, **On Any Key Pressed**, and `Event <asset name>` shortcuts. Action/axis events accept an **Input Binding** struct and listen to the entire action/axis identified by its Input field. An unwired event has a filtered asset dropdown with no extra Choose Input entry. A wired event uses its generic title; dynamic axes expose **Axis Dimensions** (1D/2D) in Details. Events belong in ticking runtime class graphs, not functions or animation rules.
 
-**Make Structure** creates graph-local data without a variable reference. Select its Structure Type in Details, or add **Make <Struct>** directly for any engine/project structure, including **Make Input Binding**. Pins and field defaults follow the live schema. **Break <Struct>** exposes its fields.
+**Make Structure** creates graph-local data without a variable reference. Select its Structure Type in Details, or add `Make <Struct>` directly for any engine/project structure, including **Make Input Binding**. Pins and field defaults follow the live schema. `Break <Struct>` exposes its fields.
 
 | Pin | Behaviour |
 | --- | --- |
