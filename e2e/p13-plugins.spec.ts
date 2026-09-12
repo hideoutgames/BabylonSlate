@@ -272,7 +272,7 @@ test.describe("P13 plugins", () => {
     await engineRow.getByRole("button", { name: "Export", exact: true }).click();
     expect((await downloadPromise).suggestedFilename()).toBe("engine-shared-pack.babplugin");
     await expect(page.getByTestId("plugin-export-dialog")).toHaveCount(0);
-    const defaultToggle = engineRow.getByRole("switch", { name: "Enable Engine Shared Pack By Default" });
+    const defaultToggle = engineRow.getByRole("switch", { name: "Enabled By Default", exact: true });
     await expect(defaultToggle).toHaveAttribute("aria-checked", "false");
     await defaultToggle.click();
     await expect(defaultToggle).toHaveAttribute("aria-checked", "true");
