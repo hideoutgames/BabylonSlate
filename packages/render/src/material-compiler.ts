@@ -9,6 +9,7 @@ import {
   ImageProcessingBlock,
   InputBlock,
   Material,
+  Mesh,
   MeshBuilder,
   ParticleSystem,
   NodeMaterial,
@@ -572,7 +573,7 @@ export function compileMaterialPlan(
   );
   if (deformationBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {
-      if (!mesh || !material.isFrozen) return;
+        if (!(mesh instanceof Mesh) || !material.isFrozen) return;
       const effect = material.getEffect();
       if (effect) for (const block of deformationBlocks) block.bind(effect, material, mesh);
     });

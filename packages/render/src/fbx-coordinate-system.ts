@@ -87,7 +87,7 @@ export function fbxCoordinateMatrix(bytes: Uint8Array): number[] {
   const signs = [
     values.get("CoordAxisSign") ?? 1,
     values.get("UpAxisSign") ?? 1,
-    -(values.get("FrontAxisSign") ?? -1),
+    values.get("FrontAxisSign") ?? 1,
   ];
   if (
     !Number.isFinite(scale) ||

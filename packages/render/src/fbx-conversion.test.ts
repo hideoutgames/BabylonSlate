@@ -28,7 +28,7 @@ describe("FBX canonical conversion", () => {
       P: "UnitScaleFactor", "double", "Number", "", 1
       P: "UpAxis", "int", "Integer", "", 2
       P: "FrontAxis", "int", "Integer", "", 1
-      P: "FrontAxisSign", "int", "Integer", "", 1
+      P: "FrontAxisSign", "int", "Integer", "", -1
     } }`);
     expect(fbxCoordinateMatrix(bytes)).toEqual([
       0.01, 0, 0, 0, 0, 0, -0.01, 0, 0, 0.01, 0, 0, 0, 0, 0, 1,

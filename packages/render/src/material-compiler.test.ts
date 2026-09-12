@@ -29,6 +29,7 @@ function host(): Scene {
 
 it("rebinds each mesh's bone palette when sharing a frozen compiled material", async () => {
   const scene = host();
+  scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
   const caps = scene.getEngine().getCaps();
   caps.textureFloat = true;
   caps.maxVertexTextureImageUnits = 16;
