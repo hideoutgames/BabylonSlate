@@ -356,6 +356,7 @@ class InProcessRuntime implements RuntimeDriver {
     axes: {},
     axes2D: {},
     gamepadConnections: [],
+    pressedKeys: [],
     cursor: { x: 0, y: 0, pressed: false },
   };
   /** Mutable box so TickContext can read connections without aliasing `this`. */
@@ -655,6 +656,7 @@ class InProcessRuntime implements RuntimeDriver {
         resolved().actions[action]?.pressed ?? false,
       wasActionReleased: (action) =>
         resolved().actions[action]?.released ?? false,
+      getPressedKeys: () => resolved().pressedKeys,
       getAxis: (axis) => resolved().axes[axis] ?? 0,
       getAxis2D: (axis) => resolved().axes2D[axis] ?? { x: 0, y: 0 },
       getCursorPosition: () => resolved().cursor,

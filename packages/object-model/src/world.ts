@@ -23,6 +23,7 @@ export type WorldInputProvider = Pick<
   | "isActionHeld"
   | "wasActionPressed"
   | "wasActionReleased"
+  | "getPressedKeys"
   | "getAxis"
   | "getAxis2D"
   | "getCursorPosition"

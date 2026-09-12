@@ -16,7 +16,7 @@ describe("bindingCodesForDevice", () => {
     expect(keys).toContain("KeyW");
     expect(keys).toContain("Space");
     expect(keys).toContain("F12");
-    expect(keys).not.toContain("F13");
+    expect(keys).toContain("F24");
     expect(
       bindingCodesForDevice("key").find((entry) => entry.code === "KeyW"),
     ).toMatchObject({ label: "W", group: "Letters" });
@@ -29,7 +29,7 @@ describe("bindingCodesForDevice", () => {
   });
 
   it("lists mouse buttons and primary pointer", () => {
-    expect(codesOf("mouseButton")).toEqual(["0", "1", "2"]);
+    expect(codesOf("mouseButton")).toEqual(["0", "1", "2", "3", "4"]);
     expect(
       bindingCodesForDevice("mouseButton").find((entry) => entry.code === "0"),
     ).toMatchObject({ label: "Mouse Left", group: "Mouse" });

@@ -1,4 +1,9 @@
-import type { InputTypeValue, InputValueState } from "@babylonslate/core";
+import {
+  inputKeyFromControl,
+  type InputKey,
+  type InputTypeValue,
+  type InputValueState,
+} from "@babylonslate/core";
 import { inputMappingKey } from "./input-assets";
 import type { RawInputEvent } from "./ring-buffer";
 import { InputBindingProfile } from "./input-bindings";
@@ -27,6 +32,8 @@ export interface GamepadConnectionEvent {
 
 export interface ResolvedInputTick {
   inputs: Record<string, InputValueState>;
+  /** Physical rising edges in delivery order; analog controls cross 0.5. */
+  pressedKeys: InputKey[];
   actions: Record<string, ActionState>;
   axes: Record<string, number>;
   axes2D: Record<string, Axis2DValue>;
@@ -46,6 +53,7 @@ interface ResolverInternals {
   heldKeys: Set<string>;
   heldMouseButtons: Set<number>;
   heldPointerButtons: Set<number>;
+  pointerButtons: Map<number, Set<number>>;
   heldGamepadButtons: Set<string>;
   gamepadAxes: Map<string, number>;
   touchAxes: Map<string, number>;
@@ -95,7 +103,10 @@ function actionBindingHeld(
     case "key":
       return state.heldKeys.has(binding.code);
     case "mouseButton":
-      return state.heldMouseButtons.has(Number(binding.code));
+      return (
+        state.heldMouseButtons.has(Number(binding.code)) ||
+        state.heldPointerButtons.has(Number(binding.code))
+      );
     case "pointer":
       return state.heldPointerButtons.has(
         binding.code === "primary" ? 0 : Number(binding.code),
@@ -183,6 +194,7 @@ export class InputResolver {
     heldKeys: new Set(),
     heldMouseButtons: new Set(),
     heldPointerButtons: new Set(),
+    pointerButtons: new Map(),
     heldGamepadButtons: new Set(),
     gamepadAxes: new Map(),
     touchAxes: new Map(),
@@ -226,6 +238,14 @@ export class InputResolver {
     deltaSeconds = 0,
   ): ResolvedInputTick {
     const inputs: Record<string, InputValueState> = {};
+    const pressedKeys: InputKey[] = [];
+    const pressed = (
+      device: Parameters<typeof inputKeyFromControl>[0],
+      code: string,
+    ) => {
+      const key = inputKeyFromControl(device, code);
+      if (key) pressedKeys.push(key);
+    };
     const sampleInputs = () => {
       for (const mapping of [...this.mappings.actions, ...this.mappings.axes]) {
         const key = inputMappingKey(mapping);
@@ -306,6 +326,8 @@ export class InputResolver {
         case "key": {
           const down = event.phase === "down";
           updateModifiers(event.code, down, this.state);
+          if (down && !this.state.heldKeys.has(event.code))
+            pressed("key", event.code);
           if (down) this.state.heldKeys.add(event.code);
           else this.state.heldKeys.delete(event.code);
           break;
@@ -320,6 +342,11 @@ export class InputResolver {
             }
           }
           if (event.phase === "down") {
+            if (
+              !this.state.heldMouseButtons.has(event.button) &&
+              !this.state.heldPointerButtons.has(event.button)
+            )
+              pressed("mouseButton", String(event.button));
             this.state.heldMouseButtons.add(event.button);
           } else if (event.phase === "up" || event.phase === "cancel") {
             this.state.heldMouseButtons.delete(event.button);
@@ -327,22 +354,46 @@ export class InputResolver {
           break;
         }
         case "pointer": {
-          if (this.state.primaryPointerId == null) {
+          const contacts = this.state.pointerButtons;
+          // Only the first contact controls the cursor. Existing secondary
+          // fingers stay secondary until lifted, even after the first lifts.
+          if (
+            this.state.primaryPointerId == null &&
+            contacts.size === 0 &&
+            (event.phase === "down" || event.phase === "move")
+          ) {
             this.state.primaryPointerId = event.pointerId;
+          }
+          if (event.phase === "down") {
+            const buttons = contacts.get(event.pointerId) ?? new Set<number>();
+            buttons.add(event.button);
+            contacts.set(event.pointerId, buttons);
+          } else if (event.phase === "cancel") {
+            contacts.delete(event.pointerId);
+          } else if (event.phase === "up") {
+            const buttons = contacts.get(event.pointerId);
+            buttons?.delete(event.button);
+            if (!buttons?.size) contacts.delete(event.pointerId);
           }
           if (event.pointerId === this.state.primaryPointerId) {
             this.state.cursor.x = event.x;
             this.state.cursor.y = event.y;
-            if (event.phase === "down") this.state.cursor.pressed = true;
-            else if (event.phase === "up" || event.phase === "cancel") {
-              this.state.cursor.pressed = false;
+            if (
+              event.phase === "down" &&
+              !this.state.heldPointerButtons.has(event.button) &&
+              !this.state.heldMouseButtons.has(event.button)
+            )
+              pressed("mouseButton", String(event.button));
+            this.state.heldPointerButtons = new Set(
+              contacts.get(event.pointerId),
+            );
+            this.state.cursor.pressed = this.state.heldPointerButtons.has(0);
+            if (
+              (event.phase === "up" || event.phase === "cancel") &&
+              !contacts.has(event.pointerId)
+            ) {
               this.state.primaryPointerId = null;
             }
-          }
-          if (event.phase === "down") {
-            this.state.heldPointerButtons.add(event.button);
-          } else if (event.phase === "up" || event.phase === "cancel") {
-            this.state.heldPointerButtons.delete(event.button);
           }
           break;
         }
@@ -355,13 +406,22 @@ export class InputResolver {
           for (let i = 0; i < event.buttons.length; i++) {
             const key = `${pad}:${i}`;
             if ((event.buttons[i] ?? 0) > 0.5) {
+              if (!this.state.heldGamepadButtons.has(key))
+                pressed("gamepadButton", key);
               this.state.heldGamepadButtons.add(key);
             } else {
               this.state.heldGamepadButtons.delete(key);
             }
           }
           for (let i = 0; i < event.axes.length; i++) {
-            this.state.gamepadAxes.set(`${pad}:${i}`, event.axes[i] ?? 0);
+            const key = `${pad}:${i}`;
+            const value = event.axes[i] ?? 0;
+            if (
+              Math.abs(value) > 0.5 &&
+              Math.abs(this.state.gamepadAxes.get(key) ?? 0) <= 0.5
+            )
+              pressed("gamepadAxis", key);
+            this.state.gamepadAxes.set(key, value);
           }
           break;
         }
@@ -473,6 +533,7 @@ export class InputResolver {
       if (mapping.id) exposeAxis(mapping.id, mapping.name);
     return {
       inputs,
+      pressedKeys,
       actions,
       axes,
       axes2D,
@@ -525,6 +586,7 @@ export class InputResolver {
     this.state.heldKeys.clear();
     this.state.heldMouseButtons.clear();
     this.state.heldPointerButtons.clear();
+    this.state.pointerButtons.clear();
     this.state.heldGamepadButtons.clear();
     this.state.gamepadAxes.clear();
     this.state.touchAxes.clear();

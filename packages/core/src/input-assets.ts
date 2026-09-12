@@ -1,3 +1,4 @@
+import type { InputKey } from "./input-keys";
 /** Input asset data is shared by authoring, workers, and exported games. */
 export const INPUT_ASSET_TYPES = ["InputAction", "InputAxis"] as const;
 export type InputAssetType = (typeof INPUT_ASSET_TYPES)[number];
@@ -57,7 +58,19 @@ export interface InputBindingValue {
   Label: string;
   Input: InputTypeValue;
   Id: string;
-  Control: InputControlValue;
+  /** Low-level control metadata; native graph structs use Key. */
+  Control?: InputControlValue;
+  Key: InputKey;
+  Shift: boolean;
+  Ctrl: boolean;
+  Alt: boolean;
+  Meta: boolean;
+  Component: "X" | "Y";
+  DeadZone: number;
+  Scale: number;
+  Invert: boolean;
+  Sensitivity: number;
+  DigitalValue: number;
 }
 export interface InputValueState {
   input: InputTypeValue;

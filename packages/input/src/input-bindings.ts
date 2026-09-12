@@ -1,3 +1,9 @@
+import {
+  inputControlFromKey,
+  inputKeyFromControl,
+  normalizeInputAssetPayload,
+  type InputKey,
+} from "@babylonslate/core";
 import type {
   InputTypeValue,
   InputBindingValue,
@@ -24,6 +30,20 @@ export interface InputBindingInfo {
 }
 
 export interface InputBindingControls {
+  addInputActionBinding?(
+    input: InputTypeValue,
+    key: InputKey,
+    options?: Partial<InputBindingValue>,
+  ): boolean;
+  setInputActionBinding?(binding: InputBindingValue, key: InputKey): boolean;
+  removeInputActionBinding?(input: InputTypeValue, key: InputKey): boolean;
+  addInputAxisBinding?(
+    input: InputTypeValue,
+    key: InputKey,
+    options?: Partial<InputBindingValue>,
+  ): boolean;
+  setInputAxisBinding?(binding: InputBindingValue, key: InputKey): boolean;
+  removeInputAxisBinding?(input: InputTypeValue, key: InputKey): boolean;
   getInputBindings?(input: InputTypeValue): InputBindingValue[];
   setInputControl?(
     binding: InputBindingValue,
@@ -69,6 +89,16 @@ interface BindingOverride {
   alt?: boolean;
   meta?: boolean;
 }
+
+interface BindingEdit {
+  kind: "action" | "axis";
+  mapping: string;
+  id: string;
+  added: boolean;
+  binding: (AxisBinding & { id: string }) | null;
+}
+const editKey = (edit: Pick<BindingEdit, "kind" | "mapping" | "id">) =>
+  JSON.stringify([edit.kind, edit.mapping, edit.id]);
 
 const devices: readonly string[] = [
   "key",
@@ -170,6 +200,8 @@ export class InputBindingProfile implements InputBindingControls {
   private defaults: InputMappings;
   private current: InputMappings;
   private overrides = new Map<string, BindingOverride>();
+  private edits = new Map<string, BindingEdit>();
+  private nextBindingId = 0;
   private heldKeys = new Set<string>();
   private blockedKeys = new Set<string>();
   private target: { kind: string; mapping: string; index: number } | null =
@@ -193,6 +225,7 @@ export class InputBindingProfile implements InputBindingControls {
   setDefaults(mappings: InputMappings): void {
     this.defaults = normalizeInputMappings(mappings);
     this.overrides.clear();
+    this.edits.clear();
     this.target = null;
     this.modifierCandidate = null;
     this.status = "idle";
@@ -211,6 +244,17 @@ export class InputBindingProfile implements InputBindingControls {
               Input: { Name: row.name, Asset: row.id! },
               Id: binding.id,
               Label: describeBinding(binding).label,
+              Key: inputKeyFromControl(binding.device, binding.code) ?? "None",
+              Shift: !!binding.modifiers?.shift,
+              Ctrl: !!binding.modifiers?.ctrl,
+              Alt: !!binding.modifiers?.alt,
+              Meta: !!binding.modifiers?.meta,
+              Component: (binding as AxisBinding).component === "y" ? "Y" : "X",
+              DeadZone: (binding as AxisBinding).deadZone ?? 0,
+              Scale: (binding as AxisBinding).scale ?? 1,
+              Invert: (binding as AxisBinding).invert ?? false,
+              Sensitivity: (binding as AxisBinding).sensitivity ?? 1,
+              DigitalValue: (binding as AxisBinding).digitalValue ?? 1,
               Control: {
                 Device: binding.device,
                 Code: binding.code,
@@ -223,6 +267,159 @@ export class InputBindingProfile implements InputBindingControls {
           ]
         : [],
     );
+  }
+
+  addInputActionBinding(
+    input: InputTypeValue,
+    key: InputKey,
+    options?: Partial<InputBindingValue>,
+  ): boolean {
+    return this.addTypedBinding("action", input, key, options);
+  }
+
+  addInputAxisBinding(
+    input: InputTypeValue,
+    key: InputKey,
+    options?: Partial<InputBindingValue>,
+  ): boolean {
+    return this.addTypedBinding("axis", input, key, options);
+  }
+
+  setInputActionBinding(binding: InputBindingValue, key: InputKey): boolean {
+    return this.setTypedBinding("action", binding, key);
+  }
+
+  setInputAxisBinding(binding: InputBindingValue, key: InputKey): boolean {
+    return this.setTypedBinding("axis", binding, key);
+  }
+
+  removeInputActionBinding(input: InputTypeValue, key: InputKey): boolean {
+    return this.removeTypedBinding("action", input, key);
+  }
+
+  removeInputAxisBinding(input: InputTypeValue, key: InputKey): boolean {
+    return this.removeTypedBinding("axis", input, key);
+  }
+
+  private typedMapping(kind: "action" | "axis", input: InputTypeValue) {
+    return (kind === "action" ? this.current.actions : this.current.axes).find(
+      (row) => !!input?.Asset && row.id === input.Asset,
+    );
+  }
+
+  private writeEdit(
+    kind: "action" | "axis",
+    mapping: string,
+    binding: AxisBinding & { id: string },
+    removed = false,
+  ): void {
+    const authored = (
+      kind === "action" ? this.defaults.actions : this.defaults.axes
+    )
+      .find((row) => row.id === mapping)
+      ?.bindings.some((row) => row.id === binding.id);
+    const edit: BindingEdit = {
+      kind,
+      mapping,
+      id: binding.id,
+      added: !authored,
+      binding: removed ? null : structuredClone(binding),
+    };
+    if (removed && !authored) this.edits.delete(editKey(edit));
+    else this.edits.set(editKey(edit), edit);
+  }
+
+  private addTypedBinding(
+    kind: "action" | "axis",
+    input: InputTypeValue,
+    key: InputKey,
+    options: Partial<InputBindingValue> = {},
+  ): boolean {
+    options ??= {};
+    const row = this.typedMapping(kind, input);
+    const control = inputControlFromKey(key);
+    if (!row || !control || !options || typeof options !== "object")
+      return false;
+    let id: string;
+    do {
+      id = `runtime-binding-${++this.nextBindingId}`;
+    } while (row.bindings.some((binding) => binding.id === id));
+    const binding: AxisBinding & { id: string } = { ...control, id };
+    for (const [field, flag] of [
+      ["Shift", "shift"],
+      ["Ctrl", "ctrl"],
+      ["Alt", "alt"],
+      ["Meta", "meta"],
+    ] as const) {
+      if (options[field] !== undefined && typeof options[field] !== "boolean")
+        return false;
+      if (options[field]) (binding.modifiers ??= {})[flag] = true;
+    }
+    if (kind === "axis") {
+      if (
+        options.Component !== undefined &&
+        options.Component !== "X" &&
+        options.Component !== "Y"
+      )
+        return false;
+      if (options.Component)
+        binding.component = options.Component === "Y" ? "y" : "x";
+      for (const [field, property] of [
+        ["DeadZone", "deadZone"],
+        ["Scale", "scale"],
+        ["Sensitivity", "sensitivity"],
+        ["DigitalValue", "digitalValue"],
+      ] as const) {
+        const value = options[field];
+        if (value !== undefined) {
+          if (typeof value !== "number" || !Number.isFinite(value))
+            return false;
+          if (field === "DeadZone" && (value < 0 || value >= 1)) return false;
+          binding[property] = value;
+        }
+      }
+      if (options.Invert !== undefined && typeof options.Invert !== "boolean")
+        return false;
+      if (options.Invert) binding.invert = true;
+    }
+    this.writeEdit(kind, row.id!, binding);
+    this.apply();
+    return true;
+  }
+
+  private setTypedBinding(
+    kind: "action" | "axis",
+    binding: InputBindingValue,
+    key: InputKey,
+  ): boolean {
+    const row = this.typedMapping(kind, binding?.Input);
+    const current = row?.bindings.find(
+      (entry) => !!binding?.Id && entry.id === binding.Id,
+    );
+    const control = inputControlFromKey(key);
+    if (!current?.id || !control) return false;
+    this.writeEdit(kind, row!.id!, { ...current, ...control, id: current.id });
+    this.apply();
+    return true;
+  }
+
+  /** Remove every matching key in this asset, including chords and axis components. */
+  private removeTypedBinding(
+    kind: "action" | "axis",
+    input: InputTypeValue,
+    key: InputKey,
+  ): boolean {
+    if (!inputControlFromKey(key)) return false;
+    const row = this.typedMapping(kind, input);
+    const bindings = row?.bindings.filter(
+      (entry) =>
+        entry.id && inputKeyFromControl(entry.device, entry.code) === key,
+    );
+    if (!row || !bindings?.length) return false;
+    for (const binding of bindings)
+      this.writeEdit(kind, row.id!, { ...binding, id: binding.id! }, true);
+    this.apply();
+    return true;
   }
 
   private typedSlot(binding: InputBindingValue) {
@@ -380,6 +577,10 @@ export class InputBindingProfile implements InputBindingControls {
       if (resetAll || (override.kind === kind && override.mapping === mapping))
         this.overrides.delete(key);
     }
+    for (const [key, edit] of this.edits) {
+      if (resetAll || (edit.kind === kind && edit.mapping === mapping))
+        this.edits.delete(key);
+    }
     this.cancelRebind();
     this.status = "idle";
     this.apply();
@@ -388,8 +589,9 @@ export class InputBindingProfile implements InputBindingControls {
 
   exportBindings(): string {
     return JSON.stringify({
-      version: 1,
+      version: this.edits.size ? 2 : 1,
       overrides: [...this.overrides.values()],
+      ...(this.edits.size ? { edits: [...this.edits.values()] } : {}),
     });
   }
 
@@ -402,8 +604,93 @@ export class InputBindingProfile implements InputBindingControls {
     }
     if (!parsed || typeof parsed !== "object") return false;
     const document = parsed as Record<string, unknown>;
-    if (document.version !== 1 || !Array.isArray(document.overrides))
+    if (
+      (document.version !== 1 && document.version !== 2) ||
+      !Array.isArray(document.overrides)
+    )
       return false;
+    const edits = new Map<string, BindingEdit>();
+    if (document.version === 2) {
+      if (!Array.isArray(document.edits)) return false;
+      for (const value of document.edits) {
+        if (!value || typeof value !== "object") return false;
+        const edit = value as BindingEdit;
+        if (
+          (edit.kind !== "action" && edit.kind !== "axis") ||
+          typeof edit.mapping !== "string" ||
+          typeof edit.id !== "string" ||
+          !edit.id ||
+          typeof edit.added !== "boolean"
+        )
+          return false;
+        const row = (
+          edit.kind === "action" ? this.defaults.actions : this.defaults.axes
+        ).find((entry) => entry.id === edit.mapping);
+        if (
+          !row ||
+          edit.added === row.bindings.some((binding) => binding.id === edit.id)
+        )
+          return false;
+        if (edit.binding === null) {
+          if (edit.added) return false;
+        } else {
+          if (
+            !edit.binding ||
+            edit.binding.id !== edit.id ||
+            !inputKeyFromControl(edit.binding.device, edit.binding.code)
+          )
+            return false;
+          for (const field of [
+            "scale",
+            "sensitivity",
+            "digitalValue",
+            "deadZone",
+          ] as const) {
+            const value = edit.binding[field];
+            if (
+              value !== undefined &&
+              (typeof value !== "number" || !Number.isFinite(value))
+            )
+              return false;
+          }
+          if (
+            edit.binding.deadZone !== undefined &&
+            (edit.binding.deadZone < 0 || edit.binding.deadZone >= 1)
+          )
+            return false;
+          if (
+            edit.binding.component !== undefined &&
+            edit.binding.component !== "x" &&
+            edit.binding.component !== "y"
+          )
+            return false;
+          if (
+            edit.binding.invert !== undefined &&
+            typeof edit.binding.invert !== "boolean"
+          )
+            return false;
+          if (
+            edit.binding.modifiers !== undefined &&
+            (!edit.binding.modifiers ||
+              typeof edit.binding.modifiers !== "object" ||
+              modifiers.some(
+                (flag) =>
+                  edit.binding!.modifiers?.[flag] !== undefined &&
+                  typeof edit.binding!.modifiers?.[flag] !== "boolean",
+              ))
+          )
+            return false;
+          const normalized = normalizeInputAssetPayload(
+            edit.kind === "action" ? "InputAction" : "InputAxis",
+            { bindings: [edit.binding] },
+          ).bindings[0];
+          if (!normalized) return false;
+          edit.binding = normalized;
+        }
+        if (edits.has(editKey(edit))) return false;
+        edits.set(editKey(edit), structuredClone(edit));
+      }
+    }
     const next = new Map<string, BindingOverride>();
     for (const value of document.overrides) {
       if (!value || typeof value !== "object") return false;
@@ -458,6 +745,7 @@ export class InputBindingProfile implements InputBindingControls {
       next.set(key, override);
     }
     this.overrides = next;
+    this.edits = edits;
     this.cancelRebind();
     this.status = "idle";
     this.apply();
@@ -534,6 +822,20 @@ export class InputBindingProfile implements InputBindingControls {
       delete binding.modifiers;
       for (const name of modifiers) {
         if (override[name]) (binding.modifiers ??= {})[name] = true;
+      }
+    }
+    for (const edit of this.edits.values()) {
+      const row = (
+        edit.kind === "action" ? this.current.actions : this.current.axes
+      ).find((entry) => entry.id === edit.mapping);
+      if (!row) continue;
+      const index = row.bindings.findIndex((binding) => binding.id === edit.id);
+      if (edit.binding === null) {
+        if (index >= 0) row.bindings.splice(index, 1);
+      } else if (index >= 0) {
+        row.bindings[index] = structuredClone(edit.binding);
+      } else if (edit.added) {
+        row.bindings.push(structuredClone(edit.binding));
       }
     }
     this.onChange(this.current);
