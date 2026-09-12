@@ -39,6 +39,7 @@ test("animated normal displacement keeps the Material preview rendering", async 
   await compileMaterialPreview(page);
   const canvas = page.getByTestId("material-preview-canvas");
   await connectMaterialPins(page, "multiply", "out", '[data-id="output"]', "worldPositionOffset");
+  await expect(page.getByTestId("material-graph-editor").locator('.react-flow__edge')).toHaveCount(doc.edges.length + 1);
   await compileMaterialPreview(page);
   const first = await canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL());
   await expect.poll(() => errors).toEqual([]);
