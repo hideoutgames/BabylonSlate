@@ -469,8 +469,12 @@ and texture bytes. Texture cache reuse compares content as well as GUID and
 sampling settings, preserving outstanding retains when bytes are replaced.
 Preview texture references are retained once per byte revision and released on
 tab teardown. Newly added Divide / Modulo nodes start with divisor 1 and Power
-starts with exponent 1. New Time nodes expose seconds of Babylon scene animation;
-legacy nodes preserve the previous 0.6-units-per-second rate.
+starts with exponent 1. New Time nodes expose elapsed seconds since the shared
+Engine started, independent of preview frame rate or the Scene viewport's render
+loop. Time-driven displacement continues when only a Material preview is drawing;
+after a suspended preview resumes, Time reflects the current elapsed time. Legacy
+nodes preserve Babylon's previous scene-animation timing (0.6 units per second
+at 60 FPS).
 
 Custom GLSL nodes created by the editor use node-local `customVersion: 2`, with
 stable pin IDs, GLSL variable names and explicit Float / Vector 2 / Vector 3 /
