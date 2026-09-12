@@ -1727,6 +1727,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         touchMinTargetPx:
           projectDocument?.settings.touchMinTargetPx ?? 44,
         pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
+        sortingLayers: projectDocument?.settings.twoD.sortingLayers,
         pixelPerfect: projectDocument?.settings.twoD.pixelPerfect === true,
         physicsWorld:
           loaded.sceneByGuid(startupSceneGuid ?? "")?.settings.physicsWorld ===

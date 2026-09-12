@@ -18,6 +18,7 @@ import {
 } from "@babylonslate/ui/components/toggle-group";
 import {
   ensureTilesetTiles,
+  DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS,
   normalizeTilesetPayload,
   type TilesetCollision,
   type TilesetPayload,
@@ -355,6 +356,14 @@ export function TilesetEditor({
             .map((entry) => Number(entry))
             .filter((id) => Number.isInteger(id) && id > 0),
         }),
+    },
+    {
+      id: "animationFrameDurationMs",
+      kind: "number",
+      label: "Frame Duration MS",
+      value: selected?.animationFrameDurationMs ?? DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS,
+      min: 1,
+      onChange: (value) => patchTile({ animationFrameDurationMs: Math.max(1, Math.floor(value)) }),
     },
   ];
   if (collisionValue === "chain") {

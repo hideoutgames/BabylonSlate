@@ -161,6 +161,7 @@ import {
 } from "@babylonslate/core";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
+import { updateSceneTilemapAnimations } from "./tilemap-mesh";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 import { MaterialLibrary } from "./material-library";
@@ -180,7 +181,7 @@ import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { configureEditorRenderingGroups } from "./sorting";
+import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
   freezeEditorActiveMeshes,
@@ -350,6 +351,7 @@ export interface CreateEngineOptions {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   pixelsPerUnit?: number;
+  sortingLayers?: readonly string[];
   /** Overlay 2DButton pick floor in CSS pixels (Engine Settings `touchMinTargetPx`). */
   touchMinTargetPx?: number;
   /** Project `twoD.pixelPerfect` — snap the Play camera, not the editor camera. */
@@ -657,6 +659,7 @@ export function createEngine(
   }
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
+  configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
     ? sceneClearColor(options.environmentColor)
@@ -766,6 +769,7 @@ export function createEngine(
   binding.tilemaps = options.tilemapPayloads;
   binding.tilesets = options.tilesetPayloads;
   binding.pixelsPerUnit = options.pixelsPerUnit;
+  binding.sortingLayers = options.sortingLayers;
   binding.pixelPerfect = options.pixelPerfect === true;
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
@@ -1044,6 +1048,7 @@ export function createEngine(
     resourceCache.setClientTextures(scene.uid, guids);
   };
 
+  let lastRenderedSnapshotFrame: number | null = null;
   const loadScene = (sceneData: SerializedScene) => {
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -1058,6 +1063,7 @@ export function createEngine(
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
       interpolator.clear();
+      lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);
@@ -1413,6 +1419,7 @@ export function createEngine(
   const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
+  const tilemapPreviewStart = performance.now();
   const renderLoop = () => {
     const frameStart = performance.now();
     if (!scheduler.shouldRender(frameStart)) {
@@ -1454,9 +1461,13 @@ export function createEngine(
     const renderStart = performance.now();
     beginEngineDrawCallFrame(engine);
     if (rttPresent) rttPresent.bind();
+    if (!options.playMode) {
+      updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
+    }
     scene.render();
     sceneLayerCompositor?.render();
     if (rttPresent) rttPresent.blit();
+    if (sampled) lastRenderedSnapshotFrame = sampled.frameId;
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     scaling.noteFrameTime(performance.now() - renderStart);
@@ -1465,9 +1476,10 @@ export function createEngine(
 
   const onVisibility = () => {
     const hidden = document.visibilityState === "hidden";
-    scheduler.setPaused(hidden);
+    scheduler.setDocumentVisible(!hidden);
   };
   if (typeof document !== "undefined") {
+    onVisibility();
     document.addEventListener("visibilitychange", onVisibility);
   }
 
@@ -1620,6 +1632,7 @@ export function createEngine(
       interpAlpha = 1;
       const sampled = interpolator.sample(interpAlpha);
       if (sampled) positionsFromSample(sampled, lastPositions);
+      if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
         playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
       }
@@ -1768,6 +1781,10 @@ export function createEngine(
         applyShadowQuality(scene, binding, command.level);
         scheduler.invalidate("asset");
       }
+      if (command.type === "tilemapAnimationTime") {
+        binding.tilemapAnimationTimeMs = command.elapsedMs;
+        scheduler.invalidate("snapshot");
+      }
       if (command.type === "animState") {
         if (!binding.pendingAnimState) binding.pendingAnimState = new Map();
         binding.pendingAnimState.set(command.slotId, command);
@@ -1900,6 +1917,7 @@ export function createEngine(
         assets.spriteAnimations ?? binding.spriteAnimations;
       binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
       binding.tilesets = assets.tilesets ?? binding.tilesets;
+      binding.sortingLayers = assets.sortingLayers ?? binding.sortingLayers;
       if (assets.materialTextureGuids) {
         binding.materialTextureGuids = assets.materialTextureGuids;
       }

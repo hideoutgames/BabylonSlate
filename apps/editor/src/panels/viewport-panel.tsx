@@ -518,6 +518,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
+          sortingLayers: projectDocument?.settings.twoD.sortingLayers,
         });
       };
       try {
@@ -581,6 +582,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
+    projectDocument?.settings.twoD.sortingLayers,
     projectDocument?.settings.fonts.defaultFontGuid,
     projectDocument?.settings.fonts.globalFallback,
     engineEpoch,
@@ -682,7 +684,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           }
         : null,
     );
-  }, [projectDocument?.settings.twoD, viewportMode]);
+  }, [projectDocument?.settings.twoD, viewportMode, engineEpoch]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

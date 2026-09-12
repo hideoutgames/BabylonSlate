@@ -19,6 +19,7 @@ import {
   type SceneLayerHitTest,
 } from "@babylonslate/core";
 import { installEngineDefaultMaterial } from "./default-material";
+import { configureCutoutSorting } from "./sorting";
 import {
   overlayCanvasToWorld,
   overlayMinTargetWorldSize,
@@ -82,6 +83,7 @@ export class SceneLayerCompositor {
   create(command: SceneLayerCreateCommand): SceneLayerView {
     this.remove(command.layerId);
     const scene = new Scene(this.engine);
+    configureCutoutSorting(scene);
     installEngineDefaultMaterial(scene);
     scene.lightsEnabled = false;
     scene.skipPointerMovePicking = false;

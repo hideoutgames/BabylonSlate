@@ -32,6 +32,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "debugDraw",
   "setCursorVisible",
   "animState",
+  "tilemapAnimationTime",
   "sceneLayerCreate",
   "sceneLayerRemove",
   "sceneLayerClear",

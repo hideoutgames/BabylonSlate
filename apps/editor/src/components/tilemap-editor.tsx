@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
   EraserIcon,
   EyeIcon,
@@ -48,12 +49,15 @@ import {
 import {
   addTilemapLayer,
   addTilemapTileset,
+  reconcileTilemapTilesets,
+  tilemapTileIdentity,
   applyPinchView,
   applyPointerPan,
   applyTilemapPaint,
   applyWheelZoom,
   cellsAlongSegment,
   decodeTileGid,
+  orderedTilemapLayers,
   DEFAULT_PAINT_CELL_SIZE,
   encodeTileGid,
   ensureTilesetTiles,
@@ -175,7 +179,9 @@ export function TilemapDetails({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const tilemap = normalizeTilemapPayload(payload);
+  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
+  const { payloads, loadPayloads } = useLoadedTilesets(authored);
+  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removeGuid, setRemoveGuid] = useState<string | null>(null);
   const [selectedLayerId, setSelectedLayerId] = useState(
@@ -224,10 +230,11 @@ export function TilemapDetails({
       tilemap,
       guid,
       normalizeTilesetPayload(raw ?? {}),
+      await loadPayloads(),
     );
     const added = next.tilesets[next.tilesets.length - 1];
     if (added && editing && tilemap.tilesets.length === 0) {
-      editing.setSelectedGid(added.firstGid);
+      editing.setSelectedTile({ guid: added.guid, localId: 1 });
     }
     commit(next);
   };
@@ -389,7 +396,7 @@ export function TilemapDetails({
                 if (!removeGuid) return;
                 const next = removeTilemapTileset(tilemap, removeGuid);
                 commit(next);
-                editing?.setSelectedGid(next.tilesets[0]?.firstGid ?? 1);
+                editing?.setSelectedTile(null);
                 setRemoveGuid(null);
               }}
             >
@@ -481,12 +488,13 @@ export function TilemapPalette({
   payload: Record<string, unknown>;
   onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const tilemap = normalizeTilemapPayload(payload);
+  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
+  const { payloads, loadPayloads } = useLoadedTilesets(authored);
+  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
   const editing = useOptionalTilemapEditing();
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const { assetRegistry, loadAssetDocument } = useDocuments();
-  const payloads = useLoadedTilesets(tilemap);
   const atlases = useTilesetAtlases(payloads);
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
@@ -507,9 +515,10 @@ export function TilemapPalette({
       tilemap,
       guid,
       normalizeTilesetPayload(raw ?? {}),
+      await loadPayloads(),
     );
     const added = next.tilesets[next.tilesets.length - 1];
-    if (added) editing?.setSelectedGid(added.firstGid);
+    if (added) editing?.setSelectedTile({ guid: added.guid, localId: 1 });
     onChange?.(next as unknown as Record<string, unknown>);
   };
 
@@ -592,8 +601,8 @@ export function TilemapPalette({
                       localId={tile.id}
                       tileset={tileset}
                       atlas={atlases.get(ref.guid) ?? null}
-                      selected={editing?.selectedGid === gid}
-                      onSelect={(next) => editing?.setSelectedGid(next)}
+                      selected={selectedTileGid(tilemap, editing?.selectedTile ?? null) === gid}
+                      onSelect={() => editing?.setSelectedTile({ guid: ref.guid, localId: tile.id })}
                       testId={`tilemap-palette-tile-${gid}`}
                     />
                   );
@@ -614,17 +623,20 @@ export function TilemapPaint({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const tilemap = normalizeTilemapPayload(payload);
+  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
+  const { payloads, loadPayloads } = useLoadedTilesets(authored);
+  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
   const latestRef = useRef(tilemap);
   useEffect(() => {
-    latestRef.current = normalizeTilemapPayload(payload);
-  }, [payload]);
+    latestRef.current = tilemap;
+  }, [tilemap]);
   const editing = useOptionalTilemapEditing();
-  const [localGid, setLocalGid] = useState(1);
-  const selectedGid = editing?.selectedGid ?? localGid;
+  const [localTile, setLocalTile] = useState<{ guid: string; localId: number } | null>(null);
+  const selectedGid = selectedTileGid(tilemap, editing ? editing.selectedTile : localTile);
   const setSelectedGid = (gid: number) => {
-    if (editing) editing.setSelectedGid(gid);
-    else setLocalGid(gid);
+    const tile = gid === 0 ? { guid: "", localId: 0 } : tilemapTileIdentity(tilemap, gid);
+    if (editing) editing.setSelectedTile(tile);
+    else setLocalTile(tile);
   };
   const [layerOpen, setLayerOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -654,6 +666,8 @@ export function TilemapPaint({
   const strokeRef = useRef<{
     id: string;
     base: TilemapPayload;
+    original: TilemapPayload;
+    gid: number;
     start: { x: number; y: number };
     last: { x: number; y: number };
     cells: Array<{ x: number; y: number }>;
@@ -661,7 +675,6 @@ export function TilemapPaint({
   const viewRef = useRef({ pan, cellSize });
   viewRef.current = { pan, cellSize };
   const { assetRegistry, loadAssetDocument } = useDocuments();
-  const payloads = useLoadedTilesets(tilemap);
   const atlases = useTilesetAtlases(payloads);
   const layer =
     tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
@@ -671,6 +684,8 @@ export function TilemapPaint({
     type: asset.header.type,
     path: asset.path,
   }));
+  const { projectDocument } = useDocuments();
+  const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const decoded = decodeTileGid(tilemap, selectedGid, payloads);
   const localTileId = decoded?.localId ?? selectedGid;
 
@@ -716,8 +731,9 @@ export function TilemapPaint({
       cellSize,
       payloads,
       atlases,
+      sortingLayers,
     );
-  }, [atlases, cellSize, cssSize, pan, payloads, tilemap]);
+  }, [atlases, cellSize, cssSize, pan, payloads, tilemap, sortingLayers]);
 
   const cellAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -743,10 +759,13 @@ export function TilemapPaint({
     pointerType: "down" | "move",
   ) => {
     if (!layer || !isTilemapPaintStrokeTool(tool)) return;
+    if (tool !== "eraser" && (selectedGid < 0 || (selectedGid > 0 && !decoded))) return;
     if (pointerType === "down") {
       strokeRef.current = {
         id: newStrokeId(),
         base: latestRef.current,
+        original: authored,
+        gid: selectedGid,
         start: cell,
         last: cell,
         cells: [cell],
@@ -773,13 +792,13 @@ export function TilemapPaint({
     const painted = applyTilemapPaint(stroke.base, {
       tool,
       layerId: layer.id,
-      tileId: selectedGid,
+      tileId: stroke.gid,
       start: stroke.start,
       end: stroke.last,
       cells: stroke.cells,
       stamp:
         tool === "stamp"
-          ? { width: 2, height: 2, tiles: [selectedGid, selectedGid, selectedGid, selectedGid] }
+          ? { width: 2, height: 2, tiles: [stroke.gid, stroke.gid, stroke.gid, stroke.gid] }
           : undefined,
     });
     latestRef.current = painted;
@@ -797,9 +816,14 @@ export function TilemapPaint({
       tilemap,
       guid,
       normalizeTilesetPayload(raw ?? {}),
+      await loadPayloads(),
     );
     const added = next.tilesets[next.tilesets.length - 1];
-    if (added) setSelectedGid(added.firstGid);
+    if (added) {
+      const tile = { guid: added.guid, localId: 1 };
+      if (editing) editing.setSelectedTile(tile);
+      else setLocalTile(tile);
+    }
     onChange(next as unknown as Record<string, unknown>);
   };
 
@@ -959,7 +983,7 @@ export function TilemapPaint({
               const stroke = strokeRef.current;
               if (stroke) {
                 latestRef.current = stroke.base;
-                commitStroke(stroke.base, stroke.id);
+                commitStroke(stroke.original, stroke.id);
                 strokeRef.current = null;
               }
               panDragRef.current = null;
@@ -1165,35 +1189,45 @@ function TileThumb({
   );
 }
 
+function selectedTileGid(
+  tilemap: TilemapPayload,
+  selected: { guid: string; localId: number } | null,
+): number {
+  if (!selected) return tilemap.tilesets[0]?.firstGid ?? 0;
+  if (selected.localId === 0) return 0;
+  const ref = tilemap.tilesets.find((entry) => entry.guid === selected.guid);
+  if (!ref || selected.localId > ref.tileCount) return -1;
+  return encodeTileGid(ref.firstGid, selected.localId);
+}
+
 function useLoadedTilesets(
   tilemap: TilemapPayload,
-): ReadonlyMap<string, TilesetPayload> {
+) {
   const { assetRegistry, loadAssetDocument, openDocuments } = useDocuments();
   const [payloads, setPayloads] = useState<ReadonlyMap<string, TilesetPayload>>(
     new Map(),
   );
   const guids = tilemapTilesetGuids(tilemap).join(",");
+  const loadPayloads = useCallback(async () => {
+    const next = new Map<string, TilesetPayload>();
+    for (const guid of guids.split(",").filter(Boolean)) {
+      const asset = assetRegistry?.list().find((entry) => entry.header.guid === guid);
+      if (!asset) continue;
+      const open = openDocuments.find((doc) => doc.ref.path === asset.path);
+      const raw = open?.content ?? (loadAssetDocument ? await loadAssetDocument("tileset", asset.path) : null);
+      if (raw) next.set(guid, ensureTilesetTiles(normalizeTilesetPayload(raw)));
+    }
+    return next;
+  }, [assetRegistry, guids, loadAssetDocument, openDocuments]);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const next = new Map<string, TilesetPayload>();
-      for (const guid of guids.split(",").filter(Boolean)) {
-        const asset = assetRegistry?.list().find((entry) => entry.header.guid === guid);
-        if (!asset) continue;
-        const open = openDocuments.find((doc) => doc.ref.path === asset.path);
-        const raw =
-          open?.content ??
-          (loadAssetDocument
-            ? await loadAssetDocument("tileset", asset.path)
-            : null);
-        if (!raw) continue;
-        next.set(guid, ensureTilesetTiles(normalizeTilesetPayload(raw)));
-      }
+      const next = await loadPayloads();
       if (!cancelled) {
         setPayloads((current) => {
           if (
             current.size === next.size &&
-            [...next.keys()].every((guid) => current.has(guid))
+            [...next].every(([guid, value]) => JSON.stringify(current.get(guid)) === JSON.stringify(value))
           ) {
             return current;
           }
@@ -1204,8 +1238,8 @@ function useLoadedTilesets(
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, guids, loadAssetDocument, openDocuments]);
-  return payloads;
+  }, [loadPayloads]);
+  return { payloads, loadPayloads };
 }
 
 function useTilesetAtlases(
@@ -1263,13 +1297,14 @@ function drawTilemapCanvas(
   cellSize: number,
   payloads: ReadonlyMap<string, TilesetPayload>,
   atlases: ReadonlyMap<string, HTMLImageElement>,
+  sortingLayers: readonly string[],
 ): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssWidth, cssHeight);
   ctx.fillStyle = "oklch(0.2 0 0)";
   ctx.fillRect(0, 0, cssWidth, cssHeight);
   ctx.imageSmoothingEnabled = false;
-  for (const layer of tilemap.layers) {
+  for (const layer of orderedTilemapLayers(tilemap, sortingLayers)) {
     if (!layer.visible) continue;
     const size = tilemap.chunkSize;
     for (const chunk of layer.chunks) {

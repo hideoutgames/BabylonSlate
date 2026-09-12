@@ -8,9 +8,28 @@ import {
   tilesetAtlasRows,
   tilesetTileRect,
   tilesetTileUv,
+  tilesetAnimationFrame,
 } from "./tileset-payload";
 
 describe("tileset payload", () => {
+  it("loops atlas frames at the authored duration with a legacy 100ms default", () => {
+    const atlas = normalizeTilesetPayload({
+      atlasWidth: 48, atlasHeight: 16,
+      tiles: [
+        { id: 1, animation: [2, 3] },
+        { id: 2, animation: [3, 1], animationFrameDurationMs: 250 },
+        { id: 3, animation: [99, 1], animationFrameDurationMs: -5 },
+      ],
+    });
+    expect([0, 99, 100, 199, 200].map((t) => tilesetAnimationFrame(atlas, atlas.tiles[0]!, t)))
+      .toEqual([2, 2, 3, 3, 2]);
+    expect([249, 250, 500].map((t) => tilesetAnimationFrame(atlas, atlas.tiles[1]!, t)))
+      .toEqual([3, 1, 3]);
+    expect(tilesetAnimationFrame(atlas, atlas.tiles[2]!, 0)).toBe(3);
+    expect(tilesetAnimationFrame(atlas, atlas.tiles[2]!, 100)).toBe(1);
+    expect(tilesetAnimationFrame(atlas, atlas.tiles[0]!, Number.NaN)).toBe(2);
+    expect(tilesetAnimationFrame(atlas, { id: 1, flags: 0, collision: "full", animation: [2, 3] }, 100)).toBe(3);
+  });
   it("defaults to a 16px grid with tile 1 and no collision", () => {
     const payload = createDefaultTilesetPayload();
     expect(payload.textureGuid).toBeNull();

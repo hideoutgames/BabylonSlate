@@ -83,6 +83,8 @@ export type GameManifest = {
   playFrameCap: number;
   touchMinTargetPx?: number;
   pixelsPerUnit: number;
+  /** Ordered 2D sorting layers; absent in older exports. */
+  sortingLayers?: readonly string[];
   pixelPerfect: boolean;
   packs: string[];
   /** Script registry path. Legacy manifests that omit it migrate to `scripts.js`. */
@@ -112,6 +114,7 @@ export type ExportGameOptions = {
   playFrameCap?: number;
   touchMinTargetPx?: number;
   pixelsPerUnit?: number;
+  sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   physicsWorld?: "2d" | "3d";
   infiniteLoopDetection?: boolean;

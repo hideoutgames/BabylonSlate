@@ -1,15 +1,42 @@
-import { Mesh, Scene, VertexData, type AbstractMesh } from "@babylonjs/core";
+import { Mesh, Scene, VertexBuffer, VertexData, type AbstractMesh } from "@babylonjs/core";
 import {
   tilemapChunkVertexData,
   tilemapParallaxOffset,
   decodeTileGid,
   tilemapTilesetGuids,
+  tilesetAnimationFrame,
+  tilesetTileUv,
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
-import { applySortingToMesh, resolveSortingLayer } from "./sorting";
+import { applyComponentSorting } from "./sorting";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
+
+type AnimatedChunk = {
+  mesh: Mesh;
+  uvs: number[];
+  tiles: ReturnType<typeof tilemapChunkVertexData>["animatedTiles"];
+  frames: number[];
+};
+const animatedChunks = new WeakMap<Scene, Set<AnimatedChunk>>();
+
+/** Seek only animated UVs. Static geometry, collision and atlas materials stay intact. */
+export function updateSceneTilemapAnimations(scene: Scene, elapsedMs: number): void {
+  for (const chunk of animatedChunks.get(scene) ?? []) {
+    let changed = false;
+    chunk.tiles.forEach((tile, index) => {
+      const frame = tilesetAnimationFrame(tile.tileset, tile.tile, elapsedMs);
+      if (frame === chunk.frames[index]) return;
+      const uv = tilesetTileUv(tile.tileset, frame);
+      if (!uv) return;
+      chunk.frames[index] = frame;
+      chunk.uvs.splice(tile.uvOffset, 8, uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1);
+      changed = true;
+    });
+    if (changed) chunk.mesh.updateVerticesData(VertexBuffer.UVKind, chunk.uvs);
+  }
+}
 
 /** Atlas materials belong to tilemap draws, not their actor's mesh material slots. */
 export function isTilemapChunkMesh(mesh: AbstractMesh): boolean {
@@ -29,20 +56,16 @@ export function createTilemapMeshes(
   const resolveGid = (gid: number) => {
     const hit = decodeTileGid(tilemap, gid, atlasMap);
     if (hit) return hit;
-    if (atlasMap.size === 1) {
+    if (!isTilesetMap(tilesets) && tilemapTilesetGuids(tilemap).length === 0) {
       const [guid, tileset] = [...atlasMap.entries()][0]!;
       return { guid, localId: gid, tileset };
     }
     return null;
   };
   const root = new Mesh(name, scene);
-  for (const layer of tilemap.layers) {
+  for (const [ordinal, layer] of tilemap.layers.entries()) {
     if (!layer.visible) continue;
-    const sorting = resolveSortingLayer(
-      DEFAULT_SORTING_LAYERS,
-      layer.sortingLayer,
-      layer.orderInLayer,
-    );
+    const sorting = { name: layer.sortingLayer, order: layer.orderInLayer, ordinal };
     for (const chunk of layer.chunks) {
       const atlasGuids = chunkAtlasGuids(chunk.tiles, resolveGid, atlasMap);
       atlasGuids.forEach((guid, atlasIndex) => {
@@ -102,6 +125,7 @@ export function createTilemapMeshes(
       });
     }
   }
+  applyComponentSorting(root, DEFAULT_SORTING_LAYERS);
   return root;
 }
 
@@ -177,7 +201,7 @@ function appendChunkMesh(
   name: string,
   data: ReturnType<typeof tilemapChunkVertexData>,
   parallax: { x: number; y: number },
-  sorting: ReturnType<typeof resolveSortingLayer>,
+  sorting: { name: string; order: number; ordinal: number },
 ): Mesh | null {
   if (data.positions.length === 0) return null;
   const mesh = new Mesh(name, scene);
@@ -189,8 +213,20 @@ function appendChunkMesh(
   VertexData.ComputeNormals(data.positions, data.indices, normals);
   vertexData.normals = normals;
   vertexData.applyToMesh(mesh, true);
+  if (data.animatedTiles.length > 0) {
+    let chunks = animatedChunks.get(scene);
+    if (!chunks) {
+      chunks = new Set();
+      animatedChunks.set(scene, chunks);
+    }
+    const chunk: AnimatedChunk = {
+      mesh, uvs: [...data.uvs], tiles: data.animatedTiles,
+      frames: data.animatedTiles.map((tile) => tilesetAnimationFrame(tile.tileset, tile.tile, 0)),
+    };
+    chunks.add(chunk);
+    mesh.onDisposeObservable.addOnce(() => chunks.delete(chunk));
+  }
   mesh.parent = root;
-  mesh.metadata = { ...(mesh.metadata ?? {}), tilemapParallax: parallax };
-  applySortingToMesh(mesh, sorting);
+  mesh.metadata = { ...(mesh.metadata ?? {}), tilemapParallax: parallax, tilemapLayer: sorting };
   return mesh;
 }

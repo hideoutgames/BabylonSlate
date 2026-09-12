@@ -433,6 +433,8 @@ class InProcessRuntime implements RuntimeDriver {
   private currentBtAssetGuid: string | null = null;
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
+  private tilemapAnimationTimeMs = 0;
+  private hasAnimatedTiles = false;
   private sprites = new Map<string, SpritePayload>();
   private spriteAnimations = new Map<string, SpriteAnimationPayload>();
   private models = new Map<string, ModelPayload>();
@@ -569,6 +571,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (options.tilesets) {
       this.tilesets = new Map(Object.entries(options.tilesets));
     }
+    this.refreshTilemapAnimationContent();
     if (options.audioAssetGuids) {
       for (const guid of options.audioAssetGuids) {
         if (guid) this.audioAssetGuids.add(guid);
@@ -1485,6 +1488,8 @@ class InProcessRuntime implements RuntimeDriver {
   realizePlayWorld(): void {
     if (this.playWorldRealized) return;
     this.playWorldRealized = true;
+    this.tilemapAnimationTimeMs = 0;
+    if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
     this.loopGuard.reset();
     try {
       this.world.start();
@@ -1703,6 +1708,12 @@ class InProcessRuntime implements RuntimeDriver {
     this.blackboards.set(guid, document);
   }
 
+  private refreshTilemapAnimationContent(): void {
+    this.hasAnimatedTiles = this.tilemaps.size > 0 && [...this.tilesets.values()].some(
+      (tileset) => tileset.tiles.some((tile) => tile.animation.length > 0),
+    );
+  }
+
   registerTileContent(options: {
     tilemaps: Readonly<Record<string, TilemapPayload>> | ReadonlyMap<string, TilemapPayload>;
     tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
@@ -1716,6 +1727,8 @@ class InProcessRuntime implements RuntimeDriver {
       options.tilesets instanceof Map
         ? new Map(options.tilesets)
         : new Map(Object.entries(options.tilesets));
+    this.refreshTilemapAnimationContent();
+    if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
@@ -3884,6 +3897,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.advanceDelays();
     this.tickAnimGraphs();
+    this.tilemapAnimationTimeMs += simDt * 1000;
+    if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
     this.navFrameActors = new Map(this.world.getActors().map((actor) => [actor.guid, actor]));
     try {
       this.tickBehaviourTrees();

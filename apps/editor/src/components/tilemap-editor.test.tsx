@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
+import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import {
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
@@ -116,6 +117,7 @@ function TilemapHarness({
 
 afterEach(() => {
   cleanup();
+  documentApi.openDocuments = [];
   loadAssetDocument.mockReset();
   readAssetChunk.mockClear();
 });
@@ -284,6 +286,101 @@ describe("TilemapPalette", () => {
 });
 
 describe("TilemapPaint", () => {
+  it("redraws layers in project sorting order when that order changes", async () => {
+    const initial = mapWithGround();
+    initial.layers = [
+      { ...setTile(initial, "layer-1", 0, 0, 1).layers[0]!, sortingLayer: "Props" },
+      { ...setTile(initial, "layer-1", 1, 0, 2).layers[0]!, id: "back", sortingLayer: "Decals" },
+    ];
+    const previous = documentApi.projectDocument.settings.twoD.sortingLayers;
+    documentApi.projectDocument.settings.twoD.sortingLayers = ["Default", "Decals", "Props"];
+    const view = render(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={() => {}} />);
+    const tileXs = () => {
+      const ctx = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.results.at(-1)!.value as unknown as { fillRect: ReturnType<typeof vi.fn> };
+      return ctx.fillRect.mock.calls.filter((args) => args[2] === 32).map((args) => args[0]);
+    };
+    try {
+      await screen.findByTestId("tilemap-palette-tile-2");
+      expect(tileXs()).toEqual([32, 0]);
+      documentApi.projectDocument.settings.twoD.sortingLayers = ["Default", "Props", "Decals"];
+      view.rerender(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={() => {}} />);
+      expect(tileXs()).toEqual([0, 32]);
+    } finally { documentApi.projectDocument.settings.twoD.sortingLayers = previous; }
+  });
+  it.each(["shrunk", "missing"])("does not overwrite cells with a selected tile from a %s atlas", async (state) => {
+    const initial = setTile(mapWithGround(), "layer-1", 0, 0, 1);
+    const onChange = vi.fn();
+    const view = render(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    fireEvent.click(await screen.findByTestId("tilemap-palette-tile-2"));
+    if (state === "shrunk") {
+      documentApi.openDocuments = [{ id: "ground", ref: { kind: "tileset", path: GROUND_PATH }, content: createDefaultTilesetPayload() }];
+    } else {
+      loadAssetDocument.mockResolvedValue(null);
+      documentApi.openDocuments = [...documentApi.openDocuments];
+    }
+    view.rerender(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    await waitFor(() => expect(screen.queryByTestId("tilemap-palette-tile-2")).toBeNull());
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    for (const type of ["pointerdown", "pointerup"] as const) dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: 16, clientY: 240 });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("tilemap-tool-eraser"));
+    for (const type of ["pointerdown", "pointerup"] as const) dispatchPointerEvent(canvas, type, { pointerId: 2, clientX: 16, clientY: 240 });
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(getTile(normalizeTilemapPayload(onChange.mock.calls.at(-1)![0]), "layer-1", 0, 0)).toBe(0);
+  });
+  it("refreshes a grown atlas and undoes remapping with the paint stroke", async () => {
+    let initial = mapWithGround();
+    initial.tilesets.push({ guid: "ts-props", firstGid: 3, tileCount: 2 });
+    initial = setTile(initial, "layer-1", 0, 0, 2);
+    initial = setTile(initial, "layer-1", 1, 0, 3);
+    const onChange = vi.fn();
+    function HistoryHarness() {
+      const [doc, setDoc] = useState(initial as unknown as Record<string, unknown>);
+      const [stack] = useState(() => new DocumentEditStack<Record<string, unknown>>({ maxEntries: 20, maxBytes: 1_000_000 }));
+      return <>
+        <button disabled={!stack.canUndo} onClick={() => setDoc(stack.undo(doc)!.doc)}>Undo Test Edit</button>
+        <button disabled={!stack.canRedo} onClick={() => setDoc(stack.redo(doc)!.doc)}>Redo Test Edit</button>
+        <output data-testid="stored-tilemap">{JSON.stringify(doc)}</output>
+        <TilemapEditor payload={doc} onChange={(next, mergeKey) => {
+          setDoc(stack.apply(doc, new SetAssetDocumentCommand(doc, next, mergeKey)).doc);
+          onChange(next);
+        }} />
+      </>;
+    }
+    const view = render(<HistoryHarness />);
+    fireEvent.click(await screen.findByTestId("tilemap-palette-tile-2"));
+    documentApi.openDocuments = [{
+      id: "ground", ref: { kind: "tileset", path: GROUND_PATH },
+      content: ensureTilesetTiles({ ...twoTileTileset(), atlasWidth: 64 }),
+    }];
+    view.rerender(<HistoryHarness />);
+    const newTile = await screen.findByTestId("tilemap-palette-tile-8");
+    expect(screen.getByTestId("tilemap-paint-canvas").getAttribute("data-gid")).toBe("6");
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(newTile);
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    dispatchPointerEvent(canvas, "pointerdown", { pointerId: 1, clientX: 16, clientY: 240 });
+    dispatchPointerEvent(canvas, "pointermove", { pointerId: 1, clientX: 16, clientY: 208 });
+    dispatchPointerEvent(canvas, "pointerup", { pointerId: 1, clientX: 16, clientY: 208 });
+    const painted = await waitFor(() => {
+      const stored = normalizeTilemapPayload(JSON.parse(screen.getByTestId("stored-tilemap").textContent!));
+      expect(stored.tilesets[0]).toMatchObject({ firstGid: 5, tileCount: 4 });
+      return stored;
+    });
+    expect(getTile(painted, "layer-1", 0, 0)).toBe(8);
+    expect(getTile(painted, "layer-1", 1, 0)).toBe(3);
+    const commits = onChange.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Undo Test Edit" }));
+    expect(JSON.parse(screen.getByTestId("stored-tilemap").textContent!)).toEqual(initial);
+    await waitFor(() => expect(screen.getByTestId("tilemap-paint-canvas").getAttribute("data-gid")).toBe("8"));
+    expect(onChange).toHaveBeenCalledTimes(commits);
+    expect(screen.getByRole("button", { name: "Undo Test Edit" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Redo Test Edit" }));
+    expect(JSON.parse(screen.getByTestId("stored-tilemap").textContent!)).toEqual(painted);
+  });
+
   it.each(["move", "picker"])("follows two-finger translation in %s without painting", async (tool) => {
     const onChange = vi.fn();
     render(<TilemapHarness initial={mapWithGround() as unknown as Record<string, unknown>} onChange={onChange} />);

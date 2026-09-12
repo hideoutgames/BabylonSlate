@@ -1,10 +1,11 @@
-import { tilesetTileById, tilesetTileUv, type TilesetPayload } from "./tileset-payload";
+import { tilesetAnimationFrame, tilesetTileById, tilesetTileUv, type TilesetPayload, type TilesetTile } from "./tileset-payload";
 
 /** Babylon-free chunk geometry: one draw per chunk per atlas. */
 export interface TilemapChunkVertexData {
   positions: number[];
   uvs: number[];
   indices: number[];
+  animatedTiles: Array<{ uvOffset: number; tile: TilesetTile; tileset: TilesetPayload }>;
 }
 
 export type TilemapChunkDrawKind = "static" | "animated";
@@ -41,6 +42,7 @@ export function tilemapChunkVertexData(options: {
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
+  const animatedTiles: TilemapChunkVertexData["animatedTiles"] = [];
   const originX = chunkX * chunkSize;
   const originY = chunkY * chunkSize;
   let quad = 0;
@@ -57,7 +59,7 @@ export function tilemapChunkVertexData(options: {
       const animated = (meta?.animation.length ?? 0) > 0;
       if (kind === "static" && animated) continue;
       if (kind === "animated" && !animated) continue;
-      const uvId = animated ? (meta?.animation[0] ?? localId) : localId;
+      const uvId = meta ? tilesetAnimationFrame(atlas, meta, 0) : localId;
       const uv = tilesetTileUv(atlas, uvId);
       if (!uv) continue;
       // Match the authored grid without stretching tiles into neighboring cells.
@@ -68,13 +70,14 @@ export function tilemapChunkVertexData(options: {
       const y1 = (originY + ly + 1) * worldTileHeight;
       // Quad order matches sprite CreatePlane: BL, BR, TR, TL.
       positions.push(x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y1, 0);
+      if (animated && meta) animatedTiles.push({ uvOffset: uvs.length, tile: meta, tileset: atlas });
       uvs.push(uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1);
       const base = quad * 4;
       indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
       quad += 1;
     }
   }
-  return { positions, uvs, indices };
+  return { positions, uvs, indices, animatedTiles };
 }
 
 /** Local offset so a parallax of 1 stays in world space and 0 tracks the camera. */

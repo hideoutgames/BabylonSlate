@@ -1,11 +1,11 @@
 import { NullEngine, Scene, VertexBuffer } from "@babylonjs/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
 } from "@babylonslate/assets";
-import { applyTilemapParallaxToMesh, createTilemapMeshes } from "./tilemap-mesh";
+import { applyTilemapParallaxToMesh, createTilemapMeshes, updateSceneTilemapAnimations } from "./tilemap-mesh";
 
 describe("createTilemapMeshes", () => {
   let engine: NullEngine;
@@ -49,7 +49,7 @@ describe("createTilemapMeshes", () => {
     ]);
   });
 
-  it("applies per-layer sorting to chunk meshes", () => {
+  it("keeps asset Foreground layers inside the default component group", () => {
     const tileset = normalizeTilesetPayload({
       atlasWidth: 16,
       atlasHeight: 16,
@@ -69,8 +69,9 @@ describe("createTilemapMeshes", () => {
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
     const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
     const child = root.getChildMeshes()[0]!;
-    expect(child.renderingGroupId).toBe(2);
+    expect(child.renderingGroupId).toBe(1);
     expect(child.alphaIndex).toBeGreaterThan(0);
+    expect(child.metadata.tilemapLayer).toEqual({ name: "Foreground", order: 7, ordinal: 0 });
   });
 
   it("draws animated tiles as a separate child mesh", () => {
@@ -92,6 +93,24 @@ describe("createTilemapMeshes", () => {
     const names = root.getChildMeshes().map((mesh) => mesh.name);
     expect(names.some((name) => name.endsWith(":anim"))).toBe(true);
     expect(names.some((name) => !name.endsWith(":anim"))).toBe(true);
+    const animated = root.getChildMeshes().find((mesh) => mesh.name.endsWith(":anim"))!;
+    const fixed = root.getChildMeshes().find((mesh) => !mesh.name.endsWith(":anim"))!;
+    const originalUvs = [...animated.getVerticesData(VertexBuffer.UVKind)!];
+    const positions = [...animated.getVerticesData(VertexBuffer.PositionKind)!];
+    const animatedUpdate = vi.spyOn(animated, "updateVerticesData");
+    const staticUpdate = vi.spyOn(fixed, "updateVerticesData");
+    updateSceneTilemapAnimations(scene, 99);
+    expect(animatedUpdate).not.toHaveBeenCalled();
+    updateSceneTilemapAnimations(scene, 100);
+    expect([...animated.getVerticesData(VertexBuffer.UVKind)!]).toEqual([...fixed.getVerticesData(VertexBuffer.UVKind)!]);
+    updateSceneTilemapAnimations(scene, 200);
+    expect([...animated.getVerticesData(VertexBuffer.UVKind)!]).toEqual(originalUvs);
+    expect([...animated.getVerticesData(VertexBuffer.PositionKind)!]).toEqual(positions);
+    expect(staticUpdate).not.toHaveBeenCalled();
+    root.dispose();
+    animatedUpdate.mockClear();
+    updateSceneTilemapAnimations(scene, 300);
+    expect(animatedUpdate).not.toHaveBeenCalled();
   });
 
   it("stores per-layer parallax on chunk meshes", () => {
@@ -181,5 +200,9 @@ describe("createTilemapMeshes", () => {
       (mesh) => mesh.metadata?.tilemapTextureGuid as string,
     );
     expect(textures.sort()).toEqual(["deco-tex", "ground-tex"]);
+    const missingGround = createTilemapMeshes(scene, "missing-ground", tilemap, new Map([["deco", deco]]), 1, 1);
+    expect(missingGround.getChildMeshes()).toHaveLength(1);
+    expect(missingGround.getChildMeshes()[0]!.getTotalVertices()).toBe(4);
+    expect(missingGround.getChildMeshes()[0]!.metadata.tilemapTextureGuid).toBe("deco-tex");
   });
 });

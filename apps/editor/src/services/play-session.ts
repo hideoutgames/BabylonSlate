@@ -505,6 +505,7 @@ export function startPlaySession(options: {
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
+  sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   /** Overlay 2DButton pick floor in CSS pixels. */
   touchMinTargetPx?: number;
@@ -579,6 +580,7 @@ export function startPlaySession(options: {
     postProcessingEnabled: options.postProcessingEnabled,
     hardwareScalingLevel: options.hardwareScalingLevel,
     pixelsPerUnit: options.pixelsPerUnit,
+    sortingLayers: options.sortingLayers,
     pixelPerfect: options.pixelPerfect,
     touchMinTargetPx: options.touchMinTargetPx,
     environmentColor: options.scene?.settings.environmentColor,

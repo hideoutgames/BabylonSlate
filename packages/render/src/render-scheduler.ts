@@ -21,6 +21,8 @@ export class RenderScheduler {
   private continuous = 0;
   private alwaysRender = false;
   private paused = false;
+  private pausedFrameRequested = false;
+  private documentVisible = true;
   private visible = true;
   private obstructed = false;
   private resizing = false;
@@ -70,6 +72,16 @@ export class RenderScheduler {
     this.visible = value;
   }
 
+  setDocumentVisible(value: boolean): void {
+    this.documentVisible = value;
+  }
+
+  /** Present a completed simulation step without resuming continuous drawing. */
+  requestPausedFrame(): void {
+    this.pausedFrameRequested = true;
+    this.dirty = true;
+  }
+
   setObstructed(value: boolean): void {
     this.obstructed = value;
   }
@@ -88,8 +100,8 @@ export class RenderScheduler {
   }
 
   shouldRender(now: number = nowMs()): boolean {
-    if (this.paused) return false;
-    if (!this.visible || this.obstructed || this.resizing) return false;
+    if (this.paused && !this.pausedFrameRequested) return false;
+    if (!this.documentVisible || !this.visible || this.obstructed || this.resizing) return false;
     const wants =
       this.alwaysRender || this.continuous > 0 || this.dirty;
     if (!wants) return false;
@@ -106,6 +118,7 @@ export class RenderScheduler {
   noteRendered(now: number = nowMs()): void {
     this.rollStats();
     this.dirty = false;
+    this.pausedFrameRequested = false;
     const minDelta = 1000 / this.frameCap;
     const tolerance = Math.min(1, minDelta * 0.05);
     // Preserve the cadence when a callback is slightly late. After a long

@@ -1,3 +1,7 @@
+import type { AbstractMesh, Scene, SubMesh } from "@babylonjs/core";
+import { sortingLayerSortKey } from "@babylonslate/core";
+export { ORDER_IN_LAYER_LIMIT, clampOrderInLayer, computeSortKey } from "@babylonslate/core";
+
 /**
  * Babylon supports four rendering groups, reserved here for coarse separation
  * so a UI sprite can never sort behind world geometry no matter what its
@@ -13,31 +17,11 @@ export const RENDERING_GROUP = {
 
 export type RenderingGroupName = keyof typeof RENDERING_GROUP;
 
-/** Widest span of `orderInLayer` a single layer can address, either side of 0. */
-export const ORDER_IN_LAYER_LIMIT = 32767;
-const LAYER_STRIDE = ORDER_IN_LAYER_LIMIT * 2 + 2;
-
 export interface SortingLayerResolution {
   /** Index of the layer in the project's ordered list; -1 when unknown. */
   layerIndex: number;
   renderingGroupId: number;
   sortKey: number;
-}
-
-export function clampOrderInLayer(orderInLayer: number): number {
-  const rounded = Math.round(orderInLayer);
-  if (Number.isNaN(rounded)) return 0;
-  return Math.min(ORDER_IN_LAYER_LIMIT, Math.max(-ORDER_IN_LAYER_LIMIT, rounded));
-}
-
-/**
- * Compile `(layer, orderInLayer)` into the single monotonically increasing
- * number Babylon sorts transparent draws by. Two sprites in different layers
- * can never interleave, whatever their order values.
- */
-export function computeSortKey(layerIndex: number, orderInLayer: number): number {
-  const layer = Math.max(0, Math.round(layerIndex));
-  return layer * LAYER_STRIDE + clampOrderInLayer(orderInLayer) + ORDER_IN_LAYER_LIMIT;
 }
 
 /**
@@ -62,11 +46,10 @@ export function resolveSortingLayer(
   // An unknown layer sorts as if it were the default layer rather than
   // vanishing behind everything, but keeps its index reported as -1 so the
   // editor can flag it.
-  const effectiveIndex = layerIndex >= 0 ? layerIndex : Math.max(0, sortingLayers.indexOf("Default"));
   return {
     layerIndex,
     renderingGroupId: renderingGroupForLayer(layerName),
-    sortKey: computeSortKey(effectiveIndex, orderInLayer),
+    sortKey: sortingLayerSortKey(sortingLayers, layerName, orderInLayer),
   };
 }
 
@@ -77,6 +60,52 @@ export function applySortingToMesh(
 ): void {
   mesh.alphaIndex = resolution.sortKey;
   mesh.renderingGroupId = resolution.renderingGroupId;
+}
+
+/** Each visual component is a group; Tilemap asset layers sort only inside it. */
+export function applyComponentSorting(
+  root: AbstractMesh,
+  layers: readonly string[],
+  layer = "Default",
+  order = 0,
+  groupId = root.name,
+): void {
+  const primary = resolveSortingLayer(layers, layer, order);
+  for (const mesh of [root, ...root.getChildMeshes(true).filter((child) =>
+    child.metadata?.tilemapLayer || child.name === `${root.name}-blend`,
+  )]) {
+    applySortingToMesh(mesh, primary);
+    const internal = mesh.metadata?.tilemapLayer as
+      { name: string; order: number; ordinal: number } | undefined;
+    mesh.metadata = {
+      ...(mesh.metadata ?? {}),
+      sortingGroupId: groupId,
+      sortingLayerKey: internal ? resolveSortingLayer(layers, internal.name, internal.order).sortKey : 0,
+    };
+  }
+}
+
+function compareIdentity(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Alpha-test draws do not populate Babylon's transparent SubMesh alpha index. */
+export function compareAlphaTestDraws(a: SubMesh, b: SubMesh): number {
+  const left = a.getMesh();
+  const right = b.getMesh();
+  return left.alphaIndex - right.alphaIndex
+    || compareIdentity(left.metadata?.sortingGroupId ?? left.name, right.metadata?.sortingGroupId ?? right.name)
+    || (left.metadata?.sortingLayerKey ?? 0) - (right.metadata?.sortingLayerKey ?? 0)
+    || (left.metadata?.tilemapLayer?.ordinal ?? 0) - (right.metadata?.tilemapLayer?.ordinal ?? 0)
+    || compareIdentity(left.name, right.name)
+    || left.uniqueId - right.uniqueId;
+}
+
+/** Preserve opaque/blended passes and depth policy while ordering cutout visuals. */
+export function configureCutoutSorting(scene: Pick<Scene, "setRenderingOrder">): void {
+  for (const group of Object.values(RENDERING_GROUP)) {
+    scene.setRenderingOrder(group, null, compareAlphaTestDraws, null);
+  }
 }
 
 export function usesSpriteOrTilemapSorting(actor: {

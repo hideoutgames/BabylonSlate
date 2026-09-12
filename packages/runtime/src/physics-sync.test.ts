@@ -384,7 +384,7 @@ describe("PhysicsWorldSync tilemap colliders", () => {
     sync.dispose();
   });
 
-  it("does not emit tilemap colliders when the tileset payload is missing", () => {
+  it.each([false, true])("does not borrow another tileset when the payload is missing (other: %s)", (withOther) => {
     const world = createWorld();
     const ground = world.createActor({
       guid: "ground",
@@ -404,7 +404,7 @@ describe("PhysicsWorldSync tilemap colliders", () => {
     const sync = new PhysicsWorldSync(backend);
     sync.setTileContent({
       tilemaps: { "map-1": collisionTilemap() },
-      tilesets: {},
+      tilesets: withOther ? { unrelated: tileset } : {},
       pixelsPerUnit: 16,
     });
     sync.syncFromWorld(world);

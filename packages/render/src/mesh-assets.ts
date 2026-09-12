@@ -43,6 +43,7 @@ export interface MeshAssetContext {
   /** Retargeted Animation loads keyed by the actor (target) Model guid. */
   retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
   pixelsPerUnit?: number;
+  sortingLayers?: readonly string[];
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */

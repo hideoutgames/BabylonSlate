@@ -61,9 +61,8 @@ import {
 } from "./scene-loader";
 import { createColliderVisualMesh } from "./collider-visual";
 import {
-  applySortingToMesh,
+  applyComponentSorting,
   applyWorldVisualGroup,
-  resolveSortingLayer,
 } from "./sorting";
 import {
   AUTHORED_CAMERA_PREFIX,
@@ -82,6 +81,7 @@ import {
   applyTilemapParallaxToMesh,
   createTilemapMeshes,
   isTilemapChunkMesh,
+  updateSceneTilemapAnimations,
   worldTileSize,
 } from "./tilemap-mesh";
 import { snapToPixelGrid } from "./pixel-perfect";
@@ -119,6 +119,9 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   overlayPanelProps: Map<number, OverlayPanelMeshOptions>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
+  /** Worker simulation clock, retained while paused and across visual rebuilds. */
+  tilemapAnimationTimeMs?: number;
+  tilemapAnimationScenes?: Set<Scene>;
   /** Reused each apply — no per-frame Set allocation. */
   liveSlots: Set<number>;
   /** meshKind from assignMesh, keyed by slotId. */
@@ -127,6 +130,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   meshAssetGuids: Map<number, string | null>;
   /** Extra component parts from assignMesh, keyed by slotId. */
   meshParts: Map<number, NonNullable<AssignMeshCommand["parts"]>>;
+  meshSorting: Map<number, Pick<AssignMeshCommand, "actorGuid" | "sortingLayer" | "orderInLayer">>;
   /** Second sprite mesh used for two-layer clip crossfades. */
   spriteOverlays?: Map<number, Mesh>;
   /** Per-slot AnimationGroups keyed after model load (not the global scene list). */
@@ -206,6 +210,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
     meshParts: new Map(),
+    meshSorting: new Map(),
     spriteOverlays: new Map(),
     slotAnimationGroups: new Map(),
     pendingAnimState: new Map(),
@@ -567,6 +572,7 @@ export function applyAssignMesh(
   }
   const meshKind = command.meshKind ?? null;
   binding.meshKinds.set(command.slotId, meshKind);
+  binding.meshSorting.set(command.slotId, { actorGuid: command.actorGuid, sortingLayer: command.sortingLayer, orderInLayer: command.orderInLayer });
   binding.meshAssetGuids.set(command.slotId, command.meshAssetGuid);
   if (command.parts && command.parts.length > 0) {
     binding.meshParts.set(command.slotId, command.parts);
@@ -650,7 +656,6 @@ export function applyAssignMesh(
   const rebuilt = createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
   stampOverlayPick(rebuilt, command);
-  applyAssignMeshSorting(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
@@ -693,36 +698,26 @@ export function migratePlaySlotVisual(
   return rebuilt;
 }
 
-function applyAssignMeshSorting(mesh: Mesh, command: AssignMeshCommand): void {
-  const apply = (
-    target: { alphaIndex: number; renderingGroupId: number },
-    layer: string | undefined,
-    order: number | undefined,
-  ) => {
-    applySortingToMesh(
-      target,
-      resolveSortingLayer(
-        DEFAULT_SORTING_LAYERS,
-        layer?.trim() || "Default",
-        typeof order === "number" ? order : 0,
-      ),
-    );
-  };
-  for (const part of command.parts ?? []) {
-    if (part.sortingLayer == null && part.orderInLayer == null) continue;
-    const name = playComponentMeshName(command.slotId, part.componentId);
-    const child =
-      mesh.name === name
-        ? mesh
-        : mesh.getChildMeshes().find((entry) => entry.name === name);
-    if (child) apply(child, part.sortingLayer, part.orderInLayer);
+/** Replay primary/part sorting whenever a snapshot visual is reconstructed. */
+function applyPlayVisualSorting(root: Mesh, slotId: number, binding: SnapshotSceneBinding): void {
+  const primary = binding.meshSorting.get(slotId);
+  const parts = binding.meshParts.get(slotId);
+  const layers = binding.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const actorId = primary?.actorGuid ?? `actor-${slotId}`;
+  if (partsNeedOrigin(parts)) {
+    for (const part of parts ?? []) {
+      if (part.meshKind !== "sprite" && part.meshKind !== "tilemap" && part.sortingLayer == null && part.orderInLayer == null) continue;
+      const target = root.getChildMeshes().find((mesh) => mesh.name === playComponentMeshName(slotId, part.componentId));
+      if (target) applyComponentSorting(target, layers, part.sortingLayer ?? "Default", part.orderInLayer ?? 0, `${actorId}|${part.componentId}`);
+    }
+    return;
   }
-  if (command.sortingLayer == null && command.orderInLayer == null) return;
-  apply(mesh, command.sortingLayer, command.orderInLayer);
-  for (const child of mesh.getChildMeshes()) {
-    if (playMeshMetadata(child as Mesh)?.playHelperVisual) continue;
-    apply(child, command.sortingLayer, command.orderInLayer);
-  }
+  const part = parts?.[0];
+  const kind = binding.meshKinds.get(slotId);
+  if (kind !== "sprite" && kind !== "tilemap" && primary?.sortingLayer == null && primary?.orderInLayer == null) return;
+  applyComponentSorting(root, layers, part?.sortingLayer ?? primary?.sortingLayer ?? "Default",
+    part?.orderInLayer ?? primary?.orderInLayer ?? 0,
+    `${actorId}|${binding.primaryComponentIds.get(slotId) ?? part?.componentId ?? ""}`);
 }
 
 function stampOverlayPick(mesh: Mesh, command: AssignMeshCommand): void {
@@ -880,6 +875,7 @@ export function retirePlaySlot(
   binding.meshKinds.delete(slotId);
   binding.meshAssetGuids.delete(slotId);
   binding.meshParts.delete(slotId);
+  binding.meshSorting.delete(slotId);
   binding.primaryComponentIds.delete(slotId);
   binding.materialAssetGuids.delete(slotId);
   for (const key of binding.materialParameters.keys()) {
@@ -968,7 +964,9 @@ function createPlayVisual(
   const meshKind = binding.meshKinds.get(slotId);
   const assetGuid = binding.meshAssetGuids.get(slotId);
   if (!partsNeedOrigin(parts)) {
-    return createPlayMesh(scene, slotId, meshKind, assetGuid, binding);
+    const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding);
+    applyPlayVisualSorting(mesh, slotId, binding);
+    return mesh;
   }
   const root = MeshBuilder.CreateSphere(
     `actor-${slotId}`,
@@ -998,6 +996,7 @@ function createPlayVisual(
     const parent = part.parentId ? meshes.get(part.parentId) : undefined;
     child.parent = parent ?? root;
   }
+  applyPlayVisualSorting(root, slotId, binding);
   return root;
 }
 
@@ -1242,6 +1241,9 @@ export function applySnapshotToScene(
   try {
     const live = binding.liveSlots;
     live.clear();
+    const animationScenes = binding.tilemapAnimationScenes ??= new Set();
+    animationScenes.clear();
+    animationScenes.add(scene);
     const count = snapshot.actorCount ?? snapshot.actors.length;
     for (let i = 0; i < count; i++) {
       const actor = snapshot.actors[i]!;
@@ -1253,6 +1255,7 @@ export function applySnapshotToScene(
       }
       const hostScene = wantsOverlay ? overlayScene : scene;
       if (!hostScene) continue;
+      animationScenes.add(hostScene);
       let mesh = binding.meshes.get(actor.slotId) ?? null;
       if (mesh && overlayScene && mesh.getScene() !== overlayScene) {
         mesh = migratePlaySlotVisual(overlayScene, binding, actor.slotId);
@@ -1317,6 +1320,9 @@ export function applySnapshotToScene(
       if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
     }
     refreshPlayActiveCamera(scene, binding);
+    for (const animationScene of animationScenes) {
+      updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
+    }
   } finally {
     scene.blockMaterialDirtyMechanism = false;
     scene.blockfreeActiveMeshesAndRenderingGroups = prevBlock;
@@ -1339,6 +1345,7 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  binding.tilemapAnimationScenes?.clear();
   binding.boneAttachments.clear();
   for (const mesh of binding.meshes.values()) {
     mesh.dispose();
@@ -1365,6 +1372,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.meshKinds.clear();
   binding.meshAssetGuids.clear();
   binding.meshParts.clear();
+  binding.meshSorting.clear();
   binding.primaryComponentIds.clear();
   binding.shadow = null;
   binding.shadowOwnerSlot = null;

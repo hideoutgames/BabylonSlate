@@ -12,6 +12,21 @@ export interface TilesetTile {
   collision: TilesetCollision;
   flags: number;
   animation: number[];
+  /** Loop duration per frame; omitted legacy values use 100 ms. */
+  animationFrameDurationMs?: number;
+}
+
+export const DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS = 100;
+
+/** Animation IDs address atlas cells directly; collision stays on the painted tile. */
+export function tilesetAnimationFrame(tileset: TilesetPayload, tile: TilesetTile, elapsedMs: number): number {
+  if (!tile.animation.length) return tile.id;
+  const duration = tile.animationFrameDurationMs;
+  const frameDuration = duration && Number.isFinite(duration) && duration > 0
+    ? duration : DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS;
+  const time = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  const frame = tile.animation[Math.floor(time / frameDuration) % tile.animation.length]!;
+  return Number.isInteger(frame) && tilesetTileRect(tileset, frame) ? frame : tile.id;
 }
 
 export interface TilesetPayload {
@@ -226,6 +241,7 @@ function normalizeTiles(value: unknown): TilesetTile[] {
       animation: Array.isArray(row.animation)
         ? row.animation.map((n) => Number(n) || 0).filter((n) => n > 0)
         : [],
+      animationFrameDurationMs: Math.max(1, positiveInt(row.animationFrameDurationMs, DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS)),
     });
   }
   return tiles;
