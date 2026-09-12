@@ -35,6 +35,23 @@ test("project settings keep descriptions below their controls and above separato
     expect(positions.descriptionBottom, controlId).toBeLessThan(positions.fieldBottom);
     expect(positions.borderWidth, controlId).toBeGreaterThan(0);
   }
+  await page.getByTestId("settings-modal-category-export").click();
+  for (const id of ["export-game", "export-project"]) {
+    const button = page.getByTestId(id);
+    await button.scrollIntoViewIfNeeded();
+    const positions = await button.evaluate((element) => {
+      const field = element.closest('[data-slot="field"]')!;
+      const description = field.querySelector('[data-slot="field-description"]')!;
+      return {
+        buttonWidth: element.getBoundingClientRect().width,
+        fieldWidth: field.getBoundingClientRect().width,
+        buttonBottom: element.getBoundingClientRect().bottom,
+        descriptionTop: description.getBoundingClientRect().top,
+      };
+    });
+    expect(positions.buttonWidth, id).toBeLessThan(positions.fieldWidth / 2);
+    expect(positions.descriptionTop, id).toBeGreaterThanOrEqual(positions.buttonBottom);
+  }
 });
 
 test("settings retain visible slider tracks and full switch travel", async ({ page }) => {
