@@ -54,11 +54,13 @@ export function tilemapChunkChains(options: {
       const localId = resolved?.localId ?? tileId;
       const def = tilesetTileById(atlas, localId);
       if (!def) continue;
-      const x0 = originX + lx * worldTileWidth;
-      const y0 = originY + ly * worldTileHeight;
       if (def.collision === "full") {
-        const x1 = x0 + worldTileWidth;
-        const y1 = y0 + worldTileHeight;
+        // Merge in integer grid space: adjacent world-space endpoints can
+        // otherwise differ by rounding at fractional pixels-per-unit scales.
+        const x0 = lx;
+        const y0 = ly;
+        const x1 = lx + 1;
+        const y1 = ly + 1;
         unitEdges.push(
           [{ x: x0, y: y0 }, { x: x1, y: y0 }],
           [{ x: x1, y: y0 }, { x: x1, y: y1 }],
@@ -71,15 +73,22 @@ export function tilemapChunkChains(options: {
         custom.push({
           loop: false,
           points: def.collision.points.map((point) => ({
-            x: x0 + point.x * worldTileWidth,
-            y: y0 + point.y * worldTileHeight,
+            x: originX + (lx + point.x) * worldTileWidth,
+            y: originY + (ly + point.y) * worldTileHeight,
           })),
         });
       }
     }
   }
 
-  return [...outlineChains(unitEdges), ...custom.filter((c) => c.points.length >= 2)];
+  const outlines = outlineChains(unitEdges).map((chain) => ({
+    ...chain,
+    points: chain.points.map((point) => ({
+      x: originX + point.x * worldTileWidth,
+      y: originY + point.y * worldTileHeight,
+    })),
+  }));
+  return [...outlines, ...custom.filter((c) => c.points.length >= 2)];
 }
 
 /** Collision-layer chains for every chunk in a tilemap (nav bake / Rapier). */

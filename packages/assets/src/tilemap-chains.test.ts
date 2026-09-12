@@ -24,6 +24,29 @@ function fullTileset() {
 }
 
 describe("tilemapChunkChains", () => {
+  it.each([
+    { chunkX: 0, chunkY: 0, width: 0.16, height: 0.16, bounds: [0, 0, 5.12, 5.12] },
+    { chunkX: 3, chunkY: -2, width: 0.16, height: 0.24, bounds: [15.36, -15.36, 20.48, -7.68] },
+  ])("merges a solid chunk at fractional world size $width x $height", ({ chunkX, chunkY, width, height, bounds }) => {
+    const chains = tilemapChunkChains({
+      tiles: Array<number>(32 * 32).fill(1),
+      chunkSize: 32,
+      chunkX,
+      chunkY,
+      tileset: fullTileset(),
+      worldTileWidth: width,
+      worldTileHeight: height,
+    });
+    expect(chains).toHaveLength(1);
+    expect(chains[0]?.loop).toBe(true);
+    expect(chains[0]?.points).toHaveLength(4);
+    const points = chains[0]!.points;
+    expect(Math.min(...points.map((point) => point.x))).toBeCloseTo(bounds[0]!);
+    expect(Math.min(...points.map((point) => point.y))).toBeCloseTo(bounds[1]!);
+    expect(Math.max(...points.map((point) => point.x))).toBeCloseTo(bounds[2]!);
+    expect(Math.max(...points.map((point) => point.y))).toBeCloseTo(bounds[3]!);
+  });
+
   it("merges two adjacent solid tiles into one outer loop", () => {
     const tiles = emptyChunkTiles(2);
     tiles[0] = 1;

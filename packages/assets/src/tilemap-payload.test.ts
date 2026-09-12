@@ -245,4 +245,37 @@ describe("tilemap payload", () => {
     expect(decodeTileGid(map, 3, payloads)?.guid).toBe("deco");
     expect(decodeTileGid(map, 1, payloads)).toBeNull();
   });
+
+  it("erases a removed tileset across layers before its GIDs can be reused", () => {
+    const tileset = ensureTilesetTiles(normalizeTilesetPayload({
+      atlasWidth: 32, atlasHeight: 16, tileWidth: 16, tileHeight: 16,
+    }));
+    let map = addTilemapTileset(createDefaultTilemapPayload(), "ground", tileset);
+    map = addTilemapTileset(map, "props", tileset);
+    map = addTilemapLayer(map);
+    map = setTile(map, "layer-1", 0, 0, 1);
+    map = setTile(map, "layer-1", 1, 0, 3);
+    const hiddenId = map.layers[1]!.id;
+    map = setTile(map, hiddenId, 0, 0, 4);
+    map.layers[1] = { ...map.layers[1]!, visible: false };
+    const removed = removeTilemapTileset(map, "props");
+    expect(getTile(removed, "layer-1", 0, 0)).toBe(1);
+    expect(getTile(removed, "layer-1", 1, 0)).toBe(0);
+    expect(removed.layers[1]?.chunks).toEqual([]);
+    expect(getTile(map, "layer-1", 1, 0)).toBe(3);
+    expect(getTile(map, hiddenId, 0, 0)).toBe(4);
+    const replacement = addTilemapTileset(removed, "replacement", tileset);
+    expect(replacement.tilesets[1]?.firstGid).toBe(3);
+    expect(getTile(replacement, "layer-1", 1, 0)).toBe(0);
+  });
+
+  it("clears legacy tiles with an unknown tile count on removal", () => {
+    let map = normalizeTilemapPayload({ tilesetGuid: "legacy" });
+    map = setTile(map, "layer-1", 0, 0, 256);
+    const next = removeTilemapTileset(map, "legacy");
+    expect(next.tilesets).toEqual([]);
+    expect(next.tilesetGuid).toBeNull();
+    expect(next.layers[0]?.chunks).toEqual([]);
+    expect(removeTilemapTileset(map, "missing")).toBe(map);
+  });
 });

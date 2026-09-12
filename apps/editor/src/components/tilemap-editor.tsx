@@ -12,6 +12,16 @@ import {
   StampIcon,
 } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
 import {
   ToggleGroup,
@@ -167,6 +177,7 @@ export function TilemapDetails({
 }) {
   const tilemap = normalizeTilemapPayload(payload);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [removeGuid, setRemoveGuid] = useState<string | null>(null);
   const [selectedLayerId, setSelectedLayerId] = useState(
     tilemap.layers[0]?.id ?? "layer-1",
   );
@@ -319,18 +330,17 @@ export function TilemapDetails({
         onAdd={() => setPickerOpen(true)}
         onChange={(guids) => {
           const remaining = new Set(guids);
-          let next = tilemap;
-          for (const ref of tilemap.tilesets) {
-            if (!remaining.has(ref.guid)) {
-              next = removeTilemapTileset(next, ref.guid);
-            }
+          const removed = tilemap.tilesets.find((ref) => !remaining.has(ref.guid));
+          if (removed) {
+            setRemoveGuid(removed.guid);
+            return;
           }
-          const byGuid = new Map(next.tilesets.map((ref) => [ref.guid, ref]));
+          const byGuid = new Map(tilemap.tilesets.map((ref) => [ref.guid, ref]));
           const tilesets = guids
             .map((guid) => byGuid.get(guid))
-            .filter((ref): ref is (typeof next.tilesets)[number] => Boolean(ref));
+            .filter((ref): ref is (typeof tilemap.tilesets)[number] => Boolean(ref));
           commit({
-            ...next,
+            ...tilemap,
             tilesets,
             tilesetGuid: tilesets[0]?.guid ?? null,
           });
@@ -355,6 +365,39 @@ export function TilemapDetails({
           );
         }}
       />
+      <AlertDialog
+        open={removeGuid !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveGuid(null);
+        }}
+      >
+        <AlertDialogContent data-testid="tilemap-remove-tileset-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Tileset?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove {assets.find((asset) => asset.guid === removeGuid)?.name ?? "this Tileset"}
+              {" "}from this Tilemap and erase its painted tiles from every layer?
+              You can undo this change.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                if (!removeGuid) return;
+                const next = removeTilemapTileset(tilemap, removeGuid);
+                commit(next);
+                editing?.setSelectedGid(next.tilesets[0]?.firstGid ?? 1);
+                setRemoveGuid(null);
+              }}
+            >
+              Remove Tileset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {tilemap.tilesets.length === 0 ? (
         <p className="px-1 text-sm text-muted-foreground">{EMPTY_TILESETS_COPY}</p>
       ) : null}
