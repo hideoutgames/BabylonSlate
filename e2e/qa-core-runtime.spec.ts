@@ -5,6 +5,7 @@ import {
 } from "../packages/core/src/index.ts";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { guidForPath } from "./material-graph";
 
 const nodes: [string, string, Record<string, unknown>][] = [
   ["begin", "flow.event.beginPlay", {}],
@@ -19,7 +20,7 @@ const nodes: [string, string, Record<string, unknown>][] = [
     "debug.print",
     { value: "DELAY_COMPLETED", key: "delayed", duration: 30 },
   ],
-  ["confirm", "input.onAction", { action: "Confirm", phase: "pressed" }],
+  ["confirm", "input.actionEvent", { valueType: "button" }],
   ["key", "literal.makeString", { "default:in": "a" }],
   ["value", "literal.makeString", { "default:in": "v" }],
   ["make", "map.make", { count: 1 }],
@@ -38,16 +39,24 @@ const wires: [string, string, string, string][] = [
   ["make", "out", "get", "map"],
   ["key", "out", "has", "key"],
   ["key", "out", "get", "key"],
-  ["confirm", "execOut", "printHas", "execIn"],
+  ["confirm", "started", "printHas", "execIn"],
   ["printHas", "execOut", "printValue", "execIn"],
   ["has", "out", "printHas", "value"],
   ["get", "out", "printValue", "value"],
 ];
-const graph: SerializedGraph = {
+const graph = (confirmAsset: string): SerializedGraph => ({
   nodes: nodes.map(([id, type, data], index) => ({
     id,
     type,
-    data,
+    data:
+      id === "confirm"
+        ? {
+            ...data,
+            "default:binding": {
+              Input: { Name: "Confirm", Asset: confirmAsset },
+            },
+          }
+        : data,
     position: { x: (index % 4) * 260, y: Math.floor(index / 4) * 180 },
   })),
   edges: wires.map(([source, sourceHandle, target, targetHandle], index) => ({
@@ -57,7 +66,7 @@ const graph: SerializedGraph = {
     target,
     targetHandle,
   })),
-};
+});
 
 for (const preview of [false, true]) {
   test(`H2: Spawn Actor retains prefab components and transform in ${preview ? "Preview Build" : "Normal Play"}`, async ({
@@ -65,6 +74,10 @@ for (const preview of [false, true]) {
   }) => {
     test.setTimeout(120_000);
     await openTestProject(page);
+    const confirmAsset = await guidForPath(
+      page,
+      "assets/Input/Confirm.inputaction.babasset",
+    );
     const spawnGraph: SerializedGraph = {
       components: [
         createMeshComponent("spawn-mesh", "box"),
@@ -73,8 +86,13 @@ for (const preview of [false, true]) {
       nodes: [
         {
           id: "confirm",
-          type: "input.onAction",
-          data: { action: "Confirm", phase: "pressed" },
+          type: "input.actionEvent",
+          data: {
+            "default:binding": {
+              Input: { Name: "Confirm", Asset: confirmAsset },
+            },
+            valueType: "button",
+          },
           position: { x: 0, y: 0 },
         },
         {
@@ -106,7 +124,7 @@ for (const preview of [false, true]) {
         {
           id: "confirm-spawn",
           source: "confirm",
-          sourceHandle: "execOut",
+          sourceHandle: "started",
           target: "spawn",
           targetHandle: "execIn",
         },
@@ -205,6 +223,10 @@ for (const preview of [false, true]) {
   }) => {
     test.setTimeout(120_000);
     await openTestProject(page);
+    const confirmAsset = await guidForPath(
+      page,
+      "assets/Input/Confirm.inputaction.babasset",
+    );
     expect(
       await page.evaluate(
         async (next) =>
@@ -217,7 +239,7 @@ for (const preview of [false, true]) {
               };
             }
           ).__babylonslateTest.setMainGraphContent(next),
-        graph,
+        graph(confirmAsset),
       ),
     ).toBe(true);
     await openMainScene(page);
