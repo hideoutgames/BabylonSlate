@@ -27,15 +27,14 @@ export type EnginePluginImportResult =
   | { status: "imported"; entry: EnginePluginEntry }
   | { status: "conflict"; existing: EnginePluginEntry };
 
-interface LibrarySnapshot {
-  storage: ProjectStorage;
+interface LibraryState {
   entries: EnginePluginEntry[];
   archivePaths: Map<string, string>;
   defaults: Record<string, boolean>;
 }
 
 function normalizedName(name: string): string {
-  return name.trim().toLocaleLowerCase();
+  return name.trim().toLowerCase();
 }
 
 /** App-owned plugin archives and creation defaults, separate from project copies. */
@@ -47,53 +46,43 @@ export class EnginePluginLibrary {
     private readonly libraryStorage: ProjectStorage,
   ) {}
 
-  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.mutation.then(operation, operation);
     this.mutation = next.catch(() => undefined);
     return next;
   }
 
   private async readDefaults(): Promise<Record<string, boolean>> {
-    if (!(await this.libraryStorage.exists(DEFAULTS_FILE))) return {};
+    const defaults: Record<string, boolean> = Object.create(null);
+    if (!(await this.libraryStorage.exists(DEFAULTS_FILE))) return defaults;
     const value: unknown = JSON.parse(await this.libraryStorage.readText(DEFAULTS_FILE));
-    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    return Object.fromEntries(
-      Object.entries(value).filter((entry): entry is [string, boolean] =>
-        typeof entry[1] === "boolean"),
-    );
+    if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
+    for (const [guid, enabled] of Object.entries(value)) {
+      if (typeof enabled === "boolean") defaults[guid] = enabled;
+    }
+    return defaults;
   }
 
-  private async snapshot(): Promise<LibrarySnapshot> {
-    const storage = new MemoryStorageAdapter("opfs");
-    await storage.openDocumentsProject("engine-plugin-snapshot");
+  private async readState(): Promise<LibraryState> {
     const defaults = await this.readDefaults();
     const entries: EnginePluginEntry[] = [];
     const archivePaths = new Map<string, string>();
     const folderNames: string[] = [];
-    const append = async (bytes: Uint8Array, folder: string, bundled: boolean) => {
-      const folderName = uniquePluginFolderName(folder, folderNames);
-      folderNames.push(folderName);
-      const descriptor = await unpackEnginePluginZip(storage, bytes, folderName);
-      descriptor.settings.enabledByDefault =
+    const append = (descriptor: PluginDescriptor, bundled: boolean) => {
+      const enabledByDefault =
         defaults[descriptor.pluginGuid] ?? descriptor.settings.enabledByDefault;
-      await storage.writeBinary(
-        descriptor.settingsPath,
-        await encodePluginSettingsDocument(descriptor.settings),
-      );
       const entry: EnginePluginEntry = {
         ...descriptor,
+        settings: { ...descriptor.settings, enabledByDefault },
         bundled,
-        enabledByDefault: descriptor.settings.enabledByDefault,
+        enabledByDefault,
       };
+      folderNames.push(entry.folderName);
       entries.push(entry);
       return entry;
     };
     for (const plugin of await discoverEnginePlugins(this.bundledStorage)) {
-      await append(
-        await exportPluginZip(this.bundledStorage, plugin),
-        plugin.folderName,
-        true,
-      );
+      append(plugin, true);
     }
     const archives = (await this.libraryStorage.readdir("."))
       .filter((file) => !file.isDir && file.name.endsWith(".babplugin"))
@@ -108,34 +97,60 @@ export class EnginePluginLibrary {
         normalizedName(entry.settings.displayName) === normalizedName(incoming.settings.displayName))) {
         continue;
       }
-      const entry = await append(bytes, incoming.settings.displayName, false);
+      const folderName = uniquePluginFolderName(incoming.settings.displayName, folderNames);
+      const entry = append({
+        pluginGuid: incoming.settings.pluginGuid,
+        folderName,
+        folderPath: folderName,
+        settingsPath: `${folderName}/${incoming.settingsPath}`,
+        contentPath: `${folderName}/assets`,
+        source: "engine",
+        readOnly: true,
+        settings: incoming.settings,
+      }, false);
       archivePaths.set(entry.pluginGuid, archive.name);
     }
-    return { storage: createReadOnlyProjectStorage(storage), entries, archivePaths, defaults };
+    return { entries, archivePaths, defaults };
   }
 
-  async list(): Promise<EnginePluginEntry[]> {
-    await this.mutation;
-    return (await this.snapshot()).entries;
+  private async captureStorage(state: LibraryState): Promise<ProjectStorage> {
+    const storage = new MemoryStorageAdapter("opfs");
+    await storage.openDocumentsProject("engine-plugin-snapshot");
+    for (const entry of state.entries) {
+      const bytes = entry.bundled
+        ? await exportPluginZip(this.bundledStorage, entry)
+        : await this.libraryStorage.readBinary(state.archivePaths.get(entry.pluginGuid)!);
+      const copied = await unpackEnginePluginZip(storage, bytes, entry.folderName);
+      await storage.writeBinary(
+        copied.settingsPath,
+        await encodePluginSettingsDocument(entry.settings),
+      );
+    }
+    return createReadOnlyProjectStorage(storage);
+  }
+
+  list(): Promise<EnginePluginEntry[]> {
+    return this.serialize(async () => (await this.readState()).entries);
   }
 
   /** A captured library is immutable; later edits cannot change an open project. */
-  async createStorageSnapshot(): Promise<ProjectStorage> {
-    await this.mutation;
-    return (await this.snapshot()).storage;
+  createStorageSnapshot(): Promise<ProjectStorage> {
+    return this.serialize(async () => this.captureStorage(await this.readState()));
   }
 
-  async export(guid: string): Promise<Uint8Array> {
-    await this.mutation;
-    const { storage, entries } = await this.snapshot();
-    const entry = entries.find((plugin) => plugin.pluginGuid === guid);
-    if (!entry) throw new Error("The Engine Plugin no longer exists.");
-    return exportPluginZip(storage, entry);
+  export(guid: string): Promise<Uint8Array> {
+    return this.serialize(async () => {
+      const state = await this.readState();
+      const entry = state.entries.find((plugin) => plugin.pluginGuid === guid);
+      if (!entry) throw new Error("The Engine Plugin no longer exists.");
+      const storage = await this.captureStorage({ ...state, entries: [entry] });
+      return exportPluginZip(storage, entry);
+    });
   }
 
   setEnabledByDefault(guid: string, enabled: boolean): Promise<void> {
-    return this.mutate(async () => {
-      const { entries, defaults } = await this.snapshot();
+    return this.serialize(async () => {
+      const { entries, defaults } = await this.readState();
       if (!entries.some((entry) => entry.pluginGuid === guid)) {
         throw new Error("The Engine Plugin no longer exists.");
       }
@@ -145,8 +160,8 @@ export class EnginePluginLibrary {
   }
 
   remove(guid: string): Promise<void> {
-    return this.mutate(async () => {
-      const { entries, archivePaths, defaults } = await this.snapshot();
+    return this.serialize(async () => {
+      const { entries, archivePaths, defaults } = await this.readState();
       const entry = entries.find((plugin) => plugin.pluginGuid === guid);
       if (!entry) throw new Error("The Engine Plugin no longer exists.");
       if (entry.bundled) throw new Error("Bundled Engine Plugins cannot be deleted.");
@@ -161,9 +176,9 @@ export class EnginePluginLibrary {
     bytes: Uint8Array,
     options: { replaceGuid?: string } = {},
   ): Promise<EnginePluginImportResult> {
-    return this.mutate(async () => {
+    return this.serialize(async () => {
       const incoming = await inspectBabplugin(bytes);
-      const { entries, archivePaths, defaults } = await this.snapshot();
+      const { entries, archivePaths, defaults } = await this.readState();
       const conflicts = entries.filter((entry) =>
         entry.pluginGuid === incoming.settings.pluginGuid ||
         normalizedName(entry.settings.displayName) === normalizedName(incoming.settings.displayName));
@@ -189,7 +204,7 @@ export class EnginePluginLibrary {
       }
       await this.libraryStorage.writeBinary(archivePath, bytes);
       await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
-      const entry = (await this.snapshot()).entries.find(
+      const entry = (await this.readState()).entries.find(
         (plugin) => plugin.pluginGuid === incoming.settings.pluginGuid,
       );
       if (!entry) throw new Error("Export did not produce an Engine Plugin.");

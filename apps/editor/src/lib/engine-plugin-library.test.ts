@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createDefaultPluginSettings,
   discoverEnginePlugins,
@@ -113,5 +113,23 @@ describe("EnginePluginLibrary", () => {
     expect((await reloaded.list()).map((entry) => entry.pluginGuid)).toEqual(["bundled-guid"]);
     await expect(captured.writeText("user-pack/assets/data.txt", "changed"))
       .rejects.toThrow(/read-only/i);
+  });
+
+  it("allows metadata actions without reading bundled content files", async () => {
+    const { bundled, library: store } = await library();
+    await store.import(await archive("user-guid", "User Pack"));
+    const readBinary = bundled.readBinary.bind(bundled);
+    vi.spyOn(bundled, "readBinary").mockImplementation(async (path) => {
+      if (path.startsWith("bundled/assets/")) {
+        throw new Error("Content storage is temporarily unavailable");
+      }
+      return readBinary(path);
+    });
+    expect(await store.list()).toHaveLength(2);
+    await store.setEnabledByDefault("bundled-guid", true);
+    await store.remove("user-guid");
+    expect(await store.list()).toMatchObject([
+      { pluginGuid: "bundled-guid", enabledByDefault: true },
+    ]);
   });
 });
