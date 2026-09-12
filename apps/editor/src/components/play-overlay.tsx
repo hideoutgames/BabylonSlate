@@ -478,6 +478,7 @@ export function PlayOverlay({
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
       postProcessingEnabled,
+      renderSettings: initialRenderRef.current,
       hardwareScalingLevel,
       pixelsPerUnit: pixelsPerUnitRef.current,
       sortingLayers: sortingLayersRef.current,

@@ -33,6 +33,7 @@ const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.babasset",
+  render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 } },
   applySceneChange: vi.fn<
     (id: string, scene: SerializedScene) => Promise<boolean>
   >(async () => true),
@@ -70,6 +71,7 @@ vi.mock("../context/document-context", () => ({
       settings: {
         twoD: { sortingLayers: ["Background", "Default", "UI"] },
         gameInstanceClass: "MyGame",
+        render: harness.render,
       },
     },
     assetRegistry: {
@@ -146,6 +148,7 @@ beforeEach(() => {
   harness.selectedActorIds = [];
   harness.documentKind = "scene";
   harness.documentId = "scene:assets/Main.scene.babasset";
+  harness.render.mode = "pbr";
   harness.scene = createDefaultScene();
   harness.applySceneChange.mockClear();
 });
@@ -804,4 +807,23 @@ describe("SceneDetailsPanel authoring", () => {
     ).toBeTruthy();
     expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
   });
+});
+
+
+it("hides scene CEL overrides in PBR and persists only explicitly overridden fields", () => {
+  const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  expect(screen.queryByTestId("scene-cel-settings")).toBeNull();
+  harness.render.mode = "cel";
+  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  expect((screen.getByLabelText("Shadow Bands") as HTMLInputElement).value).toBe("4");
+  fireEvent.click(screen.getByRole("button", { name: "Override Shadow Bands" }));
+  const next = harness.applySceneChange.mock.calls.at(-1)![1];
+  expect(next.settings.celShading).toEqual({ shadowBands: 4 });
+  harness.scene = next;
+  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  fireEvent.click(screen.getByRole("button", { name: "Reset Shadow Bands To Project Settings" }));
+  expect(harness.applySceneChange.mock.calls.at(-1)![1].settings.celShading).toEqual({});
+  harness.render.mode = "pbr";
+  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  expect(screen.queryByTestId("scene-cel-settings")).toBeNull();
 });

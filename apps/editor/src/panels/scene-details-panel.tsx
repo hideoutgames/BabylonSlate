@@ -1,5 +1,6 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
+import { CelShadingFields } from "../components/cel-shading-fields";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -31,6 +32,7 @@ import {
   type SerializedActor,
   type SerializedScene,
   isSceneWorkspaceKind,
+  normalizeCelShadingSettings,
 } from "@babylonslate/core";
 import {
   ChevronDownIcon,
@@ -589,7 +591,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       overlay ? overlaySettingsRows : settingsRows,
       "Scene Settings",
     );
-    const showPostProcess = matches("Post Process Material Enabled");
+    const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
+    const showPostProcess = matches("Post Processing Material Enabled") ||
+      (celEnabled && matches("CEL Shading Shadow Bands Threshold Strength Softness Specular Light Color Influence Falloff"));
     const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
     return (
       <PanelFrame data-testid="scene-details-panel">
@@ -604,7 +608,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         {showPostProcess ? (
           <div className="px-2 pb-3">
             <EntryListEditor
-              title="Post Process"
+              title="Post Processing"
               data-testid="scene-post-process-stack"
               items={scene.settings.postProcessStack}
               addLabel="Add Pass"
@@ -648,6 +652,15 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   />
                 </Field>
               )}
+            />
+          </div>
+        ) : null}
+        {showPostProcess && celEnabled ? (
+          <div className="px-2 pb-3">
+            <CelShadingFields
+              project={normalizeCelShadingSettings(projectDocument?.settings.render.cel)}
+              overrides={scene.settings.celShading ?? {}}
+              onChange={(celShading) => mutate({ ...scene, settings: { ...scene.settings, celShading } })}
             />
           </div>
         ) : null}

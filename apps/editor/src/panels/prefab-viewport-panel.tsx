@@ -140,6 +140,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   } = usePlay();
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
+  useEffect(() => {
+    engineRef.current?.setRenderSettings(projectDocument?.settings.render ?? {});
+  }, [projectDocument?.settings.render, engineEpoch]);
   const setSelectedIdRef = useRef(setSelectedId);
   setSelectedIdRef.current = setSelectedId;
   const componentsRef = useRef(components);

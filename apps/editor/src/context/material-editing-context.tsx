@@ -15,6 +15,7 @@ import {
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
+  setSceneRenderSettings,
   getMaterialTexture,
   materialUnavailable,
   resourceCacheForEngine,
@@ -119,6 +120,13 @@ export function MaterialEditingProvider({
   const renderCooldownTimerRef = useRef<number | null>(null);
   const [previewSceneEpoch, setPreviewSceneEpoch] = useState(0);
   const frozen = !active || play.playing;
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host) {
+      setSceneRenderSettings(host.scene, projectDocument?.settings.render ?? {});
+      if (!frozen) presenterRef.current?.present({ force: true });
+    }
+  }, [projectDocument?.settings.render, previewSceneEpoch, frozen]);
 
   const finishManualRender = useCallback(() => {
     if (!manualRenderPendingRef.current) return;

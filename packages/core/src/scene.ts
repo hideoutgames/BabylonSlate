@@ -1,3 +1,5 @@
+import { normalizeCelShadingOverrides } from "./cel-shading";
+
 /**
  * Scene document schema (v3): actors, components and scene settings.
  *
@@ -96,6 +98,8 @@ export interface SceneCameraBounds2D {
 }
 
 export interface SceneSettings {
+  /** Absent CEL fields inherit from Project Settings. Inactive in PBR mode. */
+  celShading?: import("./cel-shading").CelShadingOverrides;
   /** Clear colour as [r, g, b] in 0..1. */
   environmentColor: [number, number, number];
   fogEnabled: boolean;
@@ -180,6 +184,7 @@ export function createDefaultSceneSettings(
   viewportMode: ViewportMode = "3d",
 ): SceneSettings {
   return {
+    celShading: {},
     environmentColor: [0.06, 0.07, 0.09],
     fogEnabled: false,
     fogColor: [0.5, 0.5, 0.5],
@@ -444,6 +449,7 @@ export function normalizeSceneSettings(
       ? source.physicsWorld
       : defaults.physicsWorld;
   return {
+    celShading: normalizeCelShadingOverrides(source.celShading),
     environmentColor: asNumberTuple3(
       source.environmentColor,
       defaults.environmentColor,

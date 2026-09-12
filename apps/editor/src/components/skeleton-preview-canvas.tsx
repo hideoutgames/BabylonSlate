@@ -6,12 +6,14 @@ import {
   attachSkeletonPreview,
   createMaterialPreviewPresenter,
   createModelPreviewScene,
+  setSceneRenderSettings,
   loadModelPreviewSource,
   previewRigRoot,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
 } from "@babylonslate/render";
 import { useOptionalPlay } from "../context/play-context";
+import { useDocuments } from "../context/document-context";
 
 export function SkeletonPreviewCanvas({
   sourceBytes,
@@ -24,12 +26,20 @@ export function SkeletonPreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
+  const { projectDocument } = useDocuments();
   const [engine, setEngine] = useState<Engine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
   const [bonesAttached, setBonesAttached] = useState(false);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host) {
+      setSceneRenderSettings(host.scene, projectDocument?.settings.render ?? {});
+      presenterRef.current?.present({ force: true });
+    }
+  }, [projectDocument?.settings.render, previewGeneration]);
 
   useEffect(() => {
     setEngine(play?.ensureSharedEngine() ?? null);

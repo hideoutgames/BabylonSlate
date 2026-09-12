@@ -59,6 +59,7 @@ const harness = vi.hoisted(() => ({
   contextRestored: null as (() => void) | null,
   createScene: vi.fn(),
   createPresenter: vi.fn(),
+  setRenderSettings: vi.fn(),
   attachGestures: vi.fn(),
   acquireResult: {
     ok: true,
@@ -159,6 +160,7 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
   };
   return {
     ...actual,
+    setSceneRenderSettings: harness.setRenderSettings,
     ResourceCache: class {
       getTexture = cache.getTexture;
       releaseGpuTextures = cache.releaseGpuTextures;

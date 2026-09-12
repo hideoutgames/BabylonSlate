@@ -50,6 +50,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     resourceCache: {},
     registerFonts: vi.fn(async () => {}),
     setMeshAssets: vi.fn(),
+    setRenderSettings: vi.fn(),
     setMaterialDocuments: vi.fn(),
     whenEditorModelsReady: vi.fn(async () => {}),
     prewarmSceneMaterials: vi.fn(async () => {}),

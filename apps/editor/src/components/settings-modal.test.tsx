@@ -23,14 +23,17 @@ const {
   importPlugin,
   sourceControlEnabled,
   lastProjectInput,
+  lastProjectRender,
   pluginDescriptors,
   applyPluginOverrides,
 } = vi.hoisted(() => {
   const lastProjectInput = { current: null as unknown };
+  const lastProjectRender = { current: null as import("@babylonslate/core").RenderProjectSettings | null };
   return {
     updateProjectVersion: vi.fn(),
-    updateProjectSettings: vi.fn((patch: { input?: unknown }) => {
+    updateProjectSettings: vi.fn((patch: { input?: unknown; render?: import("@babylonslate/core").RenderProjectSettings }) => {
       if (patch?.input) lastProjectInput.current = patch.input;
+      if (patch?.render) lastProjectRender.current = patch.render;
     }),
     setShowPluginContent: vi.fn(),
     sourceControl: {
@@ -45,6 +48,7 @@ const {
     importPlugin: vi.fn(),
     sourceControlEnabled: { current: false },
     lastProjectInput,
+    lastProjectRender,
     pluginDescriptors: [] as PluginDescriptor[],
     applyPluginOverrides: vi.fn(async () => undefined),
   };
@@ -64,6 +68,7 @@ vi.mock("../context/document-context", async () => {
   return {
     useDocuments: () => {
       const projectDocument = emptyProject("Demo");
+      if (lastProjectRender.current) projectDocument.settings.render = lastProjectRender.current;
       if (lastProjectInput.current) {
         projectDocument.settings.input =
           lastProjectInput.current as typeof projectDocument.settings.input;
@@ -148,6 +153,7 @@ vi.mock("../context/document-context", async () => {
 afterEach(() => {
   cleanup();
   lastProjectInput.current = null;
+  lastProjectRender.current = null;
   updateProjectSettings.mockClear();
   updateProjectVersion.mockClear();
   setShowPluginContent.mockClear();
@@ -406,6 +412,28 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-width")).toBeTruthy();
     expect(screen.getByTestId("setting-render-height")).toBeTruthy();
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
+  });
+
+  it("shows CEL controls only in CEL and retains their values when returning from PBR", async () => {
+    const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    const selectMode = async (name: "CEL" | "PBR") => {
+      fireEvent.click(screen.getByTestId("setting-render-mode"));
+      const option = await screen.findByRole("option", { name });
+      fireEvent.pointerDown(option);
+      fireEvent.click(option);
+      await waitFor(() => expect(lastProjectRender.current?.mode).toBe(name.toLowerCase()));
+      view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    };
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.queryByTestId("project-cel-settings")).toBeNull();
+    await selectMode("CEL");
+    fireEvent.change(screen.getByLabelText("Shadow Bands"), { target: { value: "6" } });
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    await selectMode("PBR");
+    expect(screen.queryByTestId("project-cel-settings")).toBeNull();
+    expect(lastProjectRender.current?.cel?.shadowBands).toBe(6);
+    await selectMode("CEL");
+    expect((screen.getByLabelText("Shadow Bands") as HTMLInputElement).value).toBe("6");
   });
 
   it("authors infinite loop detection on the General category", () => {

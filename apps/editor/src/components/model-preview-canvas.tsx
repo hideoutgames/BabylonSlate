@@ -16,6 +16,7 @@ import {
   createGizmoHost,
   createMaterialPreviewPresenter,
   createModelPreviewScene,
+  setSceneRenderSettings,
   getMaterialTexture,
   isColliderVisualMesh,
   loadModelPreviewSource,
@@ -79,7 +80,7 @@ export function ModelPreviewCanvas({
     gizmoTool,
     setGizmoTool,
   } = useModelColliderSession();
-  const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
+  const { collectPlayMaterialLibrary, collectPlayTextureBytes, projectDocument } = useDocuments();
   const { editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
   const [engine, setEngine] = useState<Engine | null>(null);
@@ -101,6 +102,14 @@ export function ModelPreviewCanvas({
   const shadingModeRef = useRef(shadingMode);
   shadingModeRef.current = shadingMode;
   const slotKey = JSON.stringify(model.materialSlots);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host) {
+      setSceneRenderSettings(host.scene, projectDocument?.settings.render ?? {});
+      shadingRef.current?.apply();
+      presenterRef.current?.present({ force: true });
+    }
+  }, [projectDocument?.settings.render, previewGeneration]);
   const colliderKey = JSON.stringify(model.simpleColliders);
 
   useEffect(() => {
@@ -392,15 +401,15 @@ export function ModelPreviewCanvas({
       },
       items: MODEL_PREVIEW_SHADING.map((mode) => ({
         id: mode.value,
-        label: mode.label,
+        label: mode.value === "pbr" && projectDocument?.settings.render.mode === "cel" ? "CEL" : mode.label,
         value: mode.value,
         testId: `model-preview-shading-${mode.value}`,
       })),
     },
   ];
-  const shadingLabel =
-    MODEL_PREVIEW_SHADING.find((mode) => mode.value === shadingMode)?.label ??
-    "PBR";
+  const shadingLabel = shadingMode === "pbr" && projectDocument?.settings.render.mode === "cel"
+    ? "CEL"
+    : MODEL_PREVIEW_SHADING.find((mode) => mode.value === shadingMode)?.label ?? "PBR";
 
   return (
     <div className="relative h-full min-h-0">
