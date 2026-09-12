@@ -3,6 +3,7 @@ import {
   newGuid,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   type Guid,
+  type InputKey,
   type GuidFactory,
   type Transform,
 } from "@babylonslate/core";
@@ -16,6 +17,7 @@ export type TickContext = {
   isActionHeld?: (action: string) => boolean;
   wasActionPressed?: (action: string) => boolean;
   wasActionReleased?: (action: string) => boolean;
+  getPressedKeys?: () => readonly InputKey[];
   getAxis?: (axis: string) => number;
   getAxis2D?: (axis: string) => { x: number; y: number };
   getCursorPosition?: () => { x: number; y: number; pressed: boolean };

@@ -1,6 +1,10 @@
 import type { LogicGraph, GraphNode, GraphPin } from "./ir";
 import { findNode, findPin } from "./ir";
-import type { NodeRegistry, CodegenContext, HoistBodyAnchor } from "./node-registry";
+import type {
+  NodeRegistry,
+  CodegenContext,
+  HoistBodyAnchor,
+} from "./node-registry";
 import { defaultValueLiteral } from "./types";
 import { pinTypeKey, resolveWildcardPinTypes } from "./wildcard-resolve";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
@@ -8,9 +12,7 @@ import { isDevelopmentOnlyNode } from "./development-only";
 import { instrumentJsLoops } from "@babylonslate/debugger";
 import { entryNodes } from "./compiled-nodes";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
-import {
-  flowSwitchCaseValueFromPinId,
-} from "./flow-switch-pins";
+import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
 import {
   isFlowSwitchMeta,
   isLoopMeta,
@@ -27,7 +29,8 @@ export type CompileAnchor = {
 };
 
 /** Lifecycle events an entry node can bind to at runtime. */
-export type ScriptEventName = "onBeginPlay" | "onTick" | "onCommandRun" | string;
+export type ScriptEventName =
+  "onBeginPlay" | "onTick" | "onCommandRun" | string;
 
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
@@ -62,14 +65,17 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "anim.event.initialize": "onInitializeAnimation",
   "anim.event.update": "onUpdateAnimation",
   // Input event entries gate internally; they run on the tick like Event Tick.
-  "input.event": "onTick",
-  "input.onAction": "onTick",
+  "input.actionEvent": "onTick",
+  "input.axisEvent": "onTick",
+  "input.onAnyKeyPressed": "onTick",
   "input.onGamepadConnected": "onTick",
   "input.onGamepadDisconnected": "onTick",
 };
 
 /** Custom events use the member name; catalog events use EVENT_BY_TYPE_ID. */
-export function eventNameForEntry(entry: GraphNode): ScriptEventName | undefined {
+export function eventNameForEntry(
+  entry: GraphNode,
+): ScriptEventName | undefined {
   if (entry.typeId === "flow.event.custom") {
     const raw = entry.properties.name ?? entry.properties.title ?? "";
     const ident = jsIdent(String(raw));
@@ -232,7 +238,9 @@ function pinForCodegen(
   direction: "in" | "out",
 ): GraphPin | undefined {
   return (
-    node.pins.find((pin) => pin.direction === direction && pin.id === pinName) ??
+    node.pins.find(
+      (pin) => pin.direction === direction && pin.id === pinName,
+    ) ??
     node.pins.find((pin) => pin.direction === direction && pin.name === pinName)
   );
 }
@@ -466,9 +474,7 @@ export function compileGraph(
       const pin = wiredCases[i]!;
       const raw = flowSwitchCaseValueFromPinId(pin.id) ?? pin.name;
       const compare =
-        meta.kind === "switchOnInt"
-          ? String(Number(raw))
-          : JSON.stringify(raw);
+        meta.kind === "switchOnInt" ? String(Number(raw)) : JSON.stringify(raw);
       const keyword = i === 0 ? "if" : "} else if";
       emitBody(`  ${keyword} (${valueExpr} === ${compare}) {`, anchor);
       for (const target of execSuccessors(graph, node.id, pin.name)) {
@@ -534,7 +540,10 @@ export function compileGraph(
         );
         if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+        emitAlong(
+          execSuccessorEdges(graph, node.id, meta.loopBodyPin),
+          visited,
+        );
         emitBody(`    }`, anchor);
         emitBody(`  }`, anchor);
       } else if (meta.kind === "forEach" || meta.kind === "forEachWithBreak") {
@@ -554,7 +563,10 @@ export function compileGraph(
         if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         emitBody(`      ${elementSlot} = ${snap}[${iter}];`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+        emitAlong(
+          execSuccessorEdges(graph, node.id, meta.loopBodyPin),
+          visited,
+        );
         emitBody(`    }`, anchor);
         emitBody(`  }`, anchor);
       } else if (
@@ -579,7 +591,10 @@ export function compileGraph(
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         emitBody(`      ${keySlot} = ${snap}[${iter}][0];`, anchor);
         emitBody(`      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+        emitAlong(
+          execSuccessorEdges(graph, node.id, meta.loopBodyPin),
+          visited,
+        );
         emitBody(`    }`, anchor);
         emitBody(`  }`, anchor);
       }
@@ -686,10 +701,7 @@ export function compileGraph(
         `    const __st = ctx.flowState(${JSON.stringify(node.id)});`,
         anchor,
       );
-      emitBody(
-        `    if (__st.open == null) __st.open = ${startOpen};`,
-        anchor,
-      );
+      emitBody(`    if (__st.open == null) __st.open = ${startOpen};`, anchor);
       emitBody(`    if (__st.open) {`, anchor);
       emitAlong(execSuccessorEdges(graph, node.id, meta.exitPin), visited);
       emitBody(`    }`, anchor);
@@ -822,30 +834,91 @@ export function compileGraph(
         break;
       }
 
-      if (node.typeId === "input.event") {
+      if (
+        node.typeId === "input.actionEvent" ||
+        node.typeId === "input.axisEvent"
+      ) {
         const ctx = makeCtx(node);
-        const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
+        const anchor = {
+          column: 1,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId: node.id,
+        };
         const snapshot = `__input_${jsIdent(node.id)}`;
-        emitBody(`  const ${snapshot} = ctx.getInputState?.(${ctx.input("input")});`, anchor);
-        for (const p of node.pins.filter((p) => p.kind === "data" && p.direction === "out")) {
-          emitBody(`  let ${ctx.output(p.id)} = ${snapshot}?.${p.id} ?? ${defaultValueLiteral(p.type)};`, anchor);
+        const candidate = `${snapshot}_candidate`;
+        const valueType =
+          node.typeId === "input.actionEvent"
+            ? "button"
+            : node.properties.valueType === "2d"
+              ? "2d"
+              : "1d";
+        const input = `(${ctx.input("binding")})?.Input`;
+        emitBody(
+          `  const ${candidate} = ctx.getInputState?.(${input});`,
+          anchor,
+        );
+        emitBody(
+          `  const ${snapshot} = ${candidate}?.valueType === ${JSON.stringify(valueType)} ? ${candidate} : null;`,
+          anchor,
+        );
+        for (const p of node.pins.filter(
+          (p) => p.kind === "data" && p.direction === "out",
+        )) {
+          emitBody(
+            `  let ${ctx.output(p.id)} = ${snapshot}?.${p.id} ?? ${defaultValueLiteral(p.type)};`,
+            anchor,
+          );
         }
         // A release/repress in one tick finishes the old hold before starting anew.
         const phases = `__phases_${jsIdent(node.id)}`;
-        emitBody(`  const ${phases} = ${snapshot}?.held ? ["released", "started", "held"] : ["started", "released"];`, anchor);
+        emitBody(
+          `  const ${phases} = ${snapshot}?.held ? ["released", "started", "held"] : ["started", "released"];`,
+          anchor,
+        );
         emitBody(`  for (const __phase of ${phases}) {`, anchor);
         for (const phase of ["started", "held", "released"]) {
-          emitBody(`    if (__phase === "${phase}" && ${snapshot}?.${phase}) {`, anchor);
-          emitAlong(execSuccessorEdges(graph, node.id, phase[0]!.toUpperCase() + phase.slice(1)), new Set(visited));
+          emitBody(
+            `    if (__phase === "${phase}" && ${snapshot}?.${phase}) {`,
+            anchor,
+          );
+          emitAlong(
+            execSuccessorEdges(
+              graph,
+              node.id,
+              phase[0]!.toUpperCase() + phase.slice(1),
+            ),
+            new Set(visited),
+          );
           emitBody("    }", anchor);
         }
         emitBody("  }", anchor);
         break;
       }
 
+      if (node.typeId === "input.onAnyKeyPressed") {
+        const ctx = makeCtx(node);
+        const anchor = {
+          column: 1,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId: node.id,
+        };
+        declareDataOuts(node, ctx);
+        const pressedKey = `__key_${jsIdent(node.id)}`;
+        emitBody(
+          `  for (const ${pressedKey} of (ctx.getPressedKeys?.() ?? [])) {`,
+          anchor,
+        );
+        if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
+        emitBody(`    ${ctx.output("key")} = ${pressedKey};`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, "Then"), new Set(visited));
+        emitBody("  }", anchor);
+        break;
+      }
+
       // Input event entries gate their then-chain on the resolved tick state.
       if (
-        node.typeId === "input.onAction" ||
         node.typeId === "input.onGamepadConnected" ||
         node.typeId === "input.onGamepadDisconnected"
       ) {
@@ -862,27 +935,16 @@ export function compileGraph(
             emitBody(`  let ${name} = ${defaultValueLiteral(p.type)};`, anchor);
           }
         }
-        if (node.typeId === "input.onAction") {
-          const action = ctx.input("action");
-          const phase = ctx.input("phase");
-          emitBody(
-            `  if (((${phase} === "released" ? ctx.wasActionReleased?.(${action}) : ctx.wasActionPressed?.(${action})) ?? false)) {`,
-            anchor,
-          );
-          emitAlong(execSuccessorEdges(graph, node.id, "then"), visited);
-          emitBody(`  }`, anchor);
-        } else {
-          const connected = node.typeId === "input.onGamepadConnected";
-          const index = ctx.output("index");
-          emitBody(
-            `  for (const __pad of (ctx.gamepadConnections ?? []).filter((c) => c.connected === ${connected})) {`,
-            anchor,
-          );
-          if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
-          emitBody(`    ${index} = __pad.gamepadIndex;`, anchor);
-          emitAlong(execSuccessorEdges(graph, node.id, "then"), visited);
-          emitBody(`  }`, anchor);
-        }
+        const connected = node.typeId === "input.onGamepadConnected";
+        const index = ctx.output("index");
+        emitBody(
+          `  for (const __pad of (ctx.gamepadConnections ?? []).filter((c) => c.connected === ${connected})) {`,
+          anchor,
+        );
+        if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
+        emitBody(`    ${index} = __pad.gamepadIndex;`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, "then"), visited);
+        emitBody(`  }`, anchor);
         break;
       }
 
@@ -892,11 +954,7 @@ export function compileGraph(
         )) {
           for (const e of graph.edges) {
             if (e.sourceNodeId === node.id && e.sourcePinId === outPin.id) {
-              emitExecChain(
-                e.targetNodeId,
-                new Set(visited),
-                e.targetPinId,
-              );
+              emitExecChain(e.targetNodeId, new Set(visited), e.targetPinId);
             }
           }
         }
@@ -1203,8 +1261,9 @@ export function compileTransitionRuleGraph(
         name: "evaluate",
         event: "onAnimRule",
         isAsync: false,
-        nodeId: graph.nodes.find((entry) => entry.typeId === "anim.rule.exitState")
-          ?.id,
+        nodeId: graph.nodes.find(
+          (entry) => entry.typeId === "anim.rule.exitState",
+        )?.id,
       },
     ],
   };

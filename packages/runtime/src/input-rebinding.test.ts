@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { type InputAssetDefinition } from "@babylonslate/core";
+import { encodeInputEvents } from "@babylonslate/input";
 import {
   compileGraph,
   type GraphNode,
@@ -7,332 +9,243 @@ import {
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 
+const assets: InputAssetDefinition[] = [
+  {
+    guid: "jump",
+    name: "Jump",
+    type: "InputAction",
+    valueType: "button",
+    bindings: [{ id: "jump-key", device: "key", code: "Space" }],
+  },
+  {
+    guid: "confirm",
+    name: "Confirm",
+    type: "InputAction",
+    valueType: "button",
+    bindings: [{ id: "confirm-key", device: "key", code: "Enter" }],
+  },
+  {
+    guid: "move",
+    name: "Move",
+    type: "InputAxis",
+    valueType: "2d",
+    bindings: [
+      {
+        id: "forward",
+        device: "key",
+        code: "KeyW",
+        component: "y",
+        digitalValue: 1,
+      },
+    ],
+  },
+];
+const jump = { Name: "Jump", Asset: "jump" };
+const confirm = { Name: "Confirm", Asset: "confirm" };
+const move = { Name: "Move", Asset: "move" };
+const registry = createDefaultNodeRegistry();
+const node = (
+  id: string,
+  typeId: string,
+  properties: Record<string, unknown> = {},
+): GraphNode => ({
+  id,
+  typeId,
+  properties,
+  position: { x: 0, y: 0 },
+  pins: registry.get(typeId)!.pins(properties),
+});
+const edge = (
+  sourceNodeId: string,
+  sourcePinId: string,
+  targetNodeId: string,
+  targetPinId: string,
+) => ({
+  id: `${sourceNodeId}-${sourcePinId}-${targetNodeId}-${targetPinId}`,
+  sourceNodeId,
+  sourcePinId,
+  targetNodeId,
+  targetPinId,
+});
+async function load(
+  runtime: ReturnType<typeof createInProcessRuntime>,
+  nodes: GraphNode[],
+  edges: LogicGraph["edges"],
+) {
+  const compiled = compileGraph(
+    { id: "input", kind: "event", nodes, edges },
+    { assetGuid: "rebinder", registry },
+  );
+  await runtime.loadScripts([
+    { assetGuid: "rebinder", classId: "Rebinder", ...compiled },
+  ]);
+  runtime.spawnScriptedActor({ classId: "Rebinder" });
+}
+
 describe("compiled runtime input rebinding", () => {
   it.each([
-    ["input.cancelRebind", {}, "cancelled", "KeyJ", "KeyC"],
-    [
-      "input.resetBinding",
-      { kind: "action", mapping: "Jump" },
-      "idle",
-      "Space",
-      "KeyC",
-    ],
-    ["input.resetAllBindings", {}, "idle", "Space", "Enter"],
-    [
-      "input.resetBinding",
-      { kind: "action", mapping: "" },
-      "idle",
-      "KeyJ",
-      "KeyC",
-    ],
+    ["input.resetInput", { input: jump }, "Space", "KeyC"],
+    ["input.resetAllBindings", {}, "Space", "Enter"],
   ])(
-    "executes %s with properties %j against the player profile",
-    async (typeId, properties, status, jump, confirm) => {
-      const registry = createDefaultNodeRegistry();
-      expect(registry.get(typeId)).toBeDefined();
-      const graph: LogicGraph = {
-        id: "control",
-        kind: "event",
-        nodes: [
-          {
-            id: "begin",
-            typeId: "flow.event.beginPlay",
-            properties: {},
-            position: { x: 0, y: 0 },
-            pins: registry.get("flow.event.beginPlay")!.pins({}),
-          },
-          {
-            id: "control",
-            typeId,
-            properties,
-            position: { x: 0, y: 0 },
-            pins: registry.get(typeId)!.pins(properties),
-          },
-        ],
-        edges: [
-          {
-            id: "e",
-            sourceNodeId: "begin",
-            sourcePinId: "execOut",
-            targetNodeId: "control",
-            targetPinId: "execIn",
-          },
-        ],
-      };
+    "executes %s against the selected player bindings",
+    async (typeId, properties, jumpKey, confirmKey) => {
       const runtime = createInProcessRuntime({
         seed: 1,
         seedDemoActors: false,
+        inputAssets: assets,
       });
-      runtime.inputBindings.setBinding("action", "Jump", 0, "key", "KeyJ");
-      runtime.inputBindings.setBinding("action", "Confirm", 0, "key", "KeyC");
-      if (typeId === "input.cancelRebind")
-        runtime.inputBindings.beginRebind("action", "Jump", 0);
-      const compiled = compileGraph(graph, {
-        assetGuid: "control-class",
-        registry,
-      });
-      await runtime.loadScripts([
-        { assetGuid: "control-class", classId: "Rebinder", ...compiled },
-      ]);
-      runtime.spawnScriptedActor({ classId: "Rebinder" });
-      runtime.start();
-      expect(runtime.inputBindings.getRebindStatus()).toBe(status);
-      expect(runtime.inputBindings.getBinding("action", "Jump", 0)?.code).toBe(
-        jump,
+      runtime.inputBindings.setInputActionBinding!(
+        runtime.inputBindings.getInputBindings!(jump)[0]!,
+        "KeyJ",
       );
-      expect(
-        runtime.inputBindings.getBinding("action", "Confirm", 0)?.code,
-      ).toBe(confirm);
+      runtime.inputBindings.setInputActionBinding!(
+        runtime.inputBindings.getInputBindings!(confirm)[0]!,
+        "KeyC",
+      );
+      await load(
+        runtime,
+        [
+          node("begin", "flow.event.beginPlay"),
+          node("reset", typeId, properties),
+        ],
+        [edge("begin", "execOut", "reset", "execIn")],
+      );
+      runtime.start();
+      expect(runtime.inputBindings.getInputBindings!(jump)[0].Key).toBe(
+        jumpKey,
+      );
+      expect(runtime.inputBindings.getInputBindings!(confirm)[0].Key).toBe(
+        confirmKey,
+      );
       runtime.stop();
     },
   );
 
-  it("imports player overrides from a graph and exports the restored profile", async () => {
-    const registry = createDefaultNodeRegistry();
-    expect(registry.get("input.importBindings")).toBeDefined();
-    expect(registry.get("input.exportBindings")).toBeDefined();
-    const data = JSON.stringify({
-      version: 1,
-      overrides: [
-        {
-          kind: "action",
-          mapping: "Jump",
-          index: 0,
-          defaultBinding: { device: "key", code: "Space" },
-          device: "key",
-          code: "KeyJ",
-        },
-      ],
+  it("uses every Any Key edge to rebind and executes once per press across worker input transport", async () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      inputAssets: assets,
     });
-    const make = (
-      id: string,
-      typeId: string,
-      properties: Record<string, unknown> = {},
-    ): GraphNode => ({
-      id,
-      typeId,
-      properties,
-      position: { x: 0, y: 0 },
-      pins: registry.get(typeId)!.pins(properties),
-    });
-    const graph: LogicGraph = {
-      id: "profile",
-      kind: "event",
-      nodes: [
-        make("begin", "flow.event.beginPlay"),
-        make("import", "input.importBindings", { data }),
-        make("export", "input.exportBindings"),
-        make("log", "debug.log"),
+    const binding = runtime.inputBindings.getInputBindings!(jump)[0]!;
+    await load(
+      runtime,
+      [
+        node("any", "input.onAnyKeyPressed"),
+        node("set", "input.setActionBinding", { binding }),
+        node("log", "debug.log"),
       ],
-      edges: [
-        {
-          id: "e1",
-          sourceNodeId: "begin",
-          sourcePinId: "execOut",
-          targetNodeId: "import",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e2",
-          sourceNodeId: "import",
-          sourcePinId: "execOut",
-          targetNodeId: "log",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e3",
-          sourceNodeId: "export",
-          sourcePinId: "data",
-          targetNodeId: "log",
-          targetPinId: "message",
-        },
+      [
+        edge("any", "execOut", "set", "execIn"),
+        edge("any", "key", "set", "key"),
+        edge("set", "execOut", "log", "execIn"),
+        edge("any", "key", "log", "message"),
       ],
-    };
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
-    const compiled = compileGraph(graph, {
-      assetGuid: "profile-class",
-      registry,
-    });
-    await runtime.loadScripts([
-      { assetGuid: "profile-class", classId: "Rebinder", ...compiled },
-    ]);
-    runtime.spawnScriptedActor({ classId: "Rebinder" });
-    runtime.start();
-    expect(JSON.parse(runtime.getLogRing().entries().at(-1)!.message)).toEqual(
-      JSON.parse(data),
     );
-    expect(runtime.inputBindings.getBinding("action", "Jump", 0)?.code).toBe(
-      "KeyJ",
+    runtime.start();
+    runtime.pushInputBuffer(
+      encodeInputEvents([
+        { kind: "key", tick: 0, phase: "down", code: "KeyJ" },
+        { kind: "key", tick: 0, phase: "down", code: "KeyJ" },
+        { kind: "key", tick: 0, phase: "up", code: "KeyJ" },
+        {
+          kind: "pointer",
+          tick: 0,
+          pointerId: 1,
+          phase: "down",
+          x: 10,
+          y: 20,
+          button: 0,
+        },
+      ]),
     );
-    runtime.stop();
-  });
-
-  it("starts keyboard capture through a node and exposes completion to Tick graphs", async () => {
-    const registry = createDefaultNodeRegistry();
-    expect(registry.get("input.beginRebind")).toBeDefined();
-    const make = (
-      id: string,
-      typeId: string,
-      properties: Record<string, unknown> = {},
-    ): GraphNode => ({
-      id,
-      typeId,
-      properties,
-      position: { x: 0, y: 0 },
-      pins: registry.get(typeId)!.pins(properties),
-    });
-    const graph: LogicGraph = {
-      id: "capture",
-      kind: "event",
-      nodes: [
-        make("begin", "flow.event.beginPlay"),
-        make("listen", "input.beginRebind", {
-          kind: "action",
-          mapping: "Jump",
-          index: 0,
-        }),
-        make("tick", "flow.event.tick"),
-        make("status", "input.getRebindStatus"),
-        make("log", "debug.log"),
-      ],
-      edges: [
-        {
-          id: "e1",
-          sourceNodeId: "begin",
-          sourcePinId: "execOut",
-          targetNodeId: "listen",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e2",
-          sourceNodeId: "tick",
-          sourcePinId: "execOut",
-          targetNodeId: "log",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e3",
-          sourceNodeId: "status",
-          sourcePinId: "status",
-          targetNodeId: "log",
-          targetPinId: "message",
-        },
-      ],
-    };
-    const compiled = compileGraph(graph, {
-      assetGuid: "capture-class",
-      registry,
-    });
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
-    await runtime.loadScripts([
-      { assetGuid: "capture-class", classId: "Rebinder", ...compiled },
-    ]);
-    runtime.spawnScriptedActor({ classId: "Rebinder" });
-    runtime.start();
     runtime.tick();
-    expect(runtime.getLogRing().entries().at(-1)?.message).toBe("listening");
-    runtime.pushInput([{ kind: "key", tick: 1, phase: "down", code: "KeyH" }]);
-    runtime.tick();
-    expect(runtime.getLogRing().entries().at(-1)?.message).toBe("completed");
-    expect(runtime.getResolvedInput().actions.Jump?.held).toBe(false);
-    runtime.pushInput([
-      { kind: "key", tick: 2, phase: "up", code: "KeyH" },
-      { kind: "key", tick: 2, phase: "down", code: "KeyH" },
-    ]);
-    runtime.tick();
-    expect(runtime.getResolvedInput().actions.Jump?.pressed).toBe(true);
-    runtime.stop();
-  });
-
-  it("changes a binding from Begin Play and restores exported overrides in another session", async () => {
-    const registry = createDefaultNodeRegistry();
-    expect(registry.get("input.setBinding")).toBeDefined();
-    const make = (
-      id: string,
-      typeId: string,
-      properties: Record<string, unknown> = {},
-    ): GraphNode => ({
-      id,
-      typeId,
-      properties,
-      position: { x: 0, y: 0 },
-      pins: registry.get(typeId)!.pins(properties),
-    });
-    const graph: LogicGraph = {
-      id: "rebind",
-      kind: "event",
-      nodes: [
-        make("begin", "flow.event.beginPlay"),
-        make("set", "input.setBinding", {
-          kind: "action",
-          mapping: "Jump",
-          index: 0,
-          device: "key",
-          code: "KeyJ",
-        }),
-        make("get", "input.getBinding", {
-          kind: "action",
-          mapping: "Jump",
-          index: 0,
-        }),
-        make("log", "debug.log"),
-      ],
-      edges: [
-        {
-          id: "e1",
-          sourceNodeId: "begin",
-          sourcePinId: "execOut",
-          targetNodeId: "set",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e2",
-          sourceNodeId: "set",
-          sourcePinId: "execOut",
-          targetNodeId: "log",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e3",
-          sourceNodeId: "get",
-          sourcePinId: "code",
-          targetNodeId: "log",
-          targetPinId: "message",
-        },
-      ],
-    };
-    const compiled = compileGraph(graph, {
-      assetGuid: "rebind-class",
-      registry,
-    });
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
-    await runtime.loadScripts([
-      { assetGuid: "rebind-class", classId: "Rebinder", ...compiled },
-    ]);
-    runtime.spawnScriptedActor({ classId: "Rebinder" });
-    runtime.start();
     expect(
       runtime
         .getLogRing()
         .entries()
         .map((entry) => entry.message),
-    ).toContain("KeyJ");
-    runtime.pushInput([{ kind: "key", tick: 0, phase: "down", code: "KeyJ" }]);
+    ).toEqual(["KeyJ", "MouseLeft"]);
+    expect(runtime.inputBindings.getInputBindings!(jump)[0]).toMatchObject({
+      Id: binding.Id,
+      Key: "MouseLeft",
+    });
     runtime.tick();
-    expect(runtime.getResolvedInput().actions.Jump?.pressed).toBe(true);
-    const saved = runtime.inputBindings.exportBindings();
+    expect(runtime.getResolvedInput().inputs.jump.held).toBe(true);
+    expect(runtime.getLogRing().entries()).toHaveLength(2);
+    runtime.pushInput([
+      { kind: "gamepad", tick: 2, gamepadIndex: 2, axes: [], buttons: [1] },
+    ]);
+    runtime.tick();
+    expect(runtime.inputBindings.getInputBindings!(jump)[0].Key).toBe(
+      "Gamepad3Button0",
+    );
+    expect(runtime.getLogRing().entries().at(-1)?.message).toBe(
+      "Gamepad3Button0",
+    );
     runtime.stop();
+  });
 
-    const next = createInProcessRuntime({ seed: 2, seedDemoActors: false });
-    expect(next.inputBindings.importBindings(saved)).toBe(true);
-    next.start();
-    next.pushInputBuffer(
-      (await import("@babylonslate/input")).encodeInputEvents([
-        { kind: "key", tick: 0, phase: "down", code: "KeyJ" },
+  it("adds axis options from a graph and restores exported modifications in another session", async () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      inputAssets: assets,
+    });
+    await load(
+      runtime,
+      [
+        node("begin", "flow.event.beginPlay"),
+        node("add", "input.addAxisBinding", {
+          input: move,
+          key: "KeyS",
+          binding: { Component: "Y", DigitalValue: -1, Scale: 0.5 },
+        }),
+        node("remove", "input.removeAxisBinding", { input: move, key: "KeyW" }),
+        node("export", "input.exportBindings"),
+        node("log", "debug.log"),
+      ],
+      [
+        edge("begin", "execOut", "add", "execIn"),
+        edge("add", "execOut", "remove", "execIn"),
+        edge("remove", "execOut", "log", "execIn"),
+        edge("export", "data", "log", "message"),
+      ],
+    );
+    runtime.start();
+    runtime.pushInput([{ kind: "key", tick: 0, phase: "down", code: "KeyS" }]);
+    runtime.tick();
+    expect(runtime.getResolvedInput().inputs.move.value).toEqual({
+      x: 0,
+      y: -0.5,
+    });
+    const saved = runtime.getLogRing().entries().at(-1)!.message;
+    runtime.stop();
+    const restored = createInProcessRuntime({
+      seed: 2,
+      seedDemoActors: false,
+      inputAssets: assets,
+    });
+    await load(
+      restored,
+      [
+        node("begin", "flow.event.beginPlay"),
+        node("import", "input.importBindings", { data: saved }),
+      ],
+      [edge("begin", "execOut", "import", "execIn")],
+    );
+    restored.start();
+    restored.pushInputBuffer(
+      encodeInputEvents([
+        { kind: "key", tick: 0, phase: "down", code: "KeyS" },
+        { kind: "key", tick: 0, phase: "down", code: "KeyW" },
       ]),
     );
-    next.tick();
-    expect(next.getResolvedInput().actions.Jump?.pressed).toBe(true);
-    next.stop();
+    restored.tick();
+    expect(restored.getResolvedInput().inputs.move.value).toEqual({
+      x: 0,
+      y: -0.5,
+    });
+    restored.stop();
   });
 });

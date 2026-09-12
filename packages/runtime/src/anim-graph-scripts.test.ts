@@ -179,9 +179,10 @@ function movingRuleGraph(registry: NodeRegistry): LogicGraph {
 function lastAnimState(
   commands: readonly CommandMessage[],
 ): Extract<CommandMessage, { type: "animState" }> | undefined {
-  return [...commands].reverse().find((command) => command.type === "animState") as
-    | Extract<CommandMessage, { type: "animState" }>
-    | undefined;
+  return [...commands]
+    .reverse()
+    .find((command) => command.type === "animState") as
+    Extract<CommandMessage, { type: "animState" }> | undefined;
 }
 
 describe("runtime AnimationGraph scripts", () => {
@@ -265,7 +266,9 @@ describe("runtime AnimationGraph scripts", () => {
       id: "hero",
       kind: "event",
       nodes: [
-        node(registry, "tick", "input.onAction", { action: "Jump", phase: "pressed" }),
+        node(registry, "tick", "input.actionEvent", {
+          "default:binding": { Input: { Name: "Jump", Asset: "jump" } },
+        }),
         node(registry, "jump", "anim.actor.jumpToState", { state: "Walk" }),
         node(registry, "graph", "component.getNamed", {
           componentClassId: "AnimationGraphComponent",
@@ -276,7 +279,7 @@ describe("runtime AnimationGraph scripts", () => {
         {
           id: "e1",
           sourceNodeId: "tick",
-          sourcePinId: "execOut",
+          sourcePinId: "started",
           targetNodeId: "jump",
           targetPinId: "execIn",
         },
@@ -300,6 +303,15 @@ describe("runtime AnimationGraph scripts", () => {
       seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": jumpDocument() },
+      inputAssets: [
+        {
+          guid: "jump",
+          name: "Jump",
+          type: "InputAction",
+          valueType: "button",
+          bindings: [{ id: "space", device: "key", code: "Space" }],
+        },
+      ],
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -331,7 +343,9 @@ describe("runtime AnimationGraph scripts", () => {
     ]);
     runtime.tick();
     expect(lastAnimState(commands)?.stateId).toBe("walk");
-    expect(lastAnimState(commands)?.normalisedTime).toBeGreaterThan(jumped!.normalisedTime);
+    expect(lastAnimState(commands)?.normalisedTime).toBeGreaterThan(
+      jumped!.normalisedTime,
+    );
     runtime.stop();
   });
 
@@ -437,7 +451,9 @@ describe("runtime AnimationGraph scripts", () => {
       assetGuid: "hero-class",
       registry,
     });
-    expect(compiled.source).toContain('ctx.getComponentById(ctx.self, "anim-2")');
+    expect(compiled.source).toContain(
+      'ctx.getComponentById(ctx.self, "anim-2")',
+    );
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -482,7 +498,9 @@ describe("runtime AnimationGraph scripts", () => {
     runtime.start();
     runtime.realizePlayWorld();
     runtime.tick();
-    const animStates = commands.filter((command) => command.type === "animState");
+    const animStates = commands.filter(
+      (command) => command.type === "animState",
+    );
     expect(animStates.some((command) => command.stateId === "idle")).toBe(true);
     expect(lastAnimState(commands)).toMatchObject({
       type: "animState",

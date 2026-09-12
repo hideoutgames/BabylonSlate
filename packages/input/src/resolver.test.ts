@@ -12,6 +12,38 @@ function key(tick: number, code: string, phase: "down" | "up"): RawInputEvent {
 }
 
 describe("InputResolver event transitions", () => {
+  it("reports every physical press once, including taps and gamepad threshold crossings", () => {
+    const resolver = new InputResolver({ actions: [], axes: [] });
+    const pad = (buttons: number[], axes: number[]): RawInputEvent => ({ kind: "gamepad", tick: 0, gamepadIndex: 1, buttons, axes });
+    expect(resolver.resolve([
+      key(0, "KeyW", "down"), key(0, "KeyW", "down"), key(0, "KeyW", "up"),
+      key(0, "KeyW", "down"), pad([1], [0.5, -0.6]), pad([1], [0.5, -0.8]),
+    ]).pressedKeys).toEqual(["KeyW", "KeyW", "Gamepad2Button0", "Gamepad2Axis1"]);
+    expect(resolver.resolve([pad([1], [0, 0.4])]).pressedKeys).toEqual([]);
+    expect(resolver.resolve([pad([0], [0, 0.7]), pad([1], [0, 0.7])]).pressedKeys)
+      .toEqual(["Gamepad2Axis1", "Gamepad2Button0"]);
+    expect(resolver.resolve([]).pressedKeys).toEqual([]);
+    resolver.reset();
+    expect(resolver.resolve([key(0, "KeyW", "down")]).pressedKeys).toEqual(["KeyW"]);
+  });
+
+  it("lets a primary touch activate mouse bindings without a second finger releasing or moving it", () => {
+    const resolver = new InputResolver({ actions: [{ name: "Click", bindings: [{ device: "mouseButton", code: "0" }] }], axes: [] });
+    const pointer = (pointerId: number, phase: "down" | "move" | "up" | "cancel", x: number): RawInputEvent => ({ kind: "pointer", tick: 0, pointerId, phase, x, y: 20, button: 0 });
+    resolver.resolve([pointer(9, "move", 50)]);
+    const down = resolver.resolve([pointer(1, "down", 10), pointer(2, "down", 90)]);
+    expect(down.actions.Click).toMatchObject({ pressed: true, held: true });
+    expect(down.pressedKeys).toEqual(["MouseLeft"]);
+    expect(down.cursor).toEqual({ x: 10, y: 20, pressed: true });
+    expect(resolver.resolve([pointer(2, "up", 90)]).actions.Click.held).toBe(true);
+    resolver.resolve([pointer(2, "down", 90)]);
+    const up = resolver.resolve([pointer(1, "up", 15), pointer(2, "move", 100)]);
+    expect(up.actions.Click).toMatchObject({ released: true, held: false });
+    expect(up.cursor).toEqual({ x: 15, y: 20, pressed: false });
+    resolver.resolve([pointer(2, "up", 100)]);
+    expect(resolver.resolve([pointer(3, "down", 30)]).pressedKeys).toEqual(["MouseLeft"]);
+    expect(resolver.resolve([pointer(3, "cancel", 30)]).actions.Click.released).toBe(true);
+  });
   it("keeps a complete key tap received between two simulation ticks", () => {
     const resolver = new InputResolver(createDefaultInputMappings());
     const tapped = resolver.resolve([
@@ -315,40 +347,6 @@ describe("InputResolver", () => {
     ]);
     expect(resolved.axes2D.Move!.x).toBeCloseTo(0.75, 5);
     expect(resolved.axes2D.Move!.y).toBe(0);
-  });
-
-  it("default Move axis includes touch joystick bindings beside gamepad", () => {
-    const resolver = new InputResolver(createDefaultInputMappings());
-    const resolved = resolver.resolve([
-      { kind: "touchAxis", tick: 1, controlId: "joystick-x", value: 1 },
-      { kind: "touchAxis", tick: 1, controlId: "joystick-y", value: -1 },
-    ]);
-    expect(resolved.axes2D.Move!.x).toBeCloseTo(1, 5);
-    expect(resolved.axes2D.Move!.y).toBeCloseTo(-1, 5);
-  });
-
-  it("default Move axis includes the TouchDPad control ids", () => {
-    const resolver = new InputResolver(createDefaultInputMappings());
-    const resolved = resolver.resolve([
-      { kind: "touchAxis", tick: 1, controlId: "dpad-x", value: 1 },
-      { kind: "touchAxis", tick: 1, controlId: "dpad-y", value: -1 },
-    ]);
-    expect(resolved.axes2D.Move!.x).toBeCloseTo(1, 5);
-    expect(resolved.axes2D.Move!.y).toBeCloseTo(-1, 5);
-  });
-
-  it("default Jump action is held while the TouchButton control is down", () => {
-    const resolver = new InputResolver(createDefaultInputMappings());
-    const down = resolver.resolve([
-      { kind: "touchAxis", tick: 1, controlId: "Jump", value: 1 },
-    ]);
-    expect(down.actions.Jump?.held).toBe(true);
-    expect(down.actions.Jump?.pressed).toBe(true);
-    const up = resolver.resolve([
-      { kind: "touchAxis", tick: 2, controlId: "Jump", value: 0 },
-    ]);
-    expect(up.actions.Jump?.held).toBe(false);
-    expect(up.actions.Jump?.released).toBe(true);
   });
 
   it("does not treat an empty mouseButton code as left click", () => {

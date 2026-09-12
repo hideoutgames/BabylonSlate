@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { BindingCodePicker } from "./binding-code-picker";
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -17,18 +20,14 @@ afterEach(() => {
 
 describe("BindingCodePicker", () => {
   it("shows Choose Key when no code is set", () => {
-    render(
-      <BindingCodePicker device="key" code="" onChange={() => {}} />,
-    );
+    render(<BindingCodePicker device="key" code="" onChange={() => {}} />);
     expect(screen.getByTestId("binding-code-picker").textContent).toContain(
       "Choose Key",
     );
   });
 
   it("shows the formatted label for a stored code", () => {
-    render(
-      <BindingCodePicker device="key" code="Space" onChange={() => {}} />,
-    );
+    render(<BindingCodePicker device="key" code="Space" onChange={() => {}} />);
     expect(screen.getByTestId("binding-code-picker").textContent).toContain(
       "Space",
     );
@@ -85,20 +84,18 @@ describe("BindingCodePicker", () => {
     );
   });
 
-  it("lists provided touch control ids", () => {
+  it("selects a mouse button from the shared mouse and touch controls", () => {
     const onChange = vi.fn();
     render(
       <BindingCodePicker
-        device="touch"
-        code="joystick-x"
+        device="mouseButton"
+        code="0"
         onChange={onChange}
-        touchControlIds={["joystick-x", "Jump", "custom-stick"]}
         open
         onOpenChange={() => {}}
       />,
     );
-    expect(screen.getByTestId("search-item-Jump").textContent).toContain("Jump");
-    screen.getByTestId("search-item-custom-stick").click();
-    expect(onChange).toHaveBeenCalledWith("custom-stick");
+    screen.getByTestId("search-item-1").click();
+    expect(onChange).toHaveBeenCalledWith("1");
   });
 });

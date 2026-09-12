@@ -48,7 +48,10 @@ export function SearchDropdown({
   "data-testid": testId,
 }: SearchDropdownProps) {
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => filterSearchItems(items, query), [items, query]);
+  const filtered = useMemo(
+    () => filterSearchItems(items, query),
+    [items, query],
+  );
   const grouped = useMemo(() => groupSearchItems(filtered), [filtered]);
 
   return (
@@ -64,8 +67,7 @@ export function SearchDropdown({
       <DropdownMenuContent
         align="start"
         className={
-          contentClassName ??
-          "max-h-96 w-max min-w-64 max-w-sm overflow-y-auto"
+          contentClassName ?? "max-h-96 w-max min-w-64 max-w-sm overflow-y-auto"
         }
         data-testid={testId}
       >
@@ -73,7 +75,9 @@ export function SearchDropdown({
           <DropdownMenuLabel>{title}</DropdownMenuLabel>
         </DropdownMenuGroup>
         {description ? (
-          <p className="px-1.5 pb-1 text-xs text-muted-foreground">{description}</p>
+          <p className="px-1.5 pb-1 text-xs text-muted-foreground">
+            {description}
+          </p>
         ) : null}
         <div
           className="px-1 pb-1"
@@ -93,7 +97,7 @@ export function SearchDropdown({
           />
         </div>
         {grouped.map((section, index) => (
-          <DropdownMenuGroup key={section.group ?? `ungrouped-${index}`}>
+          <DropdownMenuGroup key={section.items[0]?.id ?? index}>
             {section.group ? (
               <DropdownMenuLabel>{section.group}</DropdownMenuLabel>
             ) : null}

@@ -13,6 +13,7 @@ import {
 } from "../packages/core/src/index.ts";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { guidForPath } from "./material-graph";
 
 const CLASS_PATH = "assets/Mannequin.class.babasset";
 const ANIM_PATH = "assets/Mannequin/Mannequin.anim.babasset";
@@ -163,9 +164,31 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   await openTestProject(page);
   const graph = await documentPayload<SerializedGraph>(page, CLASS_PATH);
   graph.nodes = [
-    node("space", "input.onAction", { action: "Jump", phase: "pressed" }),
+    node("space", "input.actionEvent", {
+      "default:binding": {
+        Input: {
+          Name: "Jump",
+          Asset: await guidForPath(
+            page,
+            "assets/Input/Jump.inputaction.babasset",
+          ),
+        },
+      },
+      valueType: "button",
+    }),
     node("walk", "anim.actor.jumpToState", { state: "Walk" }),
-    node("confirm", "input.onAction", { action: "Confirm", phase: "pressed" }),
+    node("confirm", "input.actionEvent", {
+      "default:binding": {
+        Input: {
+          Name: "Confirm",
+          Asset: await guidForPath(
+            page,
+            "assets/Input/Confirm.inputaction.babasset",
+          ),
+        },
+      },
+      valueType: "button",
+    }),
     node("idle", "anim.actor.jumpToState", { state: "Idle" }),
     node("graph", "component.getNamed", {
       componentClassId: "AnimationGraphComponent",
@@ -180,8 +203,8 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     }),
   ];
   graph.edges = [
-    edge("space", "execOut", "walk", "execIn"),
-    edge("confirm", "execOut", "idle", "execIn"),
+    edge("space", "started", "walk", "execIn"),
+    edge("confirm", "started", "idle", "execIn"),
     ...["walk", "idle", "state"].map((id) =>
       edge("graph", "out", id, "target"),
     ),
@@ -215,10 +238,12 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   await canvas.click();
   await page.keyboard.press("Space");
   await expect(prints).toContainText("Walk");
-  await expect.poll(async () => {
-    const walk = await mannequinPixels(canvas);
-    return walk.pixels > 50 && walk.signature !== idle.signature;
-  }).toBe(true);
+  await expect
+    .poll(async () => {
+      const walk = await mannequinPixels(canvas);
+      return walk.pixels > 50 && walk.signature !== idle.signature;
+    })
+    .toBe(true);
   await canvas.screenshot({ path: testInfo.outputPath("h16-walk.png") });
   await page.keyboard.press("Enter");
   await expect(prints).toContainText("Idle");

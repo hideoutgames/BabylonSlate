@@ -24,8 +24,8 @@ describe("engine type registry", () => {
   it("registers Collision Channel and Hit Result", () => {
     expect(ENGINE_ENUMS.map((entry) => entry.id)).toEqual([
       ENGINE_COLLISION_CHANNEL_ENUM_ID,
-      "engine:InputRebindStatus",
-      "engine:InputDevice",
+      "engine:Key",
+      "engine:InputComponent",
     ]);
     expect(ENGINE_ENUMS[0]?.members.map((member) => member.name)).toEqual([
       "All",
@@ -37,7 +37,6 @@ describe("engine type registry", () => {
     expect(ENGINE_STRUCTS.map((entry) => entry.id)).toEqual([
       ENGINE_HIT_RESULT_STRUCT_ID,
       "engine:InputType",
-      "engine:InputControl",
       "engine:InputBinding",
     ]);
     expect(ENGINE_STRUCTS[0]?.fields.map((field) => field.name)).toEqual([
@@ -59,5 +58,5 @@ it("exposes native input asset references and readable runtime binding labels", 
   ]);
   expect(
     ENGINE_STRUCTS.find((entry) => entry.id === "engine:InputBinding")?.fields,
-  ).toContainEqual({ name: "Label", typeId: "string" });
+  ).toContainEqual({ name: "Label", typeId: "string", defaultValue: "" });
 });

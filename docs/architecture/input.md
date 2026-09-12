@@ -1,10 +1,12 @@
 # Input assets and events
 
-Create **Input Action** or **Input Axis** from the Content Browser's **Input** category. Inputs are assets, not Project Settings rows. Open an asset to edit its dockable **Bindings** and **Details** panels. Actions produce a boolean; axes produce a 1D number or 2D X/Y value. Add Control uses readable device catalogs, Listen captures a keyboard chord (Escape or window blur cancels), and axis presets add WASD, arrow keys, or either gamepad stick. Select Details for modifiers, direction, scale, dead zone, sensitivity, and inversion.
+Create **Input Action** or **Input Axis** from the Content Browser's **Input** category. Inputs are assets, not Project Settings rows. Open an asset to edit its dockable **Bindings** and **Details** panels. Actions produce a boolean; axes produce a 1D number or 2D X/Y value. Add Control uses readable device catalogs, Listen captures a keyboard chord (Escape or window blur cancels), and axis presets add WASD, arrow keys, or either gamepad stick. Click anywhere on a binding row, or press Enter/Space on its selection control, to select its Details. The trailing trash icon removes the row. Details contains modifiers, direction, scale, dead zone, sensitivity, and inversion. Mouse Button includes mouse clicks and primary touch-as-left-click; Pointer Button and Touch Control are no longer authoring options.
 
 ## Graph workflow
 
-The Add Node menu has `Event <asset name>` for every input asset under Input/Actions or Input/Axes. Each event uses event colors and an **Input Type** dropdown. Asset GUIDs identify inputs; names are display metadata. Changing the selected asset updates Value's type. Native **Break Input Type** exposes Name and Asset. Input events belong in ticking runtime class event graphs, not functions or animation rules.
+The **Input** category contains **Event Input Action**, **Event Input Axis**, **On Any Key Pressed**, and `Event <asset name>` shortcuts. Action/axis events accept an **Input Binding** struct and listen to the entire action/axis identified by its Input field. An unwired event has a filtered asset dropdown with no extra Choose Input entry. A wired event uses its generic title; dynamic axes expose **Axis Dimensions** (1D/2D) in Details. Events belong in ticking runtime class graphs, not functions or animation rules.
+
+**Make Structure** creates graph-local data without a variable reference. Select its Structure Type in Details, or add `Make <Struct>` directly for any engine/project structure, including **Make Input Binding**. Pins and field defaults follow the live schema. `Break <Struct>` exposes its fields.
 
 | Pin | Behaviour |
 | --- | --- |
@@ -19,9 +21,22 @@ Complete taps between ticks retain both Started and Released. A release/repress 
 
 ## Player rebinding
 
-**Get Input Bindings** takes an Input Type dropdown and returns native **Input Binding** values. Break Input Binding exposes a readable Label for menus, the Input Type, and the typed Control. Use the existing array nodes to select a binding, then **Listen for Input Binding** to capture a replacement keyboard chord. **Get Input Rebind Status** returns the native Input Rebind Status enum; use its enum switch to handle listening, completed, and cancelled. **Cancel Input Rebind** cancels capture. **Set Input Control** takes an Input Binding and a native Input Control with device/control dropdowns, including mouse and gamepad choices. **Reset Input Bindings** restores one asset; **Reset All Input Bindings** restores all defaults.
+The native **Key** enum uses the same catalog as Input Action/Axis authoring: keyboard codes, five mouse buttons, and the four supported gamepads' Standard buttons and stick axes. Labels are readable; values such as `KeyW`, `MouseLeft`, and `Gamepad1Button0` retain exact device identity. **None** is an inert default.
 
-The existing export/import binding nodes serialize player overrides for the game's own profile storage. They do not automatically save browser data. Profiles use asset GUIDs and stable binding IDs, so renames and reordering preserve overrides while retaining current axis tuning. Missing bindings or asset/binding IDs reject import atomically; asset profiles are never inferred from display names or authored controls. Capture consumes held and newly captured keys until release to avoid activating gameplay.
+**On Any Key Pressed** emits each newly pressed Key once, in input order. Keyboard repeats and held gamepad samples do not retrigger it. Primary touch reports Mouse Left. Gamepad axes emit when their absolute value crosses 0.5, and rearm at or below that threshold; the event captures an axis identity rather than its direction.
+
+| Node | Use |
+| --- | --- |
+| Get Input Bindings | Read an asset's Input Binding array for a settings menu. |
+| Add Input Action / Axis Binding | Add Key to an asset; optional Binding Options supply modifiers and axis tuning. |
+| Set Input Action / Axis Binding | Replace a selected binding's Key while preserving its stable Id, modifiers, X/Y component, sign, and tuning. |
+| Remove Input Action / Axis Binding | Remove that Key from the selected asset, including bindings using different modifiers/components. |
+| Reset Input Bindings / Reset All Input Bindings | Restore authored defaults. |
+| Export / Import Input Bindings | Serialize player overrides for the game's own save storage. |
+
+For WASD rebinding, store the selected **Input Binding**, gate **On Any Key Pressed** with the menu's waiting flag, pass Key to **Set Input Axis Binding**, and clear the waiting flag after success. Replacing W retains its original Y component and positive/negative direction. The game owns menu gating and persistence; these nodes do not automatically write browser storage or suppress gameplay input.
+
+**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Profile additions/removals use version 2 edits; controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it. The obsolete string-based input nodes, native Input Control/Input Device types, and capture/status graph workflow have been removed.
 
 ## Storage and defaults
 
@@ -49,7 +64,7 @@ Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButt
 | `component` | `"x"` \| `"y"` for `kind: "2d"` axes |
 | `digitalValue` | Constant while a digital binding is held |
 
-`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads and **drops empty `code`s** so Play never treats a blank mouse/pointer draft as button 0. Input asset authoring passes `{ allowIncomplete: true }` so device switches and Add Binding keep `{ device, code: "" }` rows until a control is picked. `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard, gamepad stick, touch joystick (`joystick-x` / `joystick-y`), and TouchDPad (`dpad-x` / `dpad-y`) so an on-screen stick, d-pad, and a gamepad drive the same `GetAxis2D("Move")` with no script change. Default **Jump** includes Space, gamepad Face Button Down (`0:0`), and touch control id `Jump` (Play overlay virtual stick / d-pad). Default Confirm → `0:1` (Face Button Right) so both actions do not fire from one button.
+`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads and **drops empty `code`s** so Play never treats a blank mouse/pointer draft as button 0. Input asset authoring passes `{ allowIncomplete: true }` so device switches and Add Binding keep `{ device, code: "" }` rows until a control is picked. `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard and gamepad stick bindings. **Jump** includes Space and Gamepad 1 Face Button Down; **Confirm** uses Enter and Face Button Right. Synthetic touch controls are no longer included in starter defaults.
 
 Gamepad picker labels are layout-agnostic Standard Gamepad names (Face Button Down/Right/Left/Up, bumpers, triggers, Left/Right Stick Click, D-Pad, Home). Stored codes stay `padIndex:buttonIndex`. Closed bindings stay pad-qualified (`Gamepad 1 Face Button Down`); picker rows show the button name under a `Gamepad N` group.
 
@@ -63,6 +78,7 @@ interface ResolvedInputTick {
   axes: Record<string, number>;
   axes2D: Record<string, { x; y }>;
   gamepadConnections: Array<{ gamepadIndex; connected }>;
+  pressedKeys: InputKey[];
 }
 ```
 
@@ -84,15 +100,14 @@ Pure with respect to the browser — feed synthetic streams from the determinist
 | `getAxis(axis)` | `axes[axis]` |
 | `getAxis2D(axis)` | `axes2D[axis]` |
 | `gamepadConnections` | connection transitions this tick |
+| `getPressedKeys()` | ordered physical Key rising edges this tick |
 | `setGamepadRumble(index, intensity, durationMs)` | forwarded to main thread when supported |
 
-Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases. Each `tick()` consumes **all** events queued since the previous tick. Event `tick` is recorded on traces; it does not gate consumption. Play's worker host stamps canvas/gamepad samples with the last worker `stats.tickIndex` (not `performance.now() / 16.67`), so compiled `GetAxis` / `GetAxis2D` graphs see the same stick as the overlay HUD.
+Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases. Each `tick()` consumes **all** events queued since the previous tick. Event `tick` is recorded on traces; it does not gate consumption. Play's worker host stamps canvas/gamepad samples with the last worker `stats.tickIndex` (not `performance.now() / 16.67`), so compiled Input Axis events see the same stick as the host input stream.
 
 
 ## Testing
 
 Per engineplan §11.1: input is tested through **synthetic event streams** replayed by the deterministic harness and `InputResolver` unit tests — not by driving a browser. P4 raw capture tests remain separate from mapping resolution. Runtime tests also cover live gamepad events stamped with a host wall-clock tick (the Play worker skew) so `GetAxis2D("Move")` cannot silently stay at `{x:0,y:0}`. E2e: `e2e/p5-scripting.spec.ts` injects a synthetic pad and asserts a compiled Tick → GetAxis2D → Print overlay.
 
-## Scripting nodes (`@babylonslate/scripting-nodes`)
-
-#
+The typed node catalog is implemented in `packages/scripting-nodes/src/input.ts` and `input-bindings.ts`; compiler event gating lives in `packages/scripting/src/compile.ts`.

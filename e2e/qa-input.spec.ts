@@ -14,15 +14,12 @@ const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
   nodes: ["Jump", "Fire", "Confirm"].flatMap((action, index) => [
     {
       id: action,
-      type: action === "Confirm" ? "input.onAction" : "input.event",
+      type: "input.actionEvent",
       position: { x: 0, y: index * 160 },
-      data:
-        action === "Confirm"
-          ? { action, phase: "pressed" }
-          : {
-              "default:input": { Name: action, Asset: guids[action] },
-              valueType: "button",
-            },
+      data: {
+        "default:binding": { Input: { Name: action, Asset: guids[action] } },
+        valueType: "button",
+      },
     },
     {
       id: `${action}-print`,
@@ -35,7 +32,7 @@ const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
     id: `${action}-edge`,
     source: action,
     target: `${action}-print`,
-    sourceHandle: action === "Confirm" ? "execOut" : "started",
+    sourceHandle: "started",
     targetHandle: "execIn",
   })),
 });
@@ -81,6 +78,10 @@ for (const preview of [false, true]) {
     const graph = inputGraph({
       Jump: await guidForPath(page, "assets/Input/Jump.inputaction.babasset"),
       Fire: await guidForPath(page, "assets/Fire.inputaction.babasset"),
+      Confirm: await guidForPath(
+        page,
+        "assets/Input/Confirm.inputaction.babasset",
+      ),
     });
     expect(
       await page.evaluate(

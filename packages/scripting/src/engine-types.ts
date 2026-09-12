@@ -1,12 +1,12 @@
-import { INPUT_DEVICES } from "@babylonslate/core";
+import { INPUT_KEYS } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
 
 export const ENGINE_INPUT_TYPE_STRUCT_ID = "engine:InputType";
-export const ENGINE_INPUT_CONTROL_STRUCT_ID = "engine:InputControl";
 export const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
-export const ENGINE_INPUT_DEVICE_ENUM_ID = "engine:InputDevice";
+export const ENGINE_KEY_ENUM_ID = "engine:Key";
+export const ENGINE_INPUT_COMPONENT_ENUM_ID = "engine:InputComponent";
 
 export const ENGINE_TYPE_GUID_PREFIX = "engine:";
 
@@ -42,16 +42,14 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
   },
 
   {
-    id: "engine:InputRebindStatus",
-    name: "Input Rebind Status",
-    members: ["idle", "listening", "completed", "cancelled"].map(
-      (name, value) => ({ name, value }),
-    ),
+    id: ENGINE_KEY_ENUM_ID,
+    name: "Key",
+    members: INPUT_KEYS.map(({ key }, value) => ({ name: key, value })),
   },
   {
-    id: ENGINE_INPUT_DEVICE_ENUM_ID,
-    name: "Input Device",
-    members: INPUT_DEVICES.map((name, value) => ({ name, value })),
+    id: ENGINE_INPUT_COMPONENT_ENUM_ID,
+    name: "Input Component",
+    members: ["X", "Y"].map((name, value) => ({ name, value })),
   },
 ];
 
@@ -78,22 +76,6 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
     ],
   },
   {
-    id: ENGINE_INPUT_CONTROL_STRUCT_ID,
-    name: "Input Control",
-    fields: [
-      {
-        name: "Device",
-        typeId: "enum",
-        typeClassId: ENGINE_INPUT_DEVICE_ENUM_ID,
-      },
-      { name: "Code", typeId: "string" },
-      ...["Shift", "Ctrl", "Alt", "Meta"].map((name) => ({
-        name,
-        typeId: "bool",
-      })),
-    ],
-  },
-  {
     id: ENGINE_INPUT_BINDING_STRUCT_ID,
     name: "Input Binding",
     fields: [
@@ -101,14 +83,32 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
         name: "Input",
         typeId: "struct",
         typeClassId: ENGINE_INPUT_TYPE_STRUCT_ID,
+        defaultValue: { Name: "", Asset: "" },
       },
-      { name: "Id", typeId: "string" },
-      { name: "Label", typeId: "string" },
+      { name: "Id", typeId: "string", defaultValue: "" },
+      { name: "Label", typeId: "string", defaultValue: "" },
       {
-        name: "Control",
-        typeId: "struct",
-        typeClassId: ENGINE_INPUT_CONTROL_STRUCT_ID,
+        name: "Key",
+        typeId: "enum",
+        typeClassId: ENGINE_KEY_ENUM_ID,
+        defaultValue: "None",
       },
+      ...["Shift", "Ctrl", "Alt", "Meta"].map((name) => ({
+        name,
+        typeId: "bool",
+        defaultValue: false,
+      })),
+      {
+        name: "Component",
+        typeId: "enum",
+        typeClassId: ENGINE_INPUT_COMPONENT_ENUM_ID,
+        defaultValue: "X",
+      },
+      { name: "DeadZone", typeId: "float", defaultValue: 0 },
+      { name: "Scale", typeId: "float", defaultValue: 1 },
+      { name: "Invert", typeId: "bool", defaultValue: false },
+      { name: "Sensitivity", typeId: "float", defaultValue: 1 },
+      { name: "DigitalValue", typeId: "float", defaultValue: 1 },
     ],
   },
 ];

@@ -4,41 +4,76 @@ import {
   enumRef,
   structRef,
   EXEC,
-  INT,
   STRING,
   pin,
   type NodeDefinition,
 } from "@babylonslate/scripting";
 
-const mappingPins = () => [
-  pin("kind", "Mapping Kind", "in", STRING, "data", true, "action"),
-  pin("mapping", "Mapping", "in", STRING),
-];
-const slotPins = () => [
-  ...mappingPins(),
-  pin("index", "Binding Index", "in", INT, "data", true, 0),
-];
 const execPins = () => [
   pin("execIn", "Exec", "in", EXEC),
   pin("execOut", "Then", "out", EXEC),
 ];
-const slotArgs = (ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0]) =>
-  [ctx.input("kind"), ctx.input("mapping"), ctx.input("index")].join(", ");
+const INPUT_TYPE = structRef("engine:InputType");
+const INPUT_BINDING = structRef("engine:InputBinding");
+const KEY = enumRef("engine:Key");
+
+const typedBindingNodes: NodeDefinition[] = (
+  ["Action", "Axis"] as const
+).flatMap<NodeDefinition>((kind) => [
+  {
+    id: `input.add${kind}Binding`,
+    title: `Add Input ${kind} Binding`,
+    category: "input",
+    pins: () => [
+      ...execPins(),
+      pin("input", `Input ${kind}`, "in", INPUT_TYPE),
+      pin("key", "Key", "in", KEY),
+      pin("binding", "Binding Options", "in", INPUT_BINDING, "data", true),
+      pin("success", "Success", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `${ctx.output("success")} = ctx.inputBindings?.addInput${kind}Binding?.(${ctx.input("input")}, ${ctx.input("key")}, ${ctx.input("binding")}) ?? false;`,
+      );
+    },
+  },
+  {
+    id: `input.set${kind}Binding`,
+    title: `Set Input ${kind} Binding`,
+    category: "input",
+    pins: () => [
+      ...execPins(),
+      pin("binding", "Input Binding", "in", INPUT_BINDING),
+      pin("key", "Key", "in", KEY),
+      pin("success", "Success", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `${ctx.output("success")} = ctx.inputBindings?.setInput${kind}Binding?.(${ctx.input("binding")}, ${ctx.input("key")}) ?? false;`,
+      );
+    },
+  },
+  {
+    id: `input.remove${kind}Binding`,
+    title: `Remove Input ${kind} Binding`,
+    category: "input",
+    pins: () => [
+      ...execPins(),
+      pin("input", `Input ${kind}`, "in", INPUT_TYPE),
+      pin("key", "Key", "in", KEY),
+      pin("success", "Success", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `${ctx.output("success")} = ctx.inputBindings?.removeInput${kind}Binding?.(${ctx.input("input")}, ${ctx.input("key")}) ?? false;`,
+      );
+    },
+  },
+]);
 
 /** Player-owned overrides; these nodes never alter authored project defaults. */
 export const inputBindingNodes: NodeDefinition[] = [
-  {
-    id: "input.rebindStatus",
-    title: "Get Input Rebind Status",
-    category: "input",
-    pure: true,
-    pins: () => [
-      pin("status", "Status", "out", enumRef("engine:InputRebindStatus")),
-    ],
-    codegen: () => ({
-      status: `(ctx.inputBindings?.getRebindStatus() ?? "idle")`,
-    }),
-  },
+  ...typedBindingNodes,
   {
     id: "input.bindings",
     title: "Get Input Bindings",
@@ -58,37 +93,6 @@ export const inputBindingNodes: NodeDefinition[] = [
     }),
   },
   {
-    id: "input.rebind",
-    title: "Listen for Input Binding",
-    category: "input",
-    pins: () => [
-      ...execPins(),
-      pin("binding", "Binding", "in", structRef("engine:InputBinding")),
-      pin("success", "Listening", "out", BOOL),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("success")} = ctx.inputBindings?.beginInputRebind?.(${ctx.input("binding")}) ?? false;`,
-      );
-    },
-  },
-  {
-    id: "input.setControl",
-    title: "Set Input Control",
-    category: "input",
-    pins: () => [
-      ...execPins(),
-      pin("binding", "Binding", "in", structRef("engine:InputBinding")),
-      pin("control", "Control", "in", structRef("engine:InputControl")),
-      pin("success", "Success", "out", BOOL),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("success")} = ctx.inputBindings?.setInputControl?.(${ctx.input("binding")}, ${ctx.input("control")}) ?? false;`,
-      );
-    },
-  },
-  {
     id: "input.resetInput",
     title: "Reset Input Bindings",
     category: "input",
@@ -100,127 +104,6 @@ export const inputBindingNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       ctx.emit(
         `${ctx.output("success")} = ctx.inputBindings?.resetInputBindings?.(${ctx.input("input")}) ?? false;`,
-      );
-    },
-  },
-  {
-    id: "input.getBinding",
-    title: "Get Input Binding",
-    category: "input",
-    pure: true,
-    pins: () => [
-      ...slotPins(),
-      pin("device", "Input Device", "out", STRING),
-      pin("code", "Code", "out", STRING),
-      pin("label", "Label", "out", STRING),
-      pin("found", "Found", "out", BOOL),
-      ...["shift", "ctrl", "alt", "meta"].map((name) =>
-        pin(
-          name,
-          name === "ctrl" ? "Ctrl" : name[0]!.toUpperCase() + name.slice(1),
-          "out",
-          BOOL,
-          "data",
-          true,
-        ),
-      ),
-    ],
-    codegen: (ctx) => {
-      const read = `ctx.inputBindings?.getBinding(${slotArgs(ctx)})`;
-      return {
-        device: `(${read}?.device ?? "")`,
-        code: `(${read}?.code ?? "")`,
-        label: `(${read}?.label ?? "")`,
-        found: `(${read} != null)`,
-        shift: `(${read}?.shift ?? false)`,
-        ctrl: `(${read}?.ctrl ?? false)`,
-        alt: `(${read}?.alt ?? false)`,
-        meta: `(${read}?.meta ?? false)`,
-      };
-    },
-  },
-  {
-    id: "input.setBinding",
-    title: "Set Input Binding",
-    category: "input",
-    pins: () => [
-      ...execPins(),
-      ...slotPins(),
-      pin("device", "Input Device", "in", STRING, "data", true, "key"),
-      pin("code", "Code", "in", STRING),
-      ...["shift", "ctrl", "alt", "meta"].map((name) =>
-        pin(
-          name,
-          name === "ctrl" ? "Ctrl" : name[0]!.toUpperCase() + name.slice(1),
-          "in",
-          BOOL,
-          "data",
-          true,
-          false,
-        ),
-      ),
-      pin("success", "Success", "out", BOOL),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("success")} = ctx.inputBindings?.setBinding(${slotArgs(ctx)}, ${["device", "code", "shift", "ctrl", "alt", "meta"].map((name) => ctx.input(name)).join(", ")}) ?? false;`,
-      );
-    },
-  },
-  {
-    id: "input.beginRebind",
-    title: "Begin Input Rebind",
-    category: "input",
-    pins: () => [
-      ...execPins(),
-      ...slotPins(),
-      pin("success", "Success", "out", BOOL),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("success")} = ctx.inputBindings?.beginRebind(${slotArgs(ctx)}) ?? false;`,
-      );
-    },
-  },
-  {
-    id: "input.getRebindStatus",
-    title: "Get Input Rebind Status",
-    category: "input",
-    pure: true,
-    pins: () => [
-      pin("status", "Status", "out", STRING),
-      pin("listening", "Listening", "out", BOOL),
-      pin("completed", "Completed", "out", BOOL),
-      pin("cancelled", "Cancelled", "out", BOOL),
-    ],
-    codegen: () => ({
-      status: '(ctx.inputBindings?.getRebindStatus() ?? "idle")',
-      listening: '(ctx.inputBindings?.getRebindStatus() === "listening")',
-      completed: '(ctx.inputBindings?.getRebindStatus() === "completed")',
-      cancelled: '(ctx.inputBindings?.getRebindStatus() === "cancelled")',
-    }),
-  },
-  {
-    id: "input.cancelRebind",
-    title: "Cancel Input Rebind",
-    category: "input",
-    pins: execPins,
-    codegen: (ctx) => {
-      ctx.emit("ctx.inputBindings?.cancelRebind();");
-    },
-  },
-  {
-    id: "input.resetBinding",
-    title: "Reset Input Mapping",
-    category: "input",
-    pins: () => [
-      ...execPins(),
-      ...mappingPins(),
-      pin("success", "Success", "out", BOOL),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("success")} = ctx.inputBindings?.resetBindings(${ctx.input("kind")}, ${ctx.input("mapping")}) ?? false;`,
       );
     },
   },

@@ -6,6 +6,7 @@ import {
 } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
+import { guidForPath } from "./material-graph";
 
 async function injectGamepad(
   page: {
@@ -197,10 +198,14 @@ test.describe("P5 visual scripting acceptance", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
-  test("GetAxis2D Move from a compiled graph prints the stick in Play", async ({
+  test("Input Axis Move from a compiled graph prints the stick in Play", async ({
     page,
   }) => {
     await openTestProject(page);
+    const moveAsset = await guidForPath(
+      page,
+      "assets/Input/Move.inputaxis.babasset",
+    );
 
     const installed = await page.evaluate(
       async (graph) => {
@@ -215,16 +220,13 @@ test.describe("P5 visual scripting acceptance", () => {
       {
         nodes: [
           {
-            id: "tick",
-            type: "flow.event.tick",
-            position: { x: 40, y: 80 },
-            data: {},
-          },
-          {
             id: "axis",
-            type: "input.getAxis2D",
+            type: "input.axisEvent",
             position: { x: 40, y: 200 },
-            data: { axis: "Move" },
+            data: {
+              "default:binding": { Input: { Name: "Move", Asset: moveAsset } },
+              valueType: "2d",
+            },
           },
           {
             id: "print",
@@ -238,18 +240,18 @@ test.describe("P5 visual scripting acceptance", () => {
           },
         ],
         edges: [
-          {
-            id: "e1",
-            source: "tick",
+          ...["started", "held", "released"].map((sourceHandle) => ({
+            id: sourceHandle,
+            source: "axis",
             target: "print",
-            sourceHandle: "execOut",
+            sourceHandle,
             targetHandle: "execIn",
-          },
+          })),
           {
             id: "e2",
             source: "axis",
             target: "print",
-            sourceHandle: "out",
+            sourceHandle: "value",
             targetHandle: "value",
           },
         ],
@@ -528,15 +530,25 @@ test.describe("P5 visual scripting acceptance", () => {
       .dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Get Axis 2D");
-    await expect(page.getByTestId("node-palette-item-input.getAxis2D")).toHaveCount(0);
+    await expect(
+      page.getByTestId("node-palette-item-input.getAxis2D"),
+    ).toHaveCount(0);
     await page.getByTestId("node-palette-search").fill("Event Move");
-    const event = page.locator('[data-testid^="node-palette-item-input.event:"]').filter({ hasText: "Event Move" });
+    const event = page
+      .locator('[data-testid^="node-palette-item-input.axisEvent:"]')
+      .filter({ hasText: "Event Move" });
     await expect(event).toHaveCount(1);
     await event.click();
     await expect(nodes).toHaveCount(baseline + 1);
     const added = nodes.filter({ hasText: "Event Move" });
     await expect(added).toHaveCount(1);
-    for (const label of ["Started", "Held", "Released", "Value", "Held Seconds"])
+    for (const label of [
+      "Started",
+      "Held",
+      "Released",
+      "Value",
+      "Held Seconds",
+    ])
       await expect(added.getByText(label, { exact: true })).toBeVisible();
   });
 

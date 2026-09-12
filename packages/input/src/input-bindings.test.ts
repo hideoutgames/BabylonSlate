@@ -165,7 +165,7 @@ describe("runtime input bindings", () => {
     const updatedGame = new InputResolver(changedDefaults);
     expect(updatedGame.bindings.importBindings(saved)).toBe(false);
     expect(updatedGame.bindings.getBinding("action", "Jump", 0)?.device).toBe(
-      "touch",
+      "gamepadButton",
     );
   });
 

@@ -214,6 +214,12 @@ describe("InputMappingEditor", () => {
       screen.getByTestId("input-action-0-binding-0-device-gamepadAxis")
         .textContent,
     ).toBe("Gamepad Axis");
+    expect(
+      screen.queryByTestId("input-action-0-binding-0-device-pointer"),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("input-action-0-binding-0-device-touch"),
+    ).toBeNull();
   });
 
   it("clears the code when the device changes", () => {
@@ -330,7 +336,7 @@ describe("InputMappingEditor", () => {
     );
   });
 
-  it("picks a touch control id from the searchable catalog", () => {
+  it("picks an analog gamepad control from the searchable catalog", () => {
     const onChange = vi.fn();
     const value: InputMappings = {
       actions: [],
@@ -338,24 +344,20 @@ describe("InputMappingEditor", () => {
         {
           name: "Move",
           kind: "2d",
-          bindings: [{ device: "touch", code: "joystick-x", component: "x" }],
+          bindings: [{ device: "gamepadAxis", code: "0:0", component: "x" }],
         },
       ],
     };
-    render(
-      <InputMappingEditor
-        value={value}
-        onChange={onChange}
-        touchControlIds={["joystick-x", "custom-stick"]}
-      />,
-    );
+    render(<InputMappingEditor value={value} onChange={onChange} />);
     fireEvent.click(screen.getByTestId("input-axis-0-binding-0-code"));
-    screen.getByTestId("search-item-custom-stick").click();
+    screen.getByTestId("search-item-0:2").click();
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         axes: [
           expect.objectContaining({
-            bindings: [expect.objectContaining({ code: "custom-stick" })],
+            bindings: [
+              expect.objectContaining({ code: "0:2", component: "x" }),
+            ],
           }),
         ],
       }),

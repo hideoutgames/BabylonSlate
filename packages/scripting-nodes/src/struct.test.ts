@@ -3,6 +3,7 @@ import {
   INT,
   STRING,
   compileGraph,
+  validateGraphs,
   structRef,
   type GraphNode,
   type LogicGraph,
@@ -52,13 +53,23 @@ describe("struct nodes", () => {
       structGuid: "struct-stats",
       fields: statsFields,
     };
-    const make = createDefaultNodeRegistry().get("struct.make")!.pins(properties);
-    expect(make.map((pin) => ({ id: pin.id, type: pin.type, direction: pin.direction }))).toEqual([
+    const make = createDefaultNodeRegistry()
+      .get("struct.make")!
+      .pins(properties);
+    expect(
+      make.map((pin) => ({
+        id: pin.id,
+        type: pin.type,
+        direction: pin.direction,
+      })),
+    ).toEqual([
       { id: "Health", type: INT, direction: "in" },
       { id: "Label", type: STRING, direction: "in" },
       { id: "out", type: structRef("struct-stats"), direction: "out" },
     ]);
-    const brk = createDefaultNodeRegistry().get("struct.break")!.pins(properties);
+    const brk = createDefaultNodeRegistry()
+      .get("struct.break")!
+      .pins(properties);
     expect(brk[0]).toMatchObject({
       id: "in",
       type: structRef("struct-stats"),
@@ -68,10 +79,12 @@ describe("struct nodes", () => {
   });
 
   it("Title Cases Structure field pin displays while ids stay the field name", () => {
-    const pins = createDefaultNodeRegistry().get("struct.make")!.pins({
-      structGuid: "struct-stats",
-      fields: [{ name: "maxHealth", typeId: "int" }],
-    });
+    const pins = createDefaultNodeRegistry()
+      .get("struct.make")!
+      .pins({
+        structGuid: "struct-stats",
+        fields: [{ name: "maxHealth", typeId: "int" }],
+      });
     expect(pins.find((pin) => pin.id === "maxHealth")).toMatchObject({
       id: "maxHealth",
       name: "Max Health",
@@ -130,23 +143,96 @@ describe("struct nodes", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain("Health: 8");
-    expect(compiled.source).toContain("Label: \"ok\"");
+    expect(compiled.source).toContain('Label: "ok"');
   });
 
   it("keeps field pins by name when the snapshot is rewritten", () => {
     const def = createDefaultNodeRegistry().get("struct.make")!;
     const first = def.pins({
       structGuid: "s",
-      fields: [{ name: "Health", typeId: "int" }, { name: "Mana", typeId: "float" }],
+      fields: [
+        { name: "Health", typeId: "int" },
+        { name: "Mana", typeId: "float" },
+      ],
     });
     const renamed = def.pins({
       structGuid: "s",
-      fields: [{ name: "Health", typeId: "int" }, { name: "Armor", typeId: "float" }],
+      fields: [
+        { name: "Health", typeId: "int" },
+        { name: "Armor", typeId: "float" },
+      ],
     });
     expect(first.some((pin) => pin.id === "Mana")).toBe(true);
     expect(renamed.some((pin) => pin.id === "Mana")).toBe(false);
     expect(renamed.some((pin) => pin.id === "Health")).toBe(true);
     expect(renamed.some((pin) => pin.id === "Armor")).toBe(true);
+  });
+
+  it("uses schema defaults for local structs and lets authored values override them", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "defaults",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "make", "struct.make", {
+          structGuid: "binding-options",
+          fields: [
+            { name: "Scale", typeId: "float", defaultValue: 1 },
+            { name: "Enabled", typeId: "bool", defaultValue: true },
+            {
+              name: "Key",
+              typeId: "enum",
+              typeClassId: "engine:Key",
+              defaultValue: "Space",
+            },
+            { name: "Axis", typeId: "string", defaultValue: "x" },
+          ],
+          "default:Axis": "y",
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        {
+          id: "exec",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+        {
+          id: "value",
+          sourceNodeId: "make",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const body = compiled.source.replace(
+      /export\s+(async\s+)?function\s+/g,
+      "$1function ",
+    );
+    const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (
+      ctx: unknown,
+    ) => void;
+    const values: unknown[] = [];
+    onBeginPlay({
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) =>
+        values.push(value),
+    });
+    expect(values).toEqual([
+      { Scale: 1, Enabled: true, Key: "Space", Axis: "y" },
+    ]);
+    expect(
+      validateGraphs([graph], { assetGuid: "a" }, { registry }).filter(
+        (diagnostic) =>
+          diagnostic.nodeId === "make" &&
+          diagnostic.code === "pin.missing_input",
+      ),
+    ).toEqual([]);
   });
 
   it("compiles Make Transform to position, quaternion rotation, and scale", () => {

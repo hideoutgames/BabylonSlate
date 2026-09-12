@@ -65,10 +65,7 @@ export {
   type ParameterValueType,
   type ParameterListEditorProps,
 } from "./parameter-list-editor";
-export {
-  PinTypePicker,
-  type PinTypePickerProps,
-} from "./pin-type-picker";
+export { PinTypePicker, type PinTypePickerProps } from "./pin-type-picker";
 export {
   VariableTypeFields,
   VARIABLE_CONTAINERS,
@@ -155,10 +152,7 @@ export {
   type SearchDialogProps,
   type SearchItemGroup,
 } from "./search-dialog";
-export {
-  SearchDropdown,
-  type SearchDropdownProps,
-} from "./search-dropdown";
+export { SearchDropdown, type SearchDropdownProps } from "./search-dropdown";
 export {
   MarkupAutocompleteTextarea,
   applyMarkupSuggestion,
@@ -223,16 +217,13 @@ export {
   NumberPromptDialog,
   type NumberPromptDialogProps,
 } from "./number-prompt-dialog";
-export {
-  formatBindingLabel,
-} from "./format-binding-label";
+export { formatBindingLabel } from "./format-binding-label";
 export {
   BindingCodePicker,
   type BindingCodePickerProps,
 } from "./binding-code-picker";
 export {
   InputMappingEditor,
-  DEFAULT_TOUCH_CONTROL_IDS,
   INPUT_DEVICES,
   type InputMappingEditorProps,
 } from "./input-mapping-editor";
@@ -266,7 +257,10 @@ export {
   type TypeVisualQuery,
 } from "./type-visuals";
 export { TypeColorMark } from "./type-color-mark";
-export { FolderBreadcrumbs, type FolderBreadcrumbsProps } from "./folder-breadcrumbs";
+export {
+  FolderBreadcrumbs,
+  type FolderBreadcrumbsProps,
+} from "./folder-breadcrumbs";
 export {
   PinShapeGlyph,
   pinShapeForContainer,

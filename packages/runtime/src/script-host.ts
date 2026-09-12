@@ -1,4 +1,4 @@
-import type { InputTypeValue, InputValueState } from "@babylonslate/core";
+import type { InputKey, InputTypeValue, InputValueState } from "@babylonslate/core";
 import {
   combineRotators,
   createSeededRng,
@@ -378,6 +378,7 @@ export interface ScriptContext {
   isActionHeld(action: string): boolean;
   wasActionPressed?(action: string): boolean;
   wasActionReleased?(action: string): boolean;
+  getPressedKeys?(): readonly InputKey[];
   getAxis(axis: string): number;
   getAxis2D(axis: string): { x: number; y: number };
   getCursorPosition(): { x: number; y: number; pressed: boolean };
@@ -1212,6 +1213,7 @@ export class ScriptHost {
       wasActionPressed: (action) => tick?.wasActionPressed?.(action) ?? false,
       wasActionReleased: (action) =>
         tick?.wasActionReleased?.(action) ?? false,
+      getPressedKeys: () => tick?.getPressedKeys?.() ?? [],
       getAxis: (axis) => tick?.getAxis?.(axis) ?? 0,
       getAxis2D: (axis) => tick?.getAxis2D?.(axis) ?? { x: 0, y: 0 },
       getCursorPosition: () =>

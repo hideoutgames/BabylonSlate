@@ -3,6 +3,11 @@
  * Labels are the same strings the editor shows on a closed binding.
  */
 
+import {
+  INPUT_KEYS,
+  INPUT_GAMEPAD_BUTTON_NAMES as GAMEPAD_BUTTON_NAMES,
+  INPUT_GAMEPAD_AXIS_NAMES as GAMEPAD_AXIS_NAMES,
+} from "@babylonslate/core";
 import type { InputDevice } from "./mappings";
 
 export interface BindingCatalogEntry {
@@ -13,33 +18,6 @@ export interface BindingCatalogEntry {
 
 const GAMEPAD_PAD_COUNT = 4;
 
-const GAMEPAD_BUTTON_NAMES = [
-  "Face Button Down",
-  "Face Button Right",
-  "Face Button Left",
-  "Face Button Up",
-  "Left Bumper",
-  "Right Bumper",
-  "Left Trigger",
-  "Right Trigger",
-  "Back",
-  "Start",
-  "Left Stick Click",
-  "Right Stick Click",
-  "D-Pad Up",
-  "D-Pad Down",
-  "D-Pad Left",
-  "D-Pad Right",
-  "Home",
-] as const;
-
-const GAMEPAD_AXIS_NAMES = [
-  "Left Stick X",
-  "Left Stick Y",
-  "Right Stick X",
-  "Right Stick Y",
-] as const;
-
 const TOUCH_LABELS: Record<string, string> = {
   "joystick-x": "Joystick X",
   "joystick-y": "Joystick Y",
@@ -48,90 +26,12 @@ const TOUCH_LABELS: Record<string, string> = {
   Jump: "Jump",
 };
 
-function letterKeys(): BindingCatalogEntry[] {
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  return [...letters].map((letter) => ({
-    code: `Key${letter}`,
-    label: letter,
-    group: "Letters",
-  }));
-}
-
-function digitKeys(): BindingCatalogEntry[] {
-  return Array.from({ length: 10 }, (_, index) => ({
-    code: `Digit${index}`,
-    label: String(index),
-    group: "Digits",
-  }));
-}
-
-const KEYBOARD_CATALOG: BindingCatalogEntry[] = [
-  ...letterKeys(),
-  ...digitKeys(),
-  { code: "ArrowUp", label: "Up", group: "Arrows" },
-  { code: "ArrowDown", label: "Down", group: "Arrows" },
-  { code: "ArrowLeft", label: "Left", group: "Arrows" },
-  { code: "ArrowRight", label: "Right", group: "Arrows" },
-  { code: "ShiftLeft", label: "Left Shift", group: "Modifiers" },
-  { code: "ShiftRight", label: "Right Shift", group: "Modifiers" },
-  { code: "ControlLeft", label: "Left Ctrl", group: "Modifiers" },
-  { code: "ControlRight", label: "Right Ctrl", group: "Modifiers" },
-  { code: "AltLeft", label: "Left Alt", group: "Modifiers" },
-  { code: "AltRight", label: "Right Alt", group: "Modifiers" },
-  { code: "MetaLeft", label: "Left Meta", group: "Modifiers" },
-  { code: "MetaRight", label: "Right Meta", group: "Modifiers" },
-  { code: "CapsLock", label: "Caps Lock", group: "Modifiers" },
-  ...Array.from({ length: 12 }, (_, index) => ({
-    code: `F${index + 1}`,
-    label: `F${index + 1}`,
-    group: "Function",
-  })),
-  { code: "Home", label: "Home", group: "Navigation" },
-  { code: "End", label: "End", group: "Navigation" },
-  { code: "PageUp", label: "Page Up", group: "Navigation" },
-  { code: "PageDown", label: "Page Down", group: "Navigation" },
-  { code: "Insert", label: "Insert", group: "Navigation" },
-  { code: "Delete", label: "Delete", group: "Navigation" },
-  { code: "NumLock", label: "Num Lock", group: "Numpad" },
-  { code: "NumpadDivide", label: "Numpad /", group: "Numpad" },
-  { code: "NumpadMultiply", label: "Numpad *", group: "Numpad" },
-  { code: "NumpadSubtract", label: "Numpad -", group: "Numpad" },
-  { code: "NumpadAdd", label: "Numpad +", group: "Numpad" },
-  { code: "NumpadEnter", label: "Numpad Enter", group: "Numpad" },
-  { code: "NumpadDecimal", label: "Numpad .", group: "Numpad" },
-  ...Array.from({ length: 10 }, (_, index) => ({
-    code: `Numpad${index}`,
-    label: `Numpad ${index}`,
-    group: "Numpad",
-  })),
-  { code: "Backquote", label: "`", group: "Punctuation" },
-  { code: "Minus", label: "-", group: "Punctuation" },
-  { code: "Equal", label: "=", group: "Punctuation" },
-  { code: "BracketLeft", label: "[", group: "Punctuation" },
-  { code: "BracketRight", label: "]", group: "Punctuation" },
-  { code: "Backslash", label: "\\", group: "Punctuation" },
-  { code: "Semicolon", label: ";", group: "Punctuation" },
-  { code: "Quote", label: "'", group: "Punctuation" },
-  { code: "Comma", label: ",", group: "Punctuation" },
-  { code: "Period", label: ".", group: "Punctuation" },
-  { code: "Slash", label: "/", group: "Punctuation" },
-  { code: "IntlBackslash", label: "Intl \\", group: "Punctuation" },
-  { code: "Escape", label: "Escape", group: "Other" },
-  { code: "Tab", label: "Tab", group: "Other" },
-  { code: "Space", label: "Space", group: "Other" },
-  { code: "Enter", label: "Enter", group: "Other" },
-  { code: "Backspace", label: "Backspace", group: "Other" },
-  { code: "ContextMenu", label: "Context Menu", group: "Other" },
-  { code: "PrintScreen", label: "Print Screen", group: "Other" },
-  { code: "Pause", label: "Pause", group: "Other" },
-  { code: "ScrollLock", label: "Scroll Lock", group: "Other" },
-];
-
-const MOUSE_CATALOG: BindingCatalogEntry[] = [
-  { code: "0", label: "Mouse Left", group: "Mouse" },
-  { code: "1", label: "Mouse Middle", group: "Mouse" },
-  { code: "2", label: "Mouse Right", group: "Mouse" },
-];
+const KEYBOARD_CATALOG: BindingCatalogEntry[] = INPUT_KEYS.filter(
+  (entry) => entry.device === "key" && entry.key !== "None",
+).map(({ code, label, group }) => ({ code, label, group }));
+const MOUSE_CATALOG: BindingCatalogEntry[] = INPUT_KEYS.filter(
+  (entry) => entry.device === "mouseButton",
+).map(({ code, label, group }) => ({ code, label, group }));
 
 const POINTER_CATALOG: BindingCatalogEntry[] = [
   { code: "primary", label: "Primary Pointer", group: "Pointer" },

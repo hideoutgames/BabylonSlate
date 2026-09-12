@@ -18,10 +18,27 @@ import {
   pinListFromParameterRows,
   pinTypeFromParameterType,
   pinsFromNodeData,
+  structNodePropertyRows,
   assetPickerAllowedTypes,
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "./graph-inspector";
+
+describe("structNodePropertyRows", () => {
+  it("selects a live structure schema and clears defaults belonging to the previous type", () => {
+    const patch = vi.fn();
+    const rows = structNodePropertyRows("struct.make", {
+      structGuid: "old", "default:Health": 99,
+    }, patch, [{ guid: "stats", name: "Stats", fields: [{ name: "Health", typeId: "float", defaultValue: 10 }] }]);
+    const row = rows[0]!;
+    if (row.kind !== "enum") throw new Error("Expected type selector");
+    row.onChange("stats");
+    expect(patch).toHaveBeenCalledWith({
+      structGuid: "stats", title: "Make Stats", "default:Health": undefined,
+      fields: [{ name: "Health", typeId: "float", defaultValue: 10 }],
+    });
+  });
+});
 
 describe("assetPickerAllowedTypes", () => {
   it("uses catalog typeClassIds so Mesh Get/Set can pick Mesh or Model", () => {
@@ -180,15 +197,17 @@ describe("inspectorLiteralPinDefaults", () => {
 });
 
 describe("pinDefaultPropertyRows", () => {
-  it("offers input binding kinds, devices and the selected mapping names", () => {
+  it("leaves authored string fields editable regardless of input-related names", () => {
+    const patch = vi.fn();
     const rows = pinDefaultPropertyRows([
-      { pinId: "kind", name: "Mapping Kind", type: STRING, value: "axis" },
-      { pinId: "mapping", name: "Mapping", type: STRING, value: "Move" },
-      { pinId: "device", name: "Input Device", type: STRING, value: "key" },
-    ], () => {}, { actionNames: ["Jump"], axisNames: ["Move", "Look"] });
-    expect(rows[0]).toMatchObject({ kind: "enum", options: [{ value: "action", label: "Action" }, { value: "axis", label: "Axis" }] });
-    expect(rows[1]).toMatchObject({ kind: "enum", options: [{ value: "Move", label: "Move" }, { value: "Look", label: "Look" }] });
-    expect(rows[2]).toMatchObject({ kind: "enum", options: expect.arrayContaining([{ value: "key", label: "Keyboard" }]) });
+      { pinId: "device", name: "Input Device", type: STRING, value: "Custom" },
+      { pinId: "action", name: "action", type: STRING, value: "Describe" },
+    ], patch);
+    expect(rows.every((row) => row.kind === "text")).toBe(true);
+    const row = rows[0]!;
+    if (row.kind !== "text") throw new Error("Expected text");
+    row.onChange("My Device");
+    expect(patch).toHaveBeenCalledWith({ "default:device": "My Device" });
   });
 
   it("maps applicable pin defaults onto property-grid rows and writes default: keys", () => {
@@ -221,36 +240,6 @@ describe("pinDefaultPropertyRows", () => {
     expect(onPatch).toHaveBeenCalledWith({
       "default:tint": { x: 0, y: 1, z: 0, w: 0.5 },
     });
-  });
-
-  it("turns unconnected action and axis pins into mapping enums", () => {
-    const onPatch = vi.fn();
-    const rows = pinDefaultPropertyRows(
-      [
-        { pinId: "action", name: "action", type: STRING, value: "Jump" },
-        { pinId: "axis", name: "axis", type: STRING, value: "Move" },
-        { pinId: "msg", name: "message", type: STRING, value: "hi" },
-      ],
-      onPatch,
-      {
-        actionNames: ["Jump", "Confirm"],
-        axisNames: ["Move", "Look"],
-      },
-    );
-    expect(rows).toMatchObject([
-      { kind: "enum", id: "action", label: "action", value: "Jump" },
-      { kind: "enum", id: "axis", label: "axis", value: "Move" },
-      { kind: "text", id: "msg", label: "message", value: "hi" },
-    ]);
-    const action = rows[0];
-    if (action?.kind === "enum") {
-      expect(action.options.map((option) => option.value)).toEqual([
-        "Jump",
-        "Confirm",
-      ]);
-      action.onChange("Confirm");
-    }
-    expect(onPatch).toHaveBeenCalledWith({ "default:action": "Confirm" });
   });
 
   it("maps vec4 to four-axis scrubs and enumRef to member options", () => {
@@ -458,8 +447,8 @@ describe("collectEnumMemberNames", () => {
         ],
       ),
     ).toEqual({
-      "engine:InputDevice": ["key", "mouseButton", "pointer", "gamepadButton", "gamepadAxis", "touch"],
-      "engine:InputRebindStatus": ["idle", "listening", "completed", "cancelled"],
+      "engine:Key": expect.arrayContaining(["KeyW", "MouseLeft", "Gamepad1Button0", "Gamepad1Axis0"]),
+      "engine:InputComponent": ["X", "Y"],
       "enum-1": ["Idle", "Run"],
       "enum-2": ["Red", "Blue"],
       "engine:CollisionChannel": [

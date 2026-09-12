@@ -34,6 +34,26 @@ test(
       workspace.getByRole("button", { name: "Listen", exact: true }),
     ).toHaveCount(4);
     await expect(workspace.getByTestId("input-details-panel")).toBeVisible();
+    const selectedControl = workspace.getByRole("group", {
+      name: "Control 2",
+      exact: true,
+    });
+    await selectedControl.click({ position: { x: 4, y: 4 } });
+    await expect(selectedControl).toHaveAttribute("aria-current", "true");
+    await expect(
+      workspace.getByRole("button", { name: "Details", exact: true }),
+    ).toHaveCount(0);
+    const removeControl = selectedControl.getByRole("button", {
+      name: "Remove Control 2",
+    });
+    const rowBounds = await selectedControl.boundingBox();
+    const removeBounds = await removeControl.boundingBox();
+    expect(
+      rowBounds!.x + rowBounds!.width - removeBounds!.x - removeBounds!.width,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      rowBounds!.x + rowBounds!.width - removeBounds!.x - removeBounds!.width,
+    ).toBeLessThanOrEqual(12);
     await workspace
       .getByRole("button", { name: "Listen", exact: true })
       .first()
@@ -54,6 +74,8 @@ test(
         .getByRole("button", { name: "Add Preset" })
         .boundingBox();
       expect(button!.height).toBeGreaterThanOrEqual(44);
+      expect(removeBounds!.height).toBeGreaterThanOrEqual(44);
+      expect(removeBounds!.width).toBeGreaterThanOrEqual(44);
     }
     await page
       .locator(
@@ -66,7 +88,7 @@ test(
     await page.getByTestId("graph-add-node").click();
     await page.getByTestId("node-palette-search").fill("CameraMove");
     const event = page
-      .locator('[data-testid^="node-palette-item-input.event:"]')
+      .locator('[data-testid^="node-palette-item-input.axisEvent:"]')
       .filter({ hasText: "Event CameraMove" });
     await expect(event).toHaveCount(1);
     await event.click();

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { Trash2Icon } from "lucide-react";
 import {
   normalizeInputAssetPayload,
   type InputAssetPayload,
@@ -13,6 +14,7 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { cn } from "@babylonslate/ui/lib/utils";
 import {
   Empty,
   EmptyHeader,
@@ -22,6 +24,7 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useInputAssetEditing } from "../context/input-asset-editing-context";
+import { IconActionButton } from "../components/icon-action-button";
 
 type Binding = InputAssetPayload["bindings"][number];
 const DEVICES: Array<{ id: InputDevice; label: string }> = [
@@ -29,8 +32,6 @@ const DEVICES: Array<{ id: InputDevice; label: string }> = [
   { id: "mouseButton", label: "Mouse Button" },
   { id: "gamepadButton", label: "Gamepad Button" },
   { id: "gamepadAxis", label: "Gamepad Axis" },
-  { id: "pointer", label: "Pointer Button" },
-  { id: "touch", label: "Touch Control" },
 ];
 
 function useInputDocument() {
@@ -218,7 +219,7 @@ export function InputBindingsPanel(_props: IDockviewPanelProps) {
             <EmptyHeader>
               <EmptyTitle>No Controls</EmptyTitle>
               <EmptyDescription>
-                Add a keyboard, mouse, gamepad, or touch control
+                Add a keyboard, mouse, or gamepad control
                 {isAxis ? ", or start with a preset" : ""}.
               </EmptyDescription>
             </EmptyHeader>
@@ -228,19 +229,34 @@ export function InputBindingsPanel(_props: IDockviewPanelProps) {
             {asset.bindings.map((binding, index) => (
               <div
                 key={binding.id}
-                className={`flex flex-wrap items-center gap-2 p-2 ${selectedId === binding.id ? "bg-accent" : index % 2 ? "bg-[var(--list-stripe)]" : ""}`}
+                role="group"
+                aria-label={`Control ${index + 1}`}
+                aria-current={selectedId === binding.id ? "true" : undefined}
+                tabIndex={0}
+                className={cn(
+                  "flex flex-wrap items-center gap-2 p-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  selectedId === binding.id
+                    ? "bg-accent"
+                    : index % 2 && "bg-[var(--list-stripe)]",
+                )}
+                onClick={() => select(binding.id)}
+                onKeyDown={(event) => {
+                  if (
+                    event.target !== event.currentTarget ||
+                    event.nativeEvent.isComposing ||
+                    (event.key !== "Enter" && event.key !== " ")
+                  )
+                    return;
+                  event.preventDefault();
+                  select(binding.id);
+                }}
               >
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-pressed={selectedId === binding.id}
-                  onClick={() => select(binding.id)}
-                >
+                <span className="text-sm">
                   {
                     DEVICES.find((device) => device.id === binding.device)
                       ?.label
                   }
-                </Button>
+                </span>
                 {(["ctrl", "shift", "alt", "meta"] as const).some(
                   (modifier) => binding.modifiers?.[modifier],
                 ) && (
@@ -292,18 +308,12 @@ export function InputBindingsPanel(_props: IDockviewPanelProps) {
                       : "Positive"}
                   </span>
                 )}
-                <Button
-                  size="sm"
+                <IconActionButton
                   variant="ghost"
-                  onClick={() => select(binding.id)}
-                >
-                  Details
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Remove control ${index + 1}`}
-                  onClick={() => {
+                  className="ml-auto pointer-coarse:min-w-11"
+                  label={`Remove Control ${index + 1}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
                     commit({
                       ...asset,
                       bindings: asset.bindings.filter(
@@ -314,8 +324,8 @@ export function InputBindingsPanel(_props: IDockviewPanelProps) {
                     if (listening === binding.id) setListening(null);
                   }}
                 >
-                  Remove
-                </Button>
+                  <Trash2Icon />
+                </IconActionButton>
               </div>
             ))}
           </div>
@@ -323,7 +333,7 @@ export function InputBindingsPanel(_props: IDockviewPanelProps) {
         <p role="status" className="text-xs text-muted-foreground">
           {listening
             ? "Press a key or key combination. Escape or leaving this window cancels."
-            : "Select Details to adjust a control. Changes use the document’s normal save and undo commands."}
+            : "Select a control to adjust its details. Changes use the document’s normal save and undo commands."}
         </p>
       </div>
     </PanelFrame>

@@ -14,7 +14,8 @@ import { objectLiteralKey } from "./member-pins";
 import { titleCaseEnumMember } from "./enum";
 
 export function structGuidOf(properties: Record<string, unknown>): string {
-  return typeof properties.structGuid === "string" && properties.structGuid.trim()
+  return typeof properties.structGuid === "string" &&
+    properties.structGuid.trim()
     ? properties.structGuid.trim()
     : "";
 }
@@ -42,16 +43,16 @@ export function structFieldsOf(
   });
 }
 
-function fieldPins(
-  fields: readonly StructField[],
-  direction: "in" | "out",
-) {
+function fieldPins(fields: readonly StructField[], direction: "in" | "out") {
   return fields.map((field) =>
     pin(
       field.name,
       titleCaseEnumMember(field.name),
       direction,
       pinTypeForMember(field.typeId, field.typeClassId),
+      "data",
+      direction === "in" && field.defaultValue !== undefined,
+      direction === "in" ? field.defaultValue : undefined,
     ),
   );
 }
@@ -96,9 +97,11 @@ export const structNodes: NodeDefinition[] = [
       const value = ctx.input("in");
       const out: Record<string, string> = {};
       for (const field of structFieldsOf(ctx.node.properties)) {
-        out[field.name] = structGuidOf(ctx.node.properties) === "engine:InputType" && field.name === "Name"
-          ? `(ctx.getInputState?.(${value})?.input.Name ?? (${value})?.Name ?? "")`
-          : `(${value})[${JSON.stringify(field.name)}]`;
+        out[field.name] =
+          structGuidOf(ctx.node.properties) === "engine:InputType" &&
+          field.name === "Name"
+            ? `(ctx.getInputState?.(${value})?.input.Name ?? (${value})?.Name ?? "")`
+            : `(${value})[${JSON.stringify(field.name)}]`;
       }
       return out;
     },
