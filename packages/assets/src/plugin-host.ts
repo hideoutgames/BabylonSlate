@@ -330,10 +330,12 @@ export async function mountEnabledPlugins(
       .filter((plugin) => options.enabledGuids.has(plugin.pluginGuid))
       .map((plugin) => plugin.pluginGuid),
   );
-  for (const plugin of plugins) {
-    const rootId = `plugin:${plugin.pluginGuid}`;
-    if (!mountIds.has(plugin.pluginGuid) && registry.getRoot(rootId)) {
-      registry.unmountRoot(rootId);
+  for (const root of registry.listRoots()) {
+    if (
+      root.kind === "plugin" &&
+      !mountIds.has(root.id.slice("plugin:".length))
+    ) {
+      registry.unmountRoot(root.id);
     }
   }
   for (const plugin of order) {

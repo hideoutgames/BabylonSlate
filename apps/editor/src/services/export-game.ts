@@ -31,7 +31,9 @@ import {
 import {
   normalizeFontPayload,
   resolvePluginEnabled,
+  resolvePluginGraph,
   type IndexedAsset,
+  type PluginGraphInput,
 } from "@babylonslate/assets";
 import {
   missingPackedMaterialTextureGuids,
@@ -62,10 +64,7 @@ export function assetsFromIndexed(
   }));
 }
 
-export type ExportPluginDescriptor = {
-  pluginGuid: string;
-  enabledByDefault: boolean;
-};
+export type ExportPluginDescriptor = PluginGraphInput;
 
 export type CollectExportGameParams = {
   project?: { name: string; version: string };
@@ -106,24 +105,50 @@ export type CollectExportGameParams = {
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
 };
 
-function enabledPluginGuids(
+export function resolveExportPluginGraph(
   plugins: readonly ExportPluginDescriptor[],
   projectOverrides: Record<string, { enabled: boolean }>,
   preset: ExportPreset,
-): Set<string> {
-  const enabled = new Set<string>();
-  for (const plugin of plugins) {
-    if (
-      resolvePluginEnabled(
-        plugin.enabledByDefault,
-        projectOverrides[plugin.pluginGuid]?.enabled,
-        preset.pluginOverrides[plugin.pluginGuid]?.enabled,
-      )
-    ) {
-      enabled.add(plugin.pluginGuid);
-    }
-  }
-  return enabled;
+): ReturnType<typeof resolvePluginGraph> {
+  const enabled = plugins.filter((plugin) =>
+    resolvePluginEnabled(
+      plugin.settings.enabledByDefault,
+      projectOverrides[plugin.pluginGuid]?.enabled,
+      preset.pluginOverrides[plugin.pluginGuid]?.enabled,
+    ),
+  );
+  const graph = resolvePluginGraph(enabled);
+  const name = (guid: string | undefined) =>
+    plugins.find((plugin) => plugin.pluginGuid === guid)?.settings
+      .displayName ??
+    guid ??
+    "Plugin";
+  return {
+    order: graph.order,
+    diagnostics: graph.diagnostics.map((diagnostic) => {
+      const plugin = name(diagnostic.pluginGuid);
+      const dependency = name(diagnostic.dependencyGuid);
+      let message: string;
+      switch (diagnostic.code) {
+        case "plugin.missing":
+          message = `Enable or install "${dependency}", required by "${plugin}", or disable "${plugin}" in the export preset.`;
+          break;
+        case "plugin.unsatisfiable":
+          message = `"${plugin}" requires "${dependency}" ${diagnostic.versionRange} (installed ${diagnostic.foundVersion}).`;
+          break;
+        case "plugin.engine_unsatisfiable":
+          message = `"${plugin}" requires engine ${diagnostic.versionRange} (current ${diagnostic.foundVersion}).`;
+          break;
+        case "plugin.dependency_blocked":
+          message = `"${plugin}" depends on "${dependency}". Resolve its plugin errors or disable "${plugin}" in the export preset.`;
+          break;
+        case "plugin.cycle":
+          message = `Resolve the plugin dependency cycle: ${(diagnostic.plugins ?? []).map(name).join(" → ")}.`;
+          break;
+      }
+      return { ...diagnostic, message };
+    }),
+  };
 }
 
 function packSceneGuidForAsset(
@@ -217,11 +242,15 @@ export async function collectAndExportGame(
   const bundleDebugger =
     params.previewBuild === true ? true : preset.bundleDebugger;
   const mode = preset.packed === false ? "loose" : "packed";
-  const pluginEnabledGuids = enabledPluginGuids(
+  const pluginGraph = resolveExportPluginGraph(
     params.plugins,
     params.projectPluginOverrides,
     preset,
   );
+  if (pluginGraph.diagnostics.length > 0) {
+    return { ok: false, error: pluginGraph.diagnostics.map((diagnostic) => diagnostic.message).join("\n") };
+  }
+  const pluginEnabledGuids = new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid));
   const closure = collectExportReachability({
     startupSceneGuid: params.startupSceneGuid,
     gameInstanceClass: params.gameInstanceClass,

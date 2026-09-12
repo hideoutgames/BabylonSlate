@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PROJECT_FILE } from "@babylonslate/core";
 import {
   createDefaultPluginSettings,
+  createVfsBlobStore,
   createEmptyProjectFiles,
   encodeBabasset,
   encodePluginSettingsDocument,
@@ -60,6 +61,91 @@ async function writeClassAsset(
 }
 
 describe("ProjectService plugin roots", () => {
+  it("indexes export-enabled dependencies without changing the editor's disabled roots", async () => {
+    const { storage, service } = await scaffolded();
+    const dependency = createDefaultPluginSettings({
+      pluginGuid: "base",
+      displayName: "Base",
+    });
+    const dependent = createDefaultPluginSettings({
+      pluginGuid: "extra",
+      displayName: "Extra",
+    });
+    dependent.pluginDependencies = [{ guid: "base", versionRange: "^1.0.0" }];
+    await writeProjectPlugin(storage, "base", dependency);
+    await writeProjectPlugin(storage, "extra", dependent);
+    await writeClassAsset(
+      storage,
+      "plugins/extra/assets/Extra.class.babasset",
+      { guid: "extra-class", name: "Extra" },
+    );
+    await service.remountRegistry();
+
+    const assets = await service.listExportAssets(new Set(["base", "extra"]));
+
+    expect(
+      assets.find((asset) => asset.header.guid === "extra-class")?.rootId,
+    ).toBe("plugin:extra");
+    expect(assets.some((asset) => asset.rootId === "project")).toBe(true);
+    expect(service.registry?.getRoot("plugin:base")).toBeUndefined();
+    expect(service.registry?.getRoot("plugin:extra")).toBeUndefined();
+    expect(service.registry?.getByGuid("extra-class")).toBeUndefined();
+  });
+
+  it("loads blob chunks for export-enabled engine plugins that remain disabled in the editor", async () => {
+    const { service } = await scaffolded();
+    const engineStorage = new MemoryStorageAdapter("documents");
+    await engineStorage.openDocumentsProject("Engine Plugins");
+    const settings = createDefaultPluginSettings({
+      pluginGuid: "engine-export",
+      displayName: "Engine Export",
+    });
+    await engineStorage.mkdir("engine-export/assets", true);
+    await engineStorage.writeBinary(
+      "engine-export/engine-export.plugin.babasset",
+      await encodePluginSettingsDocument(settings),
+    );
+    const blobs = createVfsBlobStore(engineStorage);
+    const payload = new Uint8Array([3, 5, 8]);
+    await engineStorage.writeBinary(
+      "engine-export/assets/Texture.texture.babasset",
+      await encodeBabasset({
+        header: {
+          guid: "engine-texture",
+          type: "Texture",
+          name: "Texture",
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: [],
+          parentClass: null,
+          payload: {},
+        },
+        chunks: [
+          {
+            id: "payload",
+            kind: "payload",
+            mime: "application/octet-stream",
+            data: payload,
+          },
+        ],
+        blobThreshold: 0,
+        writeBlob: (hash, bytes) => blobs.writeBlob(hash, bytes),
+      }),
+    );
+    service.setEnginePluginStorage(engineStorage);
+    await service.remountRegistry();
+
+    const assets = await service.listExportAssets(new Set(["engine-export"]));
+    const texture = assets.find(
+      (asset) => asset.header.guid === "engine-texture",
+    )!;
+    expect(await service.readAssetChunk(texture.path, "payload")).toEqual(
+      payload,
+    );
+    expect(service.registry?.getRoot("plugin:engine-export")).toBeUndefined();
+  });
+
   it("keeps app-owned Engine Plugin and template libraries out of the project list", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("__slate_engine_plugins__");

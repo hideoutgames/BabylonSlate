@@ -324,6 +324,37 @@ describe("resolvePluginGraph", () => {
 });
 
 describe("mountEnabledPlugins", () => {
+  it("removes stale mounted roots when a plugin is no longer discovered", async () => {
+    const storage = await projectStorage();
+    const settings = createDefaultPluginSettings({
+      pluginGuid: "removed",
+      displayName: "Removed",
+    });
+    await writePluginFolder(storage, "Removed", settings, [
+      {
+        relativePath: "Removed.class.babasset",
+        guid: "removed-class",
+        type: "Class",
+        name: "Removed",
+      },
+    ]);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await mountEnabledPlugins(registry, await discoverProjectPlugins(storage), {
+      enabledGuids: new Set(["removed"]),
+    });
+    expect(registry.getByGuid("removed-class")).toBeTruthy();
+    await storage.remove("plugins/Removed");
+
+    await mountEnabledPlugins(registry, await discoverProjectPlugins(storage), {
+      enabledGuids: new Set(["removed"]),
+    });
+
+    expect(registry.getRoot("plugin:removed")).toBeUndefined();
+    expect(registry.getByGuid("removed-class")).toBeUndefined();
+    expect(registry.getRoot("project")).toBeTruthy();
+  });
+
   it("unmounts dependent content when its prerequisite is disabled and restores it when re-enabled", async () => {
     const storage = await projectStorage();
     const base = createDefaultPluginSettings({

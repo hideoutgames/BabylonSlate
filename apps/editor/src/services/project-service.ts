@@ -76,6 +76,7 @@ import {
   type MigrationPending,
   type PluginDescriptor,
   type PluginDiagnostic,
+  type IndexedAsset,
   type ProjectTreeFile,
   createDefaultPluginSettings,
   discoverEnginePlugins,
@@ -454,6 +455,30 @@ export class ProjectService {
 
   get pluginGraphDiagnostics(): PluginDiagnostic[] {
     return this.pluginDiagnostics;
+  }
+
+  /** Export presets scan their selected plugin roots without changing editor mounts. */
+  async listExportAssets(
+    enabledPluginGuids: ReadonlySet<string>,
+  ): Promise<IndexedAsset[]> {
+    const exportRegistry = new AssetRegistry(this.storage, {
+      blobs: this.blobs,
+    });
+    await mountEnabledPlugins(exportRegistry, this.pluginDescriptors, {
+      enabledGuids: enabledPluginGuids,
+      storageFor: (plugin) =>
+        plugin.source === "engine"
+          ? (this.enginePluginStorage ?? undefined)
+          : undefined,
+    });
+    const byGuid = new Map(
+      (this.assetRegistry?.list() ?? [])
+        .filter((asset) => !asset.rootId.startsWith("plugin:"))
+        .map((asset) => [asset.header.guid, asset]),
+    );
+    for (const asset of exportRegistry.list())
+      byGuid.set(asset.header.guid, asset);
+    return [...byGuid.values()];
   }
 
   setEnginePluginStorage(storage: ProjectStorage | null): void {
@@ -1033,7 +1058,8 @@ export class ProjectService {
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.blobsFor(indexed.rootId);
     }
-    return this.blobs;
+    const storage = this.storageForPath(path);
+    return storage === this.storage ? this.blobs : createVfsBlobStore(storage);
   }
 
   /** Re-scan project assets after registry file operations (import, create, delete). */

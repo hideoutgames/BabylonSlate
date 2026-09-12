@@ -24,7 +24,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@babylonslate/core";
-import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -52,7 +52,6 @@ import {
   decodeSourceToRgba,
   normalizeModelPayload,
   type ModelPayload,
-  resolvePluginEnabled,
   newAssetGuid,
   playerFilesHaveKtx2Transcoder,
 } from "@babylonslate/assets";
@@ -126,6 +125,7 @@ import type { ExportArtifact } from "@babylonslate/exporter";
 import {
   assetsFromIndexed,
   collectAndExportGame,
+  resolveExportPluginGraph,
   zipGameArtifact,
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
@@ -1270,8 +1270,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [projectService]);
 
   useEffect(() => {
-    void attachEnginePlugins();
-  }, [attachEnginePlugins]);
+    void ensureEnginePluginStorage();
+  }, []);
 
   const openProject = useCallback(async (source?: "folder" | "zip") => {
     await attachEnginePlugins();
@@ -1655,8 +1655,28 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       /** When set, overrides `playerFilesHaveKtx2Transcoder` for Texture packing. */
       transcoderAvailable?: boolean;
     }) => {
-      const list = projectService.registry?.list() ?? [];
       await flushAudioReverbForSave();
+      const preset =
+        projectDocument?.settings.exportPresets[0] ?? defaultExportPreset();
+      const plugins = projectService.plugins;
+      const projectPluginOverrides =
+        projectDocument?.settings.pluginOverrides ?? {};
+      const pluginGraph = resolveExportPluginGraph(
+        plugins,
+        projectPluginOverrides,
+        preset,
+      );
+      if (pluginGraph.diagnostics.length > 0) {
+        return {
+          ok: false as const,
+          error: pluginGraph.diagnostics
+            .map((diagnostic) => diagnostic.message)
+            .join("\n"),
+        };
+      }
+      const list = await projectService.listExportAssets(
+        new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid)),
+      );
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       const loaded = await loadExportDocuments({
         assets: list,
@@ -1687,12 +1707,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         reverbDecayScale: projectDocument?.settings.audio.reverbDecayScale,
         reverbDampingScale: projectDocument?.settings.audio.reverbDampingScale,
         assets: assetsFromIndexed(list),
-        plugins: projectService.plugins.map((plugin) => ({
-          pluginGuid: plugin.pluginGuid,
-          enabledByDefault: plugin.settings.enabledByDefault,
-        })),
-        projectPluginOverrides: projectDocument?.settings.pluginOverrides ?? {},
-        preset: projectDocument?.settings.exportPresets[0],
+        plugins,
+        projectPluginOverrides,
+        preset,
         parentOf: classParentLookup(list),
         sceneByGuid: loaded.sceneByGuid,
         graphByGuid: loaded.graphByGuid,
@@ -2459,11 +2476,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectDocumentRef.current?.settings.editorUtilityObjects ?? [],
       projectService.plugins
         .filter((plugin) =>
-          resolvePluginEnabled(
-            plugin.settings.enabledByDefault,
-            projectDocumentRef.current?.settings.pluginOverrides[plugin.pluginGuid]
-              ?.enabled,
-          ),
+          projectService.registry?.getRoot(`plugin:${plugin.pluginGuid}`),
         )
         .map((plugin) => plugin.settings),
     );

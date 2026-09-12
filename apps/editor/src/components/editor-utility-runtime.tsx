@@ -3,7 +3,6 @@ import { ScriptHost, type ScriptHostServices } from "@babylonslate/runtime";
 import { ClassRegistry } from "@babylonslate/object-model";
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
-import { resolvePluginEnabled } from "@babylonslate/assets";
 import {
   EDITOR_UTILITY_EVENTS,
   EDITOR_UTILITY_LIFECYCLE_EVENT,
@@ -13,7 +12,9 @@ import {
 } from "../lib/editor-utility-scripts";
 import { mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
 
-function editorHostServices(appendLog: (line: string) => void): ScriptHostServices {
+function editorHostServices(
+  appendLog: (line: string) => void,
+): ScriptHostServices {
   return {
     classRegistry: new ClassRegistry(),
     log: (_severity, category, message) => {
@@ -46,6 +47,7 @@ export function EditorUtilityRuntime() {
     projectName,
     openDocuments,
     pluginDescriptors,
+    assetRegistry,
   } = useDocuments();
   const { appendLog } = usePlay();
   const appendLogRef = useRef(appendLog);
@@ -61,13 +63,7 @@ export function EditorUtilityRuntime() {
   const registeredKey = mergePluginEditorUtilityObjects(
     projectDocument?.settings.editorUtilityObjects ?? [],
     pluginDescriptors
-      .filter((plugin) =>
-        resolvePluginEnabled(
-          plugin.settings.enabledByDefault,
-          projectDocument?.settings.pluginOverrides?.[plugin.pluginGuid]
-            ?.enabled,
-        ),
-      )
+      .filter((plugin) => assetRegistry?.getRoot(`plugin:${plugin.pluginGuid}`))
       .map((plugin) => plugin.settings),
   ).join("|");
 
