@@ -201,8 +201,16 @@ export function reconcileTilemapTilesets(
   const refs = map.tilesets.length > 0 ? map.tilesets : map.tilesetGuid
     ? [{ guid: map.tilesetGuid, firstGid: 1, tileCount: 0 }] : [];
   if (refs.length === 0) return map;
-  const highest = highestPaintedGid(map);
   const ordered = [...refs].sort((a, b) => a.firstGid - b.firstGid);
+  // Pointer/selection redraws normally keep the same capacities. Scan painted
+  // cells only when a legacy reservation, atlas growth or overlap needs repair.
+  if (map.tilesets.length > 0 && ordered.every((ref, index) => {
+    const atlas = knownTilesets.get(ref.guid);
+    return ref.tileCount > 0
+      && ref.tileCount >= (atlas ? atlasTileCount(atlas) : 0)
+      && ref.firstGid + ref.tileCount <= (ordered[index + 1]?.firstGid ?? Infinity);
+  })) return map;
+  const highest = highestPaintedGid(map);
   const nextRefs = new Map(ordered.map((ref, index) => {
     const nextFirst = ordered[index + 1]?.firstGid ?? Math.max(ref.firstGid + 1, highest + 1);
     return [ref.guid, { ...ref, tileCount: ref.tileCount || Math.max(1, nextFirst - ref.firstGid) }];
