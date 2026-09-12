@@ -121,7 +121,10 @@ export function MaterialEditingProvider({
   const [previewSceneEpoch, setPreviewSceneEpoch] = useState(0);
   useEffect(() => {
     const host = hostRef.current;
-    if (host) setSceneRenderSettings(host.scene, projectDocument?.settings.render ?? {});
+    if (host) {
+      setSceneRenderSettings(host.scene, projectDocument?.settings.render ?? {});
+      presenterRef.current?.present({ force: true });
+    }
   }, [projectDocument?.settings.render, previewSceneEpoch]);
   const frozen = !active || play.playing;
 

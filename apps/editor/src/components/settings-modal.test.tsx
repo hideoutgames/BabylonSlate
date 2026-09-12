@@ -416,21 +416,23 @@ describe("SettingsModal project authoring", () => {
 
   it("shows CEL controls only in CEL and retains their values when returning from PBR", async () => {
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    const selectMode = async (name: "CEL" | "PBR") => {
+      fireEvent.click(screen.getByTestId("setting-render-mode"));
+      const option = await screen.findByRole("option", { name });
+      fireEvent.pointerDown(option);
+      fireEvent.click(option);
+      await waitFor(() => expect(lastProjectRender.current?.mode).toBe(name.toLowerCase()));
+      view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    };
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
     expect(screen.queryByTestId("project-cel-settings")).toBeNull();
-    fireEvent.click(screen.getByTestId("setting-render-mode"));
-    fireEvent.click(await screen.findByRole("option", { name: "CEL" }));
-    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    await selectMode("CEL");
     fireEvent.change(screen.getByLabelText("Shadow Bands"), { target: { value: "6" } });
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
-    fireEvent.click(screen.getByTestId("setting-render-mode"));
-    fireEvent.click(await screen.findByRole("option", { name: "PBR" }));
-    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    await selectMode("PBR");
     expect(screen.queryByTestId("project-cel-settings")).toBeNull();
     expect(lastProjectRender.current?.cel?.shadowBands).toBe(6);
-    fireEvent.click(screen.getByTestId("setting-render-mode"));
-    fireEvent.click(await screen.findByRole("option", { name: "CEL" }));
-    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    await selectMode("CEL");
     expect((screen.getByLabelText("Shadow Bands") as HTMLInputElement).value).toBe("6");
   });
 

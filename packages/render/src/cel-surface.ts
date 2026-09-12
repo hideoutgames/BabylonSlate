@@ -1,15 +1,29 @@
 import {
-  AddBlock, FogBlock, FragmentOutputBlock, InputBlock, NodeMaterialSystemValues,
-  TextureBlock, VectorMergerBlock,
-  type NodeMaterial, type NodeMaterialBlock, type NodeMaterialConnectionPoint,
+  AddBlock,
+  FogBlock,
+  FragmentOutputBlock,
+  InputBlock,
+  NodeMaterialSystemValues,
+  TextureBlock,
+  VectorMergerBlock,
+  type NodeMaterial,
+  type NodeMaterialBlock,
+  type NodeMaterialConnectionPoint,
 } from "@babylonjs/core";
 import type { MaterialBuildPlan } from "@babylonslate/shader-graph";
 import { CelLightBlock } from "./cel-light-block";
-import { createConstantBlock, type MaterialPlumbing } from "./material-block-registry";
+import {
+  createConstantBlock,
+  type MaterialPlumbing,
+} from "./material-block-registry";
 import { sceneRenderingSettings } from "./render-settings";
 import { syncSceneLighting } from "./scene-lighting";
 
-type OutputPoint = (pin: string, name: string, color: boolean) => NodeMaterialConnectionPoint | null;
+type OutputPoint = (
+  pin: string,
+  name: string,
+  color: boolean,
+) => NodeMaterialConnectionPoint | null;
 
 export function installCelSurface(
   material: NodeMaterial,
@@ -21,12 +35,16 @@ export function installCelSurface(
 ): void {
   if (plan.shadingModel === "unlit") return;
   const state = sceneRenderingSettings(material.getScene());
-  const colorTextures = created.filter((block): block is TextureBlock => block instanceof TextureBlock && block.convertToLinearSpace);
+  const colorTextures = created.filter(
+    (block): block is TextureBlock =>
+      block instanceof TextureBlock && block.convertToLinearSpace,
+  );
   let cel: NodeMaterialBlock | undefined;
   let active = pbr;
   const select = (rebuild: boolean): void => {
     const useCel = state.mode === "cel";
-    if (useCel && !cel) cel = createCelSurface(material.name, created, plumbing, outputPoint);
+    if (useCel && !cel)
+      cel = createCelSurface(material.name, created, plumbing, outputPoint);
     const next = useCel ? cel! : pbr;
     if (active === next) return;
     material.removeOutputNode(active);
@@ -67,7 +85,12 @@ function createCelSurface(
   const base = outputPoint("baseColor", `${name}_celBase`, true);
   if (base) base.connectTo(lighting.diffuseColor);
   else {
-    const fallback = createConstantBlock(`${name}_celFallback`, "vec3", [0.8, 0.8, 0.8], true);
+    const fallback = createConstantBlock(
+      `${name}_celFallback`,
+      "vec3",
+      [0.8, 0.8, 0.8],
+      true,
+    );
     created.push(fallback);
     fallback.output.connectTo(lighting.diffuseColor);
   }

@@ -5,7 +5,11 @@ import { lightsFragmentFunctions } from "@babylonjs/core/Shaders/ShadersInclude/
 import { lightsFragmentFunctionsWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/lightsFragmentFunctions";
 import { sceneRenderingSettings } from "./render-settings";
 
-export const CEL_UNIFORMS = ["slateCelBands", "slateCelSpecular", "slateCelLight"];
+export const CEL_UNIFORMS = [
+  "slateCelBands",
+  "slateCelSpecular",
+  "slateCelLight",
+];
 
 /** Display-space lighting deliberately avoids a PBR BRDF and tone mapping. */
 export function celFunctions(wgsl: boolean): string {
@@ -37,39 +41,93 @@ vec3 slateCelSurfaceLight(vec3 color) {
   if (!wgsl) return source;
   // This small shared source only uses scalar/vector declarations and functions.
   return source
-    .replace(/(float|vec3) (slateCel\w+)\(([^)]*)\)/g, (_all, type: string, name: string, args: string) =>
-      `fn ${name}(${args.replace(/(float|vec3) (\w+)/g, (_arg, t: string, n: string) => `${n}: ${t === "float" ? "f32" : "vec3f"}`)}) -> ${type === "float" ? "f32" : "vec3f"}`)
+    .replace(
+      /(float|vec3) (slateCel\w+)\(([^)]*)\)/g,
+      (_all, type: string, name: string, args: string) =>
+        `fn ${name}(${args.replace(/(float|vec3) (\w+)/g, (_arg, t: string, n: string) => `${n}: ${t === "float" ? "f32" : "vec3f"}`)}) -> ${type === "float" ? "f32" : "vec3f"}`,
+    )
     .replace(/float (\w+) =/g, "var $1: f32 =")
     .replace(/vec3\(/g, "vec3f(")
-    .replace(/\b(slateCelBands|slateCelSpecular|slateCelLight)\b/g, "uniforms.$1");
+    .replace(
+      /\b(slateCelBands|slateCelSpecular|slateCelLight)\b/g,
+      "uniforms.$1",
+    );
 }
 
 /** Retain Babylon's light transforms, colors, ranges, cones and shadow bindings. */
 export function celLightingFunctions(source: string, wgsl: boolean): string {
   const scalar = wgsl ? "var ndl: f32=" : "float ndl=";
   return source
-    .replaceAll(`${scalar}max(0.,dot(vNormal,lightVectorW));`, `${scalar}slateCelBand(max(0.,dot(vNormal,lightVectorW)));`)
-    .replaceAll(`${scalar}dot(vNormal,lightData.xyz)*0.5+0.5;`, `${scalar}slateCelBand(dot(vNormal,lightData.xyz)*0.5+0.5);`)
-    .replaceAll("ndl*diffuseColor*attenuation", "ndl*slateCelTint(diffuseColor)*slateCelAttenuation(attenuation)")
-    .replaceAll("mix(groundColor,diffuseColor,ndl)", "mix(slateCelTint(groundColor),slateCelTint(diffuseColor),ndl)")
-    .replaceAll("specComp=pow(specComp,max(1.,glossiness));", "specComp=slateCelHighlight(specComp,ndl);")
-    .replaceAll("specComp*specularColor*attenuation", "specComp*slateCelTint(specularColor)*slateCelAttenuation(attenuation)")
-    .replaceAll("specComp*specularColor;", "specComp*slateCelTint(specularColor);");
+    .replaceAll(
+      `${scalar}max(0.,dot(vNormal,lightVectorW));`,
+      `${scalar}slateCelBand(max(0.,dot(vNormal,lightVectorW)));`,
+    )
+    .replaceAll(
+      `${scalar}dot(vNormal,lightData.xyz)*0.5+0.5;`,
+      `${scalar}slateCelBand(dot(vNormal,lightData.xyz)*0.5+0.5);`,
+    )
+    .replaceAll(
+      "ndl*diffuseColor*attenuation",
+      "ndl*slateCelTint(diffuseColor)*slateCelAttenuation(attenuation)",
+    )
+    .replaceAll(
+      "mix(groundColor,diffuseColor,ndl)",
+      "mix(slateCelTint(groundColor),slateCelTint(diffuseColor),ndl)",
+    )
+    .replaceAll(
+      "specComp=pow(specComp,max(1.,glossiness));",
+      "specComp=slateCelHighlight(specComp,ndl);",
+    )
+    .replaceAll(
+      "specComp*specularColor*attenuation",
+      "specComp*slateCelTint(specularColor)*slateCelAttenuation(attenuation)",
+    )
+    .replaceAll(
+      "specComp*specularColor;",
+      "specComp*slateCelTint(specularColor);",
+    );
 }
 
 for (const wgsl of [false, true]) {
   const store = ShaderStore.GetIncludesShadersStore(wgsl ? 1 : 0);
-  store.slateCelLightFragment = (wgsl ? lightFragmentWGSL : lightFragment).shader
+  store.slateCelLightFragment = (
+    wgsl ? lightFragmentWGSL : lightFragment
+  ).shader
     .replace(/info\.diffuse\*shadow\b/g, "info.diffuse*slateCelBand(shadow)")
     .replace(/info\.specular\*shadow\b/g, "info.specular*slateCelBand(shadow)");
-  store.slateCelLightsFragmentFunctions = celFunctions(wgsl) + celLightingFunctions(
-    (wgsl ? lightsFragmentFunctionsWGSL : lightsFragmentFunctions).shader, wgsl,
-  );
+  store.slateCelLightsFragmentFunctions =
+    celFunctions(wgsl) +
+    celLightingFunctions(
+      (wgsl ? lightsFragmentFunctionsWGSL : lightsFragmentFunctions).shader,
+      wgsl,
+    );
 }
 
-export function bindCelSettings(effect: Effect, scene: Scene, unlit = false): void {
+export function bindCelSettings(
+  effect: Effect,
+  scene: Scene,
+  unlit = false,
+): void {
   const { cel } = sceneRenderingSettings(scene);
-  effect.setFloat4("slateCelBands", cel.shadowBands, cel.bandSoftness, cel.shadowThreshold, cel.shadowStrength);
-  effect.setFloat4("slateCelSpecular", cel.specularStrength, cel.specularSize, cel.specularSoftness, 0);
-  effect.setFloat4("slateCelLight", cel.lightColorInfluence, cel.lightFalloff === "banded" ? 1 : 0, unlit || !scene.lightsEnabled ? 1 : 0, 0);
+  effect.setFloat4(
+    "slateCelBands",
+    cel.shadowBands,
+    cel.bandSoftness,
+    cel.shadowThreshold,
+    cel.shadowStrength,
+  );
+  effect.setFloat4(
+    "slateCelSpecular",
+    cel.specularStrength,
+    cel.specularSize,
+    cel.specularSoftness,
+    0,
+  );
+  effect.setFloat4(
+    "slateCelLight",
+    cel.lightColorInfluence,
+    cel.lightFalloff === "banded" ? 1 : 0,
+    unlit || !scene.lightsEnabled ? 1 : 0,
+    0,
+  );
 }

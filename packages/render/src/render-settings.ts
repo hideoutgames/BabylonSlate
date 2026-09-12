@@ -8,7 +8,9 @@ import {
   type RenderProjectSettings,
 } from "@babylonslate/core";
 
-export type RenderShadingSettings = Partial<Pick<RenderProjectSettings, "mode" | "cel">>;
+export type RenderShadingSettings = Partial<
+  Pick<RenderProjectSettings, "mode" | "cel">
+>;
 type SceneRendering = {
   mode: RenderMode;
   cel: CelShadingSettings;
@@ -21,10 +23,19 @@ const scenes = new WeakMap<Scene, SceneRendering>();
 export function sceneRenderingSettings(scene: Scene): SceneRendering {
   let state = scenes.get(scene);
   if (!state) {
-    state = { mode: "pbr", cel: normalizeCelShadingSettings(undefined), project: {}, overrides: {}, listeners: new Set() };
+    state = {
+      mode: "pbr",
+      cel: normalizeCelShadingSettings(undefined),
+      project: {},
+      overrides: {},
+      listeners: new Set(),
+    };
     scenes.set(scene, state);
     const owned = state;
-    scene.onDisposeObservable.addOnce(() => { owned.listeners.clear(); scenes.delete(scene); });
+    scene.onDisposeObservable.addOnce(() => {
+      owned.listeners.clear();
+      scenes.delete(scene);
+    });
   }
   return state;
 }

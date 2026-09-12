@@ -40,15 +40,22 @@ export const CEL_SHADING_LIMITS = {
 } as const;
 
 /** Invalid override values inherit; finite out-of-range values are clamped. */
-export function normalizeCelShadingOverrides(value: unknown): CelShadingOverrides {
+export function normalizeCelShadingOverrides(
+  value: unknown,
+): CelShadingOverrides {
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;
   const result: CelShadingOverrides = {};
-  for (const key of Object.keys(CEL_SHADING_LIMITS) as (keyof typeof CEL_SHADING_LIMITS)[]) {
+  for (const key of Object.keys(
+    CEL_SHADING_LIMITS,
+  ) as (keyof typeof CEL_SHADING_LIMITS)[]) {
     const number = source[key];
     if (typeof number !== "number" || !Number.isFinite(number)) continue;
     const [min, max] = CEL_SHADING_LIMITS[key];
-    result[key] = Math.min(max, Math.max(min, key === "shadowBands" ? Math.round(number) : number));
+    result[key] = Math.min(
+      max,
+      Math.max(min, key === "shadowBands" ? Math.round(number) : number),
+    );
   }
   if (source.lightFalloff === "smooth" || source.lightFalloff === "banded") {
     result.lightFalloff = source.lightFalloff;
@@ -56,13 +63,21 @@ export function normalizeCelShadingOverrides(value: unknown): CelShadingOverride
   return result;
 }
 
-export function normalizeCelShadingSettings(value: unknown): CelShadingSettings {
-  return { ...DEFAULT_CEL_SHADING_SETTINGS, ...normalizeCelShadingOverrides(value) };
+export function normalizeCelShadingSettings(
+  value: unknown,
+): CelShadingSettings {
+  return {
+    ...DEFAULT_CEL_SHADING_SETTINGS,
+    ...normalizeCelShadingOverrides(value),
+  };
 }
 
 export function resolveCelShadingSettings(
   project: unknown,
   overrides?: unknown,
 ): CelShadingSettings {
-  return { ...normalizeCelShadingSettings(project), ...normalizeCelShadingOverrides(overrides) };
+  return {
+    ...normalizeCelShadingSettings(project),
+    ...normalizeCelShadingOverrides(overrides),
+  };
 }

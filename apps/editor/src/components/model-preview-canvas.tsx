@@ -401,15 +401,15 @@ export function ModelPreviewCanvas({
       },
       items: MODEL_PREVIEW_SHADING.map((mode) => ({
         id: mode.value,
-        label: mode.label,
+        label: mode.value === "pbr" && projectDocument?.settings.render.mode === "cel" ? "CEL" : mode.label,
         value: mode.value,
         testId: `model-preview-shading-${mode.value}`,
       })),
     },
   ];
-  const shadingLabel =
-    MODEL_PREVIEW_SHADING.find((mode) => mode.value === shadingMode)?.label ??
-    "PBR";
+  const shadingLabel = shadingMode === "pbr" && projectDocument?.settings.render.mode === "cel"
+    ? "CEL"
+    : MODEL_PREVIEW_SHADING.find((mode) => mode.value === shadingMode)?.label ?? "PBR";
 
   return (
     <div className="relative h-full min-h-0">

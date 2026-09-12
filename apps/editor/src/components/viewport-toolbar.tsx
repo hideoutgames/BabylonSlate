@@ -65,7 +65,7 @@ export function ViewportToolbar({
   dropDisabled?: boolean;
 }) {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange } = useDocuments();
+  const { openDocuments, applySceneChange, projectDocument } = useDocuments();
   const { flySpeed, gridSize, snapRotateDeg, snapScale } =
     useEditorViewportPrefs();
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
@@ -185,7 +185,7 @@ export function ViewportToolbar({
           items: [
             {
               id: "pbr",
-              label: "PBR",
+              label: projectDocument?.settings.render.mode === "cel" ? "CEL" : "PBR",
               value: "pbr",
               testId: `${testIdPrefix}viewport-shading-pbr`,
             },

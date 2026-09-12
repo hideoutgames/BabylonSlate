@@ -1,14 +1,27 @@
-import { Mesh, MultiMaterial, type Material, type Scene } from "@babylonjs/core";
+import {
+  Mesh,
+  MultiMaterial,
+  type Material,
+  type Scene,
+} from "@babylonjs/core";
 import type { CelShadingOverrides } from "@babylonslate/core";
 import { CelMaterial, canUseCelMaterial } from "./cel-material";
-import { sceneRenderingSettings, updateSceneRenderingSettings, type RenderShadingSettings } from "./render-settings";
+import {
+  sceneRenderingSettings,
+  updateSceneRenderingSettings,
+  type RenderShadingSettings,
+} from "./render-settings";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { syncSceneLighting } from "./scene-lighting";
 
 const controllers = new WeakMap<Scene, () => void>();
 
 /** Shared by world hosts and asset previews; CEL never mutates authored materials. */
-export function setSceneRenderSettings(scene: Scene, project?: RenderShadingSettings, overrides?: CelShadingOverrides): void {
+export function setSceneRenderSettings(
+  scene: Scene,
+  project?: RenderShadingSettings,
+  overrides?: CelShadingOverrides,
+): void {
   updateSceneRenderingSettings(scene, project, overrides);
   let sync = controllers.get(scene);
   if (!sync) {
@@ -34,9 +47,18 @@ export function setSceneRenderSettings(scene: Scene, project?: RenderShadingSett
           owned.dispose(false, false);
         });
       }
-      if (replacement instanceof MultiMaterial && source instanceof MultiMaterial) {
+      if (
+        replacement instanceof MultiMaterial &&
+        source instanceof MultiMaterial
+      ) {
         const children = source.subMaterials.map(resolve);
-        if (children.length !== replacement.subMaterials.length || children.some((child, index) => child !== replacement.subMaterials[index])) replacement.subMaterials = children;
+        if (
+          children.length !== replacement.subMaterials.length ||
+          children.some(
+            (child, index) => child !== replacement.subMaterials[index],
+          )
+        )
+          replacement.subMaterials = children;
       } else if (replacement instanceof CelMaterial) replacement.syncSource();
       return replacement;
     };
@@ -44,7 +66,12 @@ export function setSceneRenderSettings(scene: Scene, project?: RenderShadingSett
       if (scene.isDisposed) return;
       scene.defaultMaterial = resolve(scene.defaultMaterial)!;
       for (const mesh of scene.meshes) {
-        if (!(mesh instanceof Mesh) || !isViewportShadingTarget(mesh) || !mesh.material) continue;
+        if (
+          !(mesh instanceof Mesh) ||
+          !isViewportShadingTarget(mesh) ||
+          !mesh.material
+        )
+          continue;
         const next = resolve(mesh.material);
         if (next !== mesh.material) mesh.material = next;
       }
@@ -54,8 +81,11 @@ export function setSceneRenderSettings(scene: Scene, project?: RenderShadingSett
     const observer = scene.onBeforeRenderObservable.add(sync);
     scene.onDisposeObservable.addOnce(() => {
       scene.onBeforeRenderObservable.remove(observer);
-      for (const replacement of replacements.values()) replacement.dispose(false, false);
-      replacements.clear(); originals.clear(); controllers.delete(scene);
+      for (const replacement of replacements.values())
+        replacement.dispose(false, false);
+      replacements.clear();
+      originals.clear();
+      controllers.delete(scene);
     });
   }
   sync();

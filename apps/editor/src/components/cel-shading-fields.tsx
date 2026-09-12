@@ -6,19 +6,75 @@ import {
 } from "@babylonslate/core";
 import { NumberField } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@babylonslate/ui/components/select";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@babylonslate/ui/components/field";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
 
-const fields: { key: keyof CelShadingSettings; label: string; description: string }[] = [
-  { key: "shadowBands", label: "Shadow Bands", description: "Number of light and shade levels." },
-  { key: "shadowThreshold", label: "Shadow Threshold", description: "Higher values extend the shaded region." },
-  { key: "bandSoftness", label: "Band Softness", description: "Softens transitions between bands. Zero gives hard edges." },
-  { key: "shadowStrength", label: "Shadow Strength", description: "Darkness of the deepest shade and cast shadows." },
-  { key: "specularStrength", label: "Specular Strength", description: "Highlight intensity. Zero disables highlights." },
-  { key: "specularSize", label: "Specular Size", description: "Size of the stylized highlight." },
-  { key: "specularSoftness", label: "Specular Softness", description: "Softness of the highlight edge." },
-  { key: "lightColorInfluence", label: "Light Color Influence", description: "Colored light tint. Zero uses neutral light with the same intensity." },
-  { key: "lightFalloff", label: "Light Falloff", description: "Point and spot lights fade smoothly or in bands within their authored range." },
+const fields: {
+  key: keyof CelShadingSettings;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "shadowBands",
+    label: "Shadow Bands",
+    description: "Number of light and shade levels.",
+  },
+  {
+    key: "shadowThreshold",
+    label: "Shadow Threshold",
+    description: "Higher values extend the shaded region.",
+  },
+  {
+    key: "bandSoftness",
+    label: "Band Softness",
+    description: "Softens transitions between bands. Zero gives hard edges.",
+  },
+  {
+    key: "shadowStrength",
+    label: "Shadow Strength",
+    description: "Darkness of the deepest shade and cast shadows.",
+  },
+  {
+    key: "specularStrength",
+    label: "Specular Strength",
+    description: "Highlight intensity. Zero disables highlights.",
+  },
+  {
+    key: "specularSize",
+    label: "Specular Size",
+    description: "Size of the stylized highlight.",
+  },
+  {
+    key: "specularSoftness",
+    label: "Specular Softness",
+    description: "Softness of the highlight edge.",
+  },
+  {
+    key: "lightColorInfluence",
+    label: "Light Color Influence",
+    description:
+      "Colored light tint. Zero uses neutral light with the same intensity.",
+  },
+  {
+    key: "lightFalloff",
+    label: "Light Falloff",
+    description:
+      "Point and spot lights fade smoothly or in bands within their authored range.",
+  },
 ];
 
 type Props = {
@@ -35,7 +91,9 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
   const patch = (key: keyof CelShadingSettings, value: number | string) =>
     onChange({ ...(scene ? overrides : project), [key]: value });
   return (
-    <FieldSet data-testid={scene ? "scene-cel-settings" : "project-cel-settings"}>
+    <FieldSet
+      data-testid={scene ? "scene-cel-settings" : "project-cel-settings"}
+    >
       <FieldLegend>CEL Shading</FieldLegend>
       <FieldGroup className="gap-2">
         {fields.map(({ key, label, description }) => {
@@ -52,31 +110,48 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
                     size="sm"
                     aria-label={`${overridden ? "Reset" : "Override"} ${label}${overridden ? " To Project Settings" : ""}`}
                     onClick={() => {
-                      if (!overridden) { patch(key, effective[key]); return; }
+                      if (!overridden) {
+                        patch(key, effective[key]);
+                        return;
+                      }
                       const next = { ...overrides };
                       delete next[key];
                       onChange(next);
                     }}
-                  >{overridden ? "Reset To Project" : "Override"}</Button>
+                  >
+                    {overridden ? "Reset To Project" : "Override"}
+                  </Button>
                 ) : null}
               </div>
               {key === "lightFalloff" ? (
                 <Select
                   value={effective.lightFalloff}
                   disabled={scene && !overridden}
-                  onValueChange={(value) => { if (value) patch(key, value); }}
+                  onValueChange={(value) => {
+                    if (value) patch(key, value);
+                  }}
                 >
                   <SelectTrigger id={id} aria-describedby={`${id}-description`}>
-                    <SelectValue>{effective.lightFalloff === "banded" ? "Banded" : "Smooth"}</SelectValue>
+                    <SelectValue>
+                      {effective.lightFalloff === "banded"
+                        ? "Banded"
+                        : "Smooth"}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent><SelectGroup>
-                    <SelectItem value="smooth">Smooth</SelectItem>
-                    <SelectItem value="banded">Banded</SelectItem>
-                  </SelectGroup></SelectContent>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="smooth">Smooth</SelectItem>
+                      <SelectItem value="banded">Banded</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
                 </Select>
               ) : (
                 <NumberField
-                  key={scene ? `${key}-${overridden ? "override" : "project"}` : key}
+                  key={
+                    scene
+                      ? `${key}-${overridden ? "override" : "project"}`
+                      : key
+                  }
                   id={id}
                   aria-describedby={`${id}-description`}
                   value={effective[key]}
@@ -88,7 +163,10 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
                 />
               )}
               <FieldDescription id={`${id}-description`}>
-                {scene ? `${overridden ? "Scene Override" : "Project Setting"} · ${key === "lightFalloff" ? (project[key] === "banded" ? "Banded" : "Smooth") : project[key]}. ` : ""}{description}
+                {scene
+                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightFalloff" ? (project[key] === "banded" ? "Banded" : "Smooth") : project[key]}. `
+                  : ""}
+                {description}
               </FieldDescription>
             </Field>
           );
