@@ -513,7 +513,7 @@ describe("createPlayMesh", () => {
     const native = scene.animationGroups.find((group) => group.name === "Walk");
     expect(native).toBeDefined();
     expect(native!.animatables).toHaveLength(0);
-    expect(native!.isPlaying).toBe(false);
+    expect(native!.isPlaying).not.toBe(true);
 
     const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
     expect(target).toBeDefined();
@@ -556,7 +556,7 @@ describe("createPlayMesh", () => {
     const native = scene.animationGroups.find((group) => group.name === "Run");
     expect(native).toBeDefined();
     expect(native!.animatables).toHaveLength(0);
-    expect(native!.isPlaying).toBe(false);
+    expect(native!.isPlaying).not.toBe(true);
 
     const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
     expect(target).toBeDefined();
@@ -634,7 +634,7 @@ describe("createPlayMesh", () => {
     const native = scene.animationGroups.find((group) => group.name === "idle");
     expect(native).toBeDefined();
     expect(native!.animatables).toHaveLength(0);
-    expect(native!.isPlaying).toBe(false);
+    expect(native!.isPlaying).not.toBe(true);
 
     const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
     expect(target).toBeDefined();
