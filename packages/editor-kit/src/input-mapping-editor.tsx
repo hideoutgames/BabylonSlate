@@ -49,21 +49,11 @@ import { formatBindingLabel } from "./format-binding-label";
 import { BindingCodePicker } from "./binding-code-picker";
 import { NumberField, type NumberFieldProps } from "./number-field";
 
-export const DEFAULT_TOUCH_CONTROL_IDS = [
-  "joystick-x",
-  "joystick-y",
-  "dpad-x",
-  "dpad-y",
-  "Jump",
-] as const;
-
 export const INPUT_DEVICES: Array<{ value: InputDevice; label: string }> = [
   { value: "key", label: "Key" },
   { value: "mouseButton", label: "Mouse" },
-  { value: "pointer", label: "Pointer" },
   { value: "gamepadButton", label: "Gamepad Button" },
   { value: "gamepadAxis", label: "Gamepad Axis" },
-  { value: "touch", label: "Touch" },
 ];
 
 const MODIFIER_TOGGLES: Array<{ key: keyof BindingModifiers; label: string }> =
@@ -77,7 +67,6 @@ const MODIFIER_TOGGLES: Array<{ key: keyof BindingModifiers; label: string }> =
 export interface InputMappingEditorProps {
   value: InputMappings;
   onChange: (next: InputMappings) => void;
-  touchControlIds?: readonly string[];
   "data-testid"?: string;
 }
 
@@ -111,12 +100,8 @@ function patchAxis(
   return { ...value, axes };
 }
 
-function isAnalogBinding(device: InputDevice, code: string): boolean {
-  if (device === "gamepadAxis") return true;
-  if (device === "touch") {
-    return /(joystick|dpad)/i.test(code) || /-(x|y)$/i.test(code);
-  }
-  return false;
+function isAnalogBinding(device: InputDevice): boolean {
+  return device === "gamepadAxis";
 }
 
 function showsModifiers(device: InputDevice): boolean {
@@ -271,7 +256,6 @@ function ActionBindingRow({
   binding,
   index,
   total,
-  touchControlIds,
   onChange,
   onMove,
   onRemove,
@@ -280,7 +264,6 @@ function ActionBindingRow({
   binding: ActionBinding;
   index: number;
   total: number;
-  touchControlIds: readonly string[];
   onChange: (next: ActionBinding) => void;
   onMove: (delta: number) => void;
   onRemove: () => void;
@@ -307,7 +290,6 @@ function ActionBindingRow({
             size="sm"
             device={binding.device}
             code={binding.code}
-            touchControlIds={touchControlIds}
             onChange={(code) => onChange({ ...binding, code })}
             data-testid={`${id}-code`}
           />
@@ -374,7 +356,7 @@ function axisBindingSummary(binding: AxisBinding, kind: "1d" | "2d"): string {
     formatBindingLabel(binding.device, binding.code, binding.modifiers),
   ];
   if (kind === "2d") parts.push((binding.component ?? "x").toUpperCase());
-  if (!isAnalogBinding(binding.device, binding.code)) {
+  if (!isAnalogBinding(binding.device)) {
     const value = binding.digitalValue ?? 1;
     parts.push(`Held ${value > 0 ? "+" : ""}${value}`);
   }
@@ -388,7 +370,6 @@ function AxisBindingRow({
   index,
   total,
   kind,
-  touchControlIds,
   onChange,
   onMove,
   onRemove,
@@ -398,12 +379,11 @@ function AxisBindingRow({
   index: number;
   total: number;
   kind: "1d" | "2d";
-  touchControlIds: readonly string[];
   onChange: (next: AxisBinding) => void;
   onMove: (delta: number) => void;
   onRemove: () => void;
 }) {
-  const analog = isAnalogBinding(binding.device, binding.code);
+  const analog = isAnalogBinding(binding.device);
   const [optionsOpen, setOptionsOpen] = useState(false);
   return (
     <div
@@ -428,7 +408,6 @@ function AxisBindingRow({
             size="sm"
             device={binding.device}
             code={binding.code}
-            touchControlIds={touchControlIds}
             onChange={(code) => onChange({ ...binding, code })}
             data-testid={`${id}-code`}
           />
@@ -621,11 +600,10 @@ function bindingSummary(mapping: ActionMapping): string {
   );
 }
 
-/** Touch-first action / axis mapping editor for Project Settings. */
+/** Action / axis mapping editor retained for the Component Gallery. */
 export function InputMappingEditor({
   value,
   onChange,
-  touchControlIds = DEFAULT_TOUCH_CONTROL_IDS,
   "data-testid": testId,
 }: InputMappingEditorProps) {
   const [query, setQuery] = useState("");
@@ -841,7 +819,6 @@ export function InputMappingEditor({
                           binding={binding}
                           index={bindingIndex}
                           total={action.bindings.length}
-                          touchControlIds={touchControlIds}
                           onChange={(next) => {
                             const bindings = [...action.bindings];
                             bindings[bindingIndex] = next;
@@ -990,7 +967,6 @@ export function InputMappingEditor({
                           index={bindingIndex}
                           total={axis.bindings.length}
                           kind={kind}
-                          touchControlIds={touchControlIds}
                           onChange={(next) => {
                             const bindings = [...axis.bindings];
                             bindings[bindingIndex] = next;

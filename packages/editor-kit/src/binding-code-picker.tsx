@@ -1,22 +1,10 @@
 import { useMemo } from "react";
-import {
-  bindingCodeLabel,
-  bindingCodesForDevice,
-  type InputDevice,
-} from "@babylonslate/input";
+import { bindingCodesForDevice, type InputDevice } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
 import { formatBindingLabel } from "./format-binding-label";
 import { PickerIdentity } from "./picker-identity";
 import { SearchDropdown } from "./search-dropdown";
 import type { SearchDialogItem } from "./search-dialog";
-
-const DEFAULT_TOUCH_IDS = [
-  "joystick-x",
-  "joystick-y",
-  "dpad-x",
-  "dpad-y",
-  "Jump",
-] as const;
 
 export type BindingCodePickerProps = {
   device: InputDevice;
@@ -25,7 +13,6 @@ export type BindingCodePickerProps = {
   onChange: (code: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  touchControlIds?: readonly string[];
   "data-testid"?: string;
 };
 
@@ -35,8 +22,6 @@ function emptyPrompt(device: InputDevice): string {
       return "Choose Key…";
     case "gamepadAxis":
       return "Choose Axis…";
-    case "touch":
-      return "Choose Control…";
     default:
       return "Choose Button…";
   }
@@ -48,37 +33,17 @@ function pickerTitle(device: InputDevice): string {
       return "Key";
     case "mouseButton":
       return "Mouse Button";
-    case "pointer":
-      return "Pointer";
     case "gamepadButton":
       return "Gamepad Button";
     case "gamepadAxis":
       return "Gamepad Axis";
-    case "touch":
-      return "Touch Control";
+    default:
+      return "Input";
   }
 }
 
-function resolveTouchIds(ids?: readonly string[]): string[] {
-  if (!ids || ids.length === 0) return [...DEFAULT_TOUCH_IDS];
-  return ids.includes("Jump") ? [...ids] : [...ids, "Jump"];
-}
-
-function catalogItems(
-  device: InputDevice,
-  touchControlIds?: readonly string[],
-): SearchDialogItem[] {
-  if (device === "touch") {
-    return resolveTouchIds(touchControlIds).map((id) => {
-      const label = bindingCodeLabel("touch", id);
-      return {
-        id,
-        label,
-        description: id === label ? undefined : id,
-        group: "Touch",
-      };
-    });
-  }
+function catalogItems(device: InputDevice): SearchDialogItem[] {
+  if (device === "pointer" || device === "touch") return [];
   return bindingCodesForDevice(device).map((entry) => ({
     id: entry.code,
     label: entry.label,
@@ -95,13 +60,9 @@ export function BindingCodePicker({
   onChange,
   open,
   onOpenChange,
-  touchControlIds,
   "data-testid": testId = "binding-code-picker",
 }: BindingCodePickerProps) {
-  const items = useMemo(
-    () => catalogItems(device, touchControlIds),
-    [device, touchControlIds],
-  );
+  const items = useMemo(() => catalogItems(device), [device]);
   const label = code ? formatBindingLabel(device, code) : emptyPrompt(device);
 
   return (
