@@ -1,3 +1,4 @@
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
   parseAnimGraphDocument,
   resolveAnimGraphClips,
@@ -79,6 +80,7 @@ export type PackedGameContent = {
   materialFunctions: Map<string, MaterialFunctionDocument>;
   postProcessStack: ScenePostProcessEntry[];
   pixelsPerUnit: number;
+  sortingLayers: readonly string[];
   pixelPerfect: boolean;
   audioLibrary: PackedAudioLibrary;
   particleLibrary: PackedParticleLibrary;
@@ -301,6 +303,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     materialFunctions,
     postProcessStack: startupScene?.settings.postProcessStack ?? [],
     pixelsPerUnit,
+    sortingLayers: game.manifest.sortingLayers?.length ? game.manifest.sortingLayers : DEFAULT_SORTING_LAYERS,
     pixelPerfect: game.manifest.pixelPerfect === true,
     audioLibrary: {
       mixerGuid: game.manifest.audioMixerGuid?.trim() || null,

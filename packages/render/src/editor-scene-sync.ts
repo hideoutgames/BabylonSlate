@@ -19,6 +19,7 @@ import {
   actorIdFromMeshName,
   actorVisualFingerprint,
   applyActorTransform,
+  applyActorComponentSorting,
   applyComponentChildTransforms,
   createActorMesh,
   editorComponentMeshName,
@@ -30,7 +31,6 @@ import {
 } from "./scene-loader";
 import { syncAuthoredIllumination } from "./scene-illumination";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
-import { applySortingToMesh, resolveSortingLayer } from "./sorting";
 import {
   freezeEditorActiveMeshes,
   isStructuralEditorChange,
@@ -50,23 +50,6 @@ export type EditorSceneSyncOptions = {
   /** Fired after meshes/materials are bound so overlays can re-apply. */
   onAfterApply?: () => void;
 };
-
-function spriteSortingOf(
-  actor: SerializedActor,
-): { layer: string; orderInLayer: number } | null {
-  const component = actor.components.find(
-    (entry) =>
-      entry.classId === "SpriteComponent" ||
-      entry.classId === "TilemapComponent",
-  );
-  if (!component) return null;
-  const layer = component.properties.sortingLayer;
-  const order = component.properties.orderInLayer;
-  return {
-    layer: typeof layer === "string" ? layer : "Default",
-    orderInLayer: typeof order === "number" ? order : 0,
-  };
-}
 
 /**
  * Applies scene document edits to the Babylon editor scene incrementally, so a
@@ -117,8 +100,10 @@ export class EditorSceneSync {
 
   /** Ordered sorting layers from project settings, back to front. */
   setSortingLayers(layers: readonly string[]): void {
-    this.sortingLayers =
-      layers.length > 0 ? [...layers] : [...DEFAULT_SORTING_LAYERS];
+    const next = layers.length > 0 ? [...layers] : [...DEFAULT_SORTING_LAYERS];
+    if (JSON.stringify(next) === JSON.stringify(this.sortingLayers)) return;
+    this.sortingLayers = next;
+    if (this.lastScene) this.apply(this.lastScene);
   }
 
   /**
@@ -135,6 +120,7 @@ export class EditorSceneSync {
         meshAssetFingerprintWithoutModels(assets) &&
       fingerprint !== this.lastAssetFingerprint;
     this.assets = assets;
+    if (assets?.sortingLayers) this.setSortingLayers(assets.sortingLayers);
     if (fingerprint === this.lastAssetFingerprint) {
       if (slotKey !== this.lastModelSlotKey) {
         this.lastModelSlotKey = slotKey;
@@ -225,17 +211,7 @@ export class EditorSceneSync {
         applyEditorBillboardFromActor(child, actor);
       }
 
-      const sorting = spriteSortingOf(actor);
-      if (sorting) {
-        const layer = resolveSortingLayer(
-          this.sortingLayers,
-          sorting.layer,
-          sorting.orderInLayer,
-        );
-        for (const target of visualMeshesOfActorRoot(mesh)) {
-          applySortingToMesh(target, layer);
-        }
-      }
+      applyActorComponentSorting(mesh, actor, this.sortingLayers);
       this.restoreMeshComponentConstruction(actor, mesh);
       this.applyModelSlots(actor, mesh);
       this.bindActorMeshMaterials(actor, mesh);

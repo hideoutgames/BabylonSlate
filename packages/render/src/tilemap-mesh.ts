@@ -9,7 +9,7 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
-import { applySortingToMesh, resolveSortingLayer } from "./sorting";
+import { applyComponentSorting } from "./sorting";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
@@ -63,13 +63,9 @@ export function createTilemapMeshes(
     return null;
   };
   const root = new Mesh(name, scene);
-  for (const layer of tilemap.layers) {
+  for (const [ordinal, layer] of tilemap.layers.entries()) {
     if (!layer.visible) continue;
-    const sorting = resolveSortingLayer(
-      DEFAULT_SORTING_LAYERS,
-      layer.sortingLayer,
-      layer.orderInLayer,
-    );
+    const sorting = { name: layer.sortingLayer, order: layer.orderInLayer, ordinal };
     for (const chunk of layer.chunks) {
       const atlasGuids = chunkAtlasGuids(chunk.tiles, resolveGid, atlasMap);
       atlasGuids.forEach((guid, atlasIndex) => {
@@ -129,6 +125,7 @@ export function createTilemapMeshes(
       });
     }
   }
+  applyComponentSorting(root, DEFAULT_SORTING_LAYERS);
   return root;
 }
 
@@ -204,7 +201,7 @@ function appendChunkMesh(
   name: string,
   data: ReturnType<typeof tilemapChunkVertexData>,
   parallax: { x: number; y: number },
-  sorting: ReturnType<typeof resolveSortingLayer>,
+  sorting: { name: string; order: number; ordinal: number },
 ): Mesh | null {
   if (data.positions.length === 0) return null;
   const mesh = new Mesh(name, scene);
@@ -230,7 +227,6 @@ function appendChunkMesh(
     mesh.onDisposeObservable.addOnce(() => chunks.delete(chunk));
   }
   mesh.parent = root;
-  mesh.metadata = { ...(mesh.metadata ?? {}), tilemapParallax: parallax };
-  applySortingToMesh(mesh, sorting);
+  mesh.metadata = { ...(mesh.metadata ?? {}), tilemapParallax: parallax, tilemapLayer: sorting };
   return mesh;
 }

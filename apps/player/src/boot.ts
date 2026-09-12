@@ -131,6 +131,7 @@ export function startPlayer(options: {
     tilemapPayloads: content.tilemapPayloads,
     tilesetPayloads: content.tilesetPayloads,
     pixelsPerUnit: content.pixelsPerUnit,
+    sortingLayers: content.sortingLayers,
     pixelPerfect: content.pixelPerfect,
     touchMinTargetPx: manifest.touchMinTargetPx ?? 44,
     textureBytes: game.textureBytes,

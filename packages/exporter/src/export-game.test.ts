@@ -531,6 +531,7 @@ describe("exportGame", () => {
       startupSceneGuid: "scene-1",
       customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
       pixelsPerUnit: 64,
+      sortingLayers: ["Default", "Custom", "Props"],
       pixelPerfect: true,
       touchMinTargetPx: 48,
       scripts: [],
@@ -554,6 +555,7 @@ describe("exportGame", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.manifest.pixelsPerUnit).toBe(64);
+    expect(parseGameManifest(new TextDecoder().decode(result.value.files.get("game.json")!)).sortingLayers).toEqual(["Default", "Custom", "Props"]);
     expect(result.value.manifest.pixelPerfect).toBe(true);
     expect(result.value.manifest.touchMinTargetPx).toBe(48);
     expect(
@@ -589,6 +591,7 @@ describe("exportGame", () => {
       }),
     );
     expect(manifest.pixelsPerUnit).toBe(100);
+    expect(manifest.sortingLayers).toEqual(["Background", "Default", "Foreground", "UI"]);
     expect(manifest.pixelPerfect).toBe(false);
     expect(manifest.touchMinTargetPx).toBe(44);
     expect(manifest.infiniteLoopDetection).toBeUndefined();

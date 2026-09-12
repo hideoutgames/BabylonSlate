@@ -85,6 +85,7 @@ describe("packedContentFromGame", () => {
       startupSceneGuid: "scene-1",
       customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
       pixelsPerUnit: 50,
+      sortingLayers: ["Default", "Props", "Characters"],
       scripts: [],
       assets: [
         {
@@ -185,6 +186,7 @@ describe("packedContentFromGame", () => {
     expect(content.behaviourTrees.some((entry) => entry.guid === "bt-1")).toBe(true);
     expect(content.blackboards.some((entry) => entry.guid === "bb-1")).toBe(true);
     expect(content.pixelsPerUnit).toBe(50);
+    expect(content.sortingLayers).toEqual(["Default", "Props", "Characters"]);
     expect(content.pixelPerfect).toBe(false);
     expect(content).not.toHaveProperty("userInterfaces");
     const controls = packedPlayControls(content);

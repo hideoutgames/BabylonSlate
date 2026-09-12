@@ -367,6 +367,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
+          sortingLayers: projectDocument?.settings.twoD.sortingLayers,
         });
         await handle.whenEditorModelsReady();
         if (cancelled || engineRef.current !== handle) return;
@@ -400,6 +401,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
+    projectDocument?.settings.twoD.sortingLayers,
   ]);
 
   useEffect(() => {

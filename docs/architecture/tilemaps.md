@@ -55,6 +55,12 @@ Tilemap atlas materials stay **unlit and double-sided** in both 2D and 3D scenes
 
 `tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw and returns animation descriptors alongside geometry. The `:anim` mesh starts on frame zero and is subsequently sought by the scene clock. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`).
 
+## Sorting
+
+A Tilemap component is one sorting group among world visuals. Its `sortingLayer` and `orderInLayer` apply to every chunk. Asset layers sort inside that group using the project's layer ordering, then `orderInLayer`, then asset list order for ties. An internal Foreground layer cannot move outside its component. Equal component keys use stable actor/component identity so painting rebuilds do not change their relative order.
+
+Scene Preview, Play, and Preview Build share alpha-test draw ordering and project sorting layers. World depth testing/writing remains enabled: sorting resolves coplanar overlap, nearer world geometry still occludes tiles, and atlas cutouts reveal underlying pixels. Babylon's separate blended pass remains unchanged. Export manifests carry the project sorting list; older exports use the default list.
+
 ## Collision
 
 `tilemapChunkChains` (also Babylon-free) merges `full` tiles in a chunk: shared edges cancel, collinear outer edges collapse, so a solid rectangle is **one four-point loop** rather than a box per tile. Full-tile outlines merge in integer grid coordinates before scaling to world units, so fractional tile sizes (including the default 16px / 100 PPU) cannot leave internal collision edges. Custom `chain` collision on a tile is emitted as an open polyline in world space.

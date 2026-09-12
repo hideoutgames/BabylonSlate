@@ -1465,6 +1465,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
             inputMappings={projectDocument?.settings.input}
+            sortingLayers={projectDocument?.settings.twoD.sortingLayers}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }

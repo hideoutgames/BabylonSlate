@@ -1,3 +1,5 @@
+import type { AbstractMesh, Scene, SubMesh } from "@babylonjs/core";
+
 /**
  * Babylon supports four rendering groups, reserved here for coarse separation
  * so a UI sprite can never sort behind world geometry no matter what its
@@ -77,6 +79,52 @@ export function applySortingToMesh(
 ): void {
   mesh.alphaIndex = resolution.sortKey;
   mesh.renderingGroupId = resolution.renderingGroupId;
+}
+
+/** Each visual component is a group; Tilemap asset layers sort only inside it. */
+export function applyComponentSorting(
+  root: AbstractMesh,
+  layers: readonly string[],
+  layer = "Default",
+  order = 0,
+  groupId = root.name,
+): void {
+  const primary = resolveSortingLayer(layers, layer, order);
+  for (const mesh of [root, ...root.getChildMeshes(true).filter((child) =>
+    child.metadata?.tilemapLayer || child.name === `${root.name}-blend`,
+  )]) {
+    applySortingToMesh(mesh, primary);
+    const internal = mesh.metadata?.tilemapLayer as
+      { name: string; order: number; ordinal: number } | undefined;
+    mesh.metadata = {
+      ...(mesh.metadata ?? {}),
+      sortingGroupId: groupId,
+      sortingLayerKey: internal ? resolveSortingLayer(layers, internal.name, internal.order).sortKey : 0,
+    };
+  }
+}
+
+function compareIdentity(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Alpha-test draws do not populate Babylon's transparent SubMesh alpha index. */
+export function compareAlphaTestDraws(a: SubMesh, b: SubMesh): number {
+  const left = a.getMesh();
+  const right = b.getMesh();
+  return left.alphaIndex - right.alphaIndex
+    || compareIdentity(left.metadata?.sortingGroupId ?? left.name, right.metadata?.sortingGroupId ?? right.name)
+    || (left.metadata?.sortingLayerKey ?? 0) - (right.metadata?.sortingLayerKey ?? 0)
+    || (left.metadata?.tilemapLayer?.ordinal ?? 0) - (right.metadata?.tilemapLayer?.ordinal ?? 0)
+    || compareIdentity(left.name, right.name)
+    || left.uniqueId - right.uniqueId;
+}
+
+/** Preserve opaque/blended passes and depth policy while ordering cutout visuals. */
+export function configureCutoutSorting(scene: Pick<Scene, "setRenderingOrder">): void {
+  for (const group of Object.values(RENDERING_GROUP)) {
+    scene.setRenderingOrder(group, null, compareAlphaTestDraws, null);
+  }
 }
 
 export function usesSpriteOrTilemapSorting(actor: {

@@ -93,6 +93,7 @@ export type CollectExportGameParams = {
   playFrameCap: number;
   touchMinTargetPx?: number;
   pixelsPerUnit?: number;
+  sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   physicsWorld: "2d" | "3d";
   infiniteLoopDetection?: boolean;
@@ -422,6 +423,7 @@ export async function collectAndExportGame(
     playFrameCap: params.playFrameCap,
     touchMinTargetPx: params.touchMinTargetPx,
     pixelsPerUnit: params.pixelsPerUnit,
+    sortingLayers: params.sortingLayers,
     pixelPerfect: params.pixelPerfect,
     physicsWorld: params.physicsWorld,
     infiniteLoopDetection: params.infiniteLoopDetection,

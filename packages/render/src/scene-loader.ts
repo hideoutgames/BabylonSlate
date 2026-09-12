@@ -63,6 +63,7 @@ import { createText3DMesh } from "./text3d-mesh";
 import { createText2DMesh } from "./text2d-mesh";
 import {
   applyWorldVisualGroup,
+  applyComponentSorting,
   RENDERING_GROUP,
 } from "./sorting";
 
@@ -492,6 +493,7 @@ function createSpriteComponentMesh(
     ? createSpriteQuad(scene, name, frame, payload?.pixelsPerUnit ?? assets?.pixelsPerUnit)
     : createPrimitiveMesh(scene, name, "sprite");
   applyAlbedoTexture(mesh, scene, payload?.textureGuid, assets);
+  applyAuthoredComponentSorting(mesh, component, assets?.sortingLayers);
   return mesh;
 }
 
@@ -515,6 +517,7 @@ function createTilemapComponentMesh(
       size.height,
     );
     applyTilemapAlbedoTextures(mesh, scene, assets);
+    applyAuthoredComponentSorting(mesh, component, assets?.sortingLayers);
     return mesh;
   }
   return createPrimitiveMesh(scene, name, "tilemap");
@@ -1131,6 +1134,28 @@ function isEditorPickProxy(mesh: Mesh): boolean {
   );
 }
 
+function applyAuthoredComponentSorting(mesh: Mesh, component: SerializedComponent, layers?: readonly string[]): void {
+  const { sortingLayer, orderInLayer } = component.properties;
+  applyComponentSorting(mesh, layers ?? ["Background", "Default", "Foreground", "UI"],
+    typeof sortingLayer === "string" ? sortingLayer : "Default",
+    typeof orderInLayer === "number" ? orderInLayer : 0);
+}
+
+export function applyActorComponentSorting(root: Mesh, actor: SerializedActor, layers: readonly string[]): void {
+  for (const component of actor.components) {
+    if (component.classId !== "SpriteComponent" && component.classId !== "TilemapComponent") continue;
+    const target = isEditorActorOrigin(root)
+      ? visualMeshesOfActorRoot(root).find((mesh) => mesh.name === editorComponentMeshName(actor.id, component.id))
+      : root;
+    if (!target) continue;
+    applyAuthoredComponentSorting(target, component, layers);
+    const groupId = `${actor.id}|${component.id}`;
+    for (const mesh of [target, ...target.getChildMeshes(true).filter((child) => child.metadata?.tilemapLayer)]) {
+      mesh.metadata = { ...(mesh.metadata ?? {}), sortingGroupId: groupId };
+    }
+  }
+}
+
 export function visualMeshesOfActorRoot(mesh: Mesh): Mesh[] {
   if (!isEditorActorOrigin(mesh)) return [mesh];
   const parts = childMeshesOf(mesh).filter((child) => {
@@ -1211,6 +1236,7 @@ export function applySceneToBabylonScene(
   for (const actor of sceneData.actors) {
     const mesh = createActorMesh(scene, actor, meshAssets, sceneData.actors);
     applyActorTransform(mesh, actor);
+    applyActorComponentSorting(mesh, actor, assets?.sortingLayers ?? ["Background", "Default", "Foreground", "UI"]);
     meshes.set(actor.id, mesh);
     const guid = actor.components.find(
       (component) => component.classId === "MeshComponent",

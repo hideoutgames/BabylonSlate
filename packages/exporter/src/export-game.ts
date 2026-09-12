@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, type Result } from "@babylonslate/core";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {
@@ -20,6 +20,11 @@ import type {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+function normalizeSortingLayers(value: unknown): string[] {
+  const layers = Array.isArray(value) ? value.filter((layer): layer is string => typeof layer === "string" && layer.trim().length > 0) : [];
+  return layers.length > 0 ? [...new Set(layers)] : [...DEFAULT_SORTING_LAYERS];
+}
 
 function clampAudioScale(value: unknown, fallback = 1): number {
   const n =
@@ -258,6 +263,7 @@ export async function exportGame(
         ? options.pixelsPerUnit
         : 100,
     pixelPerfect: options.pixelPerfect === true,
+    sortingLayers: normalizeSortingLayers(options.sortingLayers),
     packs: packed.packs,
     scriptsFile: SCRIPTS_FILE,
     physicsWorld: options.physicsWorld ?? "3d",
@@ -360,6 +366,7 @@ export function parseGameManifest(source: string): GameManifest {
         ? parsed.touchMinTargetPx
         : 44,
     pixelPerfect: parsed.pixelPerfect === true,
+    sortingLayers: normalizeSortingLayers(parsed.sortingLayers),
     ...(bundleDebugger
       ? {
           infiniteLoopDetection: parsed.infiniteLoopDetection !== false,

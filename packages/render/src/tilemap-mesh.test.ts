@@ -49,7 +49,7 @@ describe("createTilemapMeshes", () => {
     ]);
   });
 
-  it("applies per-layer sorting to chunk meshes", () => {
+  it("keeps asset Foreground layers inside the default component group", () => {
     const tileset = normalizeTilesetPayload({
       atlasWidth: 16,
       atlasHeight: 16,
@@ -69,8 +69,9 @@ describe("createTilemapMeshes", () => {
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
     const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
     const child = root.getChildMeshes()[0]!;
-    expect(child.renderingGroupId).toBe(2);
+    expect(child.renderingGroupId).toBe(1);
     expect(child.alphaIndex).toBeGreaterThan(0);
+    expect(child.metadata.tilemapLayer).toEqual({ name: "Foreground", order: 7, ordinal: 0 });
   });
 
   it("draws animated tiles as a separate child mesh", () => {

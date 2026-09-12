@@ -181,7 +181,7 @@ import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { configureEditorRenderingGroups } from "./sorting";
+import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
   freezeEditorActiveMeshes,
@@ -351,6 +351,7 @@ export interface CreateEngineOptions {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   pixelsPerUnit?: number;
+  sortingLayers?: readonly string[];
   /** Overlay 2DButton pick floor in CSS pixels (Engine Settings `touchMinTargetPx`). */
   touchMinTargetPx?: number;
   /** Project `twoD.pixelPerfect` — snap the Play camera, not the editor camera. */
@@ -658,6 +659,7 @@ export function createEngine(
   }
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
+  configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
     ? sceneClearColor(options.environmentColor)
@@ -767,6 +769,7 @@ export function createEngine(
   binding.tilemaps = options.tilemapPayloads;
   binding.tilesets = options.tilesetPayloads;
   binding.pixelsPerUnit = options.pixelsPerUnit;
+  binding.sortingLayers = options.sortingLayers;
   binding.pixelPerfect = options.pixelPerfect === true;
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
@@ -1909,6 +1912,7 @@ export function createEngine(
         assets.spriteAnimations ?? binding.spriteAnimations;
       binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
       binding.tilesets = assets.tilesets ?? binding.tilesets;
+      binding.sortingLayers = assets.sortingLayers ?? binding.sortingLayers;
       if (assets.materialTextureGuids) {
         binding.materialTextureGuids = assets.materialTextureGuids;
       }
