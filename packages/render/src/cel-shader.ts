@@ -12,7 +12,7 @@ export function celFunctions(wgsl: boolean): string {
   const source = `
 float slateCelBand(float value) {
   float levels = slateCelBands.x - 1.0;
-  float shifted = clamp(value + 0.5 - slateCelBands.z, 0.0, 1.0) * levels;
+  float shifted = pow(clamp(value, 0.0, 1.0), log(0.5) / log(slateCelBands.z)) * levels;
   float lower = floor(shifted);
   float width = max(slateCelBands.y * levels, 0.00001);
   return clamp((lower + smoothstep(0.5 - width, 0.5 + width, fract(shifted))) / levels, 0.0, 1.0);

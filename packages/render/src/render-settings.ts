@@ -23,7 +23,8 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
   if (!state) {
     state = { mode: "pbr", cel: normalizeCelShadingSettings(undefined), project: {}, overrides: {}, listeners: new Set() };
     scenes.set(scene, state);
-    scene.onDisposeObservable.addOnce(() => { state.listeners.clear(); scenes.delete(scene); });
+    const owned = state;
+    scene.onDisposeObservable.addOnce(() => { owned.listeners.clear(); scenes.delete(scene); });
   }
   return state;
 }
