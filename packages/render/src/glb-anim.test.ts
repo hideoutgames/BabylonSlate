@@ -1,5 +1,6 @@
 import { FreeCamera, Vector3, MeshBuilder, TransformNode } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
+import type { NamedSeekableGroup } from "./anim-apply";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -120,7 +121,7 @@ describe("beginSlotModelAnimLoad", () => {
     animations.push({ ...animations[0], name: "Second" });
     try {
       await beginSlotModelAnimLoad(handle.scene, binding, 1, "model", encodeGlbJsonBin(split.json, split.bin), root);
-      const [first, second] = binding.slotAnimationGroups!.get(1)!;
+      const [first, second] = binding.slotAnimationGroups!.get(1)! as NamedSeekableGroup[];
       first!.goToFrame(30);
       first!.setWeightForAllAnimatables?.(1);
       handle.scene.render();
