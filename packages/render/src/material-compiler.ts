@@ -24,7 +24,6 @@ import {
   VectorSplitterBlock,
   VertexOutputBlock,
   ViewDirectionBlock,
-  type Mesh,
   type Effect,
   type PostProcess,
   type NodeMaterialBlock,
