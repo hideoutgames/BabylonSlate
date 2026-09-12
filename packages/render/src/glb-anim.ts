@@ -1,4 +1,5 @@
 import "./gltf-loader";
+import { Animation } from "@babylonjs/core/Animations/animation";
 import type {
   AbstractEngine,
   AbstractMesh,
@@ -288,8 +289,16 @@ function wrapGroup(
   const initialize = () => {
     if (initialized) return;
     initialized = true;
-    if (typeof group.start === "function") group.start(true);
-    else group.play?.(true);
+    // A lazily started blend must inherit the other clip's rest values, not
+    // capture its currently animated pose as the value to restore on reset.
+    const inheritOriginal = Animation.InheritOriginalValueFromActiveAnimations;
+    Animation.InheritOriginalValueFromActiveAnimations = true;
+    try {
+      if (typeof group.start === "function") group.start(true);
+      else group.play?.(true);
+    } finally {
+      Animation.InheritOriginalValueFromActiveAnimations = inheritOriginal;
+    }
     group.pause();
     group.setWeightForAllAnimatables?.(0);
   };
