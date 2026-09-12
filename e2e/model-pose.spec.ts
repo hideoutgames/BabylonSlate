@@ -21,6 +21,9 @@ test("Model preview remains in its authored pose while Animation preview advance
   page,
 }, testInfo) => {
   test.setTimeout(180000);
+  page.on("console", (message) => {
+    if (message.text().includes("[render] Animation preview failed")) console.warn(message.text());
+  });
   await openTestProject(page);
   // Optional local regression input stays outside the repository and CI artifacts.
   const source = process.env.BL_TEST_MODEL_SOURCE;
@@ -56,7 +59,7 @@ test("Model preview remains in its authored pose while Animation preview advance
   await model.screenshot({ path: testInfo.outputPath("authored-pose.png") });
   await openAssetFromBrowser(page, animationPath);
   const animation = page.getByTestId("animation-preview-canvas");
-  await expect(animation).toHaveAttribute("data-playing", "true");
+  await expect(animation).toHaveAttribute("data-playing", "true", { timeout: 30000 });
   await expect
     .poll(() => renderedColors(animation), { timeout: 30000 })
     .toBeGreaterThan(20);

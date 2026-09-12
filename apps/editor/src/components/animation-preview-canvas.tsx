@@ -119,7 +119,8 @@ export function AnimationPreviewCanvas({
           raf.id = window.requestAnimationFrame(tick);
         };
         raf.id = window.requestAnimationFrame(tick);
-      } catch {
+      } catch (error) {
+        console.warn("[render] Animation preview failed", error);
         playingRef.current?.stop();
         presenter?.dispose();
         gestures?.dispose();

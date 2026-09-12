@@ -198,6 +198,8 @@ Delete duplicated lower-layer assertions instead of repeating them in Chromium. 
 
 ## Local test execution
 
+For local GLB regressions, `BL_TEST_MODEL_SOURCE` can point `e2e/model-pose.spec.ts` at an existing animated model on disk. It imports that file, checks a stable Model pose and advancing Animation pixels, and keeps the source outside the repository. Without the override, the test uses the bundled Mannequin.
+
 - Test scripts use a per-user queue shared across worktrees: three worker slots, one browser command at a time, and 6 GiB of aggregate workload reservations. New work waits until free memory covers its own reservation plus the configured host headroom (4 GiB without configuration, 3 GiB in the low-memory profile). Reservations are scheduling guidance, not OS memory quotas; nested commands reuse a validated lease.
 
 Machine settings live outside checkouts at `%LOCALAPPDATA%/BabylonSlate/local-resources.json` on Windows, or `$XDG_CONFIG_HOME/babylonslate/local-resources.json` (default `~/.config/babylonslate/local-resources.json`) elsewhere. Every new acquisition reads the same file. Use an absolute `BL_LOCAL_RESOURCE_CONFIG` path to select a different file; an empty value disables custom settings and restores conservative defaults. CI ignores machine settings entirely. Malformed files fail with their path before a job enters the queue.
