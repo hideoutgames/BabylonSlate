@@ -30,7 +30,7 @@ describe("FBX canonical conversion", () => {
     );
     const texture = new Uint8Array(
       readFileSync(
-        new URL("../../../../e2e/fixtures/albedo.png", import.meta.url),
+        new URL("../../../e2e/fixtures/albedo.png", import.meta.url),
       ),
     );
     const bytes = convertFbxWithAssimp(importer, file, [
