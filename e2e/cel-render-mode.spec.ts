@@ -68,14 +68,19 @@ async function projectMode(page: Page, mode: "PBR" | "CEL", setup = false) {
 }
 
 async function framePixels(canvas: Locator) {
-  return canvas.evaluate((node: HTMLCanvasElement) => {
+  const encoded = await canvas.evaluate((node: HTMLCanvasElement) => {
     const copy = document.createElement("canvas");
     copy.width = node.width;
     copy.height = node.height;
     const context = copy.getContext("2d")!;
     context.drawImage(node, 0, 0);
-    return Array.from(context.getImageData(0, 0, copy.width, copy.height).data);
+    const pixels = context.getImageData(0, 0, copy.width, copy.height).data;
+    let binary = "";
+    for (let offset = 0; offset < pixels.length; offset += 8192)
+      binary += String.fromCharCode(...pixels.subarray(offset, offset + 8192));
+    return btoa(binary);
   });
+  return Buffer.from(encoded, "base64");
 }
 
 test("CEL preserves authored and texture colors, supports every light, and restores PBR in viewport and Play", async ({
@@ -392,7 +397,9 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     let surfaceChanges = 0;
     let surfacePixels = 0;
     for (let i = 0; i < withoutShadows.length; i += 4) {
-      const [r, g, b] = withoutShadows.slice(i, i + 3) as [number, number, number];
+      const r = withoutShadows[i]!;
+      const g = withoutShadows[i + 1]!;
+      const b = withoutShadows[i + 2]!;
       const changed = Math.abs(g - withShadows[i + 1]!) > 15;
       if (g > r * 1.7 && g > b * 1.3 && g > 35) {
         surfacePixels++;
@@ -401,8 +408,8 @@ test("CEL preserves authored and texture colors, supports every light, and resto
         receiverChanges++;
       }
     }
-    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.05 };
-  }).toEqual({ castsShadow: true, cleanSurface: true });
+    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.05, receiverChanges, surfacePixels, surfaceChanges };
+  }).toMatchObject({ castsShadow: true, cleanSurface: true });
   await viewport.screenshot({ path: testInfo.outputPath("cel-cast-shadows.png") });
 
   scene.actors = [...subjects, fill];
