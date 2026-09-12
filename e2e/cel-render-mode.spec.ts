@@ -376,6 +376,23 @@ test("CEL preserves sRGB image pixels on a native glTF surface", async ({
       { timeout: 30_000 },
     )
     .toBeGreaterThan(500);
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await projectMode(page, "PBR");
+    await expect.poll(async () => page.getByTestId("viewport-canvas").evaluate((node: HTMLCanvasElement) => {
+      const copy = document.createElement("canvas");
+      copy.width = node.width;
+      copy.height = node.height;
+      const context = copy.getContext("2d")!;
+      context.drawImage(node, 0, 0);
+      const pixels = context.getImageData(0, 0, copy.width, copy.height).data;
+      let count = 0;
+      for (let i = 0; i < pixels.length; i += 4)
+        if (pixels[i + 1]! > 10 && pixels[i + 1]! > pixels[i]! * 1.5 && pixels[i + 1]! > pixels[i + 2]! * 1.5) count++;
+      return count;
+    }), { timeout: 20_000 }).toBeGreaterThan(500);
+    await projectMode(page, "CEL");
+    await expect.poll(() => pixelsNear(page.getByTestId("viewport-canvas"), [51, 153, 77], 1), { timeout: 20_000 }).toBeGreaterThan(500);
+  }
   await clickPlayAndWaitForOverlay(page);
   await expect
     .poll(() => pixelsNear(page.getByTestId("play-canvas"), [51, 153, 77], 1), {
