@@ -522,6 +522,10 @@ export type CommandMessage =
       payload: Record<string, unknown>;
     }
   | {
+      type: "tilemapAnimationTime";
+      elapsedMs: number;
+    }
+  | {
       type: "animState";
       slotId: number;
       stateId: string;

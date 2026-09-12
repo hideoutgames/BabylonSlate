@@ -45,13 +45,15 @@ Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local ind
 
 Only **affected chunks** are copied in `setTile`. Editor and Play mesh builders still walk every **visible** chunk when the document or scene applies. Editor asset fingerprints include Tilemap and Tileset payload contents, so painting, layer visibility, and atlas grid edits refresh existing scene geometry and UVs; equivalent payloads keep mesh identity.
 
-Animated tiles (tileset `animation` frame lists) draw as a small separate set; they do not make every static tile dynamic.
+Animated tiles draw as a small separate set. `animation` lists local atlas cell IDs, and `animationFrameDurationMs` sets each frame's duration (default 100ms for existing assets). Frame IDs address atlas cells directly; they do not recursively play another tile's animation. Invalid frames display the painted tile's cell. Collision and flags remain those of the painted tile.
+
+The renderer updates only animated UV buffers when a frame changes. Scene Preview uses elapsed presentation time. Play and Preview Build use the runtime's `tilemapAnimationTime` command, accumulated from simulation delta: pause holds the frame, step advances one tick, and time dilation scales playback. Scene loading resets the clock; visual rebuilds and paused content reloads retain its current phase. The binary actor snapshot format is unchanged.
 
 Play builds a parent `actor-N` mesh plus one child draw per non-empty static chunk **per atlas**, plus an `:anim` sibling when the chunk has animated tiles (`createTilemapMeshes`). Extra atlases append `:a1`, `:a2`, … Children store `metadata.tilemapTextureGuid` so `applyTilemapAlbedoTextures` can bind each atlas. Chunk children are named `editorActor:<id>:<layer>:<cx>:<cy>` (optional `:aN` / `:anim`). Editor picking maps those names back to the actor id; Play picking still walks parents to `actor-N`.
 
 Tilemap atlas materials stay **unlit and double-sided** in both 2D and 3D scenes. They disable material fog and image processing to preserve atlas colors, and retain their atlas when attached beneath actors or components with mesh/model material overrides. Alpha testing discards transparent atlas pixels. Sprite and tilemap mesh disposal or atlas rebinding disposes the old owned albedo material while preserving the shared ResourceCache texture, including mixed scenes rebuilt after painting.
 
-`tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw: animated tileset ids (`animation.length > 0`) use the first frame’s UVs on the `:anim` mesh. Per-layer `sortingLayer` / `orderInLayer` write `renderingGroupId` / `alphaIndex`. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`).
+`tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw and returns animation descriptors alongside geometry. The `:anim` mesh starts on frame zero and is subsequently sought by the scene clock. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`).
 
 ## Collision
 

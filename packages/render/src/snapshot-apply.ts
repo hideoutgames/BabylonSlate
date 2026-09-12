@@ -82,6 +82,7 @@ import {
   applyTilemapParallaxToMesh,
   createTilemapMeshes,
   isTilemapChunkMesh,
+  updateSceneTilemapAnimations,
   worldTileSize,
 } from "./tilemap-mesh";
 import { snapToPixelGrid } from "./pixel-perfect";
@@ -119,6 +120,9 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   overlayPanelProps: Map<number, OverlayPanelMeshOptions>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
+  /** Worker simulation clock, retained while paused and across visual rebuilds. */
+  tilemapAnimationTimeMs?: number;
+  tilemapAnimationScenes?: Set<Scene>;
   /** Reused each apply — no per-frame Set allocation. */
   liveSlots: Set<number>;
   /** meshKind from assignMesh, keyed by slotId. */
@@ -1242,6 +1246,9 @@ export function applySnapshotToScene(
   try {
     const live = binding.liveSlots;
     live.clear();
+    const animationScenes = binding.tilemapAnimationScenes ??= new Set();
+    animationScenes.clear();
+    animationScenes.add(scene);
     const count = snapshot.actorCount ?? snapshot.actors.length;
     for (let i = 0; i < count; i++) {
       const actor = snapshot.actors[i]!;
@@ -1253,6 +1260,7 @@ export function applySnapshotToScene(
       }
       const hostScene = wantsOverlay ? overlayScene : scene;
       if (!hostScene) continue;
+      animationScenes.add(hostScene);
       let mesh = binding.meshes.get(actor.slotId) ?? null;
       if (mesh && overlayScene && mesh.getScene() !== overlayScene) {
         mesh = migratePlaySlotVisual(overlayScene, binding, actor.slotId);
@@ -1317,6 +1325,9 @@ export function applySnapshotToScene(
       if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
     }
     refreshPlayActiveCamera(scene, binding);
+    for (const animationScene of animationScenes) {
+      updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
+    }
   } finally {
     scene.blockMaterialDirtyMechanism = false;
     scene.blockfreeActiveMeshesAndRenderingGroups = prevBlock;
@@ -1339,6 +1350,7 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  binding.tilemapAnimationScenes?.clear();
   binding.boneAttachments.clear();
   for (const mesh of binding.meshes.values()) {
     mesh.dispose();

@@ -1,11 +1,11 @@
 import { NullEngine, Scene, VertexBuffer } from "@babylonjs/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
 } from "@babylonslate/assets";
-import { applyTilemapParallaxToMesh, createTilemapMeshes } from "./tilemap-mesh";
+import { applyTilemapParallaxToMesh, createTilemapMeshes, updateSceneTilemapAnimations } from "./tilemap-mesh";
 
 describe("createTilemapMeshes", () => {
   let engine: NullEngine;
@@ -92,6 +92,24 @@ describe("createTilemapMeshes", () => {
     const names = root.getChildMeshes().map((mesh) => mesh.name);
     expect(names.some((name) => name.endsWith(":anim"))).toBe(true);
     expect(names.some((name) => !name.endsWith(":anim"))).toBe(true);
+    const animated = root.getChildMeshes().find((mesh) => mesh.name.endsWith(":anim"))!;
+    const fixed = root.getChildMeshes().find((mesh) => !mesh.name.endsWith(":anim"))!;
+    const originalUvs = [...animated.getVerticesData(VertexBuffer.UVKind)!];
+    const positions = [...animated.getVerticesData(VertexBuffer.PositionKind)!];
+    const animatedUpdate = vi.spyOn(animated, "updateVerticesData");
+    const staticUpdate = vi.spyOn(fixed, "updateVerticesData");
+    updateSceneTilemapAnimations(scene, 99);
+    expect(animatedUpdate).not.toHaveBeenCalled();
+    updateSceneTilemapAnimations(scene, 100);
+    expect([...animated.getVerticesData(VertexBuffer.UVKind)!]).toEqual([...fixed.getVerticesData(VertexBuffer.UVKind)!]);
+    updateSceneTilemapAnimations(scene, 200);
+    expect([...animated.getVerticesData(VertexBuffer.UVKind)!]).toEqual(originalUvs);
+    expect([...animated.getVerticesData(VertexBuffer.PositionKind)!]).toEqual(positions);
+    expect(staticUpdate).not.toHaveBeenCalled();
+    root.dispose();
+    animatedUpdate.mockClear();
+    updateSceneTilemapAnimations(scene, 300);
+    expect(animatedUpdate).not.toHaveBeenCalled();
   });
 
   it("stores per-layer parallax on chunk meshes", () => {

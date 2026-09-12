@@ -161,6 +161,7 @@ import {
 } from "@babylonslate/core";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
+import { updateSceneTilemapAnimations } from "./tilemap-mesh";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 import { MaterialLibrary } from "./material-library";
@@ -1413,6 +1414,7 @@ export function createEngine(
   const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
+  const tilemapPreviewStart = performance.now();
   const renderLoop = () => {
     const frameStart = performance.now();
     if (!scheduler.shouldRender(frameStart)) {
@@ -1454,6 +1456,9 @@ export function createEngine(
     const renderStart = performance.now();
     beginEngineDrawCallFrame(engine);
     if (rttPresent) rttPresent.bind();
+    if (!options.playMode) {
+      updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
+    }
     scene.render();
     sceneLayerCompositor?.render();
     if (rttPresent) rttPresent.blit();
@@ -1767,6 +1772,10 @@ export function createEngine(
       if (command.type === "setShadowQuality") {
         applyShadowQuality(scene, binding, command.level);
         scheduler.invalidate("asset");
+      }
+      if (command.type === "tilemapAnimationTime") {
+        binding.tilemapAnimationTimeMs = command.elapsedMs;
+        scheduler.invalidate("snapshot");
       }
       if (command.type === "animState") {
         if (!binding.pendingAnimState) binding.pendingAnimState = new Map();
