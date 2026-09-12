@@ -64,6 +64,7 @@ export class ShadowSpatialIndex {
     // Retain the side and far planes, so unrelated distant geometry is excluded.
     return this.queryPlanes(preserveUpstream ? planes.slice(1) : planes);
   }
+  bounds(): Bounds | undefined { this.refit(); return this.root; }
   queryPlanes(planes: readonly Plane[]): AbstractMesh[] {
     this.refit();
     const result: AbstractMesh[] = [];

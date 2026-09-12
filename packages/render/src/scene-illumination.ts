@@ -13,6 +13,7 @@ import {
   Vector3,
 
   type Light,
+  type AbstractMesh,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";

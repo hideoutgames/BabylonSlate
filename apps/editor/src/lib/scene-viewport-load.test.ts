@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { normalizeCelShadingSettings } from "@babylonslate/core";
+import { normalizeCelShadingSettings, normalizeShadowSettings } from "@babylonslate/core";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
@@ -14,6 +14,16 @@ it("reloads effective CEL changes while ignoring inactive and inherited-equivale
   expect(sceneViewportRenderSettingsKey({ ...project, mode: "pbr" })).not.toBe(initial);
   expect(sceneViewportRenderSettingsKey({ mode: "pbr", cel: project.cel }, { shadowBands: 6 }))
     .toBe(sceneViewportRenderSettingsKey({ mode: "pbr" }));
+});
+
+it("reloads effective shadow changes in PBR and CEL and restores inherited values", () => {
+  for (const mode of ["pbr", "cel"] as const) {
+    const project = { mode, shadows: normalizeShadowSettings({ distance: 200 }) };
+    const initial = sceneViewportRenderSettingsKey(project);
+    expect(sceneViewportRenderSettingsKey(project, {}, { distance: 200 })).toBe(initial);
+    expect(sceneViewportRenderSettingsKey(project, {}, { distance: 80 })).not.toBe(initial);
+    expect(sceneViewportRenderSettingsKey(project, {}, {})).toBe(initial);
+  }
 });
 
 describe("isSceneViewportRemountLoad", () => {

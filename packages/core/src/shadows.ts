@@ -10,6 +10,7 @@ export interface ShadowSettings {
   filter: "pcf" | "pcss";
   filterQuality: "low" | "medium" | "high";
   softness: number;
+  autoBias: boolean;
   depthBias: number;
   normalBias: number;
   maxLocalLights: number;
@@ -25,7 +26,7 @@ export const SHADOW_PROFILES = {
 export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
   enabled: true, distance: 200, fadeFraction: 0.1, profile: "a16",
   ...SHADOW_PROFILES.a16,
-  filter: "pcf", softness: 0.05, depthBias: 0.0001, normalBias: 0.005,
+  filter: "pcf", softness: 0.05, autoBias: true, depthBias: 0.0001, normalBias: 0.005,
 };
 export const SHADOW_LIMITS = {
   distance: [1, 1_000_000], fadeFraction: [0, 0.5], cascades: [1, 4],
@@ -36,6 +37,7 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   const source = value as Record<string, unknown>;
   const result: ShadowOverrides = {};
   if (typeof source.enabled === "boolean") result.enabled = source.enabled;
+  if (typeof source.autoBias === "boolean") result.autoBias = source.autoBias;
   if (typeof source.profile === "string" && Object.hasOwn(SHADOW_PROFILES, source.profile))
     result.profile = source.profile as ShadowProfile;
   if (source.filter === "pcf" || source.filter === "pcss") result.filter = source.filter;

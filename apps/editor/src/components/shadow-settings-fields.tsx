@@ -23,6 +23,7 @@ const fields: { key: keyof ShadowSettings; label: string; description: string }[
   { key: "filterQuality", label: "Shadow Filter Quality", description: "Higher quality uses more texture samples." },
   { key: "softness", label: "Contact Hardening Size", description: "PBR PCSS light size; larger values widen the penumbra." },
   { key: "depthBias", label: "Shadow Depth Bias", description: "Advanced depth offset. Excessive values detach shadows from surfaces." },
+  { key: "autoBias", label: "Automatic Shadow Bias", description: "Calibrate directional cascade bias from texel size and filter footprint, using Depth Bias as the minimum. Disable for a manual depth offset." },
   { key: "normalBias", label: "Shadow Normal Bias", description: "Advanced geometric normal offset in world units." },
   { key: "maxLocalLights", label: "Local Shadow Light Budget", description: "Maximum simultaneous point and spot shadow lights. A point light renders six faces." },
   { key: "localMapSize", label: "Local Shadow Map Size", description: "Resolution for each local light map or cube face." },
@@ -53,7 +54,7 @@ export function ShadowSettingsFields({ project, overrides, onChange }: {
             const next = { ...overrides }; delete next[key]; onChange(next);
           }}>{overridden ? "Reset To Project" : "Override"}</Button> : null}
         </div>
-        {key === "enabled" ? <Switch id={id} checked={effective.enabled} disabled={scene && !overridden} onCheckedChange={(value) => patch(key, value)} />
+        {key === "enabled" || key === "autoBias" ? <Switch id={id} checked={effective[key]} disabled={scene && !overridden} onCheckedChange={(value) => patch(key, value)} />
           : choices ? <Select value={String(effective[key])} disabled={scene && !overridden} onValueChange={(value) => { if (value) patch(key, typeof effective[key] === "number" ? Number(value) : value); }}>
             <SelectTrigger id={id}><SelectValue>{choices[String(effective[key])]}</SelectValue></SelectTrigger>
             <SelectContent><SelectGroup>{Object.entries(choices).map(([value, name]) => <SelectItem key={value} value={value}>{name}</SelectItem>)}</SelectGroup></SelectContent>

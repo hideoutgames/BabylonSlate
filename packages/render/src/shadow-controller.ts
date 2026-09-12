@@ -10,6 +10,7 @@ import { authoredShadowParticipation, participatesInShadows, type ShadowParticip
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
+import { calibratedShadowBias } from "./shadow-bias";
 
 type ShadowLight = DirectionalLight | PointLight | SpotLight;
 export type ShadowLightStatus = "active" | "disabled" | "outside-relevant-area" | "budget-limited";
@@ -95,6 +96,7 @@ export class SceneShadowController {
       for (const entry of this.entries.values()) entry.generator?.addShadowCaster(mesh, false);
     }
     this.pending.clear();
+    const casterBounds = this.spatial.bounds();
     const state = sceneRenderingSettings(scene);
     const requested = this.quality === undefined ? state.shadows : { ...state.shadows, enabled: state.shadows.enabled && this.quality !== null, mapSize: this.quality ?? state.shadows.mapSize };
     const { settings } = effectiveShadowSettings(requested, state.shadowDeviceProfile, CascadedShadowGenerator.IsSupported, state.mode);
@@ -124,7 +126,10 @@ export class SceneShadowController {
       const directionalLight = entry.light instanceof DirectionalLight;
       const mapSize = directionalLight ? settings.mapSize : settings.localMapSize;
       const key = JSON.stringify([settings, mapSize, state.mode]);
-      if (key === entry.key && entry.camera === camera && entry.generator) continue;
+      if (key === entry.key && entry.camera === camera && entry.generator) {
+        if (casterBounds && entry.generator instanceof CascadedShadowGenerator) entry.generator.shadowCastersBoundingInfo.reConstruct(casterBounds.min, casterBounds.max);
+        continue;
+      }
       entry.generator?.dispose();
       const generator = directionalLight && settings.cascades > 1
         ? new CascadedShadowGenerator(mapSize, entry.light as DirectionalLight, undefined, camera)
@@ -137,6 +142,8 @@ export class SceneShadowController {
         generator.cascadeBlendPercentage = 0.05;
         generator.autoCalcDepthBounds = false;
         generator.depthClamp = true;
+        generator.freezeShadowCastersBoundingInfo = true;
+        if (casterBounds) generator.shadowCastersBoundingInfo.reConstruct(casterBounds.min, casterBounds.max);
         const prepare = generator.prepareDefines.bind(generator);
         generator.prepareDefines = (defines, lightIndex) => {
           prepare(defines, lightIndex);
@@ -156,6 +163,11 @@ export class SceneShadowController {
       generator.frustumEdgeFalloff = 0;
       for (const mesh of this.meshes) generator.addShadowCaster(mesh, false);
       const map = generator.getShadowMap();
+      if (settings.autoBias && generator instanceof CascadedShadowGenerator) map?.onBeforeRenderObservable.add((layer) => {
+        const min = generator.getCascadeMinExtents(layer);
+        const max = generator.getCascadeMaxExtents(layer);
+        if (min && max) generator.bias = calibratedShadowBias(mapSize, Math.max(max.x - min.x, max.y - min.y), max.z - min.z, settings.filterQuality, settings.depthBias);
+      });
       let activePlanes: Plane[] | null = null;
       if (map) map.getCustomRenderList = (layer) => {
         const transform = generator instanceof CascadedShadowGenerator

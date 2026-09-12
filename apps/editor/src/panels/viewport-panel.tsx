@@ -187,11 +187,16 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
-  const renderSettingsKey = sceneViewportRenderSettingsKey(
+  const requestedRenderSettingsKey = sceneViewportRenderSettingsKey(
     projectDocument?.settings.render,
     scene?.settings.celShading,
     scene?.settings.shadowOverrides,
   );
+  const [renderSettingsKey, setRenderSettingsKey] = useState(requestedRenderSettingsKey);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRenderSettingsKey(requestedRenderSettingsKey), 150);
+    return () => window.clearTimeout(timer);
+  }, [requestedRenderSettingsKey]);
 
   useEffect(() => {
     sceneRef.current = scene;
