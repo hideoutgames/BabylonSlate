@@ -632,11 +632,12 @@ export function createEngine(
   const presentRtt = options.present === "rtt";
   const engine =
     options.sharedEngine ??
-    new Engine(canvas, true, {
+    new Engine(canvas, false, {
       preserveDrawingBuffer: true,
       stencil: true,
       adaptToDeviceRatio: false,
       antialias: false,
+      useLargeWorldRendering: true,
     });
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: options.playMode === true,
@@ -2133,11 +2134,12 @@ export function createAppEngine(
     dracoBasePath: options.dracoBasePath,
     meshoptBasePath: options.meshoptBasePath,
   });
-  const engine = new Engine(canvas, true, {
+  const engine = new Engine(canvas, false, {
     preserveDrawingBuffer: true,
     stencil: true,
     adaptToDeviceRatio: false,
     antialias: false,
+    useLargeWorldRendering: true,
   });
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     caps: engine.getCaps(),

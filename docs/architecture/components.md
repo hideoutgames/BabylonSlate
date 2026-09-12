@@ -176,3 +176,4 @@ Graph Engine Settings control the Node Connection Assistant (enabled by default,
 Make Structure exposes a Structure Type selector in Inspector and named Make/Break entries for engine and project structures. Input events and rebinding nodes share the native Key enum and Input Binding structure; wired events display Event Input Action or Event Input Axis.
 
 `VariableTypeFields.showType=false` reuses container/key controls inside `PinListEditor` without repeating its existing value type picker.
+ShadowSettingsFields shares compact project and scene shadow controls. Scene overrides are independent and reset by removing the key; inherited fields display project values.

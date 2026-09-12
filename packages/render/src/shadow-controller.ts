@@ -81,8 +81,8 @@ export class SceneShadowController {
     const camera = scene.activeCamera;
     const candidates = [...this.entries.values()].filter((entry) => {
       entry.status = "disabled";
-      if (!settings.enabled || !camera || !entry.requested || !entry.light.isEnabled() || entry.light.intensity <= 0) return false;
-      if (!(entry.light instanceof DirectionalLight) && Vector3.Distance(entry.light.getAbsolutePosition(), camera.globalPosition) > settings.distance + entry.light.range) {
+      if (!settings.enabled || !entry.requested || !entry.light.isEnabled() || entry.light.intensity <= 0) return false;
+      if (camera && !(entry.light instanceof DirectionalLight) && Vector3.Distance(entry.light.getAbsolutePosition(), camera.globalPosition) > settings.distance + entry.light.range) {
         entry.status = "outside-relevant-area";
         return false;
       }

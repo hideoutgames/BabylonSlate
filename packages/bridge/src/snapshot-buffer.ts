@@ -1,6 +1,4 @@
 import {
-  SNAPSHOT_ACTOR_STRIDE,
-  SNAPSHOT_HEADER_FLOATS,
   SNAPSHOT_LAYOUT_VERSION,
   SNAPSHOT_MAGIC_F32,
   actorSlotOffset,
@@ -18,6 +16,8 @@ export interface SnapshotHeader {
   physicsMs: number;
   seq: number;
   layoutGeneration: number;
+  origin?: Vec3;
+  originGeneration?: number;
 }
 
 export interface Vec3 {
@@ -63,9 +63,10 @@ export function writeSnapshotHeader(
     buf[7] = u32ToFloatBits(header.seq >>> 0);
   }
   buf[8] = header.layoutGeneration ?? 0;
-  for (let i = 9; i < SNAPSHOT_HEADER_FLOATS; i++) {
-    buf[i] = 0;
-  }
+  const origin = header.origin ?? { x: 0, y: 0, z: 0 };
+  buf[9] = origin.x; buf[10] = origin.y; buf[11] = origin.z;
+  buf[12] = origin.x - buf[9]!; buf[13] = origin.y - buf[10]!; buf[14] = origin.z - buf[11]!;
+  buf[15] = header.originGeneration ?? 0;
 }
 
 export function readSnapshotHeader(buf: Float32Array): SnapshotHeader {
@@ -79,6 +80,8 @@ export function readSnapshotHeader(buf: Float32Array): SnapshotHeader {
     physicsMs: buf[6]!,
     seq: floatBitsToU32(buf[7]!),
     layoutGeneration: buf[8]!,
+    origin: { x: buf[9]! + buf[12]!, y: buf[10]! + buf[13]!, z: buf[11]! + buf[14]! },
+    originGeneration: buf[15]!,
   };
 }
 
@@ -99,12 +102,16 @@ export function writeActorSlot(
   buf: Float32Array,
   slotIndex: number,
   actor: ActorSlot,
+  origin: Vec3 = { x: 0, y: 0, z: 0 },
 ): void {
   const o = actorSlotOffset(slotIndex);
   buf[o] = actor.slotId;
-  buf[o + 1] = actor.position.x;
-  buf[o + 2] = actor.position.y;
-  buf[o + 3] = actor.position.z;
+  const x = actor.position.x - origin.x;
+  const y = actor.position.y - origin.y;
+  const z = actor.position.z - origin.z;
+  buf[o + 1] = x;
+  buf[o + 2] = y;
+  buf[o + 3] = z;
   buf[o + 4] = actor.rotation.x;
   buf[o + 5] = actor.rotation.y;
   buf[o + 6] = actor.rotation.z;
@@ -113,16 +120,21 @@ export function writeActorSlot(
   buf[o + 9] = actor.scale.y;
   buf[o + 10] = actor.scale.z;
   buf[o + 11] = actor.flags;
-  for (let i = 12; i < SNAPSHOT_ACTOR_STRIDE; i++) {
-    buf[o + i] = 0;
-  }
+  buf[o + 12] = x - buf[o + 1]!;
+  buf[o + 13] = y - buf[o + 2]!;
+  buf[o + 14] = z - buf[o + 3]!;
+  buf[o + 15] = 0;
 }
 
 export function readActorSlot(buf: Float32Array, slotIndex: number): ActorSlot {
   const o = actorSlotOffset(slotIndex);
   return {
     slotId: buf[o]!,
-    position: { x: buf[o + 1]!, y: buf[o + 2]!, z: buf[o + 3]! },
+    position: {
+      x: (buf[o + 1]! + buf[o + 12]!) + (buf[9]! + buf[12]!),
+      y: (buf[o + 2]! + buf[o + 13]!) + (buf[10]! + buf[13]!),
+      z: (buf[o + 3]! + buf[o + 14]!) + (buf[11]! + buf[14]!),
+    },
     rotation: {
       x: buf[o + 4]!,
       y: buf[o + 5]!,

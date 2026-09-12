@@ -2,7 +2,7 @@
 
 export const SNAPSHOT_HEADER_FLOATS = 16;
 export const SNAPSHOT_ACTOR_STRIDE = 16;
-export const SNAPSHOT_LAYOUT_VERSION = 1;
+export const SNAPSHOT_LAYOUT_VERSION = 2;
 
 /** ASCII "BSNP" as big-endian u32, reinterpreted as f32 bits. */
 export const SNAPSHOT_MAGIC_U32 = 0x42534e50;

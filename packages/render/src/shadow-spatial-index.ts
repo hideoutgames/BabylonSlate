@@ -20,8 +20,8 @@ export class ShadowSpatialIndex {
   remove(mesh: AbstractMesh): void { this.leaves.delete(mesh); this.dirty.delete(mesh); this.rebuild = true; }
   private union(node: Node): void {
     if (!node.left || !node.right) return;
-    Vector3.MinimizeToRef(node.left.min, node.right.min, node.min);
-    Vector3.MaximizeToRef(node.left.max, node.right.max, node.max);
+    node.min.copyFrom(node.left.min).minimizeInPlace(node.right.min);
+    node.max.copyFrom(node.left.max).maximizeInPlace(node.right.max);
   }
   private build(nodes: Node[], depth = 0): Node | undefined {
     if (!nodes.length) return undefined;

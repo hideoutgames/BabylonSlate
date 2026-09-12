@@ -275,3 +275,4 @@ Supported directional rendering uses stabilized cascades without a depth-reducti
 pass. Device profile limits resolve separately from authored settings. The A16
 preset is a starting budget, not a measured performance certification; final iPad
 validation is manual.
+CEL band and highlight edges use screen-space derivatives for subpixel antialiasing while retaining flat band interiors. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
