@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PROJECT_FILE } from "@babylonslate/core";
 import {
   createDefaultPluginSettings,
@@ -16,6 +16,7 @@ import {
 } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
+import { EnginePluginLibrary } from "../lib/engine-plugin-library";
 
 async function scaffolded() {
   const storage = new MemoryStorageAdapter("documents");
@@ -59,6 +60,15 @@ async function writeClassAsset(
 }
 
 describe("ProjectService plugin roots", () => {
+  it("keeps app-owned Engine Plugin and template libraries out of the project list", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("__slate_engine_plugins__");
+    await storage.openDocumentsProject("__slate_templates__");
+    await storage.openDocumentsProject("My Project");
+    expect((await new ProjectService(storage).listProjects()).map((folder) => folder.name))
+      .toEqual(["My Project"]);
+  });
+
   it("mounts enabled-by-default project plugins when opening", async () => {
     const { storage, service } = await scaffolded();
     const settings = createDefaultPluginSettings({
@@ -109,6 +119,47 @@ describe("ProjectService plugin roots", () => {
     );
     expect(await storage.exists("plugins/my-pack/assets")).toBe(true);
     expect(await storage.exists(PROJECT_FILE)).toBe(true);
+  });
+
+  it("refreshes plugin metadata and dependency diagnostics immediately after settings save", async () => {
+    const { service } = await scaffolded();
+    const created = await service.createProjectPlugin("My Pack");
+    const changed = vi.fn();
+    service.onRegistryChange(changed);
+    await service.saveDocument("plugin-settings", created.settingsPath, {
+      ...created.settings,
+      displayName: "Renamed Pack",
+      iconKey: "Box",
+      experimental: true,
+      enabledByDefault: true,
+      pluginDependencies: [{ guid: "missing-plugin", versionRange: "^1.0.0" }],
+    });
+    expect(service.plugins.find((plugin) => plugin.pluginGuid === created.pluginGuid)?.settings)
+      .toMatchObject({ displayName: "Renamed Pack", iconKey: "Box", experimental: true });
+    expect(service.pluginGraphDiagnostics).toMatchObject([
+      { code: "plugin.missing", pluginGuid: created.pluginGuid, dependencyGuid: "missing-plugin" },
+    ]);
+    expect(service.registry?.getRoot(`plugin:${created.pluginGuid}`)).toBeUndefined();
+    expect(changed).toHaveBeenCalled();
+  });
+
+  it("blocks an enabled plugin until its disabled dependency is enabled", async () => {
+    const { storage, service } = await scaffolded();
+    const dependency = createDefaultPluginSettings({ pluginGuid: "dependency", displayName: "Dependency" });
+    const dependent = createDefaultPluginSettings({ pluginGuid: "dependent", displayName: "Dependent" });
+    dependent.enabledByDefault = true;
+    dependent.pluginDependencies = [{ guid: "dependency", versionRange: "^1.0.0" }];
+    await writeProjectPlugin(storage, "dependency", dependency);
+    await writeProjectPlugin(storage, "dependent", dependent);
+    await service.remountRegistry();
+    expect(service.registry?.getRoot("plugin:dependent")).toBeUndefined();
+    expect(service.pluginGraphDiagnostics).toMatchObject([
+      { code: "plugin.missing", pluginGuid: "dependent", dependencyGuid: "dependency" },
+    ]);
+    await service.applyPluginOverrides({ dependency: { enabled: true } });
+    expect(service.registry?.getRoot("plugin:dependent")).toBeTruthy();
+    expect(service.registry?.getRoot("plugin:dependency")).toBeTruthy();
+    expect(service.pluginGraphDiagnostics).toEqual([]);
   });
 
   it("exports a project plugin as a self-contained .babplugin zip", async () => {
@@ -324,4 +375,40 @@ describe("ProjectService plugin roots", () => {
       ),
     ).toBe(false);
   });
+
+  it.each(["empty", "template"] as const)(
+    "clones user Engine Plugins and their global default into a new %s project independently",
+    async (kind) => {
+      const bundled = new MemoryStorageAdapter("opfs");
+      await bundled.openDocumentsProject("bundled");
+      const saved = new MemoryStorageAdapter("opfs");
+      await saved.openDocumentsProject("library");
+      const library = new EnginePluginLibrary(bundled, saved);
+      const source = await scaffolded();
+      const created = await source.service.createProjectPlugin("Global Pack");
+      await library.import(await source.service.exportPlugin(created.pluginGuid));
+      await library.setEnabledByDefault(created.pluginGuid, true);
+      const destination = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(destination);
+      service.setEnginePluginStorage(await library.createStorageSnapshot());
+      if (kind === "empty") {
+        await service.createEmptyProject("FromLibrary");
+      } else {
+        await service.createFromTemplate({
+          name: "FromLibrary",
+          templateFiles: createEmptyProjectFiles({ guid: "template", name: "Template" }),
+        });
+      }
+      expect(service.plugins.find((plugin) => plugin.pluginGuid === created.pluginGuid))
+        .toMatchObject({ source: "project", settings: { enabledByDefault: true } });
+      expect(service.registry?.getRoot(`plugin:${created.pluginGuid}`)).toBeTruthy();
+      await library.setEnabledByDefault(created.pluginGuid, false);
+      await library.remove(created.pluginGuid);
+      service.setEnginePluginStorage(bundled);
+      await service.loadCurrentProject();
+      expect(service.plugins.find((plugin) => plugin.pluginGuid === created.pluginGuid))
+        .toMatchObject({ source: "project", settings: { enabledByDefault: true } });
+      expect(await destination.exists("plugins/global-pack/global-pack.plugin.babasset")).toBe(true);
+    },
+  );
 });

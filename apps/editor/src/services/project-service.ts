@@ -111,6 +111,7 @@ import {
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
 import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
+import { ENGINE_PLUGIN_LIBRARY_ROOT } from "../lib/engine-plugin-library";
 import {
   normalizeProjectFolderName,
   type CreateProjectOptions,
@@ -491,7 +492,9 @@ export class ProjectService {
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
-    return this.storage.listProjects();
+    return (await this.storage.listProjects()).filter(
+      (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== "__slate_templates__",
+    );
   }
 
   async deleteListedProject(handle: ProjectFolderHandle): Promise<void> {
@@ -880,7 +883,9 @@ export class ProjectService {
           ? (this.enginePluginStorage ?? undefined)
           : undefined,
     });
-    const { diagnostics } = resolvePluginGraph(this.pluginDescriptors);
+    const { diagnostics } = resolvePluginGraph(
+      this.pluginDescriptors.filter((plugin) => enabledGuids.has(plugin.pluginGuid)),
+    );
     this.pluginDiagnostics = diagnostics;
     const discoveredGuids = new Set(
       this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
@@ -1473,6 +1478,10 @@ export class ProjectService {
       );
     }
     this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
+    if (type === "PluginSettings") {
+      await this.syncPlugins();
+      this.emitRegistryChange();
+    }
   }
 
   /** Binary chunk (font source, pixels, …) without decoding the document JSON. */
