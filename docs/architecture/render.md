@@ -283,3 +283,10 @@ supported, effective target size/sample count, allocated shadow passes and an
 attachment-memory estimate. Unsupported or pending GPU timing is labeled rather
 than reported as zero. Shared-engine GPU time can include other active views.
 Offscreen canvas targets honor hardware scaling as well as their maximum size.
+
+Directional cascades fade only across the configurable final distance fraction;
+the old whole-map radial fade is removed. Large static index ranges are split
+without copying vertices, UVs or indices; material assignments and face order
+remain intact. A refitted caster hierarchy rejects unrelated geometry, and
+per-submesh shadow culling retains upstream casters for depth-clamped PCF.
+Skinned, morphing and instanced geometry is not automatically partitioned.

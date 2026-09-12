@@ -53,6 +53,7 @@ export type AuthoredLightProperties = {
   innerAngle?: number;
   outerAngle?: number;
   castShadows?: boolean;
+  shadowPriority?: number;
   groundColor?: [number, number, number] | number[];
 };
 
@@ -186,7 +187,7 @@ export function applyAuthoredLightProperties(
   );
   light.diffuse = asRgb(properties.color);
   light.setEnabled(properties.enabled !== false);
-  sceneShadowController(light.getScene()).register(light, properties.castShadows === true);
+  sceneShadowController(light.getScene()).register(light, properties.castShadows === true, properties.shadowPriority);
   const range = asNumber(properties.range, 10);
   if (light instanceof PointLight || light instanceof SpotLight) {
     light.range = range > 0 ? range : 10;

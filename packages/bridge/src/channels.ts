@@ -327,6 +327,7 @@ export type CommandMessage =
         innerAngle?: number;
         outerAngle?: number;
         castShadows?: boolean;
+        shadowPriority?: number;
         groundColor?: [number, number, number];
       };
       camera?: {

@@ -3157,6 +3157,7 @@ class InProcessRuntime implements RuntimeDriver {
           innerAngle: Number(light.getVariable("innerAngle") ?? 30),
           outerAngle: Number(light.getVariable("outerAngle") ?? 45),
           castShadows: light.getVariable("castShadows") === true,
+          shadowPriority: Number(light.getVariable("shadowPriority") ?? 0),
         },
         parts: [playMeshPartOf(light)],
       });

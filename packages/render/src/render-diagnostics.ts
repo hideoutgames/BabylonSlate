@@ -1,4 +1,4 @@
-import { EngineInstrumentation, type AbstractEngine, type Scene } from "@babylonjs/core";
+import { CascadedShadowGenerator, EngineInstrumentation, type AbstractEngine, type Scene } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
@@ -42,7 +42,7 @@ export function createRenderDiagnostics(scene: Scene, cpuMs: () => number): () =
       // Conservative depth + color attachment estimate, excluding driver overhead.
       shadowMapBytes: lights.reduce((sum, light) => sum + light.passes * light.mapSize ** 2 * 8, 0),
       shadowLights: lights,
-      qualityLimits: effectiveShadowSettings(state.shadows, state.shadowDeviceProfile, engine.webGLVersion > 1, state.mode).limits,
+      qualityLimits: effectiveShadowSettings(state.shadows, state.shadowDeviceProfile, CascadedShadowGenerator.IsSupported, state.mode).limits,
     };
   };
 }

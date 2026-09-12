@@ -16,6 +16,7 @@ const fields: { key: keyof ShadowSettings; label: string; description: string }[
   { key: "enabled", label: "Shadows Enabled", description: "Allow eligible lights to cast real-time shadows." },
   { key: "profile", label: "Shadow Preset", description: "Apply map, cascade and local-light defaults. iPad A16 is the baseline candidate; measure on your device." },
   { key: "distance", label: "Shadow Distance", description: "Camera-relative directional shadow coverage in world units. Does not limit scene size." },
+  { key: "fadeFraction", label: "Shadow Distance Fade", description: "Fraction of the directional shadow distance used to fade the far cutoff. Zero disables fading." },
   { key: "mapSize", label: "Directional Map Size", description: "Resolution per cascade. Larger maps use more GPU memory and time." },
   { key: "cascades", label: "Shadow Cascades", description: "Split directional coverage to retain detail near the camera." },
   { key: "filter", label: "Shadow Filter", description: "PCF filters shadow edges. PCSS adds distance-dependent penumbra in PBR. CEL uses PCF; point lights use the supported cube-map filter." },

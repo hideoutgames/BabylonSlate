@@ -5,6 +5,7 @@ import { lightsFragmentFunctions } from "@babylonjs/core/Shaders/ShadersInclude/
 import { lightsFragmentFunctionsWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/lightsFragmentFunctions";
 import { sceneRenderingSettings } from "./render-settings";
 import { checkedShader } from "./checked-shader";
+import { withShadowDistanceFade } from "./shadow-shader";
 
 export const CEL_UNIFORMS = [
   "slateCelBands",
@@ -112,9 +113,9 @@ export function celLightingFunctions(source: string, wgsl: boolean): string {
 
 for (const wgsl of [false, true]) {
   const store = ShaderStore.GetIncludesShadersStore(wgsl ? 1 : 0);
-  store.slateCelLightFragment = checkedShader((
+  store.slateCelLightFragment = checkedShader(withShadowDistanceFade((
     wgsl ? lightFragmentWGSL : lightFragment
-  ).shader, wgsl ? "light fragment WGSL" : "light fragment GLSL")
+  ).shader, wgsl), wgsl ? "light fragment WGSL" : "light fragment GLSL")
     .replace(
       /diffuseBase\+=info\.diffuse\*(shadow(?:Debug\{X\})?);/g,
       (

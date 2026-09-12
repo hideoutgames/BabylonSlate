@@ -1,13 +1,15 @@
 import {
   CascadedShadowGenerator, DirectionalLight, PointLight, SpotLight,
-  ShadowGenerator, Vector3,
-  type AbstractMesh, type Camera, type Light, type Scene,
+  ShadowGenerator, Vector3, Frustum,
+  type AbstractMesh, type Camera, type Light, type Scene, type Plane,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { participatesInShadows } from "./shadow-mesh-policy";
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
+import "./shadow-shader";
+import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 
 type ShadowLight = DirectionalLight | PointLight | SpotLight;
 export type ShadowLightStatus = "active" | "disabled" | "outside-relevant-area" | "budget-limited";
@@ -70,6 +72,7 @@ export class SceneShadowController {
       if (!participatesInShadows(mesh)) { mesh.receiveShadows = false; continue; }
       this.meshes.add(mesh);
       this.spatial.add(mesh);
+      partitionShadowGeometry(mesh);
       mesh.receiveShadows = true;
       for (const entry of this.entries.values()) entry.generator?.addShadowCaster(mesh, false);
     }
@@ -119,6 +122,12 @@ export class SceneShadowController {
         generator.cascadeBlendPercentage = 0.05;
         generator.autoCalcDepthBounds = false;
         generator.depthClamp = true;
+        const prepare = generator.prepareDefines.bind(generator);
+        generator.prepareDefines = (defines, lightIndex) => {
+          prepare(defines, lightIndex);
+          defines[`SLATE_SHADOW_FADE${lightIndex}`] = settings.fadeFraction;
+          defines.rebuild();
+        };
       } else if (entry.light instanceof DirectionalLight) {
         entry.light.shadowFrustumSize = settings.distance * 2;
         entry.light.autoCalcShadowZBounds = true;
@@ -132,10 +141,26 @@ export class SceneShadowController {
       generator.frustumEdgeFalloff = 0;
       for (const mesh of this.meshes) generator.addShadowCaster(mesh, false);
       const map = generator.getShadowMap();
+      let activePlanes: Plane[] | null = null;
       if (map) map.getCustomRenderList = (layer) => {
         const transform = generator instanceof CascadedShadowGenerator
           ? generator.getCascadeTransformMatrix(layer) : generator.getTransformMatrix();
-        return transform ? this.spatial.query(transform, directionalLight && settings.filter === "pcf") : null;
+        if (!transform) return null;
+        const planes = Frustum.GetPlanes(transform);
+        activePlanes = directionalLight && settings.filter === "pcf" ? planes.slice(1) : planes;
+        return this.spatial.queryPlanes(activePlanes);
+      };
+      generator.customAllowRendering = (part) => {
+        if (!activePlanes || part.getMesh().subMeshes.length < 2) return true;
+        const box = part.getBoundingInfo()?.boundingBox;
+        if (!box) return true;
+        for (const plane of activePlanes) {
+          const n = plane.normal;
+          if (n.x * (n.x >= 0 ? box.maximumWorld.x : box.minimumWorld.x)
+            + n.y * (n.y >= 0 ? box.maximumWorld.y : box.minimumWorld.y)
+            + n.z * (n.z >= 0 ? box.maximumWorld.z : box.minimumWorld.z) + plane.d < 0) return false;
+        }
+        return true;
       };
       entry.generator = generator; entry.key = key; entry.camera = camera;
     }

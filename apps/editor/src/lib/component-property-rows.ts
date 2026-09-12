@@ -1190,6 +1190,13 @@ export function componentPropertyRows(
           value: component.properties.castShadows === true,
           onChange: (next) => update("castShadows", next),
         },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "shadowPriority"),
+          label: "Shadow Priority",
+          value: asNumber(component.properties.shadowPriority, 0),
+          onChange: (next) => update("shadowPriority", next),
+        },
       ];
       if (lightKind !== "directional") {
         rows.push({

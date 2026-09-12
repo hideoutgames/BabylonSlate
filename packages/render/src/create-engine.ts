@@ -1962,7 +1962,7 @@ export function createEngine(
     setShadowDeviceProfile: (profile) => {
       sceneRenderingSettings(scene).shadowDeviceProfile = profile;
       sceneShadowController(scene).sync();
-      scheduler.invalidate();
+      scheduler.invalidate("asset");
     },
     setRenderSettings: (settings) => {
       const previousMode = sceneRenderingSettings(scene).mode;

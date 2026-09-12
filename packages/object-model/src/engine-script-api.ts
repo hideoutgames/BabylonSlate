@@ -291,6 +291,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Inner Angle", typeId: "float", propertyKey: "innerAngle" },
       { name: "Outer Angle", typeId: "float", propertyKey: "outerAngle" },
       { name: "Cast Shadows", typeId: "bool", propertyKey: "castShadows" },
+      { name: "Shadow Priority", typeId: "float", propertyKey: "shadowPriority" },
     ],
   },
   {
