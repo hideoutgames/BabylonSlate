@@ -1283,27 +1283,31 @@ export function SettingsModal({
               </p>
             ) : null}
             <Field>
-              <Button
-                className="min-h-[var(--chrome-row,28px)] w-fit"
-              data-testid="export-game"
-              id="export-game"
-              disabled={exportGameBusy}
-              onClick={() => void handleExportGame()}
-              >
-                {exportGameBusy ? "Exporting Game…" : "Export Game"}
-              </Button>
+              <div className="flex">
+                <Button
+                  className="min-h-[var(--chrome-row,28px)] w-fit"
+                  data-testid="export-game"
+                  id="export-game"
+                  disabled={exportGameBusy}
+                  onClick={() => void handleExportGame()}
+                >
+                  {exportGameBusy ? "Exporting Game…" : "Export Game"}
+                </Button>
+              </div>
               <FieldDescription>Playable ZIP for web hosting.</FieldDescription>
             </Field>
             <Field>
-              <Button
-                className="min-h-[var(--chrome-row,28px)] w-fit"
-              data-testid="export-project"
-              id="export-project"
-              disabled={exportProjectBusy}
-              onClick={() => void handleExport()}
-              >
-                {exportProjectBusy ? "Exporting Project…" : "Export Project"}
-              </Button>
+              <div className="flex">
+                <Button
+                  className="min-h-[var(--chrome-row,28px)] w-fit"
+                  data-testid="export-project"
+                  id="export-project"
+                  disabled={exportProjectBusy}
+                  onClick={() => void handleExport()}
+                >
+                  {exportProjectBusy ? "Exporting Project…" : "Export Project"}
+                </Button>
+              </div>
               <FieldDescription>Editable project backup.</FieldDescription>
             </Field>
             {exportProjectError ? (
