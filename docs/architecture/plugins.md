@@ -66,11 +66,13 @@ Override guids with **no discovered plugin** become Unresolved placeholders. Dis
 - **Export Plugin** — opens a modal offering **Export To Download** or **Export To Engine Plugins**. Both use `encodeProjectZip` with `kind: "plugin"`, PluginSettings, `assets/`, and per-plugin blobs. Engine-library duplicate names (case-insensitive) or GUIDs require a separate **Replace** confirmation for user-added entries, preserving their global default; bundled collisions give an error. Cancelling leaves the existing entry intact. Engine Settings Export only downloads.
 - **Import Plugin** — unpack under `plugins/<safeName>/`. Dedupe by **plugin guid + version**; same guid+version → Keep / Replace; same guid newer/older version → update in place; guid remap only if the incoming PluginSettings guid collides with a **different** plugin (or another occupied guid). `.babplugin` files are never listed as assets.
 - **Export Project** remains a full backup (includes disabled project plugins on disk).
+
+Game export resolves dependencies after project and export-preset overrides, reporting named plugin errors before packing. A separate registry loads the resolved plugin roots, allowing preset-enabled plugins to export even when disabled in the editor without changing editor mounts.
 - `collectEnabledPluginAssets(registry, enabledGuids)` plus export-preset layer-3 overrides feed the P14 tree-shake. Disabled roots are absent from the itch zip / Preview pack. See [exporter.md](exporter.md).
 
 ## Editor ScriptHost
 
-Enabled plugins’ `editorUtilityObjects` merge with `ProjectSettings.editorUtilityObjects` (`mergePluginEditorUtilityObjects`). Plugin EUOs register on the plugin, not the project list — enabling the plugin is the single switch. See [editor-extensions.md](editor-extensions.md).
+Mounted plugins’ `editorUtilityObjects` merge with `ProjectSettings.editorUtilityObjects` (`mergePluginEditorUtilityObjects`). Disabling or invalidating a prerequisite also stops its dependent plugin utilities. Plugin EUOs register on the plugin, not the project list — enabling the plugin is the single switch. See [editor-extensions.md](editor-extensions.md).
 
 ## Cross-root moves
 

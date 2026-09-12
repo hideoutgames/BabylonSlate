@@ -2,6 +2,8 @@
 
 `AppSettingsProvider` is the editor-root owner for engine settings. It hydrates once, exposes a versioned reactive snapshot and focused update operations, and rejects hydration completions superseded by live updates so viewport, theme, graph, and play consumers cannot diverge.
 
+Settings control descriptions live inside their owning `Field`, beneath the control and before its separator. Horizontal copy uses `FieldContent`; compact action buttons use a flex wrapper when placed in a vertical field.
+
 Reusable Editor chrome lives in `@babylonslate/ui` (shadcn / Base UI primitives) and `@babylonslate/editor-kit` (touch-first composites). Graph canvases reuse `@babylonslate/graph-ui`. Do not add raw styled `<input>`, `<select>`, or `<button>` in `apps/editor/src` — compose from this list.
 
 Tokens and action-vs-pressed rules: [theming.md](theming.md). Spec: [engineplan.md](../engineplan.md) (UI composition). Dev-only visual audit: `/?test=1&gallery=1`.
