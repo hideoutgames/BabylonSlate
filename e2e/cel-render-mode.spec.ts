@@ -22,9 +22,10 @@ async function pixelsNear(
   canvas: Locator,
   color: number[],
   tolerance = 3,
+  flatInterior = false,
 ): Promise<number> {
   return canvas.evaluate(
-    (node: HTMLCanvasElement, { color, tolerance }) => {
+    (node: HTMLCanvasElement, { color, tolerance, flatInterior }) => {
       if (!node.width || !node.height) return 0;
       const copy = document.createElement("canvas");
       copy.width = node.width;
@@ -34,6 +35,11 @@ async function pixelsNear(
       const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
       let count = 0;
       for (let i = 0; i < pixels.length; i += 4) {
+        // Derivative antialiasing legitimately creates intermediate colors at
+        // band edges. A flat 3x3 region would be an unwanted additional band.
+        if (flatInterior && ![-copy.width - 1, -copy.width, -copy.width + 1, -1, 1, copy.width - 1, copy.width, copy.width + 1].every((offset) =>
+          color.every((channel, index) => Math.abs((pixels[i + offset * 4 + index] ?? -255) - channel) <= tolerance),
+        )) continue;
         if (
           color.every(
             (channel, index) =>
@@ -44,7 +50,7 @@ async function pixelsNear(
       }
       return count;
     },
-    { color, tolerance },
+    { color, tolerance, flatInterior },
   );
 }
 
@@ -372,7 +378,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
       scene.settings.celShading.bandSoftness = 0;
       await setPreviewScene(page, scene);
       await expect
-        .poll(() => pixelsNear(viewport, [26, 77, 39]))
+        .poll(() => pixelsNear(viewport, [26, 77, 39], 3, true))
         .toBeLessThan(30);
     }
   }
