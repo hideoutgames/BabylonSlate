@@ -181,6 +181,8 @@ test.describe("P13 plugins", () => {
     await openPluginsSettings(page);
     const downloadPromise = page.waitForEvent("download");
     await page.getByTestId(`settings-plugin-export-${pluginGuid}`).click();
+    await expect(page.getByTestId("plugin-export-dialog")).toBeVisible();
+    await page.getByRole("button", { name: "Export To Download", exact: true }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toBe("shared-pack.babplugin");
     const pluginFile = await download.path();

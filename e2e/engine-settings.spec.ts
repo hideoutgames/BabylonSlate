@@ -1,6 +1,41 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
+import { openMinimalTestProject } from "./minimal-project";
+
+test("project settings keep descriptions below their controls and above separators", async ({ page }) => {
+  await openMinimalTestProject(page);
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  for (const [category, controlId] of [
+    ["general", "settings-infinite-loop-detection"],
+    ["twoD", "settings-pixel-perfect"],
+    ["twoD", "settings-integer-zoom"],
+    ["audio", "settings-audio-occlusion"],
+    ["rendering", "setting-render-custom"],
+  ] as const) {
+    await page.getByTestId(`settings-modal-category-${category}`).click();
+    const control = page.getByTestId(controlId);
+    await control.scrollIntoViewIfNeeded();
+    const positions = await control.evaluate((element) => {
+      const field = element.closest('[data-slot="field"]')!;
+      const label = field.querySelector('[data-slot="field-label"]')!;
+      const description = document.getElementById(element.getAttribute("aria-describedby")!)!;
+      return {
+        controlBottom: element.getBoundingClientRect().bottom,
+        labelBottom: label.getBoundingClientRect().bottom,
+        descriptionTop: description.getBoundingClientRect().top,
+        descriptionBottom: description.getBoundingClientRect().bottom,
+        fieldBottom: field.getBoundingClientRect().bottom,
+        borderWidth: parseFloat(getComputedStyle(field).borderBottomWidth),
+      };
+    });
+    expect(positions.descriptionTop, controlId).toBeGreaterThanOrEqual(positions.controlBottom);
+    expect(positions.descriptionTop, controlId).toBeGreaterThanOrEqual(positions.labelBottom);
+    expect(positions.descriptionBottom, controlId).toBeLessThan(positions.fieldBottom);
+    expect(positions.borderWidth, controlId).toBeGreaterThan(0);
+  }
+});
 
 test("settings retain visible slider tracks and full switch travel", async ({ page }) => {
   await page.goto("/?test=1");
