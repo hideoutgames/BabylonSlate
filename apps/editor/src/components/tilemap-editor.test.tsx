@@ -319,11 +319,15 @@ describe("TilemapPaint", () => {
     fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
     const canvas = screen.getByTestId("tilemap-paint-canvas");
     dispatchPointerEvent(canvas, "pointerdown", { pointerId: 1, clientX: 16, clientY: 240 });
-    dispatchPointerEvent(canvas, "pointermove", { pointerId: 1, clientX: 80, clientY: 240 });
-    dispatchPointerEvent(canvas, "pointerup", { pointerId: 1, clientX: 80, clientY: 240 });
-    const painted = normalizeTilemapPayload(JSON.parse(screen.getByTestId("stored-tilemap").textContent!));
-    expect(painted.tilesets[0]).toMatchObject({ firstGid: 5, tileCount: 4 });
+    dispatchPointerEvent(canvas, "pointermove", { pointerId: 1, clientX: 16, clientY: 208 });
+    dispatchPointerEvent(canvas, "pointerup", { pointerId: 1, clientX: 16, clientY: 208 });
+    const painted = await waitFor(() => {
+      const stored = normalizeTilemapPayload(JSON.parse(screen.getByTestId("stored-tilemap").textContent!));
+      expect(stored.tilesets[0]).toMatchObject({ firstGid: 5, tileCount: 4 });
+      return stored;
+    });
     expect(getTile(painted, "layer-1", 0, 0)).toBe(8);
+    expect(getTile(painted, "layer-1", 1, 0)).toBe(3);
     const commits = onChange.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Undo Test Edit" }));
     expect(JSON.parse(screen.getByTestId("stored-tilemap").textContent!)).toEqual(initial);
