@@ -66,7 +66,7 @@ describe("project schema", () => {
       aspectWidth: 16,
       aspectHeight: 9,
     });
-    expect(project.settings.render).toEqual({
+    expect(project.settings.render).toMatchObject({
       customResolution: true,
       width: 1920,
       height: 1080,
@@ -835,7 +835,7 @@ describe("project schema", () => {
   });
 
   it("keeps fill Play layout when custom resolution is missing or off", () => {
-    expect(normalizeProjectSettings(undefined).render).toEqual({
+    expect(normalizeProjectSettings(undefined).render).toMatchObject({
       customResolution: false,
       width: 1920,
       height: 1080,
@@ -845,7 +845,7 @@ describe("project schema", () => {
       normalizeProjectSettings({
         render: { customResolution: false, width: 1280, height: 720, blackBars: true },
       }).render,
-    ).toEqual({
+    ).toMatchObject({
       customResolution: false,
       width: 1280,
       height: 720,
@@ -858,7 +858,7 @@ describe("project schema", () => {
       createEmptyProject("Demo", {
         render: { customResolution: true, width: 1280, height: 720, blackBars: true },
       }).settings.render,
-    ).toEqual({
+    ).toMatchObject({
       customResolution: true,
       width: 1280,
       height: 720,

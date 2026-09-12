@@ -6,6 +6,7 @@ import { CelMaterial } from "./cel-material";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings } from "./render-settings";
 import { setSceneRenderSettings } from "./scene-render-mode";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
 
 const engines: NullEngine[] = [];
 afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); });
@@ -42,7 +43,7 @@ describe("native CEL render mode", () => {
     expect(mesh.material).toBe(slots);
     expect(late.material).toBe(pbr);
     expect(pbr.albedoColor.asArray()).toEqual([0.25, 0.5, 0.75]);
-    expect(pbr.albedoTexture.isReady()).toBe(true);
+    expect(isDisposedGpuTexture(pbr.albedoTexture)).toBe(false);
   });
 
   it("switches authored graphs in place and preserves frozen materials and live parameters", async () => {

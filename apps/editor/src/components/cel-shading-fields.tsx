@@ -76,6 +76,7 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
                 </Select>
               ) : (
                 <NumberField
+                  key={scene ? `${key}-${overridden ? "override" : "project"}` : key}
                   id={id}
                   aria-describedby={`${id}-description`}
                   value={effective[key]}
@@ -87,7 +88,7 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
                 />
               )}
               <FieldDescription id={`${id}-description`}>
-                {scene ? `${overridden ? "Scene Override" : "Project Setting"} · ${project[key]}. ` : ""}{description}
+                {scene ? `${overridden ? "Scene Override" : "Project Setting"} · ${key === "lightFalloff" ? (project[key] === "banded" ? "Banded" : "Smooth") : project[key]}. ` : ""}{description}
               </FieldDescription>
             </Field>
           );
