@@ -20,6 +20,10 @@ export class ShadowSpatialIndex {
   private readonly leaves = new Map<AbstractMesh, Node>();
   private readonly dirty = new Set<AbstractMesh>();
   private readonly observers = new Map<AbstractMesh, () => void>();
+  private readonly transforms = new Map<
+    TransformNode,
+    { listeners: Set<() => void>; dispose: () => void }
+  >();
   private root?: Node;
   private rebuild = false;
   add(mesh: AbstractMesh): void {
@@ -31,31 +35,57 @@ export class ShadowSpatialIndex {
       max: box.maximumWorld.clone(),
       mesh,
     });
-    let parent: TransformNode | null = null;
-    const updateFromParent = () => {
-      // Parent updates can happen twice in one render id (editor manipulation).
-      // Invalidate the child's same-frame cache without forcing its parent again.
-      mesh.markAsDirty("position");
-      mesh.computeWorldMatrix();
-    };
-    const update = () => {
-      this.dirty.add(mesh);
-      if (mesh.parent === parent) return;
-      parent?.onAfterWorldMatrixUpdateObservable.removeCallback(
-        updateFromParent,
-      );
-      parent = mesh.parent instanceof TransformNode ? mesh.parent : null;
-      parent?.onAfterWorldMatrixUpdateObservable.add(updateFromParent);
-    };
-    mesh.onAfterWorldMatrixUpdateObservable.add(update);
-    update();
-    this.observers.set(mesh, () => {
-      mesh.onAfterWorldMatrixUpdateObservable.removeCallback(update);
-      parent?.onAfterWorldMatrixUpdateObservable.removeCallback(
-        updateFromParent,
-      );
-    });
+    this.observers.set(
+      mesh,
+      this.watchTransform(mesh, () => this.dirty.add(mesh)),
+    );
     this.rebuild = true;
+  }
+  /** Share ancestor subscriptions across imported submeshes; no per-frame tree arrays. */
+  private watchTransform(
+    node: TransformNode,
+    listener: () => void,
+  ): () => void {
+    let record = this.transforms.get(node);
+    if (!record) {
+      const listeners = new Set<() => void>();
+      let parent: TransformNode | null = null;
+      let detachParent: (() => void) | undefined;
+      const updateFromParent = () => {
+        node.markAsDirty("position");
+        node.computeWorldMatrix();
+      };
+      const updateParent = () => {
+        const next = node.parent instanceof TransformNode ? node.parent : null;
+        if (next === parent) return;
+        detachParent?.();
+        parent = next;
+        detachParent = next
+          ? this.watchTransform(next, updateFromParent)
+          : undefined;
+      };
+      const observer = node.onAfterWorldMatrixUpdateObservable.add(() => {
+        updateParent();
+        for (const notify of listeners) notify();
+      });
+      record = {
+        listeners,
+        dispose: () => {
+          node.onAfterWorldMatrixUpdateObservable.remove(observer);
+          detachParent?.();
+        },
+      };
+      this.transforms.set(node, record);
+      updateParent();
+    }
+    record.listeners.add(listener);
+    const owned = record;
+    return () => {
+      owned.listeners.delete(listener);
+      if (owned.listeners.size) return;
+      this.transforms.delete(node);
+      owned.dispose();
+    };
   }
   remove(mesh: AbstractMesh): void {
     this.observers.get(mesh)?.();

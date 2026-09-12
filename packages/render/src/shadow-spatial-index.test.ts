@@ -10,14 +10,16 @@ import {
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 
 describe("shadow caster spatial selection", () => {
-  it("refits an off-screen child when its parent moves", () => {
+  it("refits off-screen descendants when nested parents move or are replaced", () => {
     const engine = new NullEngine();
     try {
       const scene = new Scene(engine);
       const index = new ShadowSpatialIndex();
       const parent = new TransformNode("moving actor", scene);
+      const importedRoot = new TransformNode("imported model root", scene);
+      importedRoot.parent = parent;
       const child = MeshBuilder.CreateBox("caster", {}, scene);
-      child.parent = parent;
+      child.parent = importedRoot;
       index.add(child);
       const plane = new Plane(-1, 0, 0, 10);
       expect(index.queryPlanes([plane])).toContain(child);
@@ -27,6 +29,12 @@ describe("shadow caster spatial selection", () => {
       parent.position.x = 0;
       parent.computeWorldMatrix(true);
       expect(index.queryPlanes([plane])).toContain(child);
+      const replacement = new TransformNode("replacement parent", scene);
+      importedRoot.parent = replacement;
+      importedRoot.computeWorldMatrix(true);
+      replacement.position.x = 100;
+      replacement.computeWorldMatrix(true);
+      expect(index.queryPlanes([plane])).not.toContain(child);
       index.dispose();
     } finally {
       engine.dispose();
