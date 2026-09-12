@@ -88,7 +88,6 @@ export function AtlasTileGrid({
   const tool = toolProp ?? (panZoom ? "move" : "select");
   const surfaceRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLDivElement>(null);
-  const fittedKeyRef = useRef<string | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef({
     panX: 0,
@@ -138,19 +137,28 @@ export function AtlasTileGrid({
     if (!panZoom) return;
     const surface = surfaceRef.current;
     if (!surface) return;
-    const key = `${filled.atlasWidth}x${filled.atlasHeight}:${imageUrl ?? ""}`;
-    if (fittedKeyRef.current === key) return;
-    const rect = surface.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    fittedKeyRef.current = key;
-    const next = fitAtlasView(
-      rect.width,
-      rect.height,
-      filled.atlasWidth,
-      filled.atlasHeight,
-    );
-    setZoom(next.zoom);
-    setPan({ x: next.panX, y: next.panY });
+    let previousWidth = 0;
+    let previousHeight = 0;
+    const fit = () => {
+      const width = surface.clientWidth;
+      const height = surface.clientHeight;
+      if (width <= 0 || height <= 0) return;
+      if (width === previousWidth && height === previousHeight) return;
+      previousWidth = width;
+      previousHeight = height;
+      const next = fitAtlasView(
+        width,
+        height,
+        filled.atlasWidth,
+        filled.atlasHeight,
+      );
+      setZoom(next.zoom);
+      setPan({ x: next.panX, y: next.panY });
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(surface);
+    return () => observer.disconnect();
   }, [filled.atlasHeight, filled.atlasWidth, imageUrl, panZoom]);
 
   const pointerIdOf = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -439,7 +447,7 @@ export function AtlasTileGrid({
         ) : null}
         <div
           ref={imageRef}
-          className="relative shrink-0"
+          className={cn(panZoom ? "absolute left-0 top-0" : "relative shrink-0")}
           style={{
             width: Math.max(1, filled.atlasWidth),
             height: Math.max(1, filled.atlasHeight),
