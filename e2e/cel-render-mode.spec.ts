@@ -67,6 +67,17 @@ async function projectMode(page: Page, mode: "PBR" | "CEL", setup = false) {
     .click();
 }
 
+async function framePixels(canvas: Locator) {
+  return canvas.evaluate((node: HTMLCanvasElement) => {
+    const copy = document.createElement("canvas");
+    copy.width = node.width;
+    copy.height = node.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(node, 0, 0);
+    return Array.from(context.getImageData(0, 0, copy.width, copy.height).data);
+  });
+}
+
 test("CEL preserves authored and texture colors, supports every light, and restores PBR in viewport and Play", async ({
   page,
 }, testInfo) => {
@@ -357,12 +368,54 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     }
   }
 
+  // A large receiver makes a fixed world-space shadow offset sub-texel.
+  // Enabling shadows must cast onto the floor without mottling the sphere.
+  const sun = createActor("shadow-sun", "Shadow Sun", {
+    transform: { position: [0, 5, -3], rotation: [0.382683, 0, 0, 0.92388], scale: [1, 1, 1] },
+    components: [{ id: "sun-light", classId: "LightComponent", properties: {
+      lightKind: "directional", color: [1, 1, 1], intensity: 1.5, castShadows: false,
+    } }],
+  });
+  scene.actors = [...subjects, sun, createActor("receiver", "Receiver", {
+    transform: { position: [0, -1.25, 0], rotation: [0, 0, 0, 1], scale: [12, 1, 12] },
+    components: [createMeshComponent("receiver-mesh", "ground")],
+  })];
+  scene.settings.celShading = { specularEnabled: false, shadowStrength: 0.65 };
+  await setPreviewScene(page, scene);
+  await expect.poll(() => pixelsNear(viewport, authored)).toBeGreaterThan(100);
+  const withoutShadows = await framePixels(viewport);
+  sun.components[0]!.properties.castShadows = true;
+  await setPreviewScene(page, scene);
+  await expect.poll(async () => {
+    const withShadows = await framePixels(viewport);
+    let receiverChanges = 0;
+    let surfaceChanges = 0;
+    let surfacePixels = 0;
+    for (let i = 0; i < withoutShadows.length; i += 4) {
+      const [r, g, b] = withoutShadows.slice(i, i + 3) as [number, number, number];
+      const changed = Math.abs(g - withShadows[i + 1]!) > 15;
+      if (g > r * 1.7 && g > b * 1.3 && g > 35) {
+        surfacePixels++;
+        if (changed) surfaceChanges++;
+      } else if (Math.abs(r - g) < 3 && Math.abs(g - b) < 3 && g > 60 && changed) {
+        receiverChanges++;
+      }
+    }
+    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.05 };
+  }).toEqual({ castsShadow: true, cleanSurface: true });
+  await viewport.screenshot({ path: testInfo.outputPath("cel-cast-shadows.png") });
+
   scene.actors = [...subjects, fill];
   scene.settings.celShading = { specularStrength: 1, specularSize: 1 };
   await setPreviewScene(page, scene);
   await expect
     .poll(() => pixelsNear(viewport, [255, 255, 255]))
     .toBeGreaterThan(100);
+  scene.settings.celShading.specularEnabled = false;
+  await setPreviewScene(page, scene);
+  await expect.poll(() => pixelsNear(viewport, authored)).toBeGreaterThan(500);
+  await expect.poll(() => pixelsNear(viewport, [255, 255, 255])).toBeLessThan(30);
+  scene.settings.celShading.specularEnabled = true;
   fill.components[0]!.properties.color = [1, 0, 0];
   fill.components[0]!.properties.groundColor = [1, 0, 0];
   scene.settings.celShading.shadowStrength = 1;

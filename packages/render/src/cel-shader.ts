@@ -148,7 +148,7 @@ export function bindCelSettings(
   );
   effect.setFloat4(
     "slateCelSpecular",
-    cel.specularStrength,
+    cel.specularEnabled ? cel.specularStrength : 0,
     cel.specularSize,
     cel.specularSoftness,
     0,
