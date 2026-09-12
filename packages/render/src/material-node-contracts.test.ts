@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Constants, DiscardBlock, FragmentOutputBlock, NullEngine, Scene } from "@babylonjs/core";
+import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, MeshBuilder, NullEngine, Scene, Vector3 } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 
@@ -39,6 +39,12 @@ describe("material node contracts", () => {
     wire(doc, "multiply", "out", "output", "worldPositionOffset");
     const result = await compile(doc);
     expect(result.material.compiledShaders).toContain("sin(");
+    const scene = result.material.getScene();
+    new ArcRotateCamera("camera", 0, Math.PI / 4, 5, Vector3.Zero(), scene);
+    const mesh = MeshBuilder.CreateSphere("preview", {}, scene);
+    mesh.material = result.material;
+    scene.render();
+    scene.render();
   });
   it("compiles VertexNormalWS in vertex displacement and fragment color", async () => {
     const doc = createDefaultMaterialDocument();
