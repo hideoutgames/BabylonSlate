@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openMainScene, openTestProject } from "./open-test-project";
+import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
+import { guidForPath } from "./material-graph";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 import { saveAllIfEnabled } from "./save-all";
 import { openMinimalTestProject } from "./minimal-project";
 
@@ -146,7 +148,7 @@ test("create project dialog defaults to 1920×1080 stretch", async ({
   await expect(page.getByTestId("create-project-black-bars")).toBeVisible();
 });
 
-test("editor viewport applies hardware scaling and the post-processing gate", async ({
+test("editor viewport applies hardware scaling and the post-processing gate", { tag: IPAD_TEST_TAG }, async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -176,6 +178,7 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
   await page.getByTestId("property-domain").click();
   await page.getByRole("option", { name: "Post Process" }).click();
   await saveAllIfEnabled(page);
+  await createContentBrowserAsset(page, "SceneLayer", "Foreground_Layer_With_A_Long_Name");
   await openMainScene(page);
   await expect(page.getByTestId("scene-post-process-stack")).toBeVisible();
   await page.getByTestId("scene-post-process-stack-add").click();
@@ -196,6 +199,53 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
   await expect
     .poll(async () => viewportPostProcessPassCount(page), { timeout: 30_000 })
     .toBe(1);
+
+  await page.getByRole("textbox", { name: "Filter Properties" }).fill("Enabled");
+  await page.getByTestId("scene-layers-stack-add").click();
+  const layerGuid = await guidForPath(page, "assets/Foreground_Layer_With_A_Long_Name.scenelayer.babasset");
+  expect(layerGuid).not.toBe("");
+  await page.getByTestId(`search-item-${layerGuid}`).click();
+
+  // Measure the actual docked panel, including a long name and Open Asset.
+  const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+  for (const id of ["scene-post-process-stack-0-row", "scene-layers-stack-0-row"]) {
+    const row = page.getByTestId(id);
+    await expect(row).toBeVisible();
+    const layout = await row.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const controls = Array.from(element.querySelectorAll("button, input, [role=switch]"))
+        .filter((control) => control.getAttribute("aria-hidden") !== "true")
+        .map((control) => {
+          const rect = control.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+        });
+      return { width: box.width, height: box.height, left: box.left, right: box.right, controls };
+    });
+    await row.screenshot({ path: test.info().outputPath(`${id}.png`) });
+    expect(layout.width).toBeLessThanOrEqual(300);
+    expect(layout.height).toBeLessThanOrEqual(coarse ? 152 : 68);
+    for (const control of layout.controls) {
+      expect(control.left).toBeGreaterThanOrEqual(layout.left);
+      expect(control.right).toBeLessThanOrEqual(layout.right);
+    }
+    for (let index = 0; index < layout.controls.length; index++) {
+      for (const other of layout.controls.slice(index + 1)) {
+        const control = layout.controls[index]!;
+        const overlaps = Math.min(control.right, other.right) - Math.max(control.left, other.left) > 1 &&
+          Math.min(control.bottom, other.bottom) - Math.max(control.top, other.top) > 1;
+        expect(overlaps, `${id} controls overlap`).toBe(false);
+      }
+    }
+  }
+  await page.getByTestId("scene-layer-0-z-order").fill("5");
+  await page.getByTestId("scene-layer-0-z-order").press("Enter");
+  await expect(page.getByTestId("scene-layer-0-z-order")).toHaveValue("5");
+  await page.getByTestId("scene-layer-0-enabled").click();
+  await expect(page.getByTestId("scene-layer-0-enabled")).toHaveAttribute("aria-checked", "false");
+  await page.getByTestId("scene-post-process-0-enabled").click();
+  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(0);
+  await page.getByTestId("scene-post-process-0-enabled").click();
+  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(1);
 
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("engine-settings").click();

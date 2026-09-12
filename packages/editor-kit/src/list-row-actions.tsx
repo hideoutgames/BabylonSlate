@@ -1,5 +1,6 @@
 import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
+import { cn } from "@babylonslate/ui/lib/utils";
 
 export type ListRowActionsProps = {
   index: number;
@@ -12,6 +13,7 @@ export type ListRowActionsProps = {
   onMove: (delta: number) => void;
   onRemove: () => void;
   removeDisabled?: boolean;
+  touchAdaptive?: boolean;
 };
 
 /** Compact up / down / trash cluster matching PinListEditor row actions. */
@@ -24,6 +26,7 @@ export function ListRowActions({
   onMove,
   onRemove,
   removeDisabled,
+  touchAdaptive = false,
 }: ListRowActionsProps) {
   const label = name ?? `row ${index + 1}`;
   const id = rowId ?? String(index);
@@ -34,7 +37,7 @@ export function ListRowActions({
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="size-7"
+        className={cn("size-7", touchAdaptive && "pointer-coarse:size-11")}
         aria-label={`Move ${label} up`}
         data-testid={`${testIdPrefix}-${id}-move-up`}
         disabled={index === 0}
@@ -46,7 +49,7 @@ export function ListRowActions({
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="size-7"
+        className={cn("size-7", touchAdaptive && "pointer-coarse:size-11")}
         aria-label={`Move ${label} down`}
         data-testid={`${testIdPrefix}-${id}-move-down`}
         disabled={index === count - 1}
@@ -58,7 +61,7 @@ export function ListRowActions({
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="size-7"
+        className={cn("size-7", touchAdaptive && "pointer-coarse:size-11")}
         aria-label={`Remove ${label}`}
         data-testid={`${testIdPrefix}-${id}-remove`}
         onClick={onRemove}

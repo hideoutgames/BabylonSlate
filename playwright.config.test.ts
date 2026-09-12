@@ -96,7 +96,6 @@ describe("Playwright iPad project filter", () => {
       "p5-scripting.spec.ts",
       "editor-smoke.spec.ts",
       "editor-theme.spec.ts",
-      "engine-settings.spec.ts",
       "debug-menu.spec.ts",
       "p8-trace.spec.ts",
     ]) {
@@ -105,6 +104,12 @@ describe("Playwright iPad project filter", () => {
 
     expect(landscape.filter((test) => test.file === "p9-content.spec.ts")).toEqual([
       expect.objectContaining({ title: expect.stringMatching(/Custom GLSL node compiles a function body in the Material editor @ipad$/) }),
+    ]);
+
+    expect(landscape.filter((test) => test.file === "engine-settings.spec.ts")).toEqual([
+      expect.objectContaining({
+        title: "editor viewport applies hardware scaling and the post-processing gate",
+      }),
     ]);
 
     expect(landscape.filter((test) => test.file === "p4-play.spec.ts")).toEqual([

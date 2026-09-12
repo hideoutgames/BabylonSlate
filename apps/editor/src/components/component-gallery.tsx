@@ -811,6 +811,9 @@ function GalleryComposites() {
           onCreate={() => "New"}
           addLabel="Add Item"
           data-testid="gallery-entry-list"
+          renderItemHeader={({ index }) => (
+            <span className="truncate text-sm">Entry {index + 1}</span>
+          )}
           renderItem={({ item, index, onChange }) => (
             <Input
               value={item}

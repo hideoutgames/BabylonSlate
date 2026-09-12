@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Matrix, NullEngine, PBRMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -21,6 +21,7 @@ import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
+import { prewarmMaterial } from "./material-compiler";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -801,6 +802,39 @@ describe("Play createEngine view", () => {
       handle.scaling.noteFrameTime(20);
     }
     expect(handle.scaling.getLevel()).toBe(1);
+  });
+
+  it.each([false, true])("keeps post-process materials and passes after asynchronous readiness (Play: %s)", async (playMode) => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(),
+      playMode,
+      editor: !playMode,
+      materialDocuments: new Map([
+        ["pp", createDefaultMaterialDocument("Scene Color", "postProcess")],
+      ]),
+    });
+    try {
+      handle.setPostProcessStack([
+        { materialGuid: "pp", enabled: true },
+        { materialGuid: "pp", enabled: true },
+      ]);
+      const material = handle.scene.getMaterialByName("material:pp");
+      expect(material).toBeInstanceOf(NodeMaterial);
+      const camera = handle.scene.activeCamera!;
+      const passes = camera._postProcesses.filter((pass) => pass != null);
+      expect(passes).toHaveLength(2);
+
+      await prewarmMaterial(material as NodeMaterial, null);
+      expect(handle.scene.getMaterialByName("material:pp")).toBe(material);
+      expect(camera._postProcesses.filter((pass) => pass != null)).toEqual(passes);
+      expect(handle.postProcessPassCount()).toBe(2);
+
+      handle.setPostProcessStack([]);
+      expect(livePassCount(camera)).toBe(0);
+      expect(handle.scene.getMaterialByName("material:pp")).toBeNull();
+    } finally {
+      handle.dispose();
+    }
   });
 
   it("attaches an authored post-process stack when the local gate is on", () => {
