@@ -11,6 +11,11 @@ import { createDefaultPluginSettings } from "@babylonslate/assets";
 import { EnginePluginsSettings } from "./engine-plugins-settings";
 import type { EnginePluginEntry } from "../lib/engine-plugin-library";
 
+// Base UI forwards switch clicks using PointerEvent; jsdom lacks it.
+if (typeof window.PointerEvent === "undefined") {
+  window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;
+}
+
 const { library, download } = vi.hoisted(() => ({
   library: {
     list: vi.fn(),

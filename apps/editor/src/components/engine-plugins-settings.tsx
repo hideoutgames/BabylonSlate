@@ -112,7 +112,7 @@ export function EnginePluginsSettings() {
         return (
           <Field
             key={entry.pluginGuid}
-            className="settings-field"
+            className="rounded-md border border-border p-3"
             data-testid={`engine-plugin-row-${entry.pluginGuid}`}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
