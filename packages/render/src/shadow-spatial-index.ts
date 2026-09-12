@@ -16,7 +16,12 @@ export class ShadowSpatialIndex {
     const box = mesh.getBoundingInfo().boundingBox;
     this.leaves.set(mesh, { min: box.minimumWorld.clone(), max: box.maximumWorld.clone(), mesh });
     let parent: TransformNode | null = null;
-    const updateFromParent = () => { mesh.computeWorldMatrix(); };
+    const updateFromParent = () => {
+      // Parent updates can happen twice in one render id (editor manipulation).
+      // Invalidate the child's same-frame cache without forcing its parent again.
+      mesh.markAsDirty("position");
+      mesh.computeWorldMatrix();
+    };
     const update = () => {
       this.dirty.add(mesh);
       if (mesh.parent === parent) return;
