@@ -106,6 +106,9 @@ describe("native CEL render mode", () => {
     // settle on the last request rather than lose a build or mix graph roots.
     setSceneRenderSettings(scene, { mode: "cel" });
     setSceneRenderSettings(scene, { mode: "pbr" });
+    await vi.waitFor(() =>
+      expect(material.compiledShaders).toContain("pbrBlockAlbedoOpacity"),
+    );
     setSceneRenderSettings(scene, { mode: "cel" });
     expect(material.maxSimultaneousLights).toBe(6);
     await vi.waitFor(() =>
