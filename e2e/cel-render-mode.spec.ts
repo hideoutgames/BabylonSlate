@@ -389,8 +389,10 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   await setPreviewScene(page, scene);
   await expect.poll(() => pixelsNear(viewport, authored)).toBeGreaterThan(100);
   const withoutShadows = await framePixels(viewport);
+  await viewport.screenshot({ path: testInfo.outputPath("cel-shadow-receiver-unshadowed.png") });
   sun.components[0]!.properties.castShadows = true;
   await setPreviewScene(page, scene);
+  await viewport.screenshot({ path: testInfo.outputPath("cel-shadow-receiver-shadowed.png") });
   await expect.poll(async () => {
     const withShadows = await framePixels(viewport);
     let receiverChanges = 0;
