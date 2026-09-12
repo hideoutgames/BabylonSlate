@@ -92,6 +92,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   const materialGuid = await guidForPath(page, materialPath);
   expect(materialGuid).not.toBe("");
   await projectMode(page, "CEL", true);
+  await projectMode(page, "PBR");
 
   const mesh = createMeshComponent("cel-mesh", "sphere");
   mesh.properties.materialGuid = materialGuid;
@@ -131,6 +132,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   await setPreviewScene(page, scene);
   const viewport = page.getByTestId("viewport-canvas");
   const authored = [51, 153, 77];
+  await projectMode(page, "CEL");
   await expect
     .poll(() => pixelsNear(viewport, authored), { timeout: 30_000 })
     .toBeGreaterThan(500);
