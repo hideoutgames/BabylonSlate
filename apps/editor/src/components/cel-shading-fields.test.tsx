@@ -69,7 +69,7 @@ it("overrides light mixing independently and resets to the current project choic
     screen.getByRole("button", { name: "Override Light Mixing" }),
   );
   fireEvent.click(screen.getByRole("combobox", { name: "Light Mixing" }));
-  const blend = screen.getByRole("option", { name: "Blend", exact: true });
+  const blend = screen.getByRole("option", { name: "Blend" });
   fireEvent.pointerDown(blend);
   fireEvent.click(blend);
   expect(
