@@ -14,8 +14,8 @@ describe("Tilemap Play presentation", () => {
     handles.push(world, overlay);
     const binding = createSnapshotSceneBinding();
     const map = { ...setTile(createDefaultTilemapPayload(), "layer-1", 0, 0, 1), tilesetGuid: "atlas" };
-    binding.tilemapPayloads = new Map([["map", map]]);
-    binding.tilesetPayloads = new Map([["atlas", normalizeTilesetPayload({ atlasWidth: 32, tiles: [{ id: 1, animation: [1, 2] }] })]]);
+    binding.tilemaps = new Map([["map", map]]);
+    binding.tilesets = new Map([["atlas", normalizeTilesetPayload({ atlasWidth: 32, tiles: [{ id: 1, animation: [1, 2] }] })]]);
     applyAssignMesh(world.scene, binding, { type: "assignMesh", slotId: 1, meshKind: "tilemap", meshAssetGuid: "map" });
     const first = [...binding.meshes.get(1)!.getChildMeshes()[0]!.getVerticesData(VertexBuffer.UVKind)!];
     const snapshot = { frameId: 1, tickIndex: 1, alpha: 1, actors: [{ slotId: 1, flags: 1, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } }] };
