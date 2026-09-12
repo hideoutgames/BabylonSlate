@@ -249,7 +249,7 @@ function inheritedMembers(
 
 function isClassTreeEventNode(type: string): boolean {
   if (isFlowEventCallNode(type)) return false;
-  return type === "input.event" || type.startsWith("flow.event.") || type.startsWith("bt.event.");
+  return type === "input.actionEvent" || type === "input.axisEvent" || type === "input.onAnyKeyPressed" || type.startsWith("flow.event.") || type.startsWith("bt.event.");
 }
 
 /**

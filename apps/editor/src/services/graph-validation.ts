@@ -177,8 +177,12 @@ function catalogTypeId(node: {
   return typeof hinted === "string" ? hinted : node.type;
 }
 
+function isInputEvent(typeId: string): boolean {
+  return typeId === "input.actionEvent" || typeId === "input.axisEvent";
+}
+
 function shouldRegeneratePins(typeId: string): boolean {
-  if (typeId === "input.event") return true;
+  if (isInputEvent(typeId)) return true;
   return (
     typeId === "flow.event.call" ||
     typeId === "flow.event.callParent" ||
@@ -445,7 +449,7 @@ function hydratedNodeTitle(
     typeof properties.title === "string" &&
     (typeId === "flow.event.call" ||
       typeId === "flow.event.callParent" ||
-      typeId === "input.event" ||
+      isInputEvent(typeId) ||
       typeId === "struct.make" ||
       typeId === "struct.break" ||
       isEnumCatalogType(typeId))
@@ -455,11 +459,26 @@ function hydratedNodeTitle(
   return authoredTitle ?? defTitle;
 }
 
-function refreshInputEvent(typeId: string, data: Record<string, unknown>, options?: HydrateGraphOptions) {
-  if (typeId !== "input.event") return;
-  const input = data["default:input"] as { Asset?: string } | undefined;
-  const asset = options?.inputAssets?.find((entry) => entry.guid === input?.Asset);
-  if (asset) { data.valueType = asset.valueType; data["default:input"] = { Name: asset.name, Asset: asset.guid }; data.title = `Event ${asset.name}`; }
+function refreshInputEvent(
+  typeId: string,
+  data: Record<string, unknown>,
+  options: HydrateGraphOptions | undefined,
+  graph: SerializedGraph,
+  nodeId: string,
+) {
+  if (!isInputEvent(typeId)) return;
+  const action = typeId === "input.actionEvent";
+  const wired = graph.edges.some((edge) => edge.target === nodeId && edge.targetHandle === "binding");
+  data.title = action ? "Event Input Action" : "Event Input Axis";
+  if (action) data.valueType = "button";
+  if (wired) return;
+  const binding = data["default:binding"] as { Input?: { Asset?: string } } | undefined;
+  const asset = options?.inputAssets?.find((entry) => entry.guid === binding?.Input?.Asset && entry.type === (action ? "InputAction" : "InputAxis"));
+  if (asset) {
+    data.valueType = asset.valueType;
+    data["default:binding"] = { ...binding, Input: { Name: asset.name, Asset: asset.guid } };
+    data.title = `Event ${asset.name}`;
+  }
 }
 
 export type InputPaletteAsset = { guid: string; name: string; type: string; valueType: string };
@@ -555,7 +574,7 @@ export function hydrateSerializedGraphForEditor(
   const nodes = graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
       const typeIdHint = catalogTypeId({ type: node.type, data: rawData });
-      refreshInputEvent(typeIdHint, rawData, options);
+      refreshInputEvent(typeIdHint, rawData, options, graph, node.id);
       if (hasNonEmptyPins(rawData) && !shouldRegeneratePins(typeIdHint)) {
         return {
           ...node,
@@ -576,7 +595,7 @@ export function hydrateSerializedGraphForEditor(
       delete properties.__pins;
       delete properties.__nodeType;
       delete properties.title;
-      refreshInputEvent(typeId, properties, options);
+      refreshInputEvent(typeId, properties, options, graph, node.id);
 
       if (typeId === "logMessage") {
         typeId = "debug.log";
@@ -1594,7 +1613,7 @@ function structPaletteNodes(
       structGuid: structure.guid,
       fields: structure.fields,
     };
-    if (!["engine:InputType", "engine:InputControl", "engine:InputBinding"].includes(structure.guid)) rows.push({
+    rows.push({
       id: `struct.make:${structure.guid}`,
       nodeType: "struct.make",
       title: `Make ${structure.name}`,
@@ -1815,7 +1834,8 @@ function scriptPaletteCatalogNodes(
   return nodeRegistry
     .list()
     .filter((def) => {
-      if (["input.event", "input.onAction", "input.isActionHeld", "input.getAxis", "input.getAxis2D", "input.getBinding", "input.setBinding", "input.beginRebind", "input.resetBinding", "input.getRebindStatus"].includes(def.id)) return false;
+      if ((isInputEvent(def.id) || def.id === "input.onAnyKeyPressed") &&
+        (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick"))) return false;
       if (def.editorOnly && !isEditorGraphHost(options ?? {})) {
         return false;
       }
@@ -1861,12 +1881,14 @@ function scriptPaletteCatalogNodes(
 }
 
 function inputEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
-  const def = nodeRegistry.get("input.event");
-  if (!def || options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick")) return [];
-  return (options?.inputAssets ?? []).map((asset) => {
+  if (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick")) return [];
+  return (options?.inputAssets ?? []).flatMap((asset) => {
+    const nodeType = asset.type === "InputAction" ? "input.actionEvent" : "input.axisEvent";
+    const def = nodeRegistry.get(nodeType);
+    if (!def) return [];
     const title = `Event ${asset.name}`;
-    const defaultData = { "default:input": { Name: asset.name, Asset: asset.guid }, valueType: asset.valueType, title };
-    return { id: `input.event:${asset.guid}`, nodeType: "input.event", title, category: asset.type === "InputAction" ? "Input/Actions" : "Input/Axes", pins: def.pins(defaultData), defaultData };
+    const defaultData = { "default:binding": { Input: { Name: asset.name, Asset: asset.guid } }, valueType: asset.valueType, title };
+    return [{ id: `${nodeType}:${asset.guid}`, nodeType, title, category: def.category, pins: def.pins(defaultData), defaultData }];
   });
 }
 
@@ -1948,7 +1970,7 @@ export function materializeLogicGraph(
     if (typeId === "flow.switchString") {
       properties.cases = normalizeStringSwitchCases(properties.cases).cases;
     }
-    refreshInputEvent(typeId, properties, options);
+    refreshInputEvent(typeId, properties, options, content, logic.nodes[i]!.id);
     const regenerate = shouldRegeneratePins(typeId);
     const def = registry.get(typeId);
     if (data?.__pins && !regenerate) {

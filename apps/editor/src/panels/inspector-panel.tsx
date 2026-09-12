@@ -50,7 +50,6 @@ import {
   type ViewportMode,
   parseMapDefaultEntries,
 } from "@babylonslate/core";
-import { normalizeInputMappings } from "@babylonslate/input";
 import {
   animGraphMembersFromVariables,
   decorateTransitionRuleGraph,
@@ -98,12 +97,14 @@ import {
   enumNodePropertyRows,
   flowSwitchCaseListValues,
   inspectorLiteralPinDefaults,
+  inputEventPropertyRows,
   isFlowSwitchTypeId,
   logNodePropertyRows,
   parameterRowsFromPinList,
   patchFlowSwitchCases,
   pinDefaultPropertyRows,
   pinListFromParameterRows,
+  structNodePropertyRows,
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
@@ -1458,17 +1459,15 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     persistGraph(next);
   };
 
-  const inputMappings = normalizeInputMappings(projectDocument?.settings.input);
   const enumMembers = collectEnumMemberNames(
     openDocuments,
     assetRegistry?.list() ?? [],
   );
   const pinDefaultRows = pinDefaultPropertyRows(
-    inspectorLiteralPinDefaults(selectedNode, graph.edges),
+    inspectorLiteralPinDefaults(selectedNode, graph.edges).filter((entry) =>
+      !((selectedNode.type === "input.actionEvent" || selectedNode.type === "input.axisEvent") && entry.pinId === "binding")),
     updateNodeData,
     {
-      actionNames: inputMappings.actions.map((action) => action.name),
-      axisNames: inputMappings.axes.map((axis) => axis.name),
       enumMembers,
       classEntries: subclassClassEntries(
         "BObject",
@@ -1513,6 +1512,19 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const logRows = isLog
     ? logNodePropertyRows(selectedNode.data, updateNodeData)
     : [];
+  const structNodeRows = structNodePropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+    typeCatalog.structures,
+  );
+  const inputEventRows = inputEventPropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+    pickerAssets.map((asset) => ({ id: asset.guid, name: asset.name, type: asset.type })),
+    graph.edges.some((edge) => edge.target === selectedNode.id && edge.targetHandle === "binding"),
+  );
   const containerConstructorRows = containerConstructorPropertyRows(
     selectedNode.type,
     selectedNode.data,
@@ -1532,6 +1544,9 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="inspector-panel">
       <div className="flex flex-col gap-3 p-3">
         <div className="text-sm font-medium">{title}</div>
+        {inputEventRows.length > 0 ? (
+          <PropertyGrid rows={inputEventRows} data-testid="inspector-input-event" />
+        ) : null}
         {logRows.length > 0 ? (
           <PropertyGrid rows={logRows} data-testid="inspector-log-properties" />
         ) : null}
@@ -1543,6 +1558,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           <PropertyGrid
             rows={enumNodeRows}
             data-testid="inspector-enum-properties"
+          />
+        ) : null}
+        {structNodeRows.length > 0 ? (
+          <PropertyGrid
+            rows={structNodeRows}
+            data-testid="inspector-struct-properties"
           />
         ) : null}
         {containerConstructorRows.length > 0 ? (

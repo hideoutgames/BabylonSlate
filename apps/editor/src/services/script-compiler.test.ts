@@ -220,21 +220,15 @@ describe("script compiler service", () => {
     expect(classIdForGraphPath("assets/HUD.class.babasset")).toBe("HUD");
   });
 
-  it("compiles authored GetAxis2D pin data into getAxis2D(\"Move\")", () => {
+  it("compiles a typed Input Axis event using its binding asset identity", () => {
     const script = compileGraphDocument(
       {
         nodes: [
           {
-            id: "tick",
-            type: "flow.event.tick",
-            position: { x: 0, y: 0 },
-            data: {},
-          },
-          {
             id: "axis",
-            type: "input.getAxis2D",
+            type: "input.axisEvent",
             position: { x: 0, y: 80 },
-            data: { axis: "Move" },
+            data: { "default:binding": { Input: { Name: "Move", Asset: "move" } }, valueType: "2d" },
           },
           {
             id: "print",
@@ -246,23 +240,24 @@ describe("script compiler service", () => {
         edges: [
           {
             id: "e1",
-            source: "tick",
+            source: "axis",
             target: "print",
-            sourceHandle: "execOut",
+            sourceHandle: "held",
             targetHandle: "execIn",
           },
           {
             id: "e2",
             source: "axis",
             target: "print",
-            sourceHandle: "out",
+            sourceHandle: "value",
             targetHandle: "value",
           },
         ],
       },
       { path: "assets/main.class.babasset" },
     );
-    expect(script?.source).toContain('ctx.getAxis2D?.("Move")');
+    expect(script?.source).toContain("ctx.getInputState");
+    expect(script?.source).toContain('"Asset":"move"');
   });
 
   it("compiles a serialized graph into a runtime script bundle", () => {

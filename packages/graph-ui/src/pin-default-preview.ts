@@ -155,7 +155,11 @@ export function pinDefaultPreview(
   if (pin.direction !== "in" || pin.kind !== "data") return null;
   if (pin.type.kind === "structRef" && pin.type.guid === "engine:InputType") {
     const input = readPreviewValue(pin, properties) as { Name?: string } | undefined;
-    return { kind: "structRef", text: input?.Name || "Choose Input" };
+    return input?.Name ? { kind: "structRef", text: input.Name } : null;
+  }
+  if (pin.type.kind === "structRef" && pin.type.guid === "engine:InputBinding") {
+    const binding = readPreviewValue(pin, properties) as { Input?: { Name?: string } } | undefined;
+    return binding?.Input?.Name ? { kind: "structRef", text: binding.Input.Name } : null;
   }
   const constraint = pinConstraintPreview(pin, pinTypeNames);
   if (constraint) return constraint;

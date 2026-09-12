@@ -2454,7 +2454,7 @@ describe("scriptPaletteNodes", () => {
     }
   });
 
-  it("hides generic Make/Break Structure and injects typed rows", () => {
+  it("offers a configurable Make Structure and injects typed Make/Break rows", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "Actor",
       structures: [
@@ -2468,7 +2468,7 @@ describe("scriptPaletteNodes", () => {
         },
       ],
     });
-    expect(nodes.some((node) => node.id === "struct.make")).toBe(false);
+    expect(nodes.some((node) => node.id === "struct.make")).toBe(true);
     expect(nodes.some((node) => node.id === "struct.break")).toBe(false);
     expect(nodes.some((node) => node.id === "struct.makeRotator")).toBe(true);
     const make = nodes.find((node) => node.id === "struct.make:struct-stats");
