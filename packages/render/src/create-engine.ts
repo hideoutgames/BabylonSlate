@@ -840,7 +840,8 @@ export function createEngine(
       options.onMaterialDiagnostic?.(diagnostic);
     },
     onMaterialReady: () => {
-      rebuildPostProcessStack();
+      // Babylon completes deferred post-process effects on the attached pass.
+      // Rebuilding here releases the ready material and starts compilation again.
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
       scheduler.invalidate("asset");

@@ -6,6 +6,8 @@ Overlay Play collects Texture literals from **Set Material Texture Parameter** n
 
 ## Runtime Material Parameters
 
+Post-process material readiness completes Babylon's existing deferred camera passes and invalidates the viewport. It must not rebuild the stack: releasing its last material reference on readiness would start another asynchronous compile and freeze the editor. Stack, document, camera, and enable/disable changes still rebuild and release their owned resources.
+
 - MeshComponent geometry and material assignments use separate asset references. A primitive with a Material keeps a null `meshAssetGuid`; only its model asset can populate that field. The Material travels in `assignMaterial`, so adding a surface Material cannot replace primitive geometry with an unloaded model placeholder.
 - `setMaterialParameter` carries a captured Material asset, actor slot, optional component, parameter name, and typed Float / RGBA Color / Texture value. Stale assignments are ignored.
 - A MeshComponent shares the compiled default until its first parameter update. `MaterialLibrary` then compiles a private instance for that component; sibling meshes and the asset defaults are unchanged. Values survive mesh rebuilds and imported model loading. Reassignment, despawn, and Scene disposal release private instances.
