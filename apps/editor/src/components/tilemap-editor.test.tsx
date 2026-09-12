@@ -156,10 +156,10 @@ describe("TilemapDetails", () => {
     fireEvent.click(screen.getByTestId("tilemap-tilesets-0-remove"));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
     expect(onChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("tilemap-tilesets-0-remove"));
-    fireEvent.click(await screen.findByRole("button", { name: "Remove Tileset", exact: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Tileset" }));
     expect(onChange).toHaveBeenCalledTimes(1);
     const next = onChange.mock.calls[0]![0] as TilemapPayload;
     expect(next.tilesets).toEqual([]);
