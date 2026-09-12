@@ -1,5 +1,4 @@
-/// <reference path="./assimpjs.d.ts" />
-import type { AssimpModule } from "assimpjs";
+import type { AssimpModule } from "./assimp-types";
 import {
   encodeGlbJsonBin,
   ingestGltfForImport,

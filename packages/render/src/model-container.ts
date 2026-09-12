@@ -28,8 +28,11 @@ export async function loadModelContainer(
           targetFps,
           onParsed: (data) => {
             clips = gltfAnimationClips(data.json as Record<string, unknown>);
-            const animations = (data.json as { animations?: { name?: string }[] }).animations ?? [];
-            for (const [index, animation] of animations.entries()) animation.name = clips[index]!.name;
+            const animations =
+              (data.json as { animations?: { name?: string }[] }).animations ??
+              [];
+            for (const [index, animation] of animations.entries())
+              animation.name = clips[index]!.name;
           },
         },
       },

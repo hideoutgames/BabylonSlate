@@ -2,7 +2,7 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { openAssetFromBrowser, openTestProject } from "./open-test-project";
 
-test("FBX worker imports a canonical model with a stable rest-pose preview", async ({
+test("FBX worker imports a canonical model and opens its preview", async ({
   page,
 }) => {
   await openTestProject(page);

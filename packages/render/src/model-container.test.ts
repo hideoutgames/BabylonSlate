@@ -11,6 +11,36 @@ import {
 } from "./model-preview";
 
 describe("model pose and clip ranges", () => {
+  it("matches unnamed and duplicate clips to their own ranges", async () => {
+    const handle = createTestEngine();
+    const host = createModelPreviewScene(handle.engine);
+    try {
+      const split = splitGlbJsonBin(
+        encodeParentedAnimatedTriangleGlb("Duplicate"),
+      )!;
+      const animations = split.json.animations as Record<string, unknown>[];
+      animations.push(
+        { ...animations[0], name: "Duplicate" },
+        { ...animations[0], name: " " },
+      );
+      const loaded = await loadModelPreviewSource(
+        host,
+        encodeGlbJsonBin(split.json, split.bin),
+      );
+      expect(loaded!.animationGroups.map((group) => group.name)).toEqual([
+        "Duplicate",
+        "Duplicate_1",
+        "Animation_2",
+      ]);
+      expect(
+        loaded!.animationGroups.map((group) => group.to - group.from),
+      ).toEqual([60, 60, 60]);
+    } finally {
+      host.dispose();
+      handle.engine.dispose();
+    }
+  });
+
   it("retains the authored pose, with no playback, until a specific animation is requested", async () => {
     const handle = createTestEngine();
     const host = createModelPreviewScene(handle.engine);

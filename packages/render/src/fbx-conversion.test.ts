@@ -23,6 +23,31 @@ const fixture = (name: string) => ({
 });
 
 describe("FBX canonical conversion", () => {
+  it("embeds selected texture sidecars and reports missing images instead of dropping them", () => {
+    const file = fixture("maxPbrMaterial_metalRough.fbx");
+    expect(() => convertFbxWithAssimp(importer, file)).toThrow(
+      /Missing FBX texture/,
+    );
+    const texture = new Uint8Array(
+      readFileSync(
+        new URL("../../../../e2e/fixtures/albedo.png", import.meta.url),
+      ),
+    );
+    const bytes = convertFbxWithAssimp(importer, file, [
+      { name: "albedo.png", bytes: texture },
+    ]);
+    const browse = parseGlbForBrowse(bytes)!;
+    expect(browse.images[0]!.bytes).toEqual(texture);
+    expect(
+      browse.materials.some((material) => material.albedoImageIndex === 0),
+    ).toBe(true);
+    expect(
+      (splitGlbJsonBin(bytes)!.json.images as { uri?: string }[]).every(
+        (image) => !image.uri,
+      ),
+    ).toBe(true);
+  });
+
   it("normalizes source centimeters and Z-up axes into glTF meters and Y-up", () => {
     const bytes = new TextEncoder().encode(`GlobalSettings: { Properties70: {
       P: "UnitScaleFactor", "double", "Number", "", 1
