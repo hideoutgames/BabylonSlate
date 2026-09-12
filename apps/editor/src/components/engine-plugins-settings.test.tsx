@@ -124,8 +124,7 @@ describe("EnginePluginsSettings", () => {
     expect(within(row).getByRole("switch").getAttribute("aria-checked")).toBe(
       "false",
     );
-    await waitFor(() =>
-      expect(within(row).getByRole("switch")).toHaveProperty("disabled", false),
-    );
+    fireEvent.click(within(row).getByRole("switch"));
+    await waitFor(() => expect(library.setEnabledByDefault).toHaveBeenCalledTimes(2));
   });
 });
