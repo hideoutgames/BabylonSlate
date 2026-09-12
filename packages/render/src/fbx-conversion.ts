@@ -1,5 +1,10 @@
 import type { AssimpModule } from "assimpjs";
-import { ingestGltfForImport, splitGlbJsonBin } from "@babylonslate/assets";
+import {
+  encodeGlbJsonBin,
+  ingestGltfForImport,
+  splitGlbJsonBin,
+} from "@babylonslate/assets";
+import { fbxCoordinateMatrix } from "./fbx-coordinate-system";
 
 export type ModelImportFile = { name: string; bytes: Uint8Array };
 
@@ -19,11 +24,18 @@ export function convertFbxWithAssimp(
     if (files.has(key)) throw new Error(`Ambiguous FBX sidecar name: ${key}`);
     files.set(key, sidecar.bytes);
   }
-  const result = importer.ConvertFile(file.name, "glb2", file.bytes,
+  const result = importer.ConvertFile(
+    file.name,
+    "glb2",
+    file.bytes,
     (name) => files.has(basename(name)),
-    (name) => files.get(basename(name)) ?? new Uint8Array());
+    (name) => files.get(basename(name)) ?? new Uint8Array(),
+  );
   try {
-    if (!result.IsSuccess()) throw new Error(`FBX conversion failed (Assimp ${result.GetErrorCode()}).`);
+    if (!result.IsSuccess())
+      throw new Error(
+        `FBX conversion failed (Assimp ${result.GetErrorCode()}).`,
+      );
     let glb: Uint8Array | undefined;
     for (let i = 0; i < result.FileCount(); i++) {
       const output = result.GetFile(i);
@@ -32,10 +44,17 @@ export function convertFbxWithAssimp(
         const bytes = output.GetContent().slice();
         if (/\.glb$/i.test(name)) glb = bytes;
         else files.set(basename(name), bytes);
-      } finally { output.delete(); }
+      } finally {
+        output.delete();
+      }
     }
     const split = glb && splitGlbJsonBin(glb);
-    if (!glb || !split || !Array.isArray(split.json.meshes) || !split.json.meshes.length) {
+    if (
+      !glb ||
+      !split ||
+      !Array.isArray(split.json.meshes) ||
+      !split.json.meshes.length
+    ) {
       throw new Error("FBX conversion produced no model meshes.");
     }
     // Fail visibly instead of silently dropping missing materials' image inputs.
@@ -43,9 +62,25 @@ export function convertFbxWithAssimp(
       if (!image.uri || image.uri.startsWith("data:")) continue;
       const key = basename(decodeURIComponent(image.uri));
       const bytes = files.get(key);
-      if (!bytes) throw new Error(`Missing FBX texture: ${image.uri}. Select its image file with the FBX.`);
+      if (!bytes)
+        throw new Error(
+          `Missing FBX texture: ${image.uri}. Select its image file with the FBX.`,
+        );
       files.set(image.uri, bytes);
     }
-    return ingestGltfForImport("import.glb", glb, files).bytes;
-  } finally { result.delete(); }
+    const nodes = split.json.nodes as Record<string, unknown>[];
+    const matrix = fbxCoordinateMatrix(file.bytes);
+    for (const scene of split.json.scenes as { nodes: number[] }[]) {
+      const index = nodes.length;
+      nodes.push({ name: "FBX_Coordinates", matrix, children: scene.nodes });
+      scene.nodes = [index];
+    }
+    return ingestGltfForImport(
+      "import.glb",
+      encodeGlbJsonBin(split.json, split.bin),
+      files,
+    ).bytes;
+  } finally {
+    result.delete();
+  }
 }

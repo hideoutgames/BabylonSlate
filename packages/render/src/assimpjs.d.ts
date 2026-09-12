@@ -12,8 +12,13 @@ declare module "assimpjs" {
     delete(): void;
   }
   export interface AssimpModule {
-    ConvertFile(name: string, format: string, bytes: Uint8Array,
-      exists: (name: string) => boolean, load: (name: string) => Uint8Array): AssimpResult;
+    ConvertFile(
+      name: string,
+      format: string,
+      bytes: Uint8Array,
+      exists: (name: string) => boolean,
+      load: (name: string) => Uint8Array,
+    ): AssimpResult;
   }
   export default function assimp(options?: {
     wasmBinary?: Uint8Array;
