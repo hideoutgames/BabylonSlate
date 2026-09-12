@@ -56,6 +56,7 @@ import {
   applyWheelZoom,
   cellsAlongSegment,
   decodeTileGid,
+  orderedTilemapLayers,
   DEFAULT_PAINT_CELL_SIZE,
   encodeTileGid,
   ensureTilesetTiles,
@@ -682,6 +683,8 @@ export function TilemapPaint({
     type: asset.header.type,
     path: asset.path,
   }));
+  const { projectDocument } = useDocuments();
+  const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? ["Background", "Default", "Foreground", "UI"];
   const decoded = decodeTileGid(tilemap, selectedGid, payloads);
   const localTileId = decoded?.localId ?? selectedGid;
 
@@ -727,8 +730,9 @@ export function TilemapPaint({
       cellSize,
       payloads,
       atlases,
+      sortingLayers,
     );
-  }, [atlases, cellSize, cssSize, pan, payloads, tilemap]);
+  }, [atlases, cellSize, cssSize, pan, payloads, tilemap, sortingLayers]);
 
   const cellAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -754,7 +758,7 @@ export function TilemapPaint({
     pointerType: "down" | "move",
   ) => {
     if (!layer || !isTilemapPaintStrokeTool(tool)) return;
-    if (tool !== "eraser" && selectedGid < 0) return;
+    if (tool !== "eraser" && tool !== "picker" && (selectedGid < 0 || (selectedGid > 0 && !decoded))) return;
     if (pointerType === "down") {
       strokeRef.current = {
         id: newStrokeId(),
@@ -1292,13 +1296,14 @@ function drawTilemapCanvas(
   cellSize: number,
   payloads: ReadonlyMap<string, TilesetPayload>,
   atlases: ReadonlyMap<string, HTMLImageElement>,
+  sortingLayers: readonly string[],
 ): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssWidth, cssHeight);
   ctx.fillStyle = "oklch(0.2 0 0)";
   ctx.fillRect(0, 0, cssWidth, cssHeight);
   ctx.imageSmoothingEnabled = false;
-  for (const layer of tilemap.layers) {
+  for (const layer of orderedTilemapLayers(tilemap, sortingLayers)) {
     if (!layer.visible) continue;
     const size = tilemap.chunkSize;
     for (const chunk of layer.chunks) {

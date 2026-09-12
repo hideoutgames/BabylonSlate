@@ -286,6 +286,49 @@ describe("TilemapPalette", () => {
 });
 
 describe("TilemapPaint", () => {
+  it("redraws layers in project sorting order when that order changes", async () => {
+    const initial = mapWithGround();
+    initial.layers = [
+      { ...setTile(initial, "layer-1", 0, 0, 1).layers[0]!, sortingLayer: "Props" },
+      { ...setTile(initial, "layer-1", 1, 0, 2).layers[0]!, id: "back", sortingLayer: "Decals" },
+    ];
+    const previous = documentApi.projectDocument.settings.twoD.sortingLayers;
+    documentApi.projectDocument.settings.twoD.sortingLayers = ["Default", "Decals", "Props"];
+    const view = render(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={() => {}} />);
+    const tileXs = () => {
+      const ctx = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.results.at(-1)!.value as unknown as { fillRect: ReturnType<typeof vi.fn> };
+      return ctx.fillRect.mock.calls.filter((args) => args[2] === 32).map((args) => args[0]);
+    };
+    try {
+      await screen.findByTestId("tilemap-palette-tile-2");
+      expect(tileXs()).toEqual([32, 0]);
+      documentApi.projectDocument.settings.twoD.sortingLayers = ["Default", "Props", "Decals"];
+      view.rerender(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={() => {}} />);
+      expect(tileXs()).toEqual([0, 32]);
+    } finally { documentApi.projectDocument.settings.twoD.sortingLayers = previous; }
+  });
+  it.each(["shrunk", "missing"])("does not overwrite cells with a selected tile from a %s atlas", async (state) => {
+    const initial = setTile(mapWithGround(), "layer-1", 0, 0, 1);
+    const onChange = vi.fn();
+    const view = render(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    fireEvent.click(await screen.findByTestId("tilemap-palette-tile-2"));
+    if (state === "shrunk") {
+      documentApi.openDocuments = [{ id: "ground", ref: { kind: "tileset", path: GROUND_PATH }, content: createDefaultTilesetPayload() }];
+    } else {
+      loadAssetDocument.mockResolvedValue(null);
+      documentApi.openDocuments = [...documentApi.openDocuments];
+    }
+    view.rerender(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    await waitFor(() => expect(screen.queryByTestId("tilemap-palette-tile-2")).toBeNull());
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    for (const type of ["pointerdown", "pointerup"] as const) dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: 16, clientY: 240 });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("tilemap-tool-eraser"));
+    for (const type of ["pointerdown", "pointerup"] as const) dispatchPointerEvent(canvas, type, { pointerId: 2, clientX: 16, clientY: 240 });
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(getTile(normalizeTilemapPayload(onChange.mock.calls.at(-1)![0]), "layer-1", 0, 0)).toBe(0);
+  });
   it("refreshes a grown atlas and undoes remapping with the paint stroke", async () => {
     let initial = mapWithGround();
     initial.tilesets.push({ guid: "ts-props", firstGid: 3, tileCount: 2 });

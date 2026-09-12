@@ -107,6 +107,25 @@ describe("resource cache", () => {
 });
 
 describe("render scheduler", () => {
+  it("presents one paused step while retaining document and viewport visibility gates", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    scheduler.setPaused(true);
+    scheduler.invalidate("snapshot");
+    expect(scheduler.shouldRender(0)).toBe(false);
+    scheduler.requestPausedFrame();
+    scheduler.setDocumentVisible(false);
+    expect(scheduler.shouldRender(0)).toBe(false);
+    scheduler.setDocumentVisible(true);
+    scheduler.setObstructed(true);
+    expect(scheduler.shouldRender(0)).toBe(false);
+    scheduler.setObstructed(false);
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
+    expect(scheduler.shouldRender(100)).toBe(false);
+    scheduler.requestPausedFrame();
+    expect(scheduler.shouldRender(100)).toBe(true);
+  });
   it("keeps a sustained cap with fractional, jittered browser callbacks", () => {
     const scheduler = new RenderScheduler();
     scheduler.acquireContinuous("play");

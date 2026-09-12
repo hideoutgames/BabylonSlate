@@ -1,4 +1,6 @@
 import type { AbstractMesh, Scene, SubMesh } from "@babylonjs/core";
+import { sortingLayerSortKey } from "@babylonslate/core";
+export { ORDER_IN_LAYER_LIMIT, clampOrderInLayer, computeSortKey } from "@babylonslate/core";
 
 /**
  * Babylon supports four rendering groups, reserved here for coarse separation
@@ -15,31 +17,11 @@ export const RENDERING_GROUP = {
 
 export type RenderingGroupName = keyof typeof RENDERING_GROUP;
 
-/** Widest span of `orderInLayer` a single layer can address, either side of 0. */
-export const ORDER_IN_LAYER_LIMIT = 32767;
-const LAYER_STRIDE = ORDER_IN_LAYER_LIMIT * 2 + 2;
-
 export interface SortingLayerResolution {
   /** Index of the layer in the project's ordered list; -1 when unknown. */
   layerIndex: number;
   renderingGroupId: number;
   sortKey: number;
-}
-
-export function clampOrderInLayer(orderInLayer: number): number {
-  const rounded = Math.round(orderInLayer);
-  if (Number.isNaN(rounded)) return 0;
-  return Math.min(ORDER_IN_LAYER_LIMIT, Math.max(-ORDER_IN_LAYER_LIMIT, rounded));
-}
-
-/**
- * Compile `(layer, orderInLayer)` into the single monotonically increasing
- * number Babylon sorts transparent draws by. Two sprites in different layers
- * can never interleave, whatever their order values.
- */
-export function computeSortKey(layerIndex: number, orderInLayer: number): number {
-  const layer = Math.max(0, Math.round(layerIndex));
-  return layer * LAYER_STRIDE + clampOrderInLayer(orderInLayer) + ORDER_IN_LAYER_LIMIT;
 }
 
 /**
@@ -64,11 +46,10 @@ export function resolveSortingLayer(
   // An unknown layer sorts as if it were the default layer rather than
   // vanishing behind everything, but keeps its index reported as -1 so the
   // editor can flag it.
-  const effectiveIndex = layerIndex >= 0 ? layerIndex : Math.max(0, sortingLayers.indexOf("Default"));
   return {
     layerIndex,
     renderingGroupId: renderingGroupForLayer(layerName),
-    sortKey: computeSortKey(effectiveIndex, orderInLayer),
+    sortKey: sortingLayerSortKey(sortingLayers, layerName, orderInLayer),
   };
 }
 

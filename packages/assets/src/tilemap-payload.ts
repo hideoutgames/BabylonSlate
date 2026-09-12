@@ -1,3 +1,4 @@
+import { sortingLayerSortKey } from "@babylonslate/core";
 /** Tilemap asset payload: ordered layers of chunked tile ids (engineplan §13.3). */
 
 import {
@@ -552,4 +553,9 @@ function nonNegativeInt(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.floor(value)
     : fallback;
+}
+
+/** Stable list order breaks ties after the same project sort keys used by render. */
+export function orderedTilemapLayers(map: TilemapPayload, layers: readonly string[]): TilemapLayer[] {
+  return [...map.layers].sort((a, b) => sortingLayerSortKey(layers, a.sortingLayer, a.orderInLayer) - sortingLayerSortKey(layers, b.sortingLayer, b.orderInLayer));
 }

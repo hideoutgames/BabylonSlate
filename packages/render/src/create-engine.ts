@@ -1048,6 +1048,7 @@ export function createEngine(
     resourceCache.setClientTextures(scene.uid, guids);
   };
 
+  let lastRenderedSnapshotFrame: number | null = null;
   const loadScene = (sceneData: SerializedScene) => {
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -1062,6 +1063,7 @@ export function createEngine(
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
       interpolator.clear();
+      lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);
@@ -1465,6 +1467,7 @@ export function createEngine(
     scene.render();
     sceneLayerCompositor?.render();
     if (rttPresent) rttPresent.blit();
+    if (sampled) lastRenderedSnapshotFrame = sampled.frameId;
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     scaling.noteFrameTime(performance.now() - renderStart);
@@ -1473,9 +1476,10 @@ export function createEngine(
 
   const onVisibility = () => {
     const hidden = document.visibilityState === "hidden";
-    scheduler.setPaused(hidden);
+    scheduler.setDocumentVisible(!hidden);
   };
   if (typeof document !== "undefined") {
+    onVisibility();
     document.addEventListener("visibilitychange", onVisibility);
   }
 
@@ -1628,6 +1632,7 @@ export function createEngine(
       interpAlpha = 1;
       const sampled = interpolator.sample(interpAlpha);
       if (sampled) positionsFromSample(sampled, lastPositions);
+      if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
         playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
       }
