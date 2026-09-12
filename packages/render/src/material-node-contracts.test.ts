@@ -27,6 +27,19 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it.each(["a", "b"])("compiles animated normal displacement with Time on Multiply %s", async (timePin) => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "time", "input.time");
+    node(doc, "sine", "math.sin");
+    node(doc, "normal", "input.vertexNormalWS");
+    node(doc, "multiply", "math.multiply");
+    wire(doc, "time", "time", "sine", "value");
+    wire(doc, "sine", "out", "multiply", timePin);
+    wire(doc, "normal", "normal", "multiply", timePin === "a" ? "b" : "a");
+    wire(doc, "multiply", "out", "output", "worldPositionOffset");
+    const result = await compile(doc);
+    expect(result.material.compiledShaders).toContain("sin(");
+  });
   it("compiles VertexNormalWS in vertex displacement and fragment color", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "normal", "input.vertexNormalWS");
