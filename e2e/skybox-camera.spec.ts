@@ -71,9 +71,9 @@ test("large skybox remains visible after adding a possessing camera", async ({
   scene.actors.push(
     createActor("box", "Box", {
       transform: {
-        position: [0, 0, 5],
+        position: [0, 0, 900],
         rotation: [0, 0, 0, 1],
-        scale: [1, 1, 1],
+        scale: [100, 100, 100],
       },
       components: [
         {
@@ -87,7 +87,7 @@ test("large skybox remains visible after adding a possessing camera", async ({
   await setPreviewScene(page, scene);
   await clickPlayAndWaitForOverlay(page);
   await expectSkyPixels(page.getByTestId("play-canvas"));
-  // The camera at the origin sees the unlit box straight ahead, in front of the sky.
+  // Geometry near Far Clip must not be covered by the sky's infinite-far depth.
   await expect
     .poll(
       () =>
