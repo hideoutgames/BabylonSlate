@@ -7,6 +7,8 @@ import {
   syntheticRgbaForSize,
 } from "./node-basis-encode";
 import { DEFAULT_TEXTURE_ENCODE_SETTINGS } from "./texture-compression";
+import { isKtx2Bytes } from "./texture-loader";
+import { sniffKtx2Size } from "./ktx2-info";
 
 describe("A16 encode CI smoke (real Basis wasm)", () => {
   it("vendored basis encoder is present", () => {
@@ -30,6 +32,8 @@ describe("A16 encode CI smoke (real Basis wasm)", () => {
 
     expect(wallMs).toBeLessThanOrEqual(fixture.a16WallMsMax);
     expect(ktx2.byteLength).toBeGreaterThan(32);
+    expect(isKtx2Bytes(ktx2)).toBe(true);
+    expect(sniffKtx2Size(ktx2)).toEqual({ width: 512, height: 512 });
     const container = readKtx2(ktx2);
     expect(container.pixelWidth).toBe(512);
     expect(container.pixelHeight).toBe(512);

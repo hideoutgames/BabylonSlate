@@ -84,6 +84,18 @@ export async function resolveGpuTexture(
     lodQuality: lod?.quality ?? 1,
     usage,
   });
+  // Changing Usage must take effect even when a previous encode is retained.
+  if (usage === "pixelArt" && raster) {
+    return {
+      bytes: raster.bytes,
+      kind: "source",
+      chunkId: raster.chunkId,
+      targetEdge,
+      sourceEdge,
+      preferredChunkId: null,
+      missingPreferred: false,
+    };
+  }
   const encodeBase = options.encodeSettings ?? DEFAULT_TEXTURE_ENCODE_SETTINGS;
   const settings: TextureEncodeSettings = {
     ...encodeBase,
