@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
@@ -179,9 +179,9 @@ export function TilemapDetails({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const authored = normalizeTilemapPayload(payload);
+  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
   const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = reconcileTilemapTilesets(authored, payloads);
+  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removeGuid, setRemoveGuid] = useState<string | null>(null);
   const [selectedLayerId, setSelectedLayerId] = useState(
@@ -488,9 +488,9 @@ export function TilemapPalette({
   payload: Record<string, unknown>;
   onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const authored = normalizeTilemapPayload(payload);
+  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
   const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = reconcileTilemapTilesets(authored, payloads);
+  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
   const editing = useOptionalTilemapEditing();
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -623,9 +623,9 @@ export function TilemapPaint({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const authored = normalizeTilemapPayload(payload);
+  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
   const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = reconcileTilemapTilesets(authored, payloads);
+  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
   const latestRef = useRef(tilemap);
   useEffect(() => {
     latestRef.current = tilemap;

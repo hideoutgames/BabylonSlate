@@ -27,7 +27,7 @@ async function fixture(page: Page, animated: boolean) {
     const blob = await new Promise<Blob>((resolve) => canvas.toBlob((value) => resolve(value!)));
     return [...new Uint8Array(await blob.arrayBuffer())];
   }, colors));
-  for (const [id, colors] of [[texture, ["#00c800", "#c80000", "#0000c8", "#c8c800", "#00c8c8", "#00c800"]], [blueTexture, ["#0000c8"]]] as const) {
+  for (const [id, colors] of [[texture, ["#00c800", "#c80000", "#c80000", "#c8c800", "#00c8c8", "#00c800"]], [blueTexture, ["#0000c8"]]] as const) {
     const payload = { width: colors.length * 16, height: 16, usage: "pixelArt", compressionState: "fallback_uncompressed" };
     files.set(`assets/${id}.texture.babasset`, await encodeAssetDocument({ guid: id, type: "Texture", name: id, version: 1, payload }, {
       headerPayload: payload, extraChunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: await png([...colors]) }],
@@ -50,9 +50,9 @@ async function fixture(page: Page, animated: boolean) {
     scene.actors.push(createActor(`map-${id}`, `Map ${id}`, { transform: { position, rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [{ id: `component-${id}`, classId: "TilemapComponent", properties: { assetGuid: guid(id), sortingLayer: "Default", orderInLayer: order } }] }));
   };
   const addSprite = async (id: number, cell: number, position: [number, number, number], order: number, size = 1) => {
-    const sprite = createDefaultSpritePayload(); sprite.textureGuid = texture; sprite.pixelsPerUnit = 16;
-    sprite.frames[0] = { ...sprite.frames[0]!, u: (cell - 1) / 6, uSize: 1 / 6, width: 16, height: 16 };
-    await asset(guid(id), "Sprite", sprite, [texture]);
+    const sprite = createDefaultSpritePayload(); sprite.textureGuid = cell === 3 ? blueTexture : texture; sprite.pixelsPerUnit = 16;
+    sprite.frames[0] = { ...sprite.frames[0]!, u: cell === 3 ? 0 : (cell - 1) / 6, uSize: cell === 3 ? 1 : 1 / 6, width: 16, height: 16 };
+    await asset(guid(id), "Sprite", sprite, [sprite.textureGuid]);
     scene.actors.push(createActor(`sprite-${id}`, `Sprite ${id}`, { transform: { position, rotation: [0, 0, 0, 1], scale: [size, size, 1] }, components: [{ id: `component-${id}`, classId: "SpriteComponent", properties: { assetGuid: guid(id), sortingLayer: "Default", orderInLayer: order } }] }));
   };
   if (animated) {
