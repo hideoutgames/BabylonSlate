@@ -1,5 +1,6 @@
 import {
   AddBlock,
+  AnimatedInputBlockTypes,
   ArcTan2Block,
   ClampBlock,
   Color3,
@@ -580,16 +581,12 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       undefined,
       NodeMaterialBlockConnectionPointTypes.Float,
     );
-    // Babylon's Time animation advances 0.01 at 60fps, i.e. 0.6 per second.
-    block.animationType = 1;
-    if (operation.properties.timeMode === "seconds") {
-      const scale = new MultiplyBlock(`${name}_seconds`);
-      const factor = new InputBlock(`${name}_secondsFactor`);
-      factor.value = 1 / 0.6;
-      block.output.connectTo(scale.left);
-      factor.output.connectTo(scale.right);
-      return { blocks: [block, factor, scale], inputs: {}, outputs: { time: scale.output } };
-    }
+    // Preview Scenes render independently of the shared Engine's frame loop.
+    // Its frame delta can be stale, so Seconds must use elapsed time directly.
+    // Keep the historical scene-animation rate for authored legacy nodes.
+    block.animationType = operation.properties.timeMode === "seconds"
+      ? AnimatedInputBlockTypes.RealTime
+      : AnimatedInputBlockTypes.Time;
     return single(block, {}, { time: block.output });
   },
   "input.cameraPosition": ({ name, plumbing }) => {
