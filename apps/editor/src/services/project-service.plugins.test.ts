@@ -92,26 +92,27 @@ describe("ProjectService plugin roots", () => {
     expect(service.registry?.getByGuid("extra-class")).toBeUndefined();
   });
 
-  it("loads blob chunks for export-enabled engine plugins that remain disabled in the editor", async () => {
-    const { service } = await scaffolded();
-    const engineStorage = new MemoryStorageAdapter("documents");
-    await engineStorage.openDocumentsProject("Engine Plugins");
+  it.each(["project", "engine"] as const)("loads plugin-local blob chunks for export-enabled %s plugins that remain disabled in the editor", async (source) => {
+    const { storage, service } = await scaffolded();
+    const pluginStorage = source === "project" ? storage : new MemoryStorageAdapter("documents");
+    if (source === "engine") await pluginStorage.openDocumentsProject("Engine Plugins");
+    const folderPath = source === "project" ? "plugins/export-pack" : "export-pack";
     const settings = createDefaultPluginSettings({
-      pluginGuid: "engine-export",
-      displayName: "Engine Export",
+      pluginGuid: "export-pack",
+      displayName: "Export Pack",
     });
-    await engineStorage.mkdir("engine-export/assets", true);
-    await engineStorage.writeBinary(
-      "engine-export/engine-export.plugin.babasset",
+    await pluginStorage.mkdir(`${folderPath}/assets`, true);
+    await pluginStorage.writeBinary(
+      `${folderPath}/export-pack.plugin.babasset`,
       await encodePluginSettingsDocument(settings),
     );
-    const blobs = createVfsBlobStore(engineStorage);
+    const blobs = createVfsBlobStore(pluginStorage, `${folderPath}/assets/.blobs`);
     const payload = new Uint8Array([3, 5, 8]);
-    await engineStorage.writeBinary(
-      "engine-export/assets/Texture.texture.babasset",
+    await pluginStorage.writeBinary(
+      `${folderPath}/assets/Texture.texture.babasset`,
       await encodeBabasset({
         header: {
-          guid: "engine-texture",
+          guid: "export-texture",
           type: "Texture",
           name: "Texture",
           engineVersion: "0.0.0",
@@ -133,17 +134,18 @@ describe("ProjectService plugin roots", () => {
         writeBlob: (hash, bytes) => blobs.writeBlob(hash, bytes),
       }),
     );
-    service.setEnginePluginStorage(engineStorage);
+    if (source === "engine") service.setEnginePluginStorage(pluginStorage);
     await service.remountRegistry();
 
-    const assets = await service.listExportAssets(new Set(["engine-export"]));
+    const assets = await service.listExportAssets(new Set(["export-pack"]));
     const texture = assets.find(
-      (asset) => asset.header.guid === "engine-texture",
+      (asset) => asset.header.guid === "export-texture",
     )!;
     expect(await service.readAssetChunk(texture.path, "payload")).toEqual(
       payload,
     );
-    expect(service.registry?.getRoot("plugin:engine-export")).toBeUndefined();
+    expect(service.registry?.getRoot("plugin:export-pack")).toBeUndefined();
+    expect(service.registry?.getByGuid("export-texture")).toBeUndefined();
   });
 
   it("keeps app-owned Engine Plugin and template libraries out of the project list", async () => {

@@ -1027,6 +1027,14 @@ export class ProjectService {
     return { status: "imported", descriptor };
   }
 
+  private pluginForPath(path: string): PluginDescriptor | undefined {
+    return this.pluginDescriptors.find(
+      (entry) =>
+        path === entry.settingsPath ||
+        path.startsWith(`${entry.folderPath}/`),
+    );
+  }
+
   private storageForPath(path: string): ProjectStorage {
     if (isTracePath(path)) {
       if (!this.derivedStorage) {
@@ -1040,11 +1048,7 @@ export class ProjectService {
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.storageFor(indexed.rootId);
     }
-    const plugin = this.pluginDescriptors.find(
-      (entry) =>
-        path === entry.settingsPath ||
-        path.startsWith(`${entry.folderPath}/`),
-    );
+    const plugin = this.pluginForPath(path);
     if (plugin?.source === "engine" && this.enginePluginStorage) {
       return this.enginePluginStorage;
     }
@@ -1059,6 +1063,8 @@ export class ProjectService {
       return this.assetRegistry.blobsFor(indexed.rootId);
     }
     const storage = this.storageForPath(path);
+    const plugin = this.pluginForPath(path);
+    if (plugin) return createVfsBlobStore(storage, `${plugin.contentPath}/.blobs`);
     return storage === this.storage ? this.blobs : createVfsBlobStore(storage);
   }
 
