@@ -71,6 +71,7 @@ const {
     setMaterialDocuments: vi.fn(),
     setEditingMaterialGuids: vi.fn(),
     setMeshAssets: vi.fn(),
+    setRenderSettings: vi.fn(),
     registerFonts: vi.fn(async () => {}),
     resize: vi.fn(),
     dispose: disposeFn,

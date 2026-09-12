@@ -173,7 +173,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
           properties: {
             lightKind: kind,
             color: [1, 0, 0],
-            intensity: 2,
+            intensity: 1,
             range: 100,
             outerAngle: 90,
             innerAngle: 60,
@@ -197,6 +197,20 @@ test("CEL preserves authored and texture colors, supports every light, and resto
         message: `${kind} neutral light influence`,
       })
       .toBeGreaterThan(100);
+    if (kind === "directional") {
+      await expect
+        .poll(() => pixelsNear(viewport, [26, 77, 39]))
+        .toBeGreaterThan(100);
+      await viewport.screenshot({
+        path: testInfo.outputPath("cel-shadow-bands.png"),
+      });
+      scene.settings.celShading.shadowBands = 2;
+      scene.settings.celShading.bandSoftness = 0;
+      await setPreviewScene(page, scene);
+      await expect
+        .poll(() => pixelsNear(viewport, [26, 77, 39]))
+        .toBeLessThan(30);
+    }
   }
 
   scene.actors = [...subjects, fill];

@@ -27,10 +27,15 @@ export function setSceneRenderSettings(
   if (!sync) {
     const replacements = new Map<Material, Material>();
     const originals = new Map<Material, Material>();
+    const resolved = new Map<Material, Material>();
+    const settings = sceneRenderingSettings(scene);
+    let appliedCel = false;
     const resolve = (source: Material | null): Material | null => {
       if (!source) return null;
       if (originals.has(source)) source = originals.get(source)!;
-      if (sceneRenderingSettings(scene).mode !== "cel") return source;
+      if (settings.mode !== "cel") return source;
+      const cached = resolved.get(source);
+      if (cached) return cached;
       let replacement = replacements.get(source);
       if (!replacement) {
         if (source instanceof MultiMaterial) {
@@ -47,6 +52,7 @@ export function setSceneRenderSettings(
           owned.dispose(false, false);
         });
       }
+      resolved.set(source, replacement);
       if (
         replacement instanceof MultiMaterial &&
         source instanceof MultiMaterial
@@ -64,7 +70,12 @@ export function setSceneRenderSettings(
     };
     sync = () => {
       if (scene.isDisposed) return;
-      scene.defaultMaterial = resolve(scene.defaultMaterial)!;
+      const useCel = settings.mode === "cel";
+      if (!useCel && !appliedCel) return;
+      appliedCel = useCel;
+      resolved.clear();
+      const fallback = resolve(scene.defaultMaterial)!;
+      if (fallback !== scene.defaultMaterial) scene.defaultMaterial = fallback;
       for (const mesh of scene.meshes) {
         if (
           !(mesh instanceof Mesh) ||
@@ -85,6 +96,7 @@ export function setSceneRenderSettings(
         replacement.dispose(false, false);
       replacements.clear();
       originals.clear();
+      resolved.clear();
       controllers.delete(scene);
     });
   }

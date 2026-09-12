@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Color3,
+  InputBlock,
   Material,
   MeshBuilder,
   MultiMaterial,
@@ -82,6 +83,12 @@ describe("native CEL render mode", () => {
     const scene = host();
     setSceneRenderSettings(scene, { mode: "cel" });
     const doc = createDefaultMaterialDocument();
+    doc.nodes[0] = {
+      ...doc.nodes[0]!,
+      type: "param.color",
+      properties: { name: "Tint", value: [0.2, 0.6, 0.3, 1] },
+    };
+    doc.edges[0]!.sourcePinId = "rgb";
     const lowered = lowerMaterialDocument(doc);
     if (!lowered.ok) throw new Error("Invalid fixture");
     const compiled = compileMaterialPlan(lowered.plan, {
@@ -100,18 +107,34 @@ describe("native CEL render mode", () => {
     expect(material.compiledShaders).toContain("slateCelSurfaceLight");
     expect(material.compiledShaders).not.toContain("pbrBlockAlbedoOpacity");
     material.freeze();
+    expect(
+      compiled.setParameter("Tint", {
+        kind: "color",
+        value: [0.1, 0.4, 0.8, 1],
+      }),
+    ).toBe(true);
     setSceneRenderSettings(scene, { mode: "pbr" });
     await vi.waitFor(() =>
       expect(material.compiledShaders).toContain("pbrBlockAlbedoOpacity"),
     );
     expect(mesh.material).toBe(material);
     expect(material.isFrozen).toBe(true);
+    const tint = material.getBlockByName("baseColor") as InputBlock;
+    expect(tint.value.asArray()).toEqual([0.1, 0.4, 0.8, 1]);
     setSceneRenderSettings(scene, { mode: "cel" });
     await vi.waitFor(() =>
       expect(material.compiledShaders).toContain("slateCelSurfaceLight"),
     );
     expect(mesh.material).toBe(material);
     expect(material.isFrozen).toBe(true);
+    expect(material.getBlockByName("baseColor")).toBe(tint);
+    expect(
+      compiled.setParameter("Tint", {
+        kind: "color",
+        value: [0.8, 0.2, 0.1, 1],
+      }),
+    ).toBe(true);
+    expect(tint.value.asArray()).toEqual([0.8, 0.2, 0.1, 1]);
     compiled.dispose();
     expect(sceneRenderingSettings(scene).listeners.size).toBe(0);
   });

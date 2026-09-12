@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
+  normalizeCelShadingSettings,
 } from "@babylonslate/core";
 import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
 import { parseScriptRegistry } from "./scripts";
@@ -48,11 +49,14 @@ describe("exportGame", () => {
     expect(parseGameManifest(JSON.stringify(legacy)).inputMappings).toBeUndefined();
   });
   it("puts index.html at the zip root and records startupSceneGuid", async () => {
+    const cel = normalizeCelShadingSettings({ shadowBands: 5, lightFalloff: "banded" });
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       customResolution: {
         ...DEFAULT_RENDER_PROJECT_SETTINGS,
+        mode: "cel",
+        cel,
         customResolution: true,
         width: 1280,
         height: 720,
@@ -74,6 +78,8 @@ describe("exportGame", () => {
     expect(result.value.files.has("index.html")).toBe(true);
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
     expect(result.value.manifest.render).toEqual({
+      mode: "cel",
+      cel,
       customResolution: true,
       width: 1280,
       height: 720,
@@ -89,6 +95,7 @@ describe("exportGame", () => {
     expect(Object.keys(unzipped)).toContain("index.html");
     expect(Object.keys(unzipped)).toContain(GAME_MANIFEST_FILE);
     expect(unzipped["index.html"]).toBeDefined();
+    expect(parseGameManifest(new TextDecoder().decode(unzipped[GAME_MANIFEST_FILE])).render).toEqual(result.value.manifest.render);
   });
 
   it("zips with a DOS-safe local noon mtime", () => {
