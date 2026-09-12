@@ -36,6 +36,10 @@ for (const wgsl of [false, true]) {
     )
     .replaceAll("#include<lightFragment>", "#include<slateCelLightFragment>")
     .replace(
+      /(vec3 diffuseBase|var diffuseBase: vec3f)/,
+      `${wgsl ? "var slateCelUnattenuated: vec3f=vec3f(0.0);" : "vec3 slateCelUnattenuated=vec3(0.0);"}$1`,
+    )
+    .replace(
       "#define CUSTOM_FRAGMENT_UPDATE_DIFFUSE",
       `${wgsl ? `baseColor=vec4f(mix(baseColor.rgb,slateCelTextureToDisplay(baseColor.rgb),${textureFlags}.x),baseColor.a);` : `baseColor.rgb=mix(baseColor.rgb,slateCelTextureToDisplay(baseColor.rgb),${textureFlags}.x);`}\n#define CUSTOM_FRAGMENT_UPDATE_DIFFUSE`,
     )
@@ -45,7 +49,7 @@ for (const wgsl of [false, true]) {
     )
     .replace(
       "#ifdef EMISSIVEASILLUMINATION",
-      "diffuseBase=slateCelSurfaceLight(diffuseBase);\n#ifdef EMISSIVEASILLUMINATION",
+      "diffuseBase=slateCelSurfaceLight(diffuseBase,slateCelUnattenuated);\n#ifdef EMISSIVEASILLUMINATION",
     );
 }
 

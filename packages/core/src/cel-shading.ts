@@ -18,14 +18,14 @@ export type CelShadingOverrides = Partial<CelShadingSettings>;
 
 export const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
   shadowBands: 3,
-  bandSoftness: 0.02,
+  bandSoftness: 0,
   shadowThreshold: 0.5,
   shadowStrength: 0.65,
   specularStrength: 0.2,
   specularSize: 0.2,
-  specularSoftness: 0.02,
+  specularSoftness: 0,
   lightColorInfluence: 1,
-  lightFalloff: "smooth",
+  lightFalloff: "banded",
 };
 
 export const CEL_SHADING_LIMITS = {

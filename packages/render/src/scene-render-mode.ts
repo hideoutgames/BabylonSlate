@@ -75,7 +75,16 @@ export function setSceneRenderSettings(
       appliedCel = useCel;
       resolved.clear();
       const fallback = resolve(scene.defaultMaterial)!;
-      if (fallback !== scene.defaultMaterial) scene.defaultMaterial = fallback;
+      if (fallback !== scene.defaultMaterial) {
+        scene.defaultMaterial = fallback;
+        // Babylon's defaultMaterial setter does not reset the PBR/Standard
+        // defines stored on meshes that inherit it (material === null).
+        for (const mesh of scene.meshes) {
+          if (mesh.material) continue;
+          for (const subMesh of mesh.subMeshes ?? []) subMesh.resetDrawCache();
+        }
+        scene.resetCachedMaterial();
+      }
       for (const mesh of scene.meshes) {
         if (
           !(mesh instanceof Mesh) ||

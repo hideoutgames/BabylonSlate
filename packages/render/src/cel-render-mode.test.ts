@@ -81,7 +81,6 @@ describe("native CEL render mode", () => {
 
   it("switches authored graphs in place and preserves frozen materials and live parameters", async () => {
     const scene = host();
-    setSceneRenderSettings(scene, { mode: "cel" });
     const doc = createDefaultMaterialDocument();
     doc.nodes[0] = {
       ...doc.nodes[0]!,
@@ -102,9 +101,16 @@ describe("native CEL render mode", () => {
     mesh.material = material;
     for (let i = 0; i < 6; i++)
       new PointLight(`light-${i}`, new Vector3(i, 3, 0), scene);
+    material.freeze();
+    // First activation loads CEL blocks asynchronously. Rapid switches must
+    // settle on the last request rather than lose a build or mix graph roots.
+    setSceneRenderSettings(scene, { mode: "cel" });
+    setSceneRenderSettings(scene, { mode: "pbr" });
     setSceneRenderSettings(scene, { mode: "cel" });
     expect(material.maxSimultaneousLights).toBe(6);
-    expect(material.compiledShaders).toContain("slateCelSurfaceLight");
+    await vi.waitFor(() =>
+      expect(material.compiledShaders).toContain("slateCelSurfaceLight"),
+    );
     expect(material.compiledShaders).not.toContain("pbrBlockAlbedoOpacity");
     material.freeze();
     expect(

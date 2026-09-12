@@ -41,7 +41,24 @@ export function installCelSurface(
   );
   let cel: NodeMaterialBlock | undefined;
   let active = pbr;
+  let disposed = false;
+  let queued = false;
   const select = (rebuild: boolean): void => {
+    if (disposed) return;
+    // A newly activated block can still be loading its shader includes.
+    // Coalesce subsequent toggles without mutating a graph mid-build.
+    if (rebuild && material.buildIsInProgress) {
+      if (!queued) {
+        queued = true;
+        material.onBuildObservable.addOnce(() => {
+          queueMicrotask(() => {
+            queued = false;
+            select(true);
+          });
+        });
+      }
+      return;
+    }
     const useCel = state.mode === "cel";
     if (useCel && !cel)
       cel = createCelSurface(material.name, created, plumbing, outputPoint);
@@ -69,7 +86,10 @@ export function installCelSurface(
   select(false);
   const listener = () => select(true);
   state.listeners.add(listener);
-  material.onDisposeObservable.addOnce(() => state.listeners.delete(listener));
+  material.onDisposeObservable.addOnce(() => {
+    disposed = true;
+    state.listeners.delete(listener);
+  });
 }
 
 function createCelSurface(

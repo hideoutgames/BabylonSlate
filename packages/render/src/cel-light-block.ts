@@ -66,7 +66,14 @@ export class CelLightBlock extends LightBlock {
           "#include<lightFragment>",
           "#include<slateCelLightFragment>",
         )
-        .replace(" = diffuseBase", " = slateCelSurfaceLight(diffuseBase)")
+        .replace(
+          /(vec3 diffuseBase|var diffuseBase: vec3f)/,
+          `${state.shaderLanguage === 1 ? "var slateCelUnattenuated: vec3f=vec3f(0.0);" : "vec3 slateCelUnattenuated=vec3(0.0);"}$1`,
+        )
+        .replace(
+          " = diffuseBase",
+          " = slateCelSurfaceLight(diffuseBase, slateCelUnattenuated)",
+        )
         .replace(
           ` = ${this.worldNormal.associatedVariableName}.xyz;`,
           ` = normalize(${this.worldNormal.associatedVariableName}.xyz);\n#ifdef SLATE_CEL_TWO_SIDED\n${state.shaderLanguage === 1 ? "normalW = select(-normalW, normalW, fragmentInputs.frontFacing);" : "normalW = gl_FrontFacing ? normalW : -normalW;"}\n#endif\n`,
