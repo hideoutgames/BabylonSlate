@@ -1,3 +1,4 @@
+/// <reference path="./assimpjs.d.ts" />
 import type { AssimpModule } from "assimpjs";
 import {
   encodeGlbJsonBin,

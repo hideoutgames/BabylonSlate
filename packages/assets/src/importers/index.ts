@@ -36,7 +36,7 @@ export function registeredImportAccept(): string {
     .join(",");
 }
 
-/** Picker accept list: registered importers plus OBJ/MTL and glTF BIN sidecars. */
+/** Picker accept list: registered importers plus converted FBX/OBJ and their sidecars. */
 export function pickerImportAccept(): string {
   return `${registeredImportAccept()},.obj,.mtl,.bin,.fbx`;
 }

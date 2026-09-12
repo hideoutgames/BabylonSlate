@@ -28,6 +28,8 @@ export async function loadModelContainer(
           targetFps,
           onParsed: (data) => {
             clips = gltfAnimationClips(data.json as Record<string, unknown>);
+            const animations = (data.json as { animations?: { name?: string }[] }).animations ?? [];
+            for (const [index, animation] of animations.entries()) animation.name = clips[index]!.name;
           },
         },
       },
@@ -35,10 +37,10 @@ export async function loadModelContainer(
   );
   // glTF normalizes groups to frame zero, inserting a leading hold for DCC takes.
   // Keep source keys intact but play/seek only the authored range of each take.
-  for (const [index, group] of container.animationGroups.entries()) {
-    const clip = clips[index];
+  const byName = new Map(clips.map((clip) => [clip.name, clip]));
+  for (const group of container.animationGroups) {
+    const clip = byName.get(group.name);
     if (!clip) continue;
-    group.name = clip.name;
     if (clip.durationMs !== undefined) {
       group.from = ((clip.startTimeMs ?? 0) / 1000) * targetFps;
       group.to = group.from + (clip.durationMs / 1000) * targetFps;
