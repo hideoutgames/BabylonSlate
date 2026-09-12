@@ -1,3 +1,6 @@
+import type { ShadowDeviceProfile } from "@babylonslate/core";
+import { sceneShadowController } from "./shadow-controller";
+import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
 import {
   Engine,
   KhronosTextureContainer2,
@@ -214,6 +217,7 @@ export interface EngineHandle {
   liveObjectCounts: () => { meshes: number; textures: number };
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
   drawCalls: () => number;
+  renderDiagnostics: () => RenderDiagnostics;
   /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
   accountedGeometryBytes: () => number;
   /** Explicit tap pick (hover picking is disabled). */
@@ -240,6 +244,7 @@ export interface EngineHandle {
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Project render mode and defaults; scene overrides remain independent. */
   setRenderSettings: (settings: RenderShadingSettings) => void;
+  setShadowDeviceProfile: (profile: ShadowDeviceProfile) => void;
   /** Register FontFace source bytes before Bitmap 2D Text paints. */
   registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
@@ -1427,6 +1432,8 @@ export function createEngine(
   const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
+  let lastRenderCpuMs = 0;
+  const renderDiagnostics = createRenderDiagnostics(scene, () => lastRenderCpuMs);
   const tilemapPreviewStart = performance.now();
   const renderLoop = () => {
     const frameStart = performance.now();
@@ -1478,7 +1485,8 @@ export function createEngine(
     if (sampled) lastRenderedSnapshotFrame = sampled.frameId;
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
-    scaling.noteFrameTime(performance.now() - renderStart);
+    lastRenderCpuMs = performance.now() - renderStart;
+    scaling.noteFrameTime(lastRenderCpuMs);
   };
   engine.runRenderLoop(renderLoop);
 
@@ -1835,6 +1843,7 @@ export function createEngine(
       textures: engine.getLoadedTexturesCache().length,
     }),
     drawCalls: () => lastDrawCalls,
+    renderDiagnostics,
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
@@ -1949,6 +1958,11 @@ export function createEngine(
         assets: binding,
       });
       scheduler.invalidate("asset");
+    },
+    setShadowDeviceProfile: (profile) => {
+      sceneRenderingSettings(scene).shadowDeviceProfile = profile;
+      sceneShadowController(scene).sync();
+      scheduler.invalidate();
     },
     setRenderSettings: (settings) => {
       const previousMode = sceneRenderingSettings(scene).mode;

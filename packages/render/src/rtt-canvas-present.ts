@@ -43,7 +43,7 @@ export function createRttCanvasPresent(
     const rawH = Math.floor(canvas.clientHeight || 0);
     if (rawW <= 0 || rawH <= 0) return;
     const longest = Math.max(rawW, rawH);
-    const scale = longest > maxSize ? maxSize / longest : 1;
+    const scale = Math.min(1 / Math.max(1, scene.getEngine().getHardwareScalingLevel()), maxSize / longest);
     const width = Math.max(1, Math.floor(rawW * scale));
     const height = Math.max(1, Math.floor(rawH * scale));
     const current = rtt?.getSize();

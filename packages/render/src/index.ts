@@ -87,3 +87,4 @@ export * from "./particle-system-factory";
 export * from "./particle-preview";
 export * from "./convert-obj-to-glb";
 export * from "./node-rig";
+export type { RenderDiagnostics } from "./render-diagnostics";

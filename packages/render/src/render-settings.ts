@@ -37,7 +37,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       overrides: {},
       shadows: resolveShadowSettings(),
       shadowOverrides: {},
-      shadowDeviceProfile: "project",
+      shadowDeviceProfile: "a16",
       listeners: new Set(),
     };
     scenes.set(scene, state);

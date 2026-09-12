@@ -1,3 +1,4 @@
+import type { RenderDiagnostics } from "@babylonslate/render";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_PLAY_FRAME_CAP,
@@ -234,6 +235,7 @@ export function PlayOverlay({
   const [meshCount, setMeshCount] = useState(0);
   const [textureCount, setTextureCount] = useState(0);
   const [draws, setDraws] = useState(0);
+  const [rendering, setRendering] = useState<RenderDiagnostics>();
   const [bridgeRate, setBridgeRate] = useState(0);
   const [logs, setLogs] = useState<DebugConsoleLogEntry[]>([]);
   const logSequence = useRef(0);
@@ -613,6 +615,7 @@ export function PlayOverlay({
         setMeshCount(counts.meshes);
         setTextureCount(counts.textures);
         setDraws(current.drawCalls());
+        setRendering(current.handle.renderDiagnostics());
         setBridgeRate(current.bridgeMessagesPerSec());
         setPostProcessPasses(current.handle.postProcessPassCount());
         setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
@@ -727,6 +730,7 @@ export function PlayOverlay({
             meshCount={meshCount}
             textureCount={textureCount}
             draws={draws}
+            rendering={rendering}
             bridgeMessagesPerSec={bridgeRate}
             highlight={statsHighlight}
           />

@@ -21,7 +21,9 @@ export class SceneShadowController {
   private readonly pending = new Set<AbstractMesh>();
   private readonly spatial = new ShadowSpatialIndex();
   private quality: number | null | undefined;
-  constructor(private readonly scene: Scene) {
+  private readonly scene: Scene;
+  constructor(scene: Scene) {
+    this.scene = scene;
     for (const mesh of scene.meshes) this.pending.add(mesh);
     scene.onNewMeshAddedObservable.add((mesh) => { if (!mesh.isDisposed()) this.pending.add(mesh); });
     scene.onMeshRemovedObservable.add((mesh) => {

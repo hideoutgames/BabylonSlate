@@ -1409,6 +1409,10 @@ function composeSlotPartTransform(
 }
 
 function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
+  const rotation = mesh.rotationQuaternion;
+  if (mesh.position.x === actor.position.x && mesh.position.y === actor.position.y && mesh.position.z === actor.position.z
+    && mesh.scaling.x === actor.scale.x && mesh.scaling.y === actor.scale.y && mesh.scaling.z === actor.scale.z
+    && rotation?.x === actor.rotation.x && rotation.y === actor.rotation.y && rotation.z === actor.rotation.z && rotation.w === actor.rotation.w) return;
   scratchPos.set(actor.position.x, actor.position.y, actor.position.z);
   scratchScale.set(actor.scale.x, actor.scale.y, actor.scale.z);
   scratchQuat.set(
@@ -1427,5 +1431,10 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
   // every actor slot. Sharing the scratch matrix collapses all rendered meshes.
   if (shouldFreezeStaticWorldMatrix(mesh)) {
     mesh.freezeWorldMatrix();
+  } else {
+    // Update off-screen casters too: active-mesh evaluation does not necessarily
+    // visit them before the shadow hierarchy is queried.
+    mesh.computeWorldMatrix();
   }
+  for (const child of mesh.getChildMeshes()) child.computeWorldMatrix();
 }

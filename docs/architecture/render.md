@@ -276,3 +276,10 @@ pass. Device profile limits resolve separately from authored settings. The A16
 preset is a starting budget, not a measured performance certification; final iPad
 validation is manual.
 CEL band and highlight edges use screen-space derivatives for subpixel antialiasing while retaining flat band interiors. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
+
+Engine Settings now applies a local shadow device profile to editor and Play.
+Play stats report CPU submission time, asynchronous engine GPU timing when
+supported, effective target size/sample count, allocated shadow passes and an
+attachment-memory estimate. Unsupported or pending GPU timing is labeled rather
+than reported as zero. Shared-engine GPU time can include other active views.
+Offscreen canvas targets honor hardware scaling as well as their maximum size.

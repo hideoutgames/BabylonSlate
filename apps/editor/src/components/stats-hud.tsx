@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isTickOverBudget } from "@babylonslate/debugger";
 import type { HostMemoryStats } from "@babylonslate/vfs";
-import { drawCallCeilingWarning, geometryByteCeilingWarning } from "@babylonslate/render";
+import { drawCallCeilingWarning, geometryByteCeilingWarning, type RenderDiagnostics } from "@babylonslate/render";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -18,6 +18,7 @@ export type StatsHudProps = {
   meshCount?: number;
   textureCount?: number;
   draws?: number;
+  rendering?: RenderDiagnostics;
   bridgeMessagesPerSec?: number;
   highlight?: StatsHudHighlight | null;
 };
@@ -44,6 +45,7 @@ export function StatsHud({
   meshCount,
   textureCount,
   draws,
+  rendering,
   bridgeMessagesPerSec,
   highlight = null,
 }: StatsHudProps) {
@@ -76,6 +78,11 @@ export function StatsHud({
       data-highlight={highlight ?? ""}
     >
       <div className="flex flex-wrap items-center gap-2">
+        {rendering ? <span data-testid="stats-hud-rendering"><SelectableText>
+          {`render CPU ${rendering.cpuMs.toFixed(2)} ms · engine GPU ${rendering.gpuMs === null ? rendering.gpuStatus : `${rendering.gpuMs.toFixed(2)} ms`} · ${rendering.width}×${rendering.height} · ${rendering.samples} sample · shadows ${rendering.shadowPasses} passes / ~${formatBytes(rendering.shadowMapBytes)}`}
+          {rendering.qualityLimits.length ? ` · ${rendering.qualityLimits.join(", ")}` : ""}
+          {rendering.shadowLights.map((light) => ` · ${light.name}: ${light.status}`).join("")}
+        </SelectableText></span> : null}
         <span
           data-testid="play-fps"
           data-fps={String(fps)}
