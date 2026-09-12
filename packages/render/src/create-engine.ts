@@ -1056,7 +1056,7 @@ export function createEngine(
 
   let lastRenderedSnapshotFrame: number | null = null;
   const loadScene = (sceneData: SerializedScene) => {
-    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {});
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
@@ -1942,7 +1942,7 @@ export function createEngine(
       }
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
-      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {});
+      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       applySerializedSceneEnvironment(scene, sceneData, {
         applyClearColor: true,
         assets: binding,

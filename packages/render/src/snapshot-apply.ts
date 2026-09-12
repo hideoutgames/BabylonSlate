@@ -1,3 +1,4 @@
+import { sceneShadowController } from "./shadow-controller";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   Color3,
@@ -69,7 +70,6 @@ import {
   AUTHORED_LIGHT_PREFIX,
   applyAuthoredCameraProperties,
   applyAuthoredLightProperties,
-  attachSingleShadowGenerator,
   shadowMapSizeFromQuality,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
@@ -521,22 +521,9 @@ export function refreshPlayActiveCamera(
 }
 
 function applyPlayShadows(scene: Scene, binding: SnapshotSceneBinding): void {
-  const mapSize = shadowMapSizeFromQuality(binding.shadowQuality);
-  if (mapSize === null || binding.shadowOwnerSlot === null) {
-    binding.shadow?.dispose();
-    binding.shadow = null;
-    return;
-  }
-  const light = binding.lights.get(binding.shadowOwnerSlot);
-  if (!light) {
-    binding.shadow?.dispose();
-    binding.shadow = null;
-    binding.shadowOwnerSlot = null;
-    return;
-  }
-  if (!binding.shadow) {
-    binding.shadow = attachSingleShadowGenerator(scene, light, mapSize, null);
-  }
+  const shadows = sceneShadowController(scene);
+  shadows.setLegacyQuality(shadowMapSizeFromQuality(binding.shadowQuality));
+  shadows.sync();
 }
 
 /** Remember (and rebuild) the Play mesh for a slot from an assignMesh command. */

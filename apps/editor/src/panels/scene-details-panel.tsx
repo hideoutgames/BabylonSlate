@@ -1,3 +1,4 @@
+import { ShadowSettingsFields } from "../components/shadow-settings-fields";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -655,6 +656,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             />
           </div>
         ) : null}
+        {showPostProcess ? <div className="px-2 pb-3"><ShadowSettingsFields project={projectDocument?.settings.render.shadows} overrides={scene.settings.shadowOverrides ?? {}} onChange={(shadowOverrides) => mutate({ ...scene, settings: { ...scene.settings, shadowOverrides } })} /></div> : null}
         {showPostProcess && celEnabled ? (
           <div className="px-2 pb-3">
             <CelShadingFields

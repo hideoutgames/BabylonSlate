@@ -260,3 +260,18 @@ See [bridge.md](bridge.md) for the snapshot wire format and [perf-budget.md](../
 `EditorTools.dropSelectedActors(ids, maxDistance?)` is a pure placement query in `editor-drop.ts`. It uses the current authored scene and resolved asset collision geometry, independently of editor picking and collision debug visibility. Bottom-center downward probes honor the strict limit supplied by the current Engine Settings `viewportDropDistance`. The shared `DEFAULT_EDITOR_DROP_DISTANCE` fallback is 10,000 units; non-positive or non-finite query limits produce no moves. All destinations are calculated before converting to actor-local positions, including compensation when a selected ancestor also moves. Collision transforms follow runtime TRS composition and shape scaling; visual source bounds traverse imported Model wrappers. `convexHullMesh(points)` in `@babylonslate/assets` exposes indexed hull triangles from the existing hull builder for convex probes and containment checks.
 
 React sends `editor.drop` with `maxDistance` through `engineCommandBus`; only the engine with the matching `editorViewportId` responds with `editor.drop.result`. `requestEditorDrop` pairs viewport and request identities and removes its temporary listener after synchronous dispatch. Results contain plain transforms; the Scene and Prefab document command paths own mutation, undo, and persistence. Closed viewports and empty results are no-ops. No Play session or physics simulation is started for this authoring action.
+
+### Camera-relative shadow settings
+
+Project Rendering owns normalized shadow defaults, including a 200-world-unit
+shadow distance independent of scene size. Scene Defaults stores sparse shadow
+overrides; resetting a field removes its key and resumes live project inheritance.
+The viewport reload key includes effective shadow settings alongside CEL settings.
+
+`SceneShadowController` owns authored-light shadow resources in both editor and
+Play. Mesh additions/removals update caster membership, disabled lights release
+allocation, and local lights have a separate budget from the directional light.
+Supported directional rendering uses stabilized cascades without a depth-reduction
+pass. Device profile limits resolve separately from authored settings. The A16
+preset is a starting budget, not a measured performance certification; final iPad
+validation is manual.

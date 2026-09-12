@@ -1,13 +1,15 @@
-import { resolveCelShadingSettings, type CelShadingOverrides, type RenderProjectSettings } from "@babylonslate/core";
+import { resolveShadowSettings, type ShadowOverrides, resolveCelShadingSettings, type CelShadingOverrides, type RenderProjectSettings } from "@babylonslate/core";
 
 /** Only effective rendering changes rebuild GPU scene resources. */
 export function sceneViewportRenderSettingsKey(
   project: Partial<RenderProjectSettings> = {},
   overrides?: CelShadingOverrides,
+  shadowOverrides?: ShadowOverrides,
 ): string {
   return JSON.stringify({
     ...project,
     mode: project.mode ?? "pbr",
+    shadows: resolveShadowSettings(project.shadows, shadowOverrides),
     cel: project.mode === "cel"
       ? resolveCelShadingSettings(project.cel, overrides)
       : undefined,

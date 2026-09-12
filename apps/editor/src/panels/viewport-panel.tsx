@@ -190,6 +190,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const renderSettingsKey = sceneViewportRenderSettingsKey(
     projectDocument?.settings.render,
     scene?.settings.celShading,
+    scene?.settings.shadowOverrides,
   );
 
   useEffect(() => {
