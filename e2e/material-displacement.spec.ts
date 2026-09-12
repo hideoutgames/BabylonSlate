@@ -92,6 +92,10 @@ for (const mode of ["pbr", "cel"]) {
     );
     await openMinimalTestProject(page, files);
     await openAssetFromBrowser(page, path);
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="scene"]')
+      .getByTestId("document-tab-close")
+      .click();
     await compileMaterialPreview(page);
     const canvas = page.getByTestId("material-preview-canvas");
     await connectMaterialPins(
@@ -124,6 +128,11 @@ for (const mode of ["pbr", "cel"]) {
         { timeout: 10_000 },
       )
       .not.toBe(second);
+    const radius = Number(await canvas.getAttribute("data-camera-radius"));
+    await canvas.dispatchEvent("wheel", { deltaY: -120 });
+    await expect
+      .poll(async () => Number(await canvas.getAttribute("data-camera-radius")))
+      .toBeLessThan(radius);
     expect(errors).toEqual([]);
   });
 }
