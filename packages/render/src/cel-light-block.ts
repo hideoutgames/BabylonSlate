@@ -12,6 +12,7 @@ import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import {
   bindCelSettings,
   celFunctions,
+  celLightAccumulators,
   celLightingFunctions,
   CEL_UNIFORMS,
 } from "./cel-shader";
@@ -66,7 +67,18 @@ export class CelLightBlock extends LightBlock {
           "#include<lightFragment>",
           "#include<slateCelLightFragment>",
         )
-        .replace(" = diffuseBase", " = slateCelSurfaceLight(diffuseBase)")
+        .replace(
+          /(vec3 diffuseBase|var diffuseBase: vec3f)/,
+          `${celLightAccumulators(state.shaderLanguage === 1)}$1`,
+        )
+        .replace(
+          " = diffuseBase",
+          " = slateCelSurfaceLight(diffuseBase, slateCelPeak)",
+        )
+        .replace(
+          " = specularBase",
+          " = slateCelSurfaceSpecular(specularBase, slateCelPeak, slateCelTotal)",
+        )
         .replace(
           ` = ${this.worldNormal.associatedVariableName}.xyz;`,
           ` = normalize(${this.worldNormal.associatedVariableName}.xyz);\n#ifdef SLATE_CEL_TWO_SIDED\n${state.shaderLanguage === 1 ? "normalW = select(-normalW, normalW, fragmentInputs.frontFacing);" : "normalW = gl_FrontFacing ? normalW : -normalW;"}\n#endif\n`,

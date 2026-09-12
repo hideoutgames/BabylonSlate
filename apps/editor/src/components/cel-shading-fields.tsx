@@ -23,11 +23,23 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 
+const lightMixingLabels = {
+  strongest: "Strongest Light",
+  additive: "Additive",
+  blend: "Blend",
+} as const;
+
 const fields: {
   key: keyof CelShadingSettings;
   label: string;
   description: string;
 }[] = [
+  {
+    key: "lightMixing",
+    label: "Light Mixing",
+    description:
+      "Strongest Light keeps the dominant light's color. Additive sums lighting. Blend mixes colors at the strongest light's brightness.",
+  },
   {
     key: "shadowBands",
     label: "Shadow Bands",
@@ -68,12 +80,6 @@ const fields: {
     label: "Light Color Influence",
     description:
       "Colored light tint. Zero uses neutral light with the same intensity.",
-  },
-  {
-    key: "lightFalloff",
-    label: "Light Falloff",
-    description:
-      "Point and spot lights fade smoothly or in bands within their authored range.",
   },
 ];
 
@@ -123,9 +129,9 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
                   </Button>
                 ) : null}
               </div>
-              {key === "lightFalloff" ? (
+              {key === "lightMixing" ? (
                 <Select
-                  value={effective.lightFalloff}
+                  value={effective.lightMixing}
                   disabled={scene && !overridden}
                   onValueChange={(value) => {
                     if (value) patch(key, value);
@@ -133,15 +139,18 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
                 >
                   <SelectTrigger id={id} aria-describedby={`${id}-description`}>
                     <SelectValue>
-                      {effective.lightFalloff === "banded"
-                        ? "Banded"
-                        : "Smooth"}
+                      {lightMixingLabels[effective.lightMixing]}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="smooth">Smooth</SelectItem>
-                      <SelectItem value="banded">Banded</SelectItem>
+                      {Object.entries(lightMixingLabels).map(
+                        ([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ),
+                      )}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -164,7 +173,7 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
               )}
               <FieldDescription id={`${id}-description`}>
                 {scene
-                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightFalloff" ? (project[key] === "banded" ? "Banded" : "Smooth") : project[key]}. `
+                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : project[key]}. `
                   : ""}
                 {description}
               </FieldDescription>

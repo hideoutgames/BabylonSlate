@@ -11,6 +11,12 @@ export const CEL_UNIFORMS = [
   "slateCelLight",
 ];
 
+export function celLightAccumulators(wgsl: boolean): string {
+  return ["slateCelPeak", "slateCelTotal", "slateCelWins"]
+    .map((name) => (wgsl ? `var ${name}: f32=0.0;` : `float ${name}=0.0;`))
+    .join("\n");
+}
+
 /** Display-space lighting deliberately avoids a PBR BRDF and tone mapping. */
 export function celFunctions(wgsl: boolean): string {
   const source = `
@@ -24,8 +30,16 @@ float slateCelBand(float value) {
   float width = max(slateCelBands.y, 0.00001);
   return clamp((lower + smoothstep(0.5 - width, 0.5 + width, fract(shifted))) / levels, 0.0, 1.0);
 }
-float slateCelAttenuation(float value) {
-  return mix(value, slateCelBand(value), slateCelLight.y);
+float slateCelStrength(vec3 color) {
+  return max(color.r, max(color.g, color.b));
+}
+vec3 slateCelAccumulate(vec3 previous, vec3 incoming, float wins) {
+  if (slateCelLight.y < 0.5) { return mix(previous, incoming, wins); }
+  return previous + incoming;
+}
+vec3 slateCelSurfaceSpecular(vec3 color, float peak, float total) {
+  if (slateCelLight.y > 1.5) { return color * peak / max(total, 0.00001); }
+  return color;
 }
 vec3 slateCelTint(vec3 color) {
   float strength = max(color.r, max(color.g, color.b));
@@ -40,9 +54,12 @@ float slateCelHighlight(float ndh, float ndl) {
   float width = max(slateCelSpecular.z, 0.00001);
   return smoothstep(edge - width, edge + width, ndh) * step(0.00001, ndl) * slateCelSpecular.x;
 }
-vec3 slateCelSurfaceLight(vec3 color) {
+vec3 slateCelSurfaceLight(vec3 color, float peak) {
   if (slateCelLight.z > 0.5) { return vec3(1.0); }
-  return mix(vec3(1.0 - slateCelBands.w), vec3(1.0), clamp(color, vec3(0.0), vec3(1.0)));
+  float strength = max(color.r, max(color.g, color.b));
+  float brightness = strength;
+  if (slateCelLight.y > 1.5) { brightness = peak; }
+  return mix(vec3(1.0 - slateCelBands.w), slateCelTint(color / max(strength, 0.00001)), slateCelBand(brightness));
 }
 `;
   if (!wgsl) return source;
@@ -63,36 +80,28 @@ vec3 slateCelSurfaceLight(vec3 color) {
 
 /** Retain Babylon's light transforms, colors, ranges, cones and shadow bindings. */
 export function celLightingFunctions(source: string, wgsl: boolean): string {
-  const scalar = wgsl ? "var ndl: f32=" : "float ndl=";
-  return source
-    .replaceAll(
-      `${scalar}max(0.,dot(vNormal,lightVectorW));`,
-      `${scalar}slateCelBand(max(0.,dot(vNormal,lightVectorW)));`,
-    )
-    .replaceAll(
-      `${scalar}dot(vNormal,lightData.xyz)*0.5+0.5;`,
-      `${scalar}slateCelBand(dot(vNormal,lightData.xyz)*0.5+0.5);`,
-    )
-    .replaceAll(
-      "ndl*diffuseColor*attenuation",
-      "ndl*slateCelTint(diffuseColor)*slateCelAttenuation(attenuation)",
-    )
-    .replaceAll(
-      "mix(groundColor,diffuseColor,ndl)",
-      "mix(slateCelTint(groundColor),slateCelTint(diffuseColor),ndl)",
-    )
-    .replaceAll(
-      "specComp=pow(specComp,max(1.,glossiness));",
-      "specComp=slateCelHighlight(specComp,ndl);",
-    )
-    .replaceAll(
-      "specComp*specularColor*attenuation",
-      "specComp*slateCelSpecularTint(specularColor,diffuseColor)*slateCelAttenuation(attenuation)",
-    )
-    .replaceAll(
-      "specComp*specularColor;",
-      "specComp*slateCelSpecularTint(specularColor,diffuseColor);",
-    );
+  return (
+    source
+      // Colored sky/ground fills must not reintroduce a smooth hue gradient.
+      .replaceAll(
+        `${wgsl ? "var ndl: f32=" : "float ndl="}dot(vNormal,lightData.xyz)*0.5+0.5;`,
+        `${wgsl ? "var ndl: f32=" : "float ndl="}slateCelBand(dot(vNormal,lightData.xyz)*0.5+0.5);`,
+      )
+      // Retain raw diffuse brightness through attenuation and shadows. The
+      // selected mixing policy feeds one ramp, never separately banded sums.
+      .replaceAll(
+        "specComp=pow(specComp,max(1.,glossiness));",
+        "specComp=slateCelHighlight(specComp,ndl);",
+      )
+      .replaceAll(
+        "specComp*specularColor*attenuation",
+        "specComp*slateCelSpecularTint(specularColor,diffuseColor)*slateCelBand(attenuation)",
+      )
+      .replaceAll(
+        "specComp*specularColor;",
+        "specComp*slateCelSpecularTint(specularColor,diffuseColor);",
+      )
+  );
 }
 
 for (const wgsl of [false, true]) {
@@ -100,8 +109,22 @@ for (const wgsl of [false, true]) {
   store.slateCelLightFragment = (
     wgsl ? lightFragmentWGSL : lightFragment
   ).shader
-    .replace(/info\.diffuse\*shadow\b/g, "info.diffuse*slateCelBand(shadow)")
-    .replace(/info\.specular\*shadow\b/g, "info.specular*slateCelBand(shadow)");
+    .replace(
+      /diffuseBase\+=info\.diffuse\*(shadow(?:Debug\{X\})?);/g,
+      (
+        _match,
+        shadow: string,
+      ) => `${wgsl ? "var slateCelIncoming{X}: f32" : "float slateCelIncoming{X}"}=slateCelStrength(info.diffuse*${shadow});
+slateCelWins=0.0;
+if (slateCelIncoming{X}>slateCelPeak) { slateCelWins=1.0; }
+slateCelPeak=max(slateCelPeak,slateCelIncoming{X});
+slateCelTotal+=slateCelIncoming{X};
+diffuseBase=slateCelAccumulate(diffuseBase,info.diffuse*${shadow},slateCelWins);`,
+    )
+    .replace(
+      "specularBase+=info.specular*shadow;",
+      "specularBase=slateCelAccumulate(specularBase,info.specular*slateCelBand(shadow),slateCelWins);",
+    );
   store.slateCelLightsFragmentFunctions =
     celFunctions(wgsl) +
     celLightingFunctions(
@@ -133,7 +156,11 @@ export function bindCelSettings(
   effect.setFloat4(
     "slateCelLight",
     cel.lightColorInfluence,
-    cel.lightFalloff === "banded" ? 1 : 0,
+    cel.lightMixing === "strongest"
+      ? 0
+      : cel.lightMixing === "additive"
+        ? 1
+        : 2,
     unlit || !scene.lightsEnabled ? 1 : 0,
     0,
   );

@@ -14,7 +14,7 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import type { RenderShadingSettings } from "./render-settings";
+import { sceneRenderingSettings, type RenderShadingSettings } from "./render-settings";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -1950,8 +1950,11 @@ export function createEngine(
       scheduler.invalidate("asset");
     },
     setRenderSettings: (settings) => {
+      const previousMode = sceneRenderingSettings(scene).mode;
       setSceneRenderSettings(scene, settings);
       viewportShading?.apply();
+      if (options.editor && previousMode !== sceneRenderingSettings(scene).mode)
+        freezeEditorActiveMeshes(scene);
       scheduler.invalidate("asset");
     },
     setShadowQuality: (level: string) => {

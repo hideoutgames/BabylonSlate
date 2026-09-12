@@ -92,6 +92,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   const materialGuid = await guidForPath(page, materialPath);
   expect(materialGuid).not.toBe("");
   await projectMode(page, "CEL", true);
+  await projectMode(page, "PBR");
 
   const mesh = createMeshComponent("cel-mesh", "sphere");
   mesh.properties.materialGuid = materialGuid;
@@ -131,6 +132,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   await setPreviewScene(page, scene);
   const viewport = page.getByTestId("viewport-canvas");
   const authored = [51, 153, 77];
+  await projectMode(page, "CEL");
   await expect
     .poll(() => pixelsNear(viewport, authored), { timeout: 30_000 })
     .toBeGreaterThan(500);
@@ -161,8 +163,145 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     .poll(() => pixelsNear(viewport, [38, 115, 58]))
     .toBeGreaterThan(500);
 
+  // Overlapping fractional lights must share one ramp. Quantizing each light
+  // separately produces extra brightness levels even with zero softness.
+  for (const lightMixing of ["strongest", "additive", "blend"] as const) {
+    scene.settings.celShading = {
+      shadowStrength: 1,
+      shadowBands: 3,
+      bandSoftness: 0,
+      lightMixing,
+    };
+    scene.actors = [
+      ...subjects,
+      ...[-1, 1].map((side) =>
+        createActor(`overlap-${side}`, "Overlap", {
+          transform: {
+            position: [0, 0, 0],
+            rotation: [0, side * 0.173648, 0, 0.984808],
+            scale: [1, 1, 1],
+          },
+          components: [
+            {
+              id: `light-${side}`,
+              classId: "LightComponent",
+              properties: {
+                lightKind: "directional",
+                color: [1, 1, 1],
+                intensity: 0.6,
+              },
+            },
+          ],
+        }),
+      ),
+    ];
+    await setPreviewScene(page, scene);
+    await expect
+      .poll(() => pixelsNear(viewport, [26, 77, 39]))
+      .toBeGreaterThan(100);
+    if (lightMixing === "additive")
+      await expect
+        .poll(() => pixelsNear(viewport, authored))
+        .toBeGreaterThan(100);
+    else
+      await expect.poll(() => pixelsNear(viewport, authored)).toBeLessThan(30);
+    await expect
+      .poll(() =>
+        viewport.evaluate((node: HTMLCanvasElement) => {
+          const copy = document.createElement("canvas");
+          copy.width = node.width;
+          copy.height = node.height;
+          const context = copy.getContext("2d")!;
+          context.drawImage(node, 0, 0);
+          const pixels = context.getImageData(
+            0,
+            0,
+            copy.width,
+            copy.height,
+          ).data;
+          let green = 0;
+          let offBand = 0;
+          for (let i = 0; i < pixels.length; i += 4) {
+            if (
+              pixels[i + 1]! < 15 ||
+              pixels[i + 1]! < pixels[i]! * 1.8 ||
+              pixels[i + 1]! < pixels[i + 2]! * 1.5
+            )
+              continue;
+            green++;
+            if (
+              ![77, 153].some((level) => Math.abs(pixels[i + 1]! - level) <= 3)
+            )
+              offBand++;
+          }
+          return offBand / Math.max(green, 1);
+        }),
+      )
+      .toBeLessThan(0.03);
+  }
+
+  // Different colored fills distinguish choosing one light from mixing hues.
+  const coloredFills = [
+    [1, 0, 0],
+    [0, 1, 0],
+  ].map((color, index) =>
+    createActor(`tint-${index}`, "Tint", {
+      components: [
+        {
+          id: `tint-light-${index}`,
+          classId: "HemisphericFillLightComponent",
+          properties: {
+            color,
+            groundColor: color,
+            intensity: index === 0 ? 0.9 : 0.6,
+          },
+        },
+      ],
+    }),
+  );
+  scene.actors = [...subjects, ...coloredFills];
+  for (const [lightMixing, color] of [
+    ["strongest", [51, 0, 0]],
+    ["blend", [51, 102, 0]],
+    ["additive", [51, 102, 0]],
+  ] as const) {
+    scene.settings.celShading = { shadowStrength: 1, lightMixing };
+    await setPreviewScene(page, scene);
+    await expect
+      .poll(() => pixelsNear(viewport, [...color]))
+      .toBeGreaterThan(500);
+  }
+
+  scene.settings.celShading = { shadowStrength: 1, bandSoftness: 0 };
+  scene.actors = [
+    ...subjects,
+    createActor("two-tone-fill", "Two Tone Fill", {
+      components: [
+        {
+          id: "two-tone-light",
+          classId: "HemisphericFillLightComponent",
+          properties: {
+            color: [0, 1, 0],
+            groundColor: [1, 0, 0],
+            intensity: 1,
+          },
+        },
+      ],
+    }),
+  ];
+  await setPreviewScene(page, scene);
+  await expect
+    .poll(() => pixelsNear(viewport, [26, 77, 0]))
+    .toBeGreaterThan(500);
+  await expect
+    .poll(() => pixelsNear(viewport, [0, 153, 0]))
+    .toBeGreaterThan(100);
+  // Intermediate sky/ground hues would expose a smooth gradient through a
+  // nominally hard-banded hemisphere light.
+  await expect.poll(() => pixelsNear(viewport, [17, 77, 0])).toBeLessThan(30);
+
   for (const kind of ["directional", "point", "spot"] as const) {
-    scene.settings.celShading = { shadowStrength: 1, lightFalloff: "banded" };
+    scene.settings.celShading = { shadowStrength: 1 };
     const light = createActor("key", "Key", {
       transform: {
         position: [0, 3, -6],
@@ -176,7 +315,9 @@ test("CEL preserves authored and texture colors, supports every light, and resto
           properties: {
             lightKind: kind,
             color: [1, 0, 0],
-            intensity: 1,
+            // Cone attenuation participates in the ramp, so give the spot
+            // enough intensity for a measurable fully lit interior too.
+            intensity: kind === "spot" ? 1.5 : 1,
             range: 100,
             outerAngle: 90,
             innerAngle: 60,
@@ -376,6 +517,46 @@ test("CEL preserves sRGB image pixels on a native glTF surface", async ({
       { timeout: 30_000 },
     )
     .toBeGreaterThan(500);
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await projectMode(page, "PBR");
+    await expect
+      .poll(
+        async () =>
+          page
+            .getByTestId("viewport-canvas")
+            .evaluate((node: HTMLCanvasElement) => {
+              const copy = document.createElement("canvas");
+              copy.width = node.width;
+              copy.height = node.height;
+              const context = copy.getContext("2d")!;
+              context.drawImage(node, 0, 0);
+              const pixels = context.getImageData(
+                0,
+                0,
+                copy.width,
+                copy.height,
+              ).data;
+              let count = 0;
+              for (let i = 0; i < pixels.length; i += 4)
+                if (
+                  pixels[i + 1]! > 10 &&
+                  pixels[i + 1]! > pixels[i]! * 1.5 &&
+                  pixels[i + 1]! > pixels[i + 2]! * 1.5
+                )
+                  count++;
+              return count;
+            }),
+        { timeout: 20_000 },
+      )
+      .toBeGreaterThan(500);
+    await projectMode(page, "CEL");
+    await expect
+      .poll(
+        () => pixelsNear(page.getByTestId("viewport-canvas"), [51, 153, 77], 1),
+        { timeout: 20_000 },
+      )
+      .toBeGreaterThan(500);
+  }
   await clickPlayAndWaitForOverlay(page);
   await expect
     .poll(() => pixelsNear(page.getByTestId("play-canvas"), [51, 153, 77], 1), {
