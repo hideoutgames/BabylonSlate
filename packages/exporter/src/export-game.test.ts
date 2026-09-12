@@ -49,7 +49,7 @@ describe("exportGame", () => {
     expect(parseGameManifest(JSON.stringify(legacy)).inputMappings).toBeUndefined();
   });
   it("puts index.html at the zip root and records startupSceneGuid", async () => {
-    const cel = normalizeCelShadingSettings({ shadowBands: 5 });
+    const cel = normalizeCelShadingSettings({ shadowBands: 5, lightMixing: "blend" });
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
