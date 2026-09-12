@@ -3,8 +3,8 @@ import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
-import { openAssetFromBrowser } from "./open-test-project";
-import { compileMaterialPreview, connectMaterialPins } from "./material-graph";
+import { createContentBrowserAsset, openAssetFromBrowser } from "./open-test-project";
+import { addMaterialPaletteNode, compileMaterialPreview, connectMaterialPins } from "./material-graph";
 import { PROJECT_FILE } from "../packages/core/src/project";
 
 for (const mode of ["pbr", "cel"]) {
@@ -55,3 +55,42 @@ test(`animated normal displacement keeps the ${mode} Material preview rendering`
   expect(errors).toEqual([]);
 });
 }
+
+test("authoring Time Sine Multiply and VertexNormalWS keeps the preview live", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && /shader|ERROR: 0:|VALIDATE_STATUS/i.test(message.text())) errors.push(message.text());
+  });
+  await openMinimalTestProject(page);
+  await createContentBrowserAsset(page, "Material", "Animated");
+  await openAssetFromBrowser(page, "assets/Animated.material.babasset");
+  const graph = page.getByTestId("material-graph-editor");
+  for (const [title, type, dx, dy] of [
+    ["Time", "input.time", -230, -140],
+    ["Sine", "math.sin", -110, 0],
+    ["Multiply", "math.multiply", 150, 100],
+    ["VertexNormalWS", "input.vertexNormalWS", -180, 180],
+  ] as const) {
+    await addMaterialPaletteNode(page, title, type);
+    const node = graph.locator(`.react-flow__node[data-id^="${type}-"]`);
+    const box = await node.locator("[data-node-role] > div").first().boundingBox();
+    expect(box).not.toBeNull();
+    const x = box!.x + Math.min(20, box!.width / 2);
+    const y = box!.y + box!.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx, y + dy, { steps: 8 });
+    await page.mouse.up();
+  }
+  await connectMaterialPins(page, "input.time-", "time", '[data-id^="math.sin-"]', "value");
+  await connectMaterialPins(page, "math.sin-", "out", '[data-id^="math.multiply-"]', "a");
+  await connectMaterialPins(page, "input.vertexNormalWS-", "normal", '[data-id^="math.multiply-"]', "b");
+  await connectMaterialPins(page, "math.multiply-", "out", '[data-id="output"]', "worldPositionOffset");
+  await expect(graph.locator('.react-flow__edge')).toHaveCount(5);
+  await compileMaterialPreview(page);
+  const canvas = page.getByTestId("material-preview-canvas");
+  const first = await canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL());
+  await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL()), { timeout: 10_000 }).not.toBe(first);
+  expect(errors).toEqual([]);
+});
