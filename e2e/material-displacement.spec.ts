@@ -92,10 +92,9 @@ for (const mode of ["pbr", "cel"]) {
     );
     await openMinimalTestProject(page, files);
     await openAssetFromBrowser(page, path);
-    await page
-      .locator('[data-testid="document-tab"][data-document-kind="scene"]')
-      .getByTestId("document-tab-close")
-      .click();
+    await expect(
+      page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
+    ).toHaveCount(0);
     await compileMaterialPreview(page);
     const canvas = page.getByTestId("material-preview-canvas");
     await connectMaterialPins(
