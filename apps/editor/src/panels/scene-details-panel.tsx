@@ -637,6 +637,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   </FieldLabel>
                   <Switch
                     size="sm"
+                    className="pointer-coarse:after:-inset-y-[15px]"
                     id={`scene-post-process-${index}-enabled`}
                     data-testid={`scene-post-process-${index}-enabled`}
                     aria-label={`Pass ${index + 1} Enabled`}
@@ -690,6 +691,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     </FieldLabel>
                     <Switch
                       size="sm"
+                      className="pointer-coarse:after:-inset-y-[15px]"
                       id={`scene-layer-${index}-enabled`}
                       data-testid={`scene-layer-${index}-enabled`}
                       title={item.enabled !== false ? "Enabled" : "Disabled"}
