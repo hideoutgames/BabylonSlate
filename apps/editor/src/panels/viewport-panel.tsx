@@ -57,6 +57,7 @@ import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
+  sceneViewportRenderSettingsKey,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
 
@@ -124,9 +125,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   } = usePlay();
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
-  useEffect(() => {
-    engineRef.current?.setRenderSettings(projectDocument?.settings.render ?? {});
-  }, [projectDocument?.settings.render, engineEpoch]);
+  const [reloadVersion, setReloadVersion] = useState(0);
   const navBake = useOptionalNavBake();
   const [navOverlayGeneration, setNavOverlayGeneration] = useState(0);
   const selectActorRef = useRef(selectActor);
@@ -167,10 +166,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         id: "reload-scene",
         label: "Reload Scene",
         onSelect: () => {
-          const current = sceneRef.current;
-          if (current && engineRef.current) {
-            engineRef.current.loadScene(current);
-          }
+          setReloadVersion((version) => version + 1);
         },
       },
       {
@@ -191,6 +187,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  const renderSettingsKey = sceneViewportRenderSettingsKey(
+    projectDocument?.settings.render,
+    scene?.settings.celShading,
+  );
 
   useEffect(() => {
     sceneRef.current = scene;
@@ -297,6 +297,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
     const handle = createEngine(canvas, {
       editor: true,
+      renderSettings: JSON.parse(renderSettingsKey),
       editorViewportId: dropViewportId,
       sharedEngine,
       viewportMode,
@@ -406,6 +407,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     registerScheduler,
     sharedEngine,
     overlayTransformBox,
+    renderSettingsKey,
+    reloadVersion,
   ]);
 
   useEffect(() => {

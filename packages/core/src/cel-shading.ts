@@ -6,6 +6,7 @@ export interface CelShadingSettings {
   bandSoftness: number;
   shadowThreshold: number;
   shadowStrength: number;
+  specularEnabled: boolean;
   specularStrength: number;
   specularSize: number;
   specularSoftness: number;
@@ -21,6 +22,7 @@ export const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
   bandSoftness: 0,
   shadowThreshold: 0.5,
   shadowStrength: 0.65,
+  specularEnabled: true,
   specularStrength: 0.2,
   specularSize: 0.2,
   specularSoftness: 0,
@@ -46,6 +48,8 @@ export function normalizeCelShadingOverrides(
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;
   const result: CelShadingOverrides = {};
+  if (typeof source.specularEnabled === "boolean")
+    result.specularEnabled = source.specularEnabled;
   for (const key of Object.keys(
     CEL_SHADING_LIMITS,
   ) as (keyof typeof CEL_SHADING_LIMITS)[]) {

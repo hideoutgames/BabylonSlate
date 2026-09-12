@@ -6,6 +6,7 @@ import {
 } from "@babylonslate/core";
 import { NumberField } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { Switch } from "@babylonslate/ui/components/switch";
 import {
   Field,
   FieldDescription,
@@ -61,6 +62,11 @@ const fields: {
     description: "Darkness of the deepest shade and cast shadows.",
   },
   {
+    key: "specularEnabled",
+    label: "Specular",
+    description: "Enable stylized highlights. Turning this off preserves the highlight settings.",
+  },
+  {
     key: "specularStrength",
     label: "Specular Strength",
     description: "Highlight intensity. Zero disables highlights.",
@@ -94,7 +100,7 @@ type Props = {
 export function CelShadingFields({ project, overrides, onChange }: Props) {
   const scene = overrides !== undefined;
   const effective = resolveCelShadingSettings(project, overrides);
-  const patch = (key: keyof CelShadingSettings, value: number | string) =>
+  const patch = (key: keyof CelShadingSettings, value: number | string | boolean) =>
     onChange({ ...(scene ? overrides : project), [key]: value });
   return (
     <FieldSet
@@ -129,7 +135,15 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
                   </Button>
                 ) : null}
               </div>
-              {key === "lightMixing" ? (
+              {key === "specularEnabled" ? (
+                <Switch
+                  id={id}
+                  aria-describedby={`${id}-description`}
+                  checked={effective.specularEnabled}
+                  disabled={scene && !overridden}
+                  onCheckedChange={(value) => patch(key, value)}
+                />
+              ) : key === "lightMixing" ? (
                 <Select
                   value={effective.lightMixing}
                   disabled={scene && !overridden}
@@ -173,7 +187,7 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
               )}
               <FieldDescription id={`${id}-description`}>
                 {scene
-                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : project[key]}. `
+                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : key === "specularEnabled" ? project[key] ? "On" : "Off" : project[key]}. `
                   : ""}
                 {description}
               </FieldDescription>

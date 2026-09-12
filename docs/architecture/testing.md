@@ -55,6 +55,8 @@ The plugin export/re-import journey has a two-minute test deadline because it au
 
 The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
 
+The shared Save All browser helper waits for scene reloads to finish and uses an actionable click, so a loading backdrop cannot consume the save. CEL pixel checks compare shadowed and unshadowed surfaces as well as cast shadows on a large receiver.
+
 ## GitHub Actions
 
 [`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into three standard `ubuntu-latest` job templates (`static`, unsharded `unit` coverage, and a 7-way `e2e` shard matrix). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.agents/rules/github-actions-standard-runners.md`](../../.agents/rules/github-actions-standard-runners.md).

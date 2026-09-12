@@ -1,3 +1,19 @@
+import { resolveCelShadingSettings, type CelShadingOverrides, type RenderProjectSettings } from "@babylonslate/core";
+
+/** Only effective rendering changes rebuild GPU scene resources. */
+export function sceneViewportRenderSettingsKey(
+  project: Partial<RenderProjectSettings> = {},
+  overrides?: CelShadingOverrides,
+): string {
+  return JSON.stringify({
+    ...project,
+    mode: project.mode ?? "pbr",
+    cel: project.mode === "cel"
+      ? resolveCelShadingSettings(project.cel, overrides)
+      : undefined,
+  });
+}
+
 export const SCENE_LOAD_PHASES = [
   "Collecting Assets",
   "Loading Models",

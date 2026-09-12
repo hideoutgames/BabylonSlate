@@ -8,7 +8,25 @@ import {
 } from "@babylonslate/core";
 import { CelShadingFields } from "./cel-shading-fields";
 
+// Base UI dispatches PointerEvent when activating its native switch input.
+if (typeof window.PointerEvent === "undefined") {
+  window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;
+}
+
 afterEach(cleanup);
+
+it("disables specular independently without losing highlight settings and resets to project", () => {
+  render(<SceneFields />);
+  const specular = screen.getByRole("switch", { name: "Specular" });
+  expect(specular.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Override Specular" }));
+  fireEvent.click(specular);
+  expect(specular.getAttribute("aria-checked")).toBe("false");
+  expect((screen.getByLabelText("Specular Strength") as HTMLInputElement).value).toBe("0.2");
+  fireEvent.click(screen.getByRole("button", { name: "Reset Specular To Project Settings" }));
+  expect(specular.getAttribute("aria-checked")).toBe("true");
+  expect(screen.queryByRole("button", { name: "Reset Specular To Project Settings" })).toBeNull();
+});
 function SceneFields({
   bands = 3,
   mixing = "strongest",

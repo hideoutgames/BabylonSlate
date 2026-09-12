@@ -1,8 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
+import { normalizeCelShadingSettings } from "@babylonslate/core";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
+  sceneViewportRenderSettingsKey,
 } from "./scene-viewport-load";
+
+it("reloads effective CEL changes while ignoring inactive and inherited-equivalent edits", () => {
+  const project = { mode: "cel" as const, cel: normalizeCelShadingSettings({}) };
+  const initial = sceneViewportRenderSettingsKey(project);
+  expect(sceneViewportRenderSettingsKey(project, { shadowBands: 3 })).toBe(initial);
+  expect(sceneViewportRenderSettingsKey(project, { specularEnabled: false })).not.toBe(initial);
+  expect(sceneViewportRenderSettingsKey({ ...project, mode: "pbr" })).not.toBe(initial);
+  expect(sceneViewportRenderSettingsKey({ mode: "pbr", cel: project.cel }, { shadowBands: 6 }))
+    .toBe(sceneViewportRenderSettingsKey({ mode: "pbr" }));
+});
 
 describe("isSceneViewportRemountLoad", () => {
   it("is true until that engine generation has finished its first load", () => {

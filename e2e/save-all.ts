@@ -48,7 +48,10 @@ export async function saveAllIfEnabled(page: Page): Promise<void> {
       }
     ).__babylonslateTest?.clearDocumentDirtyTrace?.();
   });
-  await button.click({ force: true });
+  // Rendering changes can rebuild the viewport behind a blocking load dialog.
+  // A forced click hits that backdrop instead of invoking Save All.
+  await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 30_000 });
+  await button.click();
   try {
     await expect
       .poll(

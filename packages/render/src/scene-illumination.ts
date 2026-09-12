@@ -24,6 +24,7 @@ import {
 } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isSkyboxMesh } from "./skybox";
+import { sceneRenderingSettings } from "./render-settings";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
@@ -497,6 +498,20 @@ export function attachSingleShadowGenerator(
   generator.frustumEdgeFalloff = SHADOW_FRUSTUM_EDGE_FALLOFF;
   if (light instanceof DirectionalLight) {
     light.autoCalcShadowZBounds = true;
+    // Hard CEL thresholds amplify sub-texel self-shadow errors. Scale the
+    // depth offset with the actual projection, including large receivers.
+    // Moving along depth avoids seams from pushing adjacent box faces inward.
+    // Babylon updates these extents in its earlier before-render observer.
+    generator.getShadowMap()?.onBeforeRenderObservable.add(() => {
+      const extent = light.shadowFrustumSize > 0
+        ? light.shadowFrustumSize
+        : Math.max(light.orthoRight - light.orthoLeft, light.orthoTop - light.orthoBottom)
+          * (1 + 2 * light.shadowOrthoScale);
+      const depth = (light.shadowMaxZ ?? 0) - (light.shadowMinZ ?? 0);
+      generator.bias = sceneRenderingSettings(scene).mode === "cel" && Number.isFinite(extent) && depth > 0
+        ? Math.max(SHADOW_BIAS, 4 * extent / (mapSize * depth))
+        : SHADOW_BIAS;
+    });
   }
   refreshShadowCasters(scene, generator);
   return generator;

@@ -17,13 +17,14 @@ describe("CEL settings persistence and inheritance", () => {
         cel: normalizeCelShadingSettings({
           shadowBands: 5,
           lightMixing: "blend",
+          specularEnabled: false,
         }),
       },
     });
     const saved = JSON.parse(JSON.stringify(authored));
     expect(normalizeProjectSettings(saved).render).toMatchObject({
       mode: "cel",
-      cel: { shadowBands: 5, lightMixing: "blend" },
+      cel: { shadowBands: 5, lightMixing: "blend", specularEnabled: false },
     });
     expect(
       normalizeProjectSettings({ render: { ...authored.render, mode: "pbr" } })
@@ -69,6 +70,7 @@ describe("CEL settings persistence and inheritance", () => {
       lightFalloff: "smooth",
       lightMixing: "invalid",
       unknown: 8,
+      specularEnabled: "false",
     });
     expect(overrides).toEqual({
       shadowBands: 8,

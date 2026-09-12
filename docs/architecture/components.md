@@ -119,7 +119,7 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 ## App wrappers
 
-`CelShadingFields` composes compact Field, NumberField, Select and Button controls for Project Settings and Scene Defaults, including Strongest Light / Additive / Blend mixing. Scene fields display inherited values, independently enable overrides, and reset to live project values. Both hosts hide the controls in PBR projects; CEL has no Smooth falloff option.
+`CelShadingFields` composes compact Field, NumberField, Select, Switch and Button controls for Project Settings and Scene Defaults, including Strongest Light / Additive / Blend mixing and an independent Specular switch. Scene fields display inherited values, independently enable overrides, and reset to live project values. Both hosts hide the controls in PBR projects; CEL has no Smooth falloff option.
 
 `MultilineTextField` accepts optional `renderPreview` and `renderEditor` slots,
 retaining its draft/Done contract and viewport-bounded dialog. Material GLSL
