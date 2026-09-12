@@ -29,7 +29,7 @@ export function createTilemapMeshes(
   const resolveGid = (gid: number) => {
     const hit = decodeTileGid(tilemap, gid, atlasMap);
     if (hit) return hit;
-    if (atlasMap.size === 1) {
+    if (!isTilesetMap(tilesets) && tilemapTilesetGuids(tilemap).length === 0) {
       const [guid, tileset] = [...atlasMap.entries()][0]!;
       return { guid, localId: gid, tileset };
     }

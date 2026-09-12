@@ -181,5 +181,9 @@ describe("createTilemapMeshes", () => {
       (mesh) => mesh.metadata?.tilemapTextureGuid as string,
     );
     expect(textures.sort()).toEqual(["deco-tex", "ground-tex"]);
+    const missingGround = createTilemapMeshes(scene, "missing-ground", tilemap, new Map([["deco", deco]]), 1, 1);
+    expect(missingGround.getChildMeshes()).toHaveLength(1);
+    expect(missingGround.getChildMeshes()[0]!.getTotalVertices()).toBe(4);
+    expect(missingGround.getChildMeshes()[0]!.metadata.tilemapTextureGuid).toBe("deco-tex");
   });
 });

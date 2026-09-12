@@ -606,13 +606,7 @@ export class PhysicsWorldSync {
     const worldTileWidth = tilemap.tileWidth / ppu;
     const worldTileHeight = tilemap.tileHeight / ppu;
     const resolveGid = (gid: number) => {
-      const hit = decodeTileGid(tilemap, gid, this.tilesets);
-      if (hit) return hit;
-      if (this.tilesets.size === 1) {
-        const [atlasGuid, tileset] = [...this.tilesets.entries()][0]!;
-        return { guid: atlasGuid, localId: gid, tileset };
-      }
-      return null;
+      return decodeTileGid(tilemap, gid, this.tilesets);
     };
     const fallback = this.tilesets.get(tilemapTilesetGuids(tilemap)[0] ?? "")
       ?? this.tilesets.values().next().value;

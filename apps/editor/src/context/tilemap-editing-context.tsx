@@ -7,8 +7,8 @@ import {
 } from "react";
 
 export interface TilemapEditingContextValue {
-  selectedGid: number;
-  setSelectedGid: (gid: number) => void;
+  selectedTile: { guid: string; localId: number } | null;
+  setSelectedTile: (tile: { guid: string; localId: number } | null) => void;
 }
 
 const TilemapEditingContext = createContext<TilemapEditingContextValue | null>(
@@ -16,10 +16,10 @@ const TilemapEditingContext = createContext<TilemapEditingContextValue | null>(
 );
 
 export function TilemapEditingProvider({ children }: { children: ReactNode }) {
-  const [selectedGid, setSelectedGid] = useState(1);
+  const [selectedTile, setSelectedTile] = useState<TilemapEditingContextValue["selectedTile"]>(null);
   const value = useMemo(
-    () => ({ selectedGid, setSelectedGid }),
-    [selectedGid],
+    () => ({ selectedTile, setSelectedTile }),
+    [selectedTile],
   );
   return (
     <TilemapEditingContext.Provider value={value}>
