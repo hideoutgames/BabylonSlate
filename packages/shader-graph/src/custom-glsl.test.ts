@@ -30,8 +30,8 @@ describe("Custom GLSL function bodies", () => {
     } });
     expect(validateMaterialDocument(doc)).toEqual(expect.arrayContaining([expect.objectContaining({ code: "material.missingInput", nodeId: "custom", pinId: "tex" })]));
     doc.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "image" } });
-    doc.edges.push({ id: "sampler", sourceNodeId: "sample", sourcePinId: "texture", targetNodeId: "custom", targetPinId: "tex" });
-    expect(createTypeResolver(doc).outputType("sample", "texture")).toBe("texture");
+    doc.edges.push({ id: "sampler", sourceNodeId: "sample", sourcePinId: "textureOut", targetNodeId: "custom", targetPinId: "tex" });
+    expect(createTypeResolver(doc).outputType("sample", "textureOut")).toBe("texture");
     expect(validateMaterialDocument(doc).filter((d) => d.severity === "error")).toEqual([]);
   });
 

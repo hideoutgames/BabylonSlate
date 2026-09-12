@@ -361,7 +361,7 @@ export function compileMaterialPlan(
       try {
         point.connectTo(target);
         if (pinId === "texture" && (operation.nodeType === "texture.sample" || operation.nodeType === "texture.sampleLod")) {
-          realization.outputs.texture = point;
+          realization.outputs.textureOut = point;
         }
       } catch (error) {
         diagnostics.push({
@@ -784,7 +784,7 @@ function bindTexture(
     });
     return false;
   }
-  const block = (realization.outputs.texture?.ownerBlock ?? realization.blocks[0]) as unknown as {
+  const block = (realization.outputs.textureOut?.ownerBlock ?? realization.blocks[0]) as unknown as {
     texture?: Texture | null;
   };
   block.texture = texture;

@@ -695,7 +695,7 @@ function textureSampleAdapter(lod: boolean): BlockAdapter {
     if (!operation.inputs.texture) {
       const source = new ImageSourceBlock(`${name}_texture`);
       source.source.connectTo(block.source);
-      outputs.texture = source.source;
+      outputs.textureOut = source.source;
       blocks.push(source);
     }
     return { blocks, inputs, outputs };

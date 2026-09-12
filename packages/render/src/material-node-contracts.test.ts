@@ -47,7 +47,7 @@ describe("material node contracts", () => {
       node(doc, "sample", "texture.sample", source === "inline" ? { textureGuid: "image" } : {});
       if (source === "forwarded") wire(doc, "image", "out", "sample", "texture");
     }
-    wire(doc, source === "parameter" ? "image" : "sample", source === "parameter" ? "out" : "texture", "custom", "image");
+    wire(doc, source === "parameter" ? "image" : "sample", source === "parameter" ? "out" : "textureOut", "custom", "image");
     wire(doc, "custom", "out", "output", "emissive");
     const lowered = lowerMaterialDocument(doc);
     if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
