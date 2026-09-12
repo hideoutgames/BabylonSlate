@@ -214,13 +214,14 @@ test("editor viewport applies hardware scaling and the post-processing gate", { 
     const layout = await row.evaluate((element) => {
       const box = element.getBoundingClientRect();
       const controls = Array.from(element.querySelectorAll("button, input, [role=switch]"))
-        .filter((control) => getComputedStyle(control).position !== "absolute")
+        .filter((control) => control.getAttribute("aria-hidden") !== "true")
         .map((control) => {
           const rect = control.getBoundingClientRect();
           return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
         });
       return { width: box.width, height: box.height, left: box.left, right: box.right, controls };
     });
+    await row.screenshot({ path: test.info().outputPath(`${id}.png`) });
     expect(layout.width).toBeLessThanOrEqual(300);
     expect(layout.height).toBeLessThanOrEqual(coarse ? 152 : 68);
     for (const control of layout.controls) {
@@ -235,7 +236,6 @@ test("editor viewport applies hardware scaling and the post-processing gate", { 
         expect(overlaps, `${id} controls overlap`).toBe(false);
       }
     }
-    await row.screenshot({ path: test.info().outputPath(`${id}.png`) });
   }
   await page.getByTestId("scene-layer-0-z-order").fill("5");
   await page.getByTestId("scene-layer-0-z-order").press("Enter");
