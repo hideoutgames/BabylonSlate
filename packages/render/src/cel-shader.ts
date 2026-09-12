@@ -80,9 +80,13 @@ vec3 slateCelSurfaceLight(vec3 color, float peak) {
 
 /** Retain Babylon's light transforms, colors, ranges, cones and shadow bindings. */
 export function celLightingFunctions(source: string, wgsl: boolean): string {
-  void wgsl;
   return (
     source
+      // Colored sky/ground fills must not reintroduce a smooth hue gradient.
+      .replaceAll(
+        `${wgsl ? "var ndl: f32=" : "float ndl="}dot(vNormal,lightData.xyz)*0.5+0.5;`,
+        `${wgsl ? "var ndl: f32=" : "float ndl="}slateCelBand(dot(vNormal,lightData.xyz)*0.5+0.5);`,
+      )
       // Retain raw diffuse brightness through attenuation and shadows. The
       // selected mixing policy feeds one ramp, never separately banded sums.
       .replaceAll(

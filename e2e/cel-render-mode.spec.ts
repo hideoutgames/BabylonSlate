@@ -272,6 +272,34 @@ test("CEL preserves authored and texture colors, supports every light, and resto
       .toBeGreaterThan(500);
   }
 
+  scene.settings.celShading = { shadowStrength: 1, bandSoftness: 0 };
+  scene.actors = [
+    ...subjects,
+    createActor("two-tone-fill", "Two Tone Fill", {
+      components: [
+        {
+          id: "two-tone-light",
+          classId: "HemisphericFillLightComponent",
+          properties: {
+            color: [0, 1, 0],
+            groundColor: [1, 0, 0],
+            intensity: 1,
+          },
+        },
+      ],
+    }),
+  ];
+  await setPreviewScene(page, scene);
+  await expect
+    .poll(() => pixelsNear(viewport, [26, 77, 0]))
+    .toBeGreaterThan(500);
+  await expect
+    .poll(() => pixelsNear(viewport, [0, 153, 0]))
+    .toBeGreaterThan(100);
+  // Intermediate sky/ground hues would expose a smooth gradient through a
+  // nominally hard-banded hemisphere light.
+  await expect.poll(() => pixelsNear(viewport, [17, 77, 0])).toBeLessThan(30);
+
   for (const kind of ["directional", "point", "spot"] as const) {
     scene.settings.celShading = { shadowStrength: 1 };
     const light = createActor("key", "Key", {
