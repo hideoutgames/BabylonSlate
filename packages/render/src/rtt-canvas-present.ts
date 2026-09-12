@@ -11,6 +11,7 @@ export type RttCanvasPresent = {
   clear: () => void;
   dispose: () => void;
   canvasSize: () => { width: number; height: number };
+  readbackMs: () => number | null;
 };
 
 /**
@@ -26,6 +27,7 @@ export function createRttCanvasPresent(
   const maxSize = options.maxSize ?? 2048;
   let rtt: RenderTargetTexture | null = null;
   let blitInFlight = false;
+  let lastReadbackMs: number | null = null;
 
   const release = () => {
     const camera = scene.activeCamera;
@@ -69,6 +71,7 @@ export function createRttCanvasPresent(
     blitInFlight = true;
     const texture = rtt;
     void (async () => {
+      const start = performance.now();
       try {
         const buffer = await texture.readPixels();
         if (!buffer) return;
@@ -84,7 +87,9 @@ export function createRttCanvasPresent(
           0,
           0,
         );
+        lastReadbackMs = performance.now() - start;
       } catch {
+        lastReadbackMs = null;
         // NullEngine / missing GPU readback is fine — tests assert the RTT.
       } finally {
         blitInFlight = false;
@@ -92,5 +97,5 @@ export function createRttCanvasPresent(
     })();
   };
 
-  return { bind, blit, clear, dispose: release, canvasSize };
+  return { bind, blit, clear, dispose: release, canvasSize, readbackMs: () => lastReadbackMs };
 }

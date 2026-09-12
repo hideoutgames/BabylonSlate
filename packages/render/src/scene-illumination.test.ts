@@ -606,7 +606,8 @@ describe("syncAuthoredIllumination", () => {
     expect(generator.bias).toBeCloseTo(0.0001);
     expect(generator.normalBias).toBeCloseTo(0.005);
     expect(generator.frustumEdgeFalloff).toBe(0);
-    expect(key.autoCalcShadowZBounds).toBe(true);
+    expect(key.autoCalcShadowZBounds).toBe(false);
+    expect(key.customProjectionMatrixBuilder).toBeTypeOf("function");
   });
 
   it("disables the shadow map when shadowquality is off", () => {

@@ -76,7 +76,7 @@ export class EditorSceneSync {
   private lastScene: SerializedScene | null = null;
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
-  private shadowQuality = "1024";
+  private shadowQuality: string | undefined;
   private drawMeshCollision = false;
   private selectedActorIds = new Set<string>();
   private selectedComponentIds = new Set<string>();

@@ -291,3 +291,12 @@ remain intact. A refitted caster hierarchy rejects unrelated geometry, and
 per-submesh shadow culling retains upstream casters for depth-clamped PCF.
 Skinned, morphing and instanced geometry is not automatically partitioned.
 Authored rendering changes coalesce for 150 ms before a full scene reload and shader warm-up. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth bias derives from texel size and filter footprint; disabling it uses the authored depth bias directly.
+
+The single-map fallback also follows the camera with texel-snapped XY coverage;
+only relevant upstream caster bounds extend its depth. Directional generators
+resolve the current camera for each render, including preview views. Legacy
+`shadowquality` commands remain explicit runtime overrides; merely opening a
+scene does not override the authored map size. Exported players use project
+quality by default, while local editor/Play can apply Engine Settings caps.
+Stats distinguish actual shadow draw calls from allocated cascade/cube passes
+and report completed RTT readback-plus-copy duration separately.

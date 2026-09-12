@@ -11,6 +11,8 @@ import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import { calibratedShadowBias } from "./shadow-bias";
+import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
+import { readEngineDrawCalls } from "./draw-calls";
 
 type ShadowLight = DirectionalLight | PointLight | SpotLight;
 export type ShadowLightStatus = "active" | "disabled" | "outside-relevant-area" | "budget-limited";
@@ -24,6 +26,8 @@ export class SceneShadowController {
   private readonly pending = new Set<AbstractMesh>();
   private readonly spatial = new ShadowSpatialIndex();
   private quality: number | null | undefined;
+  private drawCalls = 0;
+  shadowDrawCalls(): number { return this.drawCalls; }
   private readonly scene: Scene;
   constructor(scene: Scene) {
     this.scene = scene;
@@ -35,7 +39,7 @@ export class SceneShadowController {
       this.spatial.remove(mesh);
       for (const entry of this.entries.values()) entry.generator?.removeShadowCaster(mesh, false);
     });
-    scene.onBeforeRenderObservable.add(() => this.sync());
+    scene.onBeforeRenderObservable.add(() => { this.drawCalls = 0; this.sync(); });
     scene.onDisposeObservable.addOnce(() => {
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.entries.clear(); this.meshes.clear(); this.pending.clear();
@@ -128,12 +132,13 @@ export class SceneShadowController {
       const key = JSON.stringify([settings, mapSize, state.mode]);
       if (key === entry.key && entry.camera === camera && entry.generator) {
         if (casterBounds && entry.generator instanceof CascadedShadowGenerator) entry.generator.shadowCastersBoundingInfo.reConstruct(casterBounds.min, casterBounds.max);
+        if (entry.light instanceof DirectionalLight && !(entry.generator instanceof CascadedShadowGenerator)) entry.light.forceProjectionMatrixCompute();
         continue;
       }
       entry.generator?.dispose();
       const generator = directionalLight && settings.cascades > 1
-        ? new CascadedShadowGenerator(mapSize, entry.light as DirectionalLight, undefined, camera)
-        : new ShadowGenerator(mapSize, entry.light, undefined, camera);
+        ? new CascadedShadowGenerator(mapSize, entry.light as DirectionalLight)
+        : new ShadowGenerator(mapSize, entry.light);
       if (generator instanceof CascadedShadowGenerator) {
         generator.numCascades = settings.cascades;
         generator.stabilizeCascades = true;
@@ -151,8 +156,7 @@ export class SceneShadowController {
           defines.rebuild();
         };
       } else if (entry.light instanceof DirectionalLight) {
-        entry.light.shadowFrustumSize = settings.distance * 2;
-        entry.light.autoCalcShadowZBounds = true;
+        configureDirectionalShadowProjection(entry.light, scene, settings.distance, mapSize, this.spatial);
       }
       generator.usePercentageCloserFiltering = settings.filter === "pcf";
       generator.useContactHardeningShadow = settings.filter === "pcss";
@@ -163,6 +167,10 @@ export class SceneShadowController {
       generator.frustumEdgeFalloff = 0;
       for (const mesh of this.meshes) generator.addShadowCaster(mesh, false);
       const map = generator.getShadowMap();
+      let drawsBefore = 0;
+      map?.onBeforeBindObservable.add(() => { drawsBefore = readEngineDrawCalls(scene.getEngine()); });
+      map?.onAfterUnbindObservable.add(() => { this.drawCalls += Math.max(0, readEngineDrawCalls(scene.getEngine()) - drawsBefore); });
+      if (generator instanceof CascadedShadowGenerator) map?.onBeforeBindObservable.add(() => generator.splitFrustum(), -1, true);
       if (settings.autoBias && generator instanceof CascadedShadowGenerator) map?.onBeforeRenderObservable.add((layer) => {
         const min = generator.getCascadeMinExtents(layer);
         const max = generator.getCascadeMaxExtents(layer);

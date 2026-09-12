@@ -1433,7 +1433,7 @@ export function createEngine(
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
   let lastRenderCpuMs = 0;
-  const renderDiagnostics = createRenderDiagnostics(scene, () => lastRenderCpuMs);
+  const renderDiagnostics = createRenderDiagnostics(scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null);
   const tilemapPreviewStart = performance.now();
   const renderLoop = () => {
     const frameStart = performance.now();

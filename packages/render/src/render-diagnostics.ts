@@ -10,11 +10,13 @@ export type RenderDiagnostics = {
   gpuStatus: "available" | "pending" | "unsupported";
   width: number; height: number; samples: number;
   shadowPasses: number; shadowMapBytes: number;
+  shadowDrawCalls: number;
+  readbackMs: number | null;
   shadowLights: ReturnType<ReturnType<typeof sceneShadowController>["diagnostics"]>;
   qualityLimits: string[];
 };
 
-export function createRenderDiagnostics(scene: Scene, cpuMs: () => number): () => RenderDiagnostics {
+export function createRenderDiagnostics(scene: Scene, cpuMs: () => number, readbackMs: () => number | null = () => null): () => RenderDiagnostics {
   const engine = scene.getEngine();
   let instrument = instruments.get(engine);
   const supported = !!engine.getCaps().timerQuery;
@@ -34,6 +36,8 @@ export function createRenderDiagnostics(scene: Scene, cpuMs: () => number): () =
     const state = sceneRenderingSettings(scene);
     return {
       cpuMs: cpuMs(),
+      readbackMs: readbackMs(),
+      shadowDrawCalls: sceneShadowController(scene).shadowDrawCalls(),
       gpuMs: available ? counter.current / 1_000_000 : null,
       gpuStatus: available ? "available" : supported ? "pending" : "unsupported",
       width: size?.width ?? engine.getRenderWidth(), height: size?.height ?? engine.getRenderHeight(),
