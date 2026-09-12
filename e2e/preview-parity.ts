@@ -13,6 +13,9 @@ export async function setPreviewScene(page: Page, scene: SerializedScene) {
       return host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false;
     }, scene),
   ).toBe(true);
+  // Committed rendering changes coalesce before the scene-loading dialog opens.
+  // Wait for that pending work too, so it cannot cover Save All during the click.
+  await expect(page.getByTestId("viewport-panel")).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
   await saveAllIfEnabled(page);
 }
 

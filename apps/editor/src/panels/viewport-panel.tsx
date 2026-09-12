@@ -805,6 +805,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       ref={panelRef}
       className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
       data-testid="viewport-panel"
+      aria-busy={requestedRenderSettingsKey !== renderSettingsKey || sceneLoad.open}
       data-scene-ready={sceneReady ? "true" : "false"}
       {...bind}
     >
