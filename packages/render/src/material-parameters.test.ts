@@ -270,7 +270,7 @@ describe("material parameter bindings", () => {
       setTexture: (_name: string, value: Texture) => {
         bound = value;
       },
-    } as unknown as import("@babylonjs/core").Effect);
+    } as unknown as import("@babylonjs/core").Effect, compiled.material);
     expect(bound).not.toBe(second);
     expect(bound).not.toBeNull();
     expect(bound!.getSize()).toMatchObject({ width: 1, height: 1 });
