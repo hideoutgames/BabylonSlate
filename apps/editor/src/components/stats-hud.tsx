@@ -79,7 +79,7 @@ export function StatsHud({
     >
       <div className="flex flex-wrap items-center gap-2">
         {rendering ? <span data-testid="stats-hud-rendering"><SelectableText>
-          {`render CPU ${rendering.cpuMs.toFixed(2)} ms · engine GPU ${rendering.gpuMs === null ? rendering.gpuStatus : `${rendering.gpuMs.toFixed(2)} ms`} · ${rendering.width}×${rendering.height} · ${rendering.samples} sample · shadows ${rendering.shadowDrawCalls} draws / ${rendering.shadowPasses} allocated passes / ~${formatBytes(rendering.shadowMapBytes)}`}
+          {`render CPU ${rendering.cpuMs.toFixed(2)} ms · engine GPU ${rendering.gpuMs === null ? rendering.gpuStatus : `${rendering.gpuMs.toFixed(2)} ms`} · ${rendering.width}×${rendering.height} · ${rendering.samples} sample · shadows ${rendering.shadowDrawCalls} draws / ${Math.round(rendering.shadowTriangles)} triangles / ${rendering.shadowPasses} allocated passes / ~${formatBytes(rendering.shadowMapBytes)}`}
           {rendering.readbackMs === null ? "" : ` · readback + copy ${rendering.readbackMs.toFixed(2)} ms`}
           {rendering.qualityLimits.length ? ` · ${rendering.qualityLimits.join(", ")}` : ""}
           {rendering.shadowLights.map((light) => ` · ${light.name}: ${light.status}`).join("")}

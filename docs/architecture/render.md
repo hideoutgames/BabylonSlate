@@ -299,5 +299,44 @@ resolve the current camera for each render, including preview views. Legacy
 `shadowquality` commands remain explicit runtime overrides; merely opening a
 scene does not override the authored map size. Exported players use project
 quality by default, while local editor/Play can apply Engine Settings caps.
-Stats distinguish actual shadow draw calls from allocated cascade/cube passes
+Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
 and report completed RTT readback-plus-copy duration separately.
+
+Local shadow allocation follows authored priority, then intensity and camera
+distance, with a 15% retention bonus to avoid oscillation. A substantially more
+relevant light can replace an existing allocation without disabling it first.
+
+#### Manual iPad A16 validation
+
+The A16 preset is a candidate budget. Desktop correctness tests do not establish
+sustained iPad GPU or thermal performance. Validate the local browser build on the
+device before increasing its default quality:
+
+1. Record iPad model, OS/browser version, build revision, viewport dimensions,
+   hardware scaling, battery/charging state and active shadow profile.
+2. Use Basic 3D with a PBR Mannequin, plain sphere/box materials and a ground
+   receiver. Keep objects separated and resting on the receiver; hide the editor
+   grid. Compare PBR PCF against CEL with specular disabled, then enable highlights.
+3. Test white and colored directional, point and spot lights. Exercise Strongest
+   Light, Additive and Blend, independent Scene overrides and Reset To Project.
+   Toggle PBR/CEL repeatedly with unsaved scene changes and confirm meshes return,
+   camera framing/selection remain and the document stays editable.
+4. Fly across a large ground at the default 200-unit shadow distance. Add distant
+   geometry, move an off-screen caster into the light path, cross cascade splits,
+   change shadow distance and replace the active camera. Check contact, acne,
+   detached shadows, flicker and the far fade while moving.
+5. Run Play for at least 15 minutes with a moving camera, animated Mannequin and
+   the permitted local shadow lights. Record FPS, CPU/GPU time, target size,
+   shadow draws/triangles/passes and memory estimate at the start and end. Record
+   unsupported GPU timing as unsupported. Repeat the same route in the editor;
+   check the 60 FPS Play and 30 FPS editor targets, plus idle/hidden suspension.
+6. Compare Economy and A16 on the same scene before trying High/Ultra. Increase
+   one of map resolution, cascade count, local-light count or filtering at a
+   time. PCSS is a PBR option and is capped to PCF by the local A16 profile.
+
+Camera-relative rendering and the high/residual snapshot transport protect
+rendered coordinates; they do not give arbitrary precision to physics or
+navigation backends. Keep active simulation near a practical local origin and
+validate backend-specific scale limits. Shadow distance does not impose a map
+boundary. Animated/deformed shadow maps continue refreshing; the controller does
+not assume that a frozen world matrix makes a material or skeleton immutable.

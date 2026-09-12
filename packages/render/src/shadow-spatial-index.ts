@@ -1,7 +1,19 @@
-import { Frustum, TransformNode, Vector3, type AbstractMesh, type Matrix, type Plane } from "@babylonjs/core";
+import {
+  Frustum,
+  TransformNode,
+  Vector3,
+  type AbstractMesh,
+  type Matrix,
+  type Plane,
+} from "@babylonjs/core";
 
 type Bounds = { min: Vector3; max: Vector3 };
-type Node = Bounds & { parent?: Node; left?: Node; right?: Node; mesh?: AbstractMesh };
+type Node = Bounds & {
+  parent?: Node;
+  left?: Node;
+  right?: Node;
+  mesh?: AbstractMesh;
+};
 
 /** Balanced caster hierarchy. Membership changes rebuild; moving bounds only refit ancestors. */
 export class ShadowSpatialIndex {
@@ -14,7 +26,11 @@ export class ShadowSpatialIndex {
     if (this.leaves.has(mesh)) return;
     mesh.computeWorldMatrix(true);
     const box = mesh.getBoundingInfo().boundingBox;
-    this.leaves.set(mesh, { min: box.minimumWorld.clone(), max: box.maximumWorld.clone(), mesh });
+    this.leaves.set(mesh, {
+      min: box.minimumWorld.clone(),
+      max: box.maximumWorld.clone(),
+      mesh,
+    });
     let parent: TransformNode | null = null;
     const updateFromParent = () => {
       // Parent updates can happen twice in one render id (editor manipulation).
@@ -25,7 +41,9 @@ export class ShadowSpatialIndex {
     const update = () => {
       this.dirty.add(mesh);
       if (mesh.parent === parent) return;
-      parent?.onAfterWorldMatrixUpdateObservable.removeCallback(updateFromParent);
+      parent?.onAfterWorldMatrixUpdateObservable.removeCallback(
+        updateFromParent,
+      );
       parent = mesh.parent instanceof TransformNode ? mesh.parent : null;
       parent?.onAfterWorldMatrixUpdateObservable.add(updateFromParent);
     };
@@ -33,18 +51,24 @@ export class ShadowSpatialIndex {
     update();
     this.observers.set(mesh, () => {
       mesh.onAfterWorldMatrixUpdateObservable.removeCallback(update);
-      parent?.onAfterWorldMatrixUpdateObservable.removeCallback(updateFromParent);
+      parent?.onAfterWorldMatrixUpdateObservable.removeCallback(
+        updateFromParent,
+      );
     });
     this.rebuild = true;
   }
   remove(mesh: AbstractMesh): void {
     this.observers.get(mesh)?.();
     this.observers.delete(mesh);
-    this.leaves.delete(mesh); this.dirty.delete(mesh); this.rebuild = true;
+    this.leaves.delete(mesh);
+    this.dirty.delete(mesh);
+    this.rebuild = true;
   }
   dispose(): void {
     for (const mesh of this.observers.keys()) this.remove(mesh);
-    this.root = undefined; this.dirty.clear(); this.leaves.clear();
+    this.root = undefined;
+    this.dirty.clear();
+    this.leaves.clear();
   }
   private union(node: Node): void {
     if (!node.left || !node.right) return;
@@ -53,12 +77,21 @@ export class ShadowSpatialIndex {
   }
   private build(nodes: Node[], depth = 0): Node | undefined {
     if (!nodes.length) return undefined;
-    if (nodes.length === 1) { nodes[0]!.parent = undefined; return nodes[0]; }
+    if (nodes.length === 1) {
+      nodes[0]!.parent = undefined;
+      return nodes[0];
+    }
     const axis = (["x", "y", "z"] as const)[depth % 3]!;
     nodes.sort((a, b) => a.min[axis] + a.max[axis] - b.min[axis] - b.max[axis]);
     const middle = Math.floor(nodes.length / 2);
-    const node: Node = { min: Vector3.Zero(), max: Vector3.Zero(), left: this.build(nodes.slice(0, middle), depth + 1), right: this.build(nodes.slice(middle), depth + 1) };
-    node.left!.parent = node; node.right!.parent = node;
+    const node: Node = {
+      min: Vector3.Zero(),
+      max: Vector3.Zero(),
+      left: this.build(nodes.slice(0, middle), depth + 1),
+      right: this.build(nodes.slice(middle), depth + 1),
+    };
+    node.left!.parent = node;
+    node.right!.parent = node;
     this.union(node);
     return node;
   }
@@ -67,11 +100,16 @@ export class ShadowSpatialIndex {
       const node = this.leaves.get(mesh);
       if (!node) continue;
       const box = mesh.getBoundingInfo().boundingBox;
-      node.min.copyFrom(box.minimumWorld); node.max.copyFrom(box.maximumWorld);
-      for (let parent = node.parent; parent; parent = parent.parent) this.union(parent);
+      node.min.copyFrom(box.minimumWorld);
+      node.max.copyFrom(box.maximumWorld);
+      for (let parent = node.parent; parent; parent = parent.parent)
+        this.union(parent);
     }
     this.dirty.clear();
-    if (this.rebuild) { this.root = this.build([...this.leaves.values()]); this.rebuild = false; }
+    if (this.rebuild) {
+      this.root = this.build([...this.leaves.values()]);
+      this.rebuild = false;
+    }
   }
   query(transform: Matrix, preserveUpstream: boolean): AbstractMesh[] {
     this.refit();
@@ -80,7 +118,10 @@ export class ShadowSpatialIndex {
     // Retain the side and far planes, so unrelated distant geometry is excluded.
     return this.queryPlanes(preserveUpstream ? planes.slice(1) : planes);
   }
-  bounds(): Bounds | undefined { this.refit(); return this.root; }
+  bounds(): Bounds | undefined {
+    this.refit();
+    return this.root;
+  }
   queryPlanes(planes: readonly Plane[]): AbstractMesh[] {
     this.refit();
     const result: AbstractMesh[] = [];
@@ -88,11 +129,26 @@ export class ShadowSpatialIndex {
       if (!node) return;
       for (const plane of planes) {
         const n = plane.normal;
-        if (n.x * (n.x >= 0 ? node.max.x : node.min.x) + n.y * (n.y >= 0 ? node.max.y : node.min.y) + n.z * (n.z >= 0 ? node.max.z : node.min.z) + plane.d < 0) return;
+        if (
+          n.x * (n.x >= 0 ? node.max.x : node.min.x) +
+            n.y * (n.y >= 0 ? node.max.y : node.min.y) +
+            n.z * (n.z >= 0 ? node.max.z : node.min.z) +
+            plane.d <
+          0
+        )
+          return;
       }
       if (node.mesh) {
-        if (node.mesh.isEnabled() && node.mesh.isVisible && !node.mesh.isDisposed()) result.push(node.mesh);
-      } else { visit(node.left); visit(node.right); }
+        if (
+          node.mesh.isEnabled() &&
+          node.mesh.isVisible &&
+          !node.mesh.isDisposed()
+        )
+          result.push(node.mesh);
+      } else {
+        visit(node.left);
+        visit(node.right);
+      }
     };
     visit(this.root);
     return result;

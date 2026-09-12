@@ -1,9 +1,19 @@
 import { LinesMesh, type AbstractMesh } from "@babylonjs/core";
 import { isSkyboxMesh } from "./skybox";
-export type ShadowParticipation = { castShadows?: boolean; receiveShadows?: boolean };
-export function authoredShadowParticipation(mesh: AbstractMesh): ShadowParticipation {
-  for (let node = mesh as import("@babylonjs/core").Node | null; node; node = node.parent) {
-    if (node.metadata?.slateShadowParticipation) return node.metadata.slateShadowParticipation as ShadowParticipation;
+export type ShadowParticipation = {
+  castShadows?: boolean;
+  receiveShadows?: boolean;
+};
+export function authoredShadowParticipation(
+  mesh: AbstractMesh,
+): ShadowParticipation {
+  for (
+    let node = mesh as import("@babylonjs/core").Node | null;
+    node;
+    node = node.parent
+  ) {
+    if (node.metadata?.slateShadowParticipation)
+      return node.metadata.slateShadowParticipation as ShadowParticipation;
   }
   return {};
 }
@@ -17,21 +27,21 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
   const meta = mesh.metadata as {
     editorActorOrigin?: boolean;
     editorPickProxy?: boolean;
-      editorBillboard?: string;
-      editorVolume?: boolean;
-      playHelperVisual?: boolean;
+    editorBillboard?: string;
+    editorVolume?: boolean;
+    playHelperVisual?: boolean;
     playActorOrigin?: boolean;
     playDebugOverlay?: boolean;
   } | null;
   if (!meta) return false;
   return Boolean(
     meta.editorActorOrigin ||
-      meta.editorPickProxy ||
-      meta.editorBillboard ||
-      meta.editorVolume ||
-      meta.playHelperVisual ||
-      meta.playActorOrigin ||
-      meta.playDebugOverlay,
+    meta.editorPickProxy ||
+    meta.editorBillboard ||
+    meta.editorVolume ||
+    meta.playHelperVisual ||
+    meta.playActorOrigin ||
+    meta.playDebugOverlay,
   );
 }
 
@@ -39,9 +49,10 @@ export function participatesInShadows(mesh: AbstractMesh): boolean {
   if (mesh.name.startsWith("__")) return false;
   if (isSkyboxMesh(mesh)) return false;
   if (mesh instanceof LinesMesh) return false;
-  if (SHADOW_SKIP_NAME_PREFIXES.some((prefix) => mesh.name.startsWith(prefix))) {
+  if (
+    SHADOW_SKIP_NAME_PREFIXES.some((prefix) => mesh.name.startsWith(prefix))
+  ) {
     return false;
   }
   return !shadowSkipMetadata(mesh);
 }
-
