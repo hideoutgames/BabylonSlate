@@ -1392,7 +1392,7 @@ export function ContentBrowserWorkspace({
               });
             errors.push(...convertErrors);
             const prepared = groupMsdfImportBatch(
-              embedGltfImportBatch(converted),
+              embedGltfImportBatch(converted).filter((file) => !fbx.consumedSidecars.includes(file.name)),
             );
             if (prepared.length === 0) return;
             setImportProgress({

@@ -17,6 +17,7 @@ export function convertFbxWithAssimp(
   importer: AssimpModule,
   file: ModelImportFile,
   sidecars: readonly ModelImportFile[] = [],
+  consumedSidecars?: Set<string>,
 ): Uint8Array {
   const files = new Map<string, Uint8Array>();
   for (const sidecar of sidecars) {
@@ -67,6 +68,8 @@ export function convertFbxWithAssimp(
           `Missing FBX texture: ${image.uri}. Select its image file with the FBX.`,
         );
       files.set(image.uri, bytes);
+      const sidecar = sidecars.find((entry) => basename(entry.name) === key);
+      if (sidecar) consumedSidecars?.add(sidecar.name);
     }
     const nodes = split.json.nodes as Record<string, unknown>[];
     const matrix = fbxCoordinateMatrix(file.bytes);
