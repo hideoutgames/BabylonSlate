@@ -512,7 +512,7 @@ describe("createPlayMesh", () => {
     await binding.slotAnimLoads?.get(2);
     const native = scene.animationGroups.find((group) => group.name === "Walk");
     expect(native).toBeDefined();
-    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.animatables).toHaveLength(0);
     expect(native!.isPlaying).toBe(false);
 
     const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
@@ -536,6 +536,7 @@ describe("createPlayMesh", () => {
       clipAssetGuid: "hero-model",
     };
     applyAnimStateToScene(host, command);
+    expect(native!.animatables.length).toBeGreaterThan(0);
     const atStart = poseAt();
     applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
     expect(poseAt()).not.toEqual(atStart);
@@ -554,7 +555,7 @@ describe("createPlayMesh", () => {
     await binding.slotAnimLoads?.get(2);
     const native = scene.animationGroups.find((group) => group.name === "Run");
     expect(native).toBeDefined();
-    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.animatables).toHaveLength(0);
     expect(native!.isPlaying).toBe(false);
 
     const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
@@ -578,6 +579,7 @@ describe("createPlayMesh", () => {
       clipAssetGuid: "hero-model",
     };
     applyAnimStateToScene(host, command);
+    expect(native!.animatables.length).toBeGreaterThan(0);
     const atStart = poseAt();
     applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
     expect(poseAt()).not.toEqual(atStart);
@@ -631,7 +633,7 @@ describe("createPlayMesh", () => {
     await binding.slotAnimLoads?.get(3);
     const native = scene.animationGroups.find((group) => group.name === "idle");
     expect(native).toBeDefined();
-    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.animatables).toHaveLength(0);
     expect(native!.isPlaying).toBe(false);
 
     const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
@@ -662,6 +664,7 @@ describe("createPlayMesh", () => {
     applyAnimStateToScene(host, { ...command, slotId: 3, normalisedTime: 0.75 });
     const otherIdle = otherPose();
     applyAnimStateToScene(host, command);
+    expect(native!.animatables.length).toBeGreaterThan(0);
     const atStart = poseAt();
     applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
     expect(poseAt()).not.toEqual(atStart);
