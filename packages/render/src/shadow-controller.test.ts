@@ -14,11 +14,13 @@ function fixture() {
   return { scene, controller: sceneShadowController(scene) };
 }
 describe("shared shadow lifecycle", () => {
-  it("registers late meshes and releases removed meshes and disabled light allocations", () => {
+  it("registers late meshes and releases removed meshes and disabled light allocations", async () => {
     const { scene, controller } = fixture();
     const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
     controller.register(light, true); controller.sync();
+    const added = new Promise<void>((resolve) => scene.onNewMeshAddedObservable.addOnce(() => resolve()));
     const mesh = MeshBuilder.CreateBox("spawned", {}, scene);
+    await added;
     controller.sync();
     expect(controller.generator(light)?.getShadowMap()?.renderList).toContain(mesh);
     expect(mesh.receiveShadows).toBe(true);

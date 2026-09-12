@@ -7,6 +7,7 @@ import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { participatesInShadows } from "./shadow-mesh-policy";
+import { ShadowSpatialIndex } from "./shadow-spatial-index";
 
 type ShadowLight = DirectionalLight | PointLight | SpotLight;
 export type ShadowLightStatus = "active" | "disabled" | "outside-relevant-area" | "budget-limited";
@@ -18,13 +19,15 @@ export class SceneShadowController {
   private readonly entries = new Map<Light, Entry>();
   private readonly meshes = new Set<AbstractMesh>();
   private readonly pending = new Set<AbstractMesh>();
+  private readonly spatial = new ShadowSpatialIndex();
   private quality: number | null | undefined;
   constructor(private readonly scene: Scene) {
     for (const mesh of scene.meshes) this.pending.add(mesh);
-    scene.onNewMeshAddedObservable.add((mesh) => this.pending.add(mesh));
+    scene.onNewMeshAddedObservable.add((mesh) => { if (!mesh.isDisposed()) this.pending.add(mesh); });
     scene.onMeshRemovedObservable.add((mesh) => {
       this.pending.delete(mesh);
       this.meshes.delete(mesh);
+      this.spatial.remove(mesh);
       for (const entry of this.entries.values()) entry.generator?.removeShadowCaster(mesh, false);
     });
     scene.onBeforeRenderObservable.add(() => this.sync());
@@ -61,8 +64,10 @@ export class SceneShadowController {
     const scene = this.scene;
     if (scene.isDisposed) return;
     for (const mesh of this.pending) {
+      if (mesh.isDisposed()) continue;
       if (!participatesInShadows(mesh)) { mesh.receiveShadows = false; continue; }
       this.meshes.add(mesh);
+      this.spatial.add(mesh);
       mesh.receiveShadows = true;
       for (const entry of this.entries.values()) entry.generator?.addShadowCaster(mesh, false);
     }
@@ -124,6 +129,12 @@ export class SceneShadowController {
       generator.normalBias = settings.normalBias;
       generator.frustumEdgeFalloff = 0;
       for (const mesh of this.meshes) generator.addShadowCaster(mesh, false);
+      const map = generator.getShadowMap();
+      if (map) map.getCustomRenderList = (layer) => {
+        const transform = generator instanceof CascadedShadowGenerator
+          ? generator.getCascadeTransformMatrix(layer) : generator.getTransformMatrix();
+        return transform ? this.spatial.query(transform, directionalLight && settings.filter === "pcf") : null;
+      };
       entry.generator = generator; entry.key = key; entry.camera = camera;
     }
   }
