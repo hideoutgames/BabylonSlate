@@ -219,6 +219,18 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   await expect
     .poll(() => pixelsNear(viewport, [255, 255, 255]))
     .toBeGreaterThan(100);
+  fill.components[0]!.properties.color = [1, 0, 0];
+  fill.components[0]!.properties.groundColor = [1, 0, 0];
+  scene.settings.celShading.shadowStrength = 1;
+  await setPreviewScene(page, scene);
+  await expect
+    .poll(() => pixelsNear(viewport, [255, 0, 0]))
+    .toBeGreaterThan(100);
+  await expect
+    .poll(() => pixelsNear(viewport, [255, 255, 255]))
+    .toBeLessThan(30);
+  fill.components[0]!.properties.color = [1, 1, 1];
+  fill.components[0]!.properties.groundColor = [1, 1, 1];
   scene.settings.celShading = {};
   await setPreviewScene(page, scene);
   await projectMode(page, "PBR");

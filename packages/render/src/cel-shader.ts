@@ -18,7 +18,7 @@ float slateCelBand(float value) {
   float levels = slateCelBands.x - 1.0;
   float shifted = pow(clamp(value, 0.0, 1.0), log(0.5) / log(slateCelBands.z)) * levels;
   float lower = floor(shifted);
-  float width = max(slateCelBands.y * levels, 0.00001);
+  float width = max(slateCelBands.y, 0.00001);
   return clamp((lower + smoothstep(0.5 - width, 0.5 + width, fract(shifted))) / levels, 0.0, 1.0);
 }
 float slateCelAttenuation(float value) {
@@ -27,6 +27,10 @@ float slateCelAttenuation(float value) {
 vec3 slateCelTint(vec3 color) {
   float strength = max(color.r, max(color.g, color.b));
   return mix(vec3(strength), color, slateCelLight.x);
+}
+vec3 slateCelSpecularTint(vec3 specular, vec3 diffuse) {
+  float strength = max(diffuse.r, max(diffuse.g, diffuse.b));
+  return slateCelTint(specular * diffuse / max(strength, 0.00001));
 }
 float slateCelHighlight(float ndh, float ndl) {
   float edge = 1.0 - slateCelSpecular.y;
@@ -80,11 +84,11 @@ export function celLightingFunctions(source: string, wgsl: boolean): string {
     )
     .replaceAll(
       "specComp*specularColor*attenuation",
-      "specComp*slateCelTint(specularColor)*slateCelAttenuation(attenuation)",
+      "specComp*slateCelSpecularTint(specularColor,diffuseColor)*slateCelAttenuation(attenuation)",
     )
     .replaceAll(
       "specComp*specularColor;",
-      "specComp*slateCelTint(specularColor);",
+      "specComp*slateCelSpecularTint(specularColor,diffuseColor);",
     );
 }
 
