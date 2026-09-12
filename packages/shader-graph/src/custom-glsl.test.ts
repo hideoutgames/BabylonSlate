@@ -11,13 +11,26 @@ describe("Custom GLSL function bodies", () => {
     expect(customGlslFunctionBodyError("uniform float x; return x;")).not.toBeNull();
   });
 
-  it("rejects duplicate, reserved and nonnumeric pin interfaces", () => {
+  it("rejects duplicate, reserved and texture output pin interfaces", () => {
     const properties = newCustomGlslProperties();
     expect(customGlslInterfaceError(properties)).toBeNull();
     for (const name of ["B", "gl_Position", "return", "Bad Name"]) {
       expect(customGlslInterfaceError({ ...properties, inputs: [{ id: "a", name, type: "float" }, { id: "b", name: "B", type: "float" }] })).not.toBeNull();
     }
-    expect(customGlslInterfaceError({ ...properties, inputs: [{ id: "a", name: "A", type: "texture" }] })).not.toBeNull();
+    expect(customGlslInterfaceError({ ...properties, inputs: [{ id: "a", name: "A", type: "texture" }] })).toBeNull();
+    expect(customGlslInterfaceError({ ...properties, outputs: [{ id: "out", name: "Result", type: "texture" }] })).not.toBeNull();
+  });
+
+  it("requires a wired sampler and resolves Texture Sample's raw texture output", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "custom", type: "custom.glsl", position: { x: 0, y: 0 }, properties: {
+      ...newCustomGlslProperties(), inputs: [{ id: "tex", name: "Albedo", type: "texture" }], body: "return texture2D(Albedo, vec2(0.5)).r;",
+    } });
+    expect(validateMaterialDocument(doc)).toEqual(expect.arrayContaining([expect.objectContaining({ code: "material.missingInput", nodeId: "custom", pinId: "tex" })]));
+    doc.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "image" } });
+    doc.edges.push({ id: "sampler", sourceNodeId: "sample", sourcePinId: "texture", targetNodeId: "custom", targetPinId: "tex" });
+    expect(createTypeResolver(doc).outputType("sample", "texture")).toBe("texture");
+    expect(validateMaterialDocument(doc).filter((d) => d.severity === "error")).toEqual([]);
   });
 
   it("resolves declared output widths and reports derivatives feeding vertex displacement", () => {

@@ -42,6 +42,7 @@ export const PIN_PICKER_LABEL: Record<string, string> = {
   quat: "Quaternion",
   color: "Color",
   transform: "Transform",
+  texture: "Texture",
   object: "Object",
   actor: "Actor",
   class: "Class",

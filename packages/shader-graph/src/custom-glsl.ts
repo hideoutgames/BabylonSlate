@@ -5,7 +5,7 @@ import { componentCount, type MaterialValueType } from "./types";
 export interface CustomGlslPin {
   id: string;
   name: string;
-  type: Exclude<MaterialValueType, "texture">;
+  type: MaterialValueType;
 }
 
 export interface CustomGlslInterface {
@@ -19,7 +19,7 @@ export function customGlslInterface(properties: Record<string, unknown>): Custom
   const read = (value: unknown): CustomGlslPin[] => Array.isArray(value)
     ? value.filter((pin): pin is CustomGlslPin => !!pin && typeof pin === "object"
       && typeof pin.id === "string" && typeof pin.name === "string"
-      && ["float", "vec2", "vec3", "vec4"].includes(pin.type))
+      && ["float", "vec2", "vec3", "vec4", "texture"].includes(pin.type))
     : [];
   return { inputs: read(properties.inputs), outputs: read(properties.outputs) };
 }
@@ -39,7 +39,7 @@ export function customGlslDefinition(node: MaterialGraphNode, base: MaterialNode
   return {
     ...base,
     ...(/\b(dFdx|dFdy|fwidth)\b/.test(glslWithoutComments(String(node.properties.body ?? ""))) ? { requires: ["customGlsl", "derivatives"] as const } : {}),
-    inputs: pins.inputs.map((pin) => ({ ...pin, type: { kind: pin.type }, defaultValue: Array(componentCount(pin.type)).fill(0) as number[] })),
+    inputs: pins.inputs.map((pin) => ({ ...pin, type: { kind: pin.type }, ...(pin.type === "texture" ? {} : { defaultValue: Array(componentCount(pin.type)).fill(0) as number[] }) })),
     outputs: pins.outputs.map((pin) => ({ ...pin, type: { kind: pin.type } })),
     // Derivatives and discard cannot be evaluated by the vertex shader.
     ...(/\b(dFdx|dFdy|fwidth|discard)\b/.test(glslWithoutComments(String(node.properties.body ?? ""))) ? { stages: ["fragment"] as const } : {}),
@@ -57,9 +57,10 @@ export function customGlslInterfaceError(properties: Record<string, unknown>): s
   if (!pins) return null;
   if (!Array.isArray(properties.inputs) || !Array.isArray(properties.outputs)
     || pins.inputs.length !== properties.inputs.length || pins.outputs.length !== properties.outputs.length) {
-    return "Custom GLSL pins must have an ID, variable name and Float or Vector type";
+    return "Custom GLSL pins must have an ID, variable name and Float, Vector or Texture type";
   }
   if (!pins.outputs.length) return "Custom GLSL needs a primary return output";
+  if (pins.outputs.some((pin) => pin.type === "texture")) return "Texture samplers are only supported as inputs";
   const ids = new Set<string>();
   const names = new Set<string>();
   for (const pin of [...pins.inputs, ...pins.outputs]) {

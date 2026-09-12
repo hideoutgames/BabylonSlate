@@ -11,6 +11,8 @@ import {
   inspectorLiteralPinDefaults,
   isFlowSwitchTypeId,
   logNodePropertyRows,
+  javaScriptPinRows,
+  javaScriptPinsFromRows,
   parameterRowsFromPinList,
   parameterTypeFromPin,
   patchFlowSwitchCases,
@@ -23,6 +25,20 @@ import {
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "./graph-inspector";
+
+describe("JavaScript pin types", () => {
+  it("preserves reference constraints and typed arrays and maps when editing pin names", () => {
+    const pins = [
+      { id: "object", name: "target", type: { kind: "objectRef", classId: "Hero" } },
+      { id: "array", name: "items", type: { kind: "array", element: { kind: "structRef", guid: "item" } } },
+      { id: "map", name: "lookup", type: { kind: "map", key: { kind: "enumRef", guid: "key" }, value: { kind: "assetRef", assetType: "Texture" } } },
+    ];
+    const rows = javaScriptPinRows(pins, "in");
+    expect(rows[2]).toMatchObject({ type: "asset", typeClassId: "Texture", container: "map", keyTypeId: "enum", keyTypeClassId: "key" });
+    rows[0]!.name = "actor";
+    expect(javaScriptPinsFromRows(rows)).toEqual([{ ...pins[0], name: "actor" }, pins[1], pins[2]]);
+  });
+});
 
 describe("structNodePropertyRows", () => {
   it("selects a live structure schema and clears defaults belonging to the previous type", () => {

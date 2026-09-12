@@ -263,7 +263,7 @@ describe("material parameter bindings", () => {
     ).toBe(true);
     // On WebGL a null TextureBlock skips binding and can leave the prior sampler active.
     let bound: Texture | null = second;
-    sample.bind({
+    sample.source.connectedPoint!.ownerBlock.bind({
       getEngine: () => scene.getEngine(),
       setFloat: () => undefined,
       setMatrix: () => undefined,

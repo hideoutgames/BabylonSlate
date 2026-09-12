@@ -1,6 +1,7 @@
 import { INPUT_KEYS } from "@babylonslate/core";
 import type {
   ParameterRow,
+  PinListRow,
   ParameterValueType,
   PropertyRow,
 } from "@babylonslate/editor-kit";
@@ -33,6 +34,8 @@ import {
   pinDefaultColorRgb,
   pinDefaultPropertyKey,
   pinTypeForMember,
+  pinTypeForVariable,
+  variableTypeFromPinType,
   vec3TupleToObject,
   vec4TupleToObject,
   type TypeSchemas,
@@ -817,6 +820,26 @@ export function parameterRowsFromPinList(
     id: `${prefix}-${index}-${row.name}`,
     name: row.name,
     type: parameterTypeFromPin(row.type),
+  }));
+}
+
+export function javaScriptPinRows(
+  rows: ReadonlyArray<{ id?: string; name: string; type?: unknown }>,
+  prefix: string,
+): PinListRow[] {
+  return rows.map((row, index) => {
+    const type = row.type && typeof row.type === "object" && "kind" in row.type
+      ? row.type as PinType : pinTypeFromParameterType(parameterTypeFromPin(row.type));
+    const { typeId, ...fields } = variableTypeFromPinType(type);
+    return { id: row.id ?? `${prefix}-${index}`, name: row.name, type: typeId, ...fields };
+  });
+}
+
+export function javaScriptPinsFromRows(rows: readonly PinListRow[]) {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    type: pinTypeForVariable({ ...row, typeId: row.type }),
   }));
 }
 

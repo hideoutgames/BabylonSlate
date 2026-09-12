@@ -100,10 +100,10 @@ import {
   inputEventPropertyRows,
   isFlowSwitchTypeId,
   logNodePropertyRows,
-  parameterRowsFromPinList,
+  javaScriptPinRows,
   patchFlowSwitchCases,
   pinDefaultPropertyRows,
-  pinListFromParameterRows,
+  javaScriptPinsFromRows,
   structNodePropertyRows,
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
@@ -961,6 +961,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [parentClassPickOpen, setParentClassPickOpen] = useState(false);
   const [renameEventOpen, setRenameEventOpen] = useState(false);
+  const [selectedJsPin, selectJsPin] = useState<string | null>(null);
   const [parentClassError, setParentClassError] = useState<string | null>(null);
   const [classPinPick, setClassPinPick] = useState<{
     pinId: string;
@@ -1082,6 +1083,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNodeIds,
   ]);
   const needsPinHydration = Boolean(selectedSerializedNode && (
+    selectedSerializedNode.type === "debug.executeJavaScript" ||
     !Array.isArray(selectedSerializedNode.data.__pins) ||
     selectedSerializedNode.data.__pins.length === 0
   ));
@@ -1594,26 +1596,36 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         ) : null}
         {isExecJs ? (
           <>
-            <ParameterListEditor
+            <PinListEditor
               title="Inputs"
-              rows={parameterRowsFromPinList(inputs, "in")}
+              rows={javaScriptPinRows(inputs, "in")}
+              showContainer showOptional={false} showDefault={false}
+              selectedId={selectedJsPin} onSelect={selectJsPin}
+              classEntries={subclassClassEntries("BObject", assetRegistry?.list() ?? [], { editorGraph })}
+              typeAssets={typeAssets}
+              testIdPrefix="js-input"
               onChange={(rows) => {
                 const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
                 updateNodeData({
-                  inputs: pinListFromParameterRows(rows),
+                  inputs: javaScriptPinsFromRows(rows),
                   ...(invalid
                     ? { __identError: invalid.name }
                     : { __identError: undefined }),
                 });
               }}
             />
-            <ParameterListEditor
+            <PinListEditor
               title="Outputs"
-              rows={parameterRowsFromPinList(outputs, "out")}
+              rows={javaScriptPinRows(outputs, "out")}
+              showContainer showOptional={false} showDefault={false}
+              selectedId={selectedJsPin} onSelect={selectJsPin}
+              classEntries={subclassClassEntries("BObject", assetRegistry?.list() ?? [], { editorGraph })}
+              typeAssets={typeAssets}
+              testIdPrefix="js-output"
               onChange={(rows) => {
                 const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
                 updateNodeData({
-                  outputs: pinListFromParameterRows(rows),
+                  outputs: javaScriptPinsFromRows(rows),
                   ...(invalid
                     ? { __identError: invalid.name }
                     : { __identError: undefined }),

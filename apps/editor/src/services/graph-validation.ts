@@ -182,6 +182,7 @@ function isInputEvent(typeId: string): boolean {
 }
 
 function shouldRegeneratePins(typeId: string): boolean {
+  if (typeId === "debug.executeJavaScript") return true;
   if (isInputEvent(typeId)) return true;
   return (
     typeId === "flow.event.call" ||

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { VariableTypeFields, type VariableContainer } from "./variable-type-fields";
 import { Button } from "@babylonslate/ui/components/button";
 import { ListRowActions } from "./list-row-actions";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
@@ -27,6 +28,9 @@ import {
 } from "./pin-types";
 
 export type PinListRow = {
+  container?: VariableContainer;
+  keyTypeId?: string;
+  keyTypeClassId?: string;
   id: string;
   name: string;
   type: PinPickerType | string;
@@ -46,6 +50,7 @@ export type PinListEditorProps = {
   showDirection?: boolean;
   showOptional?: boolean;
   showDefault?: boolean;
+  showContainer?: boolean;
   types?: readonly string[];
   classEntries?: readonly ClassPickerEntry[];
   typeAssets?: readonly AssetPickerEntry[];
@@ -125,6 +130,7 @@ export function PinListEditor({
   showDirection = false,
   showOptional = true,
   showDefault = true,
+  showContainer = false,
   types,
   classEntries = [],
   typeAssets,
@@ -186,7 +192,7 @@ export function PinListEditor({
         const showExtras =
           selected &&
           !readOnly &&
-          (showOptional ||
+          (showContainer || showOptional ||
             showDefaultField ||
             showClassType ||
             showAssetType ||
@@ -228,6 +234,15 @@ export function PinListEditor({
             </div>
             {showExtras ? (
               <div className="flex flex-wrap items-center gap-2 px-1 pb-1">
+                {showContainer ? (
+                  <VariableTypeFields
+                    showType={false}
+                    value={{ ...row, typeId: row.type, container: row.container ?? "single" }}
+                    classEntries={classEntries}
+                    typeAssets={typeAssets}
+                    onChange={({ typeId, ...next }) => onChange(patchRow(rows, row.id, { ...next, type: typeId }))}
+                  />
+                ) : null}
                 {showOptional ? (
                   <Field orientation="horizontal">
                     <Checkbox

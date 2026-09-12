@@ -533,6 +533,7 @@ const TEXTURE_NODES: MaterialNodeDefinition[] = [
       { id: "g", name: "G", type: FLOAT },
       { id: "b", name: "B", type: FLOAT },
       { id: "a", name: "A", type: FLOAT },
+      { id: "texture", name: "Texture", type: TEXTURE },
     ],
   },
   {
@@ -552,6 +553,7 @@ const TEXTURE_NODES: MaterialNodeDefinition[] = [
       { id: "rgba", name: "RGBA", type: VEC4, colorHint: true },
       { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
       { id: "a", name: "A", type: FLOAT },
+      { id: "texture", name: "Texture", type: TEXTURE },
     ],
   },
   {

@@ -7,6 +7,7 @@ import { CodeBodyEditor } from "./js-body-editor";
 import { GlslCodePreview } from "./glsl-code-preview";
 
 const TYPES = ["float", "vec2", "vec3", "vec4"] as const;
+const INPUT_TYPES = [...TYPES, "texture"] as const;
 const LABELS = ["Float", "Vector 2", "Vector 3", "Vector 4"];
 
 export function MaterialCustomGlsl({ node, document, setProperties, bodyLine }: {
@@ -21,7 +22,8 @@ export function MaterialCustomGlsl({ node, document, setProperties, bodyLine }: 
   const body = typeof node.properties.body === "string" ? node.properties.body : "a + b";
   const error = customGlslInterfaceError(node.properties);
   const setPins = (key: "inputs" | "outputs", rows: PinListRow[]) => {
-    const next: CustomGlslPin[] = rows.map((row) => ({ id: row.id, name: row.name, type: TYPES.includes(row.type as typeof TYPES[number]) ? row.type as typeof TYPES[number] : "float" }));
+    const allowed = key === "inputs" ? INPUT_TYPES : TYPES;
+    const next: CustomGlslPin[] = rows.map((row) => ({ id: row.id, name: row.name, type: (allowed as readonly string[]).includes(row.type) ? row.type as CustomGlslPin["type"] : "float" }));
     setProperties({ [key]: key === "outputs" ? [pins!.outputs[0]!, ...next] : next });
   };
   const primary = pins?.outputs[0];
@@ -31,7 +33,7 @@ export function MaterialCustomGlsl({ node, document, setProperties, bodyLine }: 
         { id: "result-name", kind: "text", label: "Return Name", value: primary.name, onChange: (name) => setProperties({ outputs: [{ ...primary, name }, ...pins.outputs.slice(1)] }) },
         { id: "result-type", kind: "enum", label: "Return Type", value: primary.type, options: TYPES.map((value, i) => ({ value, label: LABELS[i]! })), onChange: (type) => setProperties({ outputs: [{ ...primary, type }, ...pins.outputs.slice(1)] }) },
       ]} /> : null}
-      <PinListEditor title="Inputs" rows={pins.inputs} types={TYPES} showDefault={false} showOptional={false} selectedId={selectedInput} onSelect={selectInput} onChange={(rows) => setPins("inputs", rows)} testIdPrefix="custom-glsl-input" />
+      <PinListEditor title="Inputs" rows={pins.inputs} types={INPUT_TYPES} showDefault={false} showOptional={false} selectedId={selectedInput} onSelect={selectInput} onChange={(rows) => setPins("inputs", rows)} testIdPrefix="custom-glsl-input" />
       <PinListEditor title="Additional Outputs" rows={pins.outputs.slice(1)} types={TYPES} showDefault={false} showOptional={false} selectedId={selectedOutput} onSelect={selectOutput} onChange={(rows) => setPins("outputs", rows)} testIdPrefix="custom-glsl-output" />
     </> : <Button variant="outline" onClick={() => {
       const resolved = createTypeResolver(document).genericOf(node.id);
