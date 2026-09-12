@@ -28,6 +28,7 @@ test(`animated normal displacement keeps the ${mode} Material preview rendering`
     { id: "time-sine", sourceNodeId: "time", sourcePinId: "time", targetNodeId: "sine", targetPinId: "value" },
     { id: "sine-multiply", sourceNodeId: "sine", sourcePinId: "out", targetNodeId: "multiply", targetPinId: "a" },
     { id: "normal-multiply", sourceNodeId: "normal", sourcePinId: "normal", targetNodeId: "multiply", targetPinId: "b" },
+    { id: "multiply-emissive", sourceNodeId: "multiply", sourcePinId: "out", targetNodeId: "output", targetPinId: "emissive" },
   );
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));

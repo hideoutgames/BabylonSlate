@@ -37,6 +37,7 @@ describe("material node contracts", () => {
     wire(doc, "sine", "out", "multiply", timePin);
     wire(doc, "normal", "normal", "multiply", timePin === "a" ? "b" : "a");
     wire(doc, "multiply", "out", "output", "worldPositionOffset");
+    wire(doc, "multiply", "out", "output", "emissive");
     const result = await compile(doc);
     expect(result.material.compiledShaders).toContain("sin(");
     const scene = result.material.getScene();
