@@ -119,6 +119,8 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 ## App wrappers
 
+`CelShadingFields` composes compact Field, NumberField, Select and Button controls for Project Settings and Scene Defaults. Scene fields display inherited values, independently enable overrides, and reset to live project values. Both hosts hide the controls in PBR projects.
+
 `MultilineTextField` accepts optional `renderPreview` and `renderEditor` slots,
 retaining its draft/Done contract and viewport-bounded dialog. Material GLSL
 uses these slots for highlighted code. `GraphEditor.renderNodeBody` adds host

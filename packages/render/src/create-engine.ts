@@ -13,6 +13,8 @@ import type {
   ViewportMode,
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
+import { setSceneRenderSettings } from "./scene-render-mode";
+import type { RenderShadingSettings } from "./render-settings";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -236,6 +238,8 @@ export interface EngineHandle {
   playMeshMaterialNames: () => string[];
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
+  /** Project render mode and defaults; scene overrides remain independent. */
+  setRenderSettings: (settings: RenderShadingSettings) => void;
   /** Register FontFace source bytes before Bitmap 2D Text paints. */
   registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
@@ -344,6 +348,7 @@ export interface CreateEngineOptions {
   environmentColor?: readonly [number, number, number];
   /** Optional fps cap. Play sessions pass project `playFrameCap` (default 60). */
   frameCap?: number;
+  renderSettings?: RenderShadingSettings;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
@@ -659,6 +664,7 @@ export function createEngine(
   }
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
+  setSceneRenderSettings(scene, options.renderSettings ?? {});
   configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
@@ -1050,6 +1056,7 @@ export function createEngine(
 
   let lastRenderedSnapshotFrame: number | null = null;
   const loadScene = (sceneData: SerializedScene) => {
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {});
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
@@ -1935,10 +1942,16 @@ export function createEngine(
       }
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
+      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {});
       applySerializedSceneEnvironment(scene, sceneData, {
         applyClearColor: true,
         assets: binding,
       });
+      scheduler.invalidate("asset");
+    },
+    setRenderSettings: (settings) => {
+      setSceneRenderSettings(scene, settings);
+      viewportShading?.apply();
       scheduler.invalidate("asset");
     },
     setShadowQuality: (level: string) => {

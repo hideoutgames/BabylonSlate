@@ -20,6 +20,7 @@ function isLitMaterial(material: Material): material is LitMaterial {
       material.attachedBlocks.some(
         (block) =>
           block.getClassName() === "PBRMetallicRoughnessBlock" ||
+          block.getClassName() === "CelLightBlock" ||
           block.getClassName() === "LightBlock",
       )
     );

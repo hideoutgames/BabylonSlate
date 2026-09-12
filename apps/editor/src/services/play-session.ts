@@ -427,6 +427,7 @@ export function previewFixtureThrowHint(
  * to in-process runtime. Own Scene on the shared app Engine via registerView.
  */
 export function startPlaySession(options: {
+  renderSettings?: import("@babylonslate/render").RenderShadingSettings;
   canvas: HTMLCanvasElement;
   sharedEngine: EngineHandle["engine"];
   injectFixtureThrow?: boolean;
@@ -548,6 +549,7 @@ export function startPlaySession(options: {
   let runtime: RuntimeDriver | null = null;
 
   const handle = createEngine(canvas, {
+    renderSettings: options.renderSettings,
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
     sharedEngine,
     playMode: true,

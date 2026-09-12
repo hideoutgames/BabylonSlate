@@ -124,6 +124,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   } = usePlay();
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
+  useEffect(() => {
+    engineRef.current?.setRenderSettings(projectDocument?.settings.render ?? {});
+  }, [projectDocument?.settings.render, engineEpoch]);
   const navBake = useOptionalNavBake();
   const [navOverlayGeneration, setNavOverlayGeneration] = useState(0);
   const selectActorRef = useRef(selectActor);

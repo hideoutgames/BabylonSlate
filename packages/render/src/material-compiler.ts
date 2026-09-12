@@ -55,6 +55,7 @@ import {
 } from "./gpu-resource-live";
 import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
+import { installCelSurface } from "./cel-surface";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
@@ -462,6 +463,10 @@ export function compileMaterialPlan(
       }
     }
     for (const node of outputNodes) material.addOutputNode(node);
+    if (plan.domain === "surface") {
+      const surface = outputNodes.find((node) => node instanceof FragmentOutputBlock);
+      if (surface) installCelSurface(material, plan, surface, created, plumbing, outputPoint);
+    }
   } catch (error) {
     diagnostics.push({
       code: "material.compile.buildFailed",

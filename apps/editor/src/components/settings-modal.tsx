@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CelShadingFields } from "./cel-shading-fields";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -16,6 +17,7 @@ import {
   defaultExportPreset,
   isErr,
   MAX_COLLISION_LAYERS,
+  normalizeCelShadingSettings,
 } from "@babylonslate/core";
 import {
   Empty,
@@ -49,6 +51,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -119,7 +122,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     id: "rendering",
     label: "Rendering",
     keywords:
-      "frame cap fps play preview aspect ratio letterbox follow system custom resolution width height black bars",
+      "frame cap fps play preview aspect ratio letterbox follow system custom resolution width height black bars PBR CEL shader shadow bands specular light falloff",
   },
   {
     id: "textures",
@@ -982,6 +985,28 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Rendering</FieldLegend>
+            <Field className="settings-field">
+              <FieldLabel htmlFor="setting-render-mode">Render Mode</FieldLabel>
+              <Select value={projectDocument.settings.render.mode ?? "pbr"}
+                onValueChange={(mode) => {
+                  if (mode === "pbr" || mode === "cel") updateProjectSettings({ render: { ...projectDocument.settings.render, mode } });
+                }}>
+                <SelectTrigger id="setting-render-mode" data-testid="setting-render-mode">
+                  <SelectValue>{projectDocument.settings.render.mode === "cel" ? "CEL" : "PBR"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent><SelectGroup>
+                  <SelectItem value="pbr">PBR</SelectItem>
+                  <SelectItem value="cel">CEL</SelectItem>
+                </SelectGroup></SelectContent>
+              </Select>
+              <FieldDescription>CEL uses native banded surface lighting. Scene Defaults can override individual style settings.</FieldDescription>
+            </Field>
+            {projectDocument.settings.render.mode === "cel" ? (
+              <CelShadingFields
+                project={normalizeCelShadingSettings(projectDocument.settings.render.cel)}
+                onChange={(cel) => updateProjectSettings({ render: { ...projectDocument.settings.render, cel: normalizeCelShadingSettings(cel) } })}
+              />
+            ) : null}
               <Field className="settings-field">
               <FieldLabel htmlFor="setting-play-frame-cap">
                   Play Frame Cap

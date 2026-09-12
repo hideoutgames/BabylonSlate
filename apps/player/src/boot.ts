@@ -126,6 +126,7 @@ export function startPlayer(options: {
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
     frameCap: manifest.playFrameCap,
+    renderSettings: manifest.render,
     spritePayloads: content.spritePayloads,
     spriteAnimations: content.spriteAnimationPayloads,
     tilemapPayloads: content.tilemapPayloads,

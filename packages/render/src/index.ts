@@ -1,5 +1,7 @@
 export * from "./editor-clear-color";
 export * from "./create-engine";
+export { setSceneRenderSettings } from "./scene-render-mode";
+export type { RenderShadingSettings } from "./render-settings";
 export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export * from "./create-null-engine";
