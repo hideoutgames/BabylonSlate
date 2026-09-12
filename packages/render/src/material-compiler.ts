@@ -818,7 +818,9 @@ function matrixInput(
   systemValue: NodeMaterialSystemValues,
 ): InputBlock {
   const block = new InputBlock(
-    name,
+    // Babylon's floating-origin adapter recognizes u_World/u_View prefixes.
+    // Keep the system matrix first; authored material names may be arbitrary.
+    `${NodeMaterialSystemValues[systemValue]}_${name}`,
     undefined,
     NodeMaterialBlockConnectionPointTypes.Matrix,
   );

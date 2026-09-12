@@ -352,10 +352,6 @@ test("CEL preserves authored and texture colors, supports every light, and resto
       .toBeGreaterThan(100)
       .catch(async (error: unknown) => {
         await viewport.screenshot({ path: testInfo.outputPath(`cel-${kind}-failure.png`) });
-        light.components[0]!.properties.castShadows = false;
-        await setPreviewScene(page, scene);
-        await expect.poll(() => pixelsNear(viewport, [51, 0, 0])).toBeGreaterThan(100);
-        await viewport.screenshot({ path: testInfo.outputPath(`cel-${kind}-without-shadows.png`) });
         throw error;
       });
     scene.settings.celShading.lightColorInfluence = 0;
