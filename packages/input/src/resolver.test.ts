@@ -30,6 +30,7 @@ describe("InputResolver event transitions", () => {
   it("lets a primary touch activate mouse bindings without a second finger releasing or moving it", () => {
     const resolver = new InputResolver({ actions: [{ name: "Click", bindings: [{ device: "mouseButton", code: "0" }] }], axes: [] });
     const pointer = (pointerId: number, phase: "down" | "move" | "up" | "cancel", x: number): RawInputEvent => ({ kind: "pointer", tick: 0, pointerId, phase, x, y: 20, button: 0 });
+    resolver.resolve([pointer(9, "move", 50)]);
     const down = resolver.resolve([pointer(1, "down", 10), pointer(2, "down", 90)]);
     expect(down.actions.Click).toMatchObject({ pressed: true, held: true });
     expect(down.pressedKeys).toEqual(["MouseLeft"]);

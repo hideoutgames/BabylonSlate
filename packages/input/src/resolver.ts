@@ -358,7 +358,6 @@ export class InputResolver {
           // Only the first contact controls the cursor. Existing secondary
           // fingers stay secondary until lifted, even after the first lifts.
           if (
-            this.state.primaryPointerId == null &&
             contacts.size === 0 &&
             (event.phase === "down" || event.phase === "move")
           ) {

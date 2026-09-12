@@ -154,6 +154,11 @@ describe("asset input runtime", () => {
     expect(restored.bindings.importBindings(JSON.stringify(invalid))).toBe(
       false,
     );
+    const invalidShape = JSON.parse(saved);
+    invalidShape.edits[0].binding.scale = "invalid";
+    expect(restored.bindings.importBindings(JSON.stringify(invalidShape))).toBe(
+      false,
+    );
     expect(restored.resolve([]).inputs.move.value).toEqual({
       x: -0.5,
       y: -0.4,
