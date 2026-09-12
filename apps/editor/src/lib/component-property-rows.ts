@@ -509,12 +509,21 @@ export function componentPropertyRows(
           "Pick Material",
         ),
         ...meshCollisionRows(actorId, component, update, context),
+        ...(["castShadows", "receiveShadows"] as const).map((key) => ({
+          kind: "boolean" as const,
+          id: rowId(actorId, component.id, key),
+          label: key === "castShadows" ? "Cast Shadows" : "Receive Shadows",
+          value: component.properties[key] !== false,
+          onChange: (value: boolean) => update(key, value),
+        })),
         ...genericRows(
           actorId,
           component,
           update,
           new Set([
             "meshKind",
+            "castShadows",
+            "receiveShadows",
             "assetGuid",
             "materialGuid",
             "collisionMode",

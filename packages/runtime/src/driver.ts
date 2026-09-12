@@ -4458,6 +4458,8 @@ function playMeshPartOf(
   const { position, rotation, scale } = component.transform;
   return {
     componentId: component.guid,
+    castShadows: component.getVariable("castShadows") !== false,
+    receiveShadows: component.getVariable("receiveShadows") !== false,
     meshKind: playMeshKindOf(component),
     meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
     parentId,

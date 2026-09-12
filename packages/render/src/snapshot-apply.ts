@@ -17,7 +17,6 @@ import {
   type Camera,
   type Light,
   type Material,
-  type ShadowGenerator,
 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
@@ -160,8 +159,6 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   slotAnimReady?: (slotId: number) => void;
   defaultCameraSlotId: number | null;
   possessedCameraSlotId: number | null;
-  shadow: ShadowGenerator | null;
-  shadowOwnerSlot: number | null;
   shadowQuality: string;
   /** Material asset guid per slot (whole actor), keyed by slotId. */
   materialAssetGuids: Map<number, string | null>;
@@ -218,9 +215,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     slotAnimEpoch: new Map(),
     defaultCameraSlotId: null,
     possessedCameraSlotId: null,
-    shadow: null,
-    shadowOwnerSlot: null,
-    shadowQuality: "1024",
+    shadowQuality: "project",
     materialAssetGuids: new Map(),
     componentMaterialGuids: new Map(),
     primaryComponentIds: new Map(),
@@ -522,7 +517,7 @@ export function refreshPlayActiveCamera(
 
 function applyPlayShadows(scene: Scene, binding: SnapshotSceneBinding): void {
   const shadows = sceneShadowController(scene);
-  shadows.setLegacyQuality(shadowMapSizeFromQuality(binding.shadowQuality));
+  shadows.setLegacyQuality(binding.shadowQuality === "project" ? undefined : shadowMapSizeFromQuality(binding.shadowQuality));
   shadows.sync();
 }
 
@@ -611,13 +606,6 @@ export function applyAssignMesh(
   const existingLight = binding.lights.get(command.slotId);
   if (existingLight && command.light) {
     applyAuthoredLightProperties(existingLight, command.light);
-    if (
-      !(existingLight instanceof HemisphericLight) &&
-      command.light.castShadows &&
-      binding.shadowOwnerSlot === null
-    ) {
-      binding.shadowOwnerSlot = command.slotId;
-    }
     applyPlayShadows(scene, binding);
     refreshPlayActiveCamera(scene, binding);
     return;
@@ -689,6 +677,13 @@ export function migratePlaySlotVisual(
 function applyPlayVisualSorting(root: Mesh, slotId: number, binding: SnapshotSceneBinding): void {
   const primary = binding.meshSorting.get(slotId);
   const parts = binding.meshParts.get(slotId);
+  const shadows = sceneShadowController(root.getScene());
+  if (partsNeedOrigin(parts)) {
+    for (const part of parts ?? []) {
+      const target = root.getChildMeshes().find((mesh) => mesh.name === playComponentMeshName(slotId, part.componentId));
+      if (target) shadows.setParticipation(target, part);
+    }
+  } else if (parts?.[0]) shadows.setParticipation(root, parts[0]);
   const layers = binding.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const actorId = primary?.actorGuid ?? `actor-${slotId}`;
   if (partsNeedOrigin(parts)) {
@@ -826,8 +821,6 @@ export function applyShadowQuality(
   level: string,
 ): void {
   binding.shadowQuality = level;
-  binding.shadow?.dispose();
-  binding.shadow = null;
   applyPlayShadows(scene, binding);
 }
 
@@ -895,11 +888,6 @@ export function retirePlaySlot(
   if (binding.possessedCameraSlotId === slotId) {
     binding.possessedCameraSlotId = null;
   }
-  if (binding.shadowOwnerSlot === slotId) {
-    binding.shadow?.dispose();
-    binding.shadow = null;
-    binding.shadowOwnerSlot = null;
-  }
 }
 
 /** Drop world Play visuals/cameras; overlay compositor slots stay. */
@@ -935,11 +923,6 @@ function disposeSlotVisuals(
   binding.text3dProps.delete(slotId);
   binding.text2dProps.delete(slotId);
   binding.overlayPanelProps.delete(slotId);
-  if (binding.shadowOwnerSlot === slotId) {
-    binding.shadow?.dispose();
-    binding.shadow = null;
-    binding.shadowOwnerSlot = null;
-  }
 }
 
 function createPlayVisual(
@@ -1167,13 +1150,6 @@ export function createPlayMesh(
       const props = binding.lightProps.get(slotId);
       if (props) applyAuthoredLightProperties(light, props);
       binding.lights.set(slotId, light);
-      if (
-        kind !== "hemispheric" &&
-        props?.castShadows &&
-        binding.shadowOwnerSlot === null
-      ) {
-        binding.shadowOwnerSlot = slotId;
-      }
       applyPlayShadows(scene, binding);
     }
     if (meshKind === "camera" && binding) {
@@ -1345,7 +1321,6 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   }
   for (const light of binding.lights.values()) light.dispose();
   for (const camera of binding.cameras.values()) camera.dispose();
-  binding.shadow?.dispose();
   binding.meshes.clear();
   binding.spriteOverlays?.clear();
   binding.slotAnimationGroups?.clear();
@@ -1361,8 +1336,6 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.meshParts.clear();
   binding.meshSorting.clear();
   binding.primaryComponentIds.clear();
-  binding.shadow = null;
-  binding.shadowOwnerSlot = null;
   binding.defaultCameraSlotId = null;
   binding.possessedCameraSlotId = null;
 }

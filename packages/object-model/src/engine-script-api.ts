@@ -210,6 +210,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     classId: "MeshComponent",
     variables: [
       { name: "Mesh Kind", typeId: "string", propertyKey: "meshKind" },
+      { name: "Cast Shadows", typeId: "bool", propertyKey: "castShadows" },
+      { name: "Receive Shadows", typeId: "bool", propertyKey: "receiveShadows" },
       {
         name: "Mesh",
         typeId: "asset",

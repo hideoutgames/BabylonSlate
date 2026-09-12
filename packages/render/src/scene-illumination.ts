@@ -7,11 +7,11 @@ import {
   PointLight,
   Quaternion,
   Scene,
-  ShadowGenerator,
+
   SpotLight,
   UniversalCamera,
   Vector3,
-  type AbstractMesh,
+
   type Light,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
@@ -22,8 +22,6 @@ import {
   identitySerializedTransform,
 } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
-import { participatesInShadows } from "./shadow-mesh-policy";
-import { sceneRenderingSettings } from "./render-settings";
 import { sceneShadowController } from "./shadow-controller";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
@@ -31,9 +29,6 @@ export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
 export const HEMISPHERIC_FILL_LIGHT_CLASS_ID = "HemisphericFillLightComponent";
 export const DEFAULT_HEMISPHERIC_FILL_INTENSITY = 0.9;
 
-const SHADOW_BIAS = 0.001;
-const SHADOW_NORMAL_BIAS = 0.01;
-const SHADOW_FRUSTUM_EDGE_FALLOFF = 1;
 
 
 export type ShadowQualityLevel = "off" | "512" | "1024" | "2048";
@@ -79,8 +74,6 @@ type AuthoredState = {
   lights: Map<string, Light>;
   cameras: Map<string, Camera>;
   lightKinds: Map<string, string>;
-  shadow: ShadowGenerator | null;
-  shadowOwnerId: string | null;
 };
 
 const stateByScene = new WeakMap<Scene, AuthoredState>();
@@ -92,8 +85,6 @@ function stateOf(scene: Scene): AuthoredState {
       lights: new Map(),
       cameras: new Map(),
       lightKinds: new Map(),
-      shadow: null,
-      shadowOwnerId: null,
     };
     stateByScene.set(scene, state);
   }
@@ -420,63 +411,6 @@ export function syncAuthoredCamerasFromMeshes(
   }
 }
 
-function refreshShadowCasters(scene: Scene, generator: ShadowGenerator): void {
-  const list = generator.getShadowMap()?.renderList;
-  if (list) list.length = 0;
-  for (const mesh of scene.meshes) {
-    if (!participatesInShadows(mesh)) {
-      mesh.receiveShadows = false;
-      continue;
-    }
-    generator.addShadowCaster(mesh, false);
-    mesh.receiveShadows = true;
-  }
-}
-
-export function attachSingleShadowGenerator(
-  scene: Scene,
-  light: Light,
-  mapSize: number | null,
-  existing: ShadowGenerator | null,
-): ShadowGenerator | null {
-  existing?.dispose();
-  if (mapSize === null) return null;
-  if (
-    !(
-      light instanceof DirectionalLight ||
-      light instanceof PointLight ||
-      light instanceof SpotLight
-    )
-  ) {
-    return null;
-  }
-  const generator = new ShadowGenerator(mapSize, light);
-  generator.usePercentageCloserFiltering = true;
-  generator.filteringQuality = ShadowGenerator.QUALITY_LOW;
-  generator.bias = SHADOW_BIAS;
-  generator.normalBias = SHADOW_NORMAL_BIAS;
-  generator.frustumEdgeFalloff = SHADOW_FRUSTUM_EDGE_FALLOFF;
-  if (light instanceof DirectionalLight) {
-    light.autoCalcShadowZBounds = true;
-    // Hard CEL thresholds amplify sub-texel self-shadow errors. Scale the
-    // depth offset with the actual projection, including large receivers.
-    // Moving along depth avoids seams from pushing adjacent box faces inward.
-    // Babylon updates these extents in its earlier before-render observer.
-    generator.getShadowMap()?.onBeforeRenderObservable.add(() => {
-      const extent = light.shadowFrustumSize > 0
-        ? light.shadowFrustumSize
-        : Math.max(light.orthoRight - light.orthoLeft, light.orthoTop - light.orthoBottom)
-          * (1 + 2 * light.shadowOrthoScale);
-      const depth = (light.shadowMaxZ ?? 0) - (light.shadowMinZ ?? 0);
-      generator.bias = sceneRenderingSettings(scene).mode === "cel" && Number.isFinite(extent) && depth > 0
-        ? Math.max(SHADOW_BIAS, 4 * extent / (mapSize * depth))
-        : SHADOW_BIAS;
-    });
-  }
-  refreshShadowCasters(scene, generator);
-  return generator;
-}
-
 export function applySceneEnvironment(
   scene: Scene,
   sceneData: SerializedScene,
@@ -556,11 +490,6 @@ export function syncAuthoredIllumination(
       const kind = fillComponent ? "hemispheric" : lightKindOf(lightComponent);
       let light = state.lights.get(actor.id);
       if (light && state.lightKinds.get(actor.id) !== kind) {
-        if (state.shadowOwnerId === actor.id) {
-          state.shadow?.dispose();
-          state.shadow = null;
-          state.shadowOwnerId = null;
-        }
         light.dispose();
         light = undefined;
       }
@@ -622,11 +551,6 @@ export function syncAuthoredIllumination(
 
   for (const [actorId, light] of state.lights) {
     if (!liveLights.has(actorId)) {
-      if (state.shadowOwnerId === actorId) {
-        state.shadow?.dispose();
-        state.shadow = null;
-        state.shadowOwnerId = null;
-      }
       light.dispose();
       state.lights.delete(actorId);
       state.lightKinds.delete(actorId);
@@ -640,8 +564,8 @@ export function syncAuthoredIllumination(
   }
 
   const shadows = sceneShadowController(scene);
-  shadows.setLegacyQuality(shadowMapSizeFromQuality(options.shadowQuality ?? "1024"));
-  shadows.sync();
+  shadows.setLegacyQuality(options.shadowQuality === undefined ? undefined : shadowMapSizeFromQuality(options.shadowQuality));
+
 
   const namedId = resolveDefaultCameraActorId(sceneData);
   const named = namedId ? state.cameras.get(namedId) : undefined;
@@ -652,4 +576,5 @@ export function syncAuthoredIllumination(
   } else if (previousActive) {
     scene.activeCamera = previousActive;
   }
+  shadows.sync();
 }

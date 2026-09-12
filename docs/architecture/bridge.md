@@ -24,7 +24,7 @@ Double-buffered `Float32Array`. Views are little-endian; header and per-actor sl
 | Index | Name | Type meaning |
 | --- | --- | --- |
 | 0 | `magic` | `0x42534e50` bits as f32 (“BSNP”) |
-| 1 | `version` | Layout version (`1`) |
+| 1 | `version` | Layout version (`2`) |
 | 2 | `frameId` | Monotonic render/sync frame |
 | 3 | `tickIndex` | Last completed simulation tick |
 | 4 | `actorCount` | Occupied slots |

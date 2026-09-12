@@ -341,6 +341,8 @@ export type CommandMessage =
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
         componentId: string;
+        castShadows?: boolean;
+        receiveShadows?: boolean;
         meshKind?: string | null;
         meshAssetGuid?: string | null;
         parentId?: string | null;

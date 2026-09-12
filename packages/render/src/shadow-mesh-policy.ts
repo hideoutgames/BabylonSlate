@@ -1,5 +1,12 @@
 import { LinesMesh, type AbstractMesh } from "@babylonjs/core";
 import { isSkyboxMesh } from "./skybox";
+export type ShadowParticipation = { castShadows?: boolean; receiveShadows?: boolean };
+export function authoredShadowParticipation(mesh: AbstractMesh): ShadowParticipation {
+  for (let node = mesh as import("@babylonjs/core").Node | null; node; node = node.parent) {
+    if (node.metadata?.slateShadowParticipation) return node.metadata.slateShadowParticipation as ShadowParticipation;
+  }
+  return {};
+}
 const SHADOW_SKIP_NAME_PREFIXES = [
   "debugLight:",
   "debugCamera",

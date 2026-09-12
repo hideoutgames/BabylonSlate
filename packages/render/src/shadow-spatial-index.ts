@@ -7,6 +7,7 @@ type Node = Bounds & { parent?: Node; left?: Node; right?: Node; mesh?: Abstract
 export class ShadowSpatialIndex {
   private readonly leaves = new Map<AbstractMesh, Node>();
   private readonly dirty = new Set<AbstractMesh>();
+  private readonly observers = new Map<AbstractMesh, () => void>();
   private root?: Node;
   private rebuild = false;
   add(mesh: AbstractMesh): void {
@@ -14,10 +15,21 @@ export class ShadowSpatialIndex {
     mesh.computeWorldMatrix(true);
     const box = mesh.getBoundingInfo().boundingBox;
     this.leaves.set(mesh, { min: box.minimumWorld.clone(), max: box.maximumWorld.clone(), mesh });
-    mesh.onAfterWorldMatrixUpdateObservable.add(() => this.dirty.add(mesh));
+    const update = () => { this.dirty.add(mesh); };
+    mesh.onAfterWorldMatrixUpdateObservable.add(update);
+    this.observers.set(mesh, update);
     this.rebuild = true;
   }
-  remove(mesh: AbstractMesh): void { this.leaves.delete(mesh); this.dirty.delete(mesh); this.rebuild = true; }
+  remove(mesh: AbstractMesh): void {
+    const update = this.observers.get(mesh);
+    if (update) mesh.onAfterWorldMatrixUpdateObservable.removeCallback(update);
+    this.observers.delete(mesh);
+    this.leaves.delete(mesh); this.dirty.delete(mesh); this.rebuild = true;
+  }
+  dispose(): void {
+    for (const mesh of this.observers.keys()) this.remove(mesh);
+    this.root = undefined; this.dirty.clear(); this.leaves.clear();
+  }
   private union(node: Node): void {
     if (!node.left || !node.right) return;
     node.min.copyFrom(node.left.min).minimizeInPlace(node.right.min);

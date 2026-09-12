@@ -6,7 +6,7 @@ import {
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
-import { participatesInShadows } from "./shadow-mesh-policy";
+import { authoredShadowParticipation, participatesInShadows, type ShadowParticipation } from "./shadow-mesh-policy";
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
@@ -38,6 +38,7 @@ export class SceneShadowController {
     scene.onDisposeObservable.addOnce(() => {
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.entries.clear(); this.meshes.clear(); this.pending.clear();
+      this.spatial.dispose();
       controllers.delete(scene);
     });
   }
@@ -55,7 +56,14 @@ export class SceneShadowController {
     entry.requested = requested;
     entry.priority = Number.isFinite(priority) ? priority : 0;
   }
-  setLegacyQuality(size: number | null): void { this.quality = size; }
+  setLegacyQuality(size: number | null | undefined): void { this.quality = size; }
+  setParticipation(mesh: AbstractMesh, value: ShadowParticipation): void {
+    const previous = mesh.metadata?.slateShadowParticipation as ShadowParticipation | undefined;
+    if (previous?.castShadows === value.castShadows && previous?.receiveShadows === value.receiveShadows) return;
+    mesh.metadata = { ...mesh.metadata, slateShadowParticipation: { castShadows: value.castShadows, receiveShadows: value.receiveShadows } };
+    this.pending.add(mesh);
+    for (const child of mesh.getChildMeshes()) this.pending.add(child);
+  }
   generator(light: Light): ShadowGenerator | null { return this.entries.get(light)?.generator ?? null; }
   diagnostics(): { name: string; status: ShadowLightStatus; passes: number; mapSize: number }[] {
     return Array.from(this.entries.values(), ({ light, generator, status }) => ({
@@ -69,20 +77,27 @@ export class SceneShadowController {
     if (scene.isDisposed) return;
     for (const mesh of this.pending) {
       if (mesh.isDisposed()) continue;
-      if (!participatesInShadows(mesh)) { mesh.receiveShadows = false; continue; }
+      if (!participatesInShadows(mesh)) {
+        mesh.receiveShadows = false; this.meshes.delete(mesh); this.spatial.remove(mesh);
+        for (const entry of this.entries.values()) entry.generator?.removeShadowCaster(mesh, false);
+        continue;
+      }
+      const participation = authoredShadowParticipation(mesh);
+      mesh.receiveShadows = participation.receiveShadows !== false;
+      if (participation.castShadows === false) {
+        this.meshes.delete(mesh); this.spatial.remove(mesh);
+        for (const entry of this.entries.values()) entry.generator?.removeShadowCaster(mesh, false);
+        continue;
+      }
       this.meshes.add(mesh);
       this.spatial.add(mesh);
       partitionShadowGeometry(mesh);
-      mesh.receiveShadows = true;
       for (const entry of this.entries.values()) entry.generator?.addShadowCaster(mesh, false);
     }
     this.pending.clear();
     const state = sceneRenderingSettings(scene);
-    const { settings } = effectiveShadowSettings(state.shadows, state.shadowDeviceProfile, CascadedShadowGenerator.IsSupported, state.mode);
-    if (this.quality !== undefined) {
-      settings.enabled &&= this.quality !== null;
-      if (this.quality !== null) settings.mapSize = Math.min(settings.mapSize, this.quality);
-    }
+    const requested = this.quality === undefined ? state.shadows : { ...state.shadows, enabled: state.shadows.enabled && this.quality !== null, mapSize: this.quality ?? state.shadows.mapSize };
+    const { settings } = effectiveShadowSettings(requested, state.shadowDeviceProfile, CascadedShadowGenerator.IsSupported, state.mode);
     const camera = scene.activeCamera;
     const candidates = [...this.entries.values()].filter((entry) => {
       entry.status = "disabled";

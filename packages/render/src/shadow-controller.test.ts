@@ -24,6 +24,12 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(controller.generator(light)?.getShadowMap()?.renderList).toContain(mesh);
     expect(mesh.receiveShadows).toBe(true);
+    controller.setParticipation(mesh, { castShadows: false, receiveShadows: true }); controller.sync();
+    expect(controller.generator(light)?.getShadowMap()?.renderList).not.toContain(mesh);
+    expect(mesh.receiveShadows).toBe(true);
+    controller.setParticipation(mesh, { castShadows: true, receiveShadows: false }); controller.sync();
+    expect(controller.generator(light)?.getShadowMap()?.renderList).toContain(mesh);
+    expect(mesh.receiveShadows).toBe(false);
     mesh.dispose();
     expect(controller.generator(light)?.getShadowMap()?.renderList).not.toContain(mesh);
     light.setEnabled(false); controller.sync();
