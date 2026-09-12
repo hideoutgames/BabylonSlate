@@ -9,6 +9,8 @@ describe("Custom GLSL function bodies", () => {
     expect(customGlslFunctionBodyError("// uniform gl_FragColor\nif (A > 0.0) { return A; } return B;")).toBeNull();
     expect(customGlslFunctionBodyError("return A; } void escape() {")).not.toBeNull();
     expect(customGlslFunctionBodyError("uniform float x; return x;")).not.toBeNull();
+    expect(customGlslFunctionBodyError("return texture2D(samplerImage, vec2(0.5));")).toBeNull();
+    expect(customGlslFunctionBodyError("sampler2D local; return texture2D(local, vec2(0.5));")).not.toBeNull();
   });
 
   it("rejects duplicate, reserved and texture output pin interfaces", () => {

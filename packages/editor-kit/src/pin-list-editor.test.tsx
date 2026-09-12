@@ -55,10 +55,10 @@ describe("PinListEditor", () => {
     const onChange = vi.fn();
     const object = { id: "object", name: "items", type: "object", typeClassId: "Hero" };
     const view = render(<PinListEditor rows={[object]} selectedId="object" showContainer showOptional={false} showDefault={false} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Array", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Array" }));
     expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ type: "object", typeClassId: "Hero", container: "array" })]);
     view.rerender(<PinListEditor rows={[{ ...object, container: "array" }]} selectedId="object" showContainer showOptional={false} showDefault={false} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Map", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
     expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ type: "object", typeClassId: "Hero", container: "map", keyTypeId: "string" })]);
   });
 

@@ -79,8 +79,8 @@ export function customGlslFunctionBodyError(body: string): string | null {
   if (!body.trim()) return "Custom GLSL needs a function body returning the primary output";
   if (body.length > 16384) return "Custom GLSL function bodies are limited to 16384 characters";
   const code = glslWithoutComments(body);
-  if (/#|\b(uniform|attribute|varying|precision|layout|sampler\w*|gl_\w*)\b/.test(code)) {
-    return "Use named input/output pins instead of shader globals, samplers or preprocessor directives";
+  if (/#|\b(uniform|attribute|varying|precision|layout|[iu]?sampler(?:1D|2D|3D|Cube|2DRect|Buffer|2DMS)(?:Array)?(?:Shadow)?|gl_\w*)\b/.test(code)) {
+    return "Use named input/output pins instead of shader globals, sampler declarations or preprocessor directives";
   }
   if (!/\breturn\s+[^;\s]/.test(code)) return "Return a value for the primary output";
   let depth = 0;
