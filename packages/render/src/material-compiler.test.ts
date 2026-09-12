@@ -50,6 +50,7 @@ it("rebinds each mesh's bone palette when sharing a frozen compiled material", a
   });
   await result.material.forceCompilationAsync(meshes[0]!);
   await result.material.forceCompilationAsync(meshes[1]!);
+  for (const mesh of meshes) expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes![0]!)).toBe(true);
   result.material.freeze();
   const effect = meshes[0]!.subMeshes![0]!.effect!;
   expect(meshes[1]!.subMeshes![0]!.effect).toBe(effect);

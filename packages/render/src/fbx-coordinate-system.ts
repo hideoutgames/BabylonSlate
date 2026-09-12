@@ -3,7 +3,7 @@ export function fbxCoordinateMatrix(bytes: Uint8Array): number[] {
   const values = new Map<string, number>();
   const decoder = new TextDecoder();
   const binary =
-    decoder.decode(bytes.subarray(0, 18)) === "Kaydara FBX Binary ";
+    decoder.decode(bytes.subarray(0, 18)) === "Kaydara FBX Binary";
   if (binary) {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const wide = view.getUint32(23, true) >= 7500;
