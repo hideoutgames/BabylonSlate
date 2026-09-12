@@ -58,6 +58,18 @@ describe("resolveGpuTexture", () => {
     });
     expect(resolved?.kind).toBe("ktx2");
     expect(resolved?.chunkId).toBe("ktx2:stale");
+
+    // The retained encode must stop being used when the author changes Usage.
+    asset.payload.usage = "pixelArt";
+    const pixelArt = await resolveGpuTexture({
+      header: asset,
+      readChunk: async (id) => byId[id] ?? null,
+      editorLod: { enabled: true, quality: 0.5 },
+    });
+    expect(pixelArt?.kind).toBe("source");
+    expect(pixelArt?.bytes).toBe(png);
+    expect(pixelArt?.targetEdge).toBe(4);
+    expect(pixelArt?.missingPreferred).toBe(false);
   });
 
   it("does not bind a full-size KTX2 when editor LOD wants a smaller variant", async () => {

@@ -26,7 +26,7 @@ Document kind `tilemap` (`.tilemap.babasset`):
 
 | Field | Role |
 | --- | --- |
-| `tilesets` | Tiled-style list of `{ guid, firstGid, tileCount }`. Chunk cells store **global GIDs** (`firstGid + localId - 1`). Removing a tileset does **not** compact GIDs. |
+| `tilesets` | Tiled-style list of `{ guid, firstGid, tileCount }`. Chunk cells store **global GIDs** (`firstGid + localId - 1`). Removing a tileset erases its painted cells on every layer without compacting the remaining GIDs. |
 | `tilesetGuid` | Writable alias of `tilesets[0]?.guid` (legacy maps migrate to one ref at `firstGid: 1`) |
 | `tileWidth` / `tileHeight` | cell size in pixels (world size = px / `pixelsPerUnit`) |
 | `width` / `height` | map size in tiles, +Y up, origin bottom-left. Default **64×64**. Storage stays sparse chunks — empty cells are not allocated. |
@@ -53,7 +53,7 @@ Tilemap atlas materials stay **unlit and double-sided** in both 2D and 3D scenes
 
 ## Collision
 
-`tilemapChunkChains` (also Babylon-free) merges `full` tiles in a chunk: shared edges cancel, collinear outer edges collapse, so a solid rectangle is **one four-point loop** rather than a box per tile. Custom `chain` collision on a tile is emitted as an open polyline in world space.
+`tilemapChunkChains` (also Babylon-free) merges `full` tiles in a chunk: shared edges cancel, collinear outer edges collapse, so a solid rectangle is **one four-point loop** rather than a box per tile. Full-tile outlines merge in integer grid coordinates before scaling to world units, so fractional tile sizes (including the default 16px / 100 PPU) cannot leave internal collision edges. Custom `chain` collision on a tile is emitted as an open polyline in world space.
 
 `PhysicsWorldSync` gives every `TilemapComponent` actor a **static** body (even without `RigidBodyComponent`) and attaches those chains for layers with `collision: true`. Layers with `collision: false`, a missing `assetGuid`, or a missing tileset payload produce no chain colliders. Software 2D treats a chain as its AABB (wasm-failure path); Rapier uses real chain colliders. Closed Rapier loops get a closing **segment** collider (repeating the first polyline point makes Rapier miss raycasts).
 
@@ -74,7 +74,7 @@ Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 
 ### Tileset
 
-- Preview fills the panel (`object-contain` atlas, grid from `tileWidth/Height`, `margin`, `spacing` in **texture space** — not a CSS grid of `tiles.length`).
+- Preview fills the remaining panel height below its toolbar. The atlas fits both visible dimensions on open and dock resize, with pan/zoom anchored to the surface origin (`object-contain` atlas, grid from `tileWidth/Height`, `margin`, `spacing` in **texture space** — not a CSS grid of `tiles.length`).
 - Toolbar: **Move** (default, Lucide `HandIcon`) | **Select**, then None / Full / Chain and **Paint Collision**. In Move, one-finger drag pans; a tap (movement < 8px) still selects. In Select, drag a rectangle to select several cells; collision, flags, animation, and chain-point edits apply to every selected tile. Selection commits on release; a second finger or canceled pointer discards the pending selection. Two-finger pinch/pan and wheel zoom stay in both tools. `tileset-preview-cell-{id}`. Full cells show a hatch; Chain draws the stored polyline.
 - `Empty` when no Texture is assigned.
 - Picking a Texture sets `atlasWidth/Height` from `img.naturalWidth/Height` and runs `ensureTilesetTiles`. Atlas size fields in Details are read-only.
@@ -82,7 +82,7 @@ Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 
 ### Tilemap
 
-- **Tilesets** is a `NamedListEditor` (`Add Tileset` opens `AssetPicker`). Rows use `PickerIdentity`. Empty copy: “Add a Tileset to start painting.” Several tilesets share one GID space on the map — not one tileset per layer.
+- **Tilesets** is a `NamedListEditor` (`Add Tileset` opens `AssetPicker`). Rows use `PickerIdentity`. Empty copy: “Add a Tileset to start painting.” Removing a Tileset opens a confirmation explaining that its painted cells on all layers will be erased; Cancel preserves them, and confirmation is one undoable document edit. The Tileset asset itself stays in the project. Several tilesets share one GID space on the map — not one tileset per layer.
 - **Palette** loads each listed tileset with `loadAssetDocument` (closed tabs included) plus Texture `pixels`. Thumbs are cropped with `tilesetTileRect` and nearest-neighbor, grouped by tileset name. Tap sets the paint GID. The compact search bar keeps Clear inside the field; the tile list scrolls in the remaining panel height. The Paint toolbar shows a 44px selected-tile thumb (`data-gid` / `data-tile`), not a text Palette dropdown.
 - **Paint** fills `PanelFrame` (`ResizeObserver` backing store, `devicePixelRatio`). Blit with `imageSmoothingEnabled = false` and draw the grid **only inside** the map rectangle (full cell, no gutters) with a high-contrast bounds stroke; outside stays the dark canvas. Empty in-bounds cells stay empty. Default tool is **Move** (`HandIcon`, `data-tool="move"`); switch to Brush to paint. One-finger drag pans in Move. Other tools (brush/eraser/rect/bucket/stamp/picker) still one-finger paint. Two-finger pinch zooms about the midpoint and translation pans in every tool; a second finger drops an in-progress paint stroke (reverts it) so pinch does not leave a stray tile. Wheel zooms about the cursor. Cell size is clamped 8–96 CSS px (default 32). `data-cell-size` / `data-zoom` / `data-pan-x` / `data-pan-y` / `data-paint-source` (`atlas` \| `hsl`) are for Playwright. No tilesets → `Empty` instead of a blank square.
 - Details **Map** group: Map Width / Map Height (`property-mapWidth` / `property-mapHeight`) with Tile Width/Height.

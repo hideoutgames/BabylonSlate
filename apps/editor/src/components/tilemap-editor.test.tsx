@@ -149,6 +149,24 @@ beforeEach(() => {
 });
 
 describe("TilemapDetails", () => {
+  it("cancels removal or confirms one edit erasing the tileset and its painted cells", async () => {
+    const initial = setTile(mapWithGround(), "layer-1", 0, 0, 2);
+    const onChange = vi.fn();
+    render(<TilemapDetails payload={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("tilemap-tilesets-0-remove"));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("tilemap-tilesets-0-remove"));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Tileset" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const next = onChange.mock.calls[0]![0] as TilemapPayload;
+    expect(next.tilesets).toEqual([]);
+    expect(getTile(next, "layer-1", 0, 0)).toBe(0);
+    expect(getTile(initial, "layer-1", 0, 0)).toBe(2);
+  });
+
   it("hides and restores a layer without changing its tiles or the other layers", async () => {
     const payload = mapWithGround();
     payload.layers.push({ ...payload.layers[0]!, id: "layer-2", name: "Props", chunks: [] });

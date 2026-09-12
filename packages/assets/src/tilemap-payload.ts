@@ -188,8 +188,26 @@ export function removeTilemapTileset(
   map: TilemapPayload,
   guid: string,
 ): TilemapPayload {
+  const removed = map.tilesets.find((ref) => ref.guid === guid);
+  const legacy = map.tilesets.length === 0 && map.tilesetGuid === guid;
+  if (!removed && !legacy) return map;
+  const firstGid = removed?.firstGid ?? 1;
+  const nextFirstGid = Math.min(
+    ...map.tilesets.filter((ref) => ref.firstGid > firstGid).map((ref) => ref.firstGid),
+  );
+  const endGid = removed && removed.tileCount > 0
+    ? Math.min(nextFirstGid, firstGid + removed.tileCount)
+    : nextFirstGid;
+  const layers = map.layers.map((layer) => ({
+    ...layer,
+    chunks: layer.chunks.flatMap((chunk) => {
+      if (!chunk.tiles.some((gid) => gid >= firstGid && gid < endGid)) return [chunk];
+      const tiles = chunk.tiles.map((gid) => gid >= firstGid && gid < endGid ? 0 : gid);
+      return tiles.some((gid) => gid > 0) ? [{ ...chunk, tiles }] : [];
+    }),
+  }));
   const tilesets = map.tilesets.filter((ref) => ref.guid !== guid);
-  return { ...map, tilesets, tilesetGuid: tilesets[0]?.guid ?? null };
+  return { ...map, layers, tilesets, tilesetGuid: tilesets[0]?.guid ?? null };
 }
 
 function nextTilesetFirstGid(

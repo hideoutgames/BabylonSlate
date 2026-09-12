@@ -4,12 +4,54 @@ import {
   selectTextureChunk,
   playerFilesHaveKtx2Transcoder,
   KTX2_TRANSCODER_RELATIVE_FILES,
+  copyTextureBytesForUpload,
 } from "./texture-loader";
 import type { BabassetHeader } from "./babasset";
 
 const KTX2_PREFIX = new Uint8Array([
-  0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+  0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
 ]);
+
+describe("texture upload compatibility", () => {
+  function legacyUastc() {
+    const bytes = new Uint8Array(132);
+    bytes.set(KTX2_PREFIX);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(44, 2, true);
+    view.setUint32(48, 80, true);
+    view.setUint32(52, 44, true);
+    view.setUint16(88, 2, true);
+    view.setUint16(90, 40, true);
+    bytes[92] = 166;
+    bytes[96] = bytes[97] = 3;
+    bytes.fill(123, 124);
+    return bytes;
+  }
+
+  it("normalizes legacy UASTC blocks without changing stored bytes or encoded pixels", () => {
+    const source = legacyUastc();
+    const original = source.slice();
+    const upload = copyTextureBytesForUpload(source);
+    expect(source).toEqual(original);
+    expect(upload[100]).toBe(16);
+    upload[100] = 0;
+    expect(upload).toEqual(original);
+  });
+
+  it("leaves sized, unrelated and truncated descriptors unchanged in an independent copy", () => {
+    const sized = legacyUastc();
+    sized[100] = 16;
+    const otherFormat = legacyUastc();
+    otherFormat[92] = 163;
+    const invalidOffset = legacyUastc();
+    new DataView(invalidOffset.buffer).setUint32(48, 0xfffffff0, true);
+    for (const source of [sized, otherFormat, invalidOffset, legacyUastc().slice(0, 110), KTX2_PREFIX, new Uint8Array([1, 2, 3])]) {
+      const upload = copyTextureBytesForUpload(source);
+      expect(upload).toEqual(source);
+      expect(upload).not.toBe(source);
+    }
+  });
+});
 
 function textureHeader(
   chunks: BabassetHeader["chunks"],
