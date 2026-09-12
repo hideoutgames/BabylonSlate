@@ -22,6 +22,7 @@ import {
 } from "@babylonslate/assets";
 import {
   convertObjImportBatch,
+  convertFbxImportBatch,
   animationRetargetHasMatches,
 } from "@babylonslate/render";
 import {
@@ -1383,8 +1384,10 @@ export function ContentBrowserWorkspace({
         () => setImportProgress(null),
         async () => {
           try {
+            const fbx = await convertFbxImportBatch(incoming);
+            errors.push(...fbx.errors);
             const { files: converted, errors: convertErrors } =
-              await convertObjImportBatch(incoming, {
+              await convertObjImportBatch(fbx.files, {
                 engine: play?.ensureSharedEngine() ?? undefined,
               });
             errors.push(...convertErrors);

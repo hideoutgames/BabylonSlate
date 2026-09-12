@@ -109,6 +109,27 @@ describe("animationRetargetHasMatches", () => {
 });
 
 describe("beginSlotModelAnimLoad", () => {
+  it("coalesces concurrent actor loads and leaves static instances free of animation work", async () => {
+    const handle = createTestEngine();
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(handle.scene, "actor");
+    const bytes = encodeParentedAnimatedTriangleGlb("Idle");
+    try {
+      await Promise.all([
+        beginSlotModelAnimLoad(handle.scene, binding, 1, "model", bytes, root),
+        beginSlotModelAnimLoad(handle.scene, binding, 2, "model", bytes, root),
+      ]);
+      expect(visualMeshes(root)).toHaveLength(1);
+      expect(handle.scene.animatables).toHaveLength(0);
+      const clip = binding.slotAnimationGroups!.get(1)![0]!;
+      clip.goToFrame((clip.from + clip.to) / 2);
+      expect(handle.scene.animatables.length).toBeGreaterThan(0);
+      root.dispose();
+      expect(handle.scene.animatables).toHaveLength(0);
+      expect(handle.scene.animationGroups).toHaveLength(0);
+    } finally { handle.scene.dispose(); handle.engine.dispose(); }
+  });
+
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
     [];
 

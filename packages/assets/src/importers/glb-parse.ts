@@ -27,6 +27,7 @@ export interface GlbBrowseMaterial {
 
 export interface GlbBrowseAnimation {
   name: string;
+  startTimeMs?: number;
   durationMs?: number;
 }
 
@@ -569,19 +570,10 @@ function browseFromGltfJson(
     };
   });
 
-  const accessorsJson = Array.isArray(json.accessors) ? json.accessors : [];
   const nodesJson = Array.isArray(json.nodes) ? json.nodes : [];
   const skinsJson = Array.isArray(json.skins) ? json.skins : [];
 
-  const animations: GlbBrowseAnimation[] = animationsJson.map((entry, i) => {
-    const animation = entry as Record<string, unknown>;
-    const name =
-      typeof animation.name === "string" && animation.name.length > 0
-        ? animation.name
-        : `Animation_${i}`;
-    const durationMs = clipDurationMs(animation, accessorsJson);
-    return durationMs !== undefined ? { name, durationMs } : { name };
-  });
+  const animations = gltfAnimationClips(json);
 
   const { rigKind, boneNames } = classifyGltfRig(
     nodesJson,
@@ -590,6 +582,24 @@ function browseFromGltfJson(
   );
 
   return { materials, images: images_out, animations, rigKind, boneNames };
+}
+
+/** Clip ranges in source seconds; names agree between import and Babylon loading. */
+export function gltfAnimationClips(json: Record<string, unknown>): GlbBrowseAnimation[] {
+  const accessors = Array.isArray(json.accessors) ? json.accessors : [];
+  const animations = Array.isArray(json.animations) ? json.animations : [];
+  const used = new Set<string>();
+  return animations.map((entry, i) => {
+    const animation = entry as Record<string, unknown>;
+    const base =
+      typeof animation.name === "string" && animation.name.trim().length > 0
+        ? animation.name.trim()
+        : `Animation_${i}`;
+    let name = base;
+    for (let suffix = 1; used.has(name); suffix++) name = `${base}_${suffix}`;
+    used.add(name);
+    return { name, ...clipTimeRange(animation, accessors) };
+  });
 }
 
 function isCatalogBoneName(name: string): boolean {
@@ -602,12 +612,13 @@ function nodeName(nodes: unknown[], index: number): string {
   return `Node_${index}`;
 }
 
-function clipDurationMs(
+function clipTimeRange(
   animation: Record<string, unknown>,
   accessors: unknown[],
-): number | undefined {
+): Pick<GlbBrowseAnimation, "startTimeMs" | "durationMs"> {
   const samplers = Array.isArray(animation.samplers) ? animation.samplers : [];
   let maxSeconds = 0;
+  let minSeconds = Infinity;
   let found = false;
   for (const sampler of samplers) {
     const row = sampler as Record<string, unknown>;
@@ -617,10 +628,16 @@ function clipDurationMs(
     const seconds = typeof max[0] === "number" ? max[0] : NaN;
     if (!Number.isFinite(seconds) || seconds <= 0) continue;
     found = true;
+    const min = Array.isArray(accessor?.min) ? accessor.min : [];
+    const start = typeof min[0] === "number" && Number.isFinite(min[0]) ? min[0] : 0;
+    minSeconds = Math.min(minSeconds, start);
     if (seconds > maxSeconds) maxSeconds = seconds;
   }
-  if (!found) return undefined;
-  return maxSeconds * 1000;
+  if (!found || maxSeconds <= minSeconds) return {};
+  return {
+    ...(minSeconds > 0 ? { startTimeMs: minSeconds * 1000 } : {}),
+    durationMs: (maxSeconds - minSeconds) * 1000,
+  };
 }
 
 function classifyGltfRig(

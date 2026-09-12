@@ -8,7 +8,7 @@ import type {
 } from "@babylonjs/core";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import { loadModelContainer } from "./model-container";
 import { Scene } from "@babylonjs/core/scene";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { normalizeModelImportScale, type PackedTextureSlimProof } from "@babylonslate/assets";
@@ -16,7 +16,7 @@ import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
 } from "./anim-apply";
-import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes, gpuModelBytes } from "./model-mesh";
+import { isGltfModelBytes, gpuModelBytes } from "./model-mesh";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
@@ -49,6 +49,7 @@ const MODEL_LOAD_KEY = "babylonslateModelLoadKey";
 export const MODEL_IMPORT_SCALE_NODE_NAME = "__importScale";
 
 type ModelPlaceholderMeta = {
+  disposeModelOnDespawn?: boolean;
   [MODEL_PLACEHOLDER_KEY]?: boolean;
   [MODEL_INSTANCE_KEY]?: InstantiatedEntries;
   [MODEL_LOAD_KEY]?: string;
@@ -67,6 +68,7 @@ type SceneGlbCache = {
 };
 
 const glbCaches = new WeakMap<Scene, SceneGlbCache>();
+const pendingModelLoads = new WeakMap<AbstractMesh, { key: string; promise: Promise<void> }>();
 
 function cacheFor(scene: Scene): SceneGlbCache {
   let cache = glbCaches.get(scene);
@@ -213,10 +215,7 @@ export function reportGlbLoadFailure(guid: string, error: unknown): void {
 }
 
 async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
-  return LoadAssetContainerAsync(packedGltfBytes(bytes), scene, {
-    pluginExtension: gltfLoaderExtension(bytes),
-    name,
-  });
+  return loadModelContainer(scene, bytes, name);
 }
 
 function packedSlimProof(
@@ -285,15 +284,15 @@ function wrapGroup(
   },
   clipAssetGuid: string,
 ): NamedSeekableGroup & { dispose(): void } {
-  // `stop()` drops animatables so later `goToFrame` is a no-op. Start (or keep
-  // a loader-started group) then pause so Play can seek idle without auto-advance.
-  if (typeof group.start === "function") {
-    group.start(true);
-  } else {
-    group.play?.(true);
-  }
-  group.pause();
-  group.setWeightForAllAnimatables?.(0);
+  let initialized = false;
+  const initialize = () => {
+    if (initialized) return;
+    initialized = true;
+    if (typeof group.start === "function") group.start(true);
+    else group.play?.(true);
+    group.pause();
+    group.setWeightForAllAnimatables?.(0);
+  };
   let active = false;
   return {
     name: group.name,
@@ -308,6 +307,7 @@ function wrapGroup(
       active = false;
     },
     goToFrame: (frame) => {
+      initialize();
       active = true;
       group.goToFrame(frame);
     },
@@ -341,8 +341,9 @@ export function adoptLoadedHierarchy(
 
 function disposePlaceholderInstance(placeholder: AbstractMesh): void {
   const meta = asPlaceholderMeta(placeholder);
-  meta[MODEL_INSTANCE_KEY]?.dispose();
+  const instance = meta[MODEL_INSTANCE_KEY];
   meta[MODEL_INSTANCE_KEY] = undefined;
+  instance?.dispose();
 }
 
 function keepSourceName(sourceName: string): string {
@@ -367,6 +368,11 @@ function instantiateUnderPlaceholder(
     child.renderingGroupId = group;
   }
   asPlaceholderMeta(placeholder)[MODEL_INSTANCE_KEY] = instance;
+  const meta = asPlaceholderMeta(placeholder);
+  if (!meta.disposeModelOnDespawn) {
+    meta.disposeModelOnDespawn = true;
+    placeholder.onDisposeObservable.addOnce(() => disposePlaceholderInstance(placeholder));
+  }
   hideModelPlaceholder(placeholder);
   return instance;
 }
@@ -395,6 +401,12 @@ export function beginSlotModelAnimLoad(
   if (meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) {
     return Promise.resolve();
   }
+  const pending = pendingModelLoads.get(placeholder);
+  if (pending?.key === key) return pending.promise.then(() => {
+    if (!placeholder.isDisposed()) onAdopted?.(placeholder);
+  });
+  const request = { key, promise: Promise.resolve() };
+  pendingModelLoads.set(placeholder, request);
   const epoch = bumpSlotAnimEpoch(binding, slotId);
   const load = (async () => {
     try {
@@ -408,7 +420,7 @@ export function beginSlotModelAnimLoad(
       if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
         return;
       }
-      if (placeholder.isDisposed()) {
+      if (placeholder.isDisposed() || pendingModelLoads.get(placeholder) !== request) {
         return;
       }
       const instance = instantiateUnderPlaceholder(
@@ -441,7 +453,8 @@ export function beginSlotModelAnimLoad(
           binding.modelPayloads?.get(row.sourceModelGuid),
           packedSlimProof(binding),
         );
-        if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
+        if (binding.slotAnimEpoch?.get(slotId) !== epoch || placeholder.isDisposed() || pendingModelLoads.get(placeholder) !== request) {
+          for (const group of wrapped) group.dispose();
           return;
         }
         const sourceGroup = sourceContainer.animationGroups.find(
@@ -467,7 +480,10 @@ export function beginSlotModelAnimLoad(
   })();
   if (!binding.slotAnimLoads) binding.slotAnimLoads = new Map();
   const previous = binding.slotAnimLoads.get(slotId) ?? Promise.resolve();
-  const chained = previous.then(() => load);
+  const chained = previous.then(() => load).finally(() => {
+    if (pendingModelLoads.get(placeholder) === request) pendingModelLoads.delete(placeholder);
+  });
+  request.promise = chained;
   binding.slotAnimLoads.set(slotId, chained);
   return chained;
 }

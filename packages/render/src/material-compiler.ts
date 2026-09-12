@@ -564,6 +564,19 @@ export function compileMaterialPlan(
       settleBuild([]);
     }
   });
+  // Frozen NodeMaterials skip forced bindings when another mesh shared the effect.
+  // Bone palettes and morph weights belong to each mesh, even when its material is static.
+  const deformationBlocks = created.filter(
+    (block): block is BonesBlock | MorphTargetsBlock =>
+      block instanceof BonesBlock || block instanceof MorphTargetsBlock,
+  );
+  if (deformationBlocks.length > 0) {
+    material.onBindObservable.add((mesh) => {
+      if (!mesh || !material.isFrozen) return;
+      const effect = material.getEffect();
+      if (effect) for (const block of deformationBlocks) block.bind(effect, material, mesh);
+    });
+  }
   try {
     material.build();
   } catch (error) {
@@ -886,6 +899,12 @@ function createSurfacePlumbing(
   world.output.connectTo(instances.world);
   const bones = new BonesBlock(`${name}_bones`);
   instances.output.connectTo(bones.world);
+  const indicesExtra = new InputBlock(`${name}_indicesExtra`);
+  indicesExtra.setAsAttribute("matricesIndicesExtra");
+  indicesExtra.output.connectTo(bones.matricesIndicesExtra);
+  const weightsExtra = new InputBlock(`${name}_weightsExtra`);
+  weightsExtra.setAsAttribute("matricesWeightsExtra");
+  weightsExtra.output.connectTo(bones.matricesWeightsExtra);
   const morph = new MorphTargetsBlock(`${name}_morphTargets`);
   position.output.connectTo(morph.position);
   normal.output.connectTo(morph.normal);
@@ -928,6 +947,8 @@ function createSurfacePlumbing(
     world,
     instances,
     bones,
+    indicesExtra,
+    weightsExtra,
     morph,
     viewProjection,
     view,

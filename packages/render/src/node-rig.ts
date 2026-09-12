@@ -1,5 +1,5 @@
 import { AnimatorAvatar } from "@babylonjs/core/Animations/animatorAvatar";
-import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import { Bone } from "@babylonjs/core/Bones/bone";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
@@ -207,7 +207,19 @@ export function retargetAnimationGroupWithMeshProxy(
       return null;
     }
     retargeted.name = source.name;
-    return retargeted;
+    retargeted.from = source.from;
+    retargeted.to = source.to;
+    if (retargeted.getScene() === targetRoot.getScene()) return retargeted;
+    // Babylon clones into the source Scene. Own the result in the target Scene
+    // so releasing temporary source previews cannot dispose the playable clip.
+    const targetGroup = new AnimationGroup(source.name, targetRoot.getScene());
+    for (const channel of retargeted.targetedAnimations) {
+      targetGroup.addTargetedAnimation(channel.animation.clone(), channel.target);
+    }
+    targetGroup.from = source.from;
+    targetGroup.to = source.to;
+    retargeted.dispose();
+    return targetGroup;
   } finally {
     dispose();
     avatar.dispose();

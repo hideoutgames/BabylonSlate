@@ -23,6 +23,7 @@
     "@babylonslate/navigation": "workspace:*",
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
+    "assimpjs": "0.0.10",
     "earcut": "^3.2.3"
   },
   "devDependencies": {

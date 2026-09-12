@@ -49,6 +49,26 @@ function rotationClip(scene: Scene, target: TransformNode, name: string) {
 }
 
 describe("node-rig helpers", () => {
+  it("keeps a retargeted preview playable after disposing its source scene", () => {
+    const source = makeScene();
+    const target = makeScene();
+    try {
+      const sourceRig = makeHierarchy(source.scene);
+      const targetRig = makeHierarchy(target.scene);
+      ensureNodeRotationQuaternion(sourceRig.arm);
+      ensureNodeRotationQuaternion(targetRig.arm);
+      const original = rotationClip(source.scene, sourceRig.arm, "Wave");
+      const retargeted = retargetAnimationGroupWithMeshProxy(original, targetRig.root)!;
+      expect(retargeted).not.toBeNull();
+      source.scene.dispose();
+      retargeted.start(true);
+      retargeted.pause();
+      retargeted.goToFrame(15);
+      expect(Math.abs(targetRig.arm.rotationQuaternion!.y)).toBeGreaterThan(0.1);
+      expect(target.scene.animationGroups).toContain(retargeted);
+    } finally { source.engine.dispose(); target.scene.dispose(); target.engine.dispose(); }
+  });
+
   const engines: NullEngine[] = [];
   afterEach(() => {
     while (engines.length > 0) engines.pop()?.dispose();

@@ -7,7 +7,7 @@ import type {
   TransformNode,
 } from "@babylonjs/core";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
-import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import { loadModelContainer } from "./model-container";
 import type { ModelMaterialSlot } from "@babylonslate/assets";
 import {
   aimPreviewCameraAtMesh,
@@ -16,9 +16,7 @@ import {
 } from "./material-preview";
 import { applyModelImportScale } from "./glb-anim";
 import {
-  gltfLoaderExtension,
   isGltfModelBytes,
-  packedGltfBytes,
 } from "./model-mesh";
 import {
   constructionMaterialOf,
@@ -144,11 +142,7 @@ export async function loadModelPreviewSource(
   importScale = 1,
 ): Promise<{ dispose: () => void; animationGroups: AnimationGroup[] } | null> {
   if (!isGltfModelBytes(bytes)) return null;
-  const packed = packedGltfBytes(bytes);
-  const container = await LoadAssetContainerAsync(packed, host.scene, {
-    pluginExtension: gltfLoaderExtension(bytes),
-    name: "model-preview.glb",
-  });
+  const container = await loadModelContainer(host.scene, bytes, "model-preview.glb");
   container.addAllToScene();
   const wrapper = applyModelImportScale(host.mesh, importScale);
   const candidates = [
@@ -164,6 +158,12 @@ export async function loadModelPreviewSource(
   }
   host.mesh.visibility = 0;
   host.mesh.computeWorldMatrix(true);
+  // Imported joint transforms can put the visible rest pose far from raw vertices.
+  // Refresh once for framing; avoid CPU skinning on every preview frame.
+  for (const skeleton of container.skeletons) skeleton.prepare(true);
+  for (const mesh of container.meshes) {
+    if (mesh.skeleton) mesh.refreshBoundingInfo({ applySkeleton: true });
+  }
   aimPreviewCameraAtMesh(host.camera, host.mesh);
   const extent = visualHierarchyBoundingVectors(host.mesh);
   const size = extent.max.subtract(extent.min).length();

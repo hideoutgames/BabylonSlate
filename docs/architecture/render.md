@@ -1,5 +1,9 @@
 # Render sync and resource cache (P4)
 
+Model Asset previews display the authored rest/bind pose, including ordinary unrigged models. Shared glTF loading disables automatic animation playback. Animation previews explicitly play only their selected clip over its source take range; retargeted clips belong to the destination Scene and survive source-preview disposal.
+
+Static model instances allocate animation players only when first sought by runtime animation state. Concurrent loads for the same actor are coalesced, and actor disposal owns cloned skeletons and animation groups. Frozen NodeMaterials refresh mesh-specific bone palettes and morph weights on each bind, so meshes with different skins can safely share a material in the viewport and Play.
+
 Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.4, §2.5).
 
 Overlay Play collects Texture literals from **Set Material Texture Parameter** nodes and typed Texture defaults from class/local variables, including Array/Map entries. It uses the same project Class/Graph set as Play compilation, including classes spawned later, so parameter swaps can select a texture that no Material samples at startup. These textures use the existing GPU texture resolver and editor LOD settings; editor viewport loads stay scoped to their authored content.
