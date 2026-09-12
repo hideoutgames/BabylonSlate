@@ -134,7 +134,7 @@ for (const animated of [false, true]) {
       await page.waitForTimeout(500);
       expect(await colors(canvas)).toEqual(held);
       await command("resume");
-      await page.getByTestId("debug-console-close").click();
+      await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
     };
     await check(page.getByTestId("viewport-canvas"));
     await clickPlayAndWaitForOverlay(page);

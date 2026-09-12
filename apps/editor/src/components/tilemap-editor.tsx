@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
   EraserIcon,
   EyeIcon,
@@ -684,7 +685,7 @@ export function TilemapPaint({
     path: asset.path,
   }));
   const { projectDocument } = useDocuments();
-  const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? ["Background", "Default", "Foreground", "UI"];
+  const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const decoded = decodeTileGid(tilemap, selectedGid, payloads);
   const localTileId = decoded?.localId ?? selectedGid;
 
