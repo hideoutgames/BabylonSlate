@@ -39,6 +39,7 @@ import {
 } from "@babylonslate/ui/components/alert-dialog";
 import {
   Field,
+  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -206,6 +207,11 @@ const ENGINE_CATEGORIES: Array<
     keywords: "templates folder homepage",
   },
   {
+    id: "plugins",
+    label: "Engine Plugins",
+    keywords: "plugins default enabled disabled export bundled library",
+  },
+  {
     id: "focus",
     label: "Focus",
     keywords: "focus keep tabs panels layout",
@@ -233,7 +239,7 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
       "about",
     ],
   },
-  { label: "Projects", ids: ["templates"] },
+  { label: "Projects", ids: ["templates", "plugins"] },
 ];
 
 function matchesSearch(
@@ -550,6 +556,7 @@ export function SettingsModal({
               </FieldLabel>
               <Switch
                 id="settings-infinite-loop-detection"
+                aria-describedby="settings-infinite-loop-description"
                 checked={projectDocument.settings.infiniteLoopDetection}
                 onCheckedChange={(checked) =>
                   updateProjectSettings({
@@ -558,11 +565,11 @@ export function SettingsModal({
                 }
                 data-testid="settings-infinite-loop-detection"
               />
-            </Field>
-            <FieldDescription>
+              <FieldDescription id="settings-infinite-loop-description">
                 Stops runaway scripts during Play and Preview. Excluded from
                 release exports.
-            </FieldDescription>
+              </FieldDescription>
+            </Field>
               <Field className="settings-field">
                 <FieldLabel htmlFor="settings-loop-count">
                   Loop Count
@@ -663,6 +670,7 @@ export function SettingsModal({
               </FieldLabel>
               <Switch
                 id="settings-pixel-perfect"
+                aria-describedby="settings-pixel-perfect-description"
                 checked={twoD.pixelPerfect}
                 onCheckedChange={(checked) =>
                   updateProjectSettings({
@@ -671,16 +679,17 @@ export function SettingsModal({
                 }
                 data-testid="settings-pixel-perfect"
               />
-            </Field>
-            <FieldDescription>
+              <FieldDescription id="settings-pixel-perfect-description">
                 Keeps pixels sharp and snaps the camera to the pixel grid.
-            </FieldDescription>
+              </FieldDescription>
+            </Field>
               <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-integer-zoom">
                   Integer Zoom Steps
               </FieldLabel>
               <Switch
                 id="settings-integer-zoom"
+                aria-describedby="settings-integer-zoom-description"
                 checked={twoD.integerZoomSteps}
                 onCheckedChange={(checked) =>
                   updateProjectSettings({
@@ -689,10 +698,10 @@ export function SettingsModal({
                 }
                 data-testid="settings-integer-zoom"
               />
-            </Field>
-            <FieldDescription>
+              <FieldDescription id="settings-integer-zoom-description">
                 Applies to game cameras; editor zoom stays continuous.
-            </FieldDescription>
+              </FieldDescription>
+            </Field>
             <Field>
               <FieldLabel>Sorting Layers</FieldLabel>
               <NamedListEditor
@@ -880,6 +889,7 @@ export function SettingsModal({
               </FieldLabel>
               <Switch
                 id="settings-audio-occlusion"
+                aria-describedby="settings-audio-occlusion-description"
                 checked={projectDocument.settings.audio.occlusionEnabled}
                 onCheckedChange={(checked) =>
                   updateProjectSettings({
@@ -891,10 +901,10 @@ export function SettingsModal({
                 }
                 data-testid="settings-audio-occlusion"
               />
-            </Field>
-            <FieldDescription>
+              <FieldDescription id="settings-audio-occlusion-description">
                 Wall muffling for channels with Muffle Through Walls enabled.
-            </FieldDescription>
+              </FieldDescription>
+            </Field>
             {(
               [
                   [
@@ -996,6 +1006,7 @@ export function SettingsModal({
               </FieldLabel>
               <Switch
                 id="setting-render-custom"
+                aria-describedby="setting-render-custom-description"
                 checked={projectDocument.settings.render.customResolution}
                 onCheckedChange={(checked) =>
                   updateProjectSettings({
@@ -1007,11 +1018,11 @@ export function SettingsModal({
                 }
                 data-testid="setting-render-custom"
               />
-            </Field>
-            <FieldDescription>
+              <FieldDescription id="setting-render-custom-description">
                 Sets the design size for Play and exported games. Overrides
                 Follow System.
-            </FieldDescription>
+              </FieldDescription>
+            </Field>
               <Field className="settings-field">
               <FieldLabel htmlFor="setting-render-width">
                 Render Size
@@ -1053,6 +1064,7 @@ export function SettingsModal({
             <Field orientation="horizontal">
               <Checkbox
                 id="setting-render-black-bars"
+                aria-describedby="setting-render-black-bars-description"
                 checked={projectDocument.settings.render.blackBars}
                 disabled={!projectDocument.settings.render.customResolution}
                 onCheckedChange={(checked) =>
@@ -1065,14 +1077,16 @@ export function SettingsModal({
                 }
                 data-testid="setting-render-black-bars"
               />
-              <FieldLabel htmlFor="setting-render-black-bars">
-                Black Bars
-              </FieldLabel>
+              <FieldContent>
+                <FieldLabel htmlFor="setting-render-black-bars">
+                  Black Bars
+                </FieldLabel>
+                <FieldDescription id="setting-render-black-bars-description">
+                  Adds bars to preserve the design size. Off fills the window
+                  without stretching.
+                </FieldDescription>
+              </FieldContent>
             </Field>
-            <FieldDescription>
-                Adds bars to preserve the design size. Off fills the window
-                without stretching.
-            </FieldDescription>
             <PlayPreviewSettingsFields
               settings={projectDocument.settings.playPreview}
               onChange={(playPreview) =>
@@ -1260,11 +1274,6 @@ export function SettingsModal({
                 data-testid="setting-export-file-fail"
               />
             </Field>
-            <Field>
-              <FieldDescription>
-                  Playable ZIP for web hosting.
-              </FieldDescription>
-            </Field>
             {exportGameError ? (
                 <p
                   className="text-sm text-destructive"
@@ -1273,27 +1282,30 @@ export function SettingsModal({
                 {exportGameError}
               </p>
             ) : null}
-            <Button
+            <Field>
+              <Button
                 className="min-h-[var(--chrome-row,28px)] w-fit"
               data-testid="export-game"
               id="export-game"
               disabled={exportGameBusy}
               onClick={() => void handleExportGame()}
-            >
-              {exportGameBusy ? "Exporting Game…" : "Export Game"}
-            </Button>
-            <Field>
-                <FieldDescription>Editable project backup.</FieldDescription>
+              >
+                {exportGameBusy ? "Exporting Game…" : "Export Game"}
+              </Button>
+              <FieldDescription>Playable ZIP for web hosting.</FieldDescription>
             </Field>
-            <Button
+            <Field>
+              <Button
                 className="min-h-[var(--chrome-row,28px)] w-fit"
               data-testid="export-project"
               id="export-project"
               disabled={exportProjectBusy}
               onClick={() => void handleExport()}
-            >
-              {exportProjectBusy ? "Exporting Project…" : "Export Project"}
-            </Button>
+              >
+                {exportProjectBusy ? "Exporting Project…" : "Export Project"}
+              </Button>
+              <FieldDescription>Editable project backup.</FieldDescription>
+            </Field>
             {exportProjectError ? (
               <Alert variant="destructive">
                 <AlertTitle>Project Export Failed</AlertTitle>

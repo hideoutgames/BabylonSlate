@@ -42,6 +42,7 @@ import {
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { classAssetReference, classDeletionCandidates, validateClassDeletionReplacements } from "../lib/class-deletion";
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
+import { resolvePluginIcon } from "../lib/plugin-icons";
 import {
   documentKindForAssetType,
   CONTENT_BROWSER_ID,
@@ -371,6 +372,13 @@ export function ContentBrowserWorkspace({
     () => pluginDescriptors.map((plugin) => plugin.contentPath),
     [pluginDescriptors],
   );
+  const pluginRootIcons = useMemo(
+    () => new Map(pluginDescriptors.map((plugin) => [
+      plugin.contentPath,
+      resolvePluginIcon(plugin.settings.iconKey),
+    ])),
+    [pluginDescriptors],
+  );
   const selectedRoot = useMemo(
     () => contentBrowserFolderOps(selectedFolderPath, browserRoots),
     [browserRoots, selectedFolderPath],
@@ -662,6 +670,7 @@ export function ContentBrowserWorkspace({
   const treeNodes = useMemo(
     () =>
       browserRows.map((row) => {
+        const FolderGlyph = pluginRootIcons.get(row.id) ?? FolderIcon;
         const asset = row.guid
           ? allAssets.find((item) => item.header.guid === row.guid)
           : undefined;
@@ -673,7 +682,7 @@ export function ContentBrowserWorkspace({
           expanded: row.expanded,
           icon:
             row.kind === "folder" ? (
-              <FolderIcon />
+              <FolderGlyph />
             ) : asset ? (
               <TypeVisualIcon
                 visual={visualForIndexedAsset(asset, classParentOf)}
@@ -681,7 +690,7 @@ export function ContentBrowserWorkspace({
             ) : undefined,
         };
       }),
-    [allAssets, browserRows, classParentOf],
+    [allAssets, browserRows, classParentOf, pluginRootIcons],
   );
 
   const selectionCount = selectedGuids.size + selectedFolderPaths.size;
@@ -2394,6 +2403,7 @@ export function ContentBrowserWorkspace({
                           <ContentBrowserFolderTile
                             path={item.path}
                             name={item.name}
+                            icon={pluginRootIcons.get(item.path)}
                             selected={selectedFolderPaths.has(item.path)}
                             consumeSelectClick={consumeSelectClick}
                             onSelect={(event) =>

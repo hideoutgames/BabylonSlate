@@ -1,4 +1,4 @@
-import { FolderIcon } from "lucide-react";
+import { FolderIcon, type LucideIcon } from "lucide-react";
 import {
   SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
@@ -16,6 +16,7 @@ import { useLongPressMenu } from "../lib/use-long-press-menu";
 export interface ContentBrowserFolderTileProps {
   path: string;
   name: string;
+  icon?: LucideIcon;
   selected: boolean;
   onOpen: () => void;
   onSelect: (event: {
@@ -30,6 +31,7 @@ export interface ContentBrowserFolderTileProps {
 export function ContentBrowserFolderTile({
   path,
   name,
+  icon: Icon = FolderIcon,
   selected,
   onOpen,
   onSelect,
@@ -69,7 +71,7 @@ export function ContentBrowserFolderTile({
         {...bind}
       >
         <div className="flex aspect-square w-full shrink-0 items-center justify-center bg-card">
-          <FolderIcon
+          <Icon
             size={TYPE_VISUAL_ICON_TILE_SIZE}
             strokeWidth={TYPE_VISUAL_ICON_TILE_STROKE_WIDTH}
             absoluteStrokeWidth
