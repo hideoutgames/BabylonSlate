@@ -53,7 +53,7 @@ for (const wgsl of [false, true]) {
     )
     .replace(
       "#ifdef EMISSIVEASILLUMINATION",
-      "diffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\nspecularBase=slateCelSurfaceSpecular(specularBase,slateCelPeak,slateCelTotal);\n#ifdef EMISSIVEASILLUMINATION",
+      "diffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\n#ifdef SPECULARTERM\nspecularBase=slateCelSurfaceSpecular(specularBase,slateCelPeak,slateCelTotal);\n#endif\n#ifdef EMISSIVEASILLUMINATION",
     );
 }
 

@@ -287,7 +287,9 @@ test("CEL preserves authored and texture colors, supports every light, and resto
           properties: {
             lightKind: kind,
             color: [1, 0, 0],
-            intensity: 1,
+            // Cone attenuation participates in the ramp, so give the spot
+            // enough intensity for a measurable fully lit interior too.
+            intensity: kind === "spot" ? 1.5 : 1,
             range: 100,
             outerAngle: 90,
             innerAngle: 60,

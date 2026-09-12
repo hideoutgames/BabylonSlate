@@ -593,7 +593,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     );
     const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
     const showPostProcess = matches("Post Processing Material Enabled") ||
-      (celEnabled && matches("CEL Shading Shadow Bands Threshold Strength Softness Specular Light Color Influence Falloff"));
+      (celEnabled && matches("CEL Shading Shadow Bands Threshold Strength Softness Specular Light Color Influence Mixing Strongest Additive Blend"));
     const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
     return (
       <PanelFrame data-testid="scene-details-panel">
