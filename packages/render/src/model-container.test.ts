@@ -80,6 +80,15 @@ describe("model pose and clip ranges", () => {
       group.goToFrame(group.from + 30);
       expect(target.position.y).toBeCloseTo(0.5);
       expect(group.loopAnimation).toBe(true);
+      group.stop();
+      host.scene.useConstantAnimationDeltaTime = true;
+      group.start(true);
+      for (let i = 0; i < 32; i++) host.scene.render();
+      expect(target.position.y).toBeGreaterThan(0.3);
+      expect(target.position.y).toBeLessThan(0.7);
+      for (let i = 0; i < 33; i++) host.scene.render();
+      expect(target.position.y).toBeLessThan(0.1);
+      expect(group.isPlaying).toBe(true);
     } finally {
       host.dispose();
       handle.engine.dispose();
