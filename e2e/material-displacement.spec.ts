@@ -5,8 +5,10 @@ import { createDefaultMaterialDocument } from "../packages/shader-graph/src/docu
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser } from "./open-test-project";
 import { compileMaterialPreview, connectMaterialPins } from "./material-graph";
+import { PROJECT_FILE } from "../packages/core/src/project";
 
-test("animated normal displacement keeps the Material preview rendering", async ({ page }) => {
+for (const mode of ["pbr", "cel"]) {
+test(`animated normal displacement keeps the ${mode} Material preview rendering`, async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
@@ -28,6 +30,9 @@ test("animated normal displacement keeps the Material preview rendering", async 
     { id: "normal-multiply", sourceNodeId: "normal", sourcePinId: "normal", targetNodeId: "multiply", targetPinId: "b" },
   );
   const files = await minimalProjectFiles();
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.render.mode = mode;
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const path = "assets/Displacement.material.babasset";
   files.set(path, await encodeAssetDocument({
     guid: "00000000-0000-4000-8000-000000000010",
@@ -48,3 +53,4 @@ test("animated normal displacement keeps the Material preview rendering", async 
   await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL()), { timeout: 10_000 }).not.toBe(second);
   expect(errors).toEqual([]);
 });
+}
