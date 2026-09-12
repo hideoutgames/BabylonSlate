@@ -499,16 +499,18 @@ export function attachSingleShadowGenerator(
   if (light instanceof DirectionalLight) {
     light.autoCalcShadowZBounds = true;
     // Hard CEL thresholds amplify sub-texel self-shadow errors. Scale the
-    // normal offset with the actual projection, including large receivers.
+    // depth offset with the actual projection, including large receivers.
+    // Moving along depth avoids seams from pushing adjacent box faces inward.
     // Babylon updates these extents in its earlier before-render observer.
     generator.getShadowMap()?.onBeforeRenderObservable.add(() => {
       const extent = light.shadowFrustumSize > 0
         ? light.shadowFrustumSize
         : Math.max(light.orthoRight - light.orthoLeft, light.orthoTop - light.orthoBottom)
           * (1 + 2 * light.shadowOrthoScale);
-      generator.normalBias = sceneRenderingSettings(scene).mode === "cel" && Number.isFinite(extent)
-        ? Math.max(SHADOW_NORMAL_BIAS, 2 * extent / mapSize)
-        : SHADOW_NORMAL_BIAS;
+      const depth = (light.shadowMaxZ ?? 0) - (light.shadowMinZ ?? 0);
+      generator.bias = sceneRenderingSettings(scene).mode === "cel" && Number.isFinite(extent) && depth > 0
+        ? Math.max(SHADOW_BIAS, 4 * extent / (mapSize * depth))
+        : SHADOW_BIAS;
     });
   }
   refreshShadowCasters(scene, generator);

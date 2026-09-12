@@ -13,7 +13,7 @@
 - `settings.render.mode` / `settings.render.cel` persist in the project and player manifest. Optional `scene.settings.celShading` keys are normalized and resolved independently. Missing/invalid values inherit; finite values are bounded before shader binding.
 - `setSceneRenderSettings` is scene-local. Authored material graphs switch their surface output in place, preserving parameter bindings, textures, deformation and freeze policy. Imported PBR/Standard surfaces use native CEL adapters, including MultiMaterial slots; original materials and borrowed textures remain available for PBR restoration. Scene disposal releases adapters and listeners.
 - Scene viewport rendering changes recreate the GPU scene, recollect saved assets and warm shaders before revealing it. Camera pose, selection and unsaved scene content survive; inactive CEL settings do not reload PBR. **Reload Scene** uses the same full reload path.
-- CEL directional shadows scale normal bias with the shadow projection texel size to avoid self-shadow speckling on curved surfaces and large receivers; PBR retains its existing bias.
+- CEL directional shadows scale depth bias with the shadow projection texel size to avoid self-shadow speckling on curved and flat surfaces with large receivers; PBR retains its existing bias.
 - Mode switches invalidate inherited default-material shader caches and refresh the editor's frozen active meshes after material readiness. Rapid graph switches coalesce while shader blocks load, so an open scene follows the latest mode without reopening it.
 - Scene/Prefab viewports, Material/Model/Animation/Skeleton previews, Play and the player share this policy. Scene overrides apply to world scenes; asset previews use project defaults.
 
