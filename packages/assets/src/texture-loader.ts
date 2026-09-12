@@ -77,6 +77,32 @@ export function isKtx2Bytes(bytes: Uint8Array): boolean {
   return true;
 }
 
+/** Copy source bytes for GPU ownership, normalizing legacy Basis UASTC metadata. */
+export function copyTextureBytesForUpload(bytes: Uint8Array): Uint8Array {
+  const copy = bytes.slice();
+  if (!isKtx2Bytes(bytes) || bytes.length < 80) return copy;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // The vendored Basis encoder uses Zstd and the older, unsized DFD convention.
+  // Babylon 9.20 multiplies by bytesPlane0, turning zero into empty image data.
+  if (view.getUint32(12, true) !== 0 || view.getUint32(44, true) !== 2) return copy;
+  const dfd = view.getUint32(48, true);
+  const length = view.getUint32(52, true);
+  if (dfd < 80 || length < 44 || dfd + length > bytes.length) return copy;
+  if (
+    view.getUint32(dfd + 4, true) !== 0 || // Khronos basic descriptor
+    view.getUint16(dfd + 8, true) !== 2 ||
+    view.getUint16(dfd + 10, true) < 40 ||
+    view.getUint16(dfd + 10, true) + 4 > length ||
+    bytes[dfd + 12] !== 166 || // UASTC
+    bytes[dfd + 16] !== 3 || bytes[dfd + 17] !== 3 || // 4 x 4 blocks
+    bytes[dfd + 18] !== 0 || bytes[dfd + 19] !== 0 ||
+    bytes.subarray(dfd + 20, dfd + 28).some((value) => value !== 0)
+  ) return copy;
+  // UASTC blocks contain 16 bytes. Keep stored assets and cache identity intact.
+  copy[dfd + 20] = 16;
+  return copy;
+}
+
 /**
  * Browser-decodable MIME for raster bytes (skybox overlay, blob URLs).
  * KTX2 and unknown blobs return null — they must not be labeled `image/png`.

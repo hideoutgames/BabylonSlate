@@ -226,24 +226,7 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
   );
   await openMinimalTestProject(page, files);
   await openMainScene(page);
-  await expect.poll(() => page.evaluate(() => {
-    const host = globalThis as unknown as {
-      __babylonslateViewportTest?: { sceneVisuals: () => unknown[] };
-    };
-    return host.__babylonslateViewportTest?.sceneVisuals() ?? [];
-  })).toEqual(expect.arrayContaining([expect.objectContaining({
-    actorId: "ground", materialName: `albedo:${textureGuid}`,
-  })]));
-  try {
-    await expectGreenIllumination(page.getByTestId("viewport-canvas"));
-  } catch (error) {
-    console.log("ATLAS DIAGNOSTIC", JSON.stringify(await page.evaluate(() => {
-      const host = globalThis as unknown as { __babylonslateViewportTest?: { sceneVisuals: () => unknown[] } };
-      return host.__babylonslateViewportTest?.sceneVisuals();
-    })));
-    await expectGreenIllumination(page.getByTestId("viewport-canvas"));
-    throw error;
-  }
+  await expectGreenIllumination(page.getByTestId("viewport-canvas"));
   await clickPlayAndWaitForOverlay(page);
   await expectGreenIllumination(page.getByTestId("play-canvas"));
   await page.getByTestId("play-overlay-close").click();

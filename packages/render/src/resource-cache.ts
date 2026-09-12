@@ -1,4 +1,4 @@
-import { isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { copyTextureBytesForUpload, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -319,7 +319,7 @@ export class ResourceCache {
           useSRGBBuffer: options.useSRGBBuffer ?? false,
           mimeType: ktx2.mimeType,
           forcedExtension: ktx2.forcedExtension,
-          buffer: raw ? raw.slice() : undefined,
+          buffer: raw ? copyTextureBytesForUpload(raw) : undefined,
         });
     entry.textures.set(key, texture);
     this.accountLoadedBytes(assetGuid, bytes, options.noMipmap !== true);
