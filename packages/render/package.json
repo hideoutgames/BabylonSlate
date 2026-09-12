@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./fbx-import": "./src/convert-fbx-to-glb.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },

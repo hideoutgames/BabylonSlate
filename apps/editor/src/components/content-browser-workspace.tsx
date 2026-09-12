@@ -22,9 +22,9 @@ import {
 } from "@babylonslate/assets";
 import {
   convertObjImportBatch,
-  convertFbxImportBatch,
   animationRetargetHasMatches,
 } from "@babylonslate/render";
+import { convertFbxImportBatch } from "@babylonslate/render/fbx-import";
 import {
   ContextMenuOverlay,
   FolderBreadcrumbs,
