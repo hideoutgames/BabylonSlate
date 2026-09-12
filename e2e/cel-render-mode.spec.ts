@@ -373,8 +373,9 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     }
   }
 
-  // A large receiver makes a fixed world-space shadow offset sub-texel.
-  // Enabling shadows must cast onto the floor without mottling the sphere.
+  // Keep both primitives in contact with the receiver: sphere radius 1.875,
+  // box half-height 1.5. Intersections must not masquerade as shadow artifacts.
+  subjects[0]!.transform.position[1] = 0.375;
   const sun = createActor("shadow-sun", "Shadow Sun", {
     transform: { position: [0, 5, -3], rotation: [0.353553, 0.353553, -0.146447, 0.853553], scale: [1, 1, 1] },
     components: [{ id: "sun-light", classId: "LightComponent", properties: {
@@ -382,7 +383,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     } }],
   });
   scene.actors = [...subjects, sun, createActor("receiver", "Receiver", {
-    transform: { position: [0, -1.25, 0], rotation: [0, 0, 0, 1], scale: [12, 1, 12] },
+    transform: { position: [0, -1.5, 0], rotation: [0, 0, 0, 1], scale: [12, 1, 12] },
     components: [createMeshComponent("receiver-mesh", "ground")],
   })];
   scene.settings.celShading = { specularEnabled: false, shadowStrength: 0.65 };
@@ -420,9 +421,31 @@ test("CEL preserves authored and texture colors, supports every light, and resto
         receiverChanges++;
       }
     }
-    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.05, cleanNativeSurface: nativePixels > 500 && nativeChanges / nativePixels < 0.02 };
+    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.01, cleanNativeSurface: nativePixels > 500 && nativeChanges / nativePixels < 0.01 };
   }).toEqual({ castsShadow: true, cleanSurface: true, cleanNativeSurface: true });
   await viewport.screenshot({ path: testInfo.outputPath("cel-cast-shadows.png") });
+
+  const localShadows = await framePixels(viewport);
+  scene.actors.find((actor) => actor.id === "receiver")!.transform.scale = [1200, 1, 1200];
+  scene.actors.push(createActor("distant-caster", "Distant Caster", {
+    transform: { position: [10000, 0, 10000], rotation: [0, 0, 0, 1], scale: [100, 100, 100] },
+    components: [createMeshComponent("distant-mesh", "box")],
+  }));
+  await setPreviewScene(page, scene);
+  await expect.poll(async () => {
+    const largeMap = await framePixels(viewport);
+    let changed = 0, count = 0;
+    for (let i = 0; i < localShadows.length; i += 4) {
+      const x = (i / 4 % frameSize.width) / frameSize.width;
+      const y = Math.floor(i / 4 / frameSize.width) / frameSize.height;
+      if (x <= 0.53 || x >= 0.69 || y <= 0.43 || y >= 0.61) continue;
+      count++;
+      if (Math.abs(localShadows[i + 1]! - largeMap[i + 1]!) > 15) changed++;
+    }
+    return count > 500 ? changed / count : 1;
+  }).toBeLessThan(0.01);
+  await viewport.screenshot({ path: testInfo.outputPath("cel-large-map-shadows.png") });
+  subjects[0]!.transform.position[1] = 0;
 
   scene.actors = [...subjects, fill];
   scene.settings.celShading = { specularStrength: 1, specularSize: 1 };

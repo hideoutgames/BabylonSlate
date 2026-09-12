@@ -14,13 +14,13 @@ it("keeps independent scene overrides and resets to live project shadow distance
   const distance = () => screen.getByLabelText("Shadow Distance") as HTMLInputElement;
   expect(distance().disabled).toBe(true);
   expect(distance().value).toBe("200");
-  fireEvent.click(screen.getByRole("button", { name: "Override Shadow Distance", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Override Shadow Distance" }));
   fireEvent.change(distance(), { target: { value: "75" } });
   fireEvent.blur(distance());
   view.rerender(<SceneFields distance={350} />);
   expect(distance().value).toBe("75");
   expect((screen.getByLabelText("Shadow Normal Bias") as HTMLInputElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Reset Shadow Distance", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset Shadow Distance" }));
   expect(distance().disabled).toBe(true);
   expect(distance().value).toBe("350");
 });
