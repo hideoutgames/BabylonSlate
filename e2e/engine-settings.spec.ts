@@ -178,7 +178,7 @@ test("editor viewport applies hardware scaling and the post-processing gate", { 
   await page.getByTestId("property-domain").click();
   await page.getByRole("option", { name: "Post Process" }).click();
   await saveAllIfEnabled(page);
-  await createContentBrowserAsset(page, "SceneLayer", "Foreground Layer With A Long Name");
+  await createContentBrowserAsset(page, "SceneLayer", "Foreground_Layer_With_A_Long_Name");
   await openMainScene(page);
   await expect(page.getByTestId("scene-post-process-stack")).toBeVisible();
   await page.getByTestId("scene-post-process-stack-add").click();
@@ -202,7 +202,7 @@ test("editor viewport applies hardware scaling and the post-processing gate", { 
 
   await page.getByRole("textbox", { name: "Filter Properties" }).fill("Enabled");
   await page.getByTestId("scene-layers-stack-add").click();
-  const layerGuid = await guidForPath(page, "assets/Foreground Layer With A Long Name.scenelayer.babasset");
+  const layerGuid = await guidForPath(page, "assets/Foreground_Layer_With_A_Long_Name.scenelayer.babasset");
   expect(layerGuid).not.toBe("");
   await page.getByTestId(`search-item-${layerGuid}`).click();
 
