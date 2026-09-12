@@ -103,7 +103,6 @@ describe("EnginePluginsSettings", () => {
     fireEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: "Delete",
-        exact: true,
       }),
     );
     await waitFor(() =>

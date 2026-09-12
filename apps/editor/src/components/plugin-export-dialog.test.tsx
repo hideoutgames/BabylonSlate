@@ -84,7 +84,7 @@ describe("PluginExportDialog", () => {
     expect(install).toHaveBeenCalledOnce();
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(
-      screen.getByRole("button", { name: "Replace", exact: true }),
+      screen.getByRole("button", { name: "Replace" }),
     );
     await waitFor(() =>
       expect(install).toHaveBeenCalledWith(bytes, {
@@ -113,7 +113,7 @@ describe("PluginExportDialog", () => {
     );
     await screen.findByRole("alertdialog");
     fireEvent.click(
-      screen.getByRole("button", { name: "Cancel", exact: true }),
+      screen.getByRole("button", { name: "Cancel" }),
     );
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(install).toHaveBeenCalledOnce();

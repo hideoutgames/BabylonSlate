@@ -40,11 +40,16 @@ function normalizedName(name: string): string {
 /** App-owned plugin archives and creation defaults, separate from project copies. */
 export class EnginePluginLibrary {
   private mutation: Promise<unknown> = Promise.resolve();
+  private readonly bundledStorage: ProjectStorage;
+  private readonly libraryStorage: ProjectStorage;
 
   constructor(
-    private readonly bundledStorage: ProjectStorage,
-    private readonly libraryStorage: ProjectStorage,
-  ) {}
+    bundledStorage: ProjectStorage,
+    libraryStorage: ProjectStorage,
+  ) {
+    this.bundledStorage = bundledStorage;
+    this.libraryStorage = libraryStorage;
+  }
 
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.mutation.then(operation, operation);
