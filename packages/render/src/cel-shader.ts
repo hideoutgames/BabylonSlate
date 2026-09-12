@@ -14,6 +14,9 @@ export const CEL_UNIFORMS = [
 /** Display-space lighting deliberately avoids a PBR BRDF and tone mapping. */
 export function celFunctions(wgsl: boolean): string {
   const source = `
+vec3 slateCelTextureToDisplay(vec3 color) {
+  return mix(12.92 * color, 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - vec3(0.055), step(vec3(0.0031308), color));
+}
 float slateCelBand(float value) {
   float levels = slateCelBands.x - 1.0;
   float shifted = pow(clamp(value, 0.0, 1.0), log(0.5) / log(slateCelBands.z)) * levels;

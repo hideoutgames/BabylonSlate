@@ -14,6 +14,9 @@ import { guidForPath } from "./material-graph";
 import { saveAllIfEnabled } from "./save-all";
 import { setPreviewScene } from "./preview-parity";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { encodeAssetDocument } from "../packages/assets/src/asset-document";
+import { encodeGlbJsonBin } from "../packages/assets/src/importers/glb-parse";
+import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 
 async function pixelsNear(
   canvas: Locator,
@@ -240,4 +243,143 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     .poll(() => pixelsNear(viewport, authored), { timeout: 20_000 })
     .toBeGreaterThan(500);
   expect(shaderErrors).toEqual([]);
+});
+
+test("CEL preserves sRGB image pixels on a native glTF surface", async ({
+  page,
+}) => {
+  // A numeric texture fixture exercises Babylon's automatic hardware sRGB decode.
+  const uri = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 2;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#33994d";
+    context.fillRect(0, 0, 2, 2);
+    return canvas.toDataURL("image/png");
+  });
+  const vertices = new Float32Array([
+    -2, -2, 0, 2, -2, 0, 2, 2, 0, -2, 2, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+    0, 0, 1, 0, 1, 1, 0, 1,
+  ]);
+  const geometry = new Uint8Array(140);
+  geometry.set(new Uint8Array(vertices.buffer));
+  geometry.set(new Uint8Array(new Uint16Array([0, 1, 2, 0, 2, 3]).buffer), 128);
+  const source = encodeGlbJsonBin(
+    {
+      asset: { version: "2.0" },
+      buffers: [{ byteLength: geometry.length }],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: 48 },
+        { buffer: 0, byteOffset: 48, byteLength: 48 },
+        { buffer: 0, byteOffset: 96, byteLength: 32 },
+        { buffer: 0, byteOffset: 128, byteLength: 12 },
+      ],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: 5126,
+          count: 4,
+          type: "VEC3",
+          min: [-2, -2, 0],
+          max: [2, 2, 0],
+        },
+        { bufferView: 1, componentType: 5126, count: 4, type: "VEC3" },
+        { bufferView: 2, componentType: 5126, count: 4, type: "VEC2" },
+        { bufferView: 3, componentType: 5123, count: 6, type: "SCALAR" },
+      ],
+      images: [{ uri }],
+      textures: [{ source: 0 }],
+      materials: [
+        {
+          name: "Native",
+          doubleSided: true,
+          pbrMetallicRoughness: {
+            baseColorTexture: { index: 0 },
+            metallicFactor: 0,
+            roughnessFactor: 1,
+          },
+        },
+      ],
+      meshes: [
+        {
+          primitives: [
+            {
+              attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 },
+              indices: 3,
+              material: 0,
+            },
+          ],
+        },
+      ],
+      nodes: [{ mesh: 0 }],
+      scenes: [{ nodes: [0] }],
+      scene: 0,
+    },
+    geometry,
+  );
+  const guid = "00000000-0000-4000-8000-000000000010";
+  const files = await minimalProjectFiles();
+  files.set(
+    "assets/Native.model.babasset",
+    await encodeAssetDocument(
+      {
+        guid,
+        type: "Model",
+        name: "Native",
+        version: 1,
+        payload: {
+          materialSlots: [{ index: 0, name: "Native", materialGuid: null }],
+          importScale: 1,
+        },
+      },
+      {
+        extraChunks: [
+          {
+            id: "source",
+            kind: "geometry",
+            mime: "model/gltf-binary",
+            data: source,
+          },
+        ],
+      },
+    ),
+  );
+  await openMinimalTestProject(page, files);
+  await projectMode(page, "CEL", true);
+  const mesh = createMeshComponent("native", "box");
+  mesh.properties.assetGuid = guid;
+  const scene = createDefaultScene();
+  scene.settings.environmentColor = [0, 0, 0];
+  scene.settings.environmentTextureGuid = null;
+  scene.settings.grid.showGrid = false;
+  scene.actors = [
+    createActor("model", "Model", { components: [mesh] }),
+    createActor("fill", "Fill", {
+      components: [
+        {
+          id: "light",
+          classId: "HemisphericFillLightComponent",
+          properties: {
+            color: [1, 1, 1],
+            groundColor: [1, 1, 1],
+            intensity: 1,
+          },
+        },
+      ],
+    }),
+  ];
+  await openMainScene(page);
+  await setPreviewScene(page, scene);
+  await expect
+    .poll(
+      () => pixelsNear(page.getByTestId("viewport-canvas"), [51, 153, 77], 1),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(500);
+  await clickPlayAndWaitForOverlay(page);
+  await expect
+    .poll(() => pixelsNear(page.getByTestId("play-canvas"), [51, 153, 77], 1), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(500);
 });

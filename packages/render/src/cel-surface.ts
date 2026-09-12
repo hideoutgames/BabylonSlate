@@ -50,7 +50,10 @@ export function installCelSurface(
     material.removeOutputNode(active);
     material.addOutputNode(next);
     active = next;
-    for (const texture of colorTextures) texture.convertToLinearSpace = !useCel;
+    for (const texture of colorTextures) {
+      texture.convertToLinearSpace = !useCel;
+      texture.convertToGammaSpace = useCel;
+    }
     if (!rebuild) return;
     const frozen = material.isFrozen;
     material.unfreeze();
