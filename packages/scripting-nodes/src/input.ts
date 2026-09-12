@@ -5,7 +5,6 @@ import {
   FLOAT,
   VEC2,
   VEC3,
-  STRING,
   EXEC,
   INT,
   actorRef,
@@ -18,6 +17,23 @@ import { inputBindingNodes } from "./input-bindings";
 
 const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
 const COLLISION_CHANNEL = enumRef(ENGINE_COLLISION_CHANNEL_ENUM_ID);
+
+function assetInputEventPins(valueType: unknown) {
+  return [
+    pin("started", "Started", "out", EXEC),
+    pin("held", "Held", "out", EXEC),
+    pin("released", "Released", "out", EXEC),
+    pin("binding", "Input Binding", "in", structRef("engine:InputBinding")),
+    pin(
+      "value",
+      "Value",
+      "out",
+      valueType === "2d" ? VEC2 : valueType === "1d" ? FLOAT : BOOL,
+    ),
+    pin("heldSeconds", "Held Seconds", "out", FLOAT),
+    pin("lastHeldSeconds", "Last Held Seconds", "out", FLOAT),
+  ];
+}
 
 function emitMappedHit(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
@@ -39,79 +55,30 @@ function emitMappedHit(
 /** Input category: mappings resolve through the runtime ctx (engineplan §11). */
 export const inputNodes: NodeDefinition[] = [
   {
-    id: "input.event",
-    title: "Input Event",
+    id: "input.actionEvent",
+    title: "Event Input Action",
     category: "input",
-    pins: (properties) => [
-      pin("started", "Started", "out", EXEC),
-      pin("held", "Held", "out", EXEC),
-      pin("released", "Released", "out", EXEC),
-      pin("input", "Input", "in", structRef("engine:InputType")),
-      pin(
-        "value",
-        "Value",
-        "out",
-        properties?.valueType === "2d"
-          ? VEC2
-          : properties?.valueType === "1d"
-            ? FLOAT
-            : BOOL,
-      ),
-      pin("heldSeconds", "Held Seconds", "out", FLOAT),
-      pin("lastHeldSeconds", "Last Held Seconds", "out", FLOAT),
-    ],
+    pins: () => assetInputEventPins("button"),
+    codegen: () => {},
+  },
+  {
+    id: "input.axisEvent",
+    title: "Event Input Axis",
+    category: "input",
+    pins: (properties) =>
+      assetInputEventPins(properties.valueType === "2d" ? "2d" : "1d"),
     codegen: () => {},
   },
   ...inputBindingNodes,
   {
-    id: "input.isActionHeld",
-    title: "Is Action Held",
-    category: "input",
-    pure: true,
-    pins: () => [
-      pin("action", "action", "in", STRING),
-      pin("out", "out", "out", BOOL),
-    ],
-    codegen: (ctx) => ({
-      out: `(ctx.isActionHeld?.(${ctx.input("action")}) ?? false)`,
-    }),
-  },
-  {
-    id: "input.getAxis",
-    title: "Get Axis",
-    category: "input",
-    pure: true,
-    pins: () => [
-      pin("axis", "axis", "in", STRING),
-      pin("out", "out", "out", FLOAT),
-    ],
-    codegen: (ctx) => ({
-      out: `(ctx.getAxis?.(${ctx.input("axis")}) ?? 0)`,
-    }),
-  },
-  {
-    id: "input.getAxis2D",
-    title: "Get Axis 2D",
-    category: "input",
-    pure: true,
-    pins: () => [
-      pin("axis", "axis", "in", STRING),
-      pin("out", "out", "out", VEC2),
-    ],
-    codegen: (ctx) => ({
-      out: `(ctx.getAxis2D?.(${ctx.input("axis")}) ?? { x: 0, y: 0 })`,
-    }),
-  },
-  {
-    id: "input.onAction",
-    title: "On Action",
+    id: "input.onAnyKeyPressed",
+    title: "On Any Key Pressed",
     category: "input",
     pins: () => [
-      pin("execOut", "then", "out", EXEC),
-      pin("action", "action", "in", STRING),
-      pin("phase", "phase", "in", STRING),
+      pin("execOut", "Then", "out", EXEC),
+      pin("key", "Key", "out", enumRef("engine:Key")),
     ],
-    // Compiled specially in packages/scripting so the then-chain stays gated.
+    // Compiled as one gated execution per key pressed during the current tick.
     codegen: () => {},
   },
   {

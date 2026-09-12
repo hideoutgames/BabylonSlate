@@ -1017,7 +1017,7 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("GetAxis2D Move from the resolver moves the actor on Tick", async () => {
+  it("Input Axis Move from the resolver moves the actor while held", async () => {
     const registry = createDefaultNodeRegistry();
     const jsProps = {
       inputs: [{ name: "stick", type: VEC2 }],
@@ -1028,15 +1028,17 @@ describe("script host runs compiled graphs", () => {
       id: "event-graph",
       kind: "event",
       nodes: [
-        node(registry, "tick", "flow.event.tick"),
-        node(registry, "axis", "input.getAxis2D", { axis: "Move" }),
+        node(registry, "axis", "input.axisEvent", {
+          valueType: "2d",
+          "default:binding": { Input: { Name: "Move", Asset: "move" } },
+        }),
         node(registry, "js", "debug.executeJavaScript", jsProps),
         node(registry, "move", "transform.setLocation"),
         node(registry, "self", "actor.getSelf"),
       ],
       edges: [
-        edge("e1", "tick", "execOut", "js", "execIn"),
-        edge("e2", "axis", "out", "js", "in_stick"),
+        edge("e1", "axis", "held", "js", "execIn"),
+        edge("e2", "axis", "value", "js", "in_stick"),
         edge("e3", "js", "execOut", "move", "execIn"),
         edge("e4", "js", "out_location", "move", "location"),
         edge("e5", "self", "out", "move", "target"),
@@ -1046,6 +1048,23 @@ describe("script host runs compiled graphs", () => {
       seed: 1,
       seedDemoActors: false,
       dt: 0.1,
+      inputAssets: [
+        {
+          guid: "move",
+          name: "Move",
+          type: "InputAxis",
+          valueType: "2d",
+          bindings: [
+            {
+              id: "right",
+              device: "key",
+              code: "KeyD",
+              component: "x",
+              digitalValue: 1,
+            },
+          ],
+        },
+      ],
     });
     await runtime.loadScripts([
       toScript(graph, registry, "Player", "player-asset"),
@@ -1059,7 +1078,7 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("IsActionHeld Jump from the resolver is true while Space is down", async () => {
+  it("Input Action Jump exposes its value while Space is down", async () => {
     const registry = createDefaultNodeRegistry();
     const jsProps = {
       inputs: [{ name: "held", type: FLOAT }],
@@ -1070,8 +1089,9 @@ describe("script host runs compiled graphs", () => {
       id: "event-graph",
       kind: "event",
       nodes: [
-        node(registry, "tick", "flow.event.tick"),
-        node(registry, "held", "input.isActionHeld", { action: "Jump" }),
+        node(registry, "held", "input.actionEvent", {
+          "default:binding": { Input: { Name: "Jump", Asset: "jump" } },
+        }),
         node(registry, "js", "debug.executeJavaScript", {
           ...jsProps,
           inputs: [{ name: "held", type: { kind: "bool" } }],
@@ -1080,8 +1100,8 @@ describe("script host runs compiled graphs", () => {
         node(registry, "self", "actor.getSelf"),
       ],
       edges: [
-        edge("e1", "tick", "execOut", "js", "execIn"),
-        edge("e2", "held", "out", "js", "in_held"),
+        edge("e1", "held", "held", "js", "execIn"),
+        edge("e2", "held", "value", "js", "in_held"),
         edge("e3", "js", "execOut", "move", "execIn"),
         edge("e4", "js", "out_location", "move", "location"),
         edge("e5", "self", "out", "move", "target"),
@@ -1090,6 +1110,15 @@ describe("script host runs compiled graphs", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
+      inputAssets: [
+        {
+          guid: "jump",
+          name: "Jump",
+          type: "InputAction",
+          valueType: "button",
+          bindings: [{ id: "space", device: "key", code: "Space" }],
+        },
+      ],
     });
     await runtime.loadScripts([
       toScript(graph, registry, "JumperHeld", "jumper-held-asset"),
@@ -1102,15 +1131,14 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("OnAction pressed Jump from the resolver runs the then-chain on Tick", async () => {
+  it("Input Action Jump from the resolver runs Started once per press", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
       kind: "event",
       nodes: [
-        node(registry, "onJump", "input.onAction", {
-          action: "Jump",
-          phase: "pressed",
+        node(registry, "onJump", "input.actionEvent", {
+          "default:binding": { Input: { Name: "Jump", Asset: "jump" } },
         }),
         node(registry, "print", "debug.print", {
           value: "jumped",
@@ -1118,13 +1146,22 @@ describe("script host runs compiled graphs", () => {
           duration: 1,
         }),
       ],
-      edges: [edge("e1", "onJump", "execOut", "print", "execIn")],
+      edges: [edge("e1", "onJump", "started", "print", "execIn")],
     };
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
       onCommand: (command) => commands.push(command),
+      inputAssets: [
+        {
+          guid: "jump",
+          name: "Jump",
+          type: "InputAction",
+          valueType: "button",
+          bindings: [{ id: "space", device: "key", code: "Space" }],
+        },
+      ],
     });
     const script = toScript(graph, registry, "Jumper", "jumper-asset");
     expect(script.entryPoints[0]?.event).toBe("onTick");
@@ -1132,6 +1169,7 @@ describe("script host runs compiled graphs", () => {
     runtime.spawnScriptedActor({ classId: "Jumper" });
     runtime.start();
     runtime.pushInput([{ kind: "key", tick: 0, code: "Space", phase: "down" }]);
+    runtime.tick();
     runtime.tick();
     const prints = commands.filter((c) => c.type === "print");
     expect(prints).toHaveLength(1);
