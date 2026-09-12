@@ -1,6 +1,16 @@
-import { Mesh, PBRMaterial, Texture, UniversalCamera, Vector3 } from "@babylonjs/core";
+import {
+  Mesh,
+  PBRMaterial,
+  Texture,
+  UniversalCamera,
+  Vector3,
+} from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createSkyboxComponent } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  createSkyboxComponent,
+} from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import {
@@ -17,8 +27,10 @@ import { RENDERING_GROUP } from "./sorting";
 import { applyAuthoredCameraLens } from "./scene-illumination";
 
 describe("editor skybox mesh", () => {
-  const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
-    [];
+  const handles: Array<{
+    engine: { dispose: () => void };
+    scene: { dispose: () => void };
+  }> = [];
 
   afterEach(() => {
     while (handles.length > 0) {
@@ -37,7 +49,9 @@ describe("editor skybox mesh", () => {
   it("builds an unlit skybox at the actor transform, not camera-locked", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());
-    const mesh = scene.getMeshByName(editorMeshName("actor-skybox")) as Mesh | null;
+    const mesh = scene.getMeshByName(
+      editorMeshName("actor-skybox"),
+    ) as Mesh | null;
     expect(mesh).not.toBeNull();
     expect(isSkyboxMesh(mesh!)).toBe(true);
     expect(mesh!.isPickable).toBe(false);
@@ -50,7 +64,9 @@ describe("editor skybox mesh", () => {
     expect(material.disableLighting).toBe(true);
     expect(material.twoSidedLighting).toBe(true);
     expect(mesh!.applyFog).toBe(false);
-    expect(material.reflectionTexture?.coordinatesMode).toBe(Texture.SKYBOX_MODE);
+    expect(material.reflectionTexture?.coordinatesMode).toBe(
+      Texture.SKYBOX_MODE,
+    );
   });
 
   it("keeps the authored actor position instead of following the camera", () => {
@@ -78,12 +94,21 @@ describe("editor skybox mesh", () => {
     const actor = createActor("sky", "Skybox", {
       components: [createSkyboxComponent("sky-comp", 10000)],
     });
-    applySceneToBabylonScene(scene, { ...createDefaultScene(), actors: [actor] });
+    applySceneToBabylonScene(scene, {
+      ...createDefaultScene(),
+      actors: [actor],
+    });
     const mesh = scene.getMeshByName(editorMeshName("sky")) as Mesh;
     const camera = new UniversalCamera("possessed", Vector3.Zero(), scene);
-    applyAuthoredCameraLens(camera, {
-      projectionMode: "perspective", nearClip: 0.1, farClip: 1000,
-    }, 16 / 9);
+    applyAuthoredCameraLens(
+      camera,
+      {
+        projectionMode: "perspective",
+        nearClip: 0.1,
+        farClip: 1000,
+      },
+      16 / 9,
+    );
     scene.activeCamera = camera;
     const faceCenter = new Vector3(0, 0, 5000);
     const projectedDepth = () =>
@@ -122,7 +147,9 @@ describe("editor skybox mesh", () => {
   it("stays unpickable after the actor is unlocked", () => {
     const { scene } = createHandle();
     const sceneData = createDefaultScene();
-    const skybox = sceneData.actors.find((actor) => actor.id === "actor-skybox");
+    const skybox = sceneData.actors.find(
+      (actor) => actor.id === "actor-skybox",
+    );
     expect(skybox).toBeDefined();
     skybox!.locked = false;
     applySceneToBabylonScene(scene, sceneData);

@@ -5,7 +5,6 @@ import {
   DirectionalLight,
   HemisphericLight,
   LinesMesh,
-  Matrix,
   PointLight,
   Quaternion,
   Scene,
@@ -211,6 +210,27 @@ export function applyAuthoredLightProperties(
 
 export const CAMERA_LENS_FALLBACK_ASPECT = 16 / 9;
 
+const authoredCameraAspects = new WeakMap<Camera, number>();
+
+function setAuthoredCameraAspect(camera: Camera, aspect: number): void {
+  if (!authoredCameraAspects.has(camera)) {
+    camera.onProjectionMatrixChangedObservable.add((current) => {
+      if (current.mode !== Camera.PERSPECTIVE_CAMERA) return;
+      // Babylon has populated its projection cache before this notification.
+      // Keep its depth calculation live: skybox draws temporarily set maxZ to 0.
+      const projection = current.getProjectionMatrix();
+      const authoredAspect = authoredCameraAspects.get(current)!;
+      if (current.fovMode === Camera.FOVMODE_VERTICAL_FIXED) {
+        projection.setAtIndex(0, projection.m[5]! / authoredAspect);
+      } else {
+        projection.setAtIndex(5, projection.m[0]! * authoredAspect);
+      }
+    });
+  }
+  authoredCameraAspects.set(camera, aspect);
+  camera.getProjectionMatrix(true);
+}
+
 export function cameraRenderAspect(width: number, height: number): number {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     return CAMERA_LENS_FALLBACK_ASPECT;
@@ -255,15 +275,7 @@ export function applyAuthoredCameraLens(
     return;
   }
   camera.mode = Camera.PERSPECTIVE_CAMERA;
-  const projection = Matrix.Identity();
-  Matrix.PerspectiveFovLHToRef(
-    camera.fov,
-    safeAspect,
-    camera.minZ,
-    camera.maxZ,
-    projection,
-  );
-  camera.freezeProjectionMatrix(projection);
+  setAuthoredCameraAspect(camera, safeAspect);
 }
 
 export function applyAuthoredCameraProperties(
