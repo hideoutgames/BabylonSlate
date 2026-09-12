@@ -18,6 +18,7 @@ export type PluginSource = "project" | "engine";
 export type PluginDiagnosticCode =
   | "plugin.cycle"
   | "plugin.unsatisfiable"
+  | "plugin.dependency_blocked"
   | "plugin.missing"
   | "plugin.engine_unsatisfiable";
 
@@ -42,7 +43,10 @@ export interface PluginDescriptor {
   settings: PluginSettingsPayload;
 }
 
-export type PluginGraphInput = Pick<PluginDescriptor, "pluginGuid" | "settings">;
+export type PluginGraphInput = Pick<
+  PluginDescriptor,
+  "pluginGuid" | "settings"
+>;
 
 /** Layer 3 (export preset) wins over project override over the plugin default. */
 export function resolvePluginEnabled(
@@ -71,7 +75,10 @@ async function findPluginSettingsPath(
   const preferred = files.filter((entry) =>
     entry.name.endsWith(PLUGIN_FILE_SUFFIX),
   );
-  const candidates = [...preferred, ...files.filter((file) => !preferred.includes(file))];
+  const candidates = [
+    ...preferred,
+    ...files.filter((file) => !preferred.includes(file)),
+  ];
   for (const file of candidates) {
     const path = `${folderPath}/${file.name}`;
     try {
@@ -236,6 +243,27 @@ export function resolvePluginGraph(
     }
   }
 
+  // A plugin cannot load while any prerequisite is blocked, even if that
+  // prerequisite's own version satisfies the requested range.
+  let blockedCount = -1;
+  while (blockedCount !== blocked.size) {
+    blockedCount = blocked.size;
+    for (const plugin of plugins) {
+      if (blocked.has(plugin.pluginGuid)) continue;
+      const dependency = plugin.settings.pluginDependencies.find((dep) =>
+        blocked.has(dep.guid),
+      );
+      if (!dependency) continue;
+      blocked.add(plugin.pluginGuid);
+      diagnostics.push({
+        code: "plugin.dependency_blocked",
+        pluginGuid: plugin.pluginGuid,
+        dependencyGuid: dependency.guid,
+        message: `Plugin ${plugin.pluginGuid} depends on blocked plugin ${dependency.guid}`,
+      });
+    }
+  }
+
   const remaining = plugins.filter((plugin) => !blocked.has(plugin.pluginGuid));
   const inDegree = new Map<string, number>();
   const dependents = new Map<string, string[]>();
@@ -246,7 +274,10 @@ export function resolvePluginGraph(
   for (const plugin of remaining) {
     for (const dep of plugin.settings.pluginDependencies) {
       if (!inDegree.has(dep.guid)) continue;
-      inDegree.set(plugin.pluginGuid, (inDegree.get(plugin.pluginGuid) ?? 0) + 1);
+      inDegree.set(
+        plugin.pluginGuid,
+        (inDegree.get(plugin.pluginGuid) ?? 0) + 1,
+      );
       dependents.get(dep.guid)!.push(plugin.pluginGuid);
     }
   }
@@ -291,7 +322,9 @@ export async function mountEnabledPlugins(
     storageFor?: (plugin: PluginDescriptor) => ProjectStorage | undefined;
   },
 ): Promise<void> {
-  const { order } = resolvePluginGraph(plugins);
+  const { order } = resolvePluginGraph(
+    plugins.filter((plugin) => options.enabledGuids.has(plugin.pluginGuid)),
+  );
   const mountIds = new Set(
     order
       .filter((plugin) => options.enabledGuids.has(plugin.pluginGuid))
@@ -347,8 +380,6 @@ export function collectEnabledPluginAssets(
   registry: AssetRegistry,
   enabledGuids: ReadonlySet<string>,
 ): IndexedAsset[] {
-  const rootIds = new Set(
-    [...enabledGuids].map((guid) => `plugin:${guid}`),
-  );
+  const rootIds = new Set([...enabledGuids].map((guid) => `plugin:${guid}`));
   return registry.list().filter((asset) => rootIds.has(asset.rootId));
 }

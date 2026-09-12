@@ -94,7 +94,9 @@ describe("discoverProjectPlugins", () => {
     expect(discovered[0]!.pluginGuid).toBe("plug-1");
     expect(discovered[0]!.folderName).toBe("Pack");
     expect(discovered[0]!.folderPath).toBe("plugins/Pack");
-    expect(discovered[0]!.settingsPath).toBe("plugins/Pack/Pack.plugin.babasset");
+    expect(discovered[0]!.settingsPath).toBe(
+      "plugins/Pack/Pack.plugin.babasset",
+    );
     expect(discovered[0]!.contentPath).toBe("plugins/Pack/assets");
     expect(discovered[0]!.source).toBe("project");
     expect(discovered[0]!.readOnly).toBe(false);
@@ -174,9 +176,9 @@ describe("shadowEnginePlugins", () => {
       "other-engine",
       "shared",
     ]);
-    expect(visible.find((plugin) => plugin.pluginGuid === "shared")?.source).toBe(
-      "project",
-    );
+    expect(
+      visible.find((plugin) => plugin.pluginGuid === "shared")?.source,
+    ).toBe("project");
   });
 });
 
@@ -280,9 +282,85 @@ describe("resolvePluginGraph", () => {
     expect(codes).toContain("plugin.unsatisfiable");
     expect(codes).toContain("plugin.missing");
   });
+
+  it("blocks transitive dependents of an unavailable prerequisite while keeping independent plugins", () => {
+    const plugins = ["outer", "middle", "base", "solo"].map((pluginGuid) => ({
+      pluginGuid,
+      settings: createDefaultPluginSettings({
+        pluginGuid,
+        displayName: pluginGuid,
+      }),
+    }));
+    plugins[0]!.settings.pluginDependencies = [
+      { guid: "middle", versionRange: "^1.0.0" },
+    ];
+    plugins[1]!.settings.pluginDependencies = [
+      { guid: "base", versionRange: "^1.0.0" },
+    ];
+    plugins[2]!.settings.engineVersionRange = "^2.0.0";
+
+    const { order, diagnostics } = resolvePluginGraph(plugins, "0.0.0");
+
+    expect(order.map((plugin) => plugin.pluginGuid)).toEqual(["solo"]);
+    expect(diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "plugin.engine_unsatisfiable",
+          pluginGuid: "base",
+        }),
+        expect.objectContaining({
+          code: "plugin.dependency_blocked",
+          pluginGuid: "middle",
+          dependencyGuid: "base",
+        }),
+        expect.objectContaining({
+          code: "plugin.dependency_blocked",
+          pluginGuid: "outer",
+          dependencyGuid: "middle",
+        }),
+      ]),
+    );
+  });
 });
 
 describe("mountEnabledPlugins", () => {
+  it("unmounts dependent content when its prerequisite is disabled and restores it when re-enabled", async () => {
+    const storage = await projectStorage();
+    const base = createDefaultPluginSettings({
+      pluginGuid: "base",
+      displayName: "Base",
+    });
+    const extra = createDefaultPluginSettings({
+      pluginGuid: "extra",
+      displayName: "Extra",
+    });
+    extra.pluginDependencies = [{ guid: "base", versionRange: "^1.0.0" }];
+    await writePluginFolder(storage, "Base", base);
+    await writePluginFolder(storage, "Extra", extra, [
+      {
+        relativePath: "Extra.class.babasset",
+        guid: "extra-class",
+        type: "Class",
+        name: "Extra",
+      },
+    ]);
+    const registry = new AssetRegistry(storage);
+    const plugins = await discoverProjectPlugins(storage);
+
+    await mountEnabledPlugins(registry, plugins, {
+      enabledGuids: new Set(["base", "extra"]),
+    });
+    expect(registry.getByGuid("extra-class")?.rootId).toBe("plugin:extra");
+    await mountEnabledPlugins(registry, plugins, {
+      enabledGuids: new Set(["extra"]),
+    });
+    expect(registry.getByGuid("extra-class")).toBeUndefined();
+    await mountEnabledPlugins(registry, plugins, {
+      enabledGuids: new Set(["base", "extra"]),
+    });
+    expect(registry.getByGuid("extra-class")?.rootId).toBe("plugin:extra");
+  });
+
   it("mounts enabled plugin assets and leaves disabled plugins unmounted", async () => {
     const storage = await projectStorage();
     const on = createDefaultPluginSettings({
