@@ -71,9 +71,9 @@ test("large skybox remains visible after adding a possessing camera", async ({
   scene.actors.push(
     createActor("box", "Box", {
       transform: {
-        position: [0, 0, 900],
+        position: [0, 0, 950],
         rotation: [0, 0, 0, 1],
-        scale: [100, 100, 100],
+        scale: [50, 50, 50],
       },
       components: [
         {
