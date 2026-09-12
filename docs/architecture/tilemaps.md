@@ -41,6 +41,8 @@ Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local ind
 
 `encodeTileGid` / `decodeTileGid(map, gid, tilesetPayloads)` pick the highest `firstGid <= gid`. Play/editor/physics all use the same helpers. Legacy maps with an empty `tilesets[]` and only `tilesetGuid` still treat GIDs as local ids.
 
+`tileCount` reserves a map-local range and never shrinks with the atlas. `reconcileTilemapTilesets` expands into an available gap or relocates the growing Tileset above existing ranges and painted GIDs, remapping its cells on every layer while preserving `{tilesetGuid, localId}`. Unknown painted GIDs are not reassigned. Legacy zero counts derive ownership from the next saved range and the last painted ID. Reconciliation belongs to the next authored Tilemap edit, so allocation and painting undo together. Closed maps retain their saved identities without a cross-document rewrite. Shrunk or unavailable atlas cells remain stored but do not render or collide until available again; historical ambiguous GIDs retain their saved interpretation.
+
 Only **affected chunks** are copied in `setTile`. Editor and Play mesh builders still walk every **visible** chunk when the document or scene applies. Editor asset fingerprints include Tilemap and Tileset payload contents, so painting, layer visibility, and atlas grid edits refresh existing scene geometry and UVs; equivalent payloads keep mesh identity.
 
 Animated tiles (tileset `animation` frame lists) draw as a small separate set; they do not make every static tile dynamic.

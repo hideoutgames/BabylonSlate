@@ -1,7 +1,8 @@
 /** Tilemap asset payload: ordered layers of chunked tile ids (engineplan §13.3). */
 
 import {
-  ensureTilesetTiles,
+  tilesetAtlasColumns,
+  tilesetAtlasRows,
   type TilesetPayload,
 } from "./tileset-payload";
 
@@ -139,11 +140,11 @@ export function encodeTileGid(firstGid: number, localId: number): number {
   return firstGid + localId - 1;
 }
 
-export function decodeTileGid(
+/** Saved identity does not depend on whether the atlas is available or has shrunk. */
+export function tilemapTileIdentity(
   map: TilemapPayload,
   gid: number,
-  tilesets: ReadonlyMap<string, TilesetPayload>,
-): TileGidHit | null {
+): { guid: string; localId: number } | null {
   if (!Number.isInteger(gid) || gid <= 0) return null;
   let chosen: TilemapTilesetRef | null = null;
   for (const ref of map.tilesets) {
@@ -155,19 +156,94 @@ export function decodeTileGid(
     if (map.tilesets.length > 0) return null;
     const fallbackGuid = map.tilesetGuid;
     if (!fallbackGuid) return null;
-    const tileset = tilesets.get(fallbackGuid);
-    if (!tileset) return null;
-    return { guid: fallbackGuid, localId: gid, tileset };
+    return { guid: fallbackGuid, localId: gid };
   }
-  const tileset = tilesets.get(chosen.guid);
-  if (!tileset) return null;
-  const count =
-    chosen.tileCount > 0
-      ? chosen.tileCount
-      : ensureTilesetTiles(tileset).tiles.length;
   const localId = gid - chosen.firstGid + 1;
-  if (count > 0 && (localId < 1 || localId > count)) return null;
-  return { guid: chosen.guid, localId, tileset };
+  if (chosen.tileCount > 0 && localId > chosen.tileCount) return null;
+  return { guid: chosen.guid, localId };
+}
+
+export function decodeTileGid(
+  map: TilemapPayload,
+  gid: number,
+  tilesets: ReadonlyMap<string, TilesetPayload>,
+): TileGidHit | null {
+  const identity = tilemapTileIdentity(map, gid);
+  if (!identity) return null;
+  const tileset = tilesets.get(identity.guid);
+  if (!tileset || identity.localId > atlasTileCount(tileset)) return null;
+  return { ...identity, tileset };
+}
+
+function atlasTileCount(tileset: TilesetPayload): number {
+  return tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
+}
+
+function highestPaintedGid(map: TilemapPayload): number {
+  let highest = 0;
+  for (const layer of map.layers) {
+    for (const chunk of layer.chunks) {
+      for (const gid of chunk.tiles) highest = Math.max(highest, gid);
+    }
+  }
+  return highest;
+}
+
+/**
+ * Grow map-local reservations without changing painted Tileset/local-tile identity.
+ * Apply this working copy with the next authored edit so ranges and cells undo together.
+ */
+export function reconcileTilemapTilesets(
+  map: TilemapPayload,
+  knownTilesets: ReadonlyMap<string, TilesetPayload>,
+): TilemapPayload {
+  const refs = map.tilesets.length > 0 ? map.tilesets : map.tilesetGuid
+    ? [{ guid: map.tilesetGuid, firstGid: 1, tileCount: 0 }] : [];
+  if (refs.length === 0) return map;
+  const highest = highestPaintedGid(map);
+  const ordered = [...refs].sort((a, b) => a.firstGid - b.firstGid);
+  const nextRefs = new Map(ordered.map((ref, index) => {
+    const nextFirst = ordered[index + 1]?.firstGid ?? Math.max(ref.firstGid + 1, highest + 1);
+    return [ref.guid, { ...ref, tileCount: ref.tileCount || Math.max(1, nextFirst - ref.firstGid) }];
+  }));
+  let nextFree = highest + 1;
+  for (const ref of nextRefs.values()) nextFree = Math.max(nextFree, ref.firstGid + ref.tileCount);
+  const unowned = new Set<number>();
+  for (const layer of map.layers) {
+    for (const chunk of layer.chunks) {
+      for (const gid of chunk.tiles) {
+        if (gid > 0 && !tilemapTileIdentity(map, gid)) unowned.add(gid);
+      }
+    }
+  }
+  for (const original of ordered) {
+    const ref = nextRefs.get(original.guid)!;
+    const payload = knownTilesets.get(ref.guid);
+    const count = Math.max(ref.tileCount, payload ? atlasTileCount(payload) : 0);
+    let nextFirst = Infinity;
+    for (const other of nextRefs.values()) {
+      if (other.firstGid > ref.firstGid) nextFirst = Math.min(nextFirst, other.firstGid);
+    }
+    const wouldClaimOrphan = [...unowned].some((gid) => gid >= ref.firstGid && gid < ref.firstGid + count);
+    if (ref.firstGid + count > nextFirst || wouldClaimOrphan) ref.firstGid = nextFree;
+    ref.tileCount = count;
+    nextFree = Math.max(nextFree, ref.firstGid + count);
+  }
+  const tilesets = refs.map((ref) => nextRefs.get(ref.guid)!);
+  if (map.tilesets.length === tilesets.length && refs.every((ref, index) =>
+    ref.firstGid === tilesets[index]!.firstGid && ref.tileCount === tilesets[index]!.tileCount)) return map;
+  const relocated = refs.some((ref) => nextRefs.get(ref.guid)!.firstGid !== ref.firstGid);
+  const layers = !relocated ? map.layers : map.layers.map((layer) => ({
+    ...layer,
+    chunks: layer.chunks.map((chunk) => ({
+      ...chunk,
+      tiles: chunk.tiles.map((gid) => {
+        const identity = tilemapTileIdentity(map, gid);
+        return identity ? encodeTileGid(nextRefs.get(identity.guid)!.firstGid, identity.localId) : gid;
+      }),
+    })),
+  }));
+  return { ...map, tilesets, tilesetGuid: tilesets[0]?.guid ?? null, layers };
 }
 
 export function addTilemapTileset(
@@ -178,10 +254,11 @@ export function addTilemapTileset(
 ): TilemapPayload {
   if (!guid) return map;
   if (map.tilesets.some((ref) => ref.guid === guid)) return map;
-  const count = Math.max(1, ensureTilesetTiles(tileset).tiles.length);
-  const firstGid = nextTilesetFirstGid(map, knownTilesets);
-  const tilesets = [...map.tilesets, { guid, firstGid, tileCount: count }];
-  return { ...map, tilesets, tilesetGuid: tilesets[0]?.guid ?? null };
+  const reconciled = reconcileTilemapTilesets(map, knownTilesets ?? new Map());
+  const count = Math.max(1, atlasTileCount(tileset));
+  const firstGid = nextTilesetFirstGid(reconciled);
+  const tilesets = [...reconciled.tilesets, { guid, firstGid, tileCount: count }];
+  return { ...reconciled, tilesets, tilesetGuid: tilesets[0]?.guid ?? null };
 }
 
 export function removeTilemapTileset(
@@ -212,16 +289,10 @@ export function removeTilemapTileset(
 
 function nextTilesetFirstGid(
   map: TilemapPayload,
-  knownTilesets?: ReadonlyMap<string, TilesetPayload>,
 ): number {
-  let next = 1;
+  let next = highestPaintedGid(map) + 1;
   for (const ref of map.tilesets) {
-    let count = ref.tileCount;
-    if (count <= 0) {
-      const payload = knownTilesets?.get(ref.guid);
-      count = payload ? ensureTilesetTiles(payload).tiles.length : 1;
-    }
-    next = Math.max(next, ref.firstGid + Math.max(1, count));
+    next = Math.max(next, ref.firstGid + Math.max(1, ref.tileCount));
   }
   return next;
 }
