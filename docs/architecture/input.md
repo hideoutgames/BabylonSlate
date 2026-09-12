@@ -23,7 +23,7 @@ Complete taps between ticks retain both Started and Released. A release/repress 
 
 The native **Key** enum uses the same catalog as Input Action/Axis authoring: keyboard codes, five mouse buttons, and the four supported gamepads' Standard buttons and stick axes. Labels are readable; values such as `KeyW`, `MouseLeft`, and `Gamepad1Button0` retain exact device identity. **None** is an inert default.
 
-**On Any Key Pressed** emits each newly pressed Key once, in input order. Keyboard repeats and held gamepad samples do not retrigger it. Primary touch reports Mouse Left. Gamepad axes emit when their absolute value crosses 0.5, and rearm below that threshold; the event captures an axis identity rather than its direction.
+**On Any Key Pressed** emits each newly pressed Key once, in input order. Keyboard repeats and held gamepad samples do not retrigger it. Primary touch reports Mouse Left. Gamepad axes emit when their absolute value crosses 0.5, and rearm at or below that threshold; the event captures an axis identity rather than its direction.
 
 | Node | Use |
 | --- | --- |
@@ -36,7 +36,7 @@ The native **Key** enum uses the same catalog as Input Action/Axis authoring: ke
 
 For WASD rebinding, store the selected **Input Binding**, gate **On Any Key Pressed** with the menu's waiting flag, pass Key to **Set Input Axis Binding**, and clear the waiting flag after success. Replacing W retains its original Y component and positive/negative direction. The game owns menu gating and persistence; these nodes do not automatically write browser storage or suppress gameplay input.
 
-**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Profile additions/removals use version 2 edits; controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it. The obsolete string-based input nodes, Input Control/Input Device types, and capture/status graph workflow have been removed.
+**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Profile additions/removals use version 2 edits; controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it. The obsolete string-based input nodes, native Input Control/Input Device types, and capture/status graph workflow have been removed.
 
 ## Storage and defaults
 
