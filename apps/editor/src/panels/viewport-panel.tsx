@@ -714,12 +714,29 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           if (!visual) return [];
           visual.computeWorldMatrix(true);
           const position = visual.getAbsolutePosition();
+          const bounds = visual.getBoundingInfo().boundingBox;
+          const textureStates = visual.material?.getActiveTextures().map((texture) => ({
+            ready: texture.isReady(),
+            size: texture.getSize(),
+            error: texture.loadingError,
+            internal: {
+              width: texture.getInternalTexture()?.width,
+              height: texture.getInternalTexture()?.height,
+              format: texture.getInternalTexture()?.format,
+              mipmaps: texture.getInternalTexture()?.generateMipMaps,
+            },
+          }));
           return [
             {
               ...materialViewportTestSnapshot(visual),
               actorId: actor.id,
               position: [position.x, position.y, position.z],
               materialName: visual.material?.name ?? null,
+              textureStates,
+              meshReady: visual.isReady(true),
+              enabled: visual.isEnabled(),
+              bounds: [bounds.minimumWorld.asArray(), bounds.maximumWorld.asArray()],
+              active: engineRef.current?.scene.getActiveMeshes().data.map((mesh) => mesh?.name),
             },
           ];
         });

@@ -234,7 +234,15 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
   })).toEqual(expect.arrayContaining([expect.objectContaining({
     actorId: "ground", materialName: `albedo:${textureGuid}`,
   })]));
-  await expectGreenIllumination(page.getByTestId("viewport-canvas"));
+  try {
+    await expectGreenIllumination(page.getByTestId("viewport-canvas"));
+  } catch (error) {
+    console.log("ATLAS DIAGNOSTIC", await page.evaluate(() => {
+      const host = globalThis as unknown as { __babylonslateViewportTest?: { sceneVisuals: () => unknown[] } };
+      return host.__babylonslateViewportTest?.sceneVisuals();
+    }));
+    throw error;
+  }
   await clickPlayAndWaitForOverlay(page);
   await expectGreenIllumination(page.getByTestId("play-canvas"));
   await page.getByTestId("play-overlay-close").click();
