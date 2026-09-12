@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, MeshBuilder, NullEngine, Scene, Vector3 } from "@babylonjs/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, type NodeMaterialConnectionPoint } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 
 const dispose: Array<() => void> = [];
-afterEach(() => { while (dispose.length) dispose.pop()!(); });
+afterEach(() => { while (dispose.length) dispose.pop()!(); vi.restoreAllMocks(); });
 
 async function compile(doc: MaterialDocument, particlePreview = false) {
   const engine = new NullEngine();
@@ -27,6 +27,35 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it("advances Seconds-mode Time when previews render without fresh engine frame deltas", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "time", "input.time", { timeMode: "seconds" });
+    node(doc, "sine", "math.sin");
+    wire(doc, "time", "time", "sine", "value");
+    wire(doc, "sine", "out", "output", "roughness");
+    const result = await compile(doc);
+    const scene = result.material.getScene();
+    const engine = scene.getEngine();
+    vi.spyOn(engine, "getDeltaTime").mockReturnValue(0);
+    const clock = vi.spyOn(PrecisionDate, "Now", "get");
+    new ArcRotateCamera("camera", 0, Math.PI / 4, 5, Vector3.Zero(), scene);
+    const mesh = MeshBuilder.CreateSphere("preview", {}, scene);
+    mesh.material = result.material;
+    // Read the numeric shader input, including the previous seconds conversion.
+    function scalar(point: NodeMaterialConnectionPoint): number {
+      const block = point.ownerBlock;
+      if (block instanceof InputBlock) return block.value as number;
+      if (block instanceof MultiplyBlock) return scalar(block.left.connectedPoint!) * scalar(block.right.connectedPoint!);
+      throw new Error(`Unexpected Time producer: ${block.getClassName()}`);
+    }
+    const time = result.material.getBlockByName("sine")!.getInputByName("input")!.connectedPoint!;
+    clock.mockReturnValue(engine.startTime + 250);
+    scene.render();
+    const before = scalar(time);
+    clock.mockReturnValue(engine.startTime + 1250);
+    scene.render();
+    expect(scalar(time) - before).toBeCloseTo(1);
+  });
   it.each(["a", "b"])("compiles animated normal displacement with Time on Multiply %s", async (timePin) => {
     const doc = createDefaultMaterialDocument();
     node(doc, "time", "input.time", { timeMode: "seconds" });
