@@ -32,7 +32,21 @@ renamed, so `.shader.babasset` files keep working and their layout ids,
 references and Git LFS locks stay valid.
 
 `MaterialDocument` (v3) carries `domain` (`surface` | `postProcess` | `particle`),
-`shadingModel`, `blendMode`, `twoSided`, `alphaCutoff`, `preview` and the graph.
+`shadingModel`, `blendMode`, `twoSided`, `defaultNormals`, `alphaCutoff`, `preview` and the graph.
+
+Surface material Defaults expose **Default Normals**: **Model Normals** (the
+default, `model`) or **Flat Normals** (`flat`). This only supplies an unconnected
+Material Outputs **Normal** input; a connected world-space normal always wins.
+Model Normals retain the model's authored smoothing. Flat Normals use each
+rendered triangle's face direction in PBR and CEL, including skinning, morphs,
+and world-position offsets. Unlit shading does not use this setting. Reset
+restores Model Normals; changing the setting invalidates material compilation
+and preview caches. It does not disable lighting or cast/received shadows.
+Face normals use fragment derivatives of the final world position, with the
+model normal selecting only their outward orientation. Shared model geometry,
+vertex counts, and draw counts are unchanged; the extra shader work runs only
+when the flat fallback is used.
+
 Unknown domain strings, including leftover HUD `interface`, parse as `surface`.
 There is no `output.interface` node and no WidgetComponent / HUD Material blit
 path.

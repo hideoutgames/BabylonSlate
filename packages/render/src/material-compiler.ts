@@ -58,6 +58,7 @@ import {
 import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
+import { FlatNormalBlock } from "./flat-normal-block";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
@@ -444,12 +445,22 @@ export function compileMaterialPlan(
     ensureParticleTextureUvs(options.name, created);
   }
 
+  let flatNormal: FlatNormalBlock | undefined;
   const outputPoint = (
     pinId: string,
     name: string,
     asColor: boolean,
   ): NodeMaterialConnectionPoint | null => {
     const operand = plan.outputs[pinId];
+    if (!operand && pinId === "normal" && plan.defaultNormals === "flat") {
+      if (!flatNormal && plumbing.worldPosition && plumbing.worldNormal) {
+        flatNormal = new FlatNormalBlock(`${options.name}_flatNormal`);
+        created.push(flatNormal);
+        plumbing.worldPosition.connectTo(flatNormal.worldPosition);
+        plumbing.worldNormal.connectTo(flatNormal.modelNormal);
+      }
+      return flatNormal?.output ?? null;
+    }
     if (!operand) return null;
     return pointForOperand(operand, name, asColor);
   };

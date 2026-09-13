@@ -677,10 +677,23 @@ function MaterialDocumentDetails() {
       value: document.twoSided,
       onChange: (value) => commit({ ...document, twoSided: value }),
     },
+    {
+      id: "defaultNormals",
+      kind: "enum",
+      label: "Default Normals",
+      description: "Used when the Normal input is unconnected. Flat Normals shade each triangle as a flat face.",
+      value: document.defaultNormals,
+      defaultValue: "model",
+      options: [
+        { value: "model", label: "Model Normals" },
+        { value: "flat", label: "Flat Normals" },
+      ],
+      onChange: (value) => commit({ ...document, defaultNormals: value === "flat" ? "flat" : "model" }),
+    },
   ];
   if (document.domain === "surface") rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }) });
   if (document.domain !== "surface") {
-    for (let i = rows.length - 1; i >= 0; i--) if (["shadingModel", "twoSided"].includes(rows[i]!.id)) rows.splice(i, 1);
+    for (let i = rows.length - 1; i >= 0; i--) if (["shadingModel", "twoSided", "defaultNormals"].includes(rows[i]!.id)) rows.splice(i, 1);
   }
   if (document.domain === "surface" && document.blendMode === "masked") {
     rows.push({

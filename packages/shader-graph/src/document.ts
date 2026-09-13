@@ -62,6 +62,7 @@ export interface MaterialDocument {
   shadingModel: MaterialShadingModel;
   blendMode: MaterialBlendMode;
   twoSided: boolean;
+  defaultNormals: "model" | "flat";
   alphaCutoff: number;
   boundsPadding?: number;
   preview: MaterialPreviewSettings;
@@ -328,6 +329,7 @@ export function createDefaultMaterialDocument(
     shadingModel: domain === "particle" ? "unlit" : "pbr",
     blendMode: domain === "particle" ? "additive" : "opaque",
     twoSided: false,
+    defaultNormals: "model",
     alphaCutoff: 0.5,
     preview: { mesh: "cube", customMeshGuid: null },
     nodes: graph.nodes,
@@ -385,6 +387,7 @@ export function normalizeMaterialDocument(
         ? record.blendMode
         : "opaque",
     twoSided: record.twoSided === true,
+    defaultNormals: record.defaultNormals === "flat" ? "flat" : "model",
     alphaCutoff: asNumber(record.alphaCutoff, 0.5),
     ...(asNumber(record.boundsPadding, 0) > 0 ? { boundsPadding: asNumber(record.boundsPadding, 0) } : {}),
     preview: normalizePreview(record.preview),
@@ -609,6 +612,7 @@ export function migrateLegacyShaderPayload(
     shadingModel: record.shadingModel,
     blendMode: record.blendMode,
     twoSided: record.twoSided,
+    defaultNormals: record.defaultNormals,
     alphaCutoff: record.alphaCutoff,
     preview: record.preview,
     nodes: seeded.nodes,
