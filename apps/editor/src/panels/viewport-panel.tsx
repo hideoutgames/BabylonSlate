@@ -156,6 +156,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const completedRenderSettingsRef = useRef<string | null>(null);
   const appliedRenderSettingsRef = useRef<string | null>(null);
   const loadTransitionRef = useRef(0);
+  const blockingLoadRef = useRef<AbortController | null>(null);
   const [sceneLoad, setSceneLoad] = useState<{
     open: boolean;
     progress: number;
@@ -168,6 +169,34 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     scene: SerializedScene;
     handle: EngineHandle;
   } | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let sized = canvas.clientWidth > 0 && canvas.clientHeight > 0;
+    let retryWhenVisible = false;
+    const observer = new ResizeObserver(() => {
+      const nextSized = canvas.clientWidth > 0 && canvas.clientHeight > 0;
+      if (sized && !nextSized && blockingLoadRef.current) {
+        const loading = blockingLoadRef.current;
+        blockingLoadRef.current = null;
+        retryWhenVisible = true;
+        loading.abort();
+        setSceneReady(false);
+        setDropReady(null);
+        setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
+        // Disposal rejects an outstanding first-frame promise immediately.
+        // Completed inactive viewports retain their handle and resources.
+        releaseEngineRef.current?.();
+      } else if (!sized && nextSized && retryWhenVisible) {
+        retryWhenVisible = false;
+        setReloadVersion((version) => version + 1);
+      }
+      sized = nextSized;
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -315,6 +344,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     setDropReady(null);
     setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
     const controller = new AbortController();
+    blockingLoadRef.current = controller;
     const disposers: Array<() => void> = [];
     let released = false;
     const release = () => {
@@ -445,6 +475,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (controller.signal.aborted) return;
         console.error("[viewport] failed to create scene", error);
         setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true });
+      } finally {
+        // Keep construction covered until the scene-loading effect takes over.
+        if (blockingLoadRef.current === controller && (!engineRef.current || !sceneRef.current)) {
+          blockingLoadRef.current = null;
+        }
       }
     })();
 
@@ -532,6 +567,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const rendering = !remount && completedRenderSettingsRef.current !== renderSettingsKey;
     const blocking = remount || rendering;
     if (blocking) {
+      blockingLoadRef.current = controller;
       handle.setPaused(true);
       setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene", rendering });
     }
@@ -664,6 +700,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         console.error("[viewport] failed to load scene", error);
         releaseEngineRef.current?.();
         setSceneLoad((current) => ({ ...current, open: true, failed: true }));
+      } finally {
+        if (blockingLoadRef.current === controller) blockingLoadRef.current = null;
       }
     })();
     return () => {
