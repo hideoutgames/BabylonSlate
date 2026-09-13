@@ -140,7 +140,8 @@ export class ForwardSceneFrameGraph {
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
       return "Multiple and rig cameras require classic rendering.";
-    if (scene.isActiveMeshesFrozen)
+    // Pinned Scene flag also used by the official culling task.
+    if (scene._activeMeshesFrozen)
       return "Frozen active-mesh lists require classic rendering.";
     // Pinned AbstractEngine target state: graph.execute restores the default
     // framebuffer, so it cannot borrow a caller-owned shared-view RTT.

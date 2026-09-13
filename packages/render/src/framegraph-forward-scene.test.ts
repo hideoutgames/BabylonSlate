@@ -106,6 +106,14 @@ it("falls back before replacing managed shadows or a shared-view target", async 
   camera.outputRenderTarget = null;
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  await new Promise<void>((resolve) =>
+    scene.freezeActiveMeshes(false, resolve),
+  );
+  expect(await graph.prepare(camera)).toMatchObject({
+    path: "classic",
+    reason: expect.stringContaining("Frozen active-mesh lists"),
+  });
+  scene.unfreezeActiveMeshes();
   graph.dispose();
 });
 
