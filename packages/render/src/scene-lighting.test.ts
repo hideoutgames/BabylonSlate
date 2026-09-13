@@ -20,7 +20,9 @@ import {
   PointLight,
   RawTexture,
   Scene,
+  SpotLight,
   StandardMaterial,
+  TransformNode,
   UniversalCamera,
   Vector3,
   type Material,
@@ -179,6 +181,45 @@ describe("scene material lighting", () => {
     expect(lamps[0]!.renderPriority).toBe(10);
     expect(sceneLightingLimits(scene)).toEqual([]);
   });
+
+  it.each(["point", "spot"] as const)(
+    "ranks parented %s lights in current world space and promotes them after ancestor movement",
+    (kind) => {
+      const scene = host(false);
+      scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+      const ancestor = new TransformNode("ancestor", scene);
+      ancestor.position.x = 30;
+      const parent = new TransformNode("parent", scene);
+      parent.parent = ancestor;
+      parent.position.x = 20;
+      const position = new Vector3(50, 0, 0);
+      const moving =
+        kind === "point"
+          ? new PointLight("moving", position, scene)
+          : new SpotLight("moving", position, Vector3.Down(), 1, 1, scene);
+      moving.parent = parent;
+      const fixed = new PointLight("fixed", new Vector3(60, 0, 0), scene);
+
+      // Before any render, moving is 100 units away despite its local x of 50.
+      syncForwardLightPolicy(scene, 1);
+      expect(fixed.isEnabled()).toBe(true);
+      expect(isForwardLightExcluded(moving)).toBe(true);
+
+      // The excluded light must be reconsidered using its ancestor's new pose,
+      // without relying on a render or an enabled light's uniform transfer.
+      ancestor.position.x = -69;
+      syncForwardLightPolicy(scene, 1);
+      expect(moving.isEnabled()).toBe(true);
+      expect(isForwardLightExcluded(fixed)).toBe(true);
+
+      // Detachment must also stop using the former parent's cached world pose.
+      moving.parent = null;
+      fixed.position.x = 10;
+      syncForwardLightPolicy(scene, 1);
+      expect(fixed.isEnabled()).toBe(true);
+      expect(isForwardLightExcluded(moving)).toBe(true);
+    },
+  );
 
   it("retains equal-distance incumbents and restores policy-excluded lights when capacity returns", () => {
     const scene = host(false);

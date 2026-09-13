@@ -1,6 +1,7 @@
 import {
   DirectionalLight,
   HemisphericLight,
+  ShadowLight,
   Vector3,
   type Light,
   type Scene,
@@ -93,7 +94,9 @@ export function syncForwardLightPolicy(
     const squared =
       camera && !global(light)
         ? Vector3.DistanceSquared(
-            light.getAbsolutePosition(),
+            light instanceof ShadowLight && !light.parent
+              ? light.position
+              : light.getAbsolutePosition(),
             camera.globalPosition,
           )
         : 0;
@@ -102,7 +105,17 @@ export function syncForwardLightPolicy(
     return Math.max(1, squared) / (previous.has(light) ? 1.15 : 1);
   };
   const capacity = Math.max(0, Math.floor(slots));
-  if (candidates.length > capacity)
+  if (candidates.length > capacity) {
+    if (camera) {
+      for (const light of candidates) {
+        if (!(light instanceof ShadowLight) || global(light)) continue;
+        // Excluded lights do not reach Babylon's shader binding path, which
+        // normally refreshes this cached position. Update ancestors too, even
+        // when admission runs again before the next scene render.
+        light.parent?.computeWorldMatrix(true);
+        light.computeTransformedInformation();
+      }
+    }
     candidates.sort(
       (a, b) =>
         Number(global(b)) - Number(global(a)) ||
@@ -111,6 +124,7 @@ export function syncForwardLightPolicy(
         distance(a) - distance(b) ||
         a.uniqueId - b.uniqueId,
     );
+  }
   const selected = previous;
   selected.clear();
   for (let index = 0; index < Math.min(capacity, candidates.length); index++)
