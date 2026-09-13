@@ -375,6 +375,10 @@ can bypass geometry notifications; an unknown mutability state also keeps maps l
 The camera-dependent sun always refreshes. This policy adds no authored mobility defaults,
 staggered refresh, baking or distinct free-camera inspection override. Spatially selective
 invalidation and device performance qualification remain separate work.
+The targeted `e2e/shadow-refresh.spec.ts` browser regression observes real cube-map
+draws and compares cached receiver pixels with a freshly allocated map at the same
+pose after caster/light edits, resize and reload. It verifies correctness and idle
+map reuse, without collecting timing samples or qualifying device performance.
 Light diagnostics distinguish disabled, non-illuminating, intentionally unshadowed,
 globally disabled shadows, distance limits, budget limits and allocation failure.
 They report the actual filter, including Babylon's point-light Poisson fallback.
