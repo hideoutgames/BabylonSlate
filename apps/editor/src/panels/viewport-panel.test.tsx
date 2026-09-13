@@ -45,6 +45,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     setEditingMaterialGuids: vi.fn(),
     postProcessPassCount: vi.fn(() => 0),
     loadScene: vi.fn(),
+    loadSceneAsync: vi.fn(async () => {}),
     resize: vi.fn(),
     dispose: vi.fn(),
     resourceCache: {},
@@ -230,6 +231,7 @@ describe("ViewportPanel engine", () => {
     selection.actorIds = [];
     documents.applySceneChange.mockClear();
     handle.loadScene.mockClear();
+    handle.loadSceneAsync.mockReset().mockResolvedValue(undefined);
     handle.setMeshAssets.mockClear();
     handle.setMaterialDocuments.mockClear();
     handle.dispose.mockClear();
@@ -307,7 +309,7 @@ describe("ViewportPanel engine", () => {
       for (const callback of [...callbacks]) callback();
     });
     expect(handle.dispose).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(createEngineMock).toHaveBeenCalledOnce();
     expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
     await act(async () => {
@@ -317,7 +319,7 @@ describe("ViewportPanel engine", () => {
     await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
     expect(createEngineMock).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await act(async () => {
       width.mockReturnValue(0);
       for (const callback of [...callbacks]) callback();
@@ -350,6 +352,24 @@ describe("ViewportPanel engine", () => {
     expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true");
   });
 
+  it("collects once and waits for chunked realization before model readiness", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" }, content: createDefaultScene(),
+    }];
+    let finish!: () => void;
+    handle.loadSceneAsync.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+    renderViewport();
+    await waitFor(() => expect(handle.loadSceneAsync).toHaveBeenCalledOnce());
+    expect(documents.collectPlayMaterialLibrary).toHaveBeenCalledOnce();
+    expect(handle.setMaterialDocuments).not.toHaveBeenCalled();
+    expect(handle.setMeshAssets).not.toHaveBeenCalled();
+    expect(handle.loadScene).not.toHaveBeenCalled();
+    expect(handle.whenEditorModelsReady).not.toHaveBeenCalled();
+    expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
+    await act(async () => finish());
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+  });
+
   it.each(["create", "realize", "assets", "shaders", "present"] as const)(
     "keeps %s failures unready and retries with a fresh transition", async (stage) => {
       documents.openDocuments = [{
@@ -359,7 +379,7 @@ describe("ViewportPanel engine", () => {
       const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
       const failure = new Error("Unavailable scene resource");
       if (stage === "create") createEngineMock.mockImplementationOnce(() => { throw failure; });
-      if (stage === "realize") handle.loadScene.mockImplementationOnce(() => { throw failure; });
+      if (stage === "realize") handle.loadSceneAsync.mockRejectedValueOnce(failure);
       if (stage === "assets") documents.collectPlayTextureBytes.mockRejectedValueOnce(failure);
       if (stage === "shaders") handle.prewarmSceneMaterials.mockRejectedValueOnce(failure);
       if (stage === "present") handle.presentFirstFrame.mockRejectedValueOnce(failure);
@@ -393,7 +413,7 @@ describe("ViewportPanel engine", () => {
       ...scene, settings: { ...scene.settings, shadowOverrides: { distance: 80 } },
     } }];
     view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
-    expect(handle.loadScene).toHaveBeenCalledTimes(1);
+    expect(handle.loadSceneAsync).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledTimes(2));
     expect(createEngineMock).toHaveBeenCalledOnce();
     expect(handle.dispose).not.toHaveBeenCalled();
@@ -446,7 +466,8 @@ describe("ViewportPanel engine", () => {
     view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
     await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledOnce());
     await act(async () => finishOldAssets());
-    expect(handle.setMeshAssets).toHaveBeenCalledOnce();
+    expect(handle.loadSceneAsync).toHaveBeenCalledOnce();
+    expect(handle.setMeshAssets).not.toHaveBeenCalled();
     expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
     expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
     await act(async () => present());
@@ -681,7 +702,7 @@ describe("ViewportPanel engine", () => {
       content: createDefaultScene(),
     }];
     const { rerender } = renderViewport();
-    await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
     const initialLoads = handle.loadScene.mock.calls.length;
     const initialMaterials = handle.setMaterialDocuments.mock.calls.length;
     const updatedDocument = { ...createDefaultMaterialDocument(), name: "Saved Surface" };

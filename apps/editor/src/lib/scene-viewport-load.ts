@@ -19,8 +19,8 @@ export function sceneViewportRenderSettingsKey(
 export const SCENE_LOAD_PHASES = [
   "Preparing Scene",
   "Loading Document",
-  "Realizing Scene",
   "Collecting Assets",
+  "Realizing Scene",
   "Loading Models",
   "Warming Shaders",
   "Presenting First Frame",
@@ -41,7 +41,7 @@ import { waitForSceneLoadingPaint } from "@babylonslate/render";
 
 export async function runSceneViewportBlockingLoad(options: {
   signal: AbortSignal;
-  realize: () => void;
+  realize: () => void | Promise<void>;
   collect: () => Promise<void>;
   whenModelsReady: () => Promise<void>;
   warmShaders: () => Promise<void>;
@@ -52,11 +52,11 @@ export async function runSceneViewportBlockingLoad(options: {
   options.onProgress(0, "Preparing Scene");
   await waitForSceneLoadingPaint(options.signal);
   options.signal.throwIfAborted();
-  options.onProgress(10, "Realizing Scene");
-  options.realize();
-  options.signal.throwIfAborted();
-  options.onProgress(20, "Collecting Assets");
+  options.onProgress(10, "Collecting Assets");
   await options.collect();
+  options.signal.throwIfAborted();
+  options.onProgress(20, "Realizing Scene");
+  await options.realize();
   options.signal.throwIfAborted();
   options.onProgress(45, "Loading Models");
   await options.whenModelsReady();
