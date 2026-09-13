@@ -1,5 +1,5 @@
-import type { ShadowDeviceProfile } from "@babylonslate/core";
-import { sceneShadowController } from "./shadow-controller";
+import type { BaseTexture } from "@babylonjs/core";
+import { resolveRenderingQuality } from "@babylonslate/core";
 import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
 import {
   Engine,
@@ -17,7 +17,7 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { sceneRenderingSettings, type RenderShadingSettings } from "./render-settings";
+import { sceneRenderingSettings, resolveSceneRenderingQuality, type RenderShadingSettings } from "./render-settings";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -136,7 +136,6 @@ import {
   applySetMaterialParameter,
   applyAssignMesh,
   applyPossessCamera,
-  applyShadowQuality,
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
@@ -244,12 +243,10 @@ export interface EngineHandle {
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Project render mode and defaults; scene overrides remain independent. */
   setRenderSettings: (settings: RenderShadingSettings) => void;
-  setShadowDeviceProfile: (profile: ShadowDeviceProfile) => void;
   /** Register FontFace source bytes before Bitmap 2D Text paints. */
   registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
   applySceneEnvironment: (sceneData: SerializedScene) => void;
-  setShadowQuality: (level: string) => void;
   /** Overlay Play SceneLayer scenes, back to front. */
   sceneLayerScenes: () => Array<{
     layerId: string;
@@ -264,6 +261,8 @@ export interface EngineHandle {
   postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
+  /** Explicit local quality preferences; runtime commands take precedence. */
+  setLocalQualityOverrides: (overrides: import("@babylonslate/core").QualityOverrides) => void;
   /** Live Engine Settings texture LRU budget. */
   setTextureBudget: (bytes: number, enabled: boolean) => void;
   /** Live Engine Settings decoded-PCM LRU (Play only). */
@@ -541,7 +540,6 @@ export interface EditorTools {
   } | null;
   /** Preview the named Default Camera without replacing the stored orbit pose. */
   setPreviewGameCamera: (enabled: boolean) => void;
-  setShadowQuality: (level: string) => void;
   /**
    * World point under a client coordinate on this viewport canvas, or null when
    * the canvas has no layout size.
@@ -643,6 +641,7 @@ export function createEngine(
       adaptToDeviceRatio: false,
       antialias: false,
       useLargeWorldRendering: true,
+      useExactSrgbConversions: true,
     });
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: options.playMode === true,
@@ -924,6 +923,7 @@ export function createEngine(
       library: materialLibrary,
       stack: postProcessStack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
+      resolutionScale: resolveSceneRenderingQuality(scene).postprocessing.resolutionScale,
       deviceBuffers: probePostProcessDeviceBuffers(scene, camera),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
@@ -931,6 +931,39 @@ export function createEngine(
       },
     });
   };
+
+  let appliedQuality: ReturnType<typeof resolveRenderingQuality> | undefined;
+  let appliedProject: unknown;
+  let appliedSceneOverrides: unknown;
+  let appliedSessionOverrides: unknown;
+  let appliedLocalOverrides: unknown;
+  const applyTextureAnisotropy = (texture: BaseTexture) => {
+    const anisotropy = appliedQuality?.textures.anisotropy ?? 4;
+    texture.anisotropicFilteringLevel = Math.min(anisotropy, engine.getCaps().maxAnisotropy ?? 1);
+  };
+  const applyRenderingQuality = () => {
+    const state = sceneRenderingSettings(scene);
+    if (appliedProject === state.project && appliedSceneOverrides === state.shadowOverrides && appliedSessionOverrides === state.qualityOverrides && appliedLocalOverrides === state.localQualityOverrides) return;
+    appliedProject = state.project;
+    appliedSceneOverrides = state.shadowOverrides;
+    appliedSessionOverrides = state.qualityOverrides;
+    appliedLocalOverrides = state.localQualityOverrides;
+    const quality = resolveSceneRenderingQuality(scene);
+    const previous = appliedQuality;
+    appliedQuality = quality;
+    if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution))
+      scaling.configureQuality(quality.resolution);
+    if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
+      resourceCache.setByteCeiling(quality.textures.byteBudget);
+      for (const texture of scene.textures) applyTextureAnisotropy(texture);
+    }
+    if (previous && previous.postprocessing.resolutionScale !== quality.postprocessing.resolutionScale) {
+      rebuildPostProcessStack();
+      sceneLayerCompositor?.refreshPostProcess();
+    }
+  };
+  scene.onBeforeRenderObservable.add(applyRenderingQuality);
+  scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
 
   const sceneLayerCompositor = options.playMode
     ? new SceneLayerCompositor({
@@ -942,6 +975,7 @@ export function createEngine(
             camera: layer.camera,
             library: materialLibrary,
             stack: normalizePostProcessStack(stack),
+            resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
             deviceBuffers: probePostProcessDeviceBuffers(
               layer.scene,
@@ -1372,10 +1406,6 @@ export function createEngine(
         editorSync.setGameCameraPreview(enabled, cameraController.camera);
         scheduler.invalidate("camera");
       },
-      setShadowQuality: (level: string) => {
-        editorSync.setShadowQuality(level);
-        scheduler.invalidate("asset");
-      },
       worldPositionAtClient: (clientX, clientY) => {
         const rect = canvas.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return null;
@@ -1661,7 +1691,7 @@ export function createEngine(
         return;
       }
       if (options.playMode) {
-        applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
+        applyPlayConsoleRenderCommand({ scheduler }, command);
       }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
@@ -1793,10 +1823,14 @@ export function createEngine(
         rebuildIfActiveCameraChanged(previousCamera);
         scheduler.invalidate("camera");
       }
-      if (command.type === "setShadowQuality") {
-        applyShadowQuality(scene, binding, command.level);
+      if (command.type === "setRenderingQuality" && options.playMode) {
+        sceneRenderingSettings(scene).qualityOverrides = command.overrides;
+        setSceneRenderSettings(scene);
+        applyRenderingQuality();
         scheduler.invalidate("asset");
       }
+      if (command.type === "setLightsDebug")
+        sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");
@@ -1959,22 +1993,12 @@ export function createEngine(
       });
       scheduler.invalidate("asset");
     },
-    setShadowDeviceProfile: (profile) => {
-      sceneRenderingSettings(scene).shadowDeviceProfile = profile;
-      sceneShadowController(scene).sync();
-      scheduler.invalidate("asset");
-    },
     setRenderSettings: (settings) => {
       const previousMode = sceneRenderingSettings(scene).mode;
       setSceneRenderSettings(scene, settings);
       viewportShading?.apply();
       if (options.editor && previousMode !== sceneRenderingSettings(scene).mode)
         freezeEditorActiveMeshes(scene);
-      scheduler.invalidate("asset");
-    },
-    setShadowQuality: (level: string) => {
-      applyShadowQuality(scene, binding, level);
-      editor?.setShadowQuality(level);
       scheduler.invalidate("asset");
     },
     postProcessPassCount: () => attachedStack?.passes.length ?? 0,
@@ -1990,6 +2014,12 @@ export function createEngine(
       postProcessingEnabled = enabled;
       rebuildPostProcessStack();
       sceneLayerCompositor?.refreshPostProcess();
+      scheduler.invalidate("asset");
+    },
+    setLocalQualityOverrides: (overrides) => {
+      sceneRenderingSettings(scene).localQualityOverrides = overrides;
+      setSceneRenderSettings(scene);
+      applyRenderingQuality();
       scheduler.invalidate("asset");
     },
     setTextureBudget: (bytes: number, enabled: boolean) => {
@@ -2154,6 +2184,7 @@ export function createAppEngine(
     adaptToDeviceRatio: false,
     antialias: false,
     useLargeWorldRendering: true,
+      useExactSrgbConversions: true,
   });
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     caps: engine.getCaps(),

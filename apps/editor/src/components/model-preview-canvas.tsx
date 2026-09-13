@@ -9,6 +9,9 @@ import {
 import type { ColliderShape } from "@babylonslate/physics";
 import {
   MaterialLibrary,
+  bindResourceCacheToHandle,
+  prewarmMaterial,
+  visualMeshes,
   ViewportShadingOverlay,
   applyModelMaterialSlots,
   attachMaterialPreviewGestures,
@@ -44,6 +47,7 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { useModelColliderSession } from "../context/model-collider-session";
+import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 
 const MODEL_PREVIEW_SHADING: { value: ViewportShadingMode; label: string }[] = [
@@ -80,12 +84,15 @@ export function ModelPreviewCanvas({
     gizmoTool,
     setGizmoTool,
   } = useModelColliderSession();
-  const { collectPlayMaterialLibrary, collectPlayTextureBytes, projectDocument } = useDocuments();
+  const { collectPlayMaterialLibrary, collectPlayTextureBytes, projectDocument, assetRegistry } = useDocuments();
   const { editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
   const [engine, setEngine] = useState<Engine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
+  const [materialsReady, setMaterialsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const materialOwnerRef = useRef<(() => void) | null>(null);
+  const materialRevision = savedMaterialLibraryKey(assetRegistry?.list() ?? []);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const shadingRef = useRef<ViewportShadingOverlay | null>(null);
@@ -130,7 +137,7 @@ export function ModelPreviewCanvas({
       try {
         setLoadError(null);
         host = createModelPreviewScene(engine);
-        presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 1 });
+        presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 1, onError: setLoadError });
         const gizmos = createGizmoHost(host.scene, {
           tool: "translate",
           onDrag: () => presenter?.present({ force: true }),
@@ -254,6 +261,8 @@ export function ModelPreviewCanvas({
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(raf.id);
+      materialOwnerRef.current?.();
+      materialOwnerRef.current = null;
       gestures?.dispose();
       presenter?.dispose();
       loaded?.dispose();
@@ -282,7 +291,11 @@ export function ModelPreviewCanvas({
     const slots = JSON.parse(slotKey) as ReturnType<
       typeof normalizeModelPayload
     >["materialSlots"];
+    setMaterialsReady(false);
+    let releaseCandidate: (() => void) | undefined;
+    let published = false;
     void (async () => {
+      try {
       const extraGuids = modelMaterialGuids({
         materialSlots: slots,
         clipNames: [],
@@ -298,24 +311,44 @@ export function ModelPreviewCanvas({
         materials.textureGuids,
       );
       if (cancelled || hostRef.current !== host) return;
-      const cache = resourceCacheForEngine(engine);
+      const lease = bindResourceCacheToHandle(resourceCacheForEngine(engine));
+      const textures = new Map<string, ReturnType<typeof getMaterialTexture>>();
       const library = new MaterialLibrary({
         functions: () => Object.fromEntries(materials.functions),
         resolveTexture: (guid) => {
           const data = textureBytes.get(guid);
           if (!data) return null;
-          return getMaterialTexture(cache, guid, engine, data);
+          if (!textures.has(guid)) textures.set(guid, getMaterialTexture(lease.cache, guid, engine, data));
+          return textures.get(guid) ?? null;
         },
       });
+      releaseCandidate = () => { library.dispose(); lease.releaseHandleRetains(); };
       for (const [guid, document] of materials.documents) {
         const acquired = library.acquire(host.scene, guid, document);
-        if (materialUnavailable(acquired)) continue;
+        if (materialUnavailable(acquired)) throw new Error(acquired.diagnostics.map((d) => d.message).join("; "));
+        const errors = await acquired.ready;
+        if (errors.length) throw new Error(errors.map((d) => d.message).join("; "));
+        for (const mesh of visualMeshes(host.mesh)) {
+          if (mesh instanceof Mesh) await prewarmMaterial(acquired.material, mesh);
+        }
+        if (cancelled || hostRef.current !== host) return;
       }
       applyModelMaterialSlots(host.mesh, slots, (guid) =>
         library.materialFor(host.scene, guid),
       );
+      const previous = materialOwnerRef.current;
+      materialOwnerRef.current = releaseCandidate;
+      published = true;
+      setMaterialsReady(true);
+      previous?.();
+      setLoadError(null);
       shadingRef.current?.apply();
       presenterRef.current?.present({ force: true });
+      } catch (error) {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (!published) { releaseCandidate?.(); releaseCandidate = undefined; }
+      }
     })();
     return () => {
       cancelled = true;
@@ -326,6 +359,7 @@ export function ModelPreviewCanvas({
     engine,
     previewGeneration,
     slotKey,
+    materialRevision,
     editorTextureLodEnabled,
     editorTextureLodQuality,
   ]);
@@ -479,6 +513,7 @@ export function ModelPreviewCanvas({
         ref={canvasRef}
         className="h-full w-full"
         data-testid="model-preview-canvas"
+        aria-busy={!materialsReady}
       />
       {loadError ? (
         <div
@@ -487,11 +522,9 @@ export function ModelPreviewCanvas({
         >
           <Empty>
             <EmptyHeader>
-              <EmptyTitle>Failed to Load Mesh</EmptyTitle>
+              <EmptyTitle>Preview Error</EmptyTitle>
               <EmptyDescription>
-                The Model source did not instantiate. Compressed glTF needs the
-                bundled Draco / meshopt decoders; a .gltf file needs its .bin
-                sidecar.
+                {loadError}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>

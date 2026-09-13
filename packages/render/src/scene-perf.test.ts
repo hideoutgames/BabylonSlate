@@ -5,6 +5,8 @@ import {
   NodeMaterialModes,
   NullEngine,
   Scene,
+  UniversalCamera,
+  Vector3,
 } from "@babylonjs/core";
 import {
   createActor,
@@ -17,7 +19,41 @@ import {
   materialLibraryAssetGuid,
   prewarmSceneMaterials,
   SCENE_SHADER_WARM_TIMEOUT_MS,
+  freezeEditorActiveMeshes,
+  unfreezeEditorActiveMeshes,
 } from "./scene-perf";
+
+it("freezes ready editor meshes only in their own floating-origin render frame", () => {
+  const engine = new NullEngine();
+  vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+  vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
+  const scene = new Scene(engine);
+  scene.activeCamera = new UniversalCamera("editor", new Vector3(2000, 0, -10), scene);
+  const previous = new Scene(engine);
+  previous.activeCamera = new UniversalCamera("previous", new Vector3(0, 4, -8), previous);
+  previous.render();
+  previous.dispose();
+  const ready = vi.spyOn(scene, "isReady").mockReturnValue(false);
+  try {
+    freezeEditorActiveMeshes(scene);
+    expect(scene._activeMeshesFrozen).toBe(false);
+    scene.render();
+    expect(scene._activeMeshesFrozen).toBe(false);
+    ready.mockReturnValue(true);
+    scene.render();
+    expect(scene._activeMeshesFrozen).toBe(true);
+    expect(scene.skipFrustumClipping).toBe(false);
+    expect([...scene.getSceneUniformBuffer().getData()].every(Number.isFinite)).toBe(true);
+
+    freezeEditorActiveMeshes(scene);
+    unfreezeEditorActiveMeshes(scene);
+    scene.render();
+    expect(scene._activeMeshesFrozen).toBe(false);
+  } finally {
+    scene.dispose();
+    engine.dispose();
+  }
+});
 
 describe("isStructuralEditorChange", () => {
   const base = createDefaultScene();

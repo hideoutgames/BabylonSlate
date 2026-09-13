@@ -1,3 +1,5 @@
+import { setSceneRenderSettings } from "./scene-render-mode";
+import { normalizeShadowSettings } from "@babylonslate/core";
 import {
   Camera,
   DirectionalLight,
@@ -28,7 +30,6 @@ import {
   applyAuthoredCameraProperties,
   cameraRenderAspect,
   refreshAuthoredCameraLenses,
-  shadowMapSizeFromQuality,
   syncAuthoredCamerasFromMeshes,
   syncAuthoredIllumination,
 } from "./scene-illumination";
@@ -127,15 +128,7 @@ afterEach(() => {
   }
 });
 
-describe("shadowMapSizeFromQuality", () => {
-  it("maps off/512/1024/2048 and defaults unknown to 1024", () => {
-    expect(shadowMapSizeFromQuality("off")).toBeNull();
-    expect(shadowMapSizeFromQuality("512")).toBe(512);
-    expect(shadowMapSizeFromQuality("1024")).toBe(1024);
-    expect(shadowMapSizeFromQuality("2048")).toBe(2048);
-    expect(shadowMapSizeFromQuality("low")).toBe(1024);
-  });
-});
+
 
 describe("syncAuthoredIllumination", () => {
   it("updates an existing light in place instead of disposing the set", () => {
@@ -494,7 +487,6 @@ describe("syncAuthoredIllumination", () => {
       ]),
       {
         stealActiveCamera: false,
-        shadowQuality: "1024",
         onDiagnostic: (message) => diagnostics.push(message),
       },
     );
@@ -504,7 +496,7 @@ describe("syncAuthoredIllumination", () => {
     expect(
       (key!.getShadowGenerator() as ShadowGenerator).getShadowMap()?.getSize()
         .width,
-    ).toBe(1024);
+    ).toBe(2048);
     expect(bounce?.getShadowGenerator()).toBeInstanceOf(ShadowGenerator);
     expect(diagnostics).toEqual([]);
   });
@@ -554,7 +546,7 @@ describe("syncAuthoredIllumination", () => {
           castShadows: true,
         }),
       ]),
-      { stealActiveCamera: false, shadowQuality: "1024" },
+      { stealActiveCamera: false },
     );
     const key = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}key`);
     const list =
@@ -592,7 +584,7 @@ describe("syncAuthoredIllumination", () => {
           castShadows: true,
         }),
       ]),
-      { stealActiveCamera: false, shadowQuality: "1024" },
+      { stealActiveCamera: false },
     );
     const key = scene.getLightByName(
       `${AUTHORED_LIGHT_PREFIX}key`,
@@ -602,7 +594,7 @@ describe("syncAuthoredIllumination", () => {
     expect(
       generator.usePercentageCloserFiltering || generator.usePoissonSampling,
     ).toBe(true);
-    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_MEDIUM);
+    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_HIGH);
     expect(generator.bias).toBeCloseTo(0.0001);
     expect(generator.normalBias).toBeCloseTo(0.005);
     expect(generator.frustumEdgeFalloff).toBe(0);
@@ -610,7 +602,7 @@ describe("syncAuthoredIllumination", () => {
     expect(key.customProjectionMatrixBuilder).toBeTypeOf("function");
   });
 
-  it("disables the shadow map when shadowquality is off", () => {
+  it("disables the shadow map when authored shadows are off", () => {
     const { scene } = createHandle();
     const data = sceneWith([
       lightActor("key", {
@@ -621,13 +613,12 @@ describe("syncAuthoredIllumination", () => {
     ]);
     syncAuthoredIllumination(scene, data, {
       stealActiveCamera: false,
-      shadowQuality: "1024",
     });
     const key = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}key`);
     expect(key?.getShadowGenerator()).toBeTruthy();
+    setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ enabled: false }) });
     syncAuthoredIllumination(scene, data, {
       stealActiveCamera: false,
-      shadowQuality: "off",
     });
     expect(key?.getShadowGenerator()).toBeNull();
   });
@@ -696,7 +687,7 @@ describe("syncAuthoredIllumination", () => {
           castShadows: true,
         }),
       ]),
-      { stealActiveCamera: false, shadowQuality: "1024" },
+      { stealActiveCamera: false },
     );
     const fill = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}fill`);
     const key = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}key`);

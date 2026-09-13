@@ -25,10 +25,10 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | Command | Registered | Applies | Notes |
 | --- | --- | --- | --- |
 | `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). Same path as `ctx.changeScene`. |
-| `shadowquality` | yes | **yes** | Emits `{ type: "setShadowQuality" }`; renderer sizes or disposes the one `ShadowGenerator`. `2048` warns. No arg → print current. |
+| `quality [low\|medium\|high\|ultra\|reset]` | yes | **yes** | Applies all scalability groups, or queries effective values when omitted. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
-| `renderquality` | yes | **yes** | `{ type: "setRenderQuality" }` → Play `HardwareScalingController` (`high=1`, `medium=1.5`, `low=2`). No arg → print current. |
-| `resolutionscale` | yes | **yes** | `{ type: "setResolutionScale" }` → Play `setLevel`, clamped `1..2` (Play valve max may be 4). Host stores and prints the clamped value. No arg → print current. Play canvas only. |
+| `quality shadows/resolution/textures/postprocessing [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |
+| `quality resolution scale <0.25..1>` | yes | **yes** | Sets a fixed fraction of target width/height without resetting simulation. |
 | `framecap` | yes | **yes** | `{ type: "setFrameCap" }` → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). No arg → print current. |
 | `help` | yes | **yes** | Core. Lists registered names or one command’s parameters. Stripped debug names print “not available in this build”. |
@@ -42,6 +42,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `step` | yes | **yes** | Overlay Step: `resume()` → `tick()` → `pause()` if it was paused. |
 | `slomo` | yes | **yes** | `RuntimeDriver.timeDilation` clamp `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
 | `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right). |
+| `lightsdebug on/off` | yes | **yes** | Independent default-off light diagnostics; detailed rows are collected only while enabled. |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
 | `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
 | `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls, including body rotation of local offsets and polyline points). Overlay meshes sit in `RENDERING_GROUP.world` (depth-tested, not a group-0 underlay). Reuse by id when pose changes. Skip helper/debug meshes. `actorboundingbox` is an alias of `showbounds`. |
@@ -109,9 +110,9 @@ Seven core setters plus `help`. Optional args print the current value.
 | Command | Target |
 | --- | --- |
 | `changescene <scene>` | Unchanged. |
-| `renderquality [low\|medium\|high]` | Apply scaling floor / tier on the Play (or player) `HardwareScalingController`. No arg → print current. |
-| `shadowquality [off\|512\|1024\|2048]` | Unchanged apply. No arg → print current. |
-| `resolutionscale [n]` | Play `setLevel`, clamped `1..2` (print and emit the clamped value). No arg → print current. |
+| `quality [low\|medium\|high\|ultra\|reset]` | Apply all groups or reset session overrides. No argument queries actual values. |
+| `quality shadows [tier\|reset\|budget N\|distance N\|enabled on/off]` | Shadow quality and allocation controls; presets preserve distance and budget. |
+| `quality resolution scale N` | Fixed fraction of target width and height, from 0.25 to 1. |
 | `framecap [fps]` | Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume [0..1]` | Emit `setGlobalVolume` (same as the graph node). No arg → print current. |
 | `quit` | Unchanged. |
@@ -181,7 +182,7 @@ Worker→main commands:
 | Command | Direction | Purpose |
 | --- | --- | --- |
 | `sessionPaused` | worker → main | Overlay chrome Pause/Resume label + `userPausedRef` |
-| `setRenderQuality` / `setResolutionScale` / `setFrameCap` | worker → main | Play view hardware scaling + scheduler cap |
+| `setRenderingQuality` / `setFrameCap` | worker → main | Play view hardware scaling + scheduler cap |
 | `setGlobalVolume` | already existed | `volume` console command reuses it |
 | `setFreeCam` | worker → main | Attach/detach debug camera, input steal |
 | `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` / `setShowAudioDebug` | worker → main | Play-scene overlays; audio debug is a DOM overlay, not Babylon GUI |
@@ -202,7 +203,7 @@ Worker→main commands:
 Landed on this pass (do not reopen P8). Spec above matches the code.
 
 - [x] **p8-console-session** — `resume` / `unpause`; `step` resume→tick→pause; `sessionPaused`; `help [name]`; reserved names
-- [x] **p8-console-apply** — `volume` / `framecap` / `renderquality` / `resolutionscale` apply; omitted args print current
+- [x] **p8-console-apply** — `volume` / `framecap` / `quality` apply; omitted args print current
 - [x] **p8-console-slomo** — `tick` uses `dt * rate` (script, physics, nav, BT); traces keep recorded `dt`
 - [x] **p8-console-freecam** — detached fly/pan; no pause; restore on off / `changescene` / possess; pointer/WASD steal, gamepad still forwards
 - [x] **p8-console-viz** — Stats HUD, wireframe/bounds/collision/nav, `dumpactors` / `inspect`
@@ -214,3 +215,7 @@ Parked (unchanged): packaged-player command **line** UI, `god`/`give` as engine 
 - This page is the catalog. [debugger.md](debugger.md) keeps package API, tiers, parser, HUD, and the host table.
 - engineplan §9.1 lists the extra names; Appendix A holds the slice checkboxes.
 - New behaviour in `packages/debugger`, `packages/runtime`, `packages/render`, `apps/editor` Play overlay, and graph validation is covered by unit tests in those packages.
+
+### Rendering quality
+
+`quality shadows budget 6`, `quality shadows distance 200`, and `quality shadows enabled off` control authored-light shadow allocation without changing which local lights illuminate. Presets preserve the budget and distance. `quality shadows` queries the effective group; `quality` queries all groups. Overrides survive scene changes, reset against current inherited settings, and clear when a new Play session starts. The renderer applies only affected resources. The unreleased numeric shadow and legacy resolution commands have been removed.

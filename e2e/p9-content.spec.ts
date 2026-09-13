@@ -1021,6 +1021,8 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("engine-settings").click();
     await page.getByTestId("engine-settings-modal-category-viewport").click();
+    await expect(page.getByTestId("setting-post-processing")).toBeDisabled();
+    await page.getByRole("switch", { name: "Override Project Rendering", exact: true }).check();
     await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
       "aria-checked",
       "true",

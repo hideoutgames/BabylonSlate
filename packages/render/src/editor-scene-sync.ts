@@ -76,7 +76,6 @@ export class EditorSceneSync {
   private lastScene: SerializedScene | null = null;
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
-  private shadowQuality: string | undefined;
   private drawMeshCollision = false;
   private selectedActorIds = new Set<string>();
   private selectedComponentIds = new Set<string>();
@@ -144,11 +143,6 @@ export class EditorSceneSync {
   setGameCameraPreview(enabled: boolean, restoreCamera?: Camera | null): void {
     this.stealActiveCamera = enabled;
     if (restoreCamera !== undefined) this.restoreCamera = restoreCamera;
-    if (this.lastScene) this.apply(this.lastScene);
-  }
-
-  setShadowQuality(level: string): void {
-    this.shadowQuality = level;
     if (this.lastScene) this.apply(this.lastScene);
   }
 
@@ -243,7 +237,6 @@ export class EditorSceneSync {
       restoreCamera: this.restoreCamera,
       applyClearColor:
         sceneData.viewportMode !== "2d" || sceneData.overlayEditor === true,
-      shadowQuality: this.shadowQuality,
       assets: this.assets,
     });
     this.onAfterApply?.();

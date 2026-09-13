@@ -280,6 +280,7 @@ interface DocumentContextValue {
   projectDocument: ProjectDocument | null;
   projectName: string | null;
   assetRegistry: AssetRegistry | null;
+  projectGuid: string | null;
   /** Bumps when encode/import mutates registry payloads in place. */
   registryVersion: number;
   refreshAssetRegistry: () => Promise<void>;
@@ -348,8 +349,9 @@ interface DocumentContextValue {
   closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[] }>;
   forceCloseProject: () => Promise<void>;
   refreshProjectList: () => Promise<void>;
-  exportProject: () => Promise<Uint8Array>;
+  exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
   exportGameArtifact: (options?: {
+    projectSnapshot?: ProjectDocument;
     previewBuild?: boolean;
     playerFiles?: Map<string, Uint8Array>;
     onPhase?: (phase: "Compiling" | "Writing Pack") => void;
@@ -1642,12 +1644,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return { blocked: false, dirty: [] };
   }, [documentService, forceCloseProject]);
 
-  const exportProject = useCallback(async () => {
-    return projectService.exportZip();
+  const exportProject = useCallback(async (snapshot?: ProjectDocument) => {
+    return projectService.exportZip(snapshot);
   }, [projectService]);
 
   const exportGameArtifact = useCallback(
     async (options?: {
+      projectSnapshot?: ProjectDocument;
       previewBuild?: boolean;
       playerFiles?: Map<string, Uint8Array>;
       onPhase?: (phase: "Compiling" | "Writing Pack") => void;
@@ -1656,11 +1659,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       transcoderAvailable?: boolean;
     }) => {
       await flushAudioReverbForSave();
+      const exportDocument = options?.projectSnapshot ?? projectDocument;
       const preset =
-        projectDocument?.settings.exportPresets[0] ?? defaultExportPreset();
+        exportDocument?.settings.exportPresets[0] ?? defaultExportPreset();
       const plugins = projectService.plugins;
       const projectPluginOverrides =
-        projectDocument?.settings.pluginOverrides ?? {};
+        exportDocument?.settings.pluginOverrides ?? {};
       const pluginGraph = resolveExportPluginGraph(
         plugins,
         projectPluginOverrides,
@@ -1695,17 +1699,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         typeof options?.startupSceneGuid === "string" &&
         options.startupSceneGuid.trim() !== ""
           ? options.startupSceneGuid.trim()
-          : (projectDocument?.settings.startupSceneGuid ?? null);
+          : (exportDocument?.settings.startupSceneGuid ?? null);
       return collectAndExportGame({
         startupSceneGuid,
-        project: projectDocument?.metadata,
-        gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
-        audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
+        project: exportDocument?.metadata,
+        gameInstanceClass: exportDocument?.settings.gameInstanceClass ?? null,
+        audioMixerGuid: exportDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:
-          projectDocument?.settings.audio.occlusionEnabled !== false,
-        reverbWetScale: projectDocument?.settings.audio.reverbWetScale,
-        reverbDecayScale: projectDocument?.settings.audio.reverbDecayScale,
-        reverbDampingScale: projectDocument?.settings.audio.reverbDampingScale,
+          exportDocument?.settings.audio.occlusionEnabled !== false,
+        reverbWetScale: exportDocument?.settings.audio.reverbWetScale,
+        reverbDecayScale: exportDocument?.settings.audio.reverbDecayScale,
+        reverbDampingScale: exportDocument?.settings.audio.reverbDampingScale,
         assets: assetsFromIndexed(list),
         plugins,
         projectPluginOverrides,
@@ -1721,23 +1725,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         navmeshByGuid: loaded.navmeshByGuid,
         audioReverbByGuid: loaded.audioReverbByGuid,
         customResolution:
-          projectDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
+          exportDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap:
-          projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,
+          exportDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,
         touchMinTargetPx:
-          projectDocument?.settings.touchMinTargetPx ?? 44,
-        pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
-        sortingLayers: projectDocument?.settings.twoD.sortingLayers,
-        pixelPerfect: projectDocument?.settings.twoD.pixelPerfect === true,
+          exportDocument?.settings.touchMinTargetPx ?? 44,
+        pixelsPerUnit: exportDocument?.settings.twoD.pixelsPerUnit ?? 100,
+        sortingLayers: exportDocument?.settings.twoD.sortingLayers,
+        pixelPerfect: exportDocument?.settings.twoD.pixelPerfect === true,
         physicsWorld:
           loaded.sceneByGuid(startupSceneGuid ?? "")?.settings.physicsWorld ===
           "2d"
             ? "2d"
             : "3d",
         infiniteLoopDetection:
-          projectDocument?.settings.infiniteLoopDetection,
-        loopCount: projectDocument?.settings.loopCount,
-        inputMappings: projectDocument?.settings.input,
+          exportDocument?.settings.infiniteLoopDetection,
+        loopCount: exportDocument?.settings.loopCount,
+        inputMappings: exportDocument?.settings.input,
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
@@ -4147,6 +4151,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleLayoutFocus,
       getAvailableDocuments,
       assetRegistry: projectService.registry,
+      projectGuid: projectService.guid,
       registryVersion,
       refreshAssetRegistry,
       pluginDescriptors: projectService.plugins,

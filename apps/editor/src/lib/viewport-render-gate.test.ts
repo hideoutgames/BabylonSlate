@@ -179,6 +179,7 @@ describe("attachViewportRenderGate", () => {
     await Promise.resolve();
     dispatchEngineSettingsChanged({
       viewportFrameCap: 60,
+      renderingOverridesEnabled: true,
       postProcessingEnabled: false,
     });
     expect(setPostProcessingEnabled).toHaveBeenCalledWith(false);
@@ -187,6 +188,18 @@ describe("attachViewportRenderGate", () => {
 });
 
 describe("applyLiveEngineSettings", () => {
+  it("inherits project quality until local overrides are explicitly enabled, and restores inheritance", () => {
+    const handle = { setLocalQualityOverrides: vi.fn(), scaling: { setLevel: vi.fn() }, setTextureBudget: vi.fn() };
+    const settings = { hardwareScalingLevel: 2, textureByteCeiling: 1024 * 1024 * 1024 };
+    applyLiveEngineSettings(handle, settings);
+    expect(handle.setLocalQualityOverrides).toHaveBeenLastCalledWith({});
+    expect(handle.scaling.setLevel).not.toHaveBeenCalled();
+    expect(handle.setTextureBudget).not.toHaveBeenCalled();
+    applyLiveEngineSettings(handle, { ...settings, renderingOverridesEnabled: true });
+    expect(handle.setLocalQualityOverrides).toHaveBeenLastCalledWith({ resolution: { scale: 0.5, minScale: 0.5, dynamic: false }, textures: { byteBudget: 1024 * 1024 * 1024 } });
+    applyLiveEngineSettings(handle, { ...settings, renderingOverridesEnabled: false });
+    expect(handle.setLocalQualityOverrides).toHaveBeenLastCalledWith({});
+  });
   it("applies hardware scaling and the post-processing gate without mutating a scene", () => {
     const scaling = { setLevel: vi.fn(), setSettingsLevel: vi.fn() };
     const handle = {
@@ -196,6 +209,7 @@ describe("applyLiveEngineSettings", () => {
     };
     applyLiveEngineSettings(handle, {
       viewportFrameCap: 30,
+      renderingOverridesEnabled: true,
       hardwareScalingLevel: 1.5,
       postProcessingEnabled: false,
     });
@@ -216,7 +230,8 @@ describe("applyLiveEngineSettings", () => {
       handle,
       {
         viewportFrameCap: 30,
-        hardwareScalingLevel: 1.5,
+        renderingOverridesEnabled: true,
+      hardwareScalingLevel: 1.5,
         postProcessingEnabled: false,
       },
       { applyFrameCap: false },
@@ -231,6 +246,7 @@ describe("applyLiveEngineSettings", () => {
       setTextureBudget: vi.fn(),
     };
     applyLiveEngineSettings(handle, {
+      renderingOverridesEnabled: true,
       textureBudgetEnabled: true,
       textureByteCeiling: 2 * 1024 * 1024 * 1024,
     });

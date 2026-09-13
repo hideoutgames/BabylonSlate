@@ -6,9 +6,7 @@ import type { ConsoleCommandHost } from "./types";
 function host(): ConsoleCommandHost {
   return {
     changeScene: () => {},
-    setRenderQuality: () => {},
-    setShadowQuality: () => {},
-    setResolutionScale: () => {},
+    quality: () => ({ success: true, output: "quality" }),
     setFrameCap: () => {},
     setVolume: () => {},
     quit: () => {},

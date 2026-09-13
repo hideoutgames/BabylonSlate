@@ -29,6 +29,7 @@ import {
 import { installEngineDefaultMaterial } from "./default-material";
 import { createPreviewLighting } from "./preview-lighting";
 import { previewMeshesReady } from "./preview-readiness";
+import { resolveSceneRenderingQuality } from "./render-settings";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -442,7 +443,7 @@ function previewBufferSize(
 export function createMaterialPreviewPresenter(
   host: MaterialPreviewScene,
   canvas: HTMLCanvasElement,
-  options: { maxSize?: number; maxFps?: number; now?: () => number } = {},
+  options: { maxSize?: number; maxFps?: number; now?: () => number; onError?: (message: string | null) => void } = {},
 ): MaterialPreviewPresenter {
   const maxSize = options.maxSize ?? MATERIAL_PREVIEW_MAX_SIZE;
   const maxFps = options.maxFps ?? 30;
@@ -454,6 +455,7 @@ export function createMaterialPreviewPresenter(
   let lastPresentMs = Number.NEGATIVE_INFINITY;
   let pendingForce = false;
   let disposed = false;
+  let renderError: string | null = null;
 
   const releaseRtt = () => {
     host.camera.outputRenderTarget = null;
@@ -514,23 +516,30 @@ export function createMaterialPreviewPresenter(
   };
 
   return {
-    present: (options) => {
+    present: (presentOptions) => {
       if (disposed) return;
-      pendingForce ||= options?.force === true;
+      pendingForce ||= presentOptions?.force === true;
       canvas.dataset.cameraRadius = String(host.camera.radius);
       if (frozen || blitInFlight) return;
       const at = now();
       if (!pendingForce && at - lastPresentMs < minIntervalMs) return;
       const size = previewBufferSize(canvas, maxSize);
       if (!size) return;
-      const texture = ensureRtt(size.width, size.height);
-      // Keep retrying at the caller's RAF cadence while textures/shaders load.
-      // An empty warm-up frame must not consume a static preview's 1 fps slot.
-      if (!previewMeshesReady(host.scene.getMeshByName("materialPreviewParticlePlane") as Mesh ?? host.mesh)) return;
-      pendingForce = false;
-      lastPresentMs = at;
-      host.scene.render();
-      blit(texture);
+      try {
+        const scale = resolveSceneRenderingQuality(host.scene).resolution.scale;
+        const texture = ensureRtt(Math.max(1, Math.round(size.width * scale)), Math.max(1, Math.round(size.height * scale)));
+        // Shader warm-up must not consume a static preview's presentation interval.
+        if (!previewMeshesReady(host.scene.getMeshByName("materialPreviewParticlePlane") as Mesh ?? host.mesh)) return;
+        pendingForce = false;
+        lastPresentMs = at;
+        host.scene.render();
+        blit(texture);
+        if (renderError) { renderError = null; options.onError?.(null); }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message !== renderError) options.onError?.(message);
+        renderError = message;
+      }
     },
     setFrozen: (value) => {
       frozen = value;

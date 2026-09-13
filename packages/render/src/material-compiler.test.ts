@@ -750,7 +750,7 @@ describe("material compiler", () => {
     expect(requested).toEqual(["tex-1"]);
     expect(
       result.material.attachedBlocks.some(
-        (block) => block.getClassName() === "TextureBlock",
+        (block) => block instanceof TextureBlock,
       ),
     ).toBe(true);
   });
@@ -836,7 +836,7 @@ describe("material compiler", () => {
     }
     disposers.push(() => result.material.dispose());
     const sample = result.material.attachedBlocks.find(
-      (block) => block.getClassName() === "TextureBlock",
+      (block) => block instanceof TextureBlock,
     ) as TextureBlock | undefined;
     expect(sample?.texture).toBe(resolved);
     expect(sample?.uv.isConnected).toBe(true);
@@ -879,7 +879,7 @@ describe("material compiler", () => {
     }
     disposers.push(() => result.material.dispose());
     const sample = result.material.attachedBlocks.find(
-      (block) => block.getClassName() === "TextureBlock",
+      (block) => block instanceof TextureBlock,
     ) as TextureBlock | undefined;
     expect(sample?.texture).toBe(resolved);
     expect(sample?.uv.isConnected).toBe(true);
@@ -933,7 +933,7 @@ describe("material compiler", () => {
     }
     disposers.push(() => result.material.dispose());
     const sample = result.material.attachedBlocks.find(
-      (block) => block.getClassName() === "TextureBlock",
+      (block) => block instanceof TextureBlock,
     ) as TextureBlock | undefined;
     expect(sample?.uv.connectedPoint?.ownerBlock.getClassName()).toBe("AddBlock");
   });
@@ -1045,7 +1045,7 @@ describe("material compiler", () => {
     }
     disposers.push(() => result.material.dispose());
     const sample = result.material.attachedBlocks.find(
-      (block) => block.getClassName() === "TextureBlock",
+      (block) => block instanceof TextureBlock,
     ) as TextureBlock | undefined;
     expect(sample?.texture).toBe(resolved);
   });
@@ -1296,7 +1296,7 @@ describe("material compiler", () => {
     }
     disposers.push(() => result.material.dispose());
     const sample = result.material.attachedBlocks.find(
-      (block) => block.getClassName() === "TextureBlock",
+      (block) => block instanceof TextureBlock,
     ) as TextureBlock | undefined;
     expect(sample?.texture).toBe(resolved);
     expect(sample?.texture?.invertY).toBe(false);

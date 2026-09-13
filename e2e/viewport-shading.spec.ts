@@ -84,8 +84,8 @@ test("Emissive surface stays self-lit on a curved mesh without scene lights", as
   await expect
     .poll(() => greenPixels(viewport), { timeout: 30_000 })
     .toBeGreaterThan(500);
-  // Half-strength linear green must be display encoded once (~186), not
-  // written directly (~128) or encoded twice (~221).
+  // Authored sRGB #008000 must round-trip through linear lighting to 128,
+  // without an extra display conversion brightening it to ~188.
   const green = await viewport.evaluate((node: HTMLCanvasElement) => {
     const copy = document.createElement("canvas");
     copy.width = node.width;
@@ -100,8 +100,8 @@ test("Emissive surface stays self-lit on a curved mesh without scene lights", as
     }
     return counts.indexOf(Math.max(...counts));
   });
-  expect(green).toBeGreaterThanOrEqual(183);
-  expect(green).toBeLessThanOrEqual(189);
+  expect(green).toBeGreaterThanOrEqual(125);
+  expect(green).toBeLessThanOrEqual(131);
   await clickPlayAndWaitForOverlay(page);
   await expect
     .poll(() => greenPixels(page.getByTestId("play-canvas")), {

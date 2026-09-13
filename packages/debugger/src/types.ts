@@ -1,3 +1,4 @@
+import type { QualityGroup } from "@babylonslate/core";
 export type CommandTier = "core" | "debug";
 
 export type CommandParamType = "string" | "float" | "int" | "bool" | "enum";
@@ -26,14 +27,9 @@ export type CommandResult = {
 
 export type ConsoleCommandHost = {
   changeScene(sceneAssetGuid: string): void;
-  setRenderQuality(level: string): void;
-  setShadowQuality(level: string): void;
-  setResolutionScale(scale: number): void;
+  quality(group?: QualityGroup, choice?: string, value?: string): CommandResult;
   setFrameCap(fps: number): void;
   setVolume(volume: number): void;
-  getRenderQuality?(): string;
-  getShadowQuality?(): string;
-  getResolutionScale?(): number;
   getFrameCap?(): number;
   getVolume?(): number;
   quit(): void;
@@ -48,6 +44,7 @@ export type ConsoleCommandHost = {
   setShowNavAgent?(enabled: boolean): void;
   setBehaviourTreeDebug?(enabled: boolean): void;
   setShowAudioDebug?(enabled: boolean): void;
+  setLightsDebug?(enabled: boolean): void;
   dumpActors?(): string;
   inspectActor?(query: string): string;
   possessActorCamera?(query: string): CommandResult;

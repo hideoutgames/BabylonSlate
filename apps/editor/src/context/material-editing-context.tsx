@@ -216,7 +216,7 @@ export function MaterialEditingProvider({
           engine,
           bytes,
         );
-        if (previous) resourceCacheForEngine(previous.engine).release(guid);
+        if (previous) resourceCacheForEngine(previous.engine).release(previous.texture);
         if (texture) retainedTexturesRef.current.set(guid, { bytes, engine, texture });
         else retainedTexturesRef.current.delete(guid);
         return texture;
@@ -376,7 +376,7 @@ export function MaterialEditingProvider({
     const restored = sharedEngine?.onContextRestoredObservable;
     if (!restored?.add) return;
     const observer = restored.add(() => {
-      for (const [guid, entry] of retainedTexturesRef.current) resourceCacheForEngine(entry.engine).release(guid);
+      for (const entry of retainedTexturesRef.current.values()) resourceCacheForEngine(entry.engine).release(entry.texture);
       retainedTexturesRef.current.clear();
       libraryRef.current?.invalidate();
       if (!compileKey) return;
@@ -480,7 +480,7 @@ export function MaterialEditingProvider({
       }
       libraryRef.current?.dispose();
       libraryRef.current = null;
-      for (const [guid, entry] of retainedTextures) resourceCacheForEngine(entry.engine).release(guid);
+      for (const entry of retainedTextures.values()) resourceCacheForEngine(entry.engine).release(entry.texture);
       retainedTextures.clear();
     };
   }, []);

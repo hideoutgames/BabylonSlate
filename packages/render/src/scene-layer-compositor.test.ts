@@ -46,6 +46,42 @@ describe("SceneLayerCompositor", () => {
     expect(scene.autoClear).toBe(true);
   });
 
+  it.each([false, true])("keeps GPU HUD matrices independent after world rendering (post-process=%s)", (postProcess) => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    // Match the real WebGL2 renderer: floating origin and scene uniform buffers.
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
+    const compositor = new SceneLayerCompositor({ engine });
+    const layer = compositor.create({
+      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: postProcess ? [{ materialGuid: "pass", enabled: true }] : [],
+    });
+    const checkHudUniforms = () => {
+      const uploaded = layer.scene.getSceneUniformBuffer().getData();
+      const expected = layer.camera.getProjectionMatrix().asArray();
+      // In floating-origin coordinates the fixed HUD camera has identity view.
+      for (let i = 0; i < 16; i++) expect(uploaded[i], `viewProjection[${i}]`).toBeCloseTo(expected[i]!, 5);
+    };
+    compositor.render();
+    checkHudUniforms();
+    // The layer exists first, as it can during asynchronous Play world loading.
+    const worldScene = new Scene(engine);
+    const camera = new UniversalCamera("world", new Vector3(2000, 4, -8), worldScene);
+    camera.setTarget(new Vector3(2000, 0, 0));
+    worldScene.activeCamera = camera;
+    for (const x of [2000, 20000]) {
+      camera.position.x = x;
+      worldScene.render();
+      compositor.render();
+      checkHudUniforms();
+      compositor.resize();
+      compositor.pickHits(256, 128);
+    }
+    compositor.dispose();
+  });
+
   it("sizes the HUD ortho to the orange layerBounds, not a height-9 aspect box", () => {
     const { engine, compositor } = world();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(1920);

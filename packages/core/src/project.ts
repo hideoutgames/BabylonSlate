@@ -1,3 +1,4 @@
+import { normalizeRenderingQuality, type RenderingQuality } from "./render-quality";
 import { lookAtRotation } from "./euler";
 import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode } from "./cel-shading";
 import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
@@ -116,6 +117,7 @@ export const DEFAULT_AUDIO_PROJECT_SETTINGS: AudioProjectSettings = {
 };
 
 export interface RenderProjectSettings {
+  quality?: RenderingQuality;
   shadows?: ShadowSettings;
   mode?: RenderMode;
   cel?: CelShadingSettings;
@@ -140,6 +142,7 @@ export const DEFAULT_RENDER_HEIGHT = 1080;
 
 /** Missing field on existing projects — keep fill / Follow System. */
 export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
+  quality: normalizeRenderingQuality(undefined),
   shadows: normalizeShadowSettings(undefined),
   mode: "pbr",
   cel: normalizeCelShadingSettings(undefined),
@@ -151,6 +154,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
 
 /** New projects default 1920×1080 custom resolution with Black Bars off (fill). */
 export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
+  quality: normalizeRenderingQuality(undefined),
   shadows: normalizeShadowSettings(undefined),
   mode: "pbr",
   cel: normalizeCelShadingSettings(undefined),
@@ -518,6 +522,7 @@ function normalizeRender(
     mode: value?.mode === "cel" ? "cel" : "pbr",
     cel: normalizeCelShadingSettings(value?.cel),
     shadows: normalizeShadowSettings(value?.shadows),
+    quality: normalizeRenderingQuality(value?.quality),
     customResolution: value?.customResolution === true,
     width: normalizePositiveInt(value?.width, DEFAULT_RENDER_WIDTH),
     height: normalizePositiveInt(value?.height, DEFAULT_RENDER_HEIGHT),

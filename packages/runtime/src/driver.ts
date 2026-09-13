@@ -1,3 +1,4 @@
+import { RenderingQualitySession, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
 import {
@@ -145,6 +146,7 @@ import {
 export type TransportMode = "in-process" | "sab" | "transferable";
 
 export interface RuntimeDriverOptions {
+  renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
   frameCap?: number;
   project?: { name: string; version: string };
@@ -375,9 +377,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
   private paused = false;
-  private renderQuality = "high";
-  private shadowQuality = "1024";
-  private resolutionScale = 1;
+  private readonly renderingQuality: RenderingQualitySession;
   private frameCap: number;
   private volume = 1;
   private timeDilation = 1;
@@ -475,6 +475,7 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
+    this.renderingQuality = new RenderingQualitySession(options.renderSettings, options.playScene?.settings.shadowOverrides);
     this.frameCap =
       options.frameCap !== undefined && options.frameCap > 0
         ? options.frameCap
@@ -1617,6 +1618,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.lastBtStateJson.clear();
     this.clearNavAgents();
     this.playScene = next;
+    this.renderingQuality.scene = next.settings.shadowOverrides ?? {};
     this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
     this.playWorldRealized = false;
     // The new scene owns its own camera choice.
@@ -2829,35 +2831,17 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private consoleHost(): ConsoleCommandHost {
-    const emitSetting = (key: string, value: string | number | boolean) => {
-      this.emit({
-        type: "log",
-        severity: "log",
-        category: "console",
-        message: `${key}=${value}`,
-        frameId: this.frameId,
-      });
-    };
     return {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
-      setRenderQuality: (level) => {
-        this.renderQuality = String(level);
-        this.emit({ type: "setRenderQuality", level: this.renderQuality });
+      quality: (group, choice, value) => {
+        const result = this.renderingQuality.execute(group, choice, value);
+        if (result.success && choice !== undefined)
+          this.emit({ type: "setRenderingQuality", overrides: this.renderingQuality.overrides });
+        return result;
       },
-      getRenderQuality: () => this.renderQuality,
-      setShadowQuality: (level) => {
-        this.shadowQuality = String(level);
-        emitSetting("shadowquality", this.shadowQuality);
-        this.emit({ type: "setShadowQuality", level: this.shadowQuality });
-      },
-      getShadowQuality: () => this.shadowQuality,
-      setResolutionScale: (scale) => {
-        this.resolutionScale = Math.min(2, Math.max(1, Number(scale)));
-        this.emit({ type: "setResolutionScale", scale: this.resolutionScale });
-      },
-      getResolutionScale: () => this.resolutionScale,
+      setLightsDebug: (enabled) => this.emit({ type: "setLightsDebug", enabled }),
       setFrameCap: (fps) => {
         this.frameCap = fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
         this.emit({ type: "setFrameCap", fps: this.frameCap });

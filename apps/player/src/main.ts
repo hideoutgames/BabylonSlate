@@ -79,7 +79,9 @@ async function launchLoaded(
     document.getElementById("player-hud") ?? document.createElement("div"),
     { bundleDebugger: game.manifest.bundleDebugger },
   );
+  let currentLightsDebugText: string | null = null;
   const stopAudioOverlays = mountPlayerDebuggerOverlays(rootEl(), {
+    lightsDebugText: () => currentLightsDebugText,
     bundleDebugger: game.manifest.bundleDebugger,
   });
   setRootState({
@@ -124,6 +126,7 @@ async function launchLoaded(
       }
     },
     onStats: (stats) => {
+      currentLightsDebugText = stats.lightsDebugText ?? null;
       hud.setStats({ ...stats, ...hostMemory });
       setRootState({
         booted: stats.ticks > 0,

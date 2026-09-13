@@ -103,18 +103,18 @@ describe("applyPlayerEngineCommand", () => {
       applyPlayerEngineCommand(handle, { type: "setFrameCap", fps: 30 }),
     ).toBe(true);
     expect(
-      applyPlayerEngineCommand(handle, { type: "setRenderQuality", level: "low" }),
+      applyPlayerEngineCommand(handle, { type: "setRenderingQuality", overrides: { shadows: { maxLocalLights: 8 } } }),
     ).toBe(true);
     expect(
       applyPlayerEngineCommand(handle, {
-        type: "setResolutionScale",
-        scale: 1.5,
+        type: "setLightsDebug",
+        enabled: true,
       }),
     ).toBe(true);
     expect(applied).toEqual([
       "setFrameCap",
-      "setRenderQuality",
-      "setResolutionScale",
+      "setRenderingQuality",
+      "setLightsDebug",
     ]);
   });
 

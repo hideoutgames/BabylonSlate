@@ -81,11 +81,13 @@ vi.mock("../context/document-context", async () => {
       }
       return {
       projectDocument,
+      projectGuid: "test-project",
       exportProject,
       exportGameArtifact,
       zipExportedGame: vi.fn(),
       retryFailedTextureEncoding: vi.fn(),
-      updateProjectSettings,
+      // Context providers may recreate callbacks during unrelated updates.
+      updateProjectSettings: (...args: Parameters<typeof updateProjectSettings>) => updateProjectSettings(...args),
       updateProjectVersion,
       sourceControl,
       prefillSourceControlFromGit: sourceControl.readGitPrefill,
@@ -421,7 +423,8 @@ describe("SettingsModal project authoring", () => {
       const option = await screen.findByRole("option", { name });
       fireEvent.pointerDown(option);
       fireEvent.click(option);
-      await waitFor(() => expect(lastProjectRender.current?.mode).toBe(name.toLowerCase()));
+      await waitFor(() => expect(screen.getByTestId("setting-render-mode").textContent).toContain(name));
+      expect(lastProjectRender.current).toBeNull();
       view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     };
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
@@ -431,9 +434,11 @@ describe("SettingsModal project authoring", () => {
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     await selectMode("PBR");
     expect(screen.queryByTestId("project-cel-settings")).toBeNull();
-    expect(lastProjectRender.current?.cel?.shadowBands).toBe(6);
+    expect(lastProjectRender.current).toBeNull();
     await selectMode("CEL");
     expect((screen.getByLabelText("Shadow Bands") as HTMLInputElement).value).toBe("6");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(lastProjectRender.current).toMatchObject({ mode: "cel", cel: { shadowBands: 6 } });
   });
 
   it("authors infinite loop detection on the General category", () => {

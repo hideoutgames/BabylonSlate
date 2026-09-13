@@ -1,3 +1,5 @@
+import { RenderQualityFields } from "./render-quality-fields";
+import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -266,17 +268,59 @@ export function SettingsModal({
   const resolvedTestId =
     testId ?? (scope === "engine" ? "engine-settings-modal" : "settings-modal");
   const {
-    projectDocument,
+    projectDocument: liveProjectDocument,
+    projectGuid,
     exportProject,
     exportGameArtifact,
     zipExportedGame,
     retryFailedTextureEncoding,
-    updateProjectSettings,
+    updateProjectSettings: applyProjectSettings,
     updateProjectVersion,
     assetRegistry,
     sourceControl,
     prefillSourceControlFromGit,
   } = useDocuments();
+  const [draft, setDraft] = useState<RenderingDraft | null>(null);
+  const draftOwner = useRef<{ guid: string | null; base: RenderingDraft } | null>(null);
+  const latest = useRef({ project: liveProjectDocument, projectGuid, draft, applyProjectSettings });
+  latest.current = { project: liveProjectDocument, projectGuid, draft, applyProjectSettings };
+  const projectDocument = liveProjectDocument && draft
+    ? { ...liveProjectDocument, settings: { ...liveProjectDocument.settings, ...draft } }
+    : liveProjectDocument;
+  const updateProjectSettings: typeof applyProjectSettings = (patch) => {
+    const { render, playFrameCap, playPreview, ...immediate } = patch;
+    if (Object.keys(immediate).length) applyProjectSettings(immediate);
+    if (render !== undefined || playFrameCap !== undefined || playPreview !== undefined)
+      setDraft((current) => ({ ...(current ?? renderingDraft(liveProjectDocument!.settings)),
+        ...(render !== undefined ? { render } : {}),
+        ...(playFrameCap !== undefined ? { playFrameCap } : {}),
+        ...(playPreview !== undefined ? { playPreview } : {}),
+      }));
+  };
+  const commitRendering = useCallback(() => {
+    const owner = draftOwner.current;
+    const current = latest.current;
+    draftOwner.current = null;
+    if (!owner || !current.project || !current.draft || owner.guid !== current.projectGuid) return;
+    const merged = mergeRenderingDraft(owner.base, current.draft, current.project.settings);
+    if (JSON.stringify(merged) !== JSON.stringify(renderingDraft(current.project.settings)))
+      current.applyProjectSettings(merged);
+  }, []);
+  const changeOpen = (next: boolean) => {
+    if (!next) commitRendering();
+    onOpenChange(next);
+  };
+  useEffect(() => {
+    if (open && scope === "project" && latest.current.project) {
+      if (draftOwner.current?.guid === projectGuid) return;
+      const base = renderingDraft(latest.current.project.settings);
+      draftOwner.current = { guid: projectGuid, base };
+      setDraft(base);
+    } else {
+      commitRendering();
+      setDraft(null);
+    }
+  }, [open, scope, projectGuid, commitRendering]);
   const [search, setSearch] = useState("");
   const settingsBodyRef = useRef<HTMLDivElement>(null);
   const [pendingFocus, setPendingFocus] = useState<{ targetId?: string } | null>(null);
@@ -384,7 +428,7 @@ export function SettingsModal({
     setExportProjectError(null);
     setExportNotice(null);
     try {
-      const bytes = await exportProject();
+      const bytes = await exportProject(projectDocument);
       const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/zip" });
       const url = URL.createObjectURL(blob);
       try {
@@ -409,7 +453,7 @@ export function SettingsModal({
     setExportGameError(null);
     setExportNotice(null);
     try {
-      const result = await exportGameArtifact();
+      const result = await exportGameArtifact({ projectSnapshot: projectDocument });
       if (isErr(result)) {
         setExportGameError(exportGameFailureMessage(result.error));
         return;
@@ -444,7 +488,7 @@ export function SettingsModal({
     <>
     <CatalogDialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={changeOpen}
       title={scope === "engine" ? "Engine Settings" : "Project Settings"}
       description={
           scope === "project" && !projectDocument
@@ -472,7 +516,7 @@ export function SettingsModal({
               id="close-project"
               className="mr-auto min-h-[var(--chrome-row,28px)] w-fit"
               onClick={() => {
-                onOpenChange(false);
+                changeOpen(false);
                 onCloseProject();
               }}
             >
@@ -483,7 +527,7 @@ export function SettingsModal({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => changeOpen(false)}
           >
             Done
           </Button>
@@ -1003,6 +1047,7 @@ export function SettingsModal({
               </Select>
               <FieldDescription>CEL uses native banded surface lighting. Scene Defaults can override individual style settings.</FieldDescription>
             </Field>
+<RenderQualityFields settings={projectDocument.settings.render} onChange={(render) => updateProjectSettings({ render })} />
 <ShadowSettingsFields project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
             {projectDocument.settings.render.mode === "cel" ? (
               <CelShadingFields

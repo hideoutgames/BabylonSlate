@@ -71,8 +71,8 @@ export const engineSettingsSchema = z.object({
     .default({ theme: "system", coarsePointerTargetScale: 1 }),
   undoHistoryLength: z.number().int().positive().default(50),
   viewportFrameCap: z.number().positive().default(30),
-  shadowDeviceProfile: z.enum(["project", "economy", "a16", "high", "ultra"]).default("a16"),
   viewportDropDistance: z.number().finite().positive().default(DEFAULT_EDITOR_DROP_DISTANCE),
+  renderingOverridesEnabled: z.boolean().default(false),
   hardwareScalingLevel: z.number().positive().default(1),
   modelImportDefaultScale: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
@@ -89,7 +89,7 @@ export const engineSettingsSchema = z.object({
   viewportSnapRotateDeg: z.number().finite().positive().default(15),
   viewportSnapScale: z.number().finite().positive().default(0.25),
   postProcessingEnabled: z.boolean().default(true),
-  editorTextureLodEnabled: z.boolean().default(true),
+  editorTextureLodEnabled: z.boolean().default(false),
   editorTextureLodQuality: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(1, Math.max(0.25, value));

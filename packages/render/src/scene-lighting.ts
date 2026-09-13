@@ -1,3 +1,5 @@
+import "./texture-quality";
+import { syncDirectionalLightPolicy } from "./light-policy";
 import {
   Material,
   NodeMaterial,
@@ -58,6 +60,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
 
   const sync = (): void => {
     if (scene.isDisposed) return;
+    syncDirectionalLightPolicy(scene);
     // Babylon defers its new-entity observables. These O(1) checks also catch
     // objects constructed immediately before prewarm or the first render.
     if (

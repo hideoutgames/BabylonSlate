@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultScene, type SerializedGraph } from "@babylonslate/core";
-import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
+import { encodeBabasset, type ImportResult, type IndexedAsset } from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_ACTOR_ID,
@@ -42,9 +43,21 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
     const createAsset = vi.fn(
       async (_root: string, _path: string, result: ImportResult) => result,
     );
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("scaffold.babproject");
+    await storage.writeBinary(created[0]!.path, await encodeBabasset({
+      header: {
+        ...created[0]!.header,
+        version: 1, engineVersion: "test", mode: "thin", dependencies: [],
+      },
+      chunks: [],
+    }));
     const registry = {
       importFile: vi.fn(async () => created),
       createAsset,
+      storageFor: () => storage,
+      blobsFor: () => ({}),
+      reindexPath: vi.fn(),
     };
 
     const scene = await applyKenneyMannequinEmptyScaffold({

@@ -18,7 +18,6 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -269,21 +268,12 @@ export function EngineSettingsForm({
       {categoryId === "viewport" ? (
         <FieldSet>
           <FieldLegend>Viewport</FieldLegend>
-          <Field className="settings-field">
-            <FieldLabel htmlFor="setting-shadow-device-profile">Shadow Device Profile</FieldLabel>
-            <Select value={settings.shadowDeviceProfile} onValueChange={(value) => {
-              if (value === "project" || value === "economy" || value === "a16" || value === "high" || value === "ultra") void onChange({ shadowDeviceProfile: value });
-            }}>
-              <SelectTrigger id="setting-shadow-device-profile"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectGroup>
-                <SelectItem value="a16">iPad A16</SelectItem>
-                <SelectItem value="economy">Economy</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="ultra">Ultra</SelectItem>
-                <SelectItem value="project">Project Settings</SelectItem>
-              </SelectGroup></SelectContent>
-            </Select>
-            <FieldDescription>Limits GPU shadow cost on this device without rewriting authored settings. Shadow distance remains the project or scene value.</FieldDescription>
+          <Field orientation="horizontal" className="settings-field">
+            <FieldContent><FieldLabel htmlFor="setting-rendering-overrides">Override Project Rendering</FieldLabel>
+              <FieldDescription>Use local resolution, texture budget and post-processing preferences in editor previews. Runtime quality commands take precedence.</FieldDescription>
+            </FieldContent>
+            <Switch id="setting-rendering-overrides" checked={settings.renderingOverridesEnabled}
+              onCheckedChange={(renderingOverridesEnabled) => void onChange({ renderingOverridesEnabled })} />
           </Field>
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-frame-cap">
@@ -340,6 +330,7 @@ export function EngineSettingsForm({
               step={0.25}
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-hardware-scale"
+              disabled={!settings.renderingOverridesEnabled}
               value={settings.hardwareScalingLevel}
               onChange={(hardwareScalingLevel) =>
                 void onChange({ hardwareScalingLevel })
@@ -361,6 +352,7 @@ export function EngineSettingsForm({
             <Switch
               id="setting-post-processing"
               data-testid="setting-post-processing"
+              disabled={!settings.renderingOverridesEnabled}
               checked={settings.postProcessingEnabled}
               onCheckedChange={(checked) =>
                 void onChange({ postProcessingEnabled: checked === true })
@@ -454,6 +446,7 @@ export function EngineSettingsForm({
             <Switch
               id="setting-texture-budget"
               data-testid="setting-texture-budget"
+              disabled={!settings.renderingOverridesEnabled}
               checked={settings.textureBudgetEnabled}
               onCheckedChange={(checked) =>
                 void onChange({ textureBudgetEnabled: checked === true })
@@ -472,7 +465,7 @@ export function EngineSettingsForm({
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-texture-budget-mb"
               value={Math.round(settings.textureByteCeiling / (1024 * 1024))}
-              disabled={!settings.textureBudgetEnabled}
+              disabled={!settings.renderingOverridesEnabled || !settings.textureBudgetEnabled}
               onChange={(megabytes) =>
                 void onChange({
                   textureByteCeiling: Math.round(megabytes) * 1024 * 1024,

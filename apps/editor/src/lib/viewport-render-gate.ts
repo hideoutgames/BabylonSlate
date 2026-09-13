@@ -1,5 +1,5 @@
+import type { QualityOverrides } from "@babylonslate/core";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "@babylonslate/vfs";
-import type { ShadowDeviceProfile } from "@babylonslate/core";
 import {
   receiveActiveAppSettingsUpdate,
   subscribeAppSettings,
@@ -23,6 +23,7 @@ export function dispatchEngineSettingsChanged(settings: {
   viewportFrameCap: number;
   theme?: "system" | "light" | "dark";
   graphDefaultZoom?: number;
+  renderingOverridesEnabled?: boolean;
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
   editorTextureLodEnabled?: boolean;
@@ -44,12 +45,12 @@ export function dispatchEngineSettingsChanged(settings: {
 }
 
 export type LiveEngineSettingsTarget = {
-  setShadowDeviceProfile?: (profile: ShadowDeviceProfile) => void;
   scaling?: {
     setLevel: (level: number) => void;
     setSettingsLevel?: (level: number) => void;
   };
   scheduler?: { setFrameCap: (fps: number) => void };
+  setLocalQualityOverrides?: (overrides: QualityOverrides) => void;
   setPostProcessingEnabled?: (enabled: boolean) => void;
   setTextureBudget?: (bytes: number, enabled: boolean) => void;
   setAudioBudget?: (bytes: number, enabled: boolean) => void;
@@ -57,8 +58,8 @@ export type LiveEngineSettingsTarget = {
 };
 
 export type LiveEngineSettings = {
-  shadowDeviceProfile?: ShadowDeviceProfile;
   viewportFrameCap?: number;
+  renderingOverridesEnabled?: boolean;
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
   editorTextureLodEnabled?: boolean;
@@ -70,13 +71,22 @@ export type LiveEngineSettings = {
   audioMaxVoices?: number;
 };
 
+/** The same local baseline is supplied to renderer and console readback. */
+export function localRenderingQualityOverrides(settings: LiveEngineSettings): QualityOverrides {
+  if (settings.renderingOverridesEnabled !== true) return {};
+  const scale = 1 / Math.max(1, settings.hardwareScalingLevel ?? 1);
+  return {
+    resolution: { scale, minScale: scale, dynamic: false },
+    textures: { byteBudget: settings.textureBudgetEnabled === false ? Number.MAX_SAFE_INTEGER : settings.textureByteCeiling ?? 512 * 1024 * 1024 },
+  };
+}
+
 /** Apply local Engine Settings that must take effect without writing a scene. */
 export function applyLiveEngineSettings(
   target: LiveEngineSettingsTarget,
   settings: LiveEngineSettings,
   options?: { applyFrameCap?: boolean },
 ): void {
-  if (settings.shadowDeviceProfile) target.setShadowDeviceProfile?.(settings.shadowDeviceProfile);
   if (
     options?.applyFrameCap !== false &&
     typeof settings.viewportFrameCap === "number" &&
@@ -85,7 +95,11 @@ export function applyLiveEngineSettings(
   ) {
     target.scheduler?.setFrameCap(settings.viewportFrameCap);
   }
+  if (target.setLocalQualityOverrides) {
+    target.setLocalQualityOverrides(localRenderingQualityOverrides(settings));
+  }
   if (
+    !target.setLocalQualityOverrides && settings.renderingOverridesEnabled === true &&
     typeof settings.hardwareScalingLevel === "number" &&
     Number.isFinite(settings.hardwareScalingLevel) &&
     settings.hardwareScalingLevel > 0
@@ -97,11 +111,12 @@ export function applyLiveEngineSettings(
     }
   }
   if (typeof settings.postProcessingEnabled === "boolean") {
-    target.setPostProcessingEnabled?.(settings.postProcessingEnabled);
+    target.setPostProcessingEnabled?.(settings.renderingOverridesEnabled !== true || settings.postProcessingEnabled);
   }
   if (
-    typeof settings.textureByteCeiling === "number" ||
-    typeof settings.textureBudgetEnabled === "boolean"
+    !target.setLocalQualityOverrides && settings.renderingOverridesEnabled === true &&
+    (typeof settings.textureByteCeiling === "number" ||
+    typeof settings.textureBudgetEnabled === "boolean")
   ) {
     const bytes =
       typeof settings.textureByteCeiling === "number"
@@ -189,7 +204,6 @@ export function canvasIsEditorVisible(
 }
 
 export function attachViewportRenderGate(options: {
-  setShadowDeviceProfile?: (profile: ShadowDeviceProfile) => void;
   canvas: HTMLCanvasElement;
   scheduler: ViewportRenderTarget;
   loadFrameCap?: () => Promise<number>;
@@ -197,6 +211,7 @@ export function attachViewportRenderGate(options: {
     setLevel: (level: number) => void;
     setSettingsLevel?: (level: number) => void;
   };
+  setLocalQualityOverrides?: (overrides: QualityOverrides) => void;
   setPostProcessingEnabled?: (enabled: boolean) => void;
   setTextureBudget?: (bytes: number, enabled: boolean) => void;
   setAudioBudget?: (bytes: number, enabled: boolean) => void;
@@ -249,7 +264,7 @@ export function attachViewportRenderGate(options: {
       {
         scheduler,
         scaling: options.scaling,
-        setShadowDeviceProfile: options.setShadowDeviceProfile,
+        setLocalQualityOverrides: options.setLocalQualityOverrides,
         setPostProcessingEnabled: options.setPostProcessingEnabled,
         setTextureBudget: options.setTextureBudget,
         setAudioBudget: options.setAudioBudget,

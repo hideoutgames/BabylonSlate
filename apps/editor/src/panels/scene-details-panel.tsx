@@ -633,9 +633,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 )
               }
               renderItem={({ item, index, onChange }) => (
+                <div className="flex items-center justify-between gap-2 px-2 pointer-coarse:flex-wrap">
                 <Field
                   orientation="horizontal"
-                  className="w-fit min-h-7 gap-3 px-3 pointer-coarse:min-h-11"
+                  className="w-fit min-h-7 gap-1 pointer-coarse:min-h-11"
                 >
                   <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
                     Enabled
@@ -652,6 +653,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     }
                   />
                 </Field>
+                <Field orientation="horizontal" className="w-fit min-h-7 gap-1 pointer-coarse:min-h-11">
+                  <FieldLabel htmlFor={`scene-post-process-${index}-scalable`} title="Allow quality settings to scale this pass resolution">Scalable</FieldLabel>
+                  <Switch size="sm" className="pointer-coarse:after:-inset-y-[15px]" id={`scene-post-process-${index}-scalable`} aria-label={`Pass ${index + 1} Scalable Resolution`} checked={item.scalable === true} onCheckedChange={(scalable) => onChange({ ...item, scalable })} />
+                </Field>
+                </div>
               )}
             />
           </div>

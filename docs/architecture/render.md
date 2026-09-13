@@ -56,7 +56,7 @@ Play overlay canvas layout comes from Project Settings. When `render.customResol
 - Reuse scratch `Vector3` / `Quaternion`; each mesh owns its frozen world `Matrix`, refreshed from local TRS so actor slots cannot alias one matrix and collapse at the origin.
 - Bulk apply / despawn wrapped in `blockMaterialDirtyMechanism` and `blockfreeActiveMeshesAndRenderingGroups`.
 - `skipPointerMovePicking: true` on world / editor scenes (mesh hover off). Overlay SceneLayer Play scenes keep move picking on for hover (`onMouseEnter` / `onMouseLeave`). See [scene-layers.md](scene-layers.md).
-- `applyAssignMesh` records `meshKind`, `meshAssetGuid`, and optional `parts[]` per slot and rebuilds the Play mesh via `createPlayMesh` **even when the slot has no mesh yet**. Non-sprite / tilemap / skybox Play visuals (primitives, GLB instances, colliders, helpers) sit in `RENDERING_GROUP.world` with the editor grid so Babylon does not clear depth between a primitive in group 0 and a model in group 1. A single identity visual stays `actor-<slotId>` (snapshot-driven). Multiple or offset parts keep that name as a hidden origin and parent `actor-<slotId>|<componentId>` children at local TRS; non-rendering component parents are skipped to the nearest visual ancestor, matching `EditorSceneSync`. Picking walks parents to the origin. `meshKind: "sprite"` / `"tilemap"` build quads/chunks and bind `ResourceCache` textures from collected `textureBytes` with the sprite alpha-test material (`alphaCutOff` 0.4). Tilemap chunks inherit component sorting as a group and order asset layers internally; the shared alpha-test comparator preserves world depth and cutouts. Parallax stays per layer, and animated `:anim` siblings seek their UVs from simulation time. When `twoD.pixelPerfect` is on, snapshot apply snaps the **Play** camera XY to the pixel grid. `MeshComponent.assetGuid` creates an empty named transform root (`actor-<slotId>` / `editorActor:<id>`, hidden and unpickable). Each Model guid is `LoadAssetContainerAsync`'d **once per Scene** from **packed** `source` bytes (`packedGltfBytes`: `slice` a babasset chunk view so the glTF plugin does not read the whole `.babasset` `ArrayBuffer`) and kept as a template `AssetContainer` (not `addAllToScene`). Loader failures leave that empty named root and log `[render] Model <guid> failed to load` (Material Preview custom mesh falls back to the cube). `instantiateModelsToScene` (keep source names, clone skins) parents a per-actor instance under that root. `createMeshFromModelBytes` is a NullEngine / synthetic-GLB test helper, not the editor/Play hot path. `visualMeshes` skips the hidden placeholder and 0-vertex `__root__`. Loader `TEXCOORD_0` UVs stay on every part. `applyModelMaterialSlots` maps each construction material to a Model slot by the glTF `/materials/N` pointer (import order), then by slot name (including same-name clones), then by the next unused index — never by `getChildMeshes()` visit order. Shared construction instances share a slot; distinct glTF materials stay distinct slots. Empty guid = glTF construction. Then `MeshComponent.materialGuid` as a whole-visual override. Snapshot TRS on the named root moves skeleton and skinned meshes. Paused `AnimationGroup`s register on `slotAnimationGroups` stamped with the **Animation** guid (`modelClipAnimationGuids`; fallback Model guid): wrap with `start`/`play` then `pause()` so animatables stay live for `goToFrame` — never `stop()`. Retargeted rows load the source Model GLB from the same per-Scene cache and run `retargetAnimationGroupWithMeshProxy` at rest pose, then pause/seek. The last `animState` is replayed when those groups land. `meshKind: "skybox"` is a **visible** mesh (`CreateBox` + unlit PBR `SKYBOX_MODE`, actor world TRS, `ignoreCameraMaxZ`, `isPickable` always false, no shadows); it is not a Play helper. `meshKind: "text3d"` is a **visible** flat mesh (`CreateTextShapePaths` + `CreatePolygon` + injected `earcut`, one unlit two-sided material, bundled ASCII TypeFace when no Font facetype chunk); optional `text3d` on the command and on `parts[]`. `meshKind: "rigidbody"` is a Play helper (`playHelperVisual`) — never a visible 0.25 cube. `meshKind` starting with `collider:` builds the same world-space dashed meshes as the editor (`createColliderVisualMesh`); runtime emits that kind only when `ColliderComponent.renderInGame` is true. Console `showcollision` stays a separate global overlay (`play-console-viz`). `meshKind: "light:*"` / `"camera"` create detached authored lights/`UniversalCamera`s; `assignMesh.light` / `.camera` apply color, intensity, range, cone, enabled, projection, FOV, clips, and Default Camera (`isDefault`). Play cameras and lights use **composed** actor × first-part TRS (same `composeActorComponentTransform` as the editor) and zero UniversalCamera Euler after setting `rotationQuaternion`. Missing Default Camera keeps the Play viewport camera named `"camera"` — it does not steal the first CameraComponent. `possessCamera` switches the global Play `activeCamera`; `setShadowQuality` sizes the one `ShadowGenerator`.
+- `applyAssignMesh` records `meshKind`, `meshAssetGuid`, and optional `parts[]` per slot and rebuilds the Play mesh via `createPlayMesh` **even when the slot has no mesh yet**. Non-sprite / tilemap / skybox Play visuals (primitives, GLB instances, colliders, helpers) sit in `RENDERING_GROUP.world` with the editor grid so Babylon does not clear depth between a primitive in group 0 and a model in group 1. A single identity visual stays `actor-<slotId>` (snapshot-driven). Multiple or offset parts keep that name as a hidden origin and parent `actor-<slotId>|<componentId>` children at local TRS; non-rendering component parents are skipped to the nearest visual ancestor, matching `EditorSceneSync`. Picking walks parents to the origin. `meshKind: "sprite"` / `"tilemap"` build quads/chunks and bind `ResourceCache` textures from collected `textureBytes` with the sprite alpha-test material (`alphaCutOff` 0.4). Tilemap chunks inherit component sorting as a group and order asset layers internally; the shared alpha-test comparator preserves world depth and cutouts. Parallax stays per layer, and animated `:anim` siblings seek their UVs from simulation time. When `twoD.pixelPerfect` is on, snapshot apply snaps the **Play** camera XY to the pixel grid. `MeshComponent.assetGuid` creates an empty named transform root (`actor-<slotId>` / `editorActor:<id>`, hidden and unpickable). Each Model guid is `LoadAssetContainerAsync`'d **once per Scene** from **packed** `source` bytes (`packedGltfBytes`: `slice` a babasset chunk view so the glTF plugin does not read the whole `.babasset` `ArrayBuffer`) and kept as a template `AssetContainer` (not `addAllToScene`). Loader failures leave that empty named root and log `[render] Model <guid> failed to load` (Material Preview custom mesh falls back to the cube). `instantiateModelsToScene` (keep source names, clone skins) parents a per-actor instance under that root. `createMeshFromModelBytes` is a NullEngine / synthetic-GLB test helper, not the editor/Play hot path. `visualMeshes` skips the hidden placeholder and 0-vertex `__root__`. Loader `TEXCOORD_0` UVs stay on every part. `applyModelMaterialSlots` maps each construction material to a Model slot by the glTF `/materials/N` pointer (import order), then by slot name (including same-name clones), then by the next unused index — never by `getChildMeshes()` visit order. Shared construction instances share a slot; distinct glTF materials stay distinct slots. Empty guid = glTF construction. Then `MeshComponent.materialGuid` as a whole-visual override. Snapshot TRS on the named root moves skeleton and skinned meshes. Paused `AnimationGroup`s register on `slotAnimationGroups` stamped with the **Animation** guid (`modelClipAnimationGuids`; fallback Model guid): wrap with `start`/`play` then `pause()` so animatables stay live for `goToFrame` — never `stop()`. Retargeted rows load the source Model GLB from the same per-Scene cache and run `retargetAnimationGroupWithMeshProxy` at rest pose, then pause/seek. The last `animState` is replayed when those groups land. `meshKind: "skybox"` is a **visible** mesh (`CreateBox` + unlit PBR `SKYBOX_MODE`, actor world TRS, `ignoreCameraMaxZ`, `isPickable` always false, no shadows); it is not a Play helper. `meshKind: "text3d"` is a **visible** flat mesh (`CreateTextShapePaths` + `CreatePolygon` + injected `earcut`, one unlit two-sided material, bundled ASCII TypeFace when no Font facetype chunk); optional `text3d` on the command and on `parts[]`. `meshKind: "rigidbody"` is a Play helper (`playHelperVisual`) — never a visible 0.25 cube. `meshKind` starting with `collider:` builds the same world-space dashed meshes as the editor (`createColliderVisualMesh`); runtime emits that kind only when `ColliderComponent.renderInGame` is true. Console `showcollision` stays a separate global overlay (`play-console-viz`). `meshKind: "light:*"` / `"camera"` create detached authored lights/`UniversalCamera`s; `assignMesh.light` / `.camera` apply color, intensity, range, cone, enabled, projection, FOV, clips, and Default Camera (`isDefault`). Play cameras and lights use **composed** actor × first-part TRS (same `composeActorComponentTransform` as the editor) and zero UniversalCamera Euler after setting `rotationQuaternion`. Missing Default Camera keeps the Play viewport camera named `"camera"` — it does not steal the first CameraComponent. `possessCamera` switches the global Play `activeCamera`; `setRenderingQuality` updates the affected quality groups without resetting simulation.
 - `applyAssignMaterial` records `materialAssetGuid` per slot (and optional `componentId`) and binds the compiled NodeMaterial from a scene-local `MaterialLibrary`. Overlay slots resolve against the mesh’s Scene with `unlit: true` so SceneLayer `2DMaterial` stays a HUD compile instead of a world-lit material. `assignedMaterialGuids()` lists unique recorded guids for Play e2e (`data-assigned-materials`). `createEngine` loads Material / Material Function documents, resolves textures through `ResourceCache`, and rebuilds the camera `postProcessStack` on `loadScene`, document updates, Engine Settings `postProcessingEnabled`, and whenever Play `activeCamera` identity changes (`assignMesh` Default Camera, `possessCamera`, snapshot spawn/despawn). That local gate defaults on and skips attachment without mutating the scene or exported games. Scene Depth / Scene Normal probe honestly (depth try/catch, keep a pre-existing pre-pass), compile each pass first, then lease only the linearized depth renderer or pre-pass a successful pass needs. Detach releases only buffers this stack created. The packaged player hydrates packed Material / Material Function JSON and the startup stack and forwards `assignMaterial`. `changescene` / `ctx.changeScene` emit `activeScene`; Play hosts look up that guid and call `loadScene` plus `applySceneEnvironment`. Play-mode `loadScene` applies environment (clear / fog / IBL) and the camera post-process stack, **clears the snapshot interpolator**, and retires world Play slot visuals/cameras (`retirePlayWorldSlots`; overlay compositor slots stay) so leftover `possessedCameraSlotId` cannot outrank the destination Default Camera. It does not run `applySceneToBabylonScene`, so a scene change cannot plant document `authoredLight:<actorId>` lights beside Play `assignMesh` lights. `despawn` also retires that slot immediately (same as snapshot prune) instead of waiting for GC. Editor Play also closes material documents over every scene in the Play library so the destination stack can compile. Per-scene navmesh reload is a separate navigation follow-up.
 - `applyPossessCamera` outranks the Default Camera: `refreshPlayActiveCamera` prefers the possessed slot, then the `isDefault` slot, then the Play fallback camera named `"camera"`. Snapshot despawn **and Play `despawn` / `loadScene`** call the same refresh so a disposed possessed camera does not leave Babylon’s `cameras[0]` (often the fallback orbit camera) as the game view. The scene `attemptPossessViewTarget` option and the graph node both arrive as the same `possessCamera` command ([engineplan §2.5](../engineplan.md)). `changeScene` re-evaluates Attempt Possess on the destination world. Possess after realize only works if `assignMesh` already created the UniversalCamera — an empty `binding.cameras` map used to leave Play on the orbit fallback.
 - One slot is one visual. Two mesh actors keep two slots and two visible meshes; overlapping meshes are authored co-location, not a lost slot. Place Actors and Outliner drag-duplicate write an explicit world position (view center or drop ray) so a new actor is not planted inside the camera lens or the default Actor origin; authors can still stack two meshes on purpose.
@@ -272,16 +272,14 @@ The viewport reload key includes effective shadow settings alongside CEL setting
 Play. Mesh additions/removals update caster membership, disabled lights release
 allocation, and local lights have a separate budget from the directional light.
 Supported directional rendering uses stabilized cascades without a depth-reduction
-pass. Device profile limits resolve separately from authored settings. The A16
-preset is a starting budget, not a measured performance certification; final iPad
-validation is manual.
-CEL band and highlight edges use screen-space derivatives for subpixel antialiasing while retaining flat band interiors. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
+pass. Quality presets never cap the authored local shadow budget or distance. Final iPad validation is manual.
+CEL band and highlight edges are hard at zero softness; positive softness is opt-in. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
 Graph system-matrix input names retain Babylon's `World`/`View` prefixes so its floating-origin adapter offsets geometry, lights and shadow coordinates consistently.
 Authored World Position and Camera Position graph inputs add the render origin
 back; lighting and view-direction calculations remain camera-relative. Moving
 the camera therefore does not move world-space procedural material coordinates.
 
-Engine Settings now applies a local shadow device profile to editor and Play.
+Obsolete hardware-specific shadow caps have been removed.
 Play stats report CPU submission time, asynchronous engine GPU timing when
 supported, effective target size/sample count, allocated shadow passes and an
 attachment-memory estimate. Unsupported or pending GPU timing is labeled rather
@@ -296,14 +294,11 @@ per-submesh shadow culling retains upstream casters for depth-clamped PCF.
 Skinned, morphing and instanced geometry is not automatically partitioned.
 Skinned/morphing casters and materials with deformation padding bypass static
 bounds rejection; a bind-pose AABB cannot certify their animated shadow extent.
-Authored rendering changes coalesce for 150 ms before a full scene reload and shader warm-up. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth and normal bias derive from texel size and filter footprint; disabling automatic bias uses the authored offsets directly.
+Project Rendering edits remain in a modal draft until Done or another close path commits them together, followed by a full scene reload and shader warm-up. Unchanged/reverted edits do not reload; only changed leaves merge into the latest project. Exports use an explicit draft snapshot without updating the running scene. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth and normal bias derive from texel size and filter footprint; disabling automatic bias uses the authored offsets directly.
 
 The single-map fallback also follows the camera with texel-snapped XY coverage;
 only relevant upstream caster bounds extend its depth. Directional generators
-resolve the current camera for each render, including preview views. Legacy
-`shadowquality` commands remain explicit runtime overrides; merely opening a
-scene does not override the authored map size. Exported players use project
-quality by default, while local editor/Play can apply Engine Settings caps.
+resolve the current camera for each render, including preview views. Runtime `quality shadows` overrides remain explicit; opening a scene does not override its authored map size. Exported players and editor previews inherit project quality unless an explicit local/session override applies.
 Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
 and report completed RTT readback-plus-copy duration separately.
 
@@ -313,9 +308,9 @@ relevant light can replace an existing allocation without disabling it first.
 
 #### Manual iPad A16 validation
 
-The A16 preset is a candidate budget. Desktop correctness tests do not establish
+The Medium preset targets A16. Desktop correctness tests do not establish
 sustained iPad GPU or thermal performance. Validate the local browser build on the
-device before increasing its default quality:
+device to validate sustained frame pacing and thermal behavior:
 
 1. Record iPad model, OS/browser version, build revision, viewport dimensions,
    hardware scaling, battery/charging state and active shadow profile.
@@ -331,13 +326,14 @@ device before increasing its default quality:
    change shadow distance and replace the active camera. Check contact, acne,
    detached shadows, flicker and the far fade while moving.
 5. Run Play for at least 15 minutes with a moving camera, animated Mannequin and
-   the permitted local shadow lights. Record FPS, CPU/GPU time, target size,
+   a user-selected local shadow light budget. Record FPS, CPU/GPU time, target size,
    shadow draws/triangles/passes and memory estimate at the start and end. Record
    unsupported GPU timing as unsupported. Repeat the same route in the editor;
    check the 60 FPS Play and 30 FPS editor targets, plus idle/hidden suspension.
-6. Compare Economy and A16 on the same scene before trying High/Ultra. Increase
+6. Compare Low and Medium on the same scene before trying High/Ultra. Increase
    one of map resolution, cascade count, local-light count or filtering at a
-   time. PCSS is a PBR option and is capped to PCF by the local A16 profile.
+   time. PCSS is an optional PBR filter on every profile; no device-specific cap
+   overrides the selected filter or local shadow budget.
 
 Camera-relative rendering and the high/residual snapshot transport protect
 rendered coordinates; they do not give arbitrary precision to physics or
@@ -348,3 +344,60 @@ not assume that a frozen world matrix makes a material or skeleton immutable.
 Bone attachment detach/retirement restores the snapshot pose even if the next
 snapshot contains unchanged TRS; an attachment's frozen world matrix is not a
 valid cache of that snapshot pose.
+
+### Shared texture representations
+
+The engine texture cache keys retained resources by asset identity and content
+representation. Original, reduced and compressed variants can coexist across
+Scene, Model and Material previews. Requesting a different representation never
+disposes another view's live texture. Handles release the exact acquired resource;
+unused variants are reclaimed through the normal byte-accounted cache policy.
+
+Model previews stage material replacements, warm them against their actual meshes,
+and retain the displayed generation until a replacement succeeds. The Model canvas marks material preparation as busy so assistive technology and preview checks can distinguish it from a settled pose. Closing or
+replacing a preview releases its material library and exact texture leases.
+Preview render and shader-readiness errors are reported without terminating frame scheduling. Asset-preview target resolution follows the shared project quality scale within the preview size limit.
+
+CEL band and highlight softness of zero uses discrete thresholds with no implicit derivative smoothing. Positive softness is an explicit artistic choice. Basic 3D templates bind the Mannequin material slot to a PBR material with nonmetallic, rough shading; ordinary glTF imports retain their authored shading model.
+
+Rendering scalability uses neutral Low, Medium, High and Ultra labels. Engineering targets (not editor labels): Low is mid/high Android, Medium is iPad A16, High is midrange gaming PC, Ultra is high-end gaming PC. Initial shadow allocations are:
+
+| Quality | Directional Map | Cascades | Local Map | PCF Quality |
+| --- | --- | --- | --- | --- |
+| Low | 1024 | 2 | 512 | Low |
+| Medium (Default) | 2048 | 4 | 1024 | High |
+| High | 2048 | 4 | 2048 | High |
+| Ultra | 4096 | 4 | 2048 | High |
+
+The default local budget is four; users can choose any nonnegative safe integer. The authored shadow distance defaults to 200 world units and does not limit map size. Presets change neither value. PCSS remains an explicit PBR artistic choice. These are starting profiles, not sustained device performance measurements.
+
+Only the first enabled directional light in stable scene order illuminates a scene. Authored enabled values are preserved so disabling/removing the owner activates the next eligible sun. Editor billboards show red for lights with no illumination and yellow for illuminating point/spot/directional lights without a shadow allocation; hemispheric fills retain their authored color.
+
+Material color inputs and Color (sRGB) samples decode to linear graph values; Data (Linear) samples remain numerical data. Unlit converts its final color to display space once. CEL converts base/emissive graph colors before its display-space ramp, without changing texture decoding when switching render modes. PBR retains its linear lighting and image-processing output. The obsolete Legacy (Unconverted) texture option is removed.
+
+Scalability groups cover shadow allocation resolution/filtering, fixed/dynamic render resolution, texture residency/anisotropy/LOD, and opt-in post-process pass resolution. Authored post-process passes stay enabled; only passes marked scalable may render below full resolution. Runtime `quality` queries effective settings. `quality medium`, `quality shadows ultra`, `quality shadows budget 6`, `quality shadows distance 200`, `quality shadows enabled off`, and `quality resolution scale 0.75` apply immediately without resetting simulation. `quality shadows reset` resets one group; `quality reset` restores all current project/scene values. The obsolete renderquality, shadowquality and resolutionscale commands are removed; framecap remains independent.
+
+`lightsdebug on/off` controls an independent, default-off light diagnostic overlay in editor Play and debug players. Detailed light rows are collected only while enabled; Stats retains aggregate rendering costs. Illumination exclusion and shadow allocation are reported separately.
+
+Local editor rendering preferences are opt-in through **Override Project Rendering**. With it off, resolution and texture budgets inherit the project. With it on, local preferences overlay authored values; explicit runtime quality commands have higher priority. Disabling it restores inheritance. Editor texture downsampling is a separate opt-in source-size optimization and defaults off. Texture quality mip bias affects sampling bandwidth; it does not shrink already resident mip chains. Memory budgets reclaim unreferenced representations and never dispose textures still leased by a preview or scene.
+
+| Quality | Resolution / Dynamic Minimum | Texture Mip Bias | Anisotropy | Texture Budget | Eligible Post-process Scale |
+| --- | --- | --- | --- | --- | --- |
+| Low | 0.75 / 0.5 | 1 | 2 | 256 MiB | 0.5 |
+| Medium | 1 / 0.75 | 0 | 4 | 512 MiB | 0.75 |
+| High | 1 / 0.75 | 0 | 8 | 1024 MiB | 1 |
+| Ultra | 1 / fixed | 0 | 16 | 2048 MiB | 1 |
+
+Dynamic resolution targets 60 FPS with hysteresis. Texture anisotropy is limited only by the actual backend capability. Budgets are estimates of resident texture allocations, including distinct cached sampling representations; they are not total GPU memory limits. Ultra is an optional high-end target, not a restriction on individual authored settings.
+
+Shared engine texture caches honor the largest budget requested by a live view, independent of settings-update order. Releasing a view removes its budget request. Graph-bound cache textures apply anisotropy at binding because engine-owned wrappers need not appear in a Scene texture list.
+
+CEL hard thresholds include a small numerical tie tolerance. Without it, an exactly flat face at a band boundary (for example a 45-degree white directional light) can alternate bands from floating-point interpolation round-off, even with shadows disabled. The tolerance does not blend the boundary. Nearly tied strongest lights likewise retain stable scene order.
+
+CEL thresholds filtered shadow visibility before applying its light ramp. Feeding near-one PCF values directly into a hard light band can amplify harmless filter variation into surface speckling at a band boundary. Zero band softness gives a hard shadow edge; positive softness explicitly blends shadow visibility. PBR retains its continuous filtered shadows.
+
+Editor billboard icons multiply their unlit status tint through the diffuse texture channel. An additive emissive texture would wash red/yellow status back to white.
+
+SceneLayer camera preparation updates camera matrices only. Scene rendering owns scene-uniform uploads after Babylon selects the correct floating-origin context. Picking and resizing must not upload scene matrices while the world scene is current; doing so can cache a perspective world projection in an orthographic HUD. Regression tests exercise actual uniform-buffer values with world-first and layer-first rendering, including layer post-processing.
+
+Editor active-mesh freezing also evaluates within the owning scene's render frame after materials are ready. A pending freeze is cancelled by structural invalidation. This avoids asynchronous readiness callbacks uploading matrices through another or disposed scene's floating-origin context while retaining off-frustum membership and per-frame draw culling.

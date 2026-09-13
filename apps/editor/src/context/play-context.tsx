@@ -421,6 +421,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setPauseOnPlayState(overlay.pauseOnPlay);
     };
     const apply = (settings: {
+      renderingOverridesEnabled?: boolean;
       postProcessingEnabled?: boolean;
       hardwareScalingLevel?: number;
       debuggerDefaults?: {
@@ -438,10 +439,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         applyOverlay(settings.debuggerDefaults);
       }
       if (typeof settings.postProcessingEnabled === "boolean") {
-        setPostProcessingEnabled(settings.postProcessingEnabled);
+        setPostProcessingEnabled(settings.renderingOverridesEnabled !== true || settings.postProcessingEnabled);
       }
       if (typeof settings.hardwareScalingLevel === "number") {
-        setHardwareScalingLevel(settings.hardwareScalingLevel);
+        setHardwareScalingLevel(settings.renderingOverridesEnabled === true ? settings.hardwareScalingLevel : 1);
       }
     };
     setPreviewBuildState(appSettings.debuggerDefaults.previewBuild === true);

@@ -1,3 +1,4 @@
+import { QualityTextureBlock } from "./texture-quality";
 import {
   AddBlock,
   AnimatedInputBlockTypes,
@@ -171,6 +172,7 @@ function constantInput(
   const uniformName = name.replace(/[^A-Za-z]+/g, "_").replace(/^_+|_+$/g, "") || "value";
   const block = new InputBlock(uniformName, undefined, babylonType);
   block.value = babylonValueFor(type, components, asColor);
+  block.convertToLinearSpace = asColor;
   return block;
 }
 
@@ -682,8 +684,8 @@ const ADAPTERS: Record<string, BlockAdapter> = {
  */
 function textureSampleAdapter(lod: boolean): BlockAdapter {
   return ({ name, operation }) => {
-    const block = new TextureBlock(name, true);
-    block.convertToLinearSpace = operation.properties.colorSpace === "color";
+    const block = new QualityTextureBlock(name, true);
+    block.convertToLinearSpace = operation.properties.colorSpace !== "data";
     const inputs: Record<string, NodeMaterialConnectionPoint> = {
       uv: block.uv,
       texture: block.source,

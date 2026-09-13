@@ -87,8 +87,8 @@ describe("suggestConsoleCompletions", () => {
   it("suggests enum values for the current parameter", () => {
     const registry = createCommandRegistry();
     expect(
-      suggestConsoleCompletions("renderquality ", registry.list()),
-    ).toEqual(["level=", "low", "medium", "high"]);
+      suggestConsoleCompletions("quality resolution ", registry.list()),
+    ).toEqual(["choice=", "low", "medium", "high", "ultra", "reset", "scale"]);
   });
 
   it("suggests on/off for bool flags", () => {
@@ -110,8 +110,8 @@ describe("suggestConsoleCompletions", () => {
       "rate=",
     );
     expect(
-      suggestConsoleCompletions("resolutionscale ", registry.list()),
-    ).toContain("scale=");
+      suggestConsoleCompletions("quality resolution scale ", registry.list()),
+    ).toContain("value=");
   });
 
   it("suggests scene names, actor ids, and command names from context", () => {
@@ -179,11 +179,11 @@ describe("applyConsoleCompletion", () => {
       "changescene ",
     );
     expect(
-      applyConsoleCompletion("renderquality ", "high", registry.list()),
-    ).toBe("renderquality high");
+      applyConsoleCompletion("quality resolution ", "high", registry.list()),
+    ).toBe("quality resolution high");
     expect(
-      applyConsoleCompletion("renderquality me", "medium", registry.list()),
-    ).toBe("renderquality medium");
+      applyConsoleCompletion("quality resolution me", "medium", registry.list()),
+    ).toBe("quality resolution medium");
     expect(
       applyConsoleCompletion("showfps ", "enabled=", registry.list()),
     ).toBe("showfps enabled=");

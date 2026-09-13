@@ -41,7 +41,7 @@ Every registered command has a tier. A non-debug registry **does not register de
 
 | Tier | Ships | Commands |
 | --- | --- | --- |
-| **core** | Every build | `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, `help`, plus user `BDebugCommand` classes |
+| **core** | Every build | `changescene`, `quality` and its rendering groups, `framecap`, `volume`, `quit`, `help`, plus user `BDebugCommand` classes |
 | **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `debugphysics`, `showbounds`, `actorboundingbox`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `shownavdebug`, `showpathfinding`, `shownavagent`, `behaviourtreedebug`, `showaudiodebug`, `dumpactors`, `inspect`, `dumplog`, `snapshot start`, `snapshot stop` |
 
 Real export tree-shaking of the debug module is landed: the release player calls `createCommandRegistry({ includeDebug: false })` via `includeDebugCommands: manifest.bundleDebugger`. Preview Build and a **Bundle Debugger** export preset keep the debug tier. See [exporter.md](exporter.md).
@@ -63,13 +63,14 @@ The registry does not touch the world or renderer. Runtime implements:
 | Command | Host |
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
-| `renderquality` / `resolutionscale` / `volume` / `framecap` | Typed setters. Optional arg prints the last value. Play applies `{ type: "setRenderQuality" \| "setResolutionScale" \| "setGlobalVolume" \| "setFrameCap" }` (`high=1`, `medium=1.5`, `low=2` hardware scale on the Play view only). `resolutionscale` clamps `1..2` on the host so print matches apply |
-| `shadowquality` | enum `off`/`512`/`1024`/`2048`. Runtime emits `{ type: "setShadowQuality"; level }` and the renderer sizes the one `ShadowGenerator` (or disposes it when `off`). `2048` also warns |
+| `quality` / `quality shadows` / `quality resolution` / `quality textures` / `quality postprocessing` | Shared `RenderingQualitySession` resolver; emits `setRenderingQuality` with session overrides. Optional arguments query effective values. Tiers are Low, Medium, High and Ultra; individual groups and all overrides can reset. |
+| `volume` / `framecap` | Typed setters emit `setGlobalVolume` / `setFrameCap`; optional arguments query current values. |
 | `quit` | `quit()` → runtime `stop` |
 | `help [name]` | Core. Lists registered commands (user included) or one command’s parameters. Stripped debug names print “not available in this build” |
 | `pause` / `resume` / `unpause` / `step` | `pause` / `resume` / overlay-style `resume`→`tick`→`pause`. Console pause/resume emit `{ type: "sessionPaused" }` so overlay chrome matches |
 | `slomo [rate]` | `setTimeDilation` / `getTimeDilation`. `tick` uses `dt * rate` (clamp `0..8`) for script, physics, nav crowd, and BT. Trace header and frame snapshots keep recorded (undilated) `dt` |
 | `freecam [on\|off]` | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stay off the game ring; 2D pinch zooms ortho; gamepad still forwards. Overlay Play shows a fly stick while on. |
+| `lightsdebug on/off` | `setLightsDebug` controls a separate light allocation overlay, independent of Stats and off by default. |
 | `showfps` / `stat *` | `{ type: "setShowFps" }` / `{ type: "setStat" }`. Opens Stats HUD; `stat` highlights unit (timings), memory, draws, or threads (main vs worker) |
 | `wireframe` / `showbounds` / `actorboundingbox` / `showcollision` / `shownav` | Play-scene overlays. Collision / nav meshes use `RENDERING_GROUP.world` with depth test (not a group-0 underlay). Collision uses `PhysicsBackend.listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls; body rotation of local offsets and polyline points). `actorboundingbox` calls the same `setShowBounds` host as `showbounds`. Separate from per-collider **Render In Game** world dashes. |
 | `showaudiodebug` | `{ type: "setShowAudioDebug" }`. DOM overlay of playing AudioV2 voices (applies; not log-only) |

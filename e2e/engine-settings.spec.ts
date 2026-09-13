@@ -250,6 +250,7 @@ test("editor viewport applies hardware scaling and the post-processing gate", { 
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("engine-settings").click();
   await page.getByTestId("engine-settings-modal-category-viewport").click();
+  await page.getByRole("switch", { name: "Override Project Rendering", exact: true }).check();
   await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
     "aria-checked",
     "true",

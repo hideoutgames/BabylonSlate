@@ -86,7 +86,7 @@ describe("app settings", () => {
     expect(settings.debuggerDefaults.overlayInspector).toBe(true);
     expect(settings.debuggerDefaults.pauseOnPlay).toBe(false);
     expect(settings.postProcessingEnabled).toBe(true);
-    expect(settings.editorTextureLodEnabled).toBe(true);
+    expect(settings.editorTextureLodEnabled).toBe(false);
     expect(settings.editorTextureLodQuality).toBe(0.5);
     expect(settings.textureBudgetEnabled).toBe(true);
     expect(settings.textureByteCeiling).toBe(2 * 1024 * 1024 * 1024);

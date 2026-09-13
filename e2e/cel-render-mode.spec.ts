@@ -37,7 +37,7 @@ async function pixelsNear(
       const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
       let count = 0;
       for (let i = 0; i < pixels.length; i += 4) {
-        // Derivative antialiasing legitimately creates intermediate colors at
+        // Rasterized geometry edges can create intermediate colors at
         // band edges. A flat 3x3 region would be an unwanted additional band.
         if (flatInterior && ![-copy.width - 1, -copy.width, -copy.width + 1, -1, 1, copy.width - 1, copy.width, copy.width + 1].every((offset) =>
           color.every((channel, index) => Math.abs((pixels[i + offset * 4 + index] ?? -255) - channel) <= tolerance),
@@ -117,15 +117,15 @@ test("world-space material inputs remain anchored when the editor camera moves",
   })];
   await setPreviewScene(page, scene);
   const canvas = page.getByTestId("viewport-canvas");
-  // The lower-left world quadrant is (0, 0, .25) after color clamping,
+  // The lower-left world quadrant is linear (0, 0, .25), display encoded once,
   // regardless of the camera-relative coordinate used internally for lighting.
-  await expect.poll(() => pixelsNear(canvas, [0, 0, 64])).toBeGreaterThan(100);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 137])).toBeGreaterThan(100);
   await canvas.hover();
   await page.mouse.wheel(0, -240);
-  await expect.poll(() => pixelsNear(canvas, [0, 0, 64])).toBeGreaterThan(100);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 137])).toBeGreaterThan(100);
   scene.actors[0]!.transform.position[2] = 0.5;
   await setPreviewScene(page, scene);
-  await expect.poll(() => pixelsNear(canvas, [0, 0, 128])).toBeGreaterThan(100);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 188])).toBeGreaterThan(100);
 });
 
 test("CEL preserves authored and texture colors, supports every light, and restores PBR in viewport and Play", async ({
@@ -133,6 +133,8 @@ test("CEL preserves authored and texture colors, supports every light, and resto
 }, testInfo) => {
   test.setTimeout(180_000);
   const shaderErrors: string[] = [];
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
     if (
       message.type() === "error" &&
@@ -238,7 +240,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
       ...[-1, 1].map((side) =>
         createActor(`overlap-${side}`, "Overlap", {
           transform: {
-            position: [0, 0, 0],
+            position: [side * 3, 0, -10],
             rotation: [0, side * 0.173648, 0, 0.984808],
             scale: [1, 1, 1],
           },
@@ -247,7 +249,8 @@ test("CEL preserves authored and texture colors, supports every light, and resto
               id: `light-${side}`,
               classId: "LightComponent",
               properties: {
-                lightKind: "directional",
+                lightKind: "point",
+                range: 1000,
                 color: [1, 1, 1],
                 intensity: 0.6,
               },
@@ -482,7 +485,9 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     transform: { position: [10000, 0, 10000], rotation: [0, 0, 0, 1], scale: [100, 100, 100] },
     components: [createMeshComponent("distant-mesh", "box")],
   }));
-  await setPreviewScene(page, scene);
+  // Save also waits for the changed static geometry's background audio bake;
+  // software-GPU CI can spend longer here while drawing the large receiver.
+  await setPreviewScene(page, scene, 30_000);
   await expect.poll(async () => {
     const largeMap = await framePixels(viewport);
     let changed = 0, count = 0;
@@ -524,6 +529,12 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   fill.components[0]!.properties.groundColor = [1, 1, 1];
   scene.settings.celShading = {};
   await setPreviewScene(page, scene);
+  // A directional light distinguishes smooth PBR response from discrete CEL bands;
+  // uniform white hemispheric illumination can now preserve authored colors in both.
+  sun.components[0]!.properties.intensity = 1;
+  sun.components[0]!.properties.castShadows = false;
+  scene.actors = [...subjects, sun];
+  await setPreviewScene(page, scene);
   await projectMode(page, "PBR");
   await expect.poll(() => pixelsNear(viewport, authored)).toBeLessThan(100);
   await projectMode(page, "CEL");
@@ -531,6 +542,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     .poll(() => pixelsNear(viewport, authored), { timeout: 20_000 })
     .toBeGreaterThan(500);
   expect(shaderErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
 });
 
 test("CEL preserves sRGB image pixels on a native glTF surface", async ({

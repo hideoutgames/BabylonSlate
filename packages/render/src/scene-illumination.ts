@@ -1,3 +1,4 @@
+import { setAuthoredLightEnabled } from "./light-policy";
 import {
   Camera,
   Color3,
@@ -34,12 +35,7 @@ export const DEFAULT_HEMISPHERIC_FILL_INTENSITY = 0.9;
 
 export type ShadowQualityLevel = "off" | "512" | "1024" | "2048";
 
-export function shadowMapSizeFromQuality(level: string): number | null {
-  if (level === "off") return null;
-  if (level === "512") return 512;
-  if (level === "2048") return 2048;
-  return 1024;
-}
+
 
 export type AuthoredLightProperties = {
   color?: [number, number, number] | number[];
@@ -66,7 +62,6 @@ export type SyncIlluminationOptions = {
   stealActiveCamera?: boolean;
   restoreCamera?: Camera | null;
   applyClearColor?: boolean;
-  shadowQuality?: string;
   assets?: MeshAssetContext;
   onDiagnostic?: (message: string) => void;
 };
@@ -178,7 +173,7 @@ export function applyAuthoredLightProperties(
     light instanceof HemisphericLight ? DEFAULT_HEMISPHERIC_FILL_INTENSITY : 1,
   );
   light.diffuse = asRgb(properties.color);
-  light.setEnabled(properties.enabled !== false);
+  setAuthoredLightEnabled(light, properties.enabled !== false);
   sceneShadowController(light.getScene()).register(light, properties.castShadows === true, properties.shadowPriority);
   const range = asNumber(properties.range, 10);
   if (light instanceof PointLight || light instanceof SpotLight) {
@@ -565,7 +560,6 @@ export function syncAuthoredIllumination(
   }
 
   const shadows = sceneShadowController(scene);
-  shadows.setLegacyQuality(options.shadowQuality === undefined ? undefined : shadowMapSizeFromQuality(options.shadowQuality));
 
 
   const namedId = resolveDefaultCameraActorId(sceneData);

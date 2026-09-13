@@ -1,6 +1,9 @@
+import { useAppSettings } from "../context/app-settings-context";
+import { lightsDebugText } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  resolveRenderingQuality,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -27,6 +30,7 @@ import type { StatsHudHighlight } from "./stats-hud";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
   applyLiveEngineSettings,
+  localRenderingQualityOverrides,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
 } from "../lib/viewport-render-gate";
@@ -371,7 +375,9 @@ export function PlayOverlay({
   const initialInputAssetsRef = useRef(inputAssets);
   const initialInputMappingsRef = useRef(inputMappings);
   const initialPlayPreviewRef = useRef(playPreview);
+  const { settings: localEngineSettings } = useAppSettings();
   const initialRenderRef = useRef(render);
+  const initialConsoleRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
   const inspectSnapshot = useInspectWorldPoll(
@@ -481,6 +487,7 @@ export function PlayOverlay({
       materialFunctions: materialFunctionsRef.current,
       postProcessingEnabled,
       renderSettings: initialRenderRef.current,
+      consoleRenderSettings: initialConsoleRenderRef.current,
       hardwareScalingLevel,
       pixelsPerUnit: pixelsPerUnitRef.current,
       sortingLayers: sortingLayersRef.current,
@@ -563,6 +570,7 @@ export function PlayOverlay({
         applyLiveEngineSettings(
           session.handle,
           {
+            renderingOverridesEnabled: settings.renderingOverridesEnabled,
             hardwareScalingLevel: settings.hardwareScalingLevel,
             postProcessingEnabled: settings.postProcessingEnabled,
             textureBudgetEnabled: settings.textureBudgetEnabled,
@@ -780,6 +788,11 @@ export function PlayOverlay({
         }
       />
       <PrintOverlay entries={printEntries} />
+      {rendering && lightsDebugText(rendering) ? (
+        <pre className="pointer-events-none absolute top-12 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap rounded-md bg-background/80 p-2 font-mono text-xs text-foreground" data-testid="lights-debug-overlay">
+          <SelectableText>{lightsDebugText(rendering)}</SelectableText>
+        </pre>
+      ) : null}
       {audioDebugText !== null ? (
         <pre
           className="pointer-events-none absolute bottom-3 right-3 z-20 m-0 max-h-48 max-w-md overflow-hidden whitespace-pre rounded-md bg-background/80 p-2 font-mono text-xs text-foreground"

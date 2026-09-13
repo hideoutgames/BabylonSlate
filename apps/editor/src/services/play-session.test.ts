@@ -295,7 +295,7 @@ describe("shouldForwardPlayEngineCommand", () => {
   it("forwards setFreeCam onto the Play engine handle", () => {
     expect(shouldForwardPlayEngineCommand("setFreeCam")).toBe(true);
     expect(shouldForwardPlayEngineCommand("debugColliders")).toBe(true);
-    expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("setRenderingQuality")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setShowAudioDebug")).toBe(true);
     expect(shouldForwardPlayEngineCommand("debugDraw")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setCursorVisible")).toBe(true);

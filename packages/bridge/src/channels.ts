@@ -1,3 +1,4 @@
+import type { QualityOverrides, RenderProjectSettings } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
@@ -78,6 +79,7 @@ export type ControlMessage =
       type: "load";
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
+  renderSettings?: Partial<RenderProjectSettings>;
       project?: { name: string; version: string };
       sceneAssetGuid: string;
       /** Authored project mappings; omitted legacy loads use defaults. */
@@ -426,7 +428,6 @@ export type CommandMessage =
       };
     }
   | { type: "possessCamera"; slotId: number }
-  | { type: "setShadowQuality"; level: string }
   | {
       /** Canonical scene after `changescene` / `ctx.changeScene`. */
       type: "activeScene";
@@ -592,8 +593,8 @@ export type CommandMessage =
       height: number;
     }
   | { type: "sessionPaused"; paused: boolean }
-  | { type: "setRenderQuality"; level: string }
-  | { type: "setResolutionScale"; scale: number }
+  | { type: "setRenderingQuality"; overrides: QualityOverrides }
+  | { type: "setLightsDebug"; enabled: boolean }
   | { type: "setFrameCap"; fps: number }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }

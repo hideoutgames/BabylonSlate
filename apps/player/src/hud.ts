@@ -9,6 +9,7 @@ import {
 } from "@babylonslate/render";
 
 export type PlayerHudStats = {
+  lightsDebugText?: string | null;
   ticks: number;
   fps: number;
   scriptMs: number;
@@ -176,13 +177,16 @@ export function mountPlayerHud(
 
 export function mountPlayerDebuggerOverlays(
   parent: HTMLElement,
-  options: { bundleDebugger: boolean },
+  options: { bundleDebugger: boolean; lightsDebugText?: () => string | null },
 ): () => void {
   if (!options.bundleDebugger) return () => {};
   const debugEl = document.createElement("pre");
   debugEl.dataset.testid = "audio-debug-overlay";
   debugEl.style.cssText =
     "position:fixed;bottom:8px;right:8px;margin:0;max-width:28rem;max-height:12rem;overflow:hidden;color:#fff;font:12px/1.4 ui-monospace,monospace;pointer-events:none;white-space:pre;background:rgba(0,0,0,0.55);padding:8px;border-radius:6px;";
+  const lightsEl = document.createElement("pre");
+  lightsEl.dataset.testid = "lights-debug-overlay";
+  lightsEl.style.cssText = debugEl.style.cssText + "top:48px;bottom:auto;white-space:pre-wrap;";
   const hint = document.createElement("p");
   hint.dataset.testid = "play-audio-unlock-hint";
   hint.style.cssText =
@@ -190,6 +194,9 @@ export function mountPlayerDebuggerOverlays(
   parent.appendChild(hint);
   let raf = 0;
   const tick = () => {
+    const lightText = options.lightsDebugText?.() ?? null;
+    if (lightText === null) lightsEl.remove();
+    else { lightsEl.textContent = lightText; if (!lightsEl.parentNode) parent.appendChild(lightsEl); }
     const debugText = audioDebugOverlayText(audioStats);
     if (debugText === null) {
       debugEl.remove();
@@ -207,6 +214,7 @@ export function mountPlayerDebuggerOverlays(
   return () => {
     cancelAnimationFrame(raf);
     debugEl.remove();
+    lightsEl.remove();
     hint.remove();
   };
 }

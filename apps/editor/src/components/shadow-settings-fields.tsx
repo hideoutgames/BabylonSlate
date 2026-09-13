@@ -2,7 +2,6 @@ import {
   normalizeShadowSettings,
   resolveShadowSettings,
   SHADOW_LIMITS,
-  SHADOW_PROFILES,
   type ShadowOverrides,
   type ShadowSettings,
 } from "@babylonslate/core";
@@ -27,16 +26,10 @@ import {
 } from "@babylonslate/ui/components/select";
 
 const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
-  profile: {
-    economy: "Economy",
-    a16: "iPad A16",
-    high: "High",
-    ultra: "Ultra",
-  },
   filter: { pcf: "PCF", pcss: "Contact Hardening (PCSS)" },
   filterQuality: { low: "Low", medium: "Medium", high: "High" },
-  mapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048" },
-  localMapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048" },
+  mapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096" },
+  localMapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096" },
 };
 const fields: {
   key: keyof ShadowSettings;
@@ -47,12 +40,6 @@ const fields: {
     key: "enabled",
     label: "Shadows Enabled",
     description: "Allow eligible lights to cast real-time shadows.",
-  },
-  {
-    key: "profile",
-    label: "Shadow Preset",
-    description:
-      "Apply map, cascade and local-light defaults. iPad A16 is the baseline candidate; measure on your device.",
   },
   {
     key: "distance",
@@ -139,11 +126,7 @@ export function ShadowSettingsFields({
     key: keyof ShadowSettings,
     value: string | number | boolean,
   ) => {
-    const preset =
-      key === "profile"
-        ? SHADOW_PROFILES[value as keyof typeof SHADOW_PROFILES]
-        : {};
-    onChange({ ...(scene ? overrides : defaults), ...preset, [key]: value });
+    onChange({ ...(scene ? overrides : defaults), [key]: value });
   };
   return (
     <FieldSet
@@ -151,9 +134,7 @@ export function ShadowSettingsFields({
     >
       <FieldLegend>Shadows</FieldLegend>
       <FieldGroup className="gap-2">
-        {fields
-          .filter(({ key }) => !scene || key !== "profile")
-          .map(({ key, label, description }) => {
+        {fields.map(({ key, label, description }) => {
             const id = `${scene ? "scene" : "project"}-shadow-${key}`;
             const overridden = scene && Object.hasOwn(overrides, key);
             const choices = options[key];

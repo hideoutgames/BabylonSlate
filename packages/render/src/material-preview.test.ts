@@ -464,6 +464,33 @@ describe("material preview presenter", () => {
     return host;
   }
 
+  it("reports a render failure and presents again after recovery", async () => {
+    const host = await previewHost();
+    const render = vi.spyOn(host.scene, "render").mockImplementationOnce(() => { throw new Error("shader failed"); });
+    const onError = vi.fn();
+    const presenter = createMaterialPreviewPresenter(host, new FakeCanvas() as unknown as HTMLCanvasElement, { onError });
+    disposers.push(() => presenter.dispose());
+    expect(() => presenter.present({ force: true })).not.toThrow();
+    expect(onError).toHaveBeenLastCalledWith("shader failed");
+    presenter.present({ force: true });
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenLastCalledWith(null);
+  });
+
+  it("keeps scheduling when mesh shader readiness throws", async () => {
+    const host = await previewHost();
+    vi.spyOn(host.mesh, "isReady").mockImplementationOnce(() => { throw new Error("compile failed"); });
+    const render = vi.spyOn(host.scene, "render");
+    const onError = vi.fn();
+    const presenter = createMaterialPreviewPresenter(host, new FakeCanvas() as unknown as HTMLCanvasElement, { onError });
+    disposers.push(() => presenter.dispose());
+    expect(() => presenter.present({ force: true })).not.toThrow();
+    expect(onError).toHaveBeenLastCalledWith("compile failed");
+    presenter.present({ force: true });
+    expect(render).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenLastCalledWith(null);
+  });
+
   it("waits for shader readiness without consuming the static preview frame interval", async () => {
     const host = await previewHost();
     const ready = vi.spyOn(host.mesh, "isReady").mockReturnValue(false);

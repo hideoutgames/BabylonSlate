@@ -20,6 +20,7 @@ export function runtimeOptionsFromLoadControl(
   RuntimeDriverOptions,
   | "seed"
   | "frameCap"
+  | "renderSettings"
   | "project"
   | "inputAssets"
   | "inputMappings"
@@ -60,6 +61,7 @@ export function runtimeOptionsFromLoadControl(
   return {
     seed: msg.seed ?? 1,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
+    renderSettings: msg.renderSettings,
     ...(msg.project ? { project: msg.project } : {}),
     ...(msg.inputAssets !== undefined ? { inputAssets: msg.inputAssets } : {}),
     ...(msg.inputMappings !== undefined ? { inputMappings: normalizeInputMappings(msg.inputMappings) } : {}),

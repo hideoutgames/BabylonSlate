@@ -352,7 +352,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       canvas,
       scheduler: handle.scheduler,
       scaling: handle.scaling,
-      setShadowDeviceProfile: handle.setShadowDeviceProfile,
+      setLocalQualityOverrides: (overrides) => handle.setLocalQualityOverrides(overrides),
       setPostProcessingEnabled: (enabled) =>
         handle.setPostProcessingEnabled(enabled),
       setTextureBudget: (bytes, enabled) =>

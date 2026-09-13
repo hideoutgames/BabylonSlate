@@ -26,7 +26,7 @@ function fixture() {
     scene,
   );
   updateSceneRenderingSettings(scene, {
-    shadows: normalizeShadowSettings({ cascades: 1 }),
+    shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1 }),
   });
   return { scene, controller: sceneShadowController(scene) };
 }

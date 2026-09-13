@@ -152,21 +152,6 @@ describe("Play session commands", () => {
     expect(command.paused).toBe(true);
   });
 
-  it("setRenderQuality, setResolutionScale, and setFrameCap are CommandMessage variants", () => {
-    const quality = {
-      type: "setRenderQuality",
-      level: "low",
-    } satisfies CommandMessage;
-    const scale = {
-      type: "setResolutionScale",
-      scale: 1.5,
-    } satisfies CommandMessage;
-    const cap = { type: "setFrameCap", fps: 30 } satisfies CommandMessage;
-    expect(commandType(quality)).toBe("setRenderQuality");
-    expect(commandType(scale)).toBe("setResolutionScale");
-    expect(commandType(cap)).toBe("setFrameCap");
-  });
-
   it("setFreeCam is a CommandMessage variant", () => {
     const command = {
       type: "setFreeCam",

@@ -255,7 +255,7 @@ export class SceneLayerCompositor {
     };
 
     for (const layer of [...this.sortedLayers()].reverse()) {
-      layer.scene.updateTransformMatrix();
+      this.bindHudCamera(layer as LayerRecord);
       const pick = layer.scene.pick(canvasX, canvasY, undefined, false);
       if (pick?.hit && pick.pickedMesh) {
         let mesh: {
@@ -406,7 +406,9 @@ export class SceneLayerCompositor {
     this.applyOrtho(layer);
     layer.camera.getViewMatrix(true);
     layer.camera.getProjectionMatrix(true);
-    layer.scene.updateTransformMatrix();
+    // Scene.render establishes Babylon's floating-origin scene before uploading
+    // the scene matrices. Updating them here would cache the previous world
+    // scene's offset/projection in this layer's GPU uniform buffer.
   }
 
   private applyOrtho(layer: LayerRecord): void {
