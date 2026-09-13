@@ -189,6 +189,8 @@ describe("prewarmSceneMaterials", () => {
     scene.activeCamera = new UniversalCamera("editor", new Vector3(2000, 3, -10), scene);
     const light = new SpotLight("shadow", new Vector3(2000, 5, 0), Vector3.Down(), 1, 1, scene);
     new ShadowGenerator(256, light);
+    // Isolate render-target readiness from NullEngine's uncompiled world effects.
+    vi.spyOn(scene, "isReady").mockReturnValue(true);
     // A newly mounted helper/preview owns Babylon's global floating-origin
     // context but has never rendered, so it has no view/projection matrices.
     const sibling = new Scene(engine);
