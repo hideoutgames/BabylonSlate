@@ -24,6 +24,7 @@ for (const mode of ["pbr", "cel"]) {
     });
     const doc = createDefaultMaterialDocument();
     doc.preview.mesh = "sphere";
+    doc.defaultNormals = "flat";
     doc.nodes.push(
       {
         id: "time",

@@ -22,7 +22,7 @@ function differentPixels(a: number[], b: number[]): number {
   expect(b.length).toBe(a.length);
   let count = 0;
   for (let i = 0; i < a.length; i += 4) {
-    if ([0, 1, 2].some((channel) => Math.abs(a[i + channel]! - b[i + channel]!) > 5)) count++;
+    if ([0, 1, 2].some((channel) => Math.abs(a[i + channel]! - b[i + channel]!) > 1)) count++;
   }
   return count;
 }
@@ -56,6 +56,7 @@ for (const mode of ["pbr", "cel"]) {
     await canvas.screenshot({ path: testInfo.outputPath(`${mode}-flat-normals.png`) });
     await connectMaterialPins(page, "modelNormal", "normal", '[data-id="output"]', "normal");
     await compileMaterialPreview(page);
+    await canvas.screenshot({ path: testInfo.outputPath(`${mode}-connected-normals.png`) });
     await expect.poll(async () => differentPixels(model, await pixels(canvas))).toBeLessThan(30);
     expect(errors).toEqual([]);
   });

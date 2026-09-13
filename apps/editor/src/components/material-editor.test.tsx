@@ -200,7 +200,9 @@ describe("Material details panel", () => {
     const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("property-defaultNormals").textContent).toContain("Model Normals");
     fireEvent.click(screen.getByTestId("property-defaultNormals"));
-    fireEvent.click(await screen.findByRole("option", { name: "Flat Normals" }));
+    const option = await screen.findByRole("option", { name: "Flat Normals" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
     expect(lastCommit().defaultNormals).toBe("flat");
     expect(lastCommit().edges).toEqual(createDefaultMaterialDocument().edges);
     harness.content = lastCommit() as unknown as Record<string, unknown>;
