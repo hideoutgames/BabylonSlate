@@ -282,8 +282,8 @@ describe("Play createEngine view", () => {
   it("does not spend a loading permit on a sibling view or a hidden document", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
-    const { handle, canvas } = editorHandle(engine);
-    const { canvas: sibling } = editorHandle(engine);
+    const { handle, canvas } = playHandle(engine);
+    const { canvas: sibling } = playHandle(engine);
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     let frames = 0;

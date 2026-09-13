@@ -228,8 +228,8 @@ describe("prewarmSceneMaterials", () => {
       const material = new ShaderMaterial("owned", scene, shader, { attributes: ["position"], uniforms: [] });
       material.checkReadyOnEveryCall = true;
       mesh.material = material;
-      material.isReady(mesh);
-      const effect = material.getEffect()!;
+      material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
+      const effect = mesh.subMeshes[0]!.effect!;
       const ownReady = vi.spyOn(effect, "isReady").mockReturnValue(false);
       expect(isSceneFrameReady(scene)).toBe(false);
       ownReady.mockReturnValue(true);
