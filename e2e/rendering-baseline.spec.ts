@@ -225,6 +225,17 @@ function summarize(measurement: Measurement) {
   };
 }
 
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return;
+  const capture = await baseline(page).catch(() => null);
+  if (capture) {
+    await testInfo.attach("rendering-state-at-failure", {
+      body: JSON.stringify(capture, null, 2),
+      contentType: "application/json",
+    });
+  }
+});
+
 test("local renderer baseline bounds sixteen eligible point and spot shadow lights across reloads", async ({
   page,
 }, testInfo) => {
