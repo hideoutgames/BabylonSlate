@@ -331,10 +331,12 @@ Structural resolution/cascade/type changes release old maps before replacement.
 Admission lowers map resolution to fit, with a 256-pixel floor, and reports limits;
 unchanged requests retain their admitted resolution to avoid movement-driven churn.
 When eligible local maps exist, the sun may consume at most half the scene allowance.
-Allocation failures release partial generators and suppress repeat attempts until
-the allocation request changes or the scene reloads. Dirty-map scheduling,
-mobility-aware refresh, automatic failure downgrade and a distinct free-camera
-inspection override are not implemented in this safety slice.
+Allocation failures release newly owned partial targets, attachments and observers,
+then retry at half resolution down to 256 pixels without changing authored values.
+Exhausted requests remain suppressed until settings change, scene reload or context
+restoration. Cleanup failures stop retries and propagate a recovery error.
+Dirty-map scheduling, mobility-aware refresh and a distinct free-camera inspection
+override are not implemented in this safety slice.
 Light diagnostics distinguish disabled, non-illuminating, intentionally unshadowed,
 globally disabled shadows, distance limits, budget limits and allocation failure.
 They report the actual filter, including Babylon's point-light Poisson fallback.
