@@ -46,6 +46,7 @@ export function applyAttachToBone(binding: BoneAttachmentBinding, command: BoneA
     visited.add(target);
     target = binding.boneAttachments.get(target)?.targetSlotId;
   }
+  restoreSnapshotPose(binding, command.slotId);
   binding.boneAttachments.set(command.slotId, {
     targetSlotId: command.targetSlotId, boneName: command.boneName,
     world: Matrix.Identity(), local: Matrix.Identity(), boneWorld: Matrix.Identity(),
