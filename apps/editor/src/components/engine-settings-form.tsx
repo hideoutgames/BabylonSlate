@@ -465,7 +465,7 @@ export function EngineSettingsForm({
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-texture-budget-mb"
               value={Math.round(settings.textureByteCeiling / (1024 * 1024))}
-              disabled={!settings.textureBudgetEnabled}
+              disabled={!settings.renderingOverridesEnabled || !settings.textureBudgetEnabled}
               onChange={(megabytes) =>
                 void onChange({
                   textureByteCeiling: Math.round(megabytes) * 1024 * 1024,

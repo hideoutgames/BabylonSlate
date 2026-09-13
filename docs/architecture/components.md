@@ -176,6 +176,8 @@ Graph Engine Settings control the Node Connection Assistant (enabled by default,
 Make Structure exposes a Structure Type selector in Inspector and named Make/Break entries for engine and project structures. Input events and rebinding nodes share the native Key enum and Input Binding structure; wired events display Event Input Action or Event Input Axis.
 
 `VariableTypeFields.showType=false` reuses container/key controls inside `PinListEditor` without repeating its existing value type picker.
-ShadowSettingsFields shares compact project and scene shadow controls, with Low/Medium/High/Ultra presets independent of the user-controlled local light budget and shadow distance. Scene overrides are independent and reset by removing the key; inherited fields display project values.
+ShadowSettingsFields shares compact project and scene shadow controls. RenderQualityFields owns the Low/Medium/High/Ultra preset selectors, independent of the user-controlled local light budget and shadow distance. Scene overrides are independent and reset by removing the key; inherited fields display project values.
 
 `RenderQualityFields` composes project scalability presets and resolution controls from Field, Select, NumberField and Switch. Presets use neutral labels and preserve shadow distance/budget. Scene post-process entries expose an explicit Scalable Resolution switch; full-resolution behavior is the default.
+
+EngineSettingsForm gates local resolution, texture budget and post-processing fields behind Override Project Rendering; project inheritance is the default. Settings search includes render mode, quality groups, shadow distance, local shadow budget and the local override switch.
