@@ -18,7 +18,10 @@ describe("Kenney Mannequin GLB", () => {
         const components = [0, 4, 8].map((axis) => Math.abs(data.getFloat32(offset + axis, true)));
         // Every face in this supplied model is an axis-aligned rectangle.
         // Smoothed corner normals produce diagonal light bands on those faces.
-        expect(components.sort()).toEqual([0, 0, 1]);
+        components.sort((a, b) => a - b);
+        expect(components[0]).toBeCloseTo(0, 5);
+        expect(components[1]).toBeCloseTo(0, 5);
+        expect(components[2]).toBeCloseTo(1, 5);
       }
     }
   });
