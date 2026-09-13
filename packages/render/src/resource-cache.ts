@@ -38,6 +38,7 @@ interface CacheEntry {
   lastUsed: number;
   contentKey: string;
   textures: Map<string, BaseTexture>;
+  samplingBytes?: Map<string, number>;
 }
 
 /**
@@ -322,7 +323,7 @@ export class ResourceCache {
         });
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
-    this.accountLoadedBytes(variantKey, bytes, options.noMipmap !== true);
+    this.accountLoadedBytes(variantKey, key, bytes, options.noMipmap !== true);
     return texture;
   }
 
@@ -373,7 +374,6 @@ export class ResourceCache {
       existing.lastUsed = ++this.clock;
       return texture;
     }
-    this.textureKeys.set(texture, variantKey);
     this.entries.set(variantKey, {
       assetGuid,
       key: variantKey,
@@ -395,6 +395,9 @@ export class ResourceCache {
   releaseGpuTextures(): void {
     for (const entry of this.entries.values()) {
       disposeEntryTextures(entry);
+      entry.samplingBytes?.clear();
+      this.totalBytes -= entry.bytes;
+      entry.bytes = 0;
       revokeExtraBlobUrls(entry);
     }
   }
@@ -482,33 +485,20 @@ export class ResourceCache {
   }
 
   private accountLoadedBytes(
-    assetGuid: string,
+    variantKey: string,
+    sampling: string,
     bytes: Uint8Array | Blob,
     withMips: boolean,
   ): void {
     const raw = asUint8Array(bytes);
     if (!raw) return;
-    const ktx2 = sniffKtx2Size(raw);
-    if (ktx2) {
-      this.accountTextureSize(
-        assetGuid,
-        ktx2.width,
-        ktx2.height,
-        "astc4x4",
-        withMips,
-      );
-      return;
-    }
-    const image = sniffImageSize(raw);
-    if (image) {
-      this.accountTextureSize(
-        assetGuid,
-        image.width,
-        image.height,
-        "rgba8",
-        withMips,
-      );
-    }
+    const compressed = sniffKtx2Size(raw);
+    const dimensions = compressed ?? sniffImageSize(raw);
+    const entry = this.entries.get(variantKey);
+    if (!dimensions || !entry) return;
+    entry.samplingBytes ??= new Map();
+    entry.samplingBytes.set(sampling, accountedTextureBytes(dimensions.width, dimensions.height, compressed ? "astc4x4" : "rgba8", withMips));
+    this.account(variantKey, [...entry.samplingBytes.values()].reduce((total, value) => total + value, 0));
   }
 
   flushUnreferenced(): void {

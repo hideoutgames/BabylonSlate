@@ -56,7 +56,9 @@ export function qualityGroupLabel(value: EffectiveRenderingQuality, group: Quali
 /** Session overrides survive scene changes; creating a new Play session resets them. */
 export class RenderingQualitySession {
   overrides: QualityOverrides = {};
-  constructor(public project: { quality?: RenderingQuality; shadows?: ShadowOverrides } = {}, public scene: ShadowOverrides = {}) {}
+  project: { quality?: RenderingQuality; shadows?: ShadowOverrides };
+  scene: ShadowOverrides;
+  constructor(project: { quality?: RenderingQuality; shadows?: ShadowOverrides } = {}, scene: ShadowOverrides = {}) { this.project = project; this.scene = scene; }
   effective(): EffectiveRenderingQuality { return resolveRenderingQuality(this.project, this.scene, this.overrides); }
   execute(group?: QualityGroup, choice?: string, value?: string): { success: boolean; output: string } {
     if (choice === "reset") {

@@ -512,7 +512,7 @@ export function refreshPlayActiveCamera(
   if (playDefault) scene.activeCamera = playDefault;
 }
 
-function applyPlayShadows(scene: Scene, binding: SnapshotSceneBinding): void {
+function applyPlayShadows(scene: Scene): void {
   const shadows = sceneShadowController(scene);
   shadows.sync();
 }
@@ -602,7 +602,7 @@ export function applyAssignMesh(
   const existingLight = binding.lights.get(command.slotId);
   if (existingLight && command.light) {
     applyAuthoredLightProperties(existingLight, command.light);
-    applyPlayShadows(scene, binding);
+    applyPlayShadows(scene);
     refreshPlayActiveCamera(scene, binding);
     return;
   }
@@ -1137,7 +1137,7 @@ export function createPlayMesh(
       const props = binding.lightProps.get(slotId);
       if (props) applyAuthoredLightProperties(light, props);
       binding.lights.set(slotId, light);
-      applyPlayShadows(scene, binding);
+      applyPlayShadows(scene);
     }
     if (meshKind === "camera" && binding) {
       const camera = new UniversalCamera(

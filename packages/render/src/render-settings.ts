@@ -19,6 +19,7 @@ type SceneRendering = {
   mode: RenderMode;
   qualityOverrides: QualityOverrides;
   lightsDebug: boolean;
+  textureLodBias: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
   overrides: CelShadingOverrides;
@@ -35,6 +36,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       mode: "pbr",
       qualityOverrides: {},
       lightsDebug: false,
+      textureLodBias: 0,
       cel: normalizeCelShadingSettings(undefined),
       project: {},
       overrides: {},
@@ -62,7 +64,9 @@ export function updateSceneRenderingSettings(
   if (project !== undefined) state.project = project;
   if (overrides !== undefined) state.overrides = overrides;
   if (shadowOverrides !== undefined) state.shadowOverrides = shadowOverrides;
-  state.shadows = resolveRenderingQuality(state.project, state.shadowOverrides, state.qualityOverrides).shadows;
+  const quality = resolveRenderingQuality(state.project, state.shadowOverrides, state.qualityOverrides);
+  state.shadows = quality.shadows;
+  state.textureLodBias = quality.textures.lodBias;
   const mode = state.project.mode === "cel" ? "cel" : "pbr";
   state.cel = resolveCelShadingSettings(state.project.cel, state.overrides);
   if (mode === state.mode) return;

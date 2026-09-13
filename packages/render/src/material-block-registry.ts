@@ -1,3 +1,4 @@
+import { QualityTextureBlock } from "./texture-quality";
 import {
   AddBlock,
   AnimatedInputBlockTypes,
@@ -683,7 +684,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
  */
 function textureSampleAdapter(lod: boolean): BlockAdapter {
   return ({ name, operation }) => {
-    const block = new TextureBlock(name, true);
+    const block = new QualityTextureBlock(name, true);
     block.convertToLinearSpace = operation.properties.colorSpace !== "data";
     const inputs: Record<string, NodeMaterialConnectionPoint> = {
       uv: block.uv,

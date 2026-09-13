@@ -1,3 +1,4 @@
+import "./texture-quality";
 import { syncDirectionalLightPolicy } from "./light-policy";
 import {
   Material,
