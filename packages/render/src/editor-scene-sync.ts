@@ -126,7 +126,9 @@ export class EditorSceneSync {
     const fingerprint = meshAssetFingerprint(assets);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
     const onlyModelsChanged = meshAssetFingerprintWithoutModels(this.assets) === meshAssetFingerprintWithoutModels(assets);
-    const layers = assets?.sortingLayers?.length ? [...assets.sortingLayers] : this.sortingLayers;
+    const layers = assets?.sortingLayers
+      ? [...(assets.sortingLayers.length > 0 ? assets.sortingLayers : DEFAULT_SORTING_LAYERS)]
+      : this.sortingLayers;
     const reapply = fingerprint !== this.lastAssetFingerprint || slotKey !== this.lastModelSlotKey || JSON.stringify(layers) !== JSON.stringify(this.sortingLayers);
     const rebuild = fingerprint !== this.lastAssetFingerprint && !onlyModelsChanged;
     this.assetsNeedRebuild ||= rebuild;
