@@ -130,6 +130,7 @@ export class ShadowMapRefresh {
       state.value(mesh.isEnabled());
       state.value(mesh.isVisible);
       state.value(mesh.visibility);
+      state.value(mesh.sideOrientation);
       state.value(mesh.skeleton);
       state.value(mesh.morphTargetManager);
       state.value(mesh.subMeshes);
@@ -160,7 +161,11 @@ export class ShadowMapRefresh {
       state.value(material.metadata?.boundsPadding);
       const safeMaterial = canCacheShadowMaterial(material, mesh);
       state.value(safeMaterial);
-      let dynamicGeometry = !geometry;
+      // Babylon 9.20 has no public index-mutability getter. updateIndices skips
+      // onGeometryUpdated for an existing dynamic buffer, including GPU-only
+      // updates, so only the known immutable state is eligible for caching.
+      let dynamicGeometry =
+        !geometry || Reflect.get(geometry, "_indexBufferIsUpdatable") !== false;
       const buffers = geometry?.getVertexBuffers();
       if (buffers)
         for (const kind in buffers)
@@ -221,13 +226,14 @@ export class ShadowMapRefresh {
     light.parent?.computeWorldMatrix(true);
     const transformed = light.computeTransformedInformation();
     const position = transformed ? light.transformedPosition! : light.position;
-    const direction = light.getShadowDirection(0);
+    // Cube face axes are fixed; PointLight.getShadowDirection allocates a vector.
+    const direction = light.needCube() ? null : light.getShadowDirection(0);
     state.value(position.x);
     state.value(position.y);
     state.value(position.z);
-    state.value(direction.x);
-    state.value(direction.y);
-    state.value(direction.z);
+    state.value(direction?.x);
+    state.value(direction?.y);
+    state.value(direction?.z);
     state.value(light.getDepthMinZ(scene.activeCamera));
     state.value(light.getDepthMaxZ(scene.activeCamera));
     // Scalar projection/filter changes retain the allocation but change its texels.

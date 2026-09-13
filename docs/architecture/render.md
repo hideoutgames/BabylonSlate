@@ -367,9 +367,11 @@ Babylon's automatic retry. Geometry observers preserve and restore existing call
 Only known native opaque materials and compiler-certified opaque surface graphs with
 identity world-position offset can cache local maps. Classification uses the fully
 lowered graph, rejects custom GLSL and is invalidated by out-of-band shader changes.
-Alpha, skeletons, morphs, deformation, instances, updatable geometry, camera-dependent
+Alpha, skeletons, morphs, deformation, instances, updatable vertex or index buffers, camera-dependent
 geometry and unknown shader/hooks keep refreshing conservatively. Any uncertain visible
 caster currently keeps every local map live; any dirty caster invalidates all local maps.
+Index mutability uses a narrow Babylon 9.20 adapter read because dynamic index edits
+can bypass geometry notifications; an unknown mutability state also keeps maps live.
 The camera-dependent sun always refreshes. This policy adds no authored mobility defaults,
 staggered refresh, baking or distinct free-camera inspection override. Spatially selective
 invalidation and device performance qualification remain separate work.

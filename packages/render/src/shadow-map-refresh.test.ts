@@ -161,6 +161,38 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(0);
   });
 
+  it("refreshes when mesh face orientation controls shadow culling", async () => {
+    const { mesh, material, render } = await fixture();
+    material.sideOrientation = null;
+    mesh.sideOrientation = Material.CounterClockWiseSideOrientation;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    mesh.sideOrientation = Material.ClockWiseSideOrientation;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+  });
+
+  it.each([false, true])(
+    "keeps same-count dynamic index edits live (GPU-only: %s)",
+    async (gpuMemoryOnly) => {
+      const { mesh, geometry, render, previousGeometryUpdate } =
+        await fixture();
+      expect(render()).toBe(6);
+      expect(render()).toBe(0);
+      const indices = [...mesh.getIndices()!];
+      mesh.setIndices(indices, null, true);
+      expect(render()).toBe(6);
+      previousGeometryUpdate.mockClear();
+      [indices[0], indices[1]] = [indices[1]!, indices[0]!];
+      geometry.updateIndices(indices, 0, gpuMemoryOnly);
+      expect(previousGeometryUpdate).not.toHaveBeenCalled();
+      expect(render()).toBe(6);
+      [indices[0], indices[1]] = [indices[1]!, indices[0]!];
+      geometry.updateIndices(indices, 0, gpuMemoryOnly);
+      expect(render()).toBe(6);
+    },
+  );
+
   it("detects replaced and updated frozen attachment matrices without transform notifications", async () => {
     const { mesh, render } = await fixture();
     expect(render()).toBe(6);
