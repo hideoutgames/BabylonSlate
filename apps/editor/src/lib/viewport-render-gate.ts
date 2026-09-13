@@ -1,3 +1,4 @@
+import type { QualityOverrides } from "@babylonslate/core";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "@babylonslate/vfs";
 import {
   receiveActiveAppSettingsUpdate,
@@ -22,6 +23,7 @@ export function dispatchEngineSettingsChanged(settings: {
   viewportFrameCap: number;
   theme?: "system" | "light" | "dark";
   graphDefaultZoom?: number;
+  renderingOverridesEnabled?: boolean;
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
   editorTextureLodEnabled?: boolean;
@@ -48,6 +50,7 @@ export type LiveEngineSettingsTarget = {
     setSettingsLevel?: (level: number) => void;
   };
   scheduler?: { setFrameCap: (fps: number) => void };
+  setLocalQualityOverrides?: (overrides: QualityOverrides) => void;
   setPostProcessingEnabled?: (enabled: boolean) => void;
   setTextureBudget?: (bytes: number, enabled: boolean) => void;
   setAudioBudget?: (bytes: number, enabled: boolean) => void;
@@ -56,6 +59,7 @@ export type LiveEngineSettingsTarget = {
 
 export type LiveEngineSettings = {
   viewportFrameCap?: number;
+  renderingOverridesEnabled?: boolean;
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
   editorTextureLodEnabled?: boolean;
@@ -81,7 +85,15 @@ export function applyLiveEngineSettings(
   ) {
     target.scheduler?.setFrameCap(settings.viewportFrameCap);
   }
+  if (target.setLocalQualityOverrides) {
+    const scale = 1 / Math.max(1, settings.hardwareScalingLevel ?? 1);
+    target.setLocalQualityOverrides(settings.renderingOverridesEnabled === true ? {
+      resolution: { scale, minScale: scale, dynamic: false },
+      textures: { byteBudget: settings.textureBudgetEnabled === false ? Number.MAX_SAFE_INTEGER : settings.textureByteCeiling ?? 512 * 1024 * 1024 },
+    } : {});
+  }
   if (
+    !target.setLocalQualityOverrides && settings.renderingOverridesEnabled === true &&
     typeof settings.hardwareScalingLevel === "number" &&
     Number.isFinite(settings.hardwareScalingLevel) &&
     settings.hardwareScalingLevel > 0
@@ -93,11 +105,12 @@ export function applyLiveEngineSettings(
     }
   }
   if (typeof settings.postProcessingEnabled === "boolean") {
-    target.setPostProcessingEnabled?.(settings.postProcessingEnabled);
+    target.setPostProcessingEnabled?.(settings.renderingOverridesEnabled !== true || settings.postProcessingEnabled);
   }
   if (
-    typeof settings.textureByteCeiling === "number" ||
-    typeof settings.textureBudgetEnabled === "boolean"
+    !target.setLocalQualityOverrides && settings.renderingOverridesEnabled === true &&
+    (typeof settings.textureByteCeiling === "number" ||
+    typeof settings.textureBudgetEnabled === "boolean")
   ) {
     const bytes =
       typeof settings.textureByteCeiling === "number"
@@ -192,6 +205,7 @@ export function attachViewportRenderGate(options: {
     setLevel: (level: number) => void;
     setSettingsLevel?: (level: number) => void;
   };
+  setLocalQualityOverrides?: (overrides: QualityOverrides) => void;
   setPostProcessingEnabled?: (enabled: boolean) => void;
   setTextureBudget?: (bytes: number, enabled: boolean) => void;
   setAudioBudget?: (bytes: number, enabled: boolean) => void;
@@ -244,6 +258,7 @@ export function attachViewportRenderGate(options: {
       {
         scheduler,
         scaling: options.scaling,
+        setLocalQualityOverrides: options.setLocalQualityOverrides,
         setPostProcessingEnabled: options.setPostProcessingEnabled,
         setTextureBudget: options.setTextureBudget,
         setAudioBudget: options.setAudioBudget,

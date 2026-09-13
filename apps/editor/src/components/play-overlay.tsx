@@ -564,6 +564,7 @@ export function PlayOverlay({
         applyLiveEngineSettings(
           session.handle,
           {
+            renderingOverridesEnabled: settings.renderingOverridesEnabled,
             hardwareScalingLevel: settings.hardwareScalingLevel,
             postProcessingEnabled: settings.postProcessingEnabled,
             textureBudgetEnabled: settings.textureBudgetEnabled,

@@ -17,7 +17,7 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { sceneRenderingSettings, type RenderShadingSettings } from "./render-settings";
+import { sceneRenderingSettings, resolveSceneRenderingQuality, type RenderShadingSettings } from "./render-settings";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -261,6 +261,8 @@ export interface EngineHandle {
   postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
+  /** Explicit local quality preferences; runtime commands take precedence. */
+  setLocalQualityOverrides: (overrides: import("@babylonslate/core").QualityOverrides) => void;
   /** Live Engine Settings texture LRU budget. */
   setTextureBudget: (bytes: number, enabled: boolean) => void;
   /** Live Engine Settings decoded-PCM LRU (Play only). */
@@ -921,7 +923,7 @@ export function createEngine(
       library: materialLibrary,
       stack: postProcessStack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
-      resolutionScale: resolveRenderingQuality(sceneRenderingSettings(scene).project, {}, sceneRenderingSettings(scene).qualityOverrides).postprocessing.resolutionScale,
+      resolutionScale: resolveSceneRenderingQuality(scene).postprocessing.resolutionScale,
       deviceBuffers: probePostProcessDeviceBuffers(scene, camera),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
@@ -934,17 +936,19 @@ export function createEngine(
   let appliedProject: unknown;
   let appliedSceneOverrides: unknown;
   let appliedSessionOverrides: unknown;
+  let appliedLocalOverrides: unknown;
   const applyTextureAnisotropy = (texture: BaseTexture) => {
     const anisotropy = appliedQuality?.textures.anisotropy ?? 4;
     texture.anisotropicFilteringLevel = Math.min(anisotropy, engine.getCaps().maxAnisotropy ?? 1);
   };
   const applyRenderingQuality = () => {
     const state = sceneRenderingSettings(scene);
-    if (appliedProject === state.project && appliedSceneOverrides === state.shadowOverrides && appliedSessionOverrides === state.qualityOverrides) return;
+    if (appliedProject === state.project && appliedSceneOverrides === state.shadowOverrides && appliedSessionOverrides === state.qualityOverrides && appliedLocalOverrides === state.localQualityOverrides) return;
     appliedProject = state.project;
     appliedSceneOverrides = state.shadowOverrides;
     appliedSessionOverrides = state.qualityOverrides;
-    const quality = resolveRenderingQuality(state.project, state.shadowOverrides, state.qualityOverrides);
+    appliedLocalOverrides = state.localQualityOverrides;
+    const quality = resolveSceneRenderingQuality(scene);
     const previous = appliedQuality;
     appliedQuality = quality;
     if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution))
@@ -2010,6 +2014,12 @@ export function createEngine(
       postProcessingEnabled = enabled;
       rebuildPostProcessStack();
       sceneLayerCompositor?.refreshPostProcess();
+      scheduler.invalidate("asset");
+    },
+    setLocalQualityOverrides: (overrides) => {
+      sceneRenderingSettings(scene).localQualityOverrides = overrides;
+      setSceneRenderSettings(scene);
+      applyRenderingQuality();
       scheduler.invalidate("asset");
     },
     setTextureBudget: (bytes: number, enabled: boolean) => {

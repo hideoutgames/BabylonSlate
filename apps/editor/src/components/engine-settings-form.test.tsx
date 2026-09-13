@@ -66,11 +66,11 @@ describe("EngineSettingsForm viewport", () => {
     fireEvent.blur(field);
     expect(onChange).toHaveBeenCalledWith({ viewportDropDistance: 25000.5 });
   });
-  it("defaults post-processing on and reports a toggle", () => {
+  it("reports a post-processing toggle when local overrides are enabled", () => {
     const onChange = vi.fn();
     const { getByTestId } = render(
       <EngineSettingsForm
-        settings={defaultEngineSettings()}
+        settings={{ ...defaultEngineSettings(), renderingOverridesEnabled: true }}
         onChange={onChange}
         categoryId="viewport"
       />,
@@ -112,7 +112,7 @@ describe("EngineSettingsForm assets", () => {
     );
   });
 
-  it("defaults editor texture LOD on at 50% with a 2 GB budget", () => {
+  it("defaults to source textures with optional local LOD and budget controls", () => {
     const { getByTestId, queryByTestId } = render(
       <EngineSettingsForm
         settings={defaultEngineSettings()}
@@ -122,7 +122,7 @@ describe("EngineSettingsForm assets", () => {
     );
     const lod = getByTestId("setting-editor-texture-lod");
     expect(lod.getAttribute("data-state") ?? lod.getAttribute("aria-checked")).toMatch(
-      /checked|true/,
+      /unchecked|false/,
     );
     expect(getByTestId("setting-editor-texture-lod-quality")).toBeTruthy();
     expect(getByTestId("setting-texture-budget-mb")).toHaveProperty("value", "2048");
@@ -141,7 +141,7 @@ describe("EngineSettingsForm assets", () => {
       />,
     );
     fireEvent.click(getByTestId("setting-editor-texture-lod"));
-    expect(onChange).toHaveBeenCalledWith({ editorTextureLodEnabled: false });
+    expect(onChange).toHaveBeenCalledWith({ editorTextureLodEnabled: true });
   });
 });
 

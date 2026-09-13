@@ -18,6 +18,7 @@ export type RenderShadingSettings = Partial<
 type SceneRendering = {
   mode: RenderMode;
   qualityOverrides: QualityOverrides;
+  localQualityOverrides: QualityOverrides;
   lightsDebug: boolean;
   textureLodBias: number;
   cel: CelShadingSettings;
@@ -35,6 +36,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
     state = {
       mode: "pbr",
       qualityOverrides: {},
+      localQualityOverrides: {},
       lightsDebug: false,
       textureLodBias: 0,
       cel: normalizeCelShadingSettings(undefined),
@@ -64,7 +66,7 @@ export function updateSceneRenderingSettings(
   if (project !== undefined) state.project = project;
   if (overrides !== undefined) state.overrides = overrides;
   if (shadowOverrides !== undefined) state.shadowOverrides = shadowOverrides;
-  const quality = resolveRenderingQuality(state.project, state.shadowOverrides, state.qualityOverrides);
+  const quality = resolveSceneRenderingQuality(scene);
   state.shadows = quality.shadows;
   state.textureLodBias = quality.textures.lodBias;
   const mode = state.project.mode === "cel" ? "cel" : "pbr";
@@ -72,4 +74,17 @@ export function updateSceneRenderingSettings(
   if (mode === state.mode) return;
   state.mode = mode;
   for (const listener of state.listeners) listener(mode);
+}
+
+/** Explicit editor preferences precede session commands and never change authored settings. */
+export function resolveSceneRenderingQuality(scene: Scene) {
+  const state = sceneRenderingSettings(scene);
+  const local = state.localQualityOverrides;
+  const session = state.qualityOverrides;
+  return resolveRenderingQuality(state.project, state.shadowOverrides, {
+    shadows: { ...local.shadows, ...session.shadows },
+    resolution: { ...local.resolution, ...session.resolution },
+    textures: { ...local.textures, ...session.textures },
+    postprocessing: { ...local.postprocessing, ...session.postprocessing },
+  });
 }

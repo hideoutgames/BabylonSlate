@@ -268,6 +268,13 @@ export function EngineSettingsForm({
       {categoryId === "viewport" ? (
         <FieldSet>
           <FieldLegend>Viewport</FieldLegend>
+          <Field orientation="horizontal" className="settings-field">
+            <FieldContent><FieldLabel htmlFor="setting-rendering-overrides">Override Project Rendering</FieldLabel>
+              <FieldDescription>Use local resolution, texture budget and post-processing preferences in editor previews. Runtime quality commands take precedence.</FieldDescription>
+            </FieldContent>
+            <Switch id="setting-rendering-overrides" checked={settings.renderingOverridesEnabled}
+              onCheckedChange={(renderingOverridesEnabled) => void onChange({ renderingOverridesEnabled })} />
+          </Field>
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-frame-cap">
               Viewport Frame Cap (FPS)
@@ -323,6 +330,7 @@ export function EngineSettingsForm({
               step={0.25}
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-hardware-scale"
+              disabled={!settings.renderingOverridesEnabled}
               value={settings.hardwareScalingLevel}
               onChange={(hardwareScalingLevel) =>
                 void onChange({ hardwareScalingLevel })
@@ -344,6 +352,7 @@ export function EngineSettingsForm({
             <Switch
               id="setting-post-processing"
               data-testid="setting-post-processing"
+              disabled={!settings.renderingOverridesEnabled}
               checked={settings.postProcessingEnabled}
               onCheckedChange={(checked) =>
                 void onChange({ postProcessingEnabled: checked === true })
@@ -437,6 +446,7 @@ export function EngineSettingsForm({
             <Switch
               id="setting-texture-budget"
               data-testid="setting-texture-budget"
+              disabled={!settings.renderingOverridesEnabled}
               checked={settings.textureBudgetEnabled}
               onCheckedChange={(checked) =>
                 void onChange({ textureBudgetEnabled: checked === true })
