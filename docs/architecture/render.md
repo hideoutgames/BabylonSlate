@@ -334,10 +334,13 @@ diagnostic; authored cascade settings and global engine state remain unchanged.
 Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
 and report completed RTT readback-plus-copy duration separately.
 
-Local shadow allocation follows authored priority, then intensity and camera
-distance, with a 15% retention bonus to avoid oscillation. A substantially more
-relevant light can replace an existing allocation without disabling it first.
-The current active camera supplies relevance, including possession changes.
+Local shadow allocation follows authored priority, then nearest relevant camera
+distance; brightness does not displace a nearer light. Maps have a 250 ms minimum
+residency and a 15% squared-distance retention bonus to reduce camera-boundary
+oscillation. Higher authored priority, camera possession changes and loss of
+eligibility take effect immediately. Byte/face/sampler/quality limits still apply
+during residency. The current active camera supplies relevance, and ranking
+refreshes parent transforms and uses local positions after light detachment.
 Compatible generators/maps survive camera, distance, bias, fade and filter edits.
 Structural resolution/cascade/type changes release old maps before replacement.
 Admission lowers map resolution to fit, with a 256-pixel floor, and reports limits;

@@ -17,6 +17,7 @@ import {
   type Light,
   type Scene,
   type Plane,
+  type Camera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import {
@@ -71,7 +72,12 @@ type Entry = {
   recovery: { requestKey: string; mapSize: number; error: string } | null;
   resetAllocation: boolean;
   status: ShadowLightStatus;
+  admittedAt: number;
+  distanceSquared: number;
 };
+// Minimum residency bounds camera-driven map churn; priority/camera switches
+// and loss of eligibility still take effect immediately.
+const SHADOW_MIN_RESIDENCY_MS = 250;
 const controllers = new WeakMap<Scene, SceneShadowController>();
 
 /** Construction is synchronous: no other renderer can allocate between checkpoints. */
@@ -126,6 +132,7 @@ export class SceneShadowController {
   private readonly meshes = new Set<AbstractMesh>();
   private readonly pending = new Set<AbstractMesh>();
   private readonly spatial = new ShadowSpatialIndex();
+  private selectionCamera: Camera | null = null;
   private readonly refresh = new ShadowMapRefresh((mesh) =>
     this.spatial.invalidate(mesh),
   );
@@ -205,6 +212,8 @@ export class SceneShadowController {
         recovery: null,
         resetAllocation: false,
         status: "disabled",
+        admittedAt: -Infinity,
+        distanceSquared: 0,
       };
       this.entries.set(light, entry);
       light.onDisposeObservable.addOnce(() => {
@@ -364,6 +373,9 @@ export class SceneShadowController {
     );
     const camera = scene.activeCamera;
     camera?.getViewMatrix();
+    const cameraChanged = camera !== this.selectionCamera;
+    this.selectionCamera = camera;
+    const selectionTime = performance.now();
     const allocationRequestKey = (entry: Entry) =>
       JSON.stringify([
         entry.light instanceof DirectionalLight
@@ -397,40 +409,37 @@ export class SceneShadowController {
           "shadow allocation failed at minimum size; awaiting settings change or context recovery";
         return false;
       }
-      if (
-        camera &&
-        !(entry.light instanceof DirectionalLight) &&
-        Vector3.Distance(
-          entry.light.getAbsolutePosition(),
+      entry.distanceSquared = 0;
+      if (camera && !(entry.light instanceof DirectionalLight)) {
+        // Shadow-limited lights may never bind a material. Refresh their
+        // parents explicitly rather than ranking a stale transformedPosition.
+        entry.light.parent?.computeWorldMatrix(true);
+        entry.light.computeTransformedInformation();
+        entry.distanceSquared = Vector3.DistanceSquared(
+          entry.light.parent ? entry.light.getAbsolutePosition() : entry.light.position,
           camera.globalPosition,
-        ) >
-          settings.distance + entry.light.range
-      ) {
+        );
+      }
+      if (camera && !(entry.light instanceof DirectionalLight) &&
+        entry.distanceSquared > (settings.distance + entry.light.range) ** 2) {
         entry.status = "outside-relevant-area";
         return false;
       }
       entry.status = "budget-limited";
       return true;
     });
-    // A bounded retention bonus prevents flicker without permanently starving a
-    // newly relevant light. Explicit authored priority remains authoritative.
-    const relevance = (entry: Entry) => {
-      const distanceSquared =
-        camera && !(entry.light instanceof DirectionalLight)
-          ? Vector3.DistanceSquared(
-              entry.light.getAbsolutePosition(),
-              camera.globalPosition,
-            )
-          : 0;
-      return (
-        (entry.light.intensity * (entry.generator ? 1.15 : 1)) /
-        Math.max(1, distanceSquared)
-      );
-    };
+    // Nearest relevant lights win independently of brightness. A short minimum
+    // residency and squared-distance bonus stabilize camera boundaries without
+    // preventing an authored-priority change or a newly possessed camera.
+    const resident = (entry: Entry) => Boolean(entry.generator && !cameraChanged &&
+      selectionTime - entry.admittedAt < SHADOW_MIN_RESIDENCY_MS);
+    const distance = (entry: Entry) =>
+      Math.max(1, entry.distanceSquared) / (entry.generator && !cameraChanged ? 1.15 : 1);
     candidates.sort(
       (a, b) =>
         b.priority - a.priority ||
-        relevance(b) - relevance(a) ||
+        Number(resident(b)) - Number(resident(a)) ||
+        distance(a) - distance(b) ||
         a.light.uniqueId - b.light.uniqueId,
     );
     const caps = scene.getEngine().getCaps();
@@ -741,6 +750,7 @@ export class SceneShadowController {
             return true;
           };
           entry.generator = generator;
+          entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
           entry.key = JSON.stringify([
             mapSize,
