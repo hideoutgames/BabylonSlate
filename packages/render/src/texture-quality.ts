@@ -12,9 +12,9 @@ export function textureLodSamplePattern(samplers: string, wgsl: boolean): string
 
 export class QualityTextureBlock extends TextureBlock {
   override getClassName(): string { return "QualityTextureBlock"; }
-  override bind(effect: Effect, material: NodeMaterial): void {
-    super.bind(effect, material);
-    effect.setFloat("slateTextureLodBias", material.mode === 0 ? sceneRenderingSettings(material.getScene()).textureLodBias : 0);
+  override bind(effect: Effect, material?: NodeMaterial): void {
+    super.bind(effect);
+    effect.setFloat("slateTextureLodBias", material?.mode === 0 ? sceneRenderingSettings(material.getScene()).textureLodBias : 0);
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this | undefined {
     const start = state.compilationString.length;

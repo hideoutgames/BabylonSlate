@@ -953,8 +953,10 @@ export function createEngine(
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
     }
-    if (previous && previous.postprocessing.resolutionScale !== quality.postprocessing.resolutionScale)
+    if (previous && previous.postprocessing.resolutionScale !== quality.postprocessing.resolutionScale) {
       rebuildPostProcessStack();
+      sceneLayerCompositor?.refreshPostProcess();
+    }
   };
   scene.onBeforeRenderObservable.add(applyRenderingQuality);
   scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
@@ -969,6 +971,7 @@ export function createEngine(
             camera: layer.camera,
             library: materialLibrary,
             stack: normalizePostProcessStack(stack),
+            resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
             deviceBuffers: probePostProcessDeviceBuffers(
               layer.scene,
