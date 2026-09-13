@@ -1,5 +1,6 @@
 import {
   Mesh,
+  MultiMaterial,
   NodeMaterial,
   NodeMaterialModes,
   NullEngine,
@@ -166,26 +167,25 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
   syncSceneLighting(scene);
   try {
     await settleOrTimeout((async () => {
-    const warmed = new Set<Material>();
-    for (const mesh of scene.meshes) {
-      check();
-      if (!(mesh instanceof Mesh)) continue;
-      const material = mesh.material;
-      if (!material || warmed.has(material)) continue;
-      if (material instanceof NodeMaterial) {
-        warmed.add(material);
-        await prewarmMaterial(material, mesh);
-        continue;
+      for (const mesh of scene.meshes) {
+        check();
+        if (!(mesh instanceof Mesh)) continue;
+        const material = mesh.material ?? scene.defaultMaterial;
+        // The same material can have different effects for skinned, morphed,
+        // instanced and static meshes. Warm each consumer, including submaterials.
+        const materials = material instanceof MultiMaterial
+          ? new Set(material.subMaterials.filter((entry): entry is Material => entry !== null))
+          : new Set([material]);
+        for (const entry of materials) {
+          check();
+          if (entry instanceof NodeMaterial) await prewarmMaterial(entry, mesh);
+          else await entry.forceCompilationAsync(mesh);
+          check();
+          if (mesh.hasThinInstances || mesh.instances.length > 0) {
+            await entry.forceCompilationAsync(mesh, { useInstances: true });
+          }
+        }
       }
-      warmed.add(material);
-      await material.forceCompilationAsync(mesh);
-    }
-    check();
-    const fallback = scene.defaultMaterial;
-    if (fallback && !warmed.has(fallback)) {
-      const mesh = scene.meshes.find((entry): entry is Mesh => entry instanceof Mesh);
-      if (mesh) await fallback.forceCompilationAsync(mesh);
-    }
     })(), SCENE_SHADER_WARM_TIMEOUT_MS);
     check();
   } finally {
@@ -193,4 +193,16 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
     // must stop before touching any more meshes, freezing, or reporting ready.
     finished = true;
   }
+}
+
+/** Readiness of the actual scene passes, including shadow render targets. */
+export function isSceneFrameReady(scene: Scene): boolean {
+  if (!scene.isReady(true)) return false;
+  for (const light of scene.lights) {
+    for (const generator of light.getShadowGenerators()?.values() ?? []) {
+      const map = generator.getShadowMap();
+      if (map && !map.isReadyForRendering()) return false;
+    }
+  }
+  return true;
 }

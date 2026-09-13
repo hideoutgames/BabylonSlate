@@ -213,6 +213,26 @@ describe("Play createEngine view", () => {
     engine.activeView = null;
   });
 
+  it("keeps loading through skipped effects until a complete ready frame is presented", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    handle.setPaused(true);
+    const ready = vi.spyOn(handle.scene, "isReady").mockReturnValue(false);
+    let presented = false;
+    const frame = handle.presentFirstFrame().then(() => { presented = true; });
+    const render = runLoop.mock.calls[0]![0];
+    render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await Promise.resolve();
+    expect(presented).toBe(false);
+    ready.mockReturnValue(true);
+    render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await frame;
+    expect(presented).toBe(true);
+  });
+
   it("rejects stale first-frame and shader completions after reload or disposal", async () => {
     const engine = sharedEngine();
     const { handle } = editorHandle(engine);

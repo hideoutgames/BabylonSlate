@@ -225,6 +225,15 @@ export class SceneLayerCompositor {
     }
   }
 
+  isReady(): boolean {
+    for (const record of this.byId.values()) {
+      if (!record.scene.isReady(true)) return false;
+      if (record.rtt && !record.rtt.isReadyForRendering()) return false;
+      if (record.rtt && !record.blitScene?.isReady(true)) return false;
+    }
+    return true;
+  }
+
   pickHits(
     canvasX: number,
     canvasY: number,

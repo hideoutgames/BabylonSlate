@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Mesh,
+  MeshBuilder,
   NodeMaterial,
   NodeMaterialModes,
   NullEngine,
   PBRMaterial,
+  SpotLight,
+  ShadowGenerator,
   Scene,
   UniversalCamera,
   Vector3,
@@ -17,6 +20,7 @@ import {
 import {
   applyEditorMaterialFreeze,
   isStructuralEditorChange,
+  isSceneFrameReady,
   materialLibraryAssetGuid,
   prewarmSceneMaterials,
   SCENE_SHADER_WARM_TIMEOUT_MS,
@@ -142,6 +146,42 @@ describe("applyEditorMaterialFreeze", () => {
 });
 
 describe("prewarmSceneMaterials", () => {
+  it("warms shared material consumers separately and includes instanced variants", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const first = MeshBuilder.CreateBox("static", {}, scene);
+      const second = MeshBuilder.CreateBox("instanced", {}, scene);
+      first.material = second.material = new PBRMaterial("shared", scene);
+      second.createInstance("copy");
+      const compile = vi.spyOn(first.material, "forceCompilationAsync").mockResolvedValue();
+      await prewarmSceneMaterials(scene);
+      expect(compile).toHaveBeenCalledWith(first);
+      expect(compile).toHaveBeenCalledWith(second);
+      expect(compile).toHaveBeenCalledWith(second, { useInstances: true });
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
+  it("rejects a ready world frame while its shadow render target is unready", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const light = new SpotLight("shadow", Vector3.Zero(), Vector3.Down(), 1, 1, scene);
+      const generator = new ShadowGenerator(256, light);
+      vi.spyOn(scene, "isReady").mockReturnValue(true);
+      const ready = vi.spyOn(generator.getShadowMap()!, "isReadyForRendering").mockReturnValue(false);
+      expect(isSceneFrameReady(scene)).toBe(false);
+      ready.mockReturnValue(true);
+      expect(isSceneFrameReady(scene)).toBe(true);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
   it("fails readiness when compilation times out and stops the late warm continuation", async () => {
     vi.useFakeTimers();
     const engine = new NullEngine();

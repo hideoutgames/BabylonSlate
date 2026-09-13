@@ -189,6 +189,7 @@ import { configureCutoutSorting, configureEditorRenderingGroups } from "./sortin
 import {
   applyEditorMaterialFreeze,
   freezeEditorActiveMeshes,
+  isSceneFrameReady,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
@@ -1544,10 +1545,17 @@ export function createEngine(
       updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
     }
     try {
+      const readyBefore = !pendingPresentation || (isSceneFrameReady(scene) &&
+        (sceneLayerCompositor?.isReady() ?? true));
       scene.render();
       sceneLayerCompositor?.render();
       if (rttPresent) rttPresent.blit();
-      if (pendingPresentation) pendingPresentation.rendered = true;
+      // Babylon can return from render while skipping unready effects. Require
+      // readiness on both sides of the frame: the first draw can create passes.
+      if (pendingPresentation) {
+        pendingPresentation.rendered = readyBefore && isSceneFrameReady(scene) &&
+          (sceneLayerCompositor?.isReady() ?? true);
+      }
     } catch (error) {
       if (!pendingPresentation) throw error;
       cancelPresentation(error instanceof Error ? error : new Error(String(error)));
