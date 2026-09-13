@@ -104,8 +104,9 @@ export function cameraBoundsBorderCoverage(
 
 /**
  * 1 when the world XY sample sits on the 2px screen-space border of the
- * camera-bounds plane (the fragment shader path). `half` is `width/2` ×
- * `height/2`; `fwidthX` / `fwidthY` match GLSL `fwidth(vBoundsPosition)`.
+ * camera-bounds plane. `half` is `width/2` × `height/2`; derivatives use
+ * world XY units. The shader evaluates the equivalent in local unit-plane
+ * coordinates so floating-origin offsets cannot affect border coverage.
  */
 export function cameraBoundsWorldBorderCoverage(
   world: { x: number; y: number },
