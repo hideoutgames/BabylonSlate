@@ -1,5 +1,5 @@
 import { unzipSync, zipSync } from "fflate";
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage, ProjectDocument } from "@babylonslate/core";
 import { stableStringify } from "./bytes";
 
 export type ManifestKind = "project" | "plugin";
@@ -135,8 +135,16 @@ export function createEmptyProjectFiles(options: {
 /** Export Project: directory tree → zip bytes (ignores derived data by construction). */
 export async function exportProjectZip(
   storage: ProjectStorage,
+  snapshot?: ProjectDocument,
 ): Promise<Uint8Array> {
   const files = await readProjectTree(storage);
+  if (snapshot) {
+    const manifest = files.find((file) => file.path === PROJECT_MANIFEST_FILE);
+    if (!manifest) throw new Error("Project manifest is missing");
+    manifest.data = new TextEncoder().encode(stableStringify({
+      ...JSON.parse(new TextDecoder().decode(manifest.data)), ...snapshot,
+    }));
+  }
   return encodeProjectZip(files);
 }
 

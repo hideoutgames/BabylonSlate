@@ -294,7 +294,7 @@ per-submesh shadow culling retains upstream casters for depth-clamped PCF.
 Skinned, morphing and instanced geometry is not automatically partitioned.
 Skinned/morphing casters and materials with deformation padding bypass static
 bounds rejection; a bind-pose AABB cannot certify their animated shadow extent.
-Authored rendering changes coalesce for 150 ms before a full scene reload and shader warm-up. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth and normal bias derive from texel size and filter footprint; disabling automatic bias uses the authored offsets directly.
+Project Rendering edits remain in a modal draft until Done or another close path commits them together, followed by a full scene reload and shader warm-up. Unchanged/reverted edits do not reload; only changed leaves merge into the latest project. Exports use an explicit draft snapshot without updating the running scene. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth and normal bias derive from texel size and filter footprint; disabling automatic bias uses the authored offsets directly.
 
 The single-map fallback also follows the camera with texel-snapped XY coverage;
 only relevant upstream caster bounds extend its depth. Directional generators

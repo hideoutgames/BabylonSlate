@@ -690,8 +690,8 @@ export class ProjectService {
     }
   }
 
-  async exportZip(): Promise<Uint8Array> {
-    return exportProjectZip(this.storage);
+  async exportZip(snapshot?: ProjectDocument): Promise<Uint8Array> {
+    return exportProjectZip(this.storage, snapshot);
   }
 
   async needsReconnect(): Promise<boolean> {
