@@ -17,6 +17,7 @@ import { openMinimalTestProject } from "./minimal-project";
 import {
   openMainScene,
   openTestProject,
+  waitForSceneViewportReady,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
