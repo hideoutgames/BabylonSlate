@@ -328,6 +328,27 @@ describe("shared shadow lifecycle", () => {
       expect(controller.generator(b)).not.toBeNull();
     } finally { clock.mockRestore(); }
   });
+
+  it("promotes a nearer sub-unit light after residency expires", () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    try {
+      const { scene, controller } = fixture();
+      scene.activeCamera!.position.set(0, 0, 0);
+      const a = new PointLight("incumbent", new Vector3(0.9, 0, 0), scene);
+      const b = new PointLight("nearer", new Vector3(0.1, 0, 0), scene);
+      controller.register(a, true);
+      controller.sync();
+      const initial = controller.generator(a);
+      controller.register(b, true);
+      clock.mockReturnValue(100);
+      controller.sync();
+      expect(controller.generator(a)).toBe(initial);
+      clock.mockReturnValue(300);
+      controller.sync();
+      expect(controller.generator(a)).toBeNull();
+      expect(controller.generator(b)).not.toBeNull();
+    } finally { clock.mockRestore(); }
+  });
   it("admits point cube memory and faces before construction, then lowers cost after Manual 16 and a Low preset", () => {
     const { scene, controller } = fixture();
     const allocation = vi.spyOn(

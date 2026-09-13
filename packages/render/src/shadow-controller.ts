@@ -434,7 +434,7 @@ export class SceneShadowController {
     const resident = (entry: Entry) => Boolean(entry.generator && !cameraChanged &&
       selectionTime - entry.admittedAt < SHADOW_MIN_RESIDENCY_MS);
     const distance = (entry: Entry) =>
-      Math.max(1, entry.distanceSquared) / (entry.generator && !cameraChanged ? 1.15 : 1);
+      entry.distanceSquared / (entry.generator && !cameraChanged ? 1.15 : 1);
     candidates.sort(
       (a, b) =>
         b.priority - a.priority ||
