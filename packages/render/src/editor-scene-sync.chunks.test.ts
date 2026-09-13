@@ -274,6 +274,29 @@ describe("cooperative editor realization", () => {
     expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
   });
 
+  it.each(["sync", "async"] as const)("keeps %s replacement readiness independent of an obsolete unresolved model", async (mode) => {
+    const { sync } = fixture();
+    const next = document(1);
+    next.actors[0]!.components[0]!.properties.assetGuid = "model";
+    const delayed = holdModelContainer();
+    const requests = vi.spyOn(modelLoads, "beginSlotModelAnimLoad");
+    sync.setMeshAssets({ modelBytes: new Map([["model", encodeTriangleGlb()]]) });
+    sync.apply(next);
+    await delayed.ready;
+    const replacement = document(0);
+    if (mode === "async") await sync.applyAsync(replacement, { signal: new AbortController().signal });
+    else sync.apply(replacement);
+    let ready = false;
+    const readiness = sync.whenEditorModelsReady().then(() => { ready = true; });
+    await vi.waitFor(() => expect(ready).toBe(true));
+    expect(sync.pendingModelLoadCount()).toBe(0);
+    delayed.release();
+    await requests.mock.results[0]!.value;
+    await readiness;
+    expect(sync.actorCount()).toBe(0);
+    expect(sync.serializedScene()).toBe(replacement);
+  });
+
   it("restores a static actor matrix when its model lands during the final freeze phase", async () => {
     const { sync, onAfterApply } = fixture();
     const next = document();

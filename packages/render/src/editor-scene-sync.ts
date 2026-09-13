@@ -173,6 +173,7 @@ export class EditorSceneSync {
     this.pendingApply = null;
     this.realization = null;
     ++this.applyGeneration;
+    this.resetModelReadiness();
     this.applyingScene = sceneData;
     try {
       for (const _progress of this.applySteps(sceneData)) {
@@ -187,6 +188,7 @@ export class EditorSceneSync {
     this.pendingApply?.abort(new Error("Scene realization was superseded."));
     const controller = new AbortController();
     const generation = ++this.applyGeneration;
+    this.resetModelReadiness();
     this.pendingApply = controller;
     const abort = () => controller.abort(options.signal.reason);
     options.signal.addEventListener("abort", abort, { once: true });
@@ -349,6 +351,13 @@ export class EditorSceneSync {
     const loads = [...(this.modelLoadBinding.slotAnimLoads?.values() ?? [])];
     if (loads.length === 0) return Promise.resolve();
     return Promise.all(loads).then(() => undefined);
+  }
+
+  private resetModelReadiness(): void {
+    // Prior waiters retain their promises, but a replacement waits only for its
+    // own submissions. Generation ownership prevents obsolete adoption.
+    this.modelLoadBinding.slotAnimLoads?.clear();
+    this.modelLoadBinding.slotAnimEpoch?.clear();
   }
 
   pendingModelLoadCount(): number {
