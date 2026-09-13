@@ -7,6 +7,7 @@ import {
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
+import { withSceneReadinessState } from "./scene-perf";
 
 /** Internal proof result; renderer selection and authored settings are untouched. */
 export type ForwardSceneGraphResult =
@@ -62,6 +63,8 @@ export class ForwardSceneFrameGraph {
 
   /** Render one scene frame, with an explicit, observable classic fallback. */
   render(camera: Camera, updateCameras = true): ForwardSceneGraphResult {
+    const unavailable = this.unavailable(camera);
+    if (unavailable) return { path: "classic", reason: unavailable };
     const engine = this.scene.getEngine();
     const reason =
       this.unsupported(camera) ??
@@ -128,12 +131,18 @@ export class ForwardSceneFrameGraph {
     if (!this.pending) this.releaseGraph();
   }
 
+  private unavailable(camera: Camera): string | undefined {
+    if (this.disposed || this.scene.isDisposed)
+      return "FrameGraph coordinator is disposed.";
+    if (camera.getScene() !== this.scene || camera.isDisposed())
+      return "Camera does not belong to this live scene.";
+    return undefined;
+  }
+
   private unsupported(camera: Camera): string | undefined {
     const scene = this.scene;
-    if (this.disposed || scene.isDisposed)
-      return "FrameGraph coordinator is disposed.";
-    if (camera.getScene() !== scene || camera.isDisposed())
-      return "Camera does not belong to this live scene.";
+    const unavailable = this.unavailable(camera);
+    if (unavailable) return unavailable;
     if (scene.getEngine().isWebGPU)
       return "Forward FrameGraph proof requires WebGL.";
     if (scene.frameGraph || scene.customRenderFunction)
@@ -222,22 +231,22 @@ export class ForwardSceneFrameGraph {
   }
 
   private isReady(): boolean {
-    const camera = this.scene.activeCamera;
     const cameras = this.scene.activeCameras;
-    const ubo = this.scene.getSceneUniformBuffer();
+    const shadowFlags = this.scene.lights.map(
+      (light) => [light, light.shadowEnabled] as const,
+    );
     const objectList = this.objects!.objectList;
     try {
       // The previous frame's culled list may omit a newly visible mesh. Probe
       // all current candidates before presenting; culling itself never draws.
       this.objects!.objectList = this.cull!.objectList;
-      return this.graph!.isReady();
+      return withSceneReadinessState(this.scene, () => this.graph!.isReady());
     } finally {
       this.objects!.objectList = objectList;
-      // ObjectRenderer's readiness path has no finally around user material
-      // readiness hooks. Keep caller camera/UBO ownership even if one throws.
-      this.scene.activeCamera = camera;
+      // ObjectRenderer's shadow toggles also lack finally around readiness
+      // hooks. The common guard owns camera/matrices/UBO/Engine state.
       this.scene.activeCameras = cameras;
-      this.scene.setSceneUniformBuffer(ubo);
+      for (const [light, enabled] of shadowFlags) light.shadowEnabled = enabled;
     }
   }
 

@@ -201,7 +201,7 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
 type SceneReadinessInternals = { _isReadyChecks: readonly { isReady(): boolean }[] };
 
 /** Preserve shared render state even when Babylon's RTT probe throws mid-pass. */
-function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
+export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   const engine = scene.getEngine();
   const camera = scene.activeCamera;
   const sceneUbo = scene.getSceneUniformBuffer();

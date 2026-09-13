@@ -1,12 +1,15 @@
 import {
   FreeCamera,
+  MeshBuilder,
   NullEngine,
   PointLight,
   RenderTargetTexture,
   Scene,
   ShadowGenerator,
   Vector3,
+  Viewport,
 } from "@babylonjs/core";
+import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
@@ -81,6 +84,79 @@ it("restores classic ownership after a callback throws and leaves a shared Engin
   expect(() => second.scene.render()).not.toThrow();
   expect(second.scene.activeCamera).toBe(second.camera);
   expect(first.engine.isDisposed).toBe(false);
+});
+
+it("rejects foreign and disposed cameras without changing or rendering either scene", async () => {
+  const first = host();
+  const second = host(first.engine);
+  const graph = new ForwardSceneFrameGraph(first.scene);
+  await graph.prepare(first.camera);
+  const firstFrame = vi.fn();
+  const secondFrame = vi.fn();
+  first.scene.onBeforeRenderObservable.add(firstFrame);
+  second.scene.onBeforeRenderObservable.add(secondFrame);
+  const disposed = new FreeCamera("disposed", Vector3.Zero(), first.scene);
+  disposed.dispose();
+  for (const invalid of [second.camera, disposed]) {
+    expect(graph.render(invalid)).toMatchObject({
+      path: "classic",
+      reason: expect.stringContaining("Camera"),
+    });
+    expect(await graph.prepare(invalid)).toMatchObject({
+      path: "classic",
+      reason: expect.stringContaining("Camera"),
+    });
+  }
+  expect(first.scene.activeCamera).toBe(first.camera);
+  expect(second.scene.activeCamera).toBe(second.camera);
+  expect(firstFrame).not.toHaveBeenCalled();
+  expect(secondFrame).not.toHaveBeenCalled();
+  graph.dispose();
+});
+
+it("restores floating-origin matrices, viewport and shadow flags when object readiness throws", async () => {
+  const engine = new NullEngine();
+  vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+  vi.spyOn(engine, "getCreationOptions").mockReturnValue({
+    useLargeWorldRendering: true,
+  });
+  const { scene, camera } = host(engine);
+  camera.position.x = 2000;
+  scene.render();
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const ubo = scene.getSceneUniformBuffer();
+  const view = Array.from(scene.getViewMatrix().asArray());
+  const projection = Array.from(scene.getProjectionMatrix().asArray());
+  MeshBuilder.CreateBox("new candidate", {}, scene);
+  const light = new PointLight("light", Vector3.Up(), scene);
+  scene.objectRenderers[0]!.customIsReadyFunction = () => {
+    expect(FloatingOriginCurrentScene.getScene()).toBe(scene);
+    expect(scene.getSceneUniformBuffer()).not.toBe(ubo);
+    throw new Error("object readiness failed");
+  };
+  const sibling = host(engine);
+  const previousScene = FloatingOriginCurrentScene.getScene;
+  FloatingOriginCurrentScene.eyeAtCamera = false;
+  const viewport = new Viewport(0.2, 0.1, 0.5, 0.7);
+  engine.setViewport(viewport);
+  engine.currentRenderPassId = 42;
+  expect(await graph.prepare(camera)).toEqual({
+    path: "classic",
+    reason: "object readiness failed",
+  });
+  expect(scene.activeCamera).toBe(camera);
+  expect(scene.getSceneUniformBuffer()).toBe(ubo);
+  expect(Array.from(scene.getViewMatrix().asArray())).toEqual(view);
+  expect(Array.from(scene.getProjectionMatrix().asArray())).toEqual(projection);
+  expect(engine.currentViewport).toEqual(viewport);
+  expect(engine.currentRenderPassId).toBe(42);
+  expect(FloatingOriginCurrentScene.getScene).toBe(previousScene);
+  expect(FloatingOriginCurrentScene.eyeAtCamera).toBe(false);
+  expect(light.shadowEnabled).toBe(true);
+  expect(scene.objectRenderers).toHaveLength(0);
+  expect(() => sibling.scene.render()).not.toThrow();
+  graph.dispose();
 });
 
 it("falls back before replacing managed shadows or a shared-view target", async () => {
