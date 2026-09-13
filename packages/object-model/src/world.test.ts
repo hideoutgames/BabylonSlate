@@ -346,6 +346,25 @@ describe("World tick", () => {
     expect(events).toEqual(["create", "destroy"]);
   });
 
+  it("allows destruction hooks to replace an actor with the same guid without deleting the replacement", () => {
+    const world = createTestWorld();
+    let replacement: ReturnType<typeof world.createActor> | undefined;
+    const original = world.createActor({ classId: "Actor", guid: "shared", hooks: {
+      onDestroyed: () => {
+        replacement = world.createActor({ classId: "Actor", guid: "shared" });
+        world.spawnActorNow(replacement);
+        world.destroyActorInstance(original);
+        world.flushPending();
+      },
+    } });
+    world.spawnActorNow(original);
+    world.destroyActorInstance(original);
+    world.flushPending();
+    expect(world.getActors()).toEqual([replacement]);
+    expect(replacement?.destroyed).toBe(false);
+    expect(replacement?.spawnIndex).toBe(0);
+  });
+
   it("produces identical snapshots for the same seed", () => {
     const run = (seed: number) => {
       const world = createTestWorld(seed);

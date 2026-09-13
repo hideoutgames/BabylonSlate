@@ -77,6 +77,26 @@ describe("Play physics startup", () => {
     }
   });
 
+  it("disposes a native backend that finishes loading after Stop without installing or restarting it", async () => {
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+    const disposed = vi.spyOn(backend, "dispose");
+    let resolve!: (backend: HavokPhysicsBackend) => void;
+    vi.spyOn(HavokPhysicsBackend, "create").mockReturnValue(new Promise((done) => { resolve = done; }));
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const initial = runtime.getPhysicsSync()!.getBackend();
+    const loading = runtime.loadPhysics();
+    const rejected = expect(loading).rejects.toMatchObject({ name: "AbortError" });
+    runtime.stop();
+    resolve(backend);
+    await rejected;
+    expect(disposed).toHaveBeenCalledOnce();
+    expect(runtime.getPhysicsSync()!.getBackend()).toBe(initial);
+    runtime.start();
+    runtime.resume();
+    runtime.tick();
+    expect(runtime.getWorld().clock.tickIndex).toBe(0);
+  });
+
   it("releases both new engines and preserves the prior world when body creation fails", async () => {
     const options = { gravity: { x: 0, y: -9.81, z: 0 } };
     const havok = await HavokPhysicsBackend.create({ ...options, kind: "3d" });

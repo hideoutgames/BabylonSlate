@@ -285,6 +285,8 @@ export class World {
       : this.actors.indexOf(target);
     if (index < 0) return;
     const actor = this.actors[index]!;
+    this.actors.splice(index, 1);
+    actor.destroyed = true;
     for (const component of [...actor.components].reverse()) {
       component.destroyed = true;
       component.callOnDestroyed();
@@ -294,7 +296,6 @@ export class World {
     actor.destroyed = true;
     actor.callOnDestroyed();
     actor.world = null;
-    this.actors.splice(index, 1);
     // Reassign dense spawn indices so order stays contiguous after removal.
     for (let i = 0; i < this.actors.length; i++) {
       this.actors[i]!.spawnIndex = i;
