@@ -248,6 +248,7 @@ Low-memory also enables the shared build cache described below. `cacheDirectory`
 - Export smoke loads the player from the owned test server's verified artifact, so cached local runs and CI shards do not depend on a separate `apps/player/dist`. Combined pointer-menu scenarios dismiss overlays through the backdrop and confirm dismissal before the next interaction.
 - Small renderer consumers may import `@babylonslate/render/render-scheduler` and `@babylonslate/render/audio-playback-backend` without loading the full render barrel.
 - The agent-wait process-contract suite uses a small package-manager fixture and retains a real-pnpm argument-boundary integration case. Failure output is captured before final Git snapshots so diagnostics show the failed command.
+- Save All failures include the latest invocation's pending phase and elapsed time alongside the last completed outcome. The bounded test diagnostic distinguishes an unstarted save from audio/navigation bake, document/project persistence, and post-save waits without retrying the UI action.
 
 ### CI artifacts and measurement
 

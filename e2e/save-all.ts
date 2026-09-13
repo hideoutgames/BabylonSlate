@@ -1,8 +1,10 @@
 import { expect, type Page } from "@playwright/test";
+import type { SaveAllProgress } from "../apps/editor/src/lib/dirty-trace";
 
 type SaveAllDiagnostics = {
   dirty: { kind: string; id: string }[];
   trace: { kind: string; id: string; via?: string }[];
+  progress: SaveAllProgress | null;
   save: {
     ok: boolean;
     reason: string;
@@ -18,6 +20,7 @@ async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
       __babylonslateTest?: {
         documentDirtyTrace?: () => { kind: string; id: string; via?: string }[];
         saveAllTrace?: () => SaveAllDiagnostics["save"];
+        saveAllProgress?: () => SaveAllProgress | null;
         dirtyDocuments?: () => { kind: string; id: string }[];
       };
     };
@@ -26,6 +29,7 @@ async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
       dirty: test?.dirtyDocuments?.() ?? [],
       trace: test?.documentDirtyTrace?.() ?? [],
       save: test?.saveAllTrace?.() ?? null,
+      progress: test?.saveAllProgress?.() ?? null,
     };
   });
 }
@@ -41,12 +45,17 @@ export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<vo
   if (!(await button.isEnabled())) {
     return;
   }
-  await page.evaluate(() => {
-    (
+  const invocationBeforeClick = await page.evaluate(() => {
+    const test = (
       globalThis as {
-        __babylonslateTest?: { clearDocumentDirtyTrace?: () => void };
+        __babylonslateTest?: {
+          clearDocumentDirtyTrace?: () => void;
+          saveAllProgress?: () => SaveAllProgress | null;
+        };
       }
-    ).__babylonslateTest?.clearDocumentDirtyTrace?.();
+    ).__babylonslateTest;
+    test?.clearDocumentDirtyTrace?.();
+    return test?.saveAllProgress?.()?.invocation ?? 0;
   });
   // Rendering changes can rebuild the viewport behind a blocking load dialog.
   // A forced click hits that backdrop instead of invoking Save All.
@@ -70,6 +79,7 @@ export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<vo
     throw new Error(
       `Save All stayed dirty: ${JSON.stringify({
         ...diagnostics,
+        invocationBeforeClick,
         buttonDisabled: await button.isDisabled(),
       })}`,
       { cause: error },

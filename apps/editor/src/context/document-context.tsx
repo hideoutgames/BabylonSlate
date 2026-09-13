@@ -262,9 +262,11 @@ import {
 } from "../lib/play-particles";
 import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
+  beginSaveAllProgress,
   clearDocumentDirtyTrace,
   documentDirtyTrace,
   recordSaveAllTrace,
+  saveAllProgress,
   saveAllTrace,
 } from "../lib/dirty-trace";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
@@ -1419,6 +1421,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [attachEnginePlugins, enterEditor, projectService]);
 
   const saveProject = useCallback(async (): Promise<boolean> => {
+    const progress = beginSaveAllProgress();
     const document = projectDocumentRef.current;
     const dirtyBefore = documentService.getDirtyDocuments().length;
     if (!document) {
@@ -1428,6 +1431,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dirtyBefore,
         dirtyAfter: dirtyBefore,
       });
+      progress.finish();
       return false;
     }
     if (projectService.pendingMigrations.length > 0) {
@@ -1438,6 +1442,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dirtyBefore,
         dirtyAfter: dirtyBefore,
       });
+      progress.finish();
       // Caller must use approveMigrationsAndSave — never silently rewrite.
       return false;
     }
@@ -1446,12 +1451,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       saveDebounceRef.current = null;
     }
     try {
+      progress.phase("audio-reverb");
       await flushAudioReverbForSave();
+      progress.phase("navigation");
       await flushNavBakeForSave();
       captureAllLayouts();
       const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
       const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model" || doc.ref.kind === "animation");
+      progress.phase("documents");
       for (const doc of dirtyDocs) {
         if (
           isAssetDocumentKind(doc.ref.kind) &&
@@ -1469,6 +1477,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
         }
       }
+      progress.phase("compile");
       if (document.settings.compileOnSave) {
         const assets = projectService.registry?.list() ?? [];
         const graphs = documentService
@@ -1494,18 +1503,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setLastCompiledSignature(graphCompileSignature(graphs, inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()])));
       }
       const layouts = documentService.buildLayouts();
+      progress.phase("project");
       await projectService.saveProject(document, layouts);
       documentService.markAllClean(dirtyDocs);
       setMigrationPending([]);
+      progress.phase("mtime");
       await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
       const guid = projectService.guid;
       if (guid) {
+        progress.phase("journal");
         const derived = await ensureDerived();
         const cleared = await truncateJournal(derived, guid, () =>
           documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
         );
         if (cleared) setRecoveryAvailable(false);
       }
+      progress.phase("callbacks");
       if (savedScene) {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
       }
@@ -1542,6 +1555,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
+    } finally {
+      progress.finish();
     }
   }, [
     bump,
@@ -3465,6 +3480,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         materialPreviewCameraRadius: () => number | null;
         documentDirtyTrace: () => { kind: string; id: string; via?: string }[];
         clearDocumentDirtyTrace: () => void;
+        saveAllProgress: typeof saveAllProgress;
         saveAllTrace: () => {
           ok: boolean;
           reason: string;
@@ -3726,6 +3742,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       materialPreviewCameraRadius,
       documentDirtyTrace,
       clearDocumentDirtyTrace,
+      saveAllProgress,
       saveAllTrace,
       dirtyDocuments: () =>
         documentService.getDirtyDocuments().map((doc) => ({

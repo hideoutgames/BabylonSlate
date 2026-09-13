@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  beginSaveAllProgress,
   clearDocumentDirtyTrace,
   documentDirtyTrace,
   recordDocumentDirty,
   recordSaveAllTrace,
+  saveAllProgress,
   saveAllTrace,
 } from "./dirty-trace";
 
@@ -41,5 +43,21 @@ describe("documentDirtyTrace", () => {
       dirtyBefore: 1,
       dirtyAfter: 0,
     });
+  });
+
+  it("distinguishes a pending save from its last outcome without stale invocations ending the current save", () => {
+    recordSaveAllTrace({ ok: true, reason: "saved", dirtyBefore: 1, dirtyAfter: 0 });
+    const old = beginSaveAllProgress();
+    old.phase("audio-reverb");
+    expect(saveAllProgress()).toMatchObject({ phase: "audio-reverb", pending: true });
+    expect(saveAllTrace()).toMatchObject({ ok: true, reason: "saved" });
+    const current = beginSaveAllProgress();
+    current.phase("documents");
+    old.phase("callbacks");
+    old.finish();
+    expect(saveAllProgress()).toMatchObject({ phase: "documents", pending: true });
+    current.finish();
+    expect(saveAllProgress()).toMatchObject({ phase: "documents", pending: false });
+    expect(saveAllProgress()!.elapsedMs).toBeGreaterThanOrEqual(0);
   });
 });
