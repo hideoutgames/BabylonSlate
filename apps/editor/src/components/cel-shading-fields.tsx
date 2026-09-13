@@ -94,10 +94,11 @@ type Props = {
   /** Omit for project authoring; an empty object means scene inheritance. */
   overrides?: CelShadingOverrides;
   onChange: (value: CelShadingOverrides) => void;
+  hideTitle?: boolean;
 };
 
 /** The same controls author project defaults and individual scene overrides. */
-export function CelShadingFields({ project, overrides, onChange }: Props) {
+export function CelShadingFields({ project, overrides, onChange, hideTitle = false }: Props) {
   const scene = overrides !== undefined;
   const effective = resolveCelShadingSettings(project, overrides);
   const patch = (key: keyof CelShadingSettings, value: number | string | boolean) =>
@@ -106,7 +107,7 @@ export function CelShadingFields({ project, overrides, onChange }: Props) {
     <FieldSet
       data-testid={scene ? "scene-cel-settings" : "project-cel-settings"}
     >
-      <FieldLegend>CEL Shading</FieldLegend>
+      <FieldLegend className={hideTitle ? "sr-only" : undefined}>CEL Shading</FieldLegend>
       <FieldGroup className="gap-2">
         {fields.map(({ key, label, description }) => {
           const id = `${scene ? "scene" : "project"}-cel-${key}`;

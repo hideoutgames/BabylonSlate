@@ -1,4 +1,4 @@
-import { ShadowSettingsFields } from "../components/shadow-settings-fields";
+import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -7,6 +7,7 @@ import {
   AssetPickerControl,
   MultilineTextField,
   EntryListEditor,
+  DisclosureSection,
   NumberField,
   PanelFrame,
   PropertyGrid,
@@ -103,6 +104,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
   const navBake = useOptionalNavBake();
   const [propertyQuery, setPropertyQuery] = useState("");
+  const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(() => new Set());
+  const [filterCollapsedOverrides, setFilterCollapsedOverrides] = useState<Set<string>>(() => new Set());
   const [collapsedComponents, setCollapsedComponents] = useState<Set<string>>(
     () => new Set(),
   );
@@ -112,6 +115,18 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const needle = propertyQuery.trim().toLowerCase();
   const matches = (label: string) =>
     !needle || humanizePropertyLabel(label).toLowerCase().includes(needle);
+  const overrideOpen = (id: string) => needle
+    ? !filterCollapsedOverrides.has(id)
+    : expandedOverrides.has(id);
+  const setOverrideOpen = (id: string, open: boolean) => {
+    const update = needle ? setFilterCollapsedOverrides : setExpandedOverrides;
+    update((previous) => {
+      const next = new Set(previous);
+      if (needle ? !open : open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
   const filterRows = (rows: PropertyRow[], section = "") =>
     matches(section)
       ? rows
@@ -127,6 +142,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onChange={(value) => {
           setPropertyQuery(value);
           setFilterCollapsedComponents(new Set());
+          setFilterCollapsedOverrides(new Set());
         }}
       />
     </div>
@@ -593,8 +609,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       "Scene Settings",
     );
     const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
-    const showPostProcess = matches("Post Processing Material Enabled") ||
-      (celEnabled && matches("CEL Shading Shadow Bands Threshold Strength Softness Specular Light Color Influence Mixing Strongest Additive Blend"));
+    const showPostProcess = matches("Post Processing Material Enabled Scalable Resolution");
+    const showShadows = !overlay && matches(SHADOW_SETTINGS_SEARCH_TEXT);
+    const showCel = celEnabled && matches("Post Processing CEL Shading Shadow Bands Threshold Strength Softness Specular Light Color Influence Mixing Strongest Additive Blend");
     const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
     return (
       <PanelFrame data-testid="scene-details-panel">
@@ -662,14 +679,23 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             />
           </div>
         ) : null}
-        {showPostProcess ? <div className="px-2 pb-3"><ShadowSettingsFields project={projectDocument?.settings.render.shadows} overrides={scene.settings.shadowOverrides ?? {}} onChange={(shadowOverrides) => mutate({ ...scene, settings: { ...scene.settings, shadowOverrides } })} /></div> : null}
-        {showPostProcess && celEnabled ? (
+        {showShadows ? (
           <div className="px-2 pb-3">
+            <DisclosureSection title="Shadows" open={overrideOpen("shadows")} onOpenChange={(open) => setOverrideOpen("shadows", open)}>
+              <ShadowSettingsFields hideTitle project={projectDocument?.settings.render.shadows} overrides={scene.settings.shadowOverrides ?? {}} onChange={(shadowOverrides) => mutate({ ...scene, settings: { ...scene.settings, shadowOverrides } })} />
+            </DisclosureSection>
+          </div>
+        ) : null}
+        {showCel ? (
+          <div className="px-2 pb-3">
+            <DisclosureSection title="CEL Shading" open={overrideOpen("cel")} onOpenChange={(open) => setOverrideOpen("cel", open)}>
             <CelShadingFields
+              hideTitle
               project={normalizeCelShadingSettings(projectDocument?.settings.render.cel)}
               overrides={scene.settings.celShading ?? {}}
               onChange={(celShading) => mutate({ ...scene, settings: { ...scene.settings, celShading } })}
             />
+            </DisclosureSection>
           </div>
         ) : null}
         {showSceneLayers ? (
@@ -743,7 +769,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             />
           </div>
         ) : null}
-        {!visibleSettingsRows.length && !showPostProcess && !showSceneLayers
+        {!visibleSettingsRows.length && !showPostProcess && !showShadows && !showCel && !showSceneLayers
           ? noMatchingProperties
           : null}
         <AssetPicker

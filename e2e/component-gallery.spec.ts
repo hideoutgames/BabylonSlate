@@ -1,6 +1,27 @@
 import { expect, test } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 
+test("gallery rendering disclosure supports keyboard and touch", { tag: IPAD_TEST_TAG }, async ({ page }) => {
+  await page.goto("/?test=1&gallery=1");
+  const category = page.getByTestId("gallery-disclosure");
+  const trigger = category.getByRole("button", { name: "Rendering Overrides" });
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(category.getByLabel("Shadow Distance")).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(trigger).toBeFocused();
+  const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+  const box = await trigger.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.height).toBeGreaterThanOrEqual(coarse ? 44 : 28);
+  if (coarse) await trigger.tap();
+  else await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(category.getByLabel("Shadow Distance")).toBeVisible();
+});
+
 test("gallery primitives, dialogs, and editor composites", async ({ page }) => {
   await page.goto("/?test=1&gallery=1");
   await test.step("component gallery renders shadcn primitives in test mode", async () => {

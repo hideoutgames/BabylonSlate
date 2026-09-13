@@ -18,6 +18,32 @@ function SceneFields({ distance = 200 }: { distance?: number }) {
     />
   );
 }
+
+function BudgetFields() {
+  const [overrides, setOverrides] = useState<ShadowOverrides>({ maxLocalLights: 16, localLightMode: "manual" });
+  return <ShadowSettingsFields project={normalizeShadowSettings({ localLightMode: "auto" })} overrides={overrides} onChange={setOverrides} />;
+}
+
+it("preserves the manual count across Auto, reset and shadow disablement", async () => {
+  render(<BudgetFields />);
+  const count = () => screen.queryByLabelText("Local Shadow Light Budget");
+  expect(count()).toHaveProperty("value", "16");
+  fireEvent.click(screen.getByLabelText("Local Shadow Budget Mode"));
+  fireEvent.click(await screen.findByRole("option", { name: "Auto", exact: true }));
+  expect(count()).toBeNull();
+  fireEvent.click(screen.getByLabelText("Local Shadow Budget Mode"));
+  fireEvent.click(await screen.findByRole("option", { name: "Manual", exact: true }));
+  expect(count()).toHaveProperty("value", "16");
+  fireEvent.click(screen.getByRole("button", { name: "Override Shadows Enabled" }));
+  fireEvent.click(screen.getByLabelText("Shadows Enabled"));
+  expect(count()).toBeNull();
+  expect(screen.queryByLabelText("Local Shadow Budget Mode")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Reset Shadows Enabled" }));
+  expect(count()).toHaveProperty("value", "16");
+  fireEvent.click(screen.getByRole("button", { name: "Reset Local Shadow Budget Mode" }));
+  expect(count()).toBeNull();
+  expect(screen.getByLabelText("Local Shadow Budget Mode")).toHaveProperty("disabled", true);
+});
 it("keeps independent scene overrides and resets to live project shadow distance", () => {
   const view = render(<SceneFields />);
   const distance = () =>

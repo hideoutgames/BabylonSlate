@@ -26,6 +26,7 @@ import {
 } from "@babylonslate/ui/components/select";
 
 const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
+  localLightMode: { auto: "Auto", manual: "Manual" },
   filter: { pcf: "PCF", pcss: "Contact Hardening (PCSS)" },
   filterQuality: { low: "Low", medium: "Medium", high: "High" },
   mapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096" },
@@ -98,6 +99,12 @@ const fields: {
     description: "Advanced geometric normal offset in world units.",
   },
   {
+    key: "localLightMode",
+    label: "Local Shadow Budget Mode",
+    description:
+      "Auto selects local shadow capacity from the quality tier. Manual sets an authored upper limit within the effective device budget.",
+  },
+  {
     key: "maxLocalLights",
     label: "Local Shadow Light Budget",
     description:
@@ -110,14 +117,21 @@ const fields: {
   },
 ];
 
+export const SHADOW_SETTINGS_SEARCH_TEXT = [
+  "Shadows Post Processing Auto Manual",
+  ...fields.map(({ label, description }) => `${label} ${description}`),
+].join(" ");
+
 export function ShadowSettingsFields({
   project,
   overrides,
   onChange,
+  hideTitle = false,
 }: {
   project?: ShadowSettings;
   overrides?: ShadowOverrides;
   onChange: (value: ShadowOverrides) => void;
+  hideTitle?: boolean;
 }) {
   const scene = overrides !== undefined;
   const defaults = normalizeShadowSettings(project);
@@ -125,16 +139,23 @@ export function ShadowSettingsFields({
   const patch = (
     key: keyof ShadowSettings,
     value: string | number | boolean,
+    selectManual = false,
   ) => {
-    onChange({ ...(scene ? overrides : defaults), [key]: value });
+    onChange({
+      ...(scene ? overrides : defaults),
+      [key]: value,
+      ...(selectManual ? { localLightMode: "manual" as const } : {}),
+    });
   };
   return (
     <FieldSet
       data-testid={scene ? "scene-shadow-settings" : "project-shadow-settings"}
     >
-      <FieldLegend>Shadows</FieldLegend>
+      <FieldLegend className={hideTitle ? "sr-only" : undefined}>Shadows</FieldLegend>
       <FieldGroup className="gap-2">
         {fields.map(({ key, label, description }) => {
+            if (key !== "enabled" && !effective.enabled) return null;
+            if (key === "maxLocalLights" && effective.localLightMode !== "manual") return null;
             const id = `${scene ? "scene" : "project"}-shadow-${key}`;
             const overridden = scene && Object.hasOwn(overrides, key);
             const choices = options[key];
@@ -169,6 +190,7 @@ export function ShadowSettingsFields({
                 {key === "enabled" || key === "autoBias" ? (
                   <Switch
                     id={id}
+                    aria-describedby={`${id}-description`}
                     checked={effective[key]}
                     disabled={scene && !overridden}
                     onCheckedChange={(value) => patch(key, value)}
@@ -187,7 +209,7 @@ export function ShadowSettingsFields({
                         );
                     }}
                   >
-                    <SelectTrigger id={id}>
+                    <SelectTrigger id={id} aria-describedby={`${id}-description`}>
                       <SelectValue>
                         {choices[String(effective[key])]}
                       </SelectValue>
@@ -205,6 +227,7 @@ export function ShadowSettingsFields({
                 ) : (
                   <NumberField
                     id={id}
+                    aria-describedby={`${id}-description`}
                     value={Number(effective[key])}
                     min={limits[0]}
                     max={limits[1]}
@@ -216,10 +239,10 @@ export function ShadowSettingsFields({
                         : 0.0001
                     }
                     disabled={scene && !overridden}
-                    onChange={(value) => patch(key, value)}
+                    onChange={(value) => patch(key, value, key === "maxLocalLights")}
                   />
                 )}
-                <FieldDescription>
+                <FieldDescription id={`${id}-description`}>
                   {scene
                     ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}. `
                     : ""}

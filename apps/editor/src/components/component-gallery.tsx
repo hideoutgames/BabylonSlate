@@ -22,6 +22,7 @@ import {
   InputMappingEditor,
   NamedListEditor,
   EntryListEditor,
+  DisclosureSection,
   NamePromptDialog,
   AddFunctionDialog,
   NestedMenu,
@@ -143,6 +144,20 @@ const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
     ],
   },
 ];
+
+function GalleryDisclosure() {
+  const [open, setOpen] = useState(false);
+  return (
+    <DisclosureSection title="Rendering Overrides" open={open} onOpenChange={setOpen} data-testid="gallery-disclosure">
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="gallery-disclosure-value">Shadow Distance</FieldLabel>
+          <Input id="gallery-disclosure-value" defaultValue="200" />
+        </Field>
+      </FieldGroup>
+    </DisclosureSection>
+  );
+}
 
 function GalleryNestedMenus() {
   const { menu, closeMenu, openMenuAt } = useContextMenu({
@@ -795,6 +810,7 @@ function GalleryComposites() {
         </Button>
       </div>
       <GalleryNestedMenus />
+      <GalleryDisclosure />
       <div className="rounded-lg border border-border p-3">
         <NamedListEditor
           title="Named List"
