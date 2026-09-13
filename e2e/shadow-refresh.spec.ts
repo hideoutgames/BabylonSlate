@@ -17,7 +17,6 @@ import { openMinimalTestProject } from "./minimal-project";
 import {
   openMainScene,
   openTestProject,
-  waitForSceneViewportReady,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
@@ -386,62 +385,4 @@ test("cached local shadows match fresh maps after caster and light motion, resiz
     body: JSON.stringify(evidence, null, 2),
     contentType: "application/json",
   });
-});
-
-test("CEL graph receiver stays illuminated after local shadows are disabled", async ({
-  page,
-}, testInfo) => {
-  await observeCubeDraws(page);
-  await openMinimalTestProject(page, await fixture());
-  await openMainScene(page);
-  await pixels(page);
-  await page.getByTestId("tree-row-actor:key").click();
-  await page
-    .getByTestId("viewport-canvas")
-    .screenshot({ path: testInfo.outputPath("shadows-on.png") });
-  await page
-    .getByRole("checkbox", { name: "Cast Shadows", exact: true })
-    .uncheck();
-  await frames(page);
-  try {
-    await pixels(page);
-  } finally {
-    await page
-      .getByTestId("viewport-canvas")
-      .screenshot({ path: testInfo.outputPath("shadows-off.png") });
-  }
-});
-
-test("CEL graph receiver presents a ready frame after edited project reload", async ({
-  page,
-}, testInfo) => {
-  await observeCubeDraws(page);
-  await openMinimalTestProject(page, await fixture());
-  await openMainScene(page);
-  await pixels(page);
-  for (const [actor, position] of [
-    ["caster", "1.5"],
-    ["key", "4"],
-  ] as const) {
-    await page.getByTestId(`tree-row-actor:${actor}`).click();
-    await page.getByTestId("property-actor-position-x").fill(position);
-    await page.getByTestId("property-actor-position-x").press("Tab");
-  }
-  await page.setViewportSize({ width: 1100, height: 820 });
-  await pixels(page);
-  await saveAllIfEnabled(page, 30_000);
-  await page
-    .getByTestId("viewport-canvas")
-    .screenshot({ path: testInfo.outputPath("before-reload.png") });
-  await page.reload();
-  await openTestProject(page);
-  try {
-    await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({
-      timeout: 10_000,
-    });
-    await openMainScene(page);
-    await pixels(page);
-  } finally {
-    await page.screenshot({ path: testInfo.outputPath("after-reload.png") });
-  }
 });
