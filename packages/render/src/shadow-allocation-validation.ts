@@ -2,8 +2,8 @@ import type {
   AbstractEngine,
   InternalTexture,
   ShadowGenerator,
-  WebGLRenderTargetWrapper,
 } from "@babylonjs/core";
+import type { WebGLRenderTargetWrapper } from "@babylonjs/core/Engines/WebGL/webGLRenderTargetWrapper";
 
 type ShadowGl = WebGLRenderingContext | WebGL2RenderingContext;
 
