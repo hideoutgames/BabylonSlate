@@ -15,6 +15,7 @@ import {
   MaterialHelper,
   MeshBuilder,
   NullEngine,
+  NullEngineOptions,
   PBRMaterial,
   PointLight,
   RawTexture,
@@ -43,8 +44,12 @@ afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-function host(viewport = true) {
-  const engine = new NullEngine();
+function host(viewport = true, uniformBuffers = true) {
+  const options = new NullEngineOptions();
+  // Babylon's headless WebGL2/multiview option supplies its real CPU-side UBO
+  // boundary. Default NullEngine models the non-UBO four-light fallback.
+  options.enableMultiview = uniformBuffers;
+  const engine = new NullEngine(options);
   engines.push(engine);
   const scene = new Scene(engine);
   if (viewport) setupDefaultViewport(scene);
@@ -87,6 +92,22 @@ function shaderLights(
 }
 
 describe("scene material lighting", () => {
+  it("retains a bounded four-light fallback when uniform buffers are unavailable", () => {
+    const scene = host(false, false);
+    const lamps = lights(scene, 6);
+    const material = new StandardMaterial("non-ubo", scene);
+    syncSceneLighting(scene);
+    expect(forwardLightBudget(scene.getEngine())).toMatchObject({
+      slots: 4,
+      source: "non-ubo",
+    });
+    const defines = shaderLights(scene, material);
+    expect(defines.LIGHT3).toBe(true);
+    expect(defines.LIGHT4).not.toBe(true);
+    expect(material.maxSimultaneousLights).toBe(4);
+    expect(lamps.filter(isForwardLightExcluded)).toHaveLength(2);
+  });
+
   it.each(["pbr", "cel"] as const)(
     "bounds native and graph %s shader slots independently of shadows",
     (mode) => {
