@@ -188,6 +188,8 @@ describe("Play createEngine view", () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const retained = sibling.resourceCache.getTexture("sibling-texture", engine, bytes);
     const cache = resourceCacheForEngine(engine);
+    sibling.setTextureBudget(100, true);
+    hidden.setTextureBudget(100, true);
     const failedCanvas = new FakeCanvas();
     const failure = new Error("Injected late construction failure");
     // Cover partial loop registration and a later failure after context/pointer
@@ -205,6 +207,7 @@ describe("Play createEngine view", () => {
         editor: kind === "editor",
         playMode: kind === "play",
         hardwareScalingLevel: 1.5,
+        textureBudgetEnabled: false,
         textureBytes: new Map([["failed-view-texture", bytes]]),
       })).toThrow(failure);
     } finally {
@@ -221,6 +224,13 @@ describe("Play createEngine view", () => {
     expect(resourceCacheForEngine(engine)).toBe(cache);
     expect(sibling.resourceCache.getTexture("sibling-texture", engine, bytes)).toBe(retained);
     expect(isDisposedGpuTexture(retained)).toBe(false);
+    const retainedBytes = cache.accountedBytes();
+    // Accounting only: no GPU or CPU allocation. A failed view's disabled
+    // budget must not prevent the remaining clients from evicting unused data.
+    cache.account("unused-after-failure", 4 * 1024 ** 3);
+    cache.release("unused-after-failure");
+    cache.evictToCeiling();
+    expect(cache.accountedBytes()).toBe(retainedBytes);
     sibling.scheduler.invalidate("manual");
     const previousFrames = sibling.scheduler.stats().renderedFrames;
     const now = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1_000);
