@@ -184,6 +184,7 @@ describe("prewarmSceneMaterials", () => {
 
   it("probes shadow readiness in its own floating-origin scene after another scene is created", () => {
     const engine = new NullEngine();
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
     const scene = new Scene(engine);
     scene.activeCamera = new UniversalCamera("editor", new Vector3(2000, 3, -10), scene);
