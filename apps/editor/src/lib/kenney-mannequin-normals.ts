@@ -6,7 +6,7 @@ import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 export function prepareMannequinNormals(bytes: Uint8Array): Uint8Array {
   const split = splitGlbJsonBin(bytes);
   if (!split) throw new Error("Invalid bundled Mannequin GLB");
-  type Accessor = { bufferView: number; byteOffset?: number; count: number; componentType: number; type: string };
+  type Accessor = { bufferView: number; byteOffset?: number; count: number; componentType: number; type: string; min?: number[]; max?: number[] };
   type BufferView = { buffer?: number; byteOffset?: number; byteStride?: number; byteLength: number };
   type Primitive = { attributes: Record<string, number>; indices?: number };
   const accessors = split.json.accessors as Accessor[];
@@ -66,7 +66,7 @@ export function prepareMannequinNormals(bytes: Uint8Array): Uint8Array {
         for (let corner = 0; corner < 3; corner++)
           for (let axis = 0; axis < 3; axis++) normals[i + corner * 3 + axis] = normal[axis]! / length;
       }
-      primitive.attributes.NORMAL = append(normals, normalAccessor, vertices.length);
+      primitive.attributes.NORMAL = append(normals, { ...normalAccessor, min: [-1, -1, -1], max: [1, 1, 1] }, vertices.length);
       delete primitive.indices;
     }
   }
