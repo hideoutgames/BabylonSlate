@@ -144,7 +144,8 @@ export function createEditorBillboard(
   material.diffuseColor = Color3.Black();
   material.specularColor = Color3.Black();
   const texture = iconTexture(scene, resolved);
-  material.emissiveTexture = texture;
+  // The icon multiplies the unlit tint; emissiveTexture would add white to it.
+  material.diffuseTexture = texture;
   material.opacityTexture = texture;
   mesh.material = material;
   return mesh;

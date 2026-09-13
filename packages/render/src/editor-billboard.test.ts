@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial, Texture, TransformNode } from "@babylonjs/core";
+import { DirectionalLight, Mesh, StandardMaterial, Texture, TransformNode, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
@@ -12,6 +12,7 @@ import {
 } from "./editor-billboard";
 import { engineBillboardUrl } from "./default-billboard/urls";
 import { RENDERING_GROUP } from "./sorting";
+import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-policy";
 
 describe("editor billboard", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -74,7 +75,8 @@ describe("editor billboard", () => {
     const material = mesh.material as StandardMaterial;
     expect(material.disableLighting).toBe(true);
     expect(material.backFaceCulling).toBe(false);
-    const texture = material.emissiveTexture as Texture;
+    const texture = material.diffuseTexture as Texture;
+    expect(material.emissiveTexture).toBeNull();
     expect(texture.url).toContain(engineBillboardUrl("point_light").slice(1));
     expect(mesh.renderingGroupId).toBe(RENDERING_GROUP.foreground);
   });
@@ -98,6 +100,25 @@ describe("editor billboard", () => {
     expect(material.emissiveColor.r).toBeCloseTo(0.2);
     expect(material.emissiveColor.g).toBeCloseTo(0.5);
     expect(material.emissiveColor.b).toBeCloseTo(1);
+  });
+
+  it("updates red and yellow status as directional illumination ownership changes", () => {
+    const { scene } = createHandle();
+    const first = new DirectionalLight("authoredLight:first", Vector3.Down(), scene);
+    const second = new DirectionalLight("authoredLight:second", Vector3.Down(), scene);
+    setAuthoredLightEnabled(first, true);
+    setAuthoredLightEnabled(second, true);
+    const icon = createEditorBillboard(scene, "editorActor:second", "directional_light");
+    applyEditorBillboardFromActor(icon, createActor("second", "Second", { components: [{ id: "light", classId: "LightComponent", properties: { enabled: true, lightKind: "directional" } }] }));
+    const material = icon.material as StandardMaterial;
+    expect(material.emissiveColor.asArray()).toEqual([1, 0, 0]);
+    expect(second.isEnabled()).toBe(false);
+    setAuthoredLightEnabled(first, false);
+    syncDirectionalLightPolicy(scene);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(second.isEnabled()).toBe(true);
+    expect(material.emissiveColor.asArray()).toEqual([1, 1, 0]);
+    icon.dispose();
   });
 
   it("stays square when parented under non-uniform actor scale", () => {

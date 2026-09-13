@@ -394,3 +394,5 @@ Shared engine texture caches honor the largest budget requested by a live view, 
 CEL hard thresholds include a small numerical tie tolerance. Without it, an exactly flat face at a band boundary (for example a 45-degree white directional light) can alternate bands from floating-point interpolation round-off, even with shadows disabled. The tolerance does not blend the boundary. Nearly tied strongest lights likewise retain stable scene order.
 
 CEL thresholds filtered shadow visibility before applying its light ramp. Feeding near-one PCF values directly into a hard light band can amplify harmless filter variation into surface speckling at a band boundary. Zero band softness gives a hard shadow edge; positive softness explicitly blends shadow visibility. PBR retains its continuous filtered shadows.
+
+Editor billboard icons multiply their unlit status tint through the diffuse texture channel. An additive emissive texture would wash red/yellow status back to white.
