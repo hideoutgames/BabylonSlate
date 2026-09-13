@@ -1,4 +1,4 @@
-import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderMaterial, Vector2, Vector3, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
+import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderMaterial, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
@@ -105,7 +105,7 @@ export function cameraBoundsBorderCoverage(
 /**
  * 1 when the world XY sample sits on the 2px screen-space border of the
  * camera-bounds plane (the fragment shader path). `half` is `width/2` ×
- * `height/2`; `fwidthX` / `fwidthY` match GLSL `fwidth(vWorldPos.xy)`.
+ * `height/2`; `fwidthX` / `fwidthY` match GLSL `fwidth(vBoundsPosition)`.
  */
 export function cameraBoundsWorldBorderCoverage(
   world: { x: number; y: number },
@@ -173,12 +173,11 @@ function ensureGridShaders(): void {
   const fragmentKey = `${GRID_SHADER_NAME}FragmentShader`;
   Effect.ShadersStore[vertexKey] = `
 attribute vec3 position;
-uniform mat4 world;
 uniform mat4 worldViewProjection;
-varying vec3 vWorldPos;
+uniform float gridExtent;
+varying vec2 vGridPosition;
 void main() {
-  vec4 worldPosition = world * vec4(position, 1.0);
-  vWorldPos = worldPosition.xyz;
+  vGridPosition = position.xy * gridExtent;
   gl_Position = worldViewProjection * vec4(position, 1.0);
 }
 `;
@@ -187,17 +186,15 @@ void main() {
   // and fails compile on typical CI Chromium. WebGL1 processors inject it
   // when they see fwidth.
   Effect.ShadersStore[fragmentKey] = `
-varying vec3 vWorldPos;
+varying vec2 vGridPosition;
 uniform vec3 majorColor;
 uniform vec3 minorColor;
 uniform float spacing;
 uniform float subdivisions;
 uniform float fadeStart;
 uniform float fadeEnd;
-uniform vec3 fadeOrigin;
 uniform float viewFade;
 uniform float gridVisible;
-uniform float mode2d;
 uniform float lineWidth;
 
 float gridLine(vec2 coord, float cell) {
@@ -209,14 +206,13 @@ float gridLine(vec2 coord, float cell) {
 }
 
 void main() {
-  vec2 coord = mode2d > 0.5 ? vWorldPos.xy : vWorldPos.xz;
-  vec2 origin = mode2d > 0.5 ? fadeOrigin.xy : fadeOrigin.xz;
+  vec2 coord = vGridPosition;
   float cell = max(spacing, 0.0001);
   float major = gridLine(coord, cell);
   float minor = subdivisions > 1.5
     ? gridLine(coord, cell / max(subdivisions, 1.0))
     : 0.0;
-  float dist = length(coord - origin);
+  float dist = length(coord);
   float fade = 1.0 - smoothstep(fadeStart, fadeEnd, dist);
   vec3 color = mix(minorColor, majorColor, clamp(major, 0.0, 1.0));
   float alpha = max(major, minor * 0.45) * fade * viewFade * gridVisible;
@@ -231,27 +227,24 @@ function ensureBoundsShaders(): void {
   const fragmentKey = `${BOUNDS_SHADER_NAME}FragmentShader`;
   Effect.ShadersStore[vertexKey] = `
 attribute vec3 position;
-uniform mat4 world;
 uniform mat4 worldViewProjection;
-varying vec3 vWorldPos;
+varying vec2 vBoundsPosition;
 void main() {
-  vec4 worldPosition = world * vec4(position, 1.0);
-  vWorldPos = worldPosition.xyz;
+  vBoundsPosition = position.xy;
   gl_Position = worldViewProjection * vec4(position, 1.0);
 }
 `;
   Effect.ShadersStore[fragmentKey] = `
-varying vec3 vWorldPos;
+varying vec2 vBoundsPosition;
 uniform vec3 lineColor;
 uniform float lineWidth;
 uniform float boundsVisible;
-uniform vec2 boundsHalf;
 
 void main() {
   if (boundsVisible < 0.5) discard;
-  vec2 deriv = fwidth(vWorldPos.xy);
-  float distX = (boundsHalf.x - abs(vWorldPos.x)) / max(deriv.x, 0.00000001);
-  float distY = (boundsHalf.y - abs(vWorldPos.y)) / max(deriv.y, 0.00000001);
+  vec2 deriv = fwidth(vBoundsPosition);
+  float distX = (0.5 - abs(vBoundsPosition.x)) / max(deriv.x, 0.00000001);
+  float distY = (0.5 - abs(vBoundsPosition.y)) / max(deriv.y, 0.00000001);
   float dist = min(distX, distY);
   if (dist < 0.0 || dist >= lineWidth) discard;
   gl_FragColor = vec4(lineColor, 1.0);
@@ -286,7 +279,6 @@ export function createEditorGrid(
   const color = options.color ?? new Color3(0.32, 0.34, 0.38);
   const minorColor = options.minorColor ?? new Color3(0.2, 0.21, 0.24);
   const camera = options.camera ?? null;
-  const fadeOrigin = new Vector3();
 
   let requestedBounds: { width: number; height: number } | null = null;
   let visible = true;
@@ -312,7 +304,6 @@ export function createEditorGrid(
     {
       attributes: ["position"],
       uniforms: [
-        "world",
         "worldViewProjection",
         "spacing",
         "subdivisions",
@@ -320,10 +311,9 @@ export function createEditorGrid(
         "minorColor",
         "fadeStart",
         "fadeEnd",
-        "fadeOrigin",
+        "gridExtent",
         "viewFade",
         "gridVisible",
-        "mode2d",
         "lineWidth",
       ],
       needAlphaBlending: true,
@@ -338,7 +328,6 @@ export function createEditorGrid(
     material.setFloat("subdivisions", subdivisions);
     material.setColor3("majorColor", color);
     material.setColor3("minorColor", minorColor);
-    material.setFloat("mode2d", mode === "2d" ? 1 : 0);
     material.setFloat("lineWidth", GRID_LINE_WIDTH);
     material.setFloat("gridVisible", visible ? 1 : 0);
   };
@@ -368,12 +357,10 @@ export function createEditorGrid(
     {
       attributes: ["position"],
       uniforms: [
-        "world",
         "worldViewProjection",
         "lineColor",
         "lineWidth",
         "boundsVisible",
-        "boundsHalf",
       ],
       needAlphaBlending: true,
     },
@@ -391,10 +378,6 @@ export function createEditorGrid(
   const applyBounds = () => {
     if (requestedBounds) {
       boundsMesh.scaling.set(requestedBounds.width, requestedBounds.height, 1);
-      boundsMaterial.setVector2(
-        "boundsHalf",
-        new Vector2(requestedBounds.width / 2, requestedBounds.height / 2),
-      );
     }
     boundsMaterial.setColor3("lineColor", CAMERA_BOUNDS_COLOR);
     boundsMaterial.setFloat("lineWidth", CAMERA_BOUNDS_LINE_WIDTH);
@@ -417,8 +400,9 @@ export function createEditorGrid(
     const coverage = gridCoverageWorld(mode, camera);
     const { fadeStart, fadeEnd } = gridEdgeFadeRange(coverage);
     mesh.scaling.setAll(coverage);
-    fadeOrigin.set(origin.x, origin.y, origin.z);
-    material.setVector3("fadeOrigin", fadeOrigin);
+    // The plane origin is snapped to a major grid cell, so local coordinates
+    // preserve world alignment without mixing absolute and floating positions.
+    material.setFloat("gridExtent", coverage);
     material.setFloat("fadeStart", fadeStart);
     material.setFloat("fadeEnd", fadeEnd);
     material.setFloat("viewFade", gridViewFade(mode, camera, spacing));

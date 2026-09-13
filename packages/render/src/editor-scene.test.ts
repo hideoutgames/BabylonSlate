@@ -1570,7 +1570,6 @@ describe("editor grid", () => {
     expect(fragment).not.toMatch(/GL_OES_standard_derivatives/);
     expect(fragment).toContain("fwidth");
     expect(fragment).toContain("viewFade");
-    expect(fragment).toContain("fadeOrigin");
     expect(fragment).not.toMatch(/length\(cameraPos - vWorldPos\)/);
     grid.dispose();
   });
@@ -1659,7 +1658,7 @@ describe("editor grid", () => {
     expect(closeUniforms.floats.fadeStart).toBeCloseTo(closeRange.fadeStart);
     expect(closeUniforms.floats.fadeEnd).toBeCloseTo(closeRange.fadeEnd);
     expect(closeUniforms.floats.viewFade).toBe(1);
-    expect(closeUniforms.vectors3.fadeOrigin).toEqual([0, 0, 0]);
+    expect(closeUniforms.floats.gridExtent).toBeCloseTo(closeCoverage);
     closeGrid.dispose();
 
     const threeD = createEditorCamera(scene, { mode: "3d" });
