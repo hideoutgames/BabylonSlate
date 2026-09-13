@@ -283,7 +283,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle, canvas } = playHandle(engine);
-    const { canvas: sibling } = playHandle(engine);
+    const { canvas: sibling } = editorHandle(engine);
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     let frames = 0;
