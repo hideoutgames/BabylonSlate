@@ -13,6 +13,7 @@ import {
   MeshBuilder,
   ParticleSystem,
   NodeMaterial,
+  ShaderLanguage,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   NodeMaterialSystemValues,
@@ -176,7 +177,11 @@ export function compileMaterialPlan(
   options: CompileMaterialOptions,
 ): CompileMaterialResult {
   const { scene } = options;
-  const material = new NodeMaterial(options.name, scene);
+  const material = new NodeMaterial(options.name, scene, {
+    shaderLanguage: scene.getEngine().isWebGPU
+      ? ShaderLanguage.WGSL
+      : ShaderLanguage.GLSL,
+  });
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
     plan.domain === "postProcess"

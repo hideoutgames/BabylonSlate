@@ -1,5 +1,7 @@
 # Render sync and resource cache (P4)
 
+The isolated WebGPU proof initializes Babylon's asynchronous backend and checks native and authored PBR/CEL surfaces with texture upload and readback. Authored NodeMaterials select the owning Engine's native shader language, avoiding an implicit GLSL translation dependency. This proof does not switch the project's default Engine or qualify WebGPU on iPad; project-wide restart, compatibility policy and recovery remain separate integration work.
+
 The public rendering contract separates project `settings.render.renderPath` (`auto`, `forward`, `clusteredForward`), `settings.render.gpuBackend` (`auto`, `webgl2`, `webgpu`), and existing PBR/CEL `mode`. Project normalization migrates absent or invalid axes to Forward/WebGL2; new projects keep these defaults until Auto is qualified. This additive migration preserves existing shading, environment, and feature settings without changing asset schema versions.
 
 Optional `scene.settings.renderPath` inherits from the project. `resolveRenderingPipeline` applies project → scene → local preview → session path precedence; deleting an override resumes live inheritance. Backend selection remains project-wide because all live views share one Engine. Save/reopen and project ZIP export retain authored requests, including unsupported requests.
