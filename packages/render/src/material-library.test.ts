@@ -117,6 +117,25 @@ describe("material library", () => {
     expect(second.material).toBe(first.material);
   });
 
+  it("validates a resolved plan before taking a cached material reference", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const document = tinted(1);
+    const first = library.acquire(scene, "material", document);
+    if (!first.ok) throw new Error("Expected a compiled material");
+    const denied = library.acquire(scene, "material", document, {
+      validatePlan: (plan) => {
+        expect(plan.hash).toBe(first.plan.hash);
+        return { severity: "error", code: "material.capability", message: "Buffer unavailable" };
+      },
+    });
+    expect(denied).toEqual({ ok: false, diagnostics: [expect.objectContaining({ message: "Buffer unavailable" })] });
+    library.release(scene, "material");
+    expect(library.materialFor(scene, "material")).toBeNull();
+    expect(scene.materials).not.toContain(first.material);
+  });
+
   it("recompiles when the graph content changes", () => {
     const scene = host();
     const library = new MaterialLibrary();

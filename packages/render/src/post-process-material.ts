@@ -1,9 +1,10 @@
 import type { Camera, NodeMaterial, PostProcess, Scene } from "@babylonjs/core";
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
-import {
-  lowerMaterialDocument,
-  type MaterialDocument,
+import type {
+  MaterialBuildPlan,
+  MaterialDiagnostic,
+  MaterialDocument,
 } from "@babylonslate/shader-graph";
 import { materialUnavailable, type MaterialLibrary } from "./material-library";
 
@@ -131,41 +132,13 @@ export function attachPostProcessStack(
       });
       continue;
     }
-    const lowered = lowerMaterialDocument(document);
-    if (
-      lowered.ok &&
-      bufferDenied(
-        lowered.plan.bufferRequirements.sceneDepth,
-        deviceBuffers.sceneDepth,
-      )
-    ) {
-      report(options, {
-        message: `Post-process material "${document.name}" needs Scene Depth, which this device cannot provide`,
-        nodeId: firstNodeId(document, "input.sceneDepth"),
-        materialGuid: entry.materialGuid,
-        code: "material.capability",
-      });
-      continue;
-    }
-    if (
-      lowered.ok &&
-      bufferDenied(
-        lowered.plan.bufferRequirements.sceneNormal,
-        deviceBuffers.sceneNormal,
-      )
-    ) {
-      report(options, {
-        message: `Post-process material "${document.name}" needs Scene Normal, which this device cannot provide`,
-        nodeId: firstNodeId(document, "input.sceneNormal"),
-        materialGuid: entry.materialGuid,
-        code: "material.capability",
-      });
-      continue;
-    }
     const compiled = options.library.acquire(
       options.scene,
       entry.materialGuid,
       document,
+      {
+        validatePlan: (plan) => bufferDiagnostic(plan, deviceBuffers),
+      },
     );
     if (materialUnavailable(compiled)) {
       report(options, {
@@ -178,14 +151,8 @@ export function attachPostProcessStack(
       });
       continue;
     }
-    const needsDepth =
-      lowered.ok &&
-      lowered.plan.bufferRequirements.sceneDepth &&
-      deviceBuffers.sceneDepth;
-    const needsNormal =
-      lowered.ok &&
-      lowered.plan.bufferRequirements.sceneNormal &&
-      deviceBuffers.sceneNormal;
+    const needsDepth = compiled.plan.bufferRequirements.sceneDepth;
+    const needsNormal = compiled.plan.bufferRequirements.sceneNormal;
     if (needsDepth) {
       try {
         options.scene.enableDepthRenderer(
@@ -199,7 +166,7 @@ export function attachPostProcessStack(
       } catch {
         report(options, {
           message: `Post-process material "${document.name}" needs Scene Depth, which this device cannot provide`,
-          nodeId: firstNodeId(document, "input.sceneDepth"),
+          nodeId: firstNodeId(compiled.plan, "input.sceneDepth"),
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
@@ -212,7 +179,7 @@ export function attachPostProcessStack(
       if (!renderer) {
         report(options, {
           message: `Post-process material "${document.name}" needs Scene Normal, which this device cannot provide`,
-          nodeId: firstNodeId(document, "input.sceneNormal"),
+          nodeId: firstNodeId(compiled.plan, "input.sceneNormal"),
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
@@ -222,7 +189,11 @@ export function attachPostProcessStack(
       if (!hadPrePass) prePassHeld = true;
     }
     acquired.push(entry.materialGuid);
-    const pass = createPostProcessPass(compiled.material, options.camera, entry.scalable ? options.resolutionScale ?? 1 : 1);
+    const pass = createPostProcessPass(
+      compiled.material,
+      options.camera,
+      entry.scalable ? (options.resolutionScale ?? 1) : 1,
+    );
     if (pass) passes.push(pass);
   }
 
@@ -272,9 +243,8 @@ function probeSceneNormal(scene: Scene): boolean {
 }
 
 function depthRendererFor(scene: Scene, camera: Camera): unknown {
-  const map = (
-    scene as Scene & { _depthRenderer?: Record<number, unknown> }
-  )._depthRenderer;
+  const map = (scene as Scene & { _depthRenderer?: Record<number, unknown> })
+    ._depthRenderer;
   return map?.[camera.uniqueId];
 }
 
@@ -286,14 +256,30 @@ function report(
 }
 
 function firstNodeId(
-  document: MaterialDocument,
+  plan: MaterialBuildPlan,
   nodeType: string,
 ): string | undefined {
-  return document.nodes.find((node) => node.type === nodeType)?.id;
+  return plan.operations.find((operation) => operation.nodeType === nodeType)
+    ?.id;
 }
 
-function bufferDenied(needed: boolean, available: boolean): boolean {
-  return needed && !available;
+function bufferDiagnostic(
+  plan: MaterialBuildPlan,
+  available: PostProcessDeviceBuffers,
+): MaterialDiagnostic | undefined {
+  for (const [buffer, title] of [
+    ["sceneDepth", "Scene Depth"],
+    ["sceneNormal", "Scene Normal"],
+  ] as const) {
+    if (plan.bufferRequirements[buffer] && !available[buffer])
+      return {
+        severity: "error",
+        code: "material.capability",
+        message: `Needs ${title}, which this device cannot provide`,
+        nodeId: firstNodeId(plan, `input.${buffer}`),
+      };
+  }
+  return undefined;
 }
 
 function createPostProcessPass(
