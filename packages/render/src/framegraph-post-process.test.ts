@@ -102,6 +102,8 @@ function host(documents: Array<MaterialDocument | null>, functions = {}) {
     false,
     Texture.NEAREST_SAMPLINGMODE,
   );
+  // NullEngine creates the raw storage but never completes a GPU upload.
+  source.getInternalTexture()!.isReady = true;
   const library = new MaterialLibrary({
     functions: () => functions,
     resolveTexture: () => source,
