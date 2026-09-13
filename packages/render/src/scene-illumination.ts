@@ -463,6 +463,17 @@ export function syncAuthoredIllumination(
   sceneData: SerializedScene,
   options: SyncIlluminationOptions = {},
 ): void {
+  for (const _progress of syncAuthoredIlluminationSteps(scene, sceneData, options)) {
+    // Immediate consumers drain the same ordered work without yielding.
+  }
+}
+
+/** Ordered actor work; the caller owns cancellation and rendering obstruction. */
+export function* syncAuthoredIlluminationSteps(
+  scene: Scene,
+  sceneData: SerializedScene,
+  options: SyncIlluminationOptions = {},
+): Generator<number, void, unknown> {
   const state = stateOf(scene);
   const previousActive = scene.activeCamera;
   applySceneEnvironment(scene, sceneData, {
@@ -474,6 +485,8 @@ export function syncAuthoredIllumination(
   const liveCameras = new Set<string>();
 
 
+  let completed = 0;
+  const total = Math.max(1, sceneData.actors.length);
   for (const actor of sceneData.actors) {
     const fillComponent = actor.components.find(
       (component) => component.classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID,
@@ -543,20 +556,25 @@ export function syncAuthoredIllumination(
         );
       }
     }
+    yield 0.7 * ++completed / total;
   }
 
+  completed = 0;
+  const retireTotal = Math.max(1, state.lights.size + state.cameras.size);
   for (const [actorId, light] of state.lights) {
     if (!liveLights.has(actorId)) {
       light.dispose();
       state.lights.delete(actorId);
       state.lightKinds.delete(actorId);
     }
+    yield 0.7 + 0.3 * ++completed / retireTotal;
   }
   for (const [actorId, camera] of state.cameras) {
     if (!liveCameras.has(actorId)) {
       camera.dispose();
       state.cameras.delete(actorId);
     }
+    yield 0.7 + 0.3 * ++completed / retireTotal;
   }
 
   const shadows = sceneShadowController(scene);

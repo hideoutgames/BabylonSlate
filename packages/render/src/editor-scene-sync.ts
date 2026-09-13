@@ -29,7 +29,8 @@ import {
   syncMeshCollisionDashes,
   visualMeshesOfActorRoot,
 } from "./scene-loader";
-import { syncAuthoredIllumination } from "./scene-illumination";
+import { syncAuthoredIlluminationSteps } from "./scene-illumination";
+import { runSceneWork, type SceneWorkOptions } from "./scene-work";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
 import {
   freezeEditorActiveMeshes,
@@ -59,7 +60,10 @@ export type EditorSceneSyncOptions = {
 export class EditorSceneSync {
   private readonly meshes = new Map<string, Mesh>();
   private readonly meshKinds = new Map<string, string | null>();
-  private readonly liveIds = new Set<string>();
+  private applyGeneration = 0;
+  private pendingApply: AbortController | null = null;
+  private realization: Promise<void> | null = null;
+  private applyingScene: SerializedScene | null = null;
 
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
@@ -73,6 +77,7 @@ export class EditorSceneSync {
   private assets: MeshAssetContext | undefined;
   private lastAssetFingerprint: string | null = null;
   private lastModelSlotKey = "";
+  private assetsNeedRebuild = false;
   private lastScene: SerializedScene | null = null;
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
@@ -111,33 +116,25 @@ export class EditorSceneSync {
    * a no-op so a gizmo transform commit does not drop selection.
    */
   setMeshAssets(assets: MeshAssetContext | undefined): boolean {
+    const change = this.installAssets(assets);
+    if (change.rebuild) this.meshKinds.clear();
+    if (change.reapply && this.lastScene) this.apply(this.lastScene);
+    return change.rebuild;
+  }
+
+  private installAssets(assets: MeshAssetContext | undefined): { rebuild: boolean; reapply: boolean } {
     const fingerprint = meshAssetFingerprint(assets);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
-    const previous = this.assets;
-    const onlyModelsChanged =
-      meshAssetFingerprintWithoutModels(previous) ===
-        meshAssetFingerprintWithoutModels(assets) &&
-      fingerprint !== this.lastAssetFingerprint;
+    const onlyModelsChanged = meshAssetFingerprintWithoutModels(this.assets) === meshAssetFingerprintWithoutModels(assets);
+    const layers = assets?.sortingLayers?.length ? [...assets.sortingLayers] : this.sortingLayers;
+    const reapply = fingerprint !== this.lastAssetFingerprint || slotKey !== this.lastModelSlotKey || JSON.stringify(layers) !== JSON.stringify(this.sortingLayers);
+    const rebuild = fingerprint !== this.lastAssetFingerprint && !onlyModelsChanged;
+    this.assetsNeedRebuild ||= rebuild;
     this.assets = assets;
-    if (assets?.sortingLayers) this.setSortingLayers(assets.sortingLayers);
-    if (fingerprint === this.lastAssetFingerprint) {
-      if (slotKey !== this.lastModelSlotKey) {
-        this.lastModelSlotKey = slotKey;
-        if (this.lastScene) this.apply(this.lastScene);
-      }
-      return false;
-    }
+    this.sortingLayers = layers;
     this.lastAssetFingerprint = fingerprint;
     this.lastModelSlotKey = slotKey;
-    if (onlyModelsChanged && this.lastScene && this.meshes.size > 0) {
-      this.apply(this.lastScene);
-      return false;
-    }
-    for (const mesh of this.meshes.values()) mesh.dispose();
-    this.meshes.clear();
-    this.meshKinds.clear();
-    if (this.lastScene) this.apply(this.lastScene);
-    return true;
+    return { rebuild, reapply };
   }
 
   setGameCameraPreview(enabled: boolean, restoreCamera?: Camera | null): void {
@@ -153,7 +150,7 @@ export class EditorSceneSync {
   setDrawMeshCollision(enabled: boolean): void {
     if (this.drawMeshCollision === enabled) return;
     this.drawMeshCollision = enabled;
-    this.syncExistingMeshCollisionDashes();
+    if (!this.applyingScene) this.syncExistingMeshCollisionDashes();
   }
 
   /** Collider helpers stay visible for the selected object and its children. */
@@ -163,89 +160,142 @@ export class EditorSceneSync {
   }): void {
     this.selectedActorIds = new Set(options.selectedActorIds);
     this.selectedComponentIds = new Set(options.selectedComponentIds ?? []);
-    if (this.lastScene && this.syncCollisionVisibility(this.lastScene)) {
+    if (!this.applyingScene && this.lastScene && this.syncCollisionVisibility(this.lastScene)) {
       freezeEditorActiveMeshes(this.scene);
       this.scheduler?.invalidate("selection");
     }
   }
 
   apply(sceneData: SerializedScene): void {
-    if (isStructuralEditorChange(this.lastScene, sceneData)) {
-      unfreezeEditorActiveMeshes(this.scene);
+    this.pendingApply?.abort(new Error("Scene realization was superseded."));
+    this.pendingApply = null;
+    this.realization = null;
+    ++this.applyGeneration;
+    this.applyingScene = sceneData;
+    try {
+      for (const _progress of this.applySteps(sceneData)) {
+        // Gizmos and other immediate consumers retain synchronous behavior.
+      }
+    } finally {
+      this.applyingScene = null;
     }
-    this.liveIds.clear();
+  }
 
+  async applyAsync(sceneData: SerializedScene, options: SceneWorkOptions & { assets?: MeshAssetContext }): Promise<void> {
+    this.pendingApply?.abort(new Error("Scene realization was superseded."));
+    const controller = new AbortController();
+    const generation = ++this.applyGeneration;
+    this.pendingApply = controller;
+    const abort = () => controller.abort(options.signal.reason);
+    options.signal.addEventListener("abort", abort, { once: true });
+    if (options.signal.aborted) abort();
+    this.applyingScene = sceneData;
+    try {
+      controller.signal.throwIfAborted();
+      const rebuild = options.assets ? this.installAssets(options.assets).rebuild : false;
+      this.realization = runSceneWork(this.applySteps(sceneData, rebuild), { ...options, signal: controller.signal });
+      await this.realization;
+    } finally {
+      options.signal.removeEventListener("abort", abort);
+      if (generation === this.applyGeneration) {
+        this.pendingApply = null;
+        this.applyingScene = null;
+      }
+    }
+  }
+
+  private *applySteps(sceneData: SerializedScene, rebuild = false): Generator<number, void, unknown> {
+    rebuild ||= this.assetsNeedRebuild;
+    if (isStructuralEditorChange(this.lastScene, sceneData) || rebuild) unfreezeEditorActiveMeshes(this.scene);
+    const assets = this.meshAssetsForScene(sceneData);
+    const liveIds = new Set<string>();
+    const nextKinds = new Map<string, string | null>();
+    const retired = new Set<string>();
+    const oldMeshes = [...this.meshes];
+    const actorCount = Math.max(1, sceneData.actors.length);
+    let index = 0;
     for (const actor of sceneData.actors) {
-      this.liveIds.add(actor.id);
-      const kind = actorVisualFingerprint(
-        actor,
-        this.meshAssetsForScene(sceneData),
-        sceneData.actors,
-      );
+      liveIds.add(actor.id);
+      const kind = actorVisualFingerprint(actor, assets, sceneData.actors);
+      nextKinds.set(actor.id, kind);
+      if (rebuild || this.meshKinds.get(actor.id) !== kind) retired.add(actor.id);
+      yield 0.1 * ++index / actorCount;
+    }
+    index = 0;
+    for (const [actorId] of oldMeshes) {
+      if (!liveIds.has(actorId)) retired.add(actorId);
+      yield 0.1 + 0.05 * ++index / Math.max(1, oldMeshes.length);
+    }
+    // Babylon recursively disposes descendants. Detach surviving actor roots
+    // before retiring a removed/replaced parent; component children stay owned.
+    index = 0;
+    for (const [, mesh] of oldMeshes) {
+      const parentId = mesh.parent ? actorIdFromMeshName(mesh.parent.name) : null;
+      if (parentId && retired.has(parentId)) mesh.parent = null;
+      yield 0.15 + 0.05 * ++index / Math.max(1, oldMeshes.length);
+    }
+    index = 0;
+    for (const actor of sceneData.actors) {
       let mesh = this.meshes.get(actor.id);
-      if (mesh && this.meshKinds.get(actor.id) !== kind) {
+      if (mesh && (retired.has(actor.id) || mesh.isDisposed())) {
         mesh.dispose();
+        this.meshes.delete(actor.id);
+        this.meshKinds.delete(actor.id);
         mesh = undefined;
       }
       if (!mesh) {
-        mesh = createActorMesh(
-          this.scene,
-          actor,
-          this.meshAssetsForScene(sceneData),
-          sceneData.actors,
-        );
+        mesh = createActorMesh(this.scene, actor, assets, sceneData.actors);
         this.meshes.set(actor.id, mesh);
-        this.meshKinds.set(actor.id, kind);
+        this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
       }
       this.beginEditorModelLoad(actor, mesh);
       applyActorTransform(mesh, actor);
       applyComponentChildTransforms(mesh, actor);
       applyEditorBillboardFromActor(mesh, actor);
-      for (const child of visualMeshesOfActorRoot(mesh)) {
-        applyEditorBillboardFromActor(child, actor);
-      }
-
+      for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
       applyActorComponentSorting(mesh, actor, this.sortingLayers);
       this.restoreMeshComponentConstruction(actor, mesh);
       this.applyModelSlots(actor, mesh);
       this.bindActorMeshMaterials(actor, mesh);
+      yield 0.2 + 0.3 * ++index / actorCount;
     }
-
-    for (const [actorId, mesh] of this.meshes) {
-      if (!this.liveIds.has(actorId)) {
+    index = 0;
+    for (const [actorId, mesh] of oldMeshes) {
+      if (!liveIds.has(actorId)) {
         mesh.dispose();
         this.meshes.delete(actorId);
         this.meshKinds.delete(actorId);
       }
+      yield 0.5 + 0.1 * ++index / Math.max(1, oldMeshes.length);
     }
-
+    index = 0;
     for (const actor of sceneData.actors) {
       const mesh = this.meshes.get(actor.id);
-      if (!mesh) continue;
-      const parent = actor.parentId
-        ? (this.meshes.get(actor.parentId) ?? null)
-        : null;
-      if (mesh.parent !== parent) {
-        mesh.parent = parent;
+      if (mesh) {
+        const parent = actor.parentId ? this.meshes.get(actor.parentId) ?? null : null;
+        if (mesh.parent !== parent) mesh.parent = parent;
       }
+      yield 0.6 + 0.1 * ++index / actorCount;
     }
-
-    this.scheduler?.invalidate("asset");
-    this.lastScene = sceneData;
-    syncAuthoredIllumination(this.scene, sceneData, {
+    for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
       stealActiveCamera: this.stealActiveCamera,
       restoreCamera: this.restoreCamera,
-      applyClearColor:
-        sceneData.viewportMode !== "2d" || sceneData.overlayEditor === true,
+      applyClearColor: sceneData.viewportMode !== "2d" || sceneData.overlayEditor === true,
       assets: this.assets,
-    });
-    this.onAfterApply?.();
-    this.syncCollisionVisibility(sceneData);
+    })) yield 0.7 + 0.2 * progress;
+    index = 0;
+    for (const _changed of this.collisionVisibilitySteps(sceneData)) yield 0.9 + 0.04 * ++index / actorCount;
+    index = 0;
     for (const actor of sceneData.actors) {
       const mesh = this.meshes.get(actor.id);
       if (mesh) freezeStaticActorWorldMatrix(mesh);
+      yield 0.94 + 0.05 * ++index / actorCount;
     }
+    this.lastScene = sceneData;
+    this.assetsNeedRebuild = false;
+    this.onAfterApply?.();
     freezeEditorActiveMeshes(this.scene);
+    this.scheduler?.invalidate("asset");
   }
 
   serializedScene(): SerializedScene | null {
@@ -286,7 +336,8 @@ export class EditorSceneSync {
     return this.meshes.size;
   }
 
-  whenEditorModelsReady(): Promise<void> {
+  async whenEditorModelsReady(): Promise<void> {
+    await this.realization;
     const loads = [...(this.modelLoadBinding.slotAnimLoads?.values() ?? [])];
     if (loads.length === 0) return Promise.resolve();
     return Promise.all(loads).then(() => undefined);
@@ -334,11 +385,17 @@ export class EditorSceneSync {
   }
 
   private syncCollisionVisibility(sceneData: SerializedScene): boolean {
+    let changed = false;
+    for (const actorChanged of this.collisionVisibilitySteps(sceneData)) changed ||= actorChanged;
+    return changed;
+  }
+
+  private *collisionVisibilitySteps(sceneData: SerializedScene): Generator<boolean, void, unknown> {
     const actors = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
     let changed = false;
     for (const actor of sceneData.actors) {
       const root = this.meshes.get(actor.id);
-      if (!root) continue;
+      if (!root) { yield false; continue; }
       const actorSelected = hasSelectedAncestor(
         actor.id,
         this.selectedActorIds,
@@ -380,8 +437,8 @@ export class EditorSceneSync {
           changed = true;
         }
       }
+      yield changed;
     }
-    return changed;
   }
 
   private meshComponentAssetGuid(actor: SerializedActor): string | null {
@@ -428,17 +485,19 @@ export class EditorSceneSync {
       bytes,
       placeholder,
       () => {
-        if (root.isDisposed() || placeholder.isDisposed()) return;
-        const current =
-          this.lastScene?.actors.find((entry) => entry.id === actor.id) ?? actor;
+        if (root.isDisposed() || placeholder.isDisposed() || this.meshes.get(actor.id) !== root) return;
+        const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
+        if (!current) return;
         applyActorTransform(root, current);
         this.restoreMeshComponentConstruction(current, root);
         this.applyModelSlots(current, root);
         this.bindActorMeshMaterials(current, root);
-        freezeStaticActorWorldMatrix(root);
-        freezeEditorActiveMeshes(this.scene);
-        this.scheduler?.invalidate("asset");
-        this.onAfterApply?.();
+        if (!this.applyingScene) {
+          freezeStaticActorWorldMatrix(root);
+          freezeEditorActiveMeshes(this.scene);
+          this.scheduler?.invalidate("asset");
+          this.onAfterApply?.();
+        }
       },
     );
   }
@@ -520,12 +579,16 @@ export class EditorSceneSync {
   }
 
   dispose(): void {
+    this.pendingApply?.abort(new Error("Scene realization was disposed."));
+    this.pendingApply = null;
+    this.realization = null;
+    ++this.applyGeneration;
+    this.applyingScene = null;
     for (const mesh of this.meshes.values()) {
       mesh.dispose();
     }
     this.meshes.clear();
     this.meshKinds.clear();
-    this.liveIds.clear();
   }
 }
 
