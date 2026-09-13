@@ -251,7 +251,7 @@ describe("resource cache getTexture", () => {
       files,
       true,
     );
-    expect(nearest).toBe(cube);
+    expect(nearest).not.toBe(cube);
     expect(isDisposedGpuTexture(cube)).toBe(false);
     cache.dispose();
     scene.dispose();

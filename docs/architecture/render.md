@@ -356,3 +356,8 @@ representation. Original, reduced and compressed variants can coexist across
 Scene, Model and Material previews. Requesting a different representation never
 disposes another view's live texture. Handles release the exact acquired resource;
 unused variants are reclaimed through the normal byte-accounted cache policy.
+
+Model previews stage material replacements, warm them against their actual meshes,
+and retain the displayed generation until a replacement succeeds. Closing or
+replacing a preview releases its material library and exact texture leases.
+Preview render errors are reported without terminating frame scheduling.

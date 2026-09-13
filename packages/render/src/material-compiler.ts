@@ -1191,5 +1191,13 @@ export async function prewarmMaterial(
   if (!mesh) return;
   if (material.mode === NodeMaterialModes.Particle) return;
   if (!nodeMaterialTexturesSampleReady(material)) return;
-  await material.forceCompilationAsync(mesh);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      material.forceCompilationAsync(mesh),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Material shader compilation timed out")), 4000); }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
