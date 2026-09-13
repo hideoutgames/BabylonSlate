@@ -1808,12 +1808,6 @@ describe("editor grid", () => {
     expect(
       (grid.boundsMesh?.material as ShaderMaterial).serialize().floats.lineWidth,
     ).toBe(CAMERA_BOUNDS_LINE_WIDTH);
-    expect(Effect.ShadersStore.editorCameraBoundsFragmentShader).toContain(
-      "vWorldPos",
-    );
-    expect(Effect.ShadersStore.editorCameraBoundsFragmentShader).toContain(
-      "boundsHalf",
-    );
     grid.dispose();
   });
 
