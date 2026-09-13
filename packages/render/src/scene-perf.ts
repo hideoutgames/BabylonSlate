@@ -5,9 +5,11 @@ import {
   NodeMaterialModes,
   NullEngine,
   type Material,
+  type RenderTargetTexture,
   type Scene,
   type SceneOptions,
 } from "@babylonjs/core";
+import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import type { SerializedScene } from "@babylonslate/core";
 import { prewarmMaterial } from "./material-compiler";
 import { isEngineDefaultMaterial } from "./default-material";
@@ -196,13 +198,25 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
 }
 
 /** Readiness of the actual scene passes, including shadow render targets. */
-export function isSceneFrameReady(scene: Scene): boolean {
-  if (!scene.isReady(true)) return false;
-  for (const light of scene.lights) {
-    for (const generator of light.getShadowGenerators()?.values() ?? []) {
-      const map = generator.getShadowMap();
-      if (map && !map.isReadyForRendering()) return false;
+export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTexture[] = []): boolean {
+  // Babylon 9.20 readiness probes write scene UBOs outside Scene.render(). A
+  // newly constructed sibling can own the global origin without camera matrices.
+  // Scope this synchronous probe exactly as Babylon scopes its render entry.
+  const previousScene = FloatingOriginCurrentScene.getScene;
+  const previousEyeAtCamera = FloatingOriginCurrentScene.eyeAtCamera;
+  FloatingOriginCurrentScene.getScene = () => scene.floatingOriginMode ? scene : undefined;
+  FloatingOriginCurrentScene.eyeAtCamera = true;
+  try {
+    if (!scene.isReady(true)) return false;
+    for (const light of scene.lights) {
+      for (const generator of light.getShadowGenerators()?.values() ?? []) {
+        const map = generator.getShadowMap();
+        if (map && !map.isReadyForRendering()) return false;
+      }
     }
+    return targets.every((target) => target.isReadyForRendering());
+  } finally {
+    FloatingOriginCurrentScene.getScene = previousScene;
+    FloatingOriginCurrentScene.eyeAtCamera = previousEyeAtCamera;
   }
-  return true;
 }

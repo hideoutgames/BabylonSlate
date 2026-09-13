@@ -7,6 +7,7 @@ Optional `scene.settings.renderPath` inherits from the project. `resolveRenderin
 This contract slice exposes no new renderer. Its pure resolver reports effective Forward/WebGL2 with explicit limits for Auto/ClusteredForward or Auto/WebGPU requests; it preserves the authored values. It describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation, controls and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
 
 Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
+Readiness probes enter and restore their scene's floating-origin context, so a newly created preview cannot supply missing or unrelated camera matrices to a loading viewport.
 
 ## Project PBR / CEL rendering
 
