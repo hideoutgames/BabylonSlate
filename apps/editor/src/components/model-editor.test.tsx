@@ -20,15 +20,15 @@ vi.mock("../context/document-context", () => ({
     assetRegistry: {
       list: () => [
         {
-          header: { guid: "mat-1", name: "HeroMat", type: "Material" },
+          header: { guid: "mat-1", name: "HeroMat", type: "Material", chunks: [], payload: {} },
           path: "assets/HeroMat.material.babasset",
         },
         {
-          header: { guid: "mat-2", name: "AltMat", type: "Material" },
+          header: { guid: "mat-2", name: "AltMat", type: "Material", chunks: [], payload: {} },
           path: "assets/AltMat.material.babasset",
         },
         {
-          header: { guid: "tex-1", name: "Albedo", type: "Texture" },
+          header: { guid: "tex-1", name: "Albedo", type: "Texture", chunks: [], payload: {} },
           path: "assets/Albedo.texture.babasset",
         },
       ],
