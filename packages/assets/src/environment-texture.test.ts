@@ -9,33 +9,46 @@ import { decodeBabasset, encodeBabasset } from "./babasset";
 import { selectTextureChunk } from "./texture-loader";
 import { resolveGpuTexture } from "./resolve-gpu-texture";
 
-// Numeric 1×1 PNG; the container stores six independent face ranges.
+// Numeric PNGs; the container stores six independent face ranges per mip.
 const png = Uint8Array.from(
   atob(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
   ),
   (c) => c.charCodeAt(0),
 );
+const png2 = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAADklEQVR4nGNg+A+FMAYAQ84H+fei4u8AAAAASUVORK5CYII=",
+  ),
+  (c) => c.charCodeAt(0),
+);
 function env(manifestPatch: Record<string, unknown> = {}) {
+  const faces = [
+    ...Array<Uint8Array>(6).fill(png2),
+    ...Array<Uint8Array>(6).fill(png),
+  ];
+  let position = 0;
+  const mipmaps = faces.map((face) => {
+    const result = { position, length: face.length };
+    position += face.length;
+    return result;
+  });
   const header = new TextEncoder().encode(
     JSON.stringify({
       version: 2,
-      width: 1,
+      width: 2,
       imageType: "image/png",
       specular: {
-        mipmaps: Array.from({ length: 6 }, (_, face) => ({
-          position: face * png.length,
-          length: png.length,
-        })),
+        mipmaps,
       },
       ...manifestPatch,
     }),
   );
-  const bytes = new Uint8Array(9 + header.length + png.length * 6);
+  const bytes = new Uint8Array(9 + header.length + position);
   bytes.set([0x86, 0x16, 0x87, 0x96, 0xf6, 0xd6, 0x96, 0x36]);
   bytes.set(header, 8);
-  for (let face = 0; face < 6; face++)
-    bytes.set(png, header.length + 9 + face * png.length);
+  for (const [index, face] of faces.entries())
+    bytes.set(face, header.length + 9 + mipmaps[index]!.position);
   return bytes;
 }
 
@@ -110,24 +123,27 @@ describe("environment texture import", () => {
     expect(asset!.payload).toMatchObject({
       dimension: "cube",
       encoding: "rgbd",
-      width: 1,
-      mipLevels: 1,
+      width: 2,
+      mipLevels: 2,
       hasIrradiance: false,
     });
     expect(asset!.chunks[0]!.data).toEqual(source);
     expect(() => readEnvironmentTextureInfo(env({ version: 3 }))).toThrow(
       /version/,
     );
-    expect(() => readEnvironmentTextureInfo(env({ width: 2 }))).toThrow(
+    expect(() => readEnvironmentTextureInfo(env({ width: 1 }))).toThrow(
+      /at least 2/,
+    );
+    expect(() => readEnvironmentTextureInfo(env({ width: 4 }))).toThrow(
       /six faces/,
     );
     expect(() =>
       readEnvironmentTextureInfo(
         env({
           specular: {
-            mipmaps: Array.from({ length: 6 }, () => ({
-              position: 0,
-              length: png.length,
+            mipmaps: Array.from({ length: 12 }, (_, index) => ({
+              position: index < 6 ? 0 : png2.length * 6,
+              length: index < 6 ? png2.length : png.length,
             })),
           },
         }),

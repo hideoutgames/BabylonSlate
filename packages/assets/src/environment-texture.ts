@@ -123,10 +123,11 @@ function readEnv(bytes: Uint8Array): EnvironmentTextureInfo {
   if (
     !record(info) ||
     (info.version !== 1 && info.version !== 2) ||
-    !cubeSize(info.width)
+    !cubeSize(info.width) ||
+    info.width < 2
   ) {
     throw new Error(
-      "ENV requires version 1 or 2 and a positive power-of-two cube width.",
+      "ENV requires version 1 or 2 and a power-of-two cube width of at least 2 (the native ENV loader minimum).",
     );
   }
   const width = info.width;

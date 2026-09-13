@@ -18,19 +18,30 @@ import { expectGreenIllumination } from "./preview-parity";
 
 async function greenEnv(page: Page) {
   // Numeric RGBD green, exactly linear [0,1,0]; no generated artwork.
-  const png = new Uint8Array(
+  const pngs = (
     await page.evaluate(async () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 1;
-      const context = canvas.getContext("2d")!;
-      context.fillStyle = "rgb(0,255,0)";
-      context.fillRect(0, 0, 1, 1);
-      const blob = await new Promise<Blob>((resolve) =>
-        canvas.toBlob((result) => resolve(result!)),
-      );
-      return [...new Uint8Array(await blob.arrayBuffer())];
-    }),
-  );
+      const levels: number[][] = [];
+      for (const size of [2, 1]) {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = size;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "rgb(0,255,0)";
+        context.fillRect(0, 0, size, size);
+        const blob = await new Promise<Blob>((resolve) =>
+          canvas.toBlob((result) => resolve(result!)),
+        );
+        levels.push([...new Uint8Array(await blob.arrayBuffer())]);
+      }
+      return levels;
+    })
+  ).map((level) => new Uint8Array(level));
+  const faces = pngs.flatMap((png) => Array<Uint8Array>(6).fill(png));
+  let position = 0;
+  const mipmaps = faces.map((face) => {
+    const entry = { position, length: face.length };
+    position += face.length;
+    return entry;
+  });
   const polynomial = Object.fromEntries(
     ["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"].map((key) => [
       key,
@@ -40,22 +51,19 @@ async function greenEnv(page: Page) {
   const header = new TextEncoder().encode(
     JSON.stringify({
       version: 2,
-      width: 1,
+      width: 2,
       imageType: "image/png",
       irradiance: polynomial,
       specular: {
-        mipmaps: Array.from({ length: 6 }, (_, face) => ({
-          position: png.length * face,
-          length: png.length,
-        })),
+        mipmaps,
       },
     }),
   );
-  const bytes = new Uint8Array(9 + header.length + png.length * 6);
+  const bytes = new Uint8Array(9 + header.length + position);
   bytes.set([0x86, 0x16, 0x87, 0x96, 0xf6, 0xd6, 0x96, 0x36]);
   bytes.set(header, 8);
-  for (let face = 0; face < 6; face++)
-    bytes.set(png, 9 + header.length + png.length * face);
+  for (const [index, face] of faces.entries())
+    bytes.set(face, 9 + header.length + mipmaps[index]!.position);
   return bytes;
 }
 
@@ -132,10 +140,10 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     expect(samples.isCube).toBe(true);
     expect(samples.gammaSpace).toBe(false);
     expect(samples.size).toEqual({
-      width: container === "dds" ? 2 : 1,
-      height: container === "dds" ? 2 : 1,
+      width: 2,
+      height: 2,
     });
-    expect(samples.samples).toHaveLength(container === "dds" ? 4 : 2);
+    expect(samples.samples).toHaveLength(4);
     for (const sample of samples.samples) {
       const unit = sample.type === "Uint8Array" ? 255 : 1;
       expect(sample.values[0]).toBeCloseTo(0, 4);

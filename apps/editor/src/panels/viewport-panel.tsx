@@ -863,7 +863,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       environmentTextureSamples: async () => {
         const handle = engineRef.current;
         const texture = handle?.scene.environmentTexture;
-        if (!handle || !texture?.isReady()) return null;
+        if (!handle || !texture) return null;
+        if (!texture.isReady()) return { ready: false, loadingError: texture.loadingError,
+          error: texture.errorObject ? { message: texture.errorObject.message, exception: String(texture.errorObject.exception) } : null,
+          size: texture.getSize(), isCube: texture.isCube };
         const size = texture.getSize();
         const lastMip = Math.floor(Math.log2(size.width));
         const samples = [];
