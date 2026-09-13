@@ -215,7 +215,7 @@ describe("cooperative editor realization", () => {
     const root = sync.meshForActor("actor-0")!;
     await vi.waitFor(() =>
       expect(
-        visualMeshes(root).some((mesh) => mesh.getTotalVertices() > 0),
+        visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3),
       ).toBe(true),
     );
     expect(onAfterApply).not.toHaveBeenCalled();
