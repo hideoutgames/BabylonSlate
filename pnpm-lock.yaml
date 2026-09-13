@@ -4,6 +4,8 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+packageExtensionsChecksum: sha256-kGv20c4ap7RRpBbtGXcn20CMRGkXEzPl0au2ojzmg5g=
+
 importers:
 
   .:
@@ -10601,12 +10603,14 @@ snapshots:
 
   three-gpu-pathtracer@0.0.24(three-mesh-bvh@0.9.5(three@0.181.1))(three@0.181.1)(xatlas-web@0.1.0):
     dependencies:
+      '@types/three': 0.181.0
       three: 0.181.1
       three-mesh-bvh: 0.9.5(three@0.181.1)
       xatlas-web: 0.1.0
 
   three-mesh-bvh@0.9.5(three@0.181.1):
     dependencies:
+      '@types/three': 0.181.0
       three: 0.181.1
 
   three@0.181.1: {}
