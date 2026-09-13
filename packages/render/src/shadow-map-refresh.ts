@@ -130,7 +130,7 @@ export class ShadowMapRefresh {
       state.value(mesh.isEnabled());
       state.value(mesh.isVisible);
       state.value(mesh.visibility);
-      state.value(mesh.sideOrientation);
+      state.value(mesh instanceof Mesh ? mesh.sideOrientation : undefined);
       state.value(mesh.skeleton);
       state.value(mesh.morphTargetManager);
       state.value(mesh.subMeshes);

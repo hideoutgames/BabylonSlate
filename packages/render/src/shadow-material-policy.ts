@@ -95,7 +95,8 @@ export function canCacheShadowMaterial(
   )
     return false;
 
-  if (material.constructor === NodeMaterial) {
+  const constructor = material.constructor;
+  if (constructor === NodeMaterial) {
     const node = material as NodeMaterial;
     const shape = compiledShape.get(node);
     return (
@@ -111,15 +112,14 @@ export function canCacheShadowMaterial(
       )
     );
   }
-  if (material.constructor === CelMaterial) {
+  if (constructor === CelMaterial) {
     const cel = material as CelMaterial;
     return (
       cel.hasOriginalShadowHooks() && canCacheShadowMaterial(cel.source, mesh)
     );
   }
   return (
-    (material.constructor === PBRMaterial ||
-      material.constructor === StandardMaterial) &&
+    (constructor === PBRMaterial || constructor === StandardMaterial) &&
     !material.customShaderNameResolve &&
     !material.onBindObservable.hasObservers()
   );
