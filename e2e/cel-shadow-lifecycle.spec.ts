@@ -211,6 +211,23 @@ test("CEL graph receiver presents a ready frame after edited project reload", as
     await openMainScene(page);
     await pixels(page);
   } finally {
+    await testInfo.attach("reload-render-state", {
+      body: JSON.stringify(
+        await page.evaluate(() => {
+          const host = globalThis as unknown as {
+            __babylonslateViewportTest?: {
+              renderingBaseline(): unknown;
+              sceneVisuals(): unknown;
+            };
+          };
+          return {
+            baseline: host.__babylonslateViewportTest?.renderingBaseline(),
+            visuals: host.__babylonslateViewportTest?.sceneVisuals(),
+          };
+        }),
+      ),
+      contentType: "application/json",
+    });
     await page.screenshot({ path: testInfo.outputPath("after-reload.png") });
   }
 });
