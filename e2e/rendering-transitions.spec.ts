@@ -60,7 +60,9 @@ test("settings close and manual reload finish blocking transitions without losin
     }
   });
   await openMinimalTestProject(page);
+  await trackLoading(page);
   await openMainScene(page);
+  expect((await loadingResult(page)).phases).toContain("Loading Document");
   const scene = createDefaultScene("Rendering Transitions");
   scene.settings.environmentTextureGuid = null;
   scene.actors.push(

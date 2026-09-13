@@ -18,6 +18,7 @@ export function sceneViewportRenderSettingsKey(
 
 export const SCENE_LOAD_PHASES = [
   "Preparing Scene",
+  "Loading Document",
   "Realizing Scene",
   "Collecting Assets",
   "Loading Models",

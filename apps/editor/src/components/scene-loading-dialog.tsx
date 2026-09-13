@@ -45,7 +45,9 @@ export function SceneLoadingDialog({
             : (failed ? "Scene Loading Failed" : "Loading Scene")}</DialogTitle>
           <DialogDescription>
             {failed
-              ? "The viewport could not finish loading. Retry, or close this message to adjust the scene or rendering settings."
+              ? (phase === "Loading Document"
+                ? "The scene document could not be read. Retry, or close this message to return to the current workspace."
+                : "The viewport could not finish loading. Retry, or close this message to adjust the scene or rendering settings.")
               : "Preparing scene resources, assets, shaders, and the first frame."}
           </DialogDescription>
         </DialogHeader>

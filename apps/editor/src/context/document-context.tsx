@@ -13,6 +13,8 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
+import { SceneLoadingDialog } from "../components/scene-loading-dialog";
+import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import type {
   AssetDocumentKind,
   DocumentRef,
@@ -698,6 +700,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const settingsStore = useMemo(() => createAppSettingsStore(), []);
   const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());
+  const sceneDocumentLoadRef = useRef<AbortController | null>(null);
+  const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean } | null>(null);
+  useEffect(() => () => sceneDocumentLoadRef.current?.abort(), []);
+  const cancelSceneDocumentLoad = useCallback(() => {
+    sceneDocumentLoadRef.current?.abort();
+    sceneDocumentLoadRef.current = null;
+    setSceneDocumentLoad(null);
+  }, []);
   const sourceControlRef = useRef(new SourceControlService());
   const secretStore = useMemo(() => createSecretStore(), []);
   const nativeHttp = useMemo(() => createNativeHttp(), []);
@@ -1212,16 +1222,33 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       >["layouts"],
       pending: MigrationPending[] = [],
     ) => {
+      cancelSceneDocumentLoad();
+      const sceneLoadController = new AbortController();
+      sceneDocumentLoadRef.current = sceneLoadController;
       dockviewApisRef.current.clear();
       disposeDockSubscriptions();
       preFocusLayoutsRef.current.clear();
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
-      await documentService.initializeFromProject(
-        projectService,
-        document,
-        layouts,
-      );
+      try {
+        await documentService.initializeFromProject(
+          projectService,
+          document,
+          layouts,
+          {
+            signal: sceneLoadController.signal,
+            beforeLoad: async (ref) => {
+              setSceneDocumentLoad({ ref, failed: false });
+              await waitForSceneLoadingPaint(sceneLoadController.signal);
+            },
+          },
+        );
+      } finally {
+        if (sceneDocumentLoadRef.current === sceneLoadController) {
+          sceneDocumentLoadRef.current = null;
+          setSceneDocumentLoad(null);
+        }
+      }
       setProjectDocument(document);
       setMigrationPending(pending);
       setLastCompiledSignature(null);
@@ -1261,6 +1288,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       refreshProjectList,
       captureMtimeSnapshot,
       clearPlayPreviewScripts,
+      cancelSceneDocumentLoad,
     ],
   );
 
@@ -1594,6 +1622,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const saveAll = saveProject;
 
   const forceCloseProject = useCallback(async () => {
+    cancelSceneDocumentLoad();
     if (saveDebounceRef.current) {
       clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = null;
@@ -1633,6 +1662,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     projectService,
     refreshProjectList,
     clearPlayPreviewScripts,
+    cancelSceneDocumentLoad,
   ]);
 
   const closeProject = useCallback(async () => {
@@ -1902,22 +1932,45 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const finishOpenDocument = useCallback(
     async (ref: DocumentRef) => {
+      const controller = isSceneWorkspaceKind(ref.kind) ? new AbortController() : null;
+      if (controller) {
+        cancelSceneDocumentLoad();
+        sceneDocumentLoadRef.current = controller;
+      }
       const { activeDocumentId } = documentService.getState();
       if (activeDocumentId) {
         captureLayoutForId(activeDocumentId);
       }
-      if (ref.kind === "scene") {
-        const nextId = documentId(ref);
-        const others = documentService
-          .getOpenDocumentsOrdered()
-          .filter((doc) => doc.ref.kind === "scene" && doc.id !== nextId);
-        for (const other of others) {
-          closeDocument(other.id);
-        }
-      }
       const layouts = documentService.buildLayouts();
       const layout = layouts.documents[documentId(ref)] ?? null;
-      await documentService.openDocument(projectService, ref, layout, true);
+      try {
+        await documentService.openDocument(projectService, ref, layout, true, controller ? {
+          signal: controller.signal,
+          beforeLoad: async () => {
+            setSceneDocumentLoad({ ref, failed: false });
+            await waitForSceneLoadingPaint(controller.signal);
+          },
+          beforeCommit: () => {
+            if (ref.kind !== "scene") return;
+            // Keep the old scene and its edit session until replacement I/O succeeds.
+            const nextId = documentId(ref);
+            const others = documentService.getOpenDocumentsOrdered()
+              .filter((doc) => doc.ref.kind === "scene" && doc.id !== nextId);
+            for (const other of others) closeDocument(other.id);
+          },
+        } : undefined);
+      } catch (error) {
+        if (controller?.signal.aborted) return;
+        if (!controller) throw error;
+        console.error("[editor] failed to open scene document", error);
+        setSceneDocumentLoad({ ref, failed: true });
+        return;
+      }
+      if (controller?.signal.aborted) return;
+      if (controller && sceneDocumentLoadRef.current === controller) {
+        sceneDocumentLoadRef.current = null;
+        setSceneDocumentLoad(null);
+      }
       if (ref.kind === "scene") {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneOpen);
       }
@@ -1927,7 +1980,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await syncPrefabInstancesRef.current({ quiet: true });
       }
     },
-    [bump, captureLayoutForId, closeDocument, documentService, projectService],
+    [bump, captureLayoutForId, closeDocument, documentService, projectService, cancelSceneDocumentLoad],
   );
 
   const openDocument = useCallback(
@@ -4347,6 +4400,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       <DockWindowTickContext.Provider value={dockWindowTick}>
         {children}
       </DockWindowTickContext.Provider>
+      <SceneLoadingDialog
+        open={sceneDocumentLoad !== null}
+        progress={0}
+        phase="Loading Document"
+        failed={sceneDocumentLoad?.failed}
+        onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
+        onDismiss={cancelSceneDocumentLoad}
+      />
     </DocumentContext.Provider>
   );
 }
