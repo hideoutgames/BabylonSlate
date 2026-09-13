@@ -152,7 +152,8 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     renderer.toneMapping = NoToneMapping;
     let shaderFailure: Error | undefined;
     renderer.debug.onShaderError = (gl, program, vertex, fragment) => {
-      shaderFailure = new Error(`Bake shader failed: ${gl.getProgramInfoLog(program)} ${gl.getShaderInfoLog(vertex)} ${gl.getShaderInfoLog(fragment)}`);
+      // @types/three 0.181 types this as its wrapper; Three passes the native handle.
+      shaderFailure = new Error(`Bake shader failed: ${gl.getProgramInfoLog(program as unknown as WebGLProgram)} ${gl.getShaderInfoLog(vertex)} ${gl.getShaderInfoLog(fragment)}`);
     };
     const scene = new Scene();
     for (const mesh of input.meshes) {
