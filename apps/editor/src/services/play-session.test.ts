@@ -22,7 +22,6 @@ import {
   playSessionBootControls,
   previewFixtureThrowHint,
   resolvePlayFrameCap,
-  scheduleSceneModelsReady,
   applyPlayActiveScene,
 } from "./play-session";
 
@@ -548,6 +547,15 @@ describe("applyPlayActiveScene", () => {
       }),
     ).toBe("scene-1");
     expect(loaded).toEqual([]);
+    applyPlayActiveScene({
+      handle,
+      command: { type: "activeScene", sceneAssetGuid: "scene-1" },
+      scenes: [{ guid: "scene-1", scene }],
+      boot: { guid: "scene-1", scene },
+      currentSceneGuid: "scene-1",
+      forceReload: true,
+    });
+    expect(loaded).toEqual(["load:Level 1", "env:Level 1", "reset-audio", "reset-particles"]);
   });
 
   it("reloads and resets when the runtime switches to another scene", () => {
@@ -584,27 +592,5 @@ describe("applyPlayActiveScene", () => {
       "reset-audio",
       "reset-particles",
     ]);
-  });
-});
-
-describe("scheduleSceneModelsReady", () => {
-  it("posts sceneModelsReady after whenModelsReady resolves", async () => {
-    const posted: string[] = [];
-    let resolveReady!: () => void;
-    const whenModelsReady = () =>
-      new Promise<void>((resolve) => {
-        resolveReady = resolve;
-      });
-    const pending = scheduleSceneModelsReady({
-      whenModelsReady,
-      notify: (sceneAssetGuid) => {
-        posted.push(sceneAssetGuid);
-      },
-      sceneAssetGuid: "scene-1",
-    });
-    expect(posted).toEqual([]);
-    resolveReady();
-    await pending;
-    expect(posted).toEqual(["scene-1"]);
   });
 });

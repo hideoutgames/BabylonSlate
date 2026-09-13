@@ -17,6 +17,7 @@ import {
   audioStats,
   attachLifecyclePause,
   createEngine,
+  createSceneLoadReadiness,
   navDebugBlockersFromActors,
   particleStats,
   type EngineHandle,
@@ -28,8 +29,6 @@ import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
 import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
-  schedulePlayerMaterialPrewarm,
-  schedulePlayerSceneModelsReady,
 } from "./engine-commands";
 import { mountPlayerPrintOverlay } from "./print-overlay";
 import { packedBootControls, packedContentFromGame } from "./hydrate";
@@ -366,6 +365,7 @@ export function startPlayer(options: {
   const haltPlayback = () => {
     if (halted) return;
     halted = true;
+    sceneReadiness.dispose();
     detachLifecycle();
     handle.setPaused(true);
     cancelAnimationFrame(raf);
@@ -378,8 +378,31 @@ export function startPlayer(options: {
     printHud.dispose();
   };
 
-  const materialsWarmed = { current: false };
   let hostSceneGuid: string | null = startup;
+  let receivedActiveScene = false;
+  const sceneReadiness = createSceneLoadReadiness({
+    handle,
+    activate: ({ sceneAssetGuid }) => {
+      if (!applyPlayerActiveScene(handle, game.scenes, { type: "activeScene", sceneAssetGuid }, hostSceneGuid, receivedActiveScene)) {
+        throw new Error("The requested scene is not available in this build.");
+      }
+      hostSceneGuid = sceneAssetGuid;
+      receivedActiveScene = true;
+    },
+    onReady: ({ sceneAssetGuid, sceneLoadId }) => {
+      worker?.postControl({ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId });
+      runtime?.notifySceneModelsReady(sceneAssetGuid, sceneLoadId);
+    },
+    onFailed: (_scene, error) => {
+      diagnostics.push({
+        message: `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`,
+        severity: "error",
+        code: "scene.load.failed",
+      });
+      options.onDiagnostic?.(diagnostics);
+      haltPlayback();
+    },
+  });
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     if (command.type === "sessionPaused") {
       const paused = pauseState.setConsolePaused(command.paused === true);
@@ -394,26 +417,7 @@ export function startPlayer(options: {
     if (command.type === "snapshotLayout")
       handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
-    if (
-      applyPlayerActiveScene(handle, game.scenes, command, hostSceneGuid) &&
-      typeof command.sceneAssetGuid === "string"
-    ) {
-      hostSceneGuid = command.sceneAssetGuid;
-    }
-    schedulePlayerMaterialPrewarm(handle, command.type, materialsWarmed);
-    if (
-      command.type === "activeScene" &&
-      typeof command.sceneAssetGuid === "string"
-    ) {
-      schedulePlayerSceneModelsReady(
-        (message) => {
-          worker?.postControl(message);
-          runtime?.notifySceneModelsReady(message.sceneAssetGuid);
-        },
-        handle,
-        command.sceneAssetGuid,
-      );
-    }
+    sceneReadiness.receive(command);
     if (command.type === "print") {
       printHud.applyPrint({
         message: command.message,
@@ -598,6 +602,7 @@ export function startPlayer(options: {
     inspectWorld: () => consoleHost.inspectWorld(),
     stop: () => {
       halted = true;
+      sceneReadiness.dispose();
       detachLifecycle();
       cancelAnimationFrame(raf);
       resizeObserver?.disconnect();

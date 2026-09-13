@@ -449,3 +449,9 @@ SceneLayer camera preparation updates camera matrices only. Scene rendering owns
 Editor active-mesh freezing also evaluates within the owning scene's render frame after materials are ready. A pending freeze is cancelled by structural invalidation. This avoids asynchronous readiness callbacks uploading matrices through another or disposed scene's floating-origin context while retaining off-frustum membership and per-frame draw culling.
 
 Editor grid and camera/SceneLayer bounds shaders evaluate their patterns in plane-local coordinates. The grid plane follows a snapped major-cell origin, retaining world alignment without mixing absolute coordinates with floating-origin matrices. Bounds retain a two-pixel stroke as the camera pans or zooms. Browser regression tests check the complete rectangle before and after camera and actor movement.
+
+### Runtime scene readiness
+
+Play and the exported player share `createSceneLoadReadiness`. `activeScene` establishes a monotonic load ID; `sceneRealized` closes the runtime assignment batch after actors and owned SceneLayers are emitted. Only then does the host await models, sample-ready textures, shader warming, and first-frame presentation before acknowledging `sceneModelsReady` with that ID. First-mesh and active-scene callbacks cannot acknowledge an incomplete worker batch.
+
+A new load of the same scene still receives a fresh ID and resets its resources; the initial already-loaded boot scene is reused. Superseded loads and disposed sessions cannot acknowledge readiness or report obsolete failures. Failed Play loading uses the session diagnostic/Stop flow; player loading reports an error and halts playback. Game Instance ticks continue while readiness is pending, and Stop does not wait for unresolved resource work.

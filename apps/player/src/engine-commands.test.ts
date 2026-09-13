@@ -1,10 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createDefaultScene } from "@babylonslate/core";
 import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
-  schedulePlayerMaterialPrewarm,
-  schedulePlayerSceneModelsReady,
 } from "./engine-commands";
 
 describe("applyPlayerEngineCommand", () => {
@@ -325,69 +323,7 @@ describe("applyPlayerActiveScene", () => {
       ),
     ).toBe(true);
     expect(loaded).toEqual([]);
-  });
-});
-
-describe("schedulePlayerMaterialPrewarm", () => {
-  it("prewarms after the first assignMesh once models are ready", async () => {
-    const order: string[] = [];
-    const handle = {
-      whenEditorModelsReady: async () => {
-        order.push("models");
-      },
-      prewarmSceneMaterials: async () => {
-        order.push("prewarm");
-      },
-    };
-    const scheduled = { current: false };
-    schedulePlayerMaterialPrewarm(handle, "spawn", scheduled);
-    expect(scheduled.current).toBe(false);
-    schedulePlayerMaterialPrewarm(handle, "assignMesh", scheduled);
-    schedulePlayerMaterialPrewarm(handle, "assignMesh", scheduled);
-    expect(scheduled.current).toBe(true);
-    await vi.waitFor(() => {
-      expect(order).toEqual(["models", "prewarm"]);
-    });
-  });
-
-  it("waits for packed textures before prewarm so Intermediate cannot bake the error sampler", async () => {
-    const order: string[] = [];
-    const handle = {
-      whenEditorModelsReady: async () => {
-        order.push("models");
-      },
-      whenMaterialTexturesReady: async () => {
-        order.push("textures");
-      },
-      prewarmSceneMaterials: async () => {
-        order.push("prewarm");
-      },
-    };
-    const scheduled = { current: false };
-    schedulePlayerMaterialPrewarm(handle, "assignMesh", scheduled);
-    await vi.waitFor(() => {
-      expect(order).toEqual(["models", "textures", "prewarm"]);
-    });
-  });
-});
-
-describe("schedulePlayerSceneModelsReady", () => {
-  it("posts sceneModelsReady after models are ready", async () => {
-    const posted: Array<{ type: string; sceneAssetGuid: string }> = [];
-    const handle = {
-      whenEditorModelsReady: async () => {},
-    };
-    schedulePlayerSceneModelsReady(
-      (message) => {
-        posted.push(message);
-      },
-      handle,
-      "scene-1",
-    );
-    await vi.waitFor(() => {
-      expect(posted).toEqual([
-        { type: "sceneModelsReady", sceneAssetGuid: "scene-1" },
-      ]);
-    });
+    expect(applyPlayerActiveScene(handle, scenes, { type: "activeScene", sceneAssetGuid: "scene-1" }, "scene-1", true)).toBe(true);
+    expect(loaded).toEqual(["load:Level 1", "env:Level 1", "reset-audio", "reset-particles"]);
   });
 });
