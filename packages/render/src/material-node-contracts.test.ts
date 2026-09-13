@@ -29,6 +29,45 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it("builds distinct legal texture samplers from editor-generated numeric node IDs", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    dispose.push(() => { scene.dispose(); engine.dispose(); });
+    const textures = [new Texture(null, scene), new Texture(null, scene)];
+    for (const texture of textures) vi.spyOn(texture, "isReady").mockReturnValue(true);
+    const doc = createDefaultMaterialDocument();
+    doc.shadingModel = "unlit";
+    doc.edges = [];
+    for (const [index, id] of ["texture.sample-123", "texture.sample-456"].entries()) {
+      node(doc, id, "texture.sample", { textureGuid: `image-${index}` });
+      wire(doc, id, "rgb", "output", index === 0 ? "baseColor" : "emissive");
+    }
+    node(doc, "param.float-123_456", "param.float", { name: "Opacity", value: 0.5 });
+    wire(doc, "param.float-123_456", "out", "output", "opacity");
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+    const result = compileMaterialPlan(lowered.plan, {
+      scene, name: "generated-ids", resolveTexture: (guid) => textures[Number(guid.slice(-1))]!,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    dispose.push(result.dispose);
+    expect(await result.ready).toEqual([]);
+    const sources = result.material.attachedBlocks.filter((block): block is ImageSourceBlock => block instanceof ImageSourceBlock);
+    expect(sources).toHaveLength(2);
+    expect(new Set(sources.map((block) => block.samplerName)).size).toBe(2);
+    expect(new Set(sources.map((block) => block.texture))).toEqual(new Set(textures));
+    for (const block of sources) {
+      expect(block.samplerName).toMatch(/^[A-Za-z][A-Za-z0-9_]*$/);
+      expect(block.samplerName).not.toContain("__");
+      expect(result.material.compiledShaders).toContain(`sampler2D ${block.samplerName}`);
+    }
+    const uniforms = result.material.compiledShaders.match(/\buniform\s+\w+\s+(\w+)/g) ?? [];
+    expect(uniforms.length).toBeGreaterThan(0);
+    expect(uniforms.every((uniform) => !uniform.includes("__"))).toBe(true);
+    expect(result.setParameter("Opacity", { kind: "float", value: 0.75 })).toBe(true);
+    expect(result.material.attachedBlocks.some((block) => block instanceof InputBlock && block.value === 0.75)).toBe(true);
+  });
+
   it.each(["parameter", "inline", "forwarded"])("compiles and binds a %s texture sampler for custom UV sampling", async (source) => {
     const engine = new NullEngine();
     const scene = new Scene(engine);

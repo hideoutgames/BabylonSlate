@@ -41,6 +41,8 @@ Overlay Play collects Texture literals from **Set Material Texture Parameter** n
 
 ## Runtime Material Parameters
 
+Compiler block names remove numeric-ID separator artifacts before Babylon allocates unique shader symbols. Editor-generated Texture Sample IDs therefore produce legal GLSL samplers; distinct operations retain separate texture bindings even when their sanitized names coincide. Authored graph IDs and public parameter names remain unchanged.
+
 Post-process material readiness completes Babylon's existing deferred camera passes and invalidates the viewport. It must not rebuild the stack: releasing its last material reference on readiness would start another asynchronous compile and freeze the editor. Stack, document, camera, and enable/disable changes still rebuild and release their owned resources.
 
 - MeshComponent geometry and material assignments use separate asset references. A primitive with a Material keeps a null `meshAssetGuid`; only its model asset can populate that field. The Material travels in `assignMaterial`, so adding a surface Material cannot replace primitive geometry with an unloaded model placeholder.
