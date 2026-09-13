@@ -38,6 +38,7 @@ import { calibratedShadowBias } from "./shadow-bias";
 import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
+import { ShadowMapRefresh } from "./shadow-map-refresh";
 import {
   ENGINE_SHADOW_BUDGET,
   SHADOW_MATERIAL_SAMPLER_RESERVE,
@@ -125,6 +126,9 @@ export class SceneShadowController {
   private readonly meshes = new Set<AbstractMesh>();
   private readonly pending = new Set<AbstractMesh>();
   private readonly spatial = new ShadowSpatialIndex();
+  private readonly refresh = new ShadowMapRefresh((mesh) =>
+    this.spatial.invalidate(mesh),
+  );
   private drawCalls = 0;
   private triangles = 0;
   shadowDrawCalls(): number {
@@ -160,12 +164,20 @@ export class SceneShadowController {
       this.triangles = 0;
       this.sync();
     });
+    // Per-camera target rendering follows active-mesh/world-matrix evaluation.
+    // Catch those updates before Babylon decides whether each shadow map renders.
+    scene.onBeforeRenderTargetsRenderObservable.add(() => {
+      this.refresh.syncCasters(scene, this.meshes);
+      for (const entry of this.entries.values())
+        if (entry.generator) this.refresh.apply(entry.generator);
+    });
     scene.onDisposeObservable.addOnce(() => {
       engine.onContextRestoredObservable.remove(restored);
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.entries.clear();
       this.meshes.clear();
       this.pending.clear();
+      this.refresh.dispose();
       this.spatial.dispose();
       reserveSceneShadows(scene, { bytes: 0, passes: 0, samplers: 0 });
       controllers.delete(scene);
@@ -275,6 +287,11 @@ export class SceneShadowController {
         status: entry?.status ?? "unsupported",
         reason: entry?.reason ?? null,
         allocationError: entry?.recovery?.error ?? null,
+        refreshMode: generator
+          ? generator.getShadowMap()?.refreshRate === RenderTargetTexture.REFRESHRATE_RENDER_ONCE
+            ? "on-change"
+            : "continuous"
+          : null,
         effectiveFilter: !generator
           ? null
           : generator.usePoissonSampling
@@ -323,6 +340,7 @@ export class SceneShadowController {
         entry.generator?.addShadowCaster(mesh, false);
     }
     this.pending.clear();
+    this.refresh.syncCasters(scene, this.meshes);
     const casterBounds = this.spatial.bounds();
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
@@ -779,6 +797,8 @@ export class SceneShadowController {
       live.passes += passes;
     }
     reserveSceneShadows(scene, live);
+    for (const entry of this.entries.values())
+      if (entry.generator) this.refresh.apply(entry.generator);
   }
   private applySettings(
     generator: ShadowGenerator,

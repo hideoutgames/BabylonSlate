@@ -352,8 +352,27 @@ are kept separate from errors raised by the allocation. These checks run
 only when constructing a map, so unchanged frames do not poll driver errors.
 Exhausted requests remain suppressed until settings change, scene reload or context
 restoration. Cleanup failures stop retries and propagate a recovery error.
-Dirty-map scheduling, mobility-aware refresh and a distinct free-camera inspection
-override are not implemented in this safety slice.
+Local maps with known opaque, undeformed casters render once and refresh on change.
+A scene-wide caster revision covers actual world-matrix changes (including externally
+supplied frozen attachment matrices), geometry edits, visibility, participation and
+material depth/culling changes. Unchanged forced matrix computations do not invalidate
+maps. Local light pose/projection, depth range, camera identity and floating render-origin
+changes also invalidate. Maps keep their allocation; no per-frame signature arrays or
+per-light whole-scene scans are added. Diagnostics expose `on-change` or `continuous`.
+The policy scans before allocation/projection and again before per-camera targets,
+after active-mesh evaluation. It uses Babylon render-once counters and explicit resets;
+readiness probes do not count as a completed render. Unready caster shaders retain
+Babylon's automatic retry. Geometry observers preserve and restore existing callbacks.
+
+Only known native opaque materials and compiler-certified opaque surface graphs with
+identity world-position offset can cache local maps. Classification uses the fully
+lowered graph, rejects custom GLSL and is invalidated by out-of-band shader changes.
+Alpha, skeletons, morphs, deformation, instances, updatable geometry, camera-dependent
+geometry and unknown shader/hooks keep refreshing conservatively. Any uncertain visible
+caster currently keeps every local map live; any dirty caster invalidates all local maps.
+The camera-dependent sun always refreshes. This policy adds no authored mobility defaults,
+staggered refresh, baking or distinct free-camera inspection override. Spatially selective
+invalidation and device performance qualification remain separate work.
 Light diagnostics distinguish disabled, non-illuminating, intentionally unshadowed,
 globally disabled shadows, distance limits, budget limits and allocation failure.
 They report the actual filter, including Babylon's point-light Poisson fallback.
