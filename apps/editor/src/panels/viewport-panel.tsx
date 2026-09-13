@@ -775,11 +775,38 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         >;
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
+        renderingBaseline: () => Record<string, unknown> | null;
       };
     };
     const host = globalThis as ViewportTestHost;
 
     host.__babylonslateViewportTest = {
+      renderingBaseline: () => {
+        const handle = engineRef.current;
+        if (!handle) return null;
+        const caps = handle.engine.getCaps();
+        return {
+          userAgent: navigator.userAgent,
+          backend: "webgl2",
+          webGLVersion: handle.engine.webGLVersion,
+          render: handle.renderDiagnostics(),
+          frameCount: handle.scheduler.stats().renderedFrames,
+          drawCalls: handle.drawCalls(),
+          liveObjects: handle.liveObjectCounts(),
+          engineScenes: handle.engine.scenes.length,
+          estimatedTextureBytes: handle.resourceCache.accountedBytes(),
+          estimatedGeometryBytes: handle.accountedGeometryBytes(),
+          sceneOverrides: sceneRef.current?.settings.shadowOverrides,
+          capabilities: {
+            maxTextureSize: caps.maxTextureSize,
+            maxCubemapTextureSize: caps.maxCubemapTextureSize,
+            maxTexturesImageUnits: caps.maxTexturesImageUnits,
+            textureFloatRender: caps.textureFloatRender,
+            textureHalfFloatRender: caps.textureHalfFloatRender,
+            timerQuery: !!caps.timerQuery,
+          },
+        };
+      },
       sceneVisuals: () => {
         const sync = engineRef.current?.editor?.sync;
         const actors = sceneRef.current?.actors ?? [];

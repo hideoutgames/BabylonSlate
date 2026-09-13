@@ -59,3 +59,9 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Draw-call ceiling (`DRAW_CALL_WARN_CEILING` 400) as HUD warnings.
 
 A16 60fps and on-device reopen remain `p1-device-spikes`. Export unzip-serve-boot-tick is `e2e/p14-export.spec.ts`.
+
+## Renderer baseline fixtures
+
+`e2e/rendering-baseline.spec.ts` loads a primitive room with sixteen eligible point lights, compares sixteen spots, and reloads points. It records actual drawing dimensions, capability limits, render counters, estimated shadow/texture/geometry bytes, live scene counts, and real canvas captures. `e2e/rendering-transitions.spec.ts` exercises settings close, unchanged close, and explicit reload with blocking loading progress. Run these explicit files through `pnpm --silent agent:wait local --script test:e2e -- <file>`.
+
+These are local browser safety and rendering checks. Chromium touch emulation is not Safari/iPad GPU validation, estimated bytes are not measured residency, and short fixture runs do not establish sustained 60 fps. The A16 crash mechanism remains unconfirmed without device evidence.

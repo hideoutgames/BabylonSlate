@@ -242,7 +242,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | `viewport-shading-mode` | Session **Viewport Mode** overlay (`PBR` / `Unlit` / `Wireframe`) on actor world materials. Unlit uses native material flags and compiled NodeMaterial `PBRMetallicRoughnessBlock.unlit` plus `scene.lightsEnabled = false` (independent of authored lights; does not require a default hemi). Changed shading invalidates shader defines and cached readiness while preserving frozen materials, texture bindings, and material identity. Original block flags are restored when leaving Unlit. Wireframe sets `Material.fillMode`. Authored Babylon `pointsCloud` fill is restored when returning to PBR/Unlit. Skips gizmos, grid, billboards, volumes, collider dashes, and debug overlays. Re-applied after `EditorSceneSync`. Model Preview reuses the overlay for a session **Preview Shading** radio dropdown (top-right, `size="sm"` outline, not `ModelPayload`) plus **Show Collision** (session, default on) and collider gizmos. Not Play console `wireframe`. |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes. Multi/offset visuals **and** Light / Camera / Audio / Particle / **RigidBody** / **NavMesh** / empty / volume billboards always use a **non-billboard** origin root at `actor.transform` (volumetric pick collider, `visibility = 0`); the gizmo stays on that origin so billboard facing is not written into rotation. `ColliderComponent` is a visual in the same pipeline as `MeshComponent`: opaque dashed segment meshes (`collider-visual.ts`, dash/gap 0.12 / 0.08), `renderingGroupId = world`, depth write on, full local TRS. 3D `MeshComponent` collision (`collisionMode` ≠ `none`) parents the same dash meshes onto the visual when Viewport **Show Collisions** is on (session, default off); 2D worlds skip them. Play does not draw Mesh dashes unless console `showcollision`. `NavMeshBlockerComponent` / `BlockingVolumeComponent` draw dotted unit volumes (`editor-volume.ts`) plus a `default` billboard at the actor pivot (the icon inverts origin local scale so non-uniform scale hits the volume only). Real meshes occlude dashes in front; dashes in front of meshes draw on top. Not UtilityLayer, `EditorDebugOverlay`, `RENDERING_GROUP.ui`, or `mesh.overlay`. Outline uses `visualMeshesForActor` (drawn glTF parts / primitives; skips the hidden Model placeholder and collider dashes), not the pick proxy. Model actors keep a hidden named root; instantiated glTF parents under a `__importScale` child so Model `importScale` does not share `mesh.scaling` with actor TRS. A collider (or extra visual) origin loads the GLB under the MeshComponent child. `setMeshAssets` that only adds `modelBytes` instantiates in place and does not dispose the scene. `whenEditorModelsReady()` settles pending GLB `slotAnimLoads` (empty scenes resolve immediately). `SkyboxComponent` is a visual (`createSkyboxMesh`); fingerprint includes `size` plus the six face guids. `Text3DComponent` is a visual (`createText3DMesh`); fingerprint includes text / size / depth / color / font. Editor and Prefab viewports bind `MeshComponent.materialGuid` through `MaterialLibrary.resolveMaterial` (whole-mesh override; skip `meshKind: "pivot"`). Rebind every apply so a Details-only edit or late document load does not need a mesh rebuild; `setMaterialDocuments` re-applies the last scene when the mesh-asset fingerprint is unchanged. |
 | `scene-illumination` | Incremental `authoredLight:<actorId>` / `authoredCamera:<actorId>` maps. `LightComponent` (point/dir/spot) plus `HemisphericFillLightComponent` (`light:hemispheric`, direction actor rotation × world +Y). No unnamed viewport hemi. Direction for point/dir/spot is (actor rotation × component rotation) × Babylon forward `(0,0,1)`. Position is actor TRS × Light/Camera `component.transform`. Game cameras are detached `UniversalCamera` (never ArcRotate); Euler `.rotation` is zeroed after `rotationQuaternion` so they do not fight. `syncAuthoredCamerasFromMeshes` copies a live origin-mesh world pose during gizmo drag so PIP / Game Camera preview do not wait for document commit. `applyAuthoredCameraLens(camera, properties, aspect)` is the single lens path: unfreeze, set `Camera.ORTHOGRAPHIC_CAMERA` / `PERSPECTIVE_CAMERA`, vertical FOV, ortho `±size` × live aspect (not hardcoded 16:9). Zero/invalid canvas size falls back to 16:9 so the first Play frame cannot write a degenerate ortho box. Perspective freezes the projection at that aspect so a later `getRenderWidth()` from the wrong canvas cannot leak in. `applyAuthoredCameraProperties` reads engine render size; `refreshAuthoredCameraLenses` runs from `createEngine` `resize` / `setSize` over illumination cameras and `authoredCamera:` scene cameras (not the 320×180 PIP). Editor keeps the orbit camera (`stealActiveCamera: false`) unless Viewport **Game Camera** preview is on. Play uses the named Default Camera; missing keeps the Play default. Shared scene-owned shadow allocation uses project/scene settings, stabilized directional cascades and a separate local-light budget. Helpers, skyboxes and debug overlays neither cast nor receive; Mesh components expose independent participation. Linear fog + optional IBL cube; `environmentColor` is Play and 3D-editor clear (2D editor keeps chrome clear). Contract: [engineplan §2.5](../engineplan.md). |
-| `editor-billboard` | Camera-facing unlit PNG quads (`engine-content/billboards/`: `default`, `point_light`, `spot_light`, `directional_light`, `camera`, `audio`, `particles`, `navmesh`). Dedicated file when we have one (lights by `lightKind`; hemispheric fill reuses `directional_light`); **`default.png` otherwise** — Empty Actor, unknown helpers, solo non-visual components, and volume centers. Mesh / Sprite / Tilemap / Skybox / 3D Text skip the extra icon. Icons are children of the origin (`BILLBOARDMODE_ALL` on the icon, `NONE` on the origin; the icon inverts origin local scale so it stays square; double-sided). `renderingGroupId` is `foreground` (2) with `EDITOR_BILLBOARD_ALPHA_INDEX` 1000 so helpers draw in front of the world-group grid (`applyWorldVisualGroup` skips `metadata.editorBillboard`). Light icons tint via `emissiveColor`. There is no procedural 32×32 rasterizer and no 0.25 white cube. Play `assignMesh` still carries `light:*` / `camera` / `audio` / `rigidbody` so authored lights, cameras, and bodies exist, but those slots stay `playHelperVisual`. Empty actors emit no Play mesh. Actor-level visibility applies only to Mesh / Sprite / Tilemap / Skybox / 3D Text parts (and collider dashes when `renderInGame` is on). |
+| `editor-billboard` | Camera-facing unlit PNG quads (`engine-content/billboards/`: `default`, `point_light`, `spot_light`, `directional_light`, `camera`, `audio`, `particles`, `navmesh`). Dedicated file when we have one (lights by `lightKind`; hemispheric fill reuses `directional_light`); **`default.png` otherwise** — Empty Actor, unknown helpers, solo non-visual components, and volume centers. Mesh / Sprite / Tilemap / Skybox / 3D Text skip the extra icon. Icons are children of the origin (`BILLBOARDMODE_ALL` on the icon, `NONE` on the origin; the icon inverts origin local scale so it stays square; double-sided). `renderingGroupId` is `foreground` (2) with `EDITOR_BILLBOARD_ALPHA_INDEX` 1000 so helpers draw in front of the world-group grid (`applyWorldVisualGroup` skips `metadata.editorBillboard`). Light icons use white for enabled operation (including intentionally unshadowed lights), yellow for requested but unavailable shadows, and red for disabled/non-illuminating lights. Authored RGB remains in the Color field; Enabled details explain this palette. There is no procedural 32×32 rasterizer and no 0.25 white cube. Play `assignMesh` still carries `light:*` / `camera` / `audio` / `rigidbody` so authored lights, cameras, and bodies exist, but those slots stay `playHelperVisual`. Empty actors emit no Play mesh. Actor-level visibility applies only to Mesh / Sprite / Tilemap / Skybox / 3D Text parts (and collider dashes when `renderInGame` is on). |
 | `editor-volume` | Unit box/cylinder editor volumes: pickable unlit **alpha 0** fill (`visibility === 1`) plus dotted outline (NavMesh Blocker amber, Blocking Volume blue). Always paired with a center `default` billboard. Play hides both; `shownav` redraws blocker volumes only. |
 | `nav-debug-overlay` | Translucent green Recast triangles with darker `EdgesRenderer` outlines, unpickable and shadow-skipped. 3D worlds lift them `0.04` on +Y; 2D worlds map Recast XZ onto XY and offset `-0.04` on Z, independently of camera view mode. Driven by Viewport **Show Navmesh** (`scene.settings.showNavmesh`) or a leftover `NavMeshComponent.debugOverlay`. When on, also draws authored NavMesh Blocker volumes. Play console `shownav` reuses the same overlay. Clearing or disposing cancels pending initialization and releases the navmesh material. |
 | `play-console-viz` / `play-navigation-overlay` | Play and Preview Build share console geometry. `debugphysics` / `showcollision` follow live simulation poses and matching boxes, spheres, capsules, cylinders, convex hulls, and triangle meshes; 2D capsules remain planar and polygon/loop-chain outlines close. `showpathfinding` draws active crowd paths and waypoint/target markers. `shownavagent` adds each agent's footprint, height, velocity, and a camera-facing 3D label with actor identity, state, and speed. Stable line layouts and unchanged labels reuse meshes; disabling commands, removed agents, and scene disposal clear their resources. All debug geometry is unpickable, unlit, fog-free, and excluded from shadows. |
@@ -274,14 +274,24 @@ The viewport reload key includes effective shadow settings alongside CEL setting
 Play. Mesh additions/removals update caster membership, disabled lights release
 allocation, and local lights have a separate budget from the directional light.
 Supported directional rendering uses stabilized cascades without a depth-reduction
-pass. Quality presets never cap the authored local shadow budget or distance. Final iPad validation is manual.
+pass. Quality presets select Auto local capacity; Manual remains an authored upper
+limit subject to effective resource admission. Neither mode changes authored
+distance. Final iPad validation is manual.
 CEL band and highlight edges are hard at zero softness; positive softness is opt-in. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
 Graph system-matrix input names retain Babylon's `World`/`View` prefixes so its floating-origin adapter offsets geometry, lights and shadow coordinates consistently.
 Authored World Position and Camera Position graph inputs add the render origin
 back; lighting and view-direction calculations remain camera-relative. Moving
 the camera therefore does not move world-space procedural material coordinates.
 
-Obsolete hardware-specific shadow caps have been removed.
+All Scene, Play and preview controllers share an Engine shadow reservation ceiling
+of 512 MiB and 64 faces/passes. Per-quality scene ceilings further restrict admission.
+Maps are admitted before construction, including all six cube faces, RGBA
+half/float/byte attachments selected from capabilities, conservative four-byte depth,
+and the temporary four-layer CSM constructor. Eight fragment samplers are reserved
+for materials; PCSS costs two shadow samplers, other supported filters one.
+These are conservative policy allowances, not measured VRAM or A16 performance.
+The ledger covers shadows only; full engine accounting of textures, effects,
+reflection targets and transition copies remains future work.
 Play stats report CPU submission time, asynchronous engine GPU timing when
 supported, effective target size/sample count, allocated shadow passes and an
 attachment-memory estimate. Unsupported or pending GPU timing is labeled rather
@@ -307,6 +317,20 @@ and report completed RTT readback-plus-copy duration separately.
 Local shadow allocation follows authored priority, then intensity and camera
 distance, with a 15% retention bonus to avoid oscillation. A substantially more
 relevant light can replace an existing allocation without disabling it first.
+The current active camera supplies relevance, including possession changes.
+Compatible generators/maps survive camera, distance, bias, fade and filter edits.
+Structural resolution/cascade/type changes release old maps before replacement.
+Admission lowers map resolution to fit, with a 256-pixel floor, and reports limits;
+unchanged requests retain their admitted resolution to avoid movement-driven churn.
+When eligible local maps exist, the sun may consume at most half the scene allowance.
+Allocation failures release partial generators and suppress repeat attempts until
+the allocation request changes or the scene reloads. Dirty-map scheduling,
+mobility-aware refresh, automatic failure downgrade and a distinct free-camera
+inspection override are not implemented in this safety slice.
+Light diagnostics distinguish disabled, non-illuminating, intentionally unshadowed,
+globally disabled shadows, distance limits, budget limits and allocation failure.
+They report the actual filter, including Babylon's point-light Poisson fallback.
+Single-channel formats are not enabled or counted as a saving.
 
 #### Manual iPad A16 validation
 
@@ -334,8 +358,8 @@ device to validate sustained frame pacing and thermal behavior:
    check the 60 FPS Play and 30 FPS editor targets, plus idle/hidden suspension.
 6. Compare Low and Medium on the same scene before trying High/Ultra. Increase
    one of map resolution, cascade count, local-light count or filtering at a
-   time. PCSS is an optional PBR filter on every profile; no device-specific cap
-   overrides the selected filter or local shadow budget.
+   time. Compare requested versus effective map sizes/counts and limiting reasons.
+   PCSS is an optional PBR filter; point shadows use Babylon's Poisson fallback.
 
 Camera-relative rendering and the high/residual snapshot transport protect
 rendered coordinates; they do not give arbitrary precision to physics or
@@ -371,13 +395,33 @@ Rendering scalability uses neutral Low, Medium, High and Ultra labels. Engineeri
 | High | 2048 | 4 | 2048 | High |
 | Ultra | 4096 | 4 | 2048 | High |
 
-The default local budget is four; users can choose any nonnegative safe integer. The authored shadow distance defaults to 200 world units and does not limit map size. Presets change neither value. PCSS remains an explicit PBR artistic choice. These are starting profiles, not sustained device performance measurements.
+The table lists requested map settings. Actual maps also satisfy the following
+conservative admission policy, pending device qualification:
 
-Only the first enabled directional light in stable scene order illuminates a scene. Authored enabled values are preserved so disabling/removing the owner activates the next eligible sun. Editor billboards show red for lights with no illumination and yellow for illuminating point/spot/directional lights without a shadow allocation; hemispheric fills retain their authored color.
+| Quality | Auto Local Lights | Scene Shadow MiB | Scene Faces/Passes |
+| --- | --- | --- | --- |
+| Low | 1 | 64 | 8 |
+| Medium | 2 | 192 | 16 |
+| High | 4 | 256 | 28 |
+| Ultra | 8 | 384 | 52 |
+
+New settings default to Auto. Manual preserves any nonnegative safe-integer upper
+limit; selecting Low after Manual 16 still reduces effective allocation through
+the byte/pass limits. Presets retain the chosen Auto/Manual mode and saved Manual
+limit. Legacy full project settings with a numeric capacity migrate to Manual,
+including the ambiguous value four that historical normalization wrote by default.
+Scene v3-to-v4 migration applies this once to authored numeric overrides; current
+sparse fields stay independent, and resetting mode resumes project inheritance.
+Project normalization, export and player hydration retain the mode. The authored
+shadow distance defaults to 200 world units and does not limit map size. PCSS
+remains an explicit PBR artistic choice. None of these tables certifies sustained
+device performance.
+
+Only the first enabled directional light in stable scene order illuminates a scene. Authored enabled values are preserved so disabling/removing the owner activates the next eligible sun. Editor billboards show white for configured operation, red for lights with no illumination, and yellow for requested shadows without an allocation. Intentionally unshadowed lights and enabled hemispheric fills are white; authored color never tints status icons.
 
 Material color inputs and Color (sRGB) samples decode to linear graph values; Data (Linear) samples remain numerical data. Unlit converts its final color to display space once. CEL converts base/emissive graph colors before its display-space ramp, without changing texture decoding when switching render modes. PBR retains its linear lighting and image-processing output. The obsolete Legacy (Unconverted) texture option is removed.
 
-Scalability groups cover shadow allocation resolution/filtering, fixed/dynamic render resolution, texture residency/anisotropy/LOD, and opt-in post-process pass resolution. Authored post-process passes stay enabled; only passes marked scalable may render below full resolution. Runtime `quality` queries effective settings. `quality medium`, `quality shadows ultra`, `quality shadows budget 6`, `quality shadows distance 200`, `quality shadows enabled off`, and `quality resolution scale 0.75` apply immediately without resetting simulation. `quality shadows reset` resets one group; `quality reset` restores all current project/scene values. The obsolete renderquality, shadowquality and resolutionscale commands are removed; framecap remains independent.
+Scalability groups cover shadow allocation resolution/filtering, fixed/dynamic render resolution, texture residency/anisotropy/LOD, and opt-in post-process pass resolution. Authored post-process passes stay enabled; only passes marked scalable may render below full resolution. Runtime `quality` queries requested settings; Stats/light diagnostics show actual allocations and limiting reasons. `quality medium`, `quality shadows ultra`, `quality shadows budget 6` (Manual), `quality shadows budget auto`, `quality shadows distance 200`, `quality shadows enabled off`, and `quality resolution scale 0.75` apply immediately without resetting simulation. `quality shadows reset` resets one group; `quality reset` restores all current project/scene values. The obsolete renderquality, shadowquality and resolutionscale commands are removed; framecap remains independent.
 
 `lightsdebug on/off` controls an independent, default-off light diagnostic overlay in editor Play and debug players. Detailed light rows are collected only while enabled; Stats retains aggregate rendering costs. Illumination exclusion and shadow allocation are reported separately.
 
