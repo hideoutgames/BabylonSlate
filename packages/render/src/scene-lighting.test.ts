@@ -402,9 +402,12 @@ describe("scene material lighting", () => {
     const compiled = compileMaterialPlan(lowered.plan, { scene, name: "receiver" });
     if (!compiled.ok) throw new Error("Fixture material did not compile");
     const material = compiled.material;
+    const added = new Promise<void>((resolve) => scene.onNewMeshAddedObservable.addOnce(() => resolve()));
     const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
     mesh.receiveShadows = true;
     mesh.material = material;
+    await added;
+    controller.sync();
     material.allowShaderHotSwapping = false;
     material.freeze();
     const check = async (shadowed: boolean) => {
