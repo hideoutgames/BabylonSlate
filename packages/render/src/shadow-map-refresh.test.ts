@@ -67,7 +67,13 @@ async function fixture(floatingOrigin = false) {
   const generator = controller.generator(light)!;
   const map = generator.getShadowMap()!;
   const faces = vi.fn();
-  map.onBeforeRenderObservable.add(faces);
+  // RTT readiness also emits per-face render observables. Count real framebuffer
+  // bindings instead, including the clears needed after the last caster leaves.
+  const bindFramebuffer = engine.bindFramebuffer.bind(engine);
+  vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, ...args) => {
+    if (target === map.renderTarget) faces();
+    bindFramebuffer(target, ...args);
+  });
   await material.forceCompilationAsync(mesh);
   await generator.forceCompilationAsync();
   const render = () => {
