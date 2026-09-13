@@ -155,6 +155,26 @@ describe("environment texture import", () => {
     expect(() =>
       readEnvironmentTextureInfo(env({ irradiance: { x: [1, 2, null] } })),
     ).toThrow(/irradiance/);
+    // The native irradiance decoder shares the same >=2 base-size guard.
+    const irradiance = Object.fromEntries(
+      ["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"].map((key) => [
+        key,
+        [0, 0, 0],
+      ]),
+    );
+    expect(() =>
+      readEnvironmentTextureInfo(
+        env({
+          irradiance: {
+            ...irradiance,
+            irradianceTexture: {
+              size: 1,
+              faces: Array(6).fill({ position: 0, length: png.length }),
+            },
+          },
+        }),
+      ),
+    ).toThrow(/at least 2/);
   });
 
   it("rejects non-cubes, incomplete mip chains, ambiguous encodings and truncated DDS", () => {

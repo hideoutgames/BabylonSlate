@@ -206,13 +206,14 @@ function readEnv(bytes: Uint8Array): EnvironmentTextureInfo {
       if (
         !record(diffuse) ||
         !cubeSize(diffuse.size) ||
+        diffuse.size < 2 ||
         !Array.isArray(diffuse.faces) ||
         diffuse.faces.length !== 6 ||
         (diffuse.dominantDirection !== undefined &&
           !triple(diffuse.dominantDirection))
       )
         throw new Error(
-          "ENV irradiance texture requires six valid cube faces.",
+          "ENV irradiance texture requires six valid cube faces of at least 2×2.",
         );
       diffuse.faces.forEach((value) => face(value, diffuse.size as number));
     }
