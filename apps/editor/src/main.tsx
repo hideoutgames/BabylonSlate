@@ -8,11 +8,19 @@ import {
 } from "@babylonslate/vfs";
 import App from "./App";
 
-initializeCapacitorLifecycle();
-initializeCapacitorAudioLifecycle();
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+const bakeProof = (import.meta as ImportMeta & { env: { VITE_TEST_MODE?: string } }).env.VITE_TEST_MODE === "true"
+  && new URLSearchParams(location.search).has("bake-provider-proof");
+if (bakeProof) {
+  // Test builds exercise the real isolated provider without an active viewport.
+  void import("@babylonslate/render/bake-provider-prototype").then((provider) => {
+    Object.assign(globalThis, { __bakePrototype: provider });
+  });
+} else {
+  initializeCapacitorLifecycle();
+  initializeCapacitorAudioLifecycle();
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
