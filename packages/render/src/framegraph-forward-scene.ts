@@ -5,6 +5,7 @@ import {
   backbufferDepthStencilTextureHandle,
 } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
+import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 
 /** Internal proof result; renderer selection and authored settings are untouched. */
@@ -19,6 +20,7 @@ export type ForwardSceneGraphResult =
 export class ForwardSceneFrameGraph {
   private graph: FrameGraph | undefined;
   private objects: FrameGraphObjectRendererTask | undefined;
+  private cull: FrameGraphCullObjectsTask | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
   private preparedHeight = 0;
@@ -28,8 +30,10 @@ export class ForwardSceneFrameGraph {
   private renderingCamera: Camera | undefined;
   private readonly beforeRender: Observer<Scene>;
   private readonly onDispose: Observer<Scene>;
+  private readonly scene: Scene;
 
-  constructor(private readonly scene: Scene) {
+  constructor(scene: Scene) {
+    this.scene = scene;
     // Babylon 9.20 clears activeCamera at the start of its graph render method.
     // Restore it before existing lighting/floating-origin/lifecycle observers.
     this.beforeRender = scene.onBeforeRenderObservable.add(
@@ -77,12 +81,20 @@ export class ForwardSceneFrameGraph {
 
     const graph = this.graph!;
     this.objects!.camera = camera;
+    this.cull!.camera = camera;
     this.syncSceneInputs();
     if (!this.isReady()) {
       this.scene.render(updateCameras);
       return { path: "classic", reason: "FrameGraph effects are not ready." };
     }
     const cameras = this.scene.activeCameras;
+    const ubo = this.scene.getSceneUniformBuffer();
+    const renderPass = engine.currentRenderPassId;
+    const oit = this.scene._depthPeelingRenderer;
+    const intermediate = this.scene._intermediateRendering;
+    const shadowFlags = this.scene.lights.map(
+      (light) => [light, light.shadowEnabled] as const,
+    );
     try {
       this.renderingCamera = camera;
       this.scene.frameGraph = graph;
@@ -98,6 +110,11 @@ export class ForwardSceneFrameGraph {
       this.scene.frameGraph = null;
       this.scene.activeCamera = camera;
       this.scene.activeCameras = cameras;
+      this.scene.setSceneUniformBuffer(ubo);
+      this.scene._depthPeelingRenderer = oit;
+      this.scene._intermediateRendering = intermediate;
+      engine.currentRenderPassId = renderPass;
+      for (const [light, enabled] of shadowFlags) light.shadowEnabled = enabled;
       this.renderingCamera = undefined;
     }
   }
@@ -123,6 +140,8 @@ export class ForwardSceneFrameGraph {
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
       return "Multiple and rig cameras require classic rendering.";
+    if (scene.isActiveMeshesFrozen)
+      return "Frozen active-mesh lists require classic rendering.";
     // Pinned AbstractEngine target state: graph.execute restores the default
     // framebuffer, so it cannot borrow a caller-owned shared-view RTT.
     if (camera.outputRenderTarget || scene.getEngine()._currentRenderTarget)
@@ -153,6 +172,11 @@ export class ForwardSceneFrameGraph {
         );
         this.clear.targetTexture = backbufferColorTextureHandle;
         this.clear.depthTexture = backbufferDepthStencilTextureHandle;
+        this.cull = new FrameGraphCullObjectsTask(
+          "Forward cull",
+          this.graph,
+          scene,
+        );
         this.objects = new FrameGraphObjectRendererTask(
           "Forward objects",
           this.graph,
@@ -162,9 +186,11 @@ export class ForwardSceneFrameGraph {
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
         this.graph.addTask(this.clear);
+        this.graph.addTask(this.cull);
         this.graph.addTask(this.objects);
       }
       this.objects!.camera = camera;
+      this.cull!.camera = camera;
       this.syncSceneInputs();
       const width = engine.getRenderWidth(true);
       const height = engine.getRenderHeight(true);
@@ -198,9 +224,14 @@ export class ForwardSceneFrameGraph {
     const camera = this.scene.activeCamera;
     const cameras = this.scene.activeCameras;
     const ubo = this.scene.getSceneUniformBuffer();
+    const objectList = this.objects!.objectList;
     try {
+      // The previous frame's culled list may omit a newly visible mesh. Probe
+      // all current candidates before presenting; culling itself never draws.
+      this.objects!.objectList = this.cull!.objectList;
       return this.graph!.isReady();
     } finally {
+      this.objects!.objectList = objectList;
       // ObjectRenderer's readiness path has no finally around user material
       // readiness hooks. Keep caller camera/UBO ownership even if one throws.
       this.scene.activeCamera = camera;
@@ -215,10 +246,11 @@ export class ForwardSceneFrameGraph {
     this.clear!.clearDepth = this.scene.autoClearDepthAndStencil;
     this.clear!.clearStencil = this.scene.autoClearDepthAndStencil;
     // Reference the live scene arrays; membership changes do not rebuild tasks.
-    this.objects!.objectList = {
+    this.cull!.objectList = {
       meshes: this.scene.meshes,
       particleSystems: this.scene.particleSystems,
     };
+    this.objects!.objectList = this.cull!.outputObjectList;
   }
 
   private releaseGraph(): void {
@@ -226,9 +258,11 @@ export class ForwardSceneFrameGraph {
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.objects?.dispose();
     this.clear?.dispose();
+    this.cull?.dispose();
     this.graph?.dispose();
     this.objects = undefined;
     this.clear = undefined;
+    this.cull = undefined;
     this.graph = undefined;
     this.preparedWidth = this.preparedHeight = 0;
   }

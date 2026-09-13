@@ -71,6 +71,9 @@ export async function runFrameGraphForwardProof() {
       box.position.x = -1;
       box.rotation.y = 0.3;
       box.material = native;
+      const offscreen = MeshBuilder.CreateBox("offscreen", {}, scene);
+      offscreen.position.x = 100;
+      offscreen.material = native;
 
       setSceneRenderSettings(scene, { mode });
       const document = createDefaultMaterialDocument("Graph Surface");
