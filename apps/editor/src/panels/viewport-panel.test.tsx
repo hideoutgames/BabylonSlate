@@ -5,7 +5,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { syncEditorPlayState } from "@babylonslate/render";
-import { createActor, createDefaultScene, engineCommandBus, type SerializedScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, createEmptyProject, engineCommandBus, type SerializedScene } from "@babylonslate/core";
 import { encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
@@ -53,6 +53,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     setRenderSettings: vi.fn(),
     setMaterialDocuments: vi.fn(),
     whenEditorModelsReady: vi.fn(async () => {}),
+    whenMaterialTexturesReady: vi.fn(async () => {}),
     prewarmSceneMaterials: vi.fn(async () => {}),
     presentFirstFrame: vi.fn(async () => {}),
   };
@@ -69,6 +70,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     handle,
     selection: { actorIds: [] as string[] },
     documents: {
+      projectDocument: null as ReturnType<typeof createEmptyProject> | null,
       assetRegistry: null as Pick<AssetRegistry, "list"> | null,
       applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
       openDocuments: [] as Array<{
@@ -131,7 +133,7 @@ vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     openDocuments: documents.openDocuments,
     applySceneChange: documents.applySceneChange,
-    projectDocument: null,
+    projectDocument: documents.projectDocument,
     collectPlaySpritePayloads: documents.collectPlaySpritePayloads,
     collectPlayTilemapContent: documents.collectPlayTilemapContent,
     collectPlayTextureBytes: documents.collectPlayTextureBytes,
@@ -218,6 +220,7 @@ describe("ViewportPanel engine", () => {
     play.preparing = false;
     documents.openDocuments = [];
     documents.assetRegistry = null;
+    documents.projectDocument = null;
     selection.actorIds = [];
     documents.applySceneChange.mockClear();
     handle.loadScene.mockClear();
@@ -227,6 +230,10 @@ describe("ViewportPanel engine", () => {
     handle.engine.onContextRestoredObservable.add.mockClear();
     handle.engine.onContextRestoredObservable.remove.mockClear();
     handle.whenEditorModelsReady.mockReset().mockResolvedValue(undefined);
+    handle.whenMaterialTexturesReady.mockReset().mockResolvedValue(undefined);
+    handle.setRenderSettings.mockClear();
+    handle.editor.camera.importSessionState.mockClear();
+    handle.editor.camera.exportSessionState.mockClear();
     handle.prewarmSceneMaterials.mockReset().mockResolvedValue(undefined);
     handle.presentFirstFrame.mockReset().mockResolvedValue(undefined);
     documents.collectPlayMaterialLibrary.mockReset().mockResolvedValue({
@@ -288,7 +295,7 @@ describe("ViewportPanel engine", () => {
     },
   );
 
-  it("blocks settings reloads on the same project Engine and ignores unchanged settings", async () => {
+  it("applies compatible settings behind blocking progress without replacing the scene or camera", async () => {
     const scene = createDefaultScene();
     const document = {
       id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
@@ -303,8 +310,14 @@ describe("ViewportPanel engine", () => {
       ...scene, settings: { ...scene.settings, shadowOverrides: { distance: 80 } },
     } }];
     view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    expect(handle.loadScene).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledTimes(2));
-    expect(createEngineMock.mock.calls[1]?.[1]?.sharedEngine).toBe(createEngineMock.mock.calls[0]?.[1]?.sharedEngine);
+    expect(createEngineMock).toHaveBeenCalledOnce();
+    expect(handle.dispose).not.toHaveBeenCalled();
+    expect(handle.editor.camera.importSessionState).toHaveBeenCalledOnce();
+    expect(handle.editor.camera.exportSessionState).not.toHaveBeenCalled();
+    expect(handle.setRenderSettings).toHaveBeenCalledWith(expect.objectContaining({ shadows: expect.objectContaining({ distance: 80 }) }));
+    expect(screen.getByRole("dialog").textContent).toContain("Updating Rendering");
     expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
     expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
     await act(async () => present());
@@ -312,8 +325,26 @@ describe("ViewportPanel engine", () => {
     documents.openDocuments = [...documents.openDocuments];
     view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 180)); });
-    expect(createEngineMock).toHaveBeenCalledTimes(2);
+    expect(createEngineMock).toHaveBeenCalledOnce();
     expect(handle.presentFirstFrame).toHaveBeenCalledTimes(2);
+  });
+
+  it("recreates compiled material ownership when shading changes while keeping the project Engine", async () => {
+    documents.projectDocument = createEmptyProject("Rendering");
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    const view = renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const project = documents.projectDocument;
+    documents.projectDocument = { ...project, settings: { ...project.settings, render: { ...project.settings.render, mode: "cel" } } };
+    view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(handle.editor.camera.exportSessionState).toHaveBeenCalledOnce();
+    expect(createEngineMock.mock.calls[1]?.[1]?.sharedEngine).toBe(createEngineMock.mock.calls[0]?.[1]?.sharedEngine);
   });
 
   it("rejects stale same-handle asset completion while the replacement waits for presentation", async () => {

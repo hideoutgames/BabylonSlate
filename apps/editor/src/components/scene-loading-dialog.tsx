@@ -19,6 +19,7 @@ export type SceneLoadingDialogProps = {
   progress: number;
   phase: SceneViewportLoadPhase;
   failed?: boolean;
+  rendering?: boolean;
   onRetry?: () => void;
   onDismiss?: () => void;
 };
@@ -28,6 +29,7 @@ export function SceneLoadingDialog({
   progress,
   phase,
   failed = false,
+  rendering = false,
   onRetry,
   onDismiss,
 }: SceneLoadingDialogProps) {
@@ -38,7 +40,9 @@ export function SceneLoadingDialog({
         data-testid="scene-loading-dialog"
       >
         <DialogHeader>
-          <DialogTitle>{failed ? "Scene Loading Failed" : "Loading Scene"}</DialogTitle>
+          <DialogTitle>{rendering
+            ? (failed ? "Rendering Update Failed" : "Updating Rendering")
+            : (failed ? "Scene Loading Failed" : "Loading Scene")}</DialogTitle>
           <DialogDescription>
             {failed
               ? "The viewport could not finish loading. Retry, or close this message to adjust the scene or rendering settings."

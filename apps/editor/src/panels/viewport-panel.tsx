@@ -152,12 +152,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   setMarqueeRectRef.current = setMarqueeRect;
   const engineGenerationRef = useRef(0);
   const completedLoadGenerationRef = useRef(-1);
+  const completedRenderSettingsRef = useRef<string | null>(null);
+  const appliedRenderSettingsRef = useRef<string | null>(null);
   const loadTransitionRef = useRef(0);
   const [sceneLoad, setSceneLoad] = useState<{
     open: boolean;
     progress: number;
     phase: SceneViewportLoadPhase;
     failed?: boolean;
+    rendering?: boolean;
   }>({ open: false, progress: 0, phase: "Preparing Scene" });
   const [sceneReady, setSceneReady] = useState(false);
   const [dropReady, setDropReady] = useState<{
@@ -198,6 +201,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     scene?.settings.shadowOverrides,
   );
   const [renderSettingsKey, setRenderSettingsKey] = useState(requestedRenderSettingsKey);
+  // Shading changes replace compiled material ownership. Other rendering settings
+  // are reconciled by the existing scene quality, lighting and material controllers.
+  const renderMode = (JSON.parse(renderSettingsKey) as { mode: "pbr" | "cel" }).mode;
   useEffect(() => {
     const timer = window.setTimeout(() => setRenderSettingsKey(requestedRenderSettingsKey), 150);
     return () => window.clearTimeout(timer);
@@ -350,6 +356,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           editorFlySpeed: () => flySpeedRef.current,
         });
         engineRef.current = handle;
+        appliedRenderSettingsRef.current = renderSettingsKey;
         disposers.push(() => {
           joystickLeaseRef.current?.();
           joystickLeaseRef.current = null;
@@ -452,7 +459,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     registerScheduler,
     sharedEngine,
     overlayTransformBox,
-    renderSettingsKey,
+    renderMode,
     reloadVersion,
   ]);
 
@@ -504,6 +511,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const handle = engineRef.current;
     if (!scene || !handle) return;
+    // Scene overrides arrive before the coalesced settings transaction. Do not
+    // apply them through incremental loadScene while its blocking UI is pending.
+    if (requestedRenderSettingsKey !== renderSettingsKey) return;
     setDropReady(null);
     setSceneReady(false);
     const controller = new AbortController();
@@ -511,16 +521,23 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const isCurrent = () => !controller.signal.aborted &&
       transitionId === loadTransitionRef.current && engineRef.current === handle;
     const generation = engineGenerationRef.current;
-    const blocking = isSceneViewportRemountLoad(
+    const remount = isSceneViewportRemountLoad(
       generation,
       completedLoadGenerationRef.current,
     );
+    const rendering = !remount && completedRenderSettingsRef.current !== renderSettingsKey;
+    const blocking = remount || rendering;
     if (blocking) {
-      setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
+      handle.setPaused(true);
+      setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
     }
     void (async () => {
       const realize = () => {
         if (!isCurrent()) return;
+        if (appliedRenderSettingsRef.current !== renderSettingsKey) {
+          handle.setRenderSettings(JSON.parse(renderSettingsKey));
+          appliedRenderSettingsRef.current = renderSettingsKey;
+        }
         // Saved Material refreshes must not realize or re-dirty scene structure.
         if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
         handle.loadScene(scene);
@@ -596,6 +613,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             whenModelsReady: async () => {
               if (!isCurrent()) return;
               await handle.whenEditorModelsReady();
+              if (!isCurrent()) return;
+              await handle.whenMaterialTexturesReady();
             },
             warmShaders: async () => {
               if (!isCurrent()) return;
@@ -607,7 +626,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             },
             onProgress: (progress, phase) => {
               if (!isCurrent()) return;
-              setSceneLoad({ open: true, progress, phase });
+              setSceneLoad({ open: true, progress, phase, rendering });
             },
           });
         } else {
@@ -621,10 +640,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           setDropReady({ scene, handle });
           if (blocking) {
             completedLoadGenerationRef.current = generation;
+            completedRenderSettingsRef.current = renderSettingsKey;
             setSceneLoad({
               open: false,
               progress: 100,
               phase: "Presenting First Frame",
+              rendering,
             });
           }
           setSceneReady(true);
@@ -641,6 +662,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [
     scene,
+    requestedRenderSettingsKey,
+    renderSettingsKey,
     materialLibraryKey,
     textureLodKey,
     collectPlaySpritePayloads,
@@ -962,6 +985,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         progress={sceneLoad.progress}
         phase={sceneLoad.phase}
         failed={sceneLoad.failed}
+        rendering={sceneLoad.rendering}
         onRetry={() => setReloadVersion((version) => version + 1)}
         onDismiss={() => setSceneLoad((current) => ({ ...current, open: false }))}
       />
