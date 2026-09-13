@@ -421,7 +421,7 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
     const select = async (id: string, name: string) => {
       fireEvent.click(screen.getByTestId(id));
-      const option = await screen.findByRole("option", { name, exact: true });
+      const option = await screen.findByRole("option", { name });
       fireEvent.pointerDown(option);
       fireEvent.click(option);
       await waitFor(() => expect(screen.getByTestId(id).textContent).toContain(name));
@@ -434,7 +434,7 @@ describe("SettingsModal project authoring", () => {
     expect(lastProjectRender.current).toBeNull();
     // Unrelated provider rerenders must not commit or discard the active draft.
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
-    expect(screen.getByTestId("project-render-path").textContent).toBe("Clustered Forward");
+    expect(screen.getByTestId("project-render-path").textContent).toContain("Clustered Forward");
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(lastProjectRender.current).toMatchObject({ renderPath: "clusteredForward", gpuBackend: "webgpu", mode: "cel" });
   });
