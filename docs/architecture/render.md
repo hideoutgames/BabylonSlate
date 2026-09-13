@@ -52,6 +52,8 @@ Post-process material readiness completes Babylon's existing deferred camera pas
 
 ## Project-lifetime Engine
 
+KTX2 decoding thread and upload format are independent. Packed players can decode on the main thread with self-hosted WASM while retaining ASTC/BC7 on capable hardware. Missing compressed-format capabilities and known software renderers still select RGBA. Preview Build retains its existing PNG/pixel payload policy.
+
 `createEngine` rolls back resources acquired during failed construction before a handle exists: owned scenes (including utility scenes), input and engine subscriptions, render loops, services, and cache leases. Shared engines and retained sibling textures survive; existing view enablement and hardware scaling are restored. Cleanup continues after individual errors and reports them alongside the original construction error. Font registration and engine diagnostics start only after successful construction.
 
 Texture-budget policy follows each handle's cache lease. The largest requested live cap applies, and any explicit live disable keeps budget eviction off; update order cannot overwrite a sibling's policy. Releasing a handle removes its cap and enablement together. With no explicit live value, the cache's own cap and enablement are the fallback, so failed construction and detach cannot leave its baseline changed.
