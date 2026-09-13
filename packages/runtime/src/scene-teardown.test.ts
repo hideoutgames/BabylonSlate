@@ -108,6 +108,29 @@ describe("runtime departing Scene loading", () => {
     expect(runtime.getWorld().getActors()).toHaveLength(0);
   });
 
+  it("Stop retires the remaining owned objects while outgoing teardown is suspended", async () => {
+    const chunks = chunkGate();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(), playSceneGuid: "world", cooperativeSceneLoading: chunks, onCommand: (command) => commands.push(command) });
+    try {
+      await runtime.realizePlayWorld();
+      const departing = [...runtime.getWorld().getActors()];
+      chunks.hold();
+      runtime.executeConsoleCommand("changescene world");
+      const rejected = expect(runtime.realizePlayWorld()).rejects.toMatchObject({ name: "AbortError" });
+      await chunks.suspended();
+      expect(departing.some((actor) => actor.destroyed)).toBe(true);
+      expect(departing.some((actor) => !actor.destroyed)).toBe(true);
+      runtime.stop();
+      await rejected;
+      chunks.open();
+      await Promise.resolve();
+      expect(departing.every((actor) => actor.destroyed)).toBe(true);
+      expect(runtime.getWorld().getActors()).toHaveLength(0);
+      expect(commands.some((command) => (command.type === "activeScene" || command.type === "sceneRealized") && command.sceneLoadId === 2)).toBe(false);
+    } finally { chunks.open(); runtime.stop(); }
+  });
+
   it("fails a missing host paint at the deadline without reporting the Scene ready", async () => {
     vi.useFakeTimers();
     const commands: CommandMessage[] = [];
