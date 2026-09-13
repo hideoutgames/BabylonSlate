@@ -22,7 +22,7 @@ async function openProvider(page: Page) {
   await page.waitForFunction(() => "__bakePrototype" in globalThis);
 }
 
-async function bake(page: Page, job: Input, cancel = false) {
+async function bake(page: Page, job: Input, cancel: false | "sampling" | "compiling" = false) {
   return page.evaluate(async ({ job, cancel }) => {
     const provider = (globalThis as unknown as { __bakePrototype: typeof import("../packages/render/src/bake-provider-prototype") }).__bakePrototype;
     const controller = new AbortController();
@@ -37,7 +37,7 @@ async function bake(page: Page, job: Input, cancel = false) {
         signal: controller.signal,
         onProgress(value) {
           progress.push({ phase: value.phase, samples: value.samples });
-          if (cancel && value.samples >= 1) controller.abort();
+          if ((cancel === "sampling" && value.samples >= 1) || (cancel === "compiling" && value.phase === "compiling")) controller.abort();
         },
         onDisposed(value) { disposal = value; },
       });
@@ -109,14 +109,30 @@ test("browser bake solves receiver irradiance, occlusion and separated colored b
   expect(environment.error).toBeNull();
   const environmentMean = meanRGB(environment.result!.irradiance);
   for (let c = 0; c < 3; c++) expect(Math.abs(environmentMean[c] / (Math.PI * [0.2, 0.3, 0.4][c]) - 1)).toBeLessThan(0.06);
+  const blackReceiver = { ...receiver, material: { kind: "diffuse" as const, albedo: [0, 0, 0] as const } };
+  const emitter = { ...wall, material: { kind: "diffuse" as const, albedo: [0, 0, 0] as const, emission: [0.8, 0.2, 0.1] as const } };
+  const emissiveJob = { ...input(), lights: [], meshes: [blackReceiver, emitter], samples: 128 };
+  const emissiveFull = await bake(page, { ...emissiveJob, mode: "full" });
+  const emissiveDirect = await bake(page, emissiveJob);
+  expect(emissiveFull.error).toBeNull();
+  expect(emissiveDirect.error).toBeNull();
+  expect(meanRGB(emissiveDirect.result!.irradiance)[0]).toBeGreaterThan(0.1);
+  expect(emissiveFull.result!.irradiance).toEqual(emissiveDirect.result!.irradiance);
   expect(errors).toEqual([]);
-  await testInfo.attach("bake-numerical-proof.json", { body: JSON.stringify({ point, unlit, occluded, full, direct, indirect, environment }), contentType: "application/json" });
+  await testInfo.attach("bake-numerical-proof.json", { body: JSON.stringify({ point, unlit, occluded, full, direct, indirect, environment, emissiveFull, emissiveDirect }), contentType: "application/json" });
 });
 
 test("browser bake cancellation releases resources and admits the next job", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
   await openProvider(page);
-  const cancelled = await bake(page, { ...input(), size: 64, samples: 512 }, true);
+  const compiling = await bake(page, input(), "compiling");
+  expect(compiling.error?.name).toBe("AbortError");
+  expect(compiling.disposal?.contextReleased).toBe(true);
+  expect(compiling.progress.at(-1)?.phase).toBe("compiling");
+  expect(compiling.progress.some((value) => value.phase === "sampling")).toBe(false);
+  const cancelled = await bake(page, { ...input(), size: 64, samples: 512 }, "sampling");
   expect(cancelled.error?.name).toBe("AbortError");
   expect(cancelled.result).toBeNull();
   expect(cancelled.disposal?.contextReleased).toBe(true);
@@ -126,5 +142,8 @@ test("browser bake cancellation releases resources and admits the next job", asy
   expect(next.error).toBeNull();
   expect(next.disposal?.contextReleased).toBe(true);
   expect(meanRGB(next.result!.irradiance)[0]).toBeGreaterThan(0.8);
-  await testInfo.attach("bake-cancellation.json", { body: JSON.stringify({ cancelled, next }), contentType: "application/json" });
+  // Following jobs drain event-loop work; uncancelled upstream compile timers would
+  // surface delayed disposed-program errors here, without an arbitrary timing sleep.
+  expect(errors).toEqual([]);
+  await testInfo.attach("bake-cancellation.json", { body: JSON.stringify({ compiling, cancelled, next }), contentType: "application/json" });
 });

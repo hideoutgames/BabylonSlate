@@ -10,7 +10,7 @@ import { patchBakePrototypeShader } from "./bake-prototype-shader";
 export type { BakePrototypeInput, BakePrototypeMesh, BakePrototypeColor } from "./bake-prototype-input";
 
 export interface BakePrototypeProgress {
-  phase: "preparing" | "building" | "sampling";
+  phase: "preparing" | "building" | "compiling" | "sampling";
   samples: number;
   totalSamples: number;
 }
@@ -218,6 +218,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     compileGeometry.setAttribute("position", new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
     compileGeometry.setAttribute("uv", new BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2));
     renderer.compile(new Mesh(compileGeometry, material), new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+    progress("compiling");
     const parallelCompile = context.getExtension("KHR_parallel_shader_compile");
     for (const program of renderer.info.programs ?? []) {
       const handle = program.program as WebGLProgram;
