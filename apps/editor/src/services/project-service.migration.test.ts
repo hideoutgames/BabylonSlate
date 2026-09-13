@@ -76,7 +76,7 @@ describe("migrate-on-load and migrate-on-save approval", () => {
     const header = readAssetDocumentHeader(
       await storage.readBinary(MAIN_SCENE_FILE),
     );
-    expect(header.version).toBe(3);
+    expect(header.version).toBe(4);
     expect(header.guid).toBe("scene-guid");
     expect(service.pendingMigrations).toEqual([]);
   });
