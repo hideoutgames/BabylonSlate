@@ -6,6 +6,7 @@ import {
   RawTexture,
   InputBlock,
   NodeMaterial,
+  Effect,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
@@ -353,4 +354,25 @@ it("waits for an authored texture and copies through a terminal texture failure"
       message: expect.stringContaining("failed to load"),
     }),
   ]);
+});
+
+it("releases owned shader sources while a sibling graph remains usable", async () => {
+  const before = new Set(Object.keys(Effect.ShadersStore));
+  const first = host([gainDocument()]);
+  await first.graph.buildAsync();
+  const owned = Object.keys(Effect.ShadersStore).filter(
+    (key) => !before.has(key) && key.startsWith("material:"),
+  );
+  expect(owned).toHaveLength(2);
+  const sibling = host([gainDocument()]);
+  await sibling.graph.buildAsync();
+  const applied = vi.fn();
+  sibling.engine.postProcesses[0]!.onApplyObservable.add(applied);
+  first.dispose();
+  expect(owned.filter((key) => Effect.ShadersStore[key] !== undefined)).toEqual(
+    [],
+  );
+  expect(sibling.graph.isReady()).toBe(true);
+  sibling.graph.execute();
+  expect(applied).toHaveBeenCalledOnce();
 });

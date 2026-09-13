@@ -1,6 +1,7 @@
 import type { Camera, NodeMaterial, Observer } from "@babylonjs/core";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Effect } from "@babylonjs/core/Materials/effect";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
@@ -21,6 +22,7 @@ import type {
 /** Babylon 9.20's public PostProcess binding protocol, without activate()/RTTs. */
 class GraphBoundPostProcess extends PostProcess {
   private disposed = false;
+  private readonly shaderSources = new Map<string, string>();
 
   get drawWrapper() {
     return this._effectWrapper.drawWrapper;
@@ -30,13 +32,30 @@ class GraphBoundPostProcess extends PostProcess {
     ...args: Parameters<PostProcess["updateEffect"]>
   ): void {
     // NodeMaterial can enqueue updateEffect from its apply-time defines update.
-    if (!this.disposed) super.updateEffect(...args);
+    if (this.disposed) return;
+    // createEffectForPostProcess registers these explicit names before calling
+    // updateEffect. Each task has its own NodeMaterial/build id, so it owns them.
+    // Babylon's camera-less PP and NodeMaterial disposal leave these strings.
+    for (const [name, suffix] of [
+      [args[6], "VertexShader"],
+      [args[7], "PixelShader"],
+    ]) {
+      if (!name) continue;
+      const key = name + suffix;
+      const source = Effect.ShadersStore[key];
+      if (typeof source === "string") this.shaderSources.set(key, source);
+    }
+    super.updateEffect(...args);
   }
 
   override dispose(camera?: Camera): void {
     if (this.disposed) return;
     this.disposed = true;
     super.dispose(camera);
+    for (const [key, source] of this.shaderSources) {
+      if (Effect.ShadersStore[key] === source) delete Effect.ShadersStore[key];
+    }
+    this.shaderSources.clear();
     // Babylon returns early from camera-less disposal before clearing these.
     this.onApplyObservable.clear();
     this.onBeforeRenderObservable.clear();
@@ -189,6 +208,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     postProcess.width = size.width;
     postProcess.height = size.height;
     let bindingError: unknown;
+    let bindingFailed = false;
     const applied = context.applyFullScreenEffect(
       postProcess.drawWrapper,
       () => {
@@ -204,11 +224,12 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
             this.options.sourceTexture,
           );
         } catch (error) {
+          bindingFailed = true;
           bindingError = error;
         }
       },
     );
-    if (bindingError !== undefined) this.fail(String(bindingError));
+    if (bindingFailed) this.fail(String(bindingError));
     if (!applied || this.failed)
       context.copyTexture(this.options.sourceTexture);
   }

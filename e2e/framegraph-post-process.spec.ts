@@ -25,6 +25,8 @@ test("authored Post Process bindings preserve pixels through the opt-in FrameGra
           }>;
           retainedPasses: number;
           retainedMaterials: number;
+          ownedShaderSources: number;
+          retainedShaderSources: number;
           diagnostics: Array<{ materialGuid?: string; message: string }>;
           webGLVersion: number;
           glInfo: unknown;
@@ -65,6 +67,8 @@ test("authored Post Process bindings preserve pixels through the opt-in FrameGra
   expect(pixels("failed-middle")).toEqual(pixels("disabled-middle"));
   expect(result.retainedPasses).toBe(0);
   expect(result.retainedMaterials).toBe(0);
+  expect(result.ownedShaderSources).toBeGreaterThan(0);
+  expect(result.retainedShaderSources).toBe(0);
   expect(result.diagnostics).toEqual([
     expect.objectContaining({
       materialGuid: "proof-1",

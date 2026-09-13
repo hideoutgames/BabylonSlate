@@ -6,6 +6,7 @@ import {
   Scene,
   Texture,
   Vector3,
+  Effect,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
@@ -170,6 +171,13 @@ export async function runFrameGraphPostProcessProof() {
   let graph: FrameGraph | undefined;
   let legacy: ReturnType<typeof attachPostProcessStack> | undefined;
   let sourceHandle = 0;
+  const graphShaderKeys = new Set<string>();
+  const rememberGraphShaders = (before: Set<string>) => {
+    for (const key of Object.keys(Effect.ShadersStore)) {
+      if (!before.has(key) && key.startsWith("material:proof-"))
+        graphShaderKeys.add(key);
+    }
+  };
   const rebuild = async (
     documents: Array<MaterialDocument | null>,
     disabled: number[] = [],
@@ -189,6 +197,7 @@ export async function runFrameGraphPostProcessProof() {
     }));
     const documentFor = (guid: string) =>
       documents[Number(guid.slice(6))] ?? null;
+    const beforeGraphShaders = new Set(Object.keys(Effect.ShadersStore));
     stack = addAuthoredPostProcessTasks({
       frameGraph: graph,
       sourceTexture: sourceHandle,
@@ -201,6 +210,7 @@ export async function runFrameGraphPostProcessProof() {
     present.sourceTexture = stack.outputTexture;
     graph.addTask(present);
     await graph.buildAsync();
+    rememberGraphShaders(beforeGraphShaders);
     legacy = attachPostProcessStack({
       scene,
       camera: scene.activeCamera!,
@@ -260,8 +270,10 @@ export async function runFrameGraphPostProcessProof() {
     await capture("parameter");
     const revised = structuredClone(gain);
     revised.name = "Hot Gain";
+    const beforeReplacement = new Set(Object.keys(Effect.ShadersStore));
     await stack!.tasks[0]!.replaceDocument(revised);
     await graph!.whenReadyAsync();
+    rememberGraphShaders(beforeReplacement);
     await capture("hot-rebuild");
     await rebuild([multiplyDocument("texture")]);
     await capture("texture");
@@ -315,6 +327,10 @@ export async function runFrameGraphPostProcessProof() {
       diagnostics,
       retainedPasses,
       retainedMaterials,
+      ownedShaderSources: graphShaderKeys.size,
+      retainedShaderSources: [...graphShaderKeys].filter(
+        (key) => Effect.ShadersStore[key] !== undefined,
+      ).length,
       webGLVersion: engine.webGLVersion,
       glInfo: engine.getGlInfo(),
     };
