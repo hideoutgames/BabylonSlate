@@ -17,7 +17,6 @@ import { openMinimalTestProject } from "./minimal-project";
 import {
   openMainScene,
   openTestProject,
-  waitForSceneViewportReady,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
@@ -202,31 +201,11 @@ test("CEL graph receiver presents a ready frame after edited project reload", as
   await page
     .getByTestId("viewport-canvas")
     .screenshot({ path: testInfo.outputPath("before-reload.png") });
-  await page.addInitScript(() => {
-    const host = globalThis as unknown as {
-      __reloadFrames?: unknown[];
-      __babylonslateViewportTest?: {
-        renderingBaseline(): unknown;
-        sceneVisuals(): unknown;
-      };
-    };
-    host.__reloadFrames = [];
-    const timer = setInterval(() => {
-      if (host.__reloadFrames!.length >= 100) { clearInterval(timer); return; }
-      const baseline = host.__babylonslateViewportTest?.renderingBaseline();
-      if (!baseline) return;
-      const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="viewport-canvas"]');
-      host.__reloadFrames!.push({
-        baseline,
-        visuals: host.__babylonslateViewportTest?.sceneVisuals(),
-        visibility: document.visibilityState,
-        canvas: canvas && [canvas.clientWidth, canvas.clientHeight],
-      });
-    }, 100);
-  });
   await page.reload();
   await openTestProject(page);
   try {
+    await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+    await expect(page.getByTestId("viewport-panel")).toHaveAttribute("data-scene-ready", "false");
     await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({
       timeout: 10_000,
     });
@@ -237,14 +216,12 @@ test("CEL graph receiver presents a ready frame after edited project reload", as
       body: JSON.stringify(
         await page.evaluate(() => {
           const host = globalThis as unknown as {
-            __reloadFrames?: unknown[];
             __babylonslateViewportTest?: {
               renderingBaseline(): unknown;
               sceneVisuals(): unknown;
             };
           };
           return {
-            frames: host.__reloadFrames,
             baseline: host.__babylonslateViewportTest?.renderingBaseline(),
             visuals: host.__babylonslateViewportTest?.sceneVisuals(),
           };
