@@ -187,6 +187,7 @@ export function createDefaultSceneSettings(
 ): SceneSettings {
   return {
     celShading: {},
+    shadowOverrides: {},
     environmentColor: [0.06, 0.07, 0.09],
     fogEnabled: false,
     fogColor: [0.5, 0.5, 0.5],
