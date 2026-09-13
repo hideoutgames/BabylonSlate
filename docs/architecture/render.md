@@ -388,3 +388,5 @@ Local editor rendering preferences are opt-in through **Override Project Renderi
 | Ultra | 1 / fixed | 0 | 16 | 2048 MiB | 1 |
 
 Dynamic resolution targets 60 FPS with hysteresis. Texture anisotropy is limited only by the actual backend capability. Budgets are estimates of resident texture allocations, including distinct cached sampling representations; they are not total GPU memory limits. Ultra is an optional high-end target, not a restriction on individual authored settings.
+
+Shared engine texture caches honor the largest budget requested by a live view, independent of settings-update order. Releasing a view removes its budget request. Graph-bound cache textures apply anisotropy at binding because engine-owned wrappers need not appear in a Scene texture list.

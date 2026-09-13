@@ -13,6 +13,20 @@ import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
 
 describe("resource cache getTexture", () => {
+  it("honors the largest live view budget regardless of update order", () => {
+    const cache = new ResourceCache({ byteCeiling: 100 });
+    const high = {};
+    const low = {};
+    cache.setClientBudget(high, 1000);
+    cache.setClientBudget(low, 100);
+    cache.account("resident", 500);
+    cache.release("resident");
+    cache.setClientBudget(low, 200);
+    expect(cache.accountedBytes()).toBe(500);
+    cache.setClientBudget(high, null);
+    expect(cache.accountedBytes()).toBe(0);
+    cache.dispose();
+  });
   it("keeps concurrent texture representations alive until their own views release them", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache();

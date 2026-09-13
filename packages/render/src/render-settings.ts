@@ -21,6 +21,7 @@ type SceneRendering = {
   localQualityOverrides: QualityOverrides;
   lightsDebug: boolean;
   textureLodBias: number;
+  textureAnisotropy: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
   overrides: CelShadingOverrides;
@@ -39,6 +40,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       localQualityOverrides: {},
       lightsDebug: false,
       textureLodBias: 0,
+      textureAnisotropy: 4,
       cel: normalizeCelShadingSettings(undefined),
       project: {},
       overrides: {},
@@ -69,6 +71,8 @@ export function updateSceneRenderingSettings(
   const quality = resolveSceneRenderingQuality(scene);
   state.shadows = quality.shadows;
   state.textureLodBias = quality.textures.lodBias;
+  state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
+  for (const texture of scene.textures) texture.anisotropicFilteringLevel = state.textureAnisotropy;
   const mode = state.project.mode === "cel" ? "cel" : "pbr";
   state.cel = resolveCelShadingSettings(state.project.cel, state.overrides);
   if (mode === state.mode) return;

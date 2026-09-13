@@ -33,6 +33,8 @@ export class QualityTextureBlock extends TextureBlock {
   }
   override bind(effect: Effect, material?: NodeMaterial): void {
     super.bind(effect);
+    if (material && this.texture)
+      this.texture.anisotropicFilteringLevel = sceneRenderingSettings(material.getScene()).textureAnisotropy;
     effect.setFloat(
       "slateTextureLodBias",
       material?.mode === 0

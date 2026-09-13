@@ -178,6 +178,7 @@ export function releaseResourceCacheForEngine(engine: AbstractEngine): void {
  */
 export class ResourceCache {
   private ceiling: number;
+  private readonly clientBudgets = new Map<object, number>();
   private evictionTargetFactor: number;
   private budgetEnabled: boolean;
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
@@ -200,6 +201,13 @@ export class ResourceCache {
   setByteCeiling(bytes: number): void {
     if (!Number.isFinite(bytes) || bytes <= 0) return;
     this.ceiling = bytes;
+    this.evictToCeiling();
+  }
+
+  /** A shared cache honors the largest live view budget, independent of update order. */
+  setClientBudget(client: object, bytes: number | null): void {
+    if (bytes === null) this.clientBudgets.delete(client);
+    else if (Number.isFinite(bytes) && bytes > 0) this.clientBudgets.set(client, bytes);
     this.evictToCeiling();
   }
 
@@ -473,8 +481,9 @@ export class ResourceCache {
 
   evictToCeiling(): void {
     if (!this.budgetEnabled) return;
-    if (this.totalBytes <= this.ceiling) return;
-    const target = this.ceiling * this.evictionTargetFactor;
+    const ceiling = this.clientBudgets.size ? Math.max(...this.clientBudgets.values()) : this.ceiling;
+    if (this.totalBytes <= ceiling) return;
+    const target = ceiling * this.evictionTargetFactor;
     const candidates = [...this.entries.values()]
       .filter((e) => this.isUnreferenced(e))
       .sort((a, b) => a.lastUsed - b.lastUsed);
@@ -535,9 +544,11 @@ export function bindResourceCacheToHandle(inner: ResourceCache): {
   releaseHandleRetains: () => void;
 } {
   const retains = new Map<string, number>();
+  const budgetOwner = {};
   const cache = new Proxy(inner, {
     get(target, prop) {
       if (prop === "dispose") return () => undefined;
+      if (prop === "setByteCeiling") return (bytes: number) => inner.setClientBudget(budgetOwner, bytes);
       const value = Reflect.get(target, prop) as unknown;
       if (typeof value !== "function") return value;
       return (...args: unknown[]) => {
@@ -559,6 +570,7 @@ export function bindResourceCacheToHandle(inner: ResourceCache): {
         for (let i = 0; i < count; i += 1) inner.release(key);
       }
       retains.clear();
+      inner.setClientBudget(budgetOwner, null);
       inner.flushUnreferenced();
     },
   };
