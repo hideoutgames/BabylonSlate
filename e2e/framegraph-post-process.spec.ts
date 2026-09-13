@@ -27,6 +27,12 @@ test("authored Post Process bindings preserve pixels through the opt-in FrameGra
           retainedMaterials: number;
           ownedShaderSources: number;
           retainedShaderSources: number;
+          disabledResources: Array<{
+            phase: string;
+            materials: number;
+            passes: number;
+            shaderSources: number;
+          }>;
           diagnostics: Array<{ materialGuid?: string; message: string }>;
           webGLVersion: number;
           glInfo: unknown;
@@ -43,9 +49,10 @@ test("authored Post Process bindings preserve pixels through the opt-in FrameGra
     expect(capture.graph.length, capture.name).toBe(
       capture.width * capture.height * 4,
     );
+    const scale = capture.name === "half-resolution" ? 0.5 : 1;
     expect([capture.passWidth, capture.passHeight], capture.name).toEqual([
-      capture.width,
-      capture.height,
+      capture.width * scale,
+      capture.height * scale,
     ]);
     const maxDifference = Math.max(
       ...capture.graph.map((value, index) =>
@@ -65,6 +72,17 @@ test("authored Post Process bindings preserve pixels through the opt-in FrameGra
   expect(pixels("ordered-stack")).not.toEqual(pixels("disabled-middle"));
   expect(pixels("binding-failed-middle")).toEqual(pixels("disabled-middle"));
   expect(pixels("failed-middle")).toEqual(pixels("disabled-middle"));
+  expect(pixels("enabled-gain")).not.toEqual(pixels("initial-disabled-gain"));
+  expect(pixels("re-enabled-gain")).toEqual(pixels("enabled-gain"));
+  expect(pixels("disabled-gain-again")).toEqual(
+    pixels("initial-disabled-gain"),
+  );
+  expect(pixels("disabled-missing").slice(0, 3)).toEqual([160, 80, 40]);
+  expect(result.disabledResources).toEqual([
+    { phase: "initial", materials: 0, passes: 0, shaderSources: 0 },
+    { phase: "disabled-again", materials: 0, passes: 0, shaderSources: 0 },
+    { phase: "missing", materials: 0, passes: 0, shaderSources: 0 },
+  ]);
   expect(result.retainedPasses).toBe(0);
   expect(result.retainedMaterials).toBe(0);
   expect(result.ownedShaderSources).toBeGreaterThan(0);

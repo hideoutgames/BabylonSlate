@@ -72,6 +72,7 @@ interface AuthoredPostProcessOptions {
   library: MaterialLibrary;
   materialGuid: string;
   document: MaterialDocument | null;
+  enabled?: boolean;
   sourceTexture: FrameGraphTextureHandle;
   /** Unscaled scene color determines pass resolution, independent of order. */
   sceneColorTexture: FrameGraphTextureHandle;
@@ -96,12 +97,15 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   private failed = false;
   private generation = 0;
   private pending: Promise<void>;
+  private document: MaterialDocument | null;
   private readonly options: AuthoredPostProcessOptions;
   private readonly parameters = new Map<string, MaterialParameterValue>();
 
   constructor(name: string, options: AuthoredPostProcessOptions) {
     super(name, options.frameGraph);
     this.options = options;
+    this.document = options.document;
+    super.disabled = options.enabled === false;
     this.outputTexture =
       options.frameGraph.textureManager.createDanglingHandle();
     this.pending = this.replaceDocument(options.document);
@@ -111,19 +115,41 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     return this.pending;
   }
 
+  override get disabled(): boolean {
+    return super.disabled;
+  }
+
+  override set disabled(value: boolean) {
+    if (value === super.disabled) return;
+    super.disabled = value;
+    if (this.disposed) return;
+    // Disabling cancels this generation and releases its reference immediately.
+    // A re-enabled pass compiles again with its replayable authored overrides.
+    this.pending = this.replaceDocument(this.document);
+  }
+
   /** Replace a graph/function revision without changing logical output handles. */
   replaceDocument(document: MaterialDocument | null): Promise<void> {
     if (this.disposed) return Promise.resolve();
+    this.document = document;
     const generation = ++this.generation;
     this.releaseMaterial();
     this.failed = false;
-    this.pending = this.prepare(document, generation);
+    this.pending = this.disabled
+      ? Promise.resolve()
+      : this.prepare(document, generation);
     return this.pending;
   }
 
   setParameter(name: string, value: MaterialParameterValue): boolean {
     if (
       this.disposed ||
+      !this.document ||
+      !this.options.library.acceptsParameter(this.document, name, value)
+    )
+      return false;
+    if (
+      this.acquired &&
       !this.options.library.setParameter(
         this._frameGraph.scene,
         this.options.materialGuid,
@@ -380,12 +406,12 @@ export function addAuthoredPostProcessTasks(options: {
         ...options,
         materialGuid: entry.materialGuid,
         document: options.documentFor(entry.materialGuid),
+        enabled: entry.enabled,
         sourceTexture,
         sceneColorTexture: options.sourceTexture,
         resolutionScale: entry.scalable ? options.resolutionScale : 1,
       },
     );
-    task.disabled = !entry.enabled;
     options.frameGraph.addTask(task);
     tasks.push(task);
     sourceTexture = task.outputTexture;

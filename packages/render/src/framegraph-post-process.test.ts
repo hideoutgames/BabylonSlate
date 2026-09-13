@@ -68,7 +68,31 @@ function gainDocument() {
   return doc;
 }
 
-function host(documents: Array<MaterialDocument | null>, functions = {}) {
+function textureDocument() {
+  const document = gainDocument();
+  document.nodes = document.nodes.map((node) =>
+    node.id === "gain"
+      ? { ...node, type: "texture.sample", properties: { textureGuid: "mask" } }
+      : node,
+  );
+  document.edges = document.edges.map((edge) =>
+    edge.sourceNodeId === "gain" ? { ...edge, sourcePinId: "rgba" } : edge,
+  );
+  document.edges.push({
+    id: "uv-mask",
+    sourceNodeId: "screenUv",
+    sourcePinId: "uv",
+    targetNodeId: "gain",
+    targetPinId: "uv",
+  });
+  return document;
+}
+
+function host(
+  documents: Array<MaterialDocument | null>,
+  functions = {},
+  disabled: number[] = [],
+) {
   const engine = new NullEngine({
     renderWidth: 16,
     renderHeight: 16,
@@ -105,9 +129,10 @@ function host(documents: Array<MaterialDocument | null>, functions = {}) {
   );
   // NullEngine creates the raw storage but never completes a GPU upload.
   source.getInternalTexture()!.isReady = true;
+  const resolveTexture = vi.fn(() => source);
   const library = new MaterialLibrary({
     functions: () => functions,
-    resolveTexture: () => source,
+    resolveTexture,
   });
   const graph = new FrameGraph(scene);
   const sourceTexture = graph.textureManager.importTexture(
@@ -122,7 +147,7 @@ function host(documents: Array<MaterialDocument | null>, functions = {}) {
     stack: documents.map((_, order) => ({
       materialGuid: String(order),
       order,
-      enabled: true,
+      enabled: !disabled.includes(order),
     })),
     documentFor: (guid) => documents[Number(guid)]!,
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
@@ -137,7 +162,16 @@ function host(documents: Array<MaterialDocument | null>, functions = {}) {
     scene.dispose();
     engine.dispose();
   });
-  return { engine, scene, graph, library, source, diagnostics, ...stack };
+  return {
+    engine,
+    scene,
+    graph,
+    library,
+    source,
+    resolveTexture,
+    diagnostics,
+    ...stack,
+  };
 }
 
 it("runs real authored apply bindings with independent per-entry parameters and no legacy targets", async () => {
@@ -315,28 +349,8 @@ it("disposal during deferred graph compilation cannot attach a late pass", async
 });
 
 it("waits for an authored texture and copies through a terminal texture failure", async () => {
-  const document = gainDocument();
-  document.nodes = document.nodes.map((node) =>
-    node.id === "gain"
-      ? {
-          ...node,
-          type: "texture.sample",
-          properties: { textureGuid: "mask" },
-        }
-      : node,
-  );
-  document.edges = document.edges.map((edge) =>
-    edge.sourceNodeId === "gain" ? { ...edge, sourcePinId: "rgba" } : edge,
-  );
-  document.edges.push({
-    id: "uv-mask",
-    sourceNodeId: "screenUv",
-    sourcePinId: "uv",
-    targetNodeId: "gain",
-    targetPinId: "uv",
-  });
   const { graph, source, diagnostics, engine } = host([
-    document,
+    textureDocument(),
     gainDocument(),
   ]);
   await graph.buildAsync();
@@ -375,4 +389,73 @@ it("releases owned shader sources while a sibling graph remains usable", async (
   expect(sibling.graph.isReady()).toBe(true);
   sibling.graph.execute();
   expect(applied).toHaveBeenCalledOnce();
+});
+
+it("admits no disabled material and preserves overrides across disable and re-enable", async () => {
+  const before = new Set(Object.keys(Effect.ShadersStore));
+  const { graph, tasks, engine, scene, diagnostics, resolveTexture } = host(
+    [gainDocument(), null, textureDocument()],
+    {},
+    [0, 1, 2],
+  );
+  await graph.buildAsync();
+  expect(engine.postProcesses).toHaveLength(0);
+  expect(
+    scene.materials.filter((material) => material instanceof NodeMaterial),
+  ).toHaveLength(0);
+  expect(
+    Object.keys(Effect.ShadersStore).filter(
+      (key) => !before.has(key) && key.startsWith("material:"),
+    ),
+  ).toEqual([]);
+  expect(diagnostics).toEqual([]);
+  expect(resolveTexture).not.toHaveBeenCalled();
+  const task = tasks[0]!;
+  expect(task.setParameter("Gain", { kind: "float", value: 0.75 })).toBe(true);
+  expect(task.setParameter("Unknown", { kind: "float", value: 0.75 })).toBe(
+    false,
+  );
+  task.disabled = false;
+  expect(task.isReady()).toBe(false);
+  await task.initAsync();
+  await graph.whenReadyAsync();
+  const oldPass = engine.postProcesses[0]!;
+  const writes = vi.spyOn(oldPass.getEffect(), "setFloat");
+  graph.execute();
+  expect(writes.mock.calls.some(([, value]) => value === 0.75)).toBe(true);
+  const owned = Object.keys(Effect.ShadersStore).filter(
+    (key) => !before.has(key) && key.startsWith("material:"),
+  );
+  expect(owned).toHaveLength(2);
+  task.disabled = true;
+  expect(task.isReady()).toBe(true);
+  expect(engine.postProcesses).toHaveLength(0);
+  expect(
+    scene.materials.filter((material) => material instanceof NodeMaterial),
+  ).toHaveLength(0);
+  expect(owned.filter((key) => Effect.ShadersStore[key] !== undefined)).toEqual(
+    [],
+  );
+  expect(task.setParameter("Gain", { kind: "float", value: 0.25 })).toBe(true);
+  task.disabled = false;
+  await task.initAsync();
+  await graph.whenReadyAsync();
+  expect(engine.postProcesses[0]).not.toBe(oldPass);
+  const replay = vi.spyOn(engine.postProcesses[0]!.getEffect(), "setFloat");
+  graph.execute();
+  expect(replay.mock.calls.some(([, value]) => value === 0.25)).toBe(true);
+  expect(diagnostics).toEqual([]);
+});
+
+it("cannot attach a late effect after disabling a pending acquisition", async () => {
+  const { tasks, engine, scene, diagnostics } = host([gainDocument()]);
+  const pending = tasks[0]!.initAsync();
+  tasks[0]!.disabled = true;
+  await pending;
+  expect(tasks[0]!.isReady()).toBe(true);
+  expect(engine.postProcesses).toHaveLength(0);
+  expect(
+    scene.materials.filter((material) => material instanceof NodeMaterial),
+  ).toHaveLength(0);
+  expect(diagnostics).toEqual([]);
 });

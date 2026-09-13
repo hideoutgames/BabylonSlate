@@ -171,6 +171,28 @@ export async function runFrameGraphPostProcessProof() {
   let graph: FrameGraph | undefined;
   let legacy: ReturnType<typeof attachPostProcessStack> | undefined;
   let sourceHandle = 0;
+  let updateLegacy!: (disabled: number[]) => Promise<void>;
+  const disabledResources: Array<{
+    phase: string;
+    materials: number;
+    passes: number;
+    shaderSources: number;
+  }> = [];
+  const disabledResourceSnapshot = (phase: string) =>
+    disabledResources.push({
+      phase,
+      materials: scene.materials.filter(
+        (material) => material.name === "material:proof-1",
+      ).length,
+      passes: engine.postProcesses.filter(
+        (pass) => pass.name === "Authored Post Process 1",
+      ).length,
+      shaderSources: [...graphShaderKeys].filter(
+        (key) =>
+          key.startsWith("material:proof-1") &&
+          Effect.ShadersStore[key] !== undefined,
+      ).length,
+    });
   const graphShaderKeys = new Set<string>();
   const rememberGraphShaders = (before: Set<string>) => {
     for (const key of Object.keys(Effect.ShadersStore)) {
@@ -181,8 +203,10 @@ export async function runFrameGraphPostProcessProof() {
   const rebuild = async (
     documents: Array<MaterialDocument | null>,
     disabled: number[] = [],
+    resolutionScale = 1,
   ) => {
     legacy?.dispose();
+    legacy = undefined;
     stack?.dispose();
     graph?.dispose();
     graph = new FrameGraph(scene);
@@ -194,6 +218,7 @@ export async function runFrameGraphPostProcessProof() {
       materialGuid: `proof-${order}`,
       order,
       enabled: !disabled.includes(order),
+      scalable: resolutionScale < 1,
     }));
     const documentFor = (guid: string) =>
       documents[Number(guid.slice(6))] ?? null;
@@ -203,6 +228,7 @@ export async function runFrameGraphPostProcessProof() {
       sourceTexture: sourceHandle,
       library,
       stack: entries,
+      resolutionScale,
       documentFor,
       onDiagnostic: (item) => diagnostics.push(item),
     });
@@ -211,24 +237,32 @@ export async function runFrameGraphPostProcessProof() {
     graph.addTask(present);
     await graph.buildAsync();
     rememberGraphShaders(beforeGraphShaders);
-    legacy = attachPostProcessStack({
-      scene,
-      camera: scene.activeCamera!,
-      library,
-      stack: entries,
-      documentFor,
-      deviceBuffers: { sceneDepth: false, sceneNormal: false },
-    });
-    // Keep the legacy camera manager path available for directRender without
-    // executing it during the blank scene tick that advances Time inputs.
-    for (const pass of legacy.passes)
-      scene.activeCamera!.detachPostProcess(pass);
-    const first = legacy.passes[0]!;
-    first.externalTextureSamplerBinding = true;
-    first.onApplyObservable.add((effect) =>
-      effect.setTexture("textureSampler", source),
-    );
-    await ready(() => legacy!.passes.every((pass) => pass.isReady()));
+    updateLegacy = async (disabledEntries) => {
+      legacy?.dispose();
+      legacy = attachPostProcessStack({
+        scene,
+        camera: scene.activeCamera!,
+        library,
+        stack: entries.map((entry, index) => ({
+          ...entry,
+          enabled: !disabledEntries.includes(index),
+        })),
+        resolutionScale,
+        documentFor,
+        deviceBuffers: { sceneDepth: false, sceneNormal: false },
+      });
+      // Keep the legacy manager path available for directRender without also
+      // executing it during the blank scene tick that advances Time inputs.
+      for (const pass of legacy.passes)
+        scene.activeCamera!.detachPostProcess(pass);
+      const first = legacy.passes[0]!;
+      first.externalTextureSamplerBinding = true;
+      first.onApplyObservable.add((effect) =>
+        effect.setTexture("textureSampler", source),
+      );
+      await ready(() => legacy!.passes.every((pass) => pass.isReady()));
+    };
+    await updateLegacy(disabled);
   };
   const readPixels = async () => {
     const view = await engine.readPixels(0, 0, canvas.width, canvas.height);
@@ -302,6 +336,45 @@ export async function runFrameGraphPostProcessProof() {
       [1],
     );
     await capture("disabled-middle");
+    const sourceDocument = createDefaultMaterialDocument(
+      "Source",
+      "postProcess",
+    );
+    await rebuild([sourceDocument, gain, multiplyDocument("function")], [1]);
+    disabledResourceSnapshot("initial");
+    await capture("initial-disabled-gain");
+    if (!stack!.tasks[1]!.setParameter("Gain", { kind: "float", value: 0.75 }))
+      throw new Error("Disabled gain override was not retained");
+    const enableMiddle = async () => {
+      const before = new Set(Object.keys(Effect.ShadersStore));
+      stack!.tasks[1]!.disabled = false;
+      if (stack!.tasks[1]!.isReady())
+        throw new Error(
+          "Enabled pass reported readiness before acquisition completed",
+        );
+      await stack!.tasks[1]!.initAsync();
+      await graph!.whenReadyAsync();
+      rememberGraphShaders(before);
+      await updateLegacy([]);
+      if (
+        !library.setParameter(scene, "proof-1", "Gain", {
+          kind: "float",
+          value: 0.75,
+        })
+      )
+        throw new Error("Legacy gain override was not bound");
+    };
+    await enableMiddle();
+    await capture("enabled-gain");
+    stack!.tasks[1]!.disabled = true;
+    await updateLegacy([1]);
+    disabledResourceSnapshot("disabled-again");
+    await capture("disabled-gain-again");
+    await enableMiddle();
+    await capture("re-enabled-gain");
+    await rebuild([sourceDocument, null], [1]);
+    disabledResourceSnapshot("missing");
+    await capture("disabled-missing");
     await rebuild([gain, null, multiplyDocument("function")]);
     await capture("failed-middle");
     engine.setSize(24, 12);
@@ -315,6 +388,8 @@ export async function runFrameGraphPostProcessProof() {
     await graph!.buildAsync();
     oldSource.dispose();
     await capture("resized");
+    await rebuild([gain], [], 0.5);
+    await capture("half-resolution");
     stack!.dispose();
     legacy!.dispose();
     graph!.dispose();
@@ -324,6 +399,7 @@ export async function runFrameGraphPostProcessProof() {
     ).length;
     return {
       captures,
+      disabledResources,
       diagnostics,
       retainedPasses,
       retainedMaterials,
