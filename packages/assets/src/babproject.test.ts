@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { createEmptyProject, normalizeProjectSettings } from "@babylonslate/core";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import {
@@ -91,6 +92,30 @@ describe("babproject codec", () => {
     await importProjectZip(b, zip);
     const tree = await readProjectTree(b);
     expect(tree.some((f) => f.path === "project.json")).toBe(true);
+  });
+
+  it("preserves requested renderer axes and shading in an exported project snapshot", async () => {
+    const source = new MemoryStorageAdapter();
+    await source.openDocumentsProject("Rendering.babproject");
+    await writeProjectTree(
+      source,
+      createEmptyProjectFiles({ guid: "rendering", name: "Rendering" }),
+    );
+    const snapshot = createEmptyProject("Rendering", {
+      render: { renderPath: "clusteredForward", gpuBackend: "webgpu", mode: "cel" },
+    });
+    const destination = new MemoryStorageAdapter();
+    await destination.openDocumentsProject("Reopened.babproject");
+    await importProjectZip(destination, await exportProjectZip(source, snapshot));
+    const manifest = (await readProjectTree(destination)).find(
+      (file) => file.path === "project.json",
+    )!;
+    const reopened = JSON.parse(new TextDecoder().decode(manifest.data));
+    expect(normalizeProjectSettings(reopened.settings).render).toMatchObject({
+      renderPath: "clusteredForward",
+      gpuBackend: "webgpu",
+      mode: "cel",
+    });
   });
 
   it("parameterises manifest kind for plugins", () => {

@@ -1,5 +1,13 @@
 # Render sync and resource cache (P4)
 
+The public rendering contract separates project `settings.render.renderPath` (`auto`, `forward`, `clusteredForward`), `settings.render.gpuBackend` (`auto`, `webgl2`, `webgpu`), and existing PBR/CEL `mode`. Project normalization migrates absent or invalid axes to Forward/WebGL2; new projects keep these defaults until Auto is qualified. This additive migration preserves existing shading, environment, and feature settings without changing asset schema versions.
+
+Optional `scene.settings.renderPath` inherits from the project. `resolveRenderingPipeline` applies project → scene → local preview → session path precedence; deleting an override resumes live inheritance. Backend selection remains project-wide because all live views share one Engine. Save/reopen and project ZIP export retain authored requests, including unsupported requests.
+
+This contract slice exposes no new renderer. Its pure resolver reports effective Forward/WebGL2 with explicit limits for Auto/ClusteredForward or Auto/WebGPU requests; it preserves the authored values. It describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation, controls and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
+
+Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
+
 ## Project PBR / CEL rendering
 
 The Basic 3D template recalculates the bundled Mannequin's normals from its existing faces before import, separating shared triangle corners. The supplied unlit model has smoothed corner normals on flat cuboid faces; under lit materials these produced diagonal CEL bands even with cast shadows disabled. Shape, UVs, hierarchy, animation, and triangle count remain unchanged. General imports preserve their authored normals; existing project copies are not rewritten. Preparation runs only when creating the template, with no per-frame preparation or extra draws.
