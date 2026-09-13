@@ -4,9 +4,9 @@ export const QUALITY_LEVELS = ["low", "medium", "high", "ultra"] as const;
 export type QualityLevel = typeof QUALITY_LEVELS[number];
 export type QualityGroup = "shadows" | "resolution" | "textures" | "postprocessing";
 export const QUALITY_GROUPS: readonly QualityGroup[] = ["shadows", "resolution", "textures", "postprocessing"];
-export interface ResolutionQuality { scale: number; dynamic: boolean; minScale: number; targetFps: number }
-export interface TextureQuality { lodBias: number; anisotropy: number; byteBudget: number }
-export interface PostProcessingQuality { resolutionScale: number }
+export interface ResolutionQuality { profile?: QualityLevel; scale: number; dynamic: boolean; minScale: number; targetFps: number }
+export interface TextureQuality { profile?: QualityLevel; lodBias: number; anisotropy: number; byteBudget: number }
+export interface PostProcessingQuality { profile?: QualityLevel; resolutionScale: number }
 export interface RenderingQuality {
   resolution: ResolutionQuality;
   textures: TextureQuality;
@@ -28,10 +28,11 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
   const source = value && typeof value === "object" ? value as Partial<RenderingQuality> : {};
   const defaults = RENDER_QUALITY_PROFILES.medium;
   const finite = (n: unknown, fallback: number, min: number, max: number) => typeof n === "number" && Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+  const scale = finite(source.resolution?.scale, defaults.resolution.scale, 0.25, 1);
   return {
-    resolution: { scale: finite(source.resolution?.scale, defaults.resolution.scale, 0.25, 1), dynamic: source.resolution?.dynamic ?? defaults.resolution.dynamic, minScale: finite(source.resolution?.minScale, defaults.resolution.minScale, 0.25, 1), targetFps: finite(source.resolution?.targetFps, 60, 1, 240) },
-    textures: { lodBias: Math.round(finite(source.textures?.lodBias, 0, 0, 8)), anisotropy: Math.round(finite(source.textures?.anisotropy, 4, 1, 16)), byteBudget: finite(source.textures?.byteBudget, defaults.textures.byteBudget, MIB, Number.MAX_SAFE_INTEGER) },
-    postprocessing: { resolutionScale: finite(source.postprocessing?.resolutionScale, defaults.postprocessing.resolutionScale, 0.25, 1) },
+    resolution: { ...(isQualityLevel(source.resolution?.profile) ? { profile: source.resolution.profile } : {}), scale, dynamic: typeof source.resolution?.dynamic === "boolean" ? source.resolution.dynamic : defaults.resolution.dynamic, minScale: Math.min(scale, finite(source.resolution?.minScale, defaults.resolution.minScale, 0.25, 1)), targetFps: finite(source.resolution?.targetFps, 60, 1, 240) },
+    textures: { ...(isQualityLevel(source.textures?.profile) ? { profile: source.textures.profile } : {}), lodBias: Math.round(finite(source.textures?.lodBias, 0, 0, 8)), anisotropy: Math.round(finite(source.textures?.anisotropy, 4, 1, 16)), byteBudget: finite(source.textures?.byteBudget, defaults.textures.byteBudget, MIB, Number.MAX_SAFE_INTEGER) },
+    postprocessing: { ...(isQualityLevel(source.postprocessing?.profile) ? { profile: source.postprocessing.profile } : {}), resolutionScale: finite(source.postprocessing?.resolutionScale, defaults.postprocessing.resolutionScale, 0.25, 1) },
   };
 }
 export function resolveRenderingQuality(project: { quality?: RenderingQuality; shadows?: ShadowOverrides } = {}, scene: ShadowOverrides = {}, session: QualityOverrides = {}): EffectiveRenderingQuality {
@@ -42,11 +43,14 @@ export function resolveRenderingQuality(project: { quality?: RenderingQuality; s
   };
 }
 export function qualityPresetPatch(level: QualityLevel, group?: QualityGroup): QualityOverrides {
-  const values = { ...RENDER_QUALITY_PROFILES[level], shadows: { ...SHADOW_PROFILES[level], profile: level } };
+  const profile = RENDER_QUALITY_PROFILES[level];
+  const values = { resolution: { ...profile.resolution, profile: level }, textures: { ...profile.textures, profile: level }, postprocessing: { ...profile.postprocessing, profile: level }, shadows: { ...SHADOW_PROFILES[level], profile: level } };
   return structuredClone(group ? { [group]: values[group] } : values);
 }
 export function qualityGroupLabel(value: EffectiveRenderingQuality, group: QualityGroup): QualityLevel | "custom" {
-  for (const level of QUALITY_LEVELS) {
+  const preferred = value[group].profile;
+  const levels = isQualityLevel(preferred) ? [preferred, ...QUALITY_LEVELS.filter((level) => level !== preferred)] : QUALITY_LEVELS;
+  for (const level of levels) {
     const preset = qualityPresetPatch(level, group)[group]!;
     if (Object.entries(preset).every(([key, expected]) => key === "profile" || (value[group] as unknown as Record<string, unknown>)[key] === expected)) return level;
   }
@@ -61,7 +65,10 @@ export class RenderingQualitySession {
   constructor(project: { quality?: RenderingQuality; shadows?: ShadowOverrides } = {}, scene: ShadowOverrides = {}) { this.project = project; this.scene = scene; }
   effective(): EffectiveRenderingQuality { return resolveRenderingQuality(this.project, this.scene, this.overrides); }
   execute(group?: QualityGroup, choice?: string, value?: string): { success: boolean; output: string } {
+    if (value !== undefined && (choice === undefined || choice === "reset" || isQualityLevel(choice)))
+      return { success: false, output: "Unexpected quality value" };
     if (choice === "reset") {
+      this.overrides = { ...this.overrides };
       if (group) delete this.overrides[group]; else this.overrides = {};
     } else if (isQualityLevel(choice)) {
       const patch = qualityPresetPatch(choice, group);
@@ -71,13 +78,13 @@ export class RenderingQualitySession {
     } else if (choice !== undefined) {
       const numeric = value === undefined ? NaN : Number(value);
       if (group === "shadows" && choice === "budget" && Number.isSafeInteger(numeric) && numeric >= 0)
-        this.overrides.shadows = { ...this.overrides.shadows, maxLocalLights: numeric };
+        this.overrides = { ...this.overrides, shadows: { ...this.overrides.shadows, maxLocalLights: numeric } };
       else if (group === "shadows" && choice === "distance" && Number.isFinite(numeric) && numeric >= 1 && numeric <= 1_000_000)
-        this.overrides.shadows = { ...this.overrides.shadows, distance: numeric };
+        this.overrides = { ...this.overrides, shadows: { ...this.overrides.shadows, distance: numeric } };
       else if (group === "shadows" && choice === "enabled" && (value === "on" || value === "off"))
-        this.overrides.shadows = { ...this.overrides.shadows, enabled: value === "on" };
+        this.overrides = { ...this.overrides, shadows: { ...this.overrides.shadows, enabled: value === "on" } };
       else if (group === "resolution" && choice === "scale" && Number.isFinite(numeric) && numeric >= 0.25 && numeric <= 1)
-        this.overrides.resolution = { ...this.overrides.resolution, scale: numeric, minScale: numeric, dynamic: false };
+        this.overrides = { ...this.overrides, resolution: { ...this.overrides.resolution, scale: numeric, minScale: numeric, dynamic: false } };
       else return { success: false, output: "Invalid quality setting or value" };
     }
     const effective = this.effective();

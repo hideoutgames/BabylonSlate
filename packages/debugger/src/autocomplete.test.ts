@@ -88,7 +88,7 @@ describe("suggestConsoleCompletions", () => {
     const registry = createCommandRegistry();
     expect(
       suggestConsoleCompletions("quality resolution ", registry.list()),
-    ).toEqual(["choice=", "value=", "low", "medium", "high", "ultra", "reset", "scale"]);
+    ).toEqual(["choice=", "low", "medium", "high", "ultra", "reset", "scale"]);
   });
 
   it("suggests on/off for bool flags", () => {
@@ -110,7 +110,7 @@ describe("suggestConsoleCompletions", () => {
       "rate=",
     );
     expect(
-      suggestConsoleCompletions("quality resolution ", registry.list()),
+      suggestConsoleCompletions("quality resolution scale ", registry.list()),
     ).toContain("value=");
   });
 

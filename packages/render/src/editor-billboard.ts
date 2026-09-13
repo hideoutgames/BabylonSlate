@@ -178,10 +178,11 @@ export function applyEditorBillboardFromActor(
     const tint = disabled ? [1, 0, 0] : shadowsMissing ? [1, 1, 0] : color;
     material.emissiveColor.set(tint[0]!, tint[1]!, tint[2]!);
   };
+  const hasUpdater = billboardUpdaters.has(mesh);
   billboardUpdaters.get(mesh)?.();
   const observer = mesh.getScene().onBeforeRenderObservable.add(update);
   billboardUpdaters.set(mesh, () => mesh.getScene().onBeforeRenderObservable.remove(observer));
-  mesh.onDisposeObservable.addOnce(() => {
+  if (!hasUpdater) mesh.onDisposeObservable.addOnce(() => {
     billboardUpdaters.get(mesh)?.();
     billboardUpdaters.delete(mesh);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RenderingQualitySession, resolveRenderingQuality } from "./render-quality";
+import { QUALITY_GROUPS, QUALITY_LEVELS, qualityGroupLabel, RenderingQualitySession, resolveRenderingQuality } from "./render-quality";
 
 describe("rendering quality sessions", () => {
   it("keeps authored distance and user budgets when applying overall or shadow presets", () => {
@@ -21,6 +21,22 @@ describe("rendering quality sessions", () => {
     expect(session.effective().resolution.scale).toBe(0.5);
     session.execute(undefined, "reset");
     expect(session.effective().resolution.scale).toBe(1);
+  });
+  it("reports each chosen tier even when two tiers share a setting value", () => {
+    const session = new RenderingQualitySession();
+    for (const level of QUALITY_LEVELS) {
+      session.execute(undefined, level);
+      for (const group of QUALITY_GROUPS)
+        expect(qualityGroupLabel(session.effective(), group)).toBe(level);
+    }
+  });
+  it("does not mutate overrides already dispatched to the renderer", () => {
+    const session = new RenderingQualitySession();
+    session.execute("shadows", "budget", "8");
+    const dispatched = session.overrides;
+    session.execute("shadows", "reset");
+    expect(dispatched.shadows?.maxLocalLights).toBe(8);
+    expect(session.execute(undefined, "low", "unexpected").success).toBe(false);
   });
   it("rejects invalid settings without changing the effective configuration", () => {
     const session = new RenderingQualitySession();
