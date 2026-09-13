@@ -76,6 +76,81 @@ describe("World tick", () => {
     expect(order).toEqual(["gi", "a1", "a2", "c1"]);
   });
 
+  it("keeps Game Instance ticking while scene phases are suspended and resumes those phases later", () => {
+    const order: string[] = [];
+    let ready = false;
+    const world = new World({
+      seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      canTickScene: () => ready,
+      onPhysics: () => { order.push("physics"); },
+    });
+    world.setGameInstance(new GameInstance({ classId: "GameInstance", hooks: { onTick: () => { order.push("gi"); } } }));
+    const actor = world.createActor({ classId: "Actor", hooks: { onTick: () => { order.push("actor"); } } });
+    actor.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: { onTick: () => { order.push("component"); } } }));
+    world.spawnActorNow(actor);
+    world.tick();
+    expect(order).toEqual(["gi"]);
+    ready = true;
+    world.tick();
+    expect(order).toEqual(["gi", "gi", "actor", "component", "physics"]);
+    expect(world.clock.tickIndex).toBe(2);
+  });
+
+  it.each(["gi", "actor"] as const)("stops remaining scene work when %s starts loading during the tick", (initiator) => {
+    const order: string[] = [];
+    let ready = true;
+    const world = new World({
+      seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      canTickScene: () => ready,
+      onPhysics: () => { order.push("physics"); },
+    });
+    world.setGameInstance(new GameInstance({ classId: "GameInstance", hooks: { onTick: () => {
+      order.push("gi");
+      if (initiator === "gi") ready = false;
+    } } }));
+    const first = world.createActor({ classId: "Actor", hooks: { onTick: () => {
+      order.push("actor");
+      ready = false;
+    } } });
+    first.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: { onTick: () => { order.push("component"); } } }));
+    world.spawnActorNow(first);
+    world.spawnActorNow(world.createActor({ classId: "Actor", hooks: { onTick: () => { order.push("sibling"); } } }));
+    world.tick();
+    expect(order).toEqual(initiator === "gi" ? ["gi"] : ["gi", "actor"]);
+  });
+
+  it("cleans up only the owned actor when a later actor reuses its guid", () => {
+    const world = createTestWorld();
+    const old = world.createActor({ classId: "Actor", guid: "same" });
+    world.spawnActorNow(old);
+    world.destroyActorInstance(old);
+    world.destroyActorInstance(old);
+    const replacement = world.createActor({ classId: "Actor", guid: "same" });
+    world.spawnActor(replacement);
+    world.flushPending();
+    expect(old.destroyed).toBe(true);
+    expect(world.getActors()).toEqual([replacement]);
+    expect(replacement.destroyed).toBe(false);
+  });
+
+  it("discards cancelled actor preparation without running queued lifecycle hooks", () => {
+    const world = createTestWorld();
+    const events: string[] = [];
+    const actor = world.createActor({ classId: "Actor", hooks: {
+      onCreation: () => { events.push("created"); },
+      onDestroyed: () => { events.push("destroyed"); },
+    } });
+    const component = world.createComponent({ classId: "ActorComponent" });
+    actor.attachComponent(component);
+    world.spawnActor(actor);
+    world.destroyActorInstance(actor);
+    world.flushPending();
+    expect(events).toEqual([]);
+    expect(world.getActors()).toHaveLength(0);
+    expect(actor.destroyed).toBe(true);
+    expect(component.owner).toBeNull();
+  });
+
   it("defers mid-tick destroy so siblings still tick", () => {
     const order: string[] = [];
     const world = createTestWorld();
