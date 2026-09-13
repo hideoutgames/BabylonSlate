@@ -326,13 +326,14 @@ device to validate sustained frame pacing and thermal behavior:
    change shadow distance and replace the active camera. Check contact, acne,
    detached shadows, flicker and the far fade while moving.
 5. Run Play for at least 15 minutes with a moving camera, animated Mannequin and
-   the permitted local shadow lights. Record FPS, CPU/GPU time, target size,
+   a user-selected local shadow light budget. Record FPS, CPU/GPU time, target size,
    shadow draws/triangles/passes and memory estimate at the start and end. Record
    unsupported GPU timing as unsupported. Repeat the same route in the editor;
    check the 60 FPS Play and 30 FPS editor targets, plus idle/hidden suspension.
 6. Compare Low and Medium on the same scene before trying High/Ultra. Increase
    one of map resolution, cascade count, local-light count or filtering at a
-   time. PCSS is a PBR option and is capped to PCF by the local A16 profile.
+   time. PCSS is an optional PBR filter on every profile; no device-specific cap
+   overrides the selected filter or local shadow budget.
 
 Camera-relative rendering and the high/residual snapshot transport protect
 rendered coordinates; they do not give arbitrary precision to physics or
