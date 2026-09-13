@@ -1,4 +1,3 @@
-import type { ShadowDeviceProfile } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
 import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
 import {
@@ -244,7 +243,6 @@ export interface EngineHandle {
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Project render mode and defaults; scene overrides remain independent. */
   setRenderSettings: (settings: RenderShadingSettings) => void;
-  setShadowDeviceProfile: (profile: ShadowDeviceProfile) => void;
   /** Register FontFace source bytes before Bitmap 2D Text paints. */
   registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
@@ -1957,11 +1955,6 @@ export function createEngine(
         applyClearColor: true,
         assets: binding,
       });
-      scheduler.invalidate("asset");
-    },
-    setShadowDeviceProfile: (profile) => {
-      sceneRenderingSettings(scene).shadowDeviceProfile = profile;
-      sceneShadowController(scene).sync();
       scheduler.invalidate("asset");
     },
     setRenderSettings: (settings) => {

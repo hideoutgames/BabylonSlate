@@ -272,16 +272,14 @@ The viewport reload key includes effective shadow settings alongside CEL setting
 Play. Mesh additions/removals update caster membership, disabled lights release
 allocation, and local lights have a separate budget from the directional light.
 Supported directional rendering uses stabilized cascades without a depth-reduction
-pass. Device profile limits resolve separately from authored settings. The A16
-preset is a starting budget, not a measured performance certification; final iPad
-validation is manual.
-CEL band and highlight edges use screen-space derivatives for subpixel antialiasing while retaining flat band interiors. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
+pass. Quality presets never cap the authored local shadow budget or distance. Final iPad validation is manual.
+CEL band and highlight edges are hard at zero softness; positive softness is opt-in. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
 Graph system-matrix input names retain Babylon's `World`/`View` prefixes so its floating-origin adapter offsets geometry, lights and shadow coordinates consistently.
 Authored World Position and Camera Position graph inputs add the render origin
 back; lighting and view-direction calculations remain camera-relative. Moving
 the camera therefore does not move world-space procedural material coordinates.
 
-Engine Settings now applies a local shadow device profile to editor and Play.
+Obsolete hardware-specific shadow caps have been removed.
 Play stats report CPU submission time, asynchronous engine GPU timing when
 supported, effective target size/sample count, allocated shadow passes and an
 attachment-memory estimate. Unsupported or pending GPU timing is labeled rather
@@ -335,7 +333,7 @@ device before increasing its default quality:
    shadow draws/triangles/passes and memory estimate at the start and end. Record
    unsupported GPU timing as unsupported. Repeat the same route in the editor;
    check the 60 FPS Play and 30 FPS editor targets, plus idle/hidden suspension.
-6. Compare Economy and A16 on the same scene before trying High/Ultra. Increase
+6. Compare Low and Medium on the same scene before trying High/Ultra. Increase
    one of map resolution, cascade count, local-light count or filtering at a
    time. PCSS is a PBR option and is capped to PCF by the local A16 profile.
 
@@ -363,3 +361,14 @@ replacing a preview releases its material library and exact texture leases.
 Preview render errors are reported without terminating frame scheduling.
 
 CEL band and highlight softness of zero uses discrete thresholds with no implicit derivative smoothing. Positive softness is an explicit artistic choice. Basic 3D templates bind the Mannequin material slot to a PBR material with nonmetallic, rough shading; ordinary glTF imports retain their authored shading model.
+
+Rendering scalability uses neutral Low, Medium, High and Ultra labels. Engineering targets (not editor labels): Low is mid/high Android, Medium is iPad A16, High is midrange gaming PC, Ultra is high-end gaming PC. Initial shadow allocations are:
+
+| Quality | Directional Map | Cascades | Local Map | PCF Quality |
+| --- | --- | --- | --- | --- |
+| Low | 1024 | 2 | 512 | Low |
+| Medium (Default) | 2048 | 4 | 1024 | High |
+| High | 2048 | 4 | 2048 | High |
+| Ultra | 4096 | 4 | 2048 | High |
+
+The default local budget is four; users can choose any nonnegative safe integer. The authored shadow distance defaults to 200 world units and does not limit map size. Presets change neither value. PCSS remains an explicit PBR artistic choice. These are starting profiles, not sustained device performance measurements.

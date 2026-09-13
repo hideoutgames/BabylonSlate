@@ -75,7 +75,6 @@ export function createRenderDiagnostics(
       shadowLights: lights,
       qualityLimits: effectiveShadowSettings(
         state.shadows,
-        state.shadowDeviceProfile,
         CascadedShadowGenerator.IsSupported,
         state.mode,
       ).limits,

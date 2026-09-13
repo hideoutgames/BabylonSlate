@@ -199,7 +199,6 @@ export class SceneShadowController {
           };
     const { settings } = effectiveShadowSettings(
       requested,
-      state.shadowDeviceProfile,
       CascadedShadowGenerator.IsSupported,
       state.mode,
     );

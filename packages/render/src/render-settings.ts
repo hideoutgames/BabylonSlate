@@ -4,7 +4,6 @@ import {
   resolveShadowSettings,
   type ShadowSettings,
   type ShadowOverrides,
-  type ShadowDeviceProfile,
   resolveCelShadingSettings,
   type CelShadingOverrides,
   type CelShadingSettings,
@@ -22,7 +21,6 @@ type SceneRendering = {
   overrides: CelShadingOverrides;
   shadows: ShadowSettings;
   shadowOverrides: ShadowOverrides;
-  shadowDeviceProfile: ShadowDeviceProfile;
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
@@ -37,7 +35,6 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       overrides: {},
       shadows: resolveShadowSettings(),
       shadowOverrides: {},
-      shadowDeviceProfile: "project",
       listeners: new Set(),
     };
     scenes.set(scene, state);

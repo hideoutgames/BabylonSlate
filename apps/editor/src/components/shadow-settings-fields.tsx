@@ -28,15 +28,15 @@ import {
 
 const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
   profile: {
-    economy: "Economy",
-    a16: "iPad A16",
+    low: "Low",
+    medium: "Medium",
     high: "High",
     ultra: "Ultra",
   },
   filter: { pcf: "PCF", pcss: "Contact Hardening (PCSS)" },
   filterQuality: { low: "Low", medium: "Medium", high: "High" },
-  mapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048" },
-  localMapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048" },
+  mapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096" },
+  localMapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096" },
 };
 const fields: {
   key: keyof ShadowSettings;
@@ -52,7 +52,7 @@ const fields: {
     key: "profile",
     label: "Shadow Preset",
     description:
-      "Apply map, cascade and local-light defaults. iPad A16 is the baseline candidate; measure on your device.",
+      "Apply map resolution, cascade and filtering defaults. Preserve the shadow distance and local light budget.",
   },
   {
     key: "distance",

@@ -1,5 +1,5 @@
 /** Authored shadow settings. Device limits never mutate these values. */
-export type ShadowProfile = "economy" | "a16" | "high" | "ultra";
+export type ShadowProfile = "low" | "medium" | "high" | "ultra";
 export interface ShadowSettings {
   enabled: boolean;
   distance: number;
@@ -18,41 +18,18 @@ export interface ShadowSettings {
 }
 export type ShadowOverrides = Partial<ShadowSettings>;
 export const SHADOW_PROFILES = {
-  economy: {
-    mapSize: 1024,
-    cascades: 1,
-    filterQuality: "low",
-    maxLocalLights: 0,
-    localMapSize: 256,
-  },
-  a16: {
-    mapSize: 1024,
-    cascades: 2,
-    filterQuality: "medium",
-    maxLocalLights: 1,
-    localMapSize: 512,
-  },
-  high: {
-    mapSize: 2048,
-    cascades: 3,
-    filterQuality: "medium",
-    maxLocalLights: 2,
-    localMapSize: 1024,
-  },
-  ultra: {
-    mapSize: 2048,
-    cascades: 4,
-    filterQuality: "high",
-    maxLocalLights: 4,
-    localMapSize: 1024,
-  },
+  low: { mapSize: 1024, cascades: 2, filterQuality: "low", localMapSize: 512 },
+  medium: { mapSize: 2048, cascades: 4, filterQuality: "high", localMapSize: 1024 },
+  high: { mapSize: 2048, cascades: 4, filterQuality: "high", localMapSize: 2048 },
+  ultra: { mapSize: 4096, cascades: 4, filterQuality: "high", localMapSize: 2048 },
 } as const;
 export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
   enabled: true,
   distance: 200,
   fadeFraction: 0.1,
-  profile: "a16",
-  ...SHADOW_PROFILES.a16,
+  profile: "medium",
+  ...SHADOW_PROFILES.medium,
+  maxLocalLights: 4,
   filter: "pcf",
   softness: 0.05,
   autoBias: true,
@@ -66,7 +43,7 @@ export const SHADOW_LIMITS = {
   softness: [0, 1],
   depthBias: [0, 0.05],
   normalBias: [0, 1],
-  maxLocalLights: [0, 4],
+  maxLocalLights: [0, Number.MAX_SAFE_INTEGER],
 } as const;
 export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   if (!value || typeof value !== "object") return {};
@@ -104,7 +81,7 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   for (const key of ["mapSize", "localMapSize"] as const) {
     const n = source[key];
     if (typeof n === "number" && Number.isFinite(n))
-      result[key] = n <= 256 ? 256 : n <= 512 ? 512 : n <= 1024 ? 1024 : 2048;
+      result[key] = n <= 256 ? 256 : n <= 512 ? 512 : n <= 1024 ? 1024 : n <= 2048 ? 2048 : 4096;
   }
   return result;
 }
@@ -112,7 +89,7 @@ export function normalizeShadowSettings(value: unknown): ShadowSettings {
   const clean = normalizeShadowOverrides(value);
   return {
     ...DEFAULT_SHADOW_SETTINGS,
-    ...SHADOW_PROFILES[clean.profile ?? "a16"],
+    ...SHADOW_PROFILES[clean.profile ?? "medium"],
     ...clean,
   };
 }
@@ -125,43 +102,13 @@ export function resolveShadowSettings(
     ...normalizeShadowOverrides(scene),
   };
 }
-export type ShadowDeviceProfile = ShadowProfile | "project";
 export function effectiveShadowSettings(
   requested: ShadowSettings,
-  device: ShadowDeviceProfile = "project",
   supportsCascades = true,
   mode: "pbr" | "cel" = "pbr",
 ): { settings: ShadowSettings; limits: string[] } {
   const settings = { ...requested };
   const limits: string[] = [];
-  if (device !== "project") {
-    const cap = SHADOW_PROFILES[device];
-    for (const key of [
-      "mapSize",
-      "cascades",
-      "maxLocalLights",
-      "localMapSize",
-    ] as const) {
-      if (settings[key] > cap[key]) {
-        settings[key] = cap[key];
-        limits.push(`${key}: device profile`);
-      }
-    }
-    const tiers = ["low", "medium", "high"] as const;
-    if (
-      tiers.indexOf(settings.filterQuality) > tiers.indexOf(cap.filterQuality)
-    ) {
-      settings.filterQuality = cap.filterQuality;
-      limits.push("filterQuality: device profile");
-    }
-    if (
-      (device === "economy" || device === "a16") &&
-      settings.filter === "pcss"
-    ) {
-      settings.filter = "pcf";
-      limits.push("filter: device profile");
-    }
-  }
   if (!supportsCascades && settings.cascades > 1) {
     settings.cascades = 1;
     limits.push("cascades: device capability");
