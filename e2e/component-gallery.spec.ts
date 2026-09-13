@@ -3,13 +3,24 @@ import { IPAD_TEST_TAG } from "./ipad-tag";
 
 test("gallery rendering disclosure supports keyboard and touch", { tag: IPAD_TEST_TAG }, async ({ page }) => {
   await page.goto("/?test=1&gallery=1");
+  // The gallery mounts beneath the launcher's inert surface, and COI bootstrap
+  // can reload the page. Wait for both before attempting keyboard focus.
+  await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
+    timeout: 15_000,
+  });
+  await expect(page.locator(".slate-loading")).toHaveCount(0, {
+    timeout: 30_000,
+  });
   const category = page.getByTestId("gallery-disclosure");
   const trigger = category.getByRole("button", { name: "Rendering Overrides" });
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
   await trigger.focus();
-  await page.keyboard.press("Enter");
+  await expect(trigger).toBeFocused();
+  await trigger.press("Enter");
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
   await expect(category.getByLabel("Shadow Distance")).toBeVisible();
-  await page.keyboard.press("Space");
+  await expect(trigger).toBeFocused();
+  await trigger.press("Space");
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
   await expect(trigger).toBeFocused();
   const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
