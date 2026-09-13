@@ -847,7 +847,7 @@ ADAPTERS["custom.glsl"] = ({ name, operation }) => {
       ? operation.properties.body.trim()
       : "";
   const expression = raw === "" ? "a" : raw;
-  const functionName = `custom_glsl_${name}`.replace(/[^A-Za-z0-9_]/g, "_");
+  const functionName = customGlslFunctionName(operation.id);
   const block = new CustomBlock(name);
   block.options = {
     name,

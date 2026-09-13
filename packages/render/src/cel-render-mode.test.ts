@@ -110,7 +110,8 @@ describe("native CEL render mode", () => {
       expect(material.compiledShaders).toContain("pbrBlockAlbedoOpacity"),
     );
     setSceneRenderSettings(scene, { mode: "cel" });
-    expect(material.maxSimultaneousLights).toBe(6);
+    // NullEngine's non-UBO path admits four conventional lights.
+    expect(material.maxSimultaneousLights).toBe(4);
     await vi.waitFor(() =>
       expect(material.compiledShaders).toContain("slateCelSurfaceLight"),
     );

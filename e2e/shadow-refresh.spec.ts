@@ -191,8 +191,15 @@ async function observeCubeDraws(page: Page) {
 async function state(page: Page) {
   return page.evaluate(() => {
     const host = globalThis as unknown as TestHost;
+    const baseline = host.__babylonslateViewportTest.renderingBaseline();
     return {
-      ...host.__babylonslateViewportTest.renderingBaseline(),
+      frameCount: baseline.frameCount,
+      render: {
+        width: baseline.render.width,
+        height: baseline.render.height,
+        shadowPasses: baseline.render.shadowPasses,
+        shadowDrawCalls: baseline.render.shadowDrawCalls,
+      },
       cubes: host.__shadowCubeDraws(),
     };
   });
@@ -369,6 +376,9 @@ test("cached local shadows match fresh maps after caster and light motion, resiz
   await saveAllIfEnabled(page, 30_000);
   await page.reload();
   await openTestProject(page);
+  await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({
+    timeout: 10_000,
+  });
   await openMainScene(page);
   await verifyPose("reloaded");
   expect(errors).toEqual([]);

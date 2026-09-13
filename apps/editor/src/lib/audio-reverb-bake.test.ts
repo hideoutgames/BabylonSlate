@@ -110,7 +110,72 @@ describe("audio reverb bake controller", () => {
     expect(writes).toHaveLength(2);
   });
 
-  it("flush awaits the in-flight bake or writes a marked dry fallback on timeout", async () => {
+  it.each(["baking", "writing"] as const)("Save joins matching background work while %s and waits for its single persisted chunk", async (phase) => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const writes: AudioReverbBakeWrite[] = [];
+    const bakes: string[] = [];
+    const controller = createAudioReverbBakeController({
+      bake: async (geometry) => {
+        bakes.push(geometryHashForAudioBake(geometry));
+        if (phase === "baking") await gate;
+        return new Uint8Array([1, 2, 3]);
+      },
+      write: async (entry) => {
+        writes.push(entry);
+        if (phase === "writing") await gate;
+      },
+    });
+    const scene = sceneWith([boxActor("wall", [0, 0, 0])]);
+    controller.schedule("assets/Main.scene.babasset", scene);
+    await vi.advanceTimersByTimeAsync(AUDIO_BAKE_DEBOUNCE_MS);
+    let saved = false;
+    const save = controller.flush("assets/Main.scene.babasset", structuredClone(scene)).then(() => { saved = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(saved).toBe(false);
+    expect(bakes).toHaveLength(1);
+    expect(writes).toHaveLength(phase === "writing" ? 1 : 0);
+    release();
+    await save;
+    await controller.drain();
+    expect(saved).toBe(true);
+    expect(writes).toHaveLength(1);
+    expect([...writes[0]!.bytes]).toEqual([1, 2, 3]);
+
+    await controller.flush("assets/Main.scene.babasset", sceneWith([boxActor("wall", [8, 0, 0])]));
+    expect(bakes).toHaveLength(2);
+    expect(writes).toHaveLength(2);
+    expect((writes[1]!.payload.actors as ReturnType<typeof boxActor>[])[0]!.transform.position).toEqual([8, 0, 0]);
+    controller.dispose();
+  });
+
+  it("does not join a stale background bake when Save requests changed geometry", async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const writes: AudioReverbBakeWrite[] = [];
+    let bakes = 0;
+    const controller = createAudioReverbBakeController({
+      bake: async () => {
+        bakes += 1;
+        if (bakes === 1) await gate;
+        return new Uint8Array([bakes]);
+      },
+      write: async (entry) => { writes.push(entry); },
+    });
+    controller.schedule("assets/Main.scene.babasset", sceneWith([boxActor("wall", [0, 0, 0])]));
+    await vi.advanceTimersByTimeAsync(AUDIO_BAKE_DEBOUNCE_MS);
+    await controller.flush("assets/Main.scene.babasset", sceneWith([boxActor("wall", [8, 0, 0])]));
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bakes).toBe(2);
+    expect(writes).toHaveLength(1);
+    expect((writes[0]!.payload.actors as ReturnType<typeof boxActor>[])[0]!.transform.position).toEqual([8, 0, 0]);
+    controller.dispose();
+  });
+
+  it("flush writes a marked dry fallback on timeout", async () => {
     vi.useFakeTimers();
     const writes: AudioReverbBakeWrite[] = [];
     const diagnostics: Array<{ code: string }> = [];
