@@ -5,7 +5,7 @@ import { openMainScene } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { setPreviewScene } from "./preview-parity";
 
-async function useCamera(page: Page, id: string) {
+async function possessCamera(page: Page, id: string) {
   await page.getByTestId("play-inspector-toggle").click();
   const inspector = page.getByTestId("debug-inspect");
   await inspector.getByTestId(`tree-row-${id}`).click();
@@ -63,7 +63,7 @@ test("Play shadow allocation follows camera possession and returns to the origin
   });
   const captures: Array<{ camera: number; diagnostics: string }> = [];
   for (const index of [0, 1, 0, 1]) {
-    await useCamera(page, `camera-${index}`);
+    await possessCamera(page, `camera-${index}`);
     await expect.poll(async () => {
       const lines = (await overlay.innerText()).split("\n");
       return lines.filter((line) => line.includes("shadows active")).map((line) => line.split(": illumination")[0]);
