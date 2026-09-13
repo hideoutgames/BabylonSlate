@@ -167,6 +167,82 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it.each(["editor", "play"] as const)("rolls back late %s construction failure without disturbing shared views", async (kind) => {
+    const engine = sharedEngine();
+    const { handle: sibling } = editorHandle(engine);
+    const { handle: hidden } = editorHandle(engine);
+    hidden.setRegisterViewEnabled(false);
+    engine.setHardwareScalingLevel(2);
+    const scenes = [...engine.scenes];
+    const utilityScenes = [...engine._virtualScenes];
+    const views = [...engine.views];
+    const enabled = views.map((view) => view.enabled);
+    const loops = [...engine.activeRenderLoops];
+    const observers = [engine.onEndFrameObservable, engine.onContextLostObservable, engine.onContextRestoredObservable];
+    const observerCounts = observers.map((observable) => observable.observers.length);
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const retained = sibling.resourceCache.getTexture("sibling-texture", engine, bytes);
+    const cache = resourceCacheForEngine(engine);
+    const failedCanvas = new FakeCanvas();
+    const failure = new Error("Injected late construction failure");
+    // Cover partial loop registration and a later failure after context/pointer
+    // subscriptions have been installed by the Play view.
+    const originalRun = engine.runRenderLoop.bind(engine);
+    const injection = kind === "editor"
+      ? vi.spyOn(engine, "runRenderLoop").mockImplementationOnce((callback) => {
+        originalRun(callback);
+        throw failure;
+      })
+      : vi.spyOn(engineCommandBus, "subscribe").mockImplementationOnce(() => { throw failure; });
+    try {
+      expect(() => createEngine(failedCanvas as unknown as HTMLCanvasElement, {
+        sharedEngine: engine,
+        editor: kind === "editor",
+        playMode: kind === "play",
+        hardwareScalingLevel: 1.5,
+        textureBytes: new Map([["failed-view-texture", bytes]]),
+      })).toThrow(failure);
+    } finally {
+      injection.mockRestore();
+    }
+    expect(engine.scenes).toEqual(scenes);
+    expect(engine._virtualScenes).toEqual(utilityScenes);
+    expect(engine.views).toEqual(views);
+    expect(engine.views.map((view) => view.enabled)).toEqual(enabled);
+    expect(engine.activeRenderLoops).toEqual(loops);
+    expect(engine.getHardwareScalingLevel()).toBe(2);
+    expect([...failedCanvas.listeners.values()].every((listeners) => listeners.size === 0)).toBe(true);
+    await vi.waitFor(() => expect(observers.map((observable) => observable.observers.length)).toEqual(observerCounts));
+    expect(resourceCacheForEngine(engine)).toBe(cache);
+    expect(sibling.resourceCache.getTexture("sibling-texture", engine, bytes)).toBe(retained);
+    expect(isDisposedGpuTexture(retained)).toBe(false);
+    sibling.scheduler.invalidate("manual");
+    const previousFrames = sibling.scheduler.stats().renderedFrames;
+    const now = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1_000);
+    try { loops[0]!(); } finally { now.mockRestore(); }
+    expect(sibling.scheduler.stats().renderedFrames).toBe(previousFrames + 1);
+  });
+
+  it("reports rollback errors while continuing to release remaining owners", () => {
+    const engine = sharedEngine();
+    const constructionError = new Error("Render loop failed");
+    const cleanupError = new Error("Scene cleanup failed");
+    const run = vi.spyOn(engine, "runRenderLoop").mockImplementationOnce(() => {
+      vi.spyOn(engine.scenes.at(-1)!, "dispose").mockImplementationOnce(() => { throw cleanupError; });
+      throw constructionError;
+    });
+    let failure: unknown;
+    try {
+      createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    } catch (error) { failure = error; } finally { run.mockRestore(); }
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).cause).toBe(constructionError);
+    expect((failure as AggregateError).errors).toEqual([constructionError, cleanupError]);
+    expect(engine.scenes).toEqual([]);
+    expect(engine.views).toEqual([]);
+    expect(engine.activeRenderLoops).toEqual([]);
+  });
+
   it("presents exactly one loading frame under a modal without resuming normal rendering", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");

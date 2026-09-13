@@ -627,6 +627,26 @@ export function createEngine(
   canvas: HTMLCanvasElement,
   options: CreateEngineOptions = {},
 ): EngineHandle {
+  const rollback: Array<() => void> = [];
+  try {
+    return initializeEngine(canvas, options, (cleanup) => rollback.push(cleanup));
+  } catch (error) {
+    // Construction can fail before a handle exists. Release every acquired
+    // owner even if one cleanup also fails, preserving the construction error.
+    const failures: unknown[] = [error];
+    for (const cleanup of rollback.reverse()) {
+      try { cleanup(); } catch (cleanupError) { failures.push(cleanupError); }
+    }
+    if (failures.length > 1) throw new AggregateError(failures, "Scene construction and rollback failed.", { cause: error });
+    throw error;
+  }
+}
+
+function initializeEngine(
+  canvas: HTMLCanvasElement,
+  options: CreateEngineOptions,
+  onRollback: (cleanup: () => void) => void,
+): EngineHandle {
   configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
   configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
     dracoBasePath: options.dracoBasePath,
@@ -646,6 +666,34 @@ export function createEngine(
       useLargeWorldRendering: true,
       useExactSrgbConversions: true,
     });
+  if (ownsEngine) {
+    onRollback(() => engine.dispose());
+    onRollback(() => releaseResourceCacheForEngine(engine));
+  }
+  // Include utility scenes created inside helpers before those helpers return.
+  const previousScenes = new Set([...engine.scenes, ...engine._virtualScenes]);
+  onRollback(() => {
+    const failures: unknown[] = [];
+    for (const owned of [...engine.scenes, ...engine._virtualScenes]) {
+      if (!previousScenes.has(owned) && !owned.isDisposed) {
+        try { owned.dispose(); } catch (error) { failures.push(error); }
+      }
+    }
+    if (failures.length) throw new AggregateError(failures, "Failed to release constructed scenes.");
+  });
+  const previousViews = new Map((engine.views ?? []).map((view) => [view, view.enabled]));
+  onRollback(() => {
+    const failures: unknown[] = [];
+    for (const view of [...(engine.views ?? [])]) {
+      if (!previousViews.has(view)) {
+        try { engine.unRegisterView(view.target); } catch (error) { failures.push(error); }
+      }
+    }
+    for (const [view, enabled] of previousViews) view.enabled = enabled;
+    if (failures.length) throw new AggregateError(failures, "Failed to release constructed views.");
+  });
+  const previousScaling = engine.getHardwareScalingLevel();
+  onRollback(() => engine.setHardwareScalingLevel(previousScaling));
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: options.playMode === true,
     caps: engine.getCaps(),
@@ -695,6 +743,11 @@ export function createEngine(
     }
     if (contextLost) throw new Error("Rendering context was lost during scene loading.");
   };
+  onRollback(() => {
+    disposed = true;
+    loadGeneration += 1;
+    cancelPresentation(new Error("Scene construction failed."));
+  });
   setSceneRenderSettings(scene, options.renderSettings ?? {});
   configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
@@ -721,6 +774,7 @@ export function createEngine(
   const rttPresent = presentRtt
     ? createRttCanvasPresent(scene, canvas, { name: "prefabPreview" })
     : null;
+  onRollback(() => rttPresent?.dispose());
 
   const pointerCanvas = () => {
     if (presentRtt) {
@@ -750,9 +804,13 @@ export function createEngine(
   const releasePlayLoop = options.playMode
     ? scheduler.acquireContinuous("play")
     : null;
+  onRollback(() => releasePlayLoop?.());
   const sharedCache = resourceCacheForEngine(engine);
   const cacheBinding = bindResourceCacheToHandle(sharedCache);
   const resourceCache = cacheBinding.cache;
+  onRollback(() => cacheBinding.releaseHandleRetains());
+  onRollback(() => resourceCache.clearClientTextures(scene.uid));
+  onRollback(() => { if (!scene.isDisposed) scene.dispose(); });
   if (typeof options.textureByteCeiling === "number") {
     resourceCache.setByteCeiling(options.textureByteCeiling);
   }
@@ -768,6 +826,7 @@ export function createEngine(
         maxVoices: options.audioMaxVoices,
       })
     : null;
+  onRollback(() => audioService?.dispose());
   if (audioService) {
     if (
       typeof options.audioByteCeiling === "number" ||
@@ -803,6 +862,7 @@ export function createEngine(
   });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
+  onRollback(() => disposeSnapshotBinding(binding));
   binding.tilemaps = options.tilemapPayloads;
   binding.tilesets = options.tilesetPayloads;
   binding.pixelsPerUnit = options.pixelsPerUnit;
@@ -822,9 +882,6 @@ export function createEngine(
   binding.fontCssStack = options.fontCssStack;
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
   const fontRegistry = new FontRegistry();
-  if (options.fontFaceEntries && options.fontFaceEntries.length > 0) {
-    void fontRegistry.registerAll(options.fontFaceEntries);
-  }
   binding.modelBytes = options.modelBytes;
   binding.modelPayloads = options.modelPayloads;
   binding.modelClipAnimationGuids = options.modelClipAnimationGuids;
@@ -840,11 +897,13 @@ export function createEngine(
         mode: options.viewportMode ?? "3d",
       })
     : null;
+  onRollback(() => playFreeCam?.dispose());
   const playFreeCamInput: PlayFreeCamInputHandle | null = playFreeCam
     ? attachPlayFreeCamInput(canvas, playFreeCam, {
         mode: options.viewportMode ?? "3d",
       })
     : null;
+  onRollback(() => playFreeCamInput?.dispose());
   const playViz: PlayConsoleVizController | null = options.playMode
     ? createPlayConsoleViz(scene, {
         navmeshBytes: options.navmeshBytes,
@@ -852,9 +911,11 @@ export function createEngine(
         world: options.physicsWorld ?? options.viewportMode,
       })
     : null;
+  onRollback(() => playViz?.dispose());
   const playDebugDraw: PlayDebugDrawController | null = options.playMode
     ? createPlayDebugDraw(scene)
     : null;
+  onRollback(() => playDebugDraw?.dispose());
 
   const materialDocuments = new Map<string, MaterialDocument>(
     options.materialDocuments ?? [],
@@ -888,6 +949,7 @@ export function createEngine(
       scheduler.invalidate("asset");
     },
   });
+  onRollback(() => materialLibrary.dispose());
   binding.resolveMaterial = (guid, options) => {
     const host = options?.scene ?? scene;
     const document = materialDocuments.get(guid);
@@ -925,6 +987,7 @@ export function createEngine(
         onDiagnostic: options.onParticleDiagnostic,
       })
     : null;
+  onRollback(() => particleService?.dispose());
   if (particleService && options.particleLibrary) {
     particleService.setLibrary(options.particleLibrary);
   }
@@ -934,6 +997,7 @@ export function createEngine(
     options.postProcessStack ?? [],
   );
   let attachedStack: AttachedPostProcessStack | null = null;
+  onRollback(() => attachedStack?.dispose());
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
@@ -1015,6 +1079,7 @@ export function createEngine(
         },
       })
     : null;
+  onRollback(() => sceneLayerCompositor?.dispose());
   binding.sceneForSlot = (slotId) =>
     sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
   binding.isOverlaySlot = (slotId) =>
@@ -1049,6 +1114,7 @@ export function createEngine(
   };
   const overlayPointerState = createOverlayPointerState();
   const playCursor = options.playMode ? attachPlayCursor(canvas) : null;
+  onRollback(() => playCursor?.dispose());
 
   const notifyOverlayResize = () => {
     if (!sceneLayerCompositor) return;
@@ -1106,6 +1172,7 @@ export function createEngine(
         onAfterApply: () => viewportShading?.apply(),
       })
     : null;
+  onRollback(() => editorSync?.dispose());
 
   const pinClientTextures = () => {
     const guids = new Set<string>(binding.textureBytes?.keys() ?? []);
@@ -1170,12 +1237,15 @@ export function createEngine(
     // The editor camera replaces the default viewport camera set up above.
     scene.activeCamera?.dispose();
     const cameraController = createEditorCamera(scene, { mode, scheduler });
+    onRollback(() => cameraController.dispose());
     let previewGameCamera = false;
     const grid = createEditorGrid(scene, {
       mode,
       camera: cameraController.camera,
     });
+    onRollback(() => grid.dispose());
     const selection = new SelectionOutline(scene);
+    onRollback(() => selection.dispose());
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
     const parentIdOf = (id: string): string | null =>
       editorSync.serializedScene()?.actors.find((actor) => actor.id === id)
@@ -1212,6 +1282,7 @@ export function createEngine(
     };
     const gizmosRef: { host: GizmoHost | null } = { host: null };
     const debugOverlayInstance = new EditorDebugOverlay(scene);
+    onRollback(() => debugOverlayInstance.dispose());
     debugOverlay = debugOverlayInstance;
     const gizmos = createGizmoHost(scene, {
       mode,
@@ -1265,6 +1336,7 @@ export function createEngine(
       },
     });
     gizmosRef.host = gizmos;
+    onRollback(() => gizmos.dispose());
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
@@ -1303,6 +1375,7 @@ export function createEngine(
         options.onMarqueeSelect(actorIds);
       },
     });
+    onRollback(() => gestures.dispose());
     const flyKeys =
       typeof window === "undefined"
         ? null
@@ -1312,6 +1385,7 @@ export function createEngine(
             isEnabled: () =>
               !previewGameCamera && options.editorFlyEnabled?.() !== false,
           });
+    onRollback(() => flyKeys?.dispose());
     disposeGestures = () => {
       gestures.dispose();
       flyKeys?.dispose();
@@ -1492,7 +1566,11 @@ export function createEngine(
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
   let lastRenderCpuMs = 0;
-  const renderDiagnostics = createRenderDiagnostics(scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null);
+  // Engine-owned instrumentation is acquired only by a successfully returned handle.
+  let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
+  const renderDiagnostics = () => (readDiagnostics ??= createRenderDiagnostics(
+    scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
+  ))();
   const tilemapPreviewStart = performance.now();
   const renderLoop = () => {
     if (disposed || contextLost || registeredView?.enabled === false) return;
@@ -1574,6 +1652,8 @@ export function createEngine(
     clearTimeout(pending.timer);
     pending.resolve();
   });
+  onRollback(() => engine.onEndFrameObservable.remove(presentationObserver));
+  onRollback(() => engine.stopRenderLoop(renderLoop));
   engine.runRenderLoop(renderLoop);
 
   const onVisibility = () => {
@@ -1581,6 +1661,7 @@ export function createEngine(
     scheduler.setDocumentVisible(!hidden);
   };
   if (typeof document !== "undefined") {
+    onRollback(() => document.removeEventListener("visibilitychange", onVisibility));
     onVisibility();
     document.addEventListener("visibilitychange", onVisibility);
   }
@@ -1592,6 +1673,7 @@ export function createEngine(
     cancelPresentation(new Error("Rendering context was lost during scene loading."));
     engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
   });
+  onRollback(() => engine.onContextLostObservable.remove(contextLostObserver));
   const contextRestoredObserver = engine.onContextRestoredObservable.add(() => {
     if (disposed) return;
     contextLost = false;
@@ -1605,6 +1687,7 @@ export function createEngine(
     // and leaves other live clients holding disposed wrappers.
     scheduler.invalidate("manual");
   });
+  onRollback(() => engine.onContextRestoredObservable.remove(contextRestoredObserver));
 
   // Tap-to-pick: continuous hover picking is off for touch.
   const overlayPointerCanvasCoords = (event: PointerEvent) => {
@@ -1649,6 +1732,14 @@ export function createEngine(
     event.preventDefault();
   };
   if (!options.editor) {
+    onRollback(() => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("touchstart", onOverlayTouch);
+      canvas.removeEventListener("touchmove", onOverlayTouch);
+    });
     canvas.addEventListener("pointerdown", onPointerDown);
     if (options.playMode && sceneLayerCompositor) {
       canvas.addEventListener("pointermove", onPointerMove);
@@ -1666,6 +1757,12 @@ export function createEngine(
     engineCommandBus.dispatch({ type: "editor.drop.result", viewportId: command.viewportId,
       requestId: command.requestId, transforms: editor.dropSelectedActors(command.actorIds, command.maxDistance) });
   });
+  onRollback(unsubscribeEditorDrop);
+  // FontFace registration publishes to the document, so start it only after
+  // the synchronous construction steps that can still roll back have succeeded.
+  if (options.fontFaceEntries && options.fontFaceEntries.length > 0) {
+    void fontRegistry.registerAll(options.fontFaceEntries);
+  }
 
   return {
     engine,
