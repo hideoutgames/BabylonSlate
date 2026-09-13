@@ -397,3 +397,5 @@ CEL hard thresholds include a small numerical tie tolerance. Without it, an exac
 CEL thresholds filtered shadow visibility before applying its light ramp. Feeding near-one PCF values directly into a hard light band can amplify harmless filter variation into surface speckling at a band boundary. Zero band softness gives a hard shadow edge; positive softness explicitly blends shadow visibility. PBR retains its continuous filtered shadows.
 
 Editor billboard icons multiply their unlit status tint through the diffuse texture channel. An additive emissive texture would wash red/yellow status back to white.
+
+SceneLayer camera preparation updates camera matrices only. Scene rendering owns scene-uniform uploads after Babylon selects the correct floating-origin context. Picking and resizing must not upload scene matrices while the world scene is current; doing so can cache a perspective world projection in an orthographic HUD. Regression tests exercise actual uniform-buffer values with world-first and layer-first rendering, including layer post-processing.
