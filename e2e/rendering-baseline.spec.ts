@@ -240,7 +240,9 @@ test("local renderer baseline bounds sixteen eligible point and spot shadow ligh
   page,
 }, testInfo) => {
   // Three 30-second samples plus room realization and persistence on SwiftShader.
-  test.setTimeout(300_000);
+  // CI can present fewer than six frames in five seconds; setup must not impose
+  // an implicit FPS requirement on this resource-safety measurement.
+  test.setTimeout(450_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await openMinimalTestProject(page);
@@ -260,7 +262,7 @@ test("local renderer baseline bounds sixteen eligible point and spot shadow ligh
     );
     const initial = await baseline(page);
     await expect
-      .poll(async () => (await baseline(page)).frameCount)
+      .poll(async () => (await baseline(page)).frameCount, { timeout: 30_000 })
       .toBeGreaterThan(initial.frameCount + 5);
     const measurement = await measure(page);
     const capture = await baseline(page);

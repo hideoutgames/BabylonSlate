@@ -48,7 +48,7 @@ import {
   editorKtx2PublicBase,
   editorMeshoptPublicBase,
 } from "../lib/public-engine-assets";
-import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
+import { createCanvasResizeGuard, waitForCanvasSize } from "../lib/canvas-resize-guard";
 import {
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScene,
@@ -157,6 +157,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const completedRenderSettingsRef = useRef<string | null>(null);
   const appliedRenderSettingsRef = useRef<string | null>(null);
   const loadTransitionRef = useRef(0);
+  const blockingLoadRef = useRef<AbortController | null>(null);
   const [sceneLoad, setSceneLoad] = useState<{
     open: boolean;
     progress: number;
@@ -169,6 +170,34 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     scene: SerializedScene;
     handle: EngineHandle;
   } | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let sized = canvas.clientWidth > 0 && canvas.clientHeight > 0;
+    let retryWhenVisible = false;
+    const observer = new ResizeObserver(() => {
+      const nextSized = canvas.clientWidth > 0 && canvas.clientHeight > 0;
+      if (sized && !nextSized && blockingLoadRef.current) {
+        const loading = blockingLoadRef.current;
+        blockingLoadRef.current = null;
+        retryWhenVisible = true;
+        loading.abort();
+        setSceneReady(false);
+        setDropReady(null);
+        setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
+        // Disposal rejects an outstanding first-frame promise immediately.
+        // Completed inactive viewports retain their handle and resources.
+        releaseEngineRef.current?.();
+      } else if (!sized && nextSized && retryWhenVisible) {
+        retryWhenVisible = false;
+        setReloadVersion((version) => version + 1);
+      }
+      sized = nextSized;
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -314,8 +343,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     engineGenerationRef.current += 1;
     setSceneReady(false);
     setDropReady(null);
-    setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
+    setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
     const controller = new AbortController();
+    blockingLoadRef.current = controller;
     const disposers: Array<() => void> = [];
     let released = false;
     const release = () => {
@@ -326,6 +356,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     releaseEngineRef.current = release;
     void (async () => {
       try {
+        await waitForCanvasSize(canvas, controller.signal);
+        controller.signal.throwIfAborted();
+        setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
         await waitForSceneLoadingPaint(controller.signal);
         controller.signal.throwIfAborted();
         setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
@@ -443,6 +476,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (controller.signal.aborted) return;
         console.error("[viewport] failed to create scene", error);
         setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true });
+      } finally {
+        // Keep construction covered until the scene-loading effect takes over.
+        if (blockingLoadRef.current === controller && (!engineRef.current || !sceneRef.current)) {
+          blockingLoadRef.current = null;
+        }
       }
     })();
 
@@ -530,8 +568,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const rendering = !remount && completedRenderSettingsRef.current !== renderSettingsKey;
     const blocking = remount || rendering;
     if (blocking) {
+      blockingLoadRef.current = controller;
       handle.setPaused(true);
-      setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
+      setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene", rendering });
     }
     void (async () => {
       let collected: EditorSceneLoadOptions | null = null;
@@ -628,6 +667,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       };
       try {
         if (blocking) {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          await waitForCanvasSize(canvas, controller.signal);
+          if (!isCurrent()) return;
+          setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
           await runSceneViewportBlockingLoad({
             signal: controller.signal,
             realize,
@@ -677,6 +721,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         console.error("[viewport] failed to load scene", error);
         releaseEngineRef.current?.();
         setSceneLoad((current) => ({ ...current, open: true, failed: true }));
+      } finally {
+        if (blockingLoadRef.current === controller) blockingLoadRef.current = null;
       }
     })();
     return () => {
