@@ -29,6 +29,20 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it("keeps different legacy GLSL expressions distinct when numeric node IDs sanitize alike", async () => {
+    const doc = createDefaultMaterialDocument();
+    doc.shadingModel = "unlit";
+    doc.edges = [];
+    for (const [index, id] of ["custom.glsl-123", "custom.glsl-456"].entries()) {
+      node(doc, id, "custom.glsl", { body: index === 0 ? "a + b" : "a - b" });
+      wire(doc, "baseColor", "out", id, "a");
+      wire(doc, id, "out", "output", index === 0 ? "baseColor" : "emissive");
+    }
+    const result = await compile(doc);
+    expect(result.material.compiledShaders).toContain("result = a + b;");
+    expect(result.material.compiledShaders).toContain("result = a - b;");
+  });
+
   it("builds distinct legal texture samplers from editor-generated numeric node IDs", async () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
