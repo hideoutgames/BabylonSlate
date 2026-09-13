@@ -9,6 +9,8 @@ This contract slice exposes no new renderer. Its pure resolver reports effective
 Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
 Readiness probes enter and restore their scene's floating-origin context, so a newly created preview cannot supply missing or unrelated camera matrices to a loading viewport. The Babylon 9.20 adapter checks scene-owned meshes, passes, targets and registered readiness checks; unrelated effects in the shared Engine cache cannot block presentation or editor mesh freezing. Target probes restore camera, matrices, scene UBO, viewport, render-pass and color-write state even if Babylon callbacks throw, preserving sibling views.
 
+Model readiness retains real GLB loader and instantiation failures, including loads started during fire-and-forget Play command delivery. A failed assigned model cannot advance scene loading to warming or presentation. Replacing/despawning the assignment clears its retained failure; late failures from superseded or disposed actors do not fail the current load.
+
 ## Project PBR / CEL rendering
 
 The Basic 3D template recalculates the bundled Mannequin's normals from its existing faces before import, separating shared triangle corners. The supplied unlit model has smoothed corner normals on flat cuboid faces; under lit materials these produced diagonal CEL bands even with cast shadows disabled. Shape, UVs, hierarchy, animation, and triangle count remain unchanged. General imports preserve their authored normals; existing project copies are not rewritten. Preparation runs only when creating the template, with no per-frame preparation or extra draws.

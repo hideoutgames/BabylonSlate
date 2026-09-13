@@ -17,6 +17,7 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { encodeGlbJsonBin } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
@@ -562,6 +563,27 @@ describe("Play createEngine view", () => {
     const root = handle.scene.getMeshByName("actor-2");
     await handle.whenEditorModelsReady();
     expect(visualMeshes(root!).length).toBeGreaterThan(0);
+  });
+
+  it("keeps failed Play GLB imports unready until the failed assignment is replaced", async () => {
+    const { handle } = playHandle(sharedEngine());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    handle.setMeshAssets({ modelBytes: new Map([
+      ["broken", encodeGlbJsonBin({ asset: { version: "99.0" } }, null)],
+      ["hero", encodeTriangleGlb()],
+    ]) });
+    try {
+      handle.applyCommand({ type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "broken" });
+      // Delivery does not await model promises. A later waiter must still see
+      // the real loader failure, with no unhandled fire-and-forget rejection.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await expect(handle.whenEditorModelsReady()).rejects.toThrow();
+      await expect(handle.whenEditorModelsReady()).rejects.toThrow();
+      expect(visualMeshes(handle.scene.getMeshByName("actor-2")!)).toHaveLength(0);
+      handle.applyCommand({ type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "hero" });
+      await handle.whenEditorModelsReady();
+      expect(visualMeshes(handle.scene.getMeshByName("actor-2")!)).toHaveLength(1);
+    } finally { warn.mockRestore(); }
   });
 
   it("does not throw when a shared view canvas has no getContext", () => {
