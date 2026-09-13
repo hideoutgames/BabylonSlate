@@ -515,9 +515,9 @@ export function createMaterialPreviewPresenter(
   };
 
   return {
-    present: (options) => {
+    present: (presentOptions) => {
       if (disposed) return;
-      pendingForce ||= options?.force === true;
+      pendingForce ||= presentOptions?.force === true;
       canvas.dataset.cameraRadius = String(host.camera.radius);
       if (frozen || blitInFlight) return;
       const at = now();

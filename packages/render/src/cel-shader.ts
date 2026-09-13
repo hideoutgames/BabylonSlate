@@ -29,7 +29,8 @@ float slateCelBand(float value) {
   float levels = slateCelBands.x - 1.0;
   float shifted = pow(clamp(value, 0.0, 1.0), log(0.5) / log(slateCelBands.z)) * levels;
   float lower = floor(shifted);
-  float width = max(slateCelBands.y, max(0.5 * fwidth(shifted), 0.00001));
+  if (slateCelBands.y <= 0.0) { return clamp(floor(shifted + 0.5) / levels, 0.0, 1.0); }
+  float width = slateCelBands.y;
   return clamp((lower + smoothstep(0.5 - width, 0.5 + width, fract(shifted))) / levels, 0.0, 1.0);
 }
 float slateCelStrength(vec3 color) {
@@ -53,7 +54,8 @@ vec3 slateCelSpecularTint(vec3 specular, vec3 diffuse) {
 }
 float slateCelHighlight(float ndh, float ndl) {
   float edge = 1.0 - slateCelSpecular.y;
-  float width = max(slateCelSpecular.z, max(0.5 * fwidth(ndh), 0.00001));
+  if (slateCelSpecular.z <= 0.0) { return step(edge, ndh) * step(0.00001, ndl) * slateCelSpecular.x; }
+  float width = slateCelSpecular.z;
   return smoothstep(edge - width, edge + width, ndh) * step(0.00001, ndl) * slateCelSpecular.x;
 }
 vec3 slateCelSurfaceLight(vec3 color, float peak) {

@@ -361,3 +361,5 @@ Model previews stage material replacements, warm them against their actual meshe
 and retain the displayed generation until a replacement succeeds. Closing or
 replacing a preview releases its material library and exact texture leases.
 Preview render errors are reported without terminating frame scheduling.
+
+CEL band and highlight softness of zero uses discrete thresholds with no implicit derivative smoothing. Positive softness is an explicit artistic choice. Basic 3D templates bind the Mannequin material slot to a PBR material with nonmetallic, rough shading; ordinary glTF imports retain their authored shading model.

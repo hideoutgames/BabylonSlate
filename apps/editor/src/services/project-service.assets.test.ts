@@ -430,6 +430,12 @@ describe("project documents as .babasset", () => {
     const animations = registry!
       .list()
       .filter((asset) => asset.header.type === "Animation");
+    const material = registry!.list().find((asset) => asset.header.type === "Material")!;
+    const materialDoc = await decodeAssetDocument(await storage.readBinary(material.path));
+    expect(materialDoc.payload.shadingModel).toBe("pbr");
+    expect(model?.header.payload.materialSlots).toEqual([
+      expect.objectContaining({ index: 0, materialGuid: material.header.guid }),
+    ]);
     expect(model?.header.name).toBe("mannequin");
     expect(mesh?.properties.assetGuid).toBe(model?.header.guid);
     expect(normalizeSkeletonPayload(skeleton?.header.payload).kind).toBe(

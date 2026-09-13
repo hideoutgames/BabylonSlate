@@ -4,6 +4,9 @@ import {
 } from "@babylonslate/anim-graph";
 import {
   DOCUMENT_CHUNK_ID,
+  decodeBabasset,
+  encodeBabasset,
+  normalizeModelPayload,
   newAssetGuid,
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
@@ -164,6 +167,48 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   }
   if (!skeleton) {
     throw new Error("Kenney Mannequin import did not create a Skeleton.");
+  }
+  // The template intentionally uses a lit material. Generic imports still
+  // preserve the source shading model and unsupported material extensions.
+  const registry = options.registry;
+  const storage = registry.storageFor("project");
+  const blobs = registry.blobsFor("project");
+  const materials = created.filter((asset) => asset.header.type === "Material");
+  for (const asset of [...materials, model]) {
+    const decoded = await decodeBabasset(
+      await storage.readBinary(asset.path),
+      (hash) => blobs.readBlob(hash),
+    );
+    const documentBytes = decoded.chunks.get(DOCUMENT_CHUNK_ID);
+    const payload = documentBytes
+      ? JSON.parse(new TextDecoder().decode(documentBytes)) as Record<string, unknown>
+      : { ...decoded.header.payload };
+    if (asset.header.type === "Material") {
+      payload.shadingModel = "pbr";
+      const nodes = payload.nodes as Array<{ id: string; properties: Record<string, unknown> }>;
+      for (const node of nodes) {
+        if (node.id === "metallic-factor") node.properties.value = [0];
+        if (node.id === "roughness-factor") node.properties.value = [0.8];
+      }
+    } else {
+      const modelPayload = normalizeModelPayload(payload);
+      payload.materialSlots = modelPayload.materialSlots.map((slot) => ({
+        ...slot,
+        materialGuid: materials[slot.index]?.header.guid ?? slot.materialGuid,
+      }));
+    }
+    const chunks = decoded.header.chunks.map((chunk) => ({
+      id: chunk.id, kind: chunk.kind, mime: chunk.mime,
+      data: chunk.id === DOCUMENT_CHUNK_ID
+        ? new TextEncoder().encode(JSON.stringify(payload))
+        : decoded.chunks.get(chunk.id)!,
+    }));
+    await storage.writeBinary(asset.path, await encodeBabasset({
+      header: { ...decoded.header, payload },
+      chunks,
+      writeBlob: (hash, data) => blobs.writeBlob(hash, data),
+    }));
+    await registry.reindexPath(asset.path);
   }
   const kind = normalizeSkeletonPayload(skeleton.header.payload).kind;
   if (kind !== "hierarchy") {
