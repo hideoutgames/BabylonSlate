@@ -2,12 +2,14 @@ import { copyTextureBytesForUpload, isKtx2Bytes, sniffImageSize, sniffKtx2Size }
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import {
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
 } from "./perf-ceilings";
 import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
+import { uploadedTextureBytes } from "./uploaded-texture-bytes";
 
 export interface ResourceCacheOptions {
   /** Accounted byte ceiling before evicting unreferenced LRU entries. */
@@ -39,6 +41,7 @@ interface CacheEntry {
   contentKey: string;
   textures: Map<string, BaseTexture>;
   samplingBytes?: Map<string, number>;
+  samplingDisposers?: Map<string, () => void>;
 }
 
 /**
@@ -71,6 +74,22 @@ import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 
 function asUint8Array(bytes: Uint8Array | Blob): Uint8Array | null {
   return bytes instanceof Uint8Array ? bytes : null;
+}
+
+interface TextureSourceSize {
+  width: number;
+  height: number;
+  ktx2MipLevels?: number;
+}
+
+function textureSourceSize(bytes: Uint8Array): TextureSourceSize | null {
+  const ktx2 = sniffKtx2Size(bytes);
+  if (ktx2 && bytes.byteLength >= 44) {
+    // KTX2 levelCount follows faceCount at byte 40. Zero denotes a base level.
+    const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return { ...ktx2, ktx2MipLevels: Math.max(1, header.getUint32(40, true)) };
+  }
+  return ktx2 ?? sniffImageSize(bytes);
 }
 
 function ktx2LoaderHints(bytes: Uint8Array | Blob): {
@@ -141,6 +160,8 @@ function anyLiveTexture(entry: CacheEntry): BaseTexture | undefined {
 }
 
 function disposeEntryTextures(entry: CacheEntry): void {
+  for (const cancel of entry.samplingDisposers?.values() ?? []) cancel();
+  entry.samplingDisposers?.clear();
   for (const texture of entry.textures.values()) {
     texture.dispose();
   }
@@ -317,14 +338,14 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
-    const canonical = this.blobUrlFor(assetGuid, bytes);
+    this.blobUrlFor(assetGuid, bytes);
     const entry = this.entries.get(variantKey)!;
     const blobUrl = this.blobUrlForSamplingKey(entry);
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
     const loaderUrl = ktx2LoaderUrl(blobUrl, bytes);
     const texture = options.isCube
-      ? new CubeTexture(canonical, engine, {
+      ? new CubeTexture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           useSRGBBuffer: options.useSRGBBuffer ?? false,
         })
@@ -339,7 +360,7 @@ export class ResourceCache {
         });
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
-    this.accountLoadedBytes(variantKey, key, bytes, options.noMipmap !== true);
+    this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true);
     return texture;
   }
 
@@ -388,9 +409,10 @@ export class ResourceCache {
       existing.textures.set(key, texture);
       existing.refCount += 1;
       existing.lastUsed = ++this.clock;
+      this.trackTextureBytes(existing, key, texture, undefined, !noMipmap);
       return texture;
     }
-    this.entries.set(variantKey, {
+    const entry: CacheEntry = {
       assetGuid,
       key: variantKey,
       blobUrl: "",
@@ -400,7 +422,9 @@ export class ResourceCache {
       lastUsed: ++this.clock,
       contentKey: files.join(":"),
       textures: new Map([[key, texture]]),
-    });
+    };
+    this.entries.set(variantKey, entry);
+    this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
     return texture;
   }
 
@@ -504,21 +528,70 @@ export class ResourceCache {
     }
   }
 
-  private accountLoadedBytes(
-    variantKey: string,
+  private trackTextureBytes(
+    entry: CacheEntry,
     sampling: string,
-    bytes: Uint8Array | Blob,
+    texture: Texture | CubeTexture,
+    bytes: Uint8Array | Blob | undefined,
     withMips: boolean,
   ): void {
-    const raw = asUint8Array(bytes);
-    if (!raw) return;
-    const compressed = sniffKtx2Size(raw);
-    const dimensions = compressed ?? sniffImageSize(raw);
-    const entry = this.entries.get(variantKey);
-    if (!dimensions || !entry) return;
+    entry.samplingDisposers ??= new Map();
+    entry.samplingDisposers.get(sampling)?.();
+    let active = true;
+    let headerPending = bytes instanceof Blob;
+    let size = bytes instanceof Uint8Array ? textureSourceSize(bytes) : null;
+    const current = () => active && this.entries.get(entry.key) === entry && entry.textures.get(sampling) === texture;
+    const update = () => {
+      if (!current() || headerPending || isDisposedGpuTexture(texture)) return;
+      const internal = texture.getInternalTexture();
+      // Babylon 9.20's RGBA KTX2 uploader leaves internal width/height at the
+      // final mip. Header base dimensions and levelCount describe its uploads.
+      const uploaded = uploadedTextureBytes(internal, size?.ktx2MipLevels, size?.ktx2MipLevels !== undefined ? size : undefined);
+      const estimate = uploaded ?? (size ? uploadedTextureBytes({
+        isReady: true, width: size.width, height: size.height, depth: 1,
+        isCube: texture.isCube, is3D: false, is2DArray: false,
+        format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_UNSIGNED_BYTE,
+        generateMipMaps: withMips,
+      }, size.ktx2MipLevels) : null);
+      if (estimate !== null) this.setSamplingBytes(entry, sampling, estimate);
+    };
+    const load = texture.onLoadObservable.add(update);
+    const disposed = texture.onDisposeObservable.add(() => {
+      if (!current()) return;
+      cancel();
+      entry.samplingDisposers!.delete(sampling);
+      entry.textures.delete(sampling);
+      this.setSamplingBytes(entry, sampling, 0);
+    });
+    const cancel = () => {
+      active = false;
+      load?.remove(false);
+      disposed?.remove(false);
+    };
+    entry.samplingDisposers.set(sampling, cancel);
+    update();
+    if (bytes instanceof Blob) {
+      // Bound temporary header storage; unusual raster headers can still be
+      // measured from the real upload when their dimensions are unavailable.
+      void bytes.slice(0, 64 * 1024).arrayBuffer().then((header) => {
+        if (!current()) return;
+        size = textureSourceSize(new Uint8Array(header));
+        headerPending = false;
+        update();
+      }, () => {
+        if (!current()) return;
+        headerPending = false;
+        update();
+      });
+    }
+  }
+
+  private setSamplingBytes(entry: CacheEntry, sampling: string, bytes: number): void {
+    if (this.entries.get(entry.key) !== entry) return;
     entry.samplingBytes ??= new Map();
-    entry.samplingBytes.set(sampling, accountedTextureBytes(dimensions.width, dimensions.height, compressed ? "astc4x4" : "rgba8", withMips));
-    this.account(variantKey, [...entry.samplingBytes.values()].reduce((total, value) => total + value, 0));
+    if (entry.samplingBytes.get(sampling) === bytes) return;
+    entry.samplingBytes.set(sampling, bytes);
+    this.account(entry.key, [...entry.samplingBytes.values()].reduce((total, value) => total + value, 0));
   }
 
   flushUnreferenced(): void {

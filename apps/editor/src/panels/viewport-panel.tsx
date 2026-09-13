@@ -921,6 +921,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           engineScenes: handle.engine.scenes.length,
           estimatedTextureBytes: handle.resourceCache.accountedBytes(),
           estimatedGeometryBytes: handle.accountedGeometryBytes(),
+          ktx2Uploads: handle.engine.getLoadedTexturesCache()
+            .filter((texture) => texture.isReady && texture._extension === ".ktx2")
+            .map((texture) => ({ format: texture.format, type: texture.type, mips: texture.generateMipMaps })),
           sceneOverrides: sceneRef.current?.settings.shadowOverrides,
           capabilities: {
             maxTextureSize: caps.maxTextureSize,
