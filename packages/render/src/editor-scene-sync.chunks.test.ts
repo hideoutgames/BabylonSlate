@@ -10,14 +10,34 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { createEditorCamera } from "./editor-camera";
 import { encodeTriangleGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
+import * as modelContainer from "./model-container";
+import * as modelLoads from "./glb-anim";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
+const releaseLoads: Array<() => void> = [];
 afterEach(() => {
+  for (const release of releaseLoads.splice(0)) release();
+  vi.restoreAllMocks();
   for (const { scene, engine } of handles.splice(0)) {
     scene.dispose();
     engine.dispose();
   }
 });
+function holdModelContainer() {
+  const load = modelContainer.loadModelContainer;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  releaseLoads.push(release);
+  let loaded!: (container: Awaited<ReturnType<typeof load>>) => void;
+  const ready = new Promise<Awaited<ReturnType<typeof load>>>((resolve) => { loaded = resolve; });
+  vi.spyOn(modelContainer, "loadModelContainer").mockImplementationOnce(async (...args) => {
+    const container = await load(...args);
+    loaded(container);
+    await gate;
+    return container;
+  });
+  return { ready, release };
+}
 function fixture() {
   const handle = createTestEngine();
   handles.push(handle);
@@ -208,6 +228,78 @@ describe("cooperative editor realization", () => {
     await rejected;
     expect(sync.serializedScene()).toBe(next);
     expect(sync.actorCount()).toBe(1);
+    expect(onAfterApply).toHaveBeenCalledOnce();
+  });
+
+  it.each(["before", "after"] as const)("lets a replacement %s model completion reuse the container without cancelled adoption", async (replace) => {
+    const { sync, scene, onAfterApply } = fixture();
+    sync.apply(document(1));
+    const previousRoot = sync.meshForActor("actor-0");
+    onAfterApply.mockClear();
+    const next = document();
+    next.actors[0]!.components[0]!.properties.assetGuid = "model";
+    const delayed = holdModelContainer();
+    const requests = vi.spyOn(modelLoads, "beginSlotModelAnimLoad");
+    const controller = new AbortController();
+    const failure = new Error("cancelled while the model was loading");
+    await expect(sync.applyAsync(next, {
+      signal: controller.signal,
+      assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
+      yieldControl: async () => {
+        if (sync.meshForActor("actor-0") !== previousRoot) controller.abort(failure);
+      },
+    })).rejects.toBe(failure);
+    const root = sync.meshForActor("actor-0")!;
+    const container = await delayed.ready;
+    const instantiate = vi.spyOn(container, "instantiateModelsToScene");
+    await expect(sync.whenEditorModelsReady()).rejects.toBe(failure);
+    if (replace === "before") {
+      await sync.applyAsync(next, { signal: new AbortController().signal });
+      expect(onAfterApply).toHaveBeenCalledOnce();
+    }
+    delayed.release();
+    await Promise.all(requests.mock.results.map((result) => result.value));
+    if (replace === "after") {
+      expect(instantiate).not.toHaveBeenCalled();
+      expect(visualMeshes(root)).toHaveLength(0);
+      expect(onAfterApply).not.toHaveBeenCalled();
+      expect(scene._activeMeshesFrozen).toBe(false);
+      await expect(sync.whenEditorModelsReady()).rejects.toBe(failure);
+      await sync.applyAsync(next, { signal: new AbortController().signal });
+    }
+    await sync.whenEditorModelsReady();
+    expect(sync.meshForActor("actor-0")).toBe(root);
+    expect(instantiate).toHaveBeenCalledOnce();
+    expect(modelLoads.glbContainerLoadCount(scene)).toBe(1);
+    expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
+  });
+
+  it("restores a static actor matrix when its model lands during the final freeze phase", async () => {
+    const { sync, onAfterApply } = fixture();
+    const next = document();
+    next.actors[0]!.components[0]!.properties.assetGuid = "model";
+    const delayed = holdModelContainer();
+    const requests = vi.spyOn(modelLoads, "beginSlotModelAnimLoad");
+    let progress = 0;
+    let released = false;
+    await sync.applyAsync(next, {
+      signal: new AbortController().signal,
+      assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
+      onProgress: (value) => { progress = value; },
+      yieldControl: async () => {
+        if (progress < 0.95 || released) return;
+        released = true;
+        const root = sync.meshForActor("actor-0")!;
+        expect(root.isWorldMatrixFrozen).toBe(true);
+        await delayed.ready;
+        delayed.release();
+        await requests.mock.results[0]!.value;
+        expect(root.isWorldMatrixFrozen).toBe(true);
+        expect(onAfterApply).not.toHaveBeenCalled();
+      },
+    });
+    expect(released).toBe(true);
+    expect(sync.meshForActor("actor-0")!.isWorldMatrixFrozen).toBe(true);
     expect(onAfterApply).toHaveBeenCalledOnce();
   });
 

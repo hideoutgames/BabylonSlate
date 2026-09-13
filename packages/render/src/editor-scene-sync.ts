@@ -485,6 +485,10 @@ export class EditorSceneSync {
     this.modelLoadBinding.compiledMaterialGuids =
       this.assets?.compiledMaterialGuids;
     const placeholder = editorModelLoadTarget(root, actor);
+    const generation = this.applyGeneration;
+    const signal = this.pendingApply?.signal;
+    const ownsLoad = () => generation === this.applyGeneration && !signal?.aborted &&
+      !root.isDisposed() && !placeholder.isDisposed() && this.meshes.get(actor.id) === root;
     void beginSlotModelAnimLoad(
       this.scene,
       this.modelLoadBinding,
@@ -493,20 +497,24 @@ export class EditorSceneSync {
       bytes,
       placeholder,
       () => {
-        if (root.isDisposed() || placeholder.isDisposed() || this.meshes.get(actor.id) !== root) return;
+        if (!ownsLoad()) return;
         const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
         if (!current) return;
+        const wasFrozen = root.isWorldMatrixFrozen;
         applyActorTransform(root, current);
         this.restoreMeshComponentConstruction(current, root);
         this.applyModelSlots(current, root);
         this.bindActorMeshMaterials(current, root);
+        // Adoption may land at a yield after this actor's final freeze step.
+        // Restore that matrix without announcing a partially realized scene.
+        if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
         if (!this.applyingScene) {
-          freezeStaticActorWorldMatrix(root);
           freezeEditorActiveMeshes(this.scene);
           this.scheduler?.invalidate("asset");
           this.onAfterApply?.();
         }
       },
+      ownsLoad,
     );
   }
 
