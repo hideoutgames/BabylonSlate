@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   createActor,
   createDefaultScene,
+  createDefaultSkyboxActor,
   createMeshComponent,
 } from "../packages/core/src/index.ts";
 import { openMinimalTestProject } from "./minimal-project";
@@ -9,6 +10,7 @@ import {
   createContentBrowserAsset,
   openAssetFromBrowser,
   openMainScene,
+  openTestProject,
 } from "./open-test-project";
 import { guidForPath } from "./material-graph";
 import { saveAllIfEnabled } from "./save-all";
@@ -19,6 +21,56 @@ import { encodeGlbJsonBin } from "../packages/assets/src/importers/glb-parse";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
+
+test("Mannequin illumination stays stable when directional shadows are enabled", async ({ page }, testInfo) => {
+  await openTestProject(page);
+  const modelGuid = await guidForPath(page, "assets/Mannequin/mannequin.babasset");
+  const scene = createDefaultScene("Mannequin Shadows");
+  const mesh = createMeshComponent("mannequin-mesh", "box");
+  mesh.properties.assetGuid = modelGuid;
+  const sun = createActor("sun", "Sun", {
+    transform: { position: [0, 5, -3], rotation: [0.35355339, 0.35355339, -0.14644661, 0.85355339], scale: [1, 1, 1] },
+    components: [{ id: "sun-light", classId: "LightComponent", properties: {
+      lightKind: "directional", color: [1, 1, 1], intensity: 1.5, castShadows: false,
+    } }],
+  });
+  scene.actors = [createActor("mannequin", "Mannequin", {
+    transform: { position: [0, -1.5, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] },
+    components: [mesh],
+  }), sun, createDefaultSkyboxActor()];
+  scene.settings.celShading = { specularEnabled: false, bandSoftness: 0 };
+  await openMainScene(page);
+  await projectMode(page, "CEL");
+  await setPreviewScene(page, scene);
+  const canvas = page.getByTestId("viewport-canvas");
+  const yellow = async () => {
+    const pixels = await framePixels(canvas);
+    let count = 0;
+    for (let i = 0; i < pixels.length; i += 4)
+      if (pixels[i]! > 200 && pixels[i + 1]! > 120 && pixels[i + 2]! < 100) count++;
+    return count;
+  };
+  await expect.poll(yellow).toBeGreaterThan(500);
+  const unshadowed = await framePixels(canvas);
+  await canvas.screenshot({ path: testInfo.outputPath("mannequin-shadows-off.png") });
+  sun.components[0]!.properties.castShadows = true;
+  await setPreviewScene(page, scene);
+  await canvas.screenshot({ path: testInfo.outputPath("mannequin-shadows-on.png") });
+  await expect.poll(async () => {
+    const shadowed = await framePixels(canvas);
+    let changed = 0, count = 0;
+    for (let i = 0; i < unshadowed.length; i += 4) {
+      if (unshadowed[i]! <= 200 || unshadowed[i + 1]! <= 120 || unshadowed[i + 2]! >= 100) continue;
+      count++;
+      if (Math.abs(shadowed[i + 1]! - unshadowed[i + 1]!) > 20) changed++;
+    }
+    return changed / Math.max(1, count);
+  }).toBeLessThan(0.01);
+  await page.getByRole("treeitem", { name: "Sun", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Cast Shadows", exact: true }).uncheck();
+  await expect.poll(yellow).toBeGreaterThan(500);
+  await canvas.screenshot({ path: testInfo.outputPath("mannequin-shadows-disabled-live.png") });
+});
 
 async function pixelsNear(
   canvas: Locator,

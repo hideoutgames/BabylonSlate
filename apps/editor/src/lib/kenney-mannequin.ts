@@ -1,5 +1,6 @@
 import { embedGlbExternalImages } from "@babylonslate/assets";
 import { publicAssetUrl } from "./branding";
+import { prepareMannequinNormals } from "./kenney-mannequin-normals";
 
 /** Public URL path (under Vite `BASE_URL`) for the Kenney Mannequin GLB. */
 export const KENNEY_MANNEQUIN_PUBLIC_PATH =
@@ -80,6 +81,7 @@ async function fetchPublicBytes(publicPath: string): Promise<Uint8Array> {
 }
 
 function withEmbeddedAlbedo(glb: Uint8Array, png: Uint8Array | null): Uint8Array {
+  glb = prepareMannequinNormals(glb);
   if (!png || png.byteLength === 0) return glb;
   return embedGlbExternalImages(glb, {
     "Textures/texture-d.png": png,
