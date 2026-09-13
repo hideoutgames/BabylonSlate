@@ -53,7 +53,11 @@ export class ShadowMapRefresh {
   private revision = 0;
   private continuous = false;
 
-  constructor(private readonly casterChanged: (mesh: AbstractMesh) => void) {}
+  private readonly casterChanged: (mesh: AbstractMesh) => void;
+
+  constructor(casterChanged: (mesh: AbstractMesh) => void) {
+    this.casterChanged = casterChanged;
+  }
 
   private watch(geometry: Geometry): void {
     const existing = this.geometries.get(geometry);
