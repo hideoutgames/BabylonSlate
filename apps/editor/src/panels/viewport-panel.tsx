@@ -19,6 +19,7 @@ import {
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
+import { subscribeAppSettings } from "../context/app-settings-context";
 import {
   materialViewportTestSnapshot,
   type MaterialViewportTestSnapshot,
@@ -799,11 +800,110 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
         renderingBaseline: () => Record<string, unknown> | null;
+        measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
       };
     };
     const host = globalThis as ViewportTestHost;
+    let viewportFrameCap: number | null = null;
+    const unsubscribeSettings = subscribeAppSettings(({ settings }) => {
+      viewportFrameCap = settings.viewportFrameCap;
+    });
+    const measurements = new Set<() => void>();
 
     host.__babylonslateViewportTest = {
+      measureRenderingBaseline: async (durationMs) => {
+        for (const cancel of measurements) cancel();
+        const handle = engineRef.current;
+        if (!handle) throw new Error("No active viewport for rendering measurement");
+        // Keep collection bounded even if a test supplies an invalid duration.
+        const requestedMs = Number.isFinite(durationMs)
+          ? Math.min(30_000, Math.max(1, durationMs)) : 30_000;
+        return new Promise((resolve) => {
+          const started = performance.now();
+          const frameSamples: Array<{
+            atMs: number; intervalMs: number | null; frameDelta: number;
+            cpuMs: number; gpuMs: number | null; gpuStatus: string;
+            viewportFrameCap: number | null; documentVisible: boolean;
+          }> = [];
+          const resourceSamples: Array<Record<string, number>> = [];
+          let lastFrame = handle.scheduler.stats().renderedFrames;
+          let lastPresented: number | null = null;
+          let lastResourceAt = -250;
+          let droppedSamples = 0;
+          let finished = false;
+          let previousTextures = new Set(handle.engine.getLoadedTexturesCache());
+          let previousTargets = new Set(handle.engine._renderTargetWrapperCache);
+          let texturesAdded = 0;
+          let texturesRemoved = 0;
+          let targetsAdded = 0;
+          let targetsRemoved = 0;
+          const sampleResources = (atMs: number) => {
+            const textures = new Set(handle.engine.getLoadedTexturesCache());
+            const targets = new Set(handle.engine._renderTargetWrapperCache);
+            for (const texture of textures) if (!previousTextures.has(texture)) texturesAdded += 1;
+            for (const texture of previousTextures) if (!textures.has(texture)) texturesRemoved += 1;
+            for (const target of targets) if (!previousTargets.has(target)) targetsAdded += 1;
+            for (const target of previousTargets) if (!targets.has(target)) targetsRemoved += 1;
+            previousTextures = textures;
+            previousTargets = targets;
+            resourceSamples.push({
+              atMs,
+              estimatedTextureBytes: handle.resourceCache.accountedBytes(),
+              estimatedGeometryBytes: handle.accountedGeometryBytes(),
+              estimatedShadowBytes: handle.renderDiagnostics().shadowMapBytes,
+              sceneMeshes: handle.scene.meshes.length,
+              engineScenes: handle.engine.scenes.length,
+              engineTextures: textures.size,
+              engineRenderTargets: targets.size,
+              texturesAdded, texturesRemoved, targetsAdded, targetsRemoved,
+            });
+            lastResourceAt = atMs;
+          };
+          const finish = (cancelled: string | null = null) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            handle.engine.onEndFrameObservable.remove(frameObserver);
+            handle.engine.onContextLostObservable.remove(lostObserver);
+            handle.scene.onDisposeObservable.remove(disposeObserver);
+            measurements.delete(cancel);
+            const elapsedMs = performance.now() - started;
+            if (!cancelled) sampleResources(elapsedMs);
+            resolve({ requestedMs, elapsedMs, cancelled, droppedSamples, frameSamples, resourceSamples });
+          };
+          const cancel = () => finish("Viewport measurement was superseded or disposed");
+          const frameObserver = handle.engine.onEndFrameObservable.add(() => {
+            if (engineRef.current !== handle || handle.scene.isDisposed) {
+              cancel();
+              return;
+            }
+            const frame = handle.scheduler.stats().renderedFrames;
+            // Shared Engine end-frame notifications from sibling views are not
+            // presentations of this viewport. Only its own scheduler advances.
+            if (frame === lastFrame) return;
+            const now = performance.now();
+            const atMs = now - started;
+            const diagnostics = handle.renderDiagnostics();
+            if (frameSamples.length < 6_000) {
+              frameSamples.push({
+                atMs, intervalMs: lastPresented === null ? null : now - lastPresented,
+                frameDelta: frame - lastFrame,
+                cpuMs: diagnostics.cpuMs, gpuMs: diagnostics.gpuMs,
+                gpuStatus: diagnostics.gpuStatus,
+                viewportFrameCap, documentVisible: document.visibilityState === "visible",
+              });
+            } else droppedSamples += 1;
+            lastFrame = frame;
+            lastPresented = now;
+            if (atMs - lastResourceAt >= 250) sampleResources(atMs);
+          });
+          const lostObserver = handle.engine.onContextLostObservable.add(() => finish("Rendering context was lost"));
+          const disposeObserver = handle.scene.onDisposeObservable.addOnce(cancel);
+          const timer = setTimeout(() => finish(), requestedMs);
+          measurements.add(cancel);
+          sampleResources(0);
+        });
+      },
       renderingBaseline: () => {
         const handle = engineRef.current;
         if (!handle) return null;
@@ -812,8 +912,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           userAgent: navigator.userAgent,
           backend: "webgl2",
           webGLVersion: handle.engine.webGLVersion,
+          glInfo: handle.engine.getGlInfo(),
           render: handle.renderDiagnostics(),
           frameCount: handle.scheduler.stats().renderedFrames,
+          viewportFrameCap,
           drawCalls: handle.drawCalls(),
           liveObjects: handle.liveObjectCounts(),
           engineScenes: handle.engine.scenes.length,
@@ -906,6 +1008,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
 
     return () => {
+      for (const cancel of measurements) cancel();
+      unsubscribeSettings();
       delete host.__babylonslateViewportTest;
     };
   }, [commitGizmoTransform]);
