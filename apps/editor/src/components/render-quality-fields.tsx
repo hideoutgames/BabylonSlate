@@ -12,6 +12,7 @@ export function RenderQualityFields({ settings, onChange }: { settings: RenderPr
     onChange({ ...settings, shadows: normalizeShadowSettings({ ...effective.shadows, ...patch.shadows }),
       quality: normalizeRenderingQuality({ ...effective, ...patch }) });
   };
+  const displayLabel = (value: string) => value[0]!.toUpperCase() + value.slice(1);
   const groupLabels = QUALITY_GROUPS.map((group) => qualityGroupLabel(effective, group));
   const overall = groupLabels.every((value) => value === groupLabels[0]) ? groupLabels[0]! : "custom";
   return <FieldSet>
@@ -19,7 +20,7 @@ export function RenderQualityFields({ settings, onChange }: { settings: RenderPr
     {([undefined, ...QUALITY_GROUPS] as (QualityGroup | undefined)[]).map((group) => <Field key={group ?? "all"} className="settings-field">
       <FieldLabel htmlFor={`quality-${group ?? "all"}`}>{group ? `${labels[group]} Quality` : "Overall Quality"}</FieldLabel>
       <Select value={group ? qualityGroupLabel(effective, group) : overall} onValueChange={(value) => { if (value && value !== "custom") apply(value as QualityLevel, group); }}>
-        <SelectTrigger id={`quality-${group ?? "all"}`}><SelectValue /></SelectTrigger>
+        <SelectTrigger id={`quality-${group ?? "all"}`}><SelectValue>{displayLabel(group ? qualityGroupLabel(effective, group) : overall)}</SelectValue></SelectTrigger>
         <SelectContent><SelectGroup>
           <SelectItem value="custom" disabled>Custom</SelectItem>
           {QUALITY_LEVELS.map((level) => <SelectItem key={level} value={level}>{level[0]!.toUpperCase() + level.slice(1)}</SelectItem>)}

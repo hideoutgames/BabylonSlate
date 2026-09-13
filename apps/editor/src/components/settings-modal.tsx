@@ -282,8 +282,8 @@ export function SettingsModal({
   } = useDocuments();
   const [draft, setDraft] = useState<RenderingDraft | null>(null);
   const draftOwner = useRef<{ guid: string | null; base: RenderingDraft } | null>(null);
-  const latest = useRef({ project: liveProjectDocument, projectGuid, draft });
-  latest.current = { project: liveProjectDocument, projectGuid, draft };
+  const latest = useRef({ project: liveProjectDocument, projectGuid, draft, applyProjectSettings });
+  latest.current = { project: liveProjectDocument, projectGuid, draft, applyProjectSettings };
   const projectDocument = liveProjectDocument && draft
     ? { ...liveProjectDocument, settings: { ...liveProjectDocument.settings, ...draft } }
     : liveProjectDocument;
@@ -304,14 +304,15 @@ export function SettingsModal({
     if (!owner || !current.project || !current.draft || owner.guid !== current.projectGuid) return;
     const merged = mergeRenderingDraft(owner.base, current.draft, current.project.settings);
     if (JSON.stringify(merged) !== JSON.stringify(renderingDraft(current.project.settings)))
-      applyProjectSettings(merged);
-  }, [applyProjectSettings]);
+      current.applyProjectSettings(merged);
+  }, []);
   const changeOpen = (next: boolean) => {
     if (!next) commitRendering();
     onOpenChange(next);
   };
   useEffect(() => {
     if (open && scope === "project" && latest.current.project) {
+      if (draftOwner.current?.guid === projectGuid) return;
       const base = renderingDraft(latest.current.project.settings);
       draftOwner.current = { guid: projectGuid, base };
       setDraft(base);

@@ -86,7 +86,8 @@ vi.mock("../context/document-context", async () => {
       exportGameArtifact,
       zipExportedGame: vi.fn(),
       retryFailedTextureEncoding: vi.fn(),
-      updateProjectSettings,
+      // Context providers may recreate callbacks during unrelated updates.
+      updateProjectSettings: (...args: Parameters<typeof updateProjectSettings>) => updateProjectSettings(...args),
       updateProjectVersion,
       sourceControl,
       prefillSourceControlFromGit: sourceControl.readGitPrefill,
