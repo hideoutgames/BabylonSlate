@@ -102,7 +102,7 @@ export function createAudioReverbBakeController(options: {
       }));
 
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
-  const inflight = new Map<string, Promise<void>>();
+  const inflight = new Map<string, { fingerprint: string; work: Promise<void> }>();
   const lastHash = new Map<string, string>();
   const generation = new Map<string, number>();
 
@@ -113,11 +113,17 @@ export function createAudioReverbBakeController(options: {
   };
 
   const run = (path: string, scene: AudioReverbBakeScene): Promise<void> => {
+    const fingerprint = staticAudioGeometryFingerprint(scene);
+    const existing = inflight.get(path);
+    // Save must join the background bake through chunk persistence, not start
+    // another rewrite while that job's hash has yet to enter the completed cache.
+    if (existing?.fingerprint === fingerprint) return existing.work;
     const gen = bump(path);
     const work = bakePath(path, scene, gen);
-    inflight.set(path, work);
+    const entry = { fingerprint, work };
+    inflight.set(path, entry);
     return work.finally(() => {
-      if (inflight.get(path) === work) inflight.delete(path);
+      if (inflight.get(path) === entry) inflight.delete(path);
     });
   };
 
@@ -193,7 +199,7 @@ export function createAudioReverbBakeController(options: {
       );
     },
     drain() {
-      return Promise.all([...inflight.values()]).then(() => undefined);
+      return Promise.all([...inflight.values()].map((entry) => entry.work)).then(() => undefined);
     },
     dispose() {
       for (const timer of pending.values()) clearTimeout(timer);
