@@ -65,10 +65,23 @@ it("rejects cubes at 2D material and dynamic parameter admission without allocat
   });
   const bytes = buildFloatDdsCubeFixture();
   const before = engine.getLoadedTexturesCache().length;
+  expect(() =>
+    cache.getTexture("unknown-blob", engine, new Blob([bytes]), {
+      isCube: true,
+    }),
+  ).toThrow(/MIME/);
   expect(getMaterialTexture(cache, "environment", engine, bytes)).toBeNull();
   expect(engine.getLoadedTexturesCache()).toHaveLength(before);
   expect(() => cache.getTexture("environment", engine, bytes)).toThrow(/2D/);
   const cube = cache.getTexture("environment", engine, bytes, { isCube: true });
+  const blobCube = cache.getTexture(
+    "typed-blob",
+    engine,
+    new Blob([bytes], { type: "image/vnd-ms.dds" }),
+    { isCube: true },
+  ) as CubeTexture;
+  expect(blobCube.forcedExtension).toBe(".dds");
+  expect(blobCube.gammaSpace).toBe(false);
   expect(
     validMaterialParameterValue(
       { kind: "texture", textureAssetGuid: "environment" },

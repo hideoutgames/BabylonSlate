@@ -24,13 +24,14 @@ export function selectTextureChunk(
   header: BabassetHeader,
   options: SelectTextureChunkOptions = {},
 ): TextureChunkSelection {
-  const source = header.chunks.find(
-    (chunk) => chunk.id === "pixels" || chunk.kind === "pixels" || chunk.id === "source" || chunk.kind === "source",
-  );
   if (isEnvironmentTexturePayload(header.payload)) {
+    const source = header.chunks.find((chunk) => chunk.id === "source" || chunk.kind === "source");
     if (!source) throw new Error(`Environment Texture ${header.guid} has no retained source cube`);
     return { chunk: source, kind: "source", reason: "prefiltered-environment-source" };
   }
+  const source = header.chunks.find(
+    (chunk) => chunk.id === "pixels" || chunk.kind === "pixels",
+  );
   const preferredId =
     options.preferredChunkId ??
     (typeof header.payload.ktx2ChunkId === "string"

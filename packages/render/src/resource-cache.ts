@@ -348,6 +348,7 @@ export class ResourceCache {
     options: TextureSamplingOptions = {},
   ): Texture | CubeTexture {
     const environment = environmentContainer(bytes);
+    if (options.isCube && bytes instanceof Blob && !environment) throw new Error("Environment Blob inputs require application/vnd.babylon.env or image/vnd-ms.dds MIME; use Uint8Array to detect the container from its bytes.");
     if (environment && !options.isCube) throw new Error("Environment cube textures cannot be used as 2D textures.");
     if (environment && bytes instanceof Uint8Array) readEnvironmentTextureInfo(bytes);
     const key = samplingKey(options);

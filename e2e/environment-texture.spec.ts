@@ -63,6 +63,11 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
   page,
 }, testInfo) => {
   test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
   await page.goto("/__test_identity");
   const evidence = [];
   for (const container of ["dds", "env"] as const) {
@@ -101,7 +106,6 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     );
     await openMinimalTestProject(page, files);
     await openMainScene(page);
-    await expectGreenIllumination(page.getByTestId("viewport-canvas"));
     const samples = await page.evaluate(async () => {
       const host = window as unknown as {
         __babylonslateViewportTest: {
@@ -120,6 +124,11 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
       };
       return host.__babylonslateViewportTest.environmentTextureSamples();
     });
+    await testInfo.attach(`${container}-upload`, {
+      body: JSON.stringify({ samples, errors }),
+      contentType: "application/json",
+    });
+    expect(samples).not.toBeNull();
     expect(samples.isCube).toBe(true);
     expect(samples.gammaSpace).toBe(false);
     expect(samples.size).toEqual({
@@ -134,6 +143,7 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
       expect(sample.values[2]).toBeCloseTo(0, 4);
     }
     evidence.push({ container, samples });
+    await expectGreenIllumination(page.getByTestId("viewport-canvas"));
     await clickPlayAndWaitForOverlay(page);
     await expectGreenIllumination(page.getByTestId("play-canvas"));
     await page.getByTestId("play-overlay-close").click();

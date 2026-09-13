@@ -739,6 +739,16 @@ export function modelSlotMaterialGuidsFromPayloads(
   return [...guids].sort();
 }
 
+/** Environment cubes needed by the active scene and future scene changes. */
+export function environmentTextureGuidsFromScenes(scenes: readonly (SerializedScene | null | undefined)[]): string[] {
+  const guids = new Set<string>();
+  for (const scene of scenes) {
+    const guid = scene?.settings.environmentTextureGuid;
+    if (guid) guids.add(guid);
+  }
+  return [...guids];
+}
+
 /** Texture guids on SkyboxComponent faces. Engine default faces are not assets. */
 export function skyboxFaceGuidsFromScene(
   scene: SerializedScene | null | undefined,
