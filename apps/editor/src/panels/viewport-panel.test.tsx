@@ -1,5 +1,5 @@
 import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
@@ -210,8 +210,14 @@ function renderViewport() {
 }
 
 describe("ViewportPanel engine", () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, "clientWidth", "get").mockReturnValue(256);
+    vi.spyOn(HTMLCanvasElement.prototype, "clientHeight", "get").mockReturnValue(256);
+  });
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000 });
     createEngineMock.mockClear();
     handle.editor.setGridSettings.mockClear();
@@ -243,6 +249,39 @@ describe("ViewportPanel engine", () => {
     });
     documents.collectPlayTextureBytes.mockReset().mockResolvedValue(new Map());
     documents.collectPlaySpritePayloads.mockReset().mockResolvedValue([]);
+  });
+
+  it("defers a hidden dock canvas without blocking its sibling, then waits for a real presentation", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    const width = vi.spyOn(HTMLCanvasElement.prototype, "clientWidth", "get").mockReturnValue(0);
+    const callbacks = new Set<() => void>();
+    vi.stubGlobal("ResizeObserver", class {
+      readonly callback: () => void;
+      constructor(callback: () => void) { this.callback = callback; }
+      observe() { callbacks.add(this.callback); }
+      disconnect() { callbacks.delete(this.callback); }
+    });
+    let present!: () => void;
+    handle.presentFirstFrame.mockReturnValueOnce(new Promise<void>((resolve) => { present = resolve; }));
+    renderViewport();
+    await waitFor(() => expect(callbacks.size).toBe(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(createEngineMock).not.toHaveBeenCalled();
+    expect(handle.loadScene).not.toHaveBeenCalled();
+    expect(handle.presentFirstFrame).not.toHaveBeenCalled();
+    await act(async () => {
+      width.mockReturnValue(256);
+      for (const callback of [...callbacks]) callback();
+    });
+    await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledOnce());
+    expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
+    expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
+    await act(async () => present());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true");
   });
 
   it("mounts blocking UI before scene creation and keeps it until the first frame", async () => {
