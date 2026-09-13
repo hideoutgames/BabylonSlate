@@ -125,6 +125,7 @@ function host(documents: Array<MaterialDocument | null>, functions = {}) {
   present.sourceTexture = stack.outputTexture;
   graph.addTask(present);
   dispose.push(() => {
+    stack.dispose();
     graph.dispose();
     library.dispose();
     scene.dispose();
@@ -246,14 +247,20 @@ it("rejects transitive logical depth before compiling or allocating a legacy ren
       nodeId: "gain/depth",
     }),
   ]);
-  expect(scene.prePassRenderer).toBeNull();
+  expect(scene.prePassRenderer).toBeFalsy();
   expect(engine.postProcesses).toHaveLength(1);
   expect(tasks.every((task) => task.isReady())).toBe(true);
   expect(build.mock.calls.length).toBeLessThanOrEqual(1);
 });
 
 it("hot rebuilds without retaining old apply callbacks and ignores queued updates after disposal", async () => {
-  const { graph, tasks, engine, scene } = host([gainDocument()]);
+  const {
+    graph,
+    tasks,
+    engine,
+    scene,
+    dispose: disposeStack,
+  } = host([gainDocument()]);
   await graph.buildAsync();
   const oldPass = engine.postProcesses[0]!;
   expect(tasks[0]!.setParameter("Gain", { kind: "float", value: 0.75 })).toBe(
@@ -283,7 +290,7 @@ it("hot rebuilds without retaining old apply callbacks and ignores queued update
   const calls = create.mock.calls.length;
   oldPass.updateEffect();
   expect(create).toHaveBeenCalledTimes(calls);
-  graph.dispose();
+  disposeStack();
   expect(engine.postProcesses).toHaveLength(0);
   expect(
     scene.materials.filter((entry) => entry instanceof NodeMaterial),

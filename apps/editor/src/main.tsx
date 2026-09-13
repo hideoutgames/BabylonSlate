@@ -11,8 +11,21 @@ import App from "./App";
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("framegraphProof")
+) {
+  void import("./testing/framegraph-post-process-proof").then(
+    ({ runFrameGraphPostProcessProof }) => {
+      Object.assign(window, {
+        __babylonslateFrameGraphProof: runFrameGraphPostProcessProof,
+      });
+    },
+  );
+} else {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}

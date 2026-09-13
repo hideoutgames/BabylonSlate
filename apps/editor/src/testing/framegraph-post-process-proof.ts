@@ -1,0 +1,328 @@
+/** Test-build-only real WebGL proof. No editor renderer selection is changed. */
+import {
+  Engine,
+  FreeCamera,
+  RawTexture,
+  Scene,
+  Texture,
+  Vector3,
+} from "@babylonjs/core";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
+import { MaterialLibrary, attachPostProcessStack } from "@babylonslate/render";
+import { addAuthoredPostProcessTasks } from "@babylonslate/render/framegraph-post-process";
+import {
+  createDefaultMaterialDocument,
+  createDefaultMaterialFunctionDocument,
+  type MaterialDocument,
+  type MaterialFunctionDocument,
+  type MaterialGraphNode,
+} from "@babylonslate/shader-graph";
+
+function node(id: string, type: string, properties = {}): MaterialGraphNode {
+  return { id, type, properties, position: { x: 0, y: 0 } };
+}
+
+function connect(
+  doc: Pick<MaterialDocument, "edges">,
+  source: string,
+  pin: string,
+  target: string,
+  input: string,
+) {
+  doc.edges.push({
+    id: `${source}-${pin}-${target}-${input}`,
+    sourceNodeId: source,
+    sourcePinId: pin,
+    targetNodeId: target,
+    targetPinId: input,
+  });
+}
+
+function multiplyDocument(kind: "gain" | "texture" | "time" | "function") {
+  const doc = createDefaultMaterialDocument(kind, "postProcess");
+  doc.edges = doc.edges.filter((edge) => edge.id !== "e-scene-output");
+  doc.nodes.push(node("multiply", "math.multiply"));
+  connect(doc, "sceneColor", "color", "multiply", "a");
+  connect(doc, "multiply", "out", "output", "color");
+  if (kind === "gain") {
+    doc.nodes.push(node("gain", "param.float", { name: "Gain", value: [0.5] }));
+    connect(doc, "gain", "out", "multiply", "b");
+  } else if (kind === "texture") {
+    doc.nodes.push(node("texture", "texture.sample", { textureGuid: "mask" }));
+    connect(doc, "screenUv", "uv", "texture", "uv");
+    connect(doc, "texture", "rgba", "multiply", "b");
+  } else if (kind === "time") {
+    doc.nodes.push(
+      node("time", "input.time"),
+      node("offset", "const.float", { value: [0.5] }),
+      node("add", "math.add"),
+    );
+    connect(doc, "time", "time", "add", "a");
+    connect(doc, "offset", "out", "add", "b");
+    connect(doc, "add", "out", "multiply", "b");
+  } else {
+    doc.nodes.push(node("call", "function.call", { functionGuid: "outer" }));
+    connect(doc, "call", "out_value", "multiply", "b");
+  }
+  return doc;
+}
+
+function functions(): Record<string, MaterialFunctionDocument> {
+  const inner = createDefaultMaterialFunctionDocument("Inner Gain");
+  inner.inputs = [];
+  inner.outputs = [{ id: "out_value", name: "Value", type: "float" }];
+  inner.nodes.push(node("value", "const.float", { value: [0.25] }));
+  inner.edges = [];
+  connect(inner, "value", "out", "outputs", "out_value");
+  const outer = createDefaultMaterialFunctionDocument("Outer Gain");
+  outer.inputs = [];
+  outer.outputs = inner.outputs;
+  outer.nodes.push(node("inner", "function.call", { functionGuid: "inner" }));
+  outer.edges = [];
+  connect(outer, "inner", "out_value", "outputs", "out_value");
+  return { inner, outer };
+}
+
+async function ready(predicate: () => boolean) {
+  const deadline = performance.now() + 10_000;
+  while (!predicate()) {
+    if (performance.now() > deadline)
+      throw new Error("Proof effect did not become ready");
+    await new Promise<void>((resolve) => setTimeout(resolve, 16));
+  }
+}
+
+export async function runFrameGraphPostProcessProof() {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 16;
+  document.getElementById("root")!.append(canvas);
+  const engine = new Engine(canvas, false, {
+    preserveDrawingBuffer: true,
+    stencil: false,
+    disableWebGL2Support: false,
+  });
+  engine.setSize(16, 16);
+  const scene = new Scene(engine);
+  scene.useConstantAnimationDeltaTime = true;
+  scene.activeCamera = new FreeCamera(
+    "Proof Camera",
+    new Vector3(0, 0, -2),
+    scene,
+  );
+  // Numeric fixture pixels only. Asymmetric quadrants also catch UV flips.
+  const makeSource = (width: number, height: number) => {
+    const colors = [
+      [160, 80, 40, 255],
+      [40, 160, 80, 255],
+      [80, 40, 160, 255],
+      [120, 100, 60, 255],
+    ];
+    const pixels = new Uint8Array(width * height * 4);
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        pixels.set(
+          colors[(y >= height / 2 ? 2 : 0) + (x >= width / 2 ? 1 : 0)]!,
+          (y * width + x) * 4,
+        );
+      }
+    return RawTexture.CreateRGBATexture(
+      pixels,
+      width,
+      height,
+      scene,
+      false,
+      false,
+      Texture.NEAREST_SAMPLINGMODE,
+    );
+  };
+  let source = makeSource(16, 16);
+  const mask = RawTexture.CreateRGBATexture(
+    new Uint8Array([128, 255, 64, 255]),
+    1,
+    1,
+    scene,
+    false,
+    false,
+    Texture.NEAREST_SAMPLINGMODE,
+  );
+  mask.gammaSpace = false;
+  const functionDocuments = functions();
+  const library = new MaterialLibrary({
+    functions: () => functionDocuments,
+    resolveTexture: () => mask,
+  });
+  const captures: Array<{
+    name: string;
+    legacy: number[];
+    graph: number[];
+    width: number;
+    height: number;
+    passWidth: number;
+    passHeight: number;
+  }> = [];
+  const diagnostics: Array<{
+    materialGuid?: string;
+    code?: string;
+    message: string;
+  }> = [];
+  let stack: ReturnType<typeof addAuthoredPostProcessTasks> | undefined;
+  let graph: FrameGraph | undefined;
+  let legacy: ReturnType<typeof attachPostProcessStack> | undefined;
+  let sourceHandle = 0;
+  const rebuild = async (
+    documents: Array<MaterialDocument | null>,
+    disabled: number[] = [],
+  ) => {
+    legacy?.dispose();
+    stack?.dispose();
+    graph?.dispose();
+    graph = new FrameGraph(scene);
+    sourceHandle = graph.textureManager.importTexture(
+      "Scene Color",
+      source.getInternalTexture()!,
+    );
+    const entries = documents.map((_, order) => ({
+      materialGuid: `proof-${order}`,
+      order,
+      enabled: !disabled.includes(order),
+    }));
+    const documentFor = (guid: string) =>
+      documents[Number(guid.slice(6))] ?? null;
+    stack = addAuthoredPostProcessTasks({
+      frameGraph: graph,
+      sourceTexture: sourceHandle,
+      library,
+      stack: entries,
+      documentFor,
+      onDiagnostic: (item) => diagnostics.push(item),
+    });
+    const present = new FrameGraphCopyToBackbufferColorTask("Present", graph);
+    present.sourceTexture = stack.outputTexture;
+    graph.addTask(present);
+    await graph.buildAsync();
+    legacy = attachPostProcessStack({
+      scene,
+      camera: scene.activeCamera!,
+      library,
+      stack: entries,
+      documentFor,
+      deviceBuffers: { sceneDepth: false, sceneNormal: false },
+    });
+    // Keep the legacy camera manager path available for directRender without
+    // executing it during the blank scene tick that advances Time inputs.
+    for (const pass of legacy.passes)
+      scene.activeCamera!.detachPostProcess(pass);
+    const first = legacy.passes[0]!;
+    first.externalTextureSamplerBinding = true;
+    first.onApplyObservable.add((effect) =>
+      effect.setTexture("textureSampler", source),
+    );
+    await ready(() => legacy!.passes.every((pass) => pass.isReady()));
+  };
+  const capture = async (name: string) => {
+    scene.render();
+    scene.postProcessManager.directRender(legacy!.passes, null, true);
+    const legacyPixels = Array.from(
+      await engine.readPixels(0, 0, canvas.width, canvas.height),
+    );
+    graph!.execute();
+    const graphPixels = Array.from(
+      await engine.readPixels(0, 0, canvas.width, canvas.height),
+    );
+    const passSize = graph!.textureManager.getTextureDescription(
+      stack!.outputTexture,
+    ).size;
+    captures.push({
+      name,
+      legacy: legacyPixels,
+      graph: graphPixels,
+      width: canvas.width,
+      height: canvas.height,
+      passWidth: passSize.width,
+      passHeight: passSize.height,
+    });
+  };
+  try {
+    const gain = multiplyDocument("gain");
+    await rebuild([gain]);
+    await capture("color");
+    if (
+      !stack!.tasks[0]!.setParameter("Gain", { kind: "float", value: 0.75 }) ||
+      !library.setParameter(scene, "proof-0", "Gain", {
+        kind: "float",
+        value: 0.75,
+      })
+    )
+      throw new Error("Gain parameter was not bound");
+    await capture("parameter");
+    const revised = structuredClone(gain);
+    revised.name = "Hot Gain";
+    await stack!.tasks[0]!.replaceDocument(revised);
+    await graph!.whenReadyAsync();
+    await capture("hot-rebuild");
+    await rebuild([multiplyDocument("texture")]);
+    await capture("texture");
+    mask.update(new Uint8Array([255, 128, 64, 255]));
+    await capture("texture-updated");
+    await rebuild([multiplyDocument("time")]);
+    await capture("time-first");
+    await capture("time-next");
+    await rebuild([multiplyDocument("function")]);
+    await capture("nested-function");
+    await rebuild([
+      gain,
+      multiplyDocument("texture"),
+      multiplyDocument("function"),
+    ]);
+    await capture("ordered-stack");
+    engine.postProcesses
+      .find((pass) => pass.name === "Authored Post Process 1")!
+      .onApplyObservable.add(() => {
+        throw new Error("Proof binding failure");
+      });
+    legacy!.passes.splice(1, 1)[0]!.dispose();
+    await capture("binding-failed-middle");
+    await rebuild(
+      [gain, multiplyDocument("texture"), multiplyDocument("function")],
+      [1],
+    );
+    await capture("disabled-middle");
+    await rebuild([gain, null, multiplyDocument("function")]);
+    await capture("failed-middle");
+    engine.setSize(24, 12);
+    const oldSource = source;
+    source = makeSource(24, 12);
+    graph!.textureManager.importTexture(
+      "Scene Color",
+      source.getInternalTexture()!,
+      sourceHandle,
+    );
+    await graph!.buildAsync();
+    oldSource.dispose();
+    await capture("resized");
+    stack!.dispose();
+    legacy!.dispose();
+    graph!.dispose();
+    const retainedPasses = engine.postProcesses.length;
+    const retainedMaterials = scene.materials.filter(
+      (material) => material.getClassName() === "NodeMaterial",
+    ).length;
+    return {
+      captures,
+      diagnostics,
+      retainedPasses,
+      retainedMaterials,
+      webGLVersion: engine.webGLVersion,
+      glInfo: engine.getGlInfo(),
+    };
+  } finally {
+    stack?.dispose();
+    legacy?.dispose();
+    graph?.dispose();
+    library.dispose();
+    scene.dispose();
+    engine.dispose();
+    canvas.remove();
+  }
+}

@@ -340,6 +340,7 @@ export function addAuthoredPostProcessTasks(options: {
 }): {
   tasks: AuthoredPostProcessTask[];
   outputTexture: FrameGraphTextureHandle;
+  dispose: () => void;
 } {
   const tasks: AuthoredPostProcessTask[] = [];
   let sourceTexture = options.sourceTexture;
@@ -360,5 +361,13 @@ export function addAuthoredPostProcessTasks(options: {
     tasks.push(task);
     sourceTexture = task.outputTexture;
   }
-  return { tasks, outputTexture: sourceTexture };
+  // FrameGraph.clear()/dispose() reset tasks without disposing them. The stack
+  // owner releases these references before retiring or clearing its graph.
+  return {
+    tasks,
+    outputTexture: sourceTexture,
+    dispose: () => {
+      for (const task of tasks) task.dispose();
+    },
+  };
 }
