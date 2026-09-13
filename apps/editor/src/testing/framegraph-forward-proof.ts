@@ -1,0 +1,230 @@
+/** Test-build-only primitive pixel oracle; no production renderer is selected. */
+import {
+  Color3,
+  Color4,
+  DirectionalLight,
+  Engine,
+  FreeCamera,
+  HemisphericLight,
+  Material,
+  MeshBuilder,
+  PBRMaterial,
+  RawTexture,
+  Scene,
+  Texture,
+  Vector3,
+} from "@babylonjs/core";
+import {
+  beginEngineDrawCallFrame,
+  compileMaterialPlan,
+  readEngineDrawCalls,
+  setSceneRenderSettings,
+} from "@babylonslate/render";
+import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+import {
+  createDefaultMaterialDocument,
+  lowerMaterialDocument,
+} from "@babylonslate/shader-graph";
+
+export async function runFrameGraphForwardProof() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 80;
+  canvas.height = 64;
+  document.getElementById("root")!.append(canvas);
+  const engine = new Engine(canvas, false, {
+    preserveDrawingBuffer: true,
+    stencil: true,
+    disableWebGL2Support: false,
+  });
+  const read = async () => {
+    const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
+    return Array.from(
+      new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+    );
+  };
+  const captures = [];
+  const lifecycle = [];
+  try {
+    for (const mode of ["pbr", "cel"] as const) {
+      engine.setSize(80, 64);
+      const scene = new Scene(engine);
+      scene.clearColor = new Color4(0.04, 0.07, 0.12, 1);
+      scene.useConstantAnimationDeltaTime = true;
+      const camera = new FreeCamera("primary", new Vector3(0, 1.1, -6), scene);
+      camera.setTarget(new Vector3(0, 0.2, 0));
+      const secondCamera = new FreeCamera(
+        "alternate",
+        new Vector3(2, 1.4, -6),
+        scene,
+      );
+      secondCamera.setTarget(new Vector3(0, 0.2, 0));
+      scene.activeCamera = camera;
+      new HemisphericLight("fill", Vector3.Up(), scene).intensity = 0.4;
+      new DirectionalLight("key", new Vector3(0.4, -1, 0.6), scene).intensity =
+        1.4;
+
+      const native = new PBRMaterial("Native Surface", scene);
+      native.albedoColor = new Color3(0.8, 0.1, 0.04);
+      native.metallic = 0;
+      native.roughness = 0.8;
+      const box = MeshBuilder.CreateBox("native", { size: 1.4 }, scene);
+      box.position.x = -1;
+      box.rotation.y = 0.3;
+      box.material = native;
+
+      setSceneRenderSettings(scene, { mode });
+      const document = createDefaultMaterialDocument("Graph Surface");
+      document.nodes.find((node) => node.id === "baseColor")!.properties.value =
+        [0.04, 0.55, 0.15];
+      const lower = lowerMaterialDocument(document);
+      if (!lower.ok) throw new Error("Surface fixture did not lower");
+      const compiled = compileMaterialPlan(lower.plan, {
+        scene,
+        name: "Graph Surface",
+      });
+      if (!compiled.ok) throw new Error("Surface fixture did not compile");
+      const diagnostics = await compiled.ready;
+      if (diagnostics.some((diagnostic) => diagnostic.severity === "error"))
+        throw new Error("Surface fixture shader failed");
+      const sphere = MeshBuilder.CreateSphere(
+        "graph",
+        { diameter: 1.5, segments: 12 },
+        scene,
+      );
+      sphere.position.x = 1;
+      sphere.material = compiled.material;
+
+      const translucent = new PBRMaterial("Translucent Surface", scene);
+      translucent.albedoColor = new Color3(0.1, 0.3, 0.95);
+      translucent.metallic = 0;
+      translucent.roughness = 1;
+      translucent.alpha = 0.45;
+      const transparent = MeshBuilder.CreatePlane(
+        "transparent",
+        { width: 2.4, height: 0.6 },
+        scene,
+      );
+      transparent.position.set(0, -0.3, -1.2);
+      transparent.material = translucent;
+
+      // Numeric alpha data catches dropped alpha-test and transparent ordering.
+      const mask = RawTexture.CreateRGBATexture(
+        new Uint8Array([
+          255, 220, 30, 255, 255, 220, 30, 0, 255, 220, 30, 0, 255, 220, 30,
+          255,
+        ]),
+        2,
+        2,
+        scene,
+        false,
+        false,
+        Texture.NEAREST_SAMPLINGMODE,
+      );
+      mask.hasAlpha = true;
+      const masked = new PBRMaterial("Masked Surface", scene);
+      masked.albedoTexture = mask;
+      masked.useAlphaFromAlbedoTexture = true;
+      masked.transparencyMode = Material.MATERIAL_ALPHATEST;
+      masked.metallic = 0;
+      masked.roughness = 1;
+      const cutout = MeshBuilder.CreatePlane(
+        "masked",
+        { width: 1.4, height: 0.7 },
+        scene,
+      );
+      cutout.position.set(0, 0.7, -1.1);
+      cutout.material = masked;
+      setSceneRenderSettings(scene, { mode });
+
+      let expectedCamera = camera;
+      let before = 0;
+      let after = 0;
+      let cameraFailures = 0;
+      scene.onBeforeRenderObservable.add(() => {
+        before++;
+        if (scene.activeCamera !== expectedCamera) cameraFailures++;
+      });
+      scene.onAfterRenderObservable.add(() => {
+        after++;
+        if (scene.activeCamera !== expectedCamera) cameraFailures++;
+      });
+      const coordinator = new ForwardSceneFrameGraph(scene);
+      const capture = async (name: string) => {
+        scene.activeCamera = expectedCamera;
+        await scene.whenReadyAsync();
+        beginEngineDrawCallFrame(engine);
+        scene.render(false);
+        const classicDraws = readEngineDrawCalls(engine);
+        const classic = await read();
+        beginEngineDrawCallFrame(engine);
+        const previousBefore = before;
+        const previousAfter = after;
+        const prepared = await coordinator.prepare(expectedCamera);
+        const readinessDraws = readEngineDrawCalls(engine);
+        if (before !== previousBefore || after !== previousAfter)
+          throw new Error("Graph readiness consumed a scene frame");
+        const result = coordinator.render(expectedCamera, false);
+        const graphDraws = readEngineDrawCalls(engine);
+        const graph = await read();
+        captures.push({
+          name: `${mode}-${name}`,
+          classic,
+          graph,
+          classicDraws,
+          graphDraws,
+          readinessDraws,
+          prepared,
+          result,
+          width: canvas.width,
+          height: canvas.height,
+          frames: [before - previousBefore, after - previousAfter],
+          frozen: scene.meshes.every(
+            (mesh) => mesh.isWorldMatrixFrozen && mesh.material?.isFrozen,
+          ),
+        });
+      };
+      await capture("surface");
+      for (const mesh of scene.meshes) {
+        mesh.freezeWorldMatrix();
+        mesh.material?.freeze();
+      }
+      await capture("frozen");
+      expectedCamera = secondCamera;
+      await capture("camera-switched");
+      secondCamera.position.x = -2;
+      secondCamera.setTarget(new Vector3(0, 0.2, 0));
+      await capture("camera-moved");
+      engine.setSize(96, 72);
+      await capture("resized");
+
+      const sibling = new Scene(engine);
+      sibling.clearColor = new Color4(0.6, 0.2, 0.7, 1);
+      sibling.activeCamera = new FreeCamera(
+        "sibling",
+        new Vector3(0, 0, -4),
+        sibling,
+      );
+      sibling.render(false);
+      const siblingBefore = await read();
+      await capture("after-sibling");
+      coordinator.dispose();
+      const retainedRenderers = scene.objectRenderers.length;
+      const retainedGraphs = scene.frameGraphs.length;
+      scene.dispose();
+      sibling.render(false);
+      lifecycle.push({
+        mode,
+        cameraFailures,
+        retainedRenderers,
+        retainedGraphs,
+        siblingBefore,
+        siblingAfter: await read(),
+      });
+      sibling.dispose();
+    }
+    return { captures, lifecycle, webGLVersion: engine.webGLVersion };
+  } finally {
+    engine.dispose();
+    canvas.remove();
+  }
+}
