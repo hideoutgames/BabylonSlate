@@ -12,7 +12,7 @@ import {
 } from "./editor-billboard";
 import { engineBillboardUrl } from "./default-billboard/urls";
 import { RENDERING_GROUP } from "./sorting";
-import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-policy";
+import { setAuthoredLightEnabled, syncDirectionalLightPolicy, syncForwardLightPolicy } from "./light-policy";
 import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
 
@@ -143,6 +143,43 @@ describe("editor billboard", () => {
     expect(second.isEnabled()).toBe(true);
     expect(material.emissiveColor.asArray()).toEqual([1, 1, 0]);
     icon.dispose();
+  });
+
+  it.each(["pbr", "cel"] as const)("shows forward-limited lights yellow and updates promotion or authored disable in %s", (mode) => {
+    const { scene } = createHandle();
+    updateSceneRenderingSettings(scene, { mode });
+    const first = new PointLight("authoredLight:first", Vector3.Zero(), scene);
+    const second = new PointLight("authoredLight:second", Vector3.Zero(), scene);
+    first.renderPriority = 10;
+    second.diffuse.set(0.2, 0.5, 1);
+    setAuthoredLightEnabled(first, true);
+    setAuthoredLightEnabled(second, true);
+    syncForwardLightPolicy(scene, 1);
+    const actor = createActor("second", "Second", { components: [{ id: "light", classId: "LightComponent", properties: { enabled: true, color: [0.2, 0.5, 1], castShadows: false } }] });
+    const icon = createEditorBillboard(scene, "editorActor:second", "point_light");
+    applyEditorBillboardFromActor(icon, actor);
+    const color = () => (icon.material as StandardMaterial).emissiveColor.asArray();
+    expect(second.isEnabled()).toBe(false);
+    expect(color()).toEqual([1, 1, 0]);
+    expect(icon.metadata.editorBillboardStatus).toContain("Forward Light Capacity");
+
+    second.renderPriority = 20;
+    syncForwardLightPolicy(scene, 1);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(second.isEnabled()).toBe(true);
+    expect(color()).toEqual([1, 1, 1]);
+
+    second.renderPriority = 0;
+    syncForwardLightPolicy(scene, 1);
+    second.intensity = 0;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(color()).toEqual([1, 0, 0]);
+    second.intensity = 1;
+    setAuthoredLightEnabled(second, false);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(color()).toEqual([1, 0, 0]);
+    expect(actor.components[0]!.properties.color).toEqual([0.2, 0.5, 1]);
+    expect(second.diffuse.asArray()).toEqual([0.2, 0.5, 1]);
   });
 
   it("stays square when parented under non-uniform actor scale", () => {
