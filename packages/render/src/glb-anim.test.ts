@@ -190,7 +190,7 @@ describe("beginSlotModelAnimLoad", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const load = beginSlotModelAnimLoad(handle.scene, binding, 2, "broken",
-        encodeGlbJsonBin({ asset: { version: "99.0" } }, null), root);
+        encodeGlbJsonBin({ asset: { version: "99.0" } }, new Uint8Array()), root);
       if (reason === "superseded") invalidateSlotAnimLoad(binding, 2);
       else root.dispose();
       await expect(load).resolves.toBeUndefined();
