@@ -27,6 +27,19 @@ function fixture() {
     textureHalfFloatRender: true,
     textureHalfFloatLinearFiltering: true,
   });
+  // Babylon 9.20 NullEngine creates cube InternalTextures but leaves them
+  // unattached to the wrapper. Complete that headless GPU boundary so the real
+  // generator can expose dimensions and dispose its allocation like WebGL does.
+  const createCubeTarget = engine.createRenderTargetCubeTexture.bind(engine);
+  engine.createRenderTargetCubeTexture = (...args) => {
+    const target = createCubeTarget(...args);
+    if (!target.texture) {
+      const texture = engine.getLoadedTexturesCache().at(-1);
+      if (!texture) throw new Error("NullEngine cube allocation has no texture");
+      target.setTexture(texture);
+    }
+    return target;
+  };
   const scene = new Scene(engine);
   scene.activeCamera = new UniversalCamera(
     "camera",
