@@ -1,4 +1,5 @@
 import type { BabassetHeader, ChunkEntry } from "./babasset";
+import { isEnvironmentTexturePayload } from "./environment-texture";
 
 export interface TextureChunkSelection {
   chunk: ChunkEntry;
@@ -24,8 +25,12 @@ export function selectTextureChunk(
   options: SelectTextureChunkOptions = {},
 ): TextureChunkSelection {
   const source = header.chunks.find(
-    (chunk) => chunk.id === "pixels" || chunk.kind === "pixels",
+    (chunk) => chunk.id === "pixels" || chunk.kind === "pixels" || chunk.id === "source" || chunk.kind === "source",
   );
+  if (isEnvironmentTexturePayload(header.payload)) {
+    if (!source) throw new Error(`Environment Texture ${header.guid} has no retained source cube`);
+    return { chunk: source, kind: "source", reason: "prefiltered-environment-source" };
+  }
   const preferredId =
     options.preferredChunkId ??
     (typeof header.payload.ktx2ChunkId === "string"

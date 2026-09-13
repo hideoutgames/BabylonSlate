@@ -35,6 +35,7 @@ import {
   msdfAtlasPickError,
   normalizeFontPayload,
   shouldCompressTexture,
+  isEnvironmentTexturePayload,
 } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
@@ -527,7 +528,16 @@ function AssetSettingsEditor({
 }) {
   const { retryTextureEncoding } = useDocuments();
   const rows: PropertyRow[] = [];
-  if (assetType === "Texture") {
+  const environment = assetType === "Texture" && isEnvironmentTexturePayload(payload);
+  if (environment) {
+    for (const [id, label, value] of [
+      ["dimension", "Dimension", "Cube"],
+      ["container", "Container", String(payload.container).toUpperCase()],
+      ["encoding", "Encoding", payload.encoding === "rgbd" ? "RGBD" : payload.encoding === "linearFloat16" ? "Linear RGBA16F" : "Linear RGBA32F"],
+      ["size", "Face Size", `${payload.width} × ${payload.height}`],
+      ["mips", "Roughness Mip Levels", String(payload.mipLevels)],
+    ]) rows.push({ id: id!, label: label!, kind: "text", value: value!, disabled: true, onChange: () => undefined });
+  } else if (assetType === "Texture") {
     const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
     const compression =
       typeof payload.compressionState === "string"
@@ -650,7 +660,12 @@ function AssetSettingsEditor({
   return (
     <PanelFrame className="flex-1" title={assetType}>
       <div className="flex flex-col gap-3" data-testid="asset-settings">
-        {assetType === "Texture" ? (
+        {environment ? (
+          <Alert>
+            <AlertTitle>Environment Cube</AlertTitle>
+            <AlertDescription>Assign this texture in Scene Defaults → Environment Texture. The source and authored roughness mips are retained. DDS cubes must be authored as prefiltered; importing does not generate filtering.</AlertDescription>
+          </Alert>
+        ) : assetType === "Texture" ? (
           <TexturePreview path={path} payload={payload} />
         ) : null}
         <PropertyGrid rows={rows} />

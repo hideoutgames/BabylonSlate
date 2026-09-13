@@ -108,6 +108,8 @@ Play frame pacing uses a timestamp captured before render work, committed only a
 
 ## Resource cache
 
+Imported ENV and linear-float prefiltered DDS cubes use the retained source with an explicit `.env`/`.dds` loader extension, including Blob URLs in Scene, Play and packed assets. Native CubeTexture prefiltered loading preserves roughness mips, linear decoding and available irradiance; it does not perform authoring convolution. Cache-owned cubes belong to the Engine and are shared without per-scene texture mutations. Ordinary 2D material bindings reject cube data before allocating a sampler. [Supported imports and metadata](asset-registry.md#importers) describe the bounded format contract; environment orientation/intensity, deliberate CEL response and general cube Material nodes remain separate work.
+
 KTX2 format detection and dimension reads share the standard "KTX 20" identifier ([Khronos specification](https://registry.khronos.org/KTX/specs/2.0/ktxspec.v2.html#_identifier)). This routes real encoded atlases through Babylon’s KTX2 loader in Scene Preview and Play and preserves texture byte accounting. Pixel Art usage selects source pixels even when the asset retains an older compressed chunk.
 
 The GPU upload copy normalizes legacy Zstd UASTC descriptors with zero `bytesPlane` fields to the 16-byte UASTC block size. The vendored Basis encoder emits that older representation, which the [KTX specification requires readers to support](https://registry.khronos.org/KTX/specs/2.0/ktxspec.v2.html#_dfd_for_supercompressed_data), but Babylon 9.20 otherwise decodes empty image slices. Original asset bytes and cache identity remain intact; no asset migration is required.

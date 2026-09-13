@@ -30,3 +30,4 @@ export {
   type RuntimeDriverOptions,
   type TransportMode,
 } from "./transport-harness";
+export * from "./environment-fixtures";

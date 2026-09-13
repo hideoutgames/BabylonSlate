@@ -846,6 +846,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
         renderingBaseline: () => Record<string, unknown> | null;
+        environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
       };
     };
@@ -857,6 +858,21 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const measurements = new Set<() => void>();
 
     host.__babylonslateViewportTest = {
+      environmentTextureSamples: async () => {
+        const handle = engineRef.current;
+        const texture = handle?.scene.environmentTexture;
+        if (!handle || !texture?.isReady()) return null;
+        const size = texture.getSize();
+        const lastMip = Math.floor(Math.log2(size.width));
+        const samples = [];
+        for (const face of [0, 5]) for (const level of [...new Set([0, lastMip])]) {
+          const pixels = await texture.readPixels(face, level, undefined, true, false, 0, 0, 1, 1);
+          samples.push({ face, level, type: pixels?.constructor.name, values: pixels ? Array.from(pixels as Uint8Array | Float32Array) : null });
+        }
+        return { size, isCube: texture.isCube, gammaSpace: texture.gammaSpace, samples,
+          sceneConsumers: handle.engine.scenes.filter((scene) => scene.environmentTexture === texture).length,
+          gpuType: texture.getInternalTexture()?.type };
+      },
       measureRenderingBaseline: async (durationMs) => {
         for (const cancel of measurements) cancel();
         const handle = engineRef.current;

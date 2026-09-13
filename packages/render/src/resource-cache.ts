@@ -1,4 +1,4 @@
-import { copyTextureBytesForUpload, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -80,9 +80,20 @@ interface TextureSourceSize {
   width: number;
   height: number;
   ktx2MipLevels?: number;
+  mipLevels?: number;
+  reserveType?: number;
 }
 
 function textureSourceSize(bytes: Uint8Array): TextureSourceSize | null {
+  if (environmentTextureContainer(bytes)) {
+    // Full source validation belongs to import. A bounded Blob header may omit
+    // the face data; wait for its real upload instead of accepting partial data.
+    try {
+      const info = readEnvironmentTextureInfo(bytes);
+      return { width: info.width, height: info.height, mipLevels: info.mipLevels,
+        reserveType: info.encoding === "linearFloat32" ? Constants.TEXTURETYPE_FLOAT : Constants.TEXTURETYPE_HALF_FLOAT };
+    } catch { return null; }
+  }
   const ktx2 = sniffKtx2Size(bytes);
   if (ktx2 && bytes.byteLength >= 44) {
     // KTX2 levelCount follows faceCount at byte 40. Zero denotes a base level.
@@ -90,6 +101,13 @@ function textureSourceSize(bytes: Uint8Array): TextureSourceSize | null {
     return { ...ktx2, ktx2MipLevels: Math.max(1, header.getUint32(40, true)) };
   }
   return ktx2 ?? sniffImageSize(bytes);
+}
+
+function environmentContainer(bytes: Uint8Array | Blob): "env" | "dds" | null {
+  if (bytes instanceof Uint8Array) return environmentTextureContainer(bytes);
+  if (bytes.type === "application/vnd.babylon.env") return "env";
+  if (bytes.type === "image/vnd-ms.dds") return "dds";
+  return null;
 }
 
 function ktx2LoaderHints(bytes: Uint8Array | Blob): {
@@ -329,6 +347,9 @@ export class ResourceCache {
     bytes: Uint8Array | Blob,
     options: TextureSamplingOptions = {},
   ): Texture | CubeTexture {
+    const environment = environmentContainer(bytes);
+    if (environment && !options.isCube) throw new Error("Environment cube textures cannot be used as 2D textures.");
+    if (environment && bytes instanceof Uint8Array) readEnvironmentTextureInfo(bytes);
     const key = samplingKey(options);
     const variantKey = `${assetGuid}\0${contentKey(bytes)}`;
     const existing = this.entries.get(variantKey);
@@ -347,7 +368,10 @@ export class ResourceCache {
     const texture = options.isCube
       ? new CubeTexture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
-          useSRGBBuffer: options.useSRGBBuffer ?? false,
+          useSRGBBuffer: environment ? false : options.useSRGBBuffer ?? false,
+          forcedExtension: environment ? `.${environment}` : undefined,
+          prefiltered: !!environment,
+          createPolynomials: !!environment,
         })
       : new Texture(loaderUrl, engine, {
           noMipmap: options.noMipmap ?? false,
@@ -546,13 +570,13 @@ export class ResourceCache {
       const internal = texture.getInternalTexture();
       // Babylon 9.20's RGBA KTX2 uploader leaves internal width/height at the
       // final mip. Header base dimensions and levelCount describe its uploads.
-      const uploaded = uploadedTextureBytes(internal, size?.ktx2MipLevels, size?.ktx2MipLevels !== undefined ? size : undefined);
+      const uploaded = uploadedTextureBytes(internal, size?.ktx2MipLevels ?? size?.mipLevels, size?.ktx2MipLevels !== undefined ? size : undefined);
       const estimate = uploaded ?? (size ? uploadedTextureBytes({
         isReady: true, width: size.width, height: size.height, depth: 1,
         isCube: texture.isCube, is3D: false, is2DArray: false,
-        format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_UNSIGNED_BYTE,
+        format: Constants.TEXTUREFORMAT_RGBA, type: size.reserveType ?? Constants.TEXTURETYPE_UNSIGNED_BYTE,
         generateMipMaps: withMips,
-      }, size.ktx2MipLevels) : null);
+      }, size.ktx2MipLevels ?? size.mipLevels) : null);
       if (estimate !== null) this.setSamplingBytes(entry, sampling, estimate);
     };
     // Texture and CubeTexture declare distinct generic Observable overloads.
@@ -683,6 +707,7 @@ export function getMaterialTexture(
   engine: AbstractEngine,
   bytes: Uint8Array | Blob,
 ): Texture | null {
+  if (environmentContainer(bytes)) return null;
   const texture = cache.getTexture(
     assetGuid,
     engine,
