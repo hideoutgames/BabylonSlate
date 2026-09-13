@@ -66,6 +66,10 @@ test("Mannequin illumination stays stable when directional shadows are enabled",
     }
     return changed / Math.max(1, count);
   }).toBeLessThan(0.01);
+  await page.getByRole("treeitem", { name: "Sun", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Cast Shadows", exact: true }).uncheck();
+  await expect.poll(yellow).toBeGreaterThan(500);
+  await canvas.screenshot({ path: testInfo.outputPath("mannequin-shadows-disabled-live.png") });
 });
 
 async function pixelsNear(
