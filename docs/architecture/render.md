@@ -348,3 +348,11 @@ not assume that a frozen world matrix makes a material or skeleton immutable.
 Bone attachment detach/retirement restores the snapshot pose even if the next
 snapshot contains unchanged TRS; an attachment's frozen world matrix is not a
 valid cache of that snapshot pose.
+
+### Shared texture representations
+
+The engine texture cache keys retained resources by asset identity and content
+representation. Original, reduced and compressed variants can coexist across
+Scene, Model and Material previews. Requesting a different representation never
+disposes another view's live texture. Handles release the exact acquired resource;
+unused variants are reclaimed through the normal byte-accounted cache policy.

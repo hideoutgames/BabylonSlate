@@ -13,18 +13,26 @@ import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
 
 describe("resource cache getTexture", () => {
-  it("replaces changed bytes under the same GUID without losing outstanding retains", () => {
+  it("keeps concurrent texture representations alive until their own views release them", () => {
     const engine = new NullEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const first = cache.getTexture("changed", engine, new Uint8Array([1, 2, 3]));
-    const second = cache.getTexture("changed", engine, new Uint8Array([1, 2, 4]));
-    expect(second).not.toBe(first);
-    cache.release("changed");
-    cache.flushUnreferenced();
-    expect(cache.getTexture("changed", engine, new Uint8Array([1, 2, 4]))).toBe(second);
-    cache.release("changed");
-    cache.release("changed");
-    cache.flushUnreferenced();
+    const cache = new ResourceCache();
+    const sceneView = bindResourceCacheToHandle(cache);
+    const materialView = bindResourceCacheToHandle(cache);
+    const original = new Uint8Array([1, 2, 3]);
+    const reduced = new Uint8Array([1, 2, 4]);
+    const first = sceneView.cache.getTexture("shared", engine, reduced);
+    const second = materialView.cache.getTexture("shared", engine, original);
+    const disposeFirst = vi.spyOn(first, "dispose");
+    const disposeSecond = vi.spyOn(second, "dispose");
+    expect(cache.getTexture("shared", engine, reduced)).toBe(first);
+    cache.release(first);
+    materialView.releaseHandleRetains();
+    expect(disposeSecond).toHaveBeenCalledOnce();
+    expect(disposeFirst).not.toHaveBeenCalled();
+    expect(cache.getTexture("shared", engine, reduced)).toBe(first);
+    cache.release(first);
+    sceneView.releaseHandleRetains();
+    expect(disposeFirst).toHaveBeenCalledOnce();
     cache.dispose();
     engine.dispose();
   });

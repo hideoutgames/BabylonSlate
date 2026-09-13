@@ -30,6 +30,7 @@ export interface TextureSamplingOptions {
 
 interface CacheEntry {
   assetGuid: string;
+  key: string;
   blobUrl: string;
   extraBlobUrls: string[];
   bytes: number;
@@ -181,6 +182,8 @@ export class ResourceCache {
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
   private readonly entries = new Map<string, CacheEntry>();
   private readonly blobs = new Map<string, Blob>();
+  private readonly textureKeys = new WeakMap<BaseTexture, string>();
+  private readonly urlKeys = new Map<string, string>();
   private readonly clientTextures = new Map<string, Set<string>>();
   private clock = 0;
   private totalBytes = 0;
@@ -223,7 +226,7 @@ export class ResourceCache {
   }
 
   private isUnreferenced(entry: CacheEntry): boolean {
-    if (anyLiveTexture(entry) && entry.refCount > 0) return false;
+    if (anyLiveTexture(entry)) return entry.refCount === 0;
     if (this.clientTextures.size === 0) return entry.refCount === 0;
     for (const guids of this.clientTextures.values()) {
       if (guids.has(entry.assetGuid)) return false;
@@ -233,19 +236,12 @@ export class ResourceCache {
 
   blobUrlFor(assetGuid: string, bytes: Uint8Array | Blob): string {
     const nextKey = contentKey(bytes);
-    const existing = this.entries.get(assetGuid);
+    const key = `${assetGuid}\0${nextKey}`;
+    const existing = this.entries.get(key);
     if (existing) {
-      if (existing.contentKey === nextKey) {
-        existing.refCount += 1;
-        existing.lastUsed = ++this.clock;
-        return existing.blobUrl;
-      }
-      disposeEntryTextures(existing);
-      revokeEntryBlobUrls(existing);
-      this.totalBytes -= existing.bytes;
-      existing.bytes = 0;
-      this.entries.delete(assetGuid);
-      this.blobs.delete(assetGuid);
+      existing.refCount += 1;
+      existing.lastUsed = ++this.clock;
+      return existing.blobUrl;
     }
     const blob =
       bytes instanceof Blob
@@ -263,22 +259,24 @@ export class ResourceCache {
                 : "application/octet-stream",
             },
           );
-    this.blobs.set(assetGuid, blob);
+    this.blobs.set(key, blob);
     const url =
       typeof URL !== "undefined" && URL.createObjectURL
         ? URL.createObjectURL(blob)
         : `blob:babylonslate/${assetGuid}`;
     const entry: CacheEntry = {
       assetGuid,
+      key,
       blobUrl: url,
       extraBlobUrls: [],
       bytes: 0,
-      refCount: (existing?.refCount ?? 0) + 1,
+      refCount: 1,
       lastUsed: ++this.clock,
       contentKey: nextKey,
       textures: new Map(),
     };
-    this.entries.set(assetGuid, entry);
+    this.entries.set(key, entry);
+    this.urlKeys.set(url, key);
     return url;
   }
 
@@ -294,16 +292,17 @@ export class ResourceCache {
     options: TextureSamplingOptions = {},
   ): Texture | CubeTexture {
     const key = samplingKey(options);
-    const existing = this.entries.get(assetGuid);
-    const reused = existing?.contentKey === contentKey(bytes) ? liveTexture(existing, key) : undefined;
+    const variantKey = `${assetGuid}\0${contentKey(bytes)}`;
+    const existing = this.entries.get(variantKey);
+    const reused = existing ? liveTexture(existing, key) : undefined;
     if (reused) {
       existing!.refCount += 1;
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
     const canonical = this.blobUrlFor(assetGuid, bytes);
-    const entry = this.entries.get(assetGuid)!;
-    const blobUrl = this.blobUrlForSamplingKey(entry, assetGuid);
+    const entry = this.entries.get(variantKey)!;
+    const blobUrl = this.blobUrlForSamplingKey(entry);
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
     const loaderUrl = ktx2LoaderUrl(blobUrl, bytes);
@@ -322,18 +321,19 @@ export class ResourceCache {
           buffer: raw ? copyTextureBytesForUpload(raw) : undefined,
         });
     entry.textures.set(key, texture);
-    this.accountLoadedBytes(assetGuid, bytes, options.noMipmap !== true);
+    this.textureKeys.set(texture, variantKey);
+    this.accountLoadedBytes(variantKey, bytes, options.noMipmap !== true);
     return texture;
   }
 
   /** First wrapper uses the canonical blob URL; later keys get a new object URL. */
-  private blobUrlForSamplingKey(entry: CacheEntry, assetGuid: string): string {
+  private blobUrlForSamplingKey(entry: CacheEntry): string {
     let live = 0;
     for (const texture of entry.textures.values()) {
       if (!isDisposedGpuTexture(texture)) live += 1;
     }
     if (live === 0) return entry.blobUrl;
-    const blob = this.blobs.get(assetGuid);
+    const blob = this.blobs.get(entry.key);
     if (!blob || typeof URL === "undefined" || !URL.createObjectURL) {
       return entry.blobUrl;
     }
@@ -353,7 +353,8 @@ export class ResourceCache {
     noMipmap = false,
   ): CubeTexture {
     const key = ["cube6", noMipmap ? "1" : "0", ...files].join(":");
-    const existing = this.entries.get(assetGuid);
+    const variantKey = `${assetGuid}\0${key}`;
+    const existing = this.entries.get(variantKey);
     const reused = existing ? anyLiveTexture(existing) : undefined;
     if (reused) {
       existing!.refCount += 1;
@@ -365,14 +366,17 @@ export class ResourceCache {
       files,
       noMipmap,
     );
+    this.textureKeys.set(texture, variantKey);
     if (existing) {
       existing.textures.set(key, texture);
       existing.refCount += 1;
       existing.lastUsed = ++this.clock;
       return texture;
     }
-    this.entries.set(assetGuid, {
+    this.textureKeys.set(texture, variantKey);
+    this.entries.set(variantKey, {
       assetGuid,
+      key: variantKey,
       blobUrl: "",
       extraBlobUrls: [],
       bytes: 0,
@@ -401,10 +405,11 @@ export class ResourceCache {
     format: TextureFormat = "rgba8",
   ): void {
     void format;
-    const entry = this.entries.get(assetGuid);
+    const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) {
       this.entries.set(assetGuid, {
         assetGuid,
+        key: assetGuid,
         blobUrl: "",
         extraBlobUrls: [],
         bytes,
@@ -434,16 +439,27 @@ export class ResourceCache {
     this.account(assetGuid, accountedTextureBytes(width, height, format, withMips));
   }
 
-  retain(assetGuid: string): void {
-    const entry = this.entries.get(assetGuid);
+  /** Resolve the exact acquired generation, including after a context restore. */
+  resourceKey(resource: string | BaseTexture): string {
+    if (typeof resource !== "string") return this.textureKeys.get(resource) ?? "";
+    if (this.entries.has(resource)) return resource;
+    const urlKey = this.urlKeys.get(resource);
+    if (urlKey) return urlKey;
+    const matches = [...this.entries.values()].filter((entry) => entry.assetGuid === resource);
+    if (matches.length > 1) throw new Error("Release a texture or blob URL, not an ambiguous asset GUID");
+    return matches[0]?.key ?? resource;
+  }
+
+  retain(resource: string | BaseTexture): void {
+    const entry = this.entries.get(this.resourceKey(resource));
     if (entry) {
       entry.refCount += 1;
       entry.lastUsed = ++this.clock;
     }
   }
 
-  release(assetGuid: string): void {
-    const entry = this.entries.get(assetGuid);
+  release(resource: string | BaseTexture): void {
+    const entry = this.entries.get(this.resourceKey(resource));
     if (!entry) return;
     entry.refCount = Math.max(0, entry.refCount - 1);
   }
@@ -461,7 +477,7 @@ export class ResourceCache {
       .sort((a, b) => a.lastUsed - b.lastUsed);
     for (const entry of candidates) {
       if (this.totalBytes <= target) break;
-      this.evictEntry(entry.assetGuid, "lru");
+      this.evictEntry(entry.key, "lru");
     }
   }
 
@@ -498,21 +514,22 @@ export class ResourceCache {
   flushUnreferenced(): void {
     for (const entry of [...this.entries.values()]) {
       if (this.isUnreferenced(entry)) {
-        this.evictEntry(entry.assetGuid, "flush");
+        this.evictEntry(entry.key, "flush");
       }
     }
   }
 
   private evictEntry(assetGuid: string, reason: string): void {
-    const entry = this.entries.get(assetGuid);
+    const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) return;
     this.totalBytes -= entry.bytes;
     this.entries.delete(assetGuid);
     this.blobs.delete(assetGuid);
+    this.urlKeys.delete(entry.blobUrl);
     disposeEntryTextures(entry);
     revokeEntryBlobUrls(entry);
     console.info(`[resource-cache] evict ${assetGuid} (${reason})`);
-    this.onEvict?.(assetGuid, reason);
+    this.onEvict?.(entry.assetGuid, reason);
   }
 
   dispose(): void {
@@ -522,51 +539,34 @@ export class ResourceCache {
   }
 }
 
-const HANDLE_RETAIN_METHODS = new Set([
-  "getTexture",
-  "getCubeTextureFromImages",
-  "blobUrlFor",
-  "retain",
-]);
-
-/**
- * Per-handle view of an Engine-keyed {@link ResourceCache}. Retains from this
- * handle are released on `releaseHandleRetains` so closing a Scene can drop
- * GPU wrappers without disposing the project Engine.
- */
+/** Per-view leases retain exact content generations, not mutable GUID aliases. */
 export function bindResourceCacheToHandle(inner: ResourceCache): {
   cache: ResourceCache;
   releaseHandleRetains: () => void;
 } {
   const retains = new Map<string, number>();
-  const note = (assetGuid: string) => {
-    retains.set(assetGuid, (retains.get(assetGuid) ?? 0) + 1);
-  };
   const cache = new Proxy(inner, {
-    get(target, prop, receiver) {
-      if (prop === "dispose") {
-        return () => undefined;
-      }
-      if (typeof prop === "string" && HANDLE_RETAIN_METHODS.has(prop)) {
-        return (assetGuid: string, ...rest: unknown[]) => {
-          note(assetGuid);
-          return (target[prop as keyof ResourceCache] as (...args: unknown[]) => unknown)(
-            assetGuid,
-            ...rest,
-          );
-        };
-      }
-      const value = Reflect.get(target, prop, receiver) as unknown;
-      return typeof value === "function"
-        ? (value as (...args: unknown[]) => unknown).bind(target)
-        : value;
+    get(target, prop) {
+      if (prop === "dispose") return () => undefined;
+      const value = Reflect.get(target, prop) as unknown;
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        const result = (value as (...args: unknown[]) => unknown).apply(target, args);
+        if (["getTexture", "getCubeTextureFromImages", "blobUrlFor", "retain", "release"].includes(String(prop))) {
+          const resource = prop === "retain" || prop === "release" ? args[0] : result;
+          const key = target.resourceKey(resource as string | BaseTexture);
+          const delta = prop === "release" ? -1 : 1;
+          retains.set(key, Math.max(0, (retains.get(key) ?? 0) + delta));
+        }
+        return result;
+      };
     },
   });
   return {
     cache,
     releaseHandleRetains() {
-      for (const [assetGuid, count] of retains) {
-        for (let i = 0; i < count; i += 1) inner.release(assetGuid);
+      for (const [key, count] of retains) {
+        for (let i = 0; i < count; i += 1) inner.release(key);
       }
       retains.clear();
       inner.flushUnreferenced();
