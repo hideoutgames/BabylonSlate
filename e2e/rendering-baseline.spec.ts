@@ -286,6 +286,10 @@ test("local renderer baseline bounds sixteen eligible point and spot shadow ligh
       measurement: summarize(measurement),
       ...capture,
     });
+    await testInfo.attach(`rendering-capture-${id}`, {
+      body: JSON.stringify(captures.at(-1), null, 2),
+      contentType: "application/json",
+    });
     await page
       .getByTestId("viewport-canvas")
       .screenshot({ path: testInfo.outputPath(`${id}.png`) });
@@ -299,6 +303,7 @@ test("local renderer baseline bounds sixteen eligible point and spot shadow ligh
         "Local browser observation with test instrumentation; not A16 qualification, thermal evidence, or Safari GPU residency. No 60 fps assertion.",
         browserProject: testInfo.project.name,
         browserVersion: page.context().browser()?.version() ?? null,
+        traceMode: testInfo.project.use.trace,
         viewportCss: page.viewportSize(),
         captures,
       },
