@@ -1,6 +1,7 @@
 import {
   syncDirectionalLightPolicy,
   isDirectionalLightExcluded,
+  isForwardLightExcluded,
 } from "./light-policy";
 import {
   CascadedShadowGenerator,
@@ -265,6 +266,8 @@ export class SceneShadowController {
         name: light.name,
         illumination: isDirectionalLightExcluded(light)
           ? "directional-limit"
+          : isForwardLightExcluded(light)
+            ? "forward-limit"
           : !light.isEnabled() || light.intensity <= 0
             ? "disabled"
             : "active",

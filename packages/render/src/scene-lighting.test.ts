@@ -1,4 +1,14 @@
-import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-policy";
+import {
+  isForwardLightExcluded,
+  setAuthoredLightEnabled,
+  syncDirectionalLightPolicy,
+  syncForwardLightPolicy,
+} from "./light-policy";
+import { forwardLightBudget } from "./forward-light-budget";
+import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
+import { CelMaterial } from "./cel-material";
+import { updateSceneRenderingSettings } from "./render-settings";
+import { createRenderDiagnostics } from "./render-diagnostics";
 import {
   DirectionalLight,
   MaterialDefines,
@@ -10,6 +20,7 @@ import {
   RawTexture,
   Scene,
   StandardMaterial,
+  UniversalCamera,
   Vector3,
   type Material,
 } from "@babylonjs/core";
@@ -76,6 +87,120 @@ function shaderLights(
 }
 
 describe("scene material lighting", () => {
+  it.each(["pbr", "cel"] as const)(
+    "bounds native and graph %s shader slots independently of shadows",
+    (mode) => {
+      const scene = host(false);
+      updateSceneRenderingSettings(scene, { mode });
+      const lamps = lights(scene, 16);
+      const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+      if (!lowered.ok) throw new Error("Fixture material did not lower");
+      const compiled = compileMaterialPlan(lowered.plan, {
+        scene,
+        name: "bounded-surface",
+      });
+      if (!compiled.ok) throw new Error("Fixture material did not compile");
+      const pbr = new PBRMaterial("native-pbr", scene);
+      const standard = new StandardMaterial("native-standard", scene);
+      const materials = [
+        compiled.material,
+        pbr,
+        standard,
+        new CelMaterial(pbr, scene),
+      ];
+      const budget = forwardLightBudget(scene.getEngine());
+      // NullEngine's absent GL query uses the documented WebGL2 minimum, leaving
+      // nine slots after the three native binding reservations.
+      expect(budget.slots).toBe(9);
+      for (const material of materials) {
+        const defines = shaderLights(scene, material);
+        expect(material.maxSimultaneousLights).toBe(9);
+        expect(defines.LIGHT8).toBe(true);
+        expect(defines.LIGHT9).not.toBe(true);
+        expect(defines.MAXLIGHTCOUNT).toBe(9);
+      }
+      expect(lamps.filter(isForwardLightExcluded)).toHaveLength(7);
+      expect(lamps.every((light) => !light.getShadowGenerator())).toBe(true);
+      expect(sceneLightingLimits(scene)[0]).toContain(
+        "9/16 requested lights admitted",
+      );
+      expect(createRenderDiagnostics(scene, () => 0)().qualityLimits).toEqual(
+        expect.arrayContaining([expect.stringContaining("9 shader slots")]),
+      );
+    },
+  );
+
+  it("updates a full budget after camera movement and honors explicit priority without losing authored Enabled", () => {
+    const scene = host(false);
+    const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
+    scene.activeCamera = camera;
+    const lamps = lights(scene, 10);
+    lamps.forEach((light, index) => light.position.set(index * 10, 0, 0));
+    const material = new StandardMaterial("receiver", scene);
+    syncSceneLighting(scene);
+    material.freeze();
+    expect(isForwardLightExcluded(lamps[9]!)).toBe(true);
+    const refresh = vi.spyOn(material, "markDirty");
+    camera.position.x = 90;
+    beginFrame(scene);
+    expect(isForwardLightExcluded(lamps[0]!)).toBe(true);
+    expect(lamps[9]!.isEnabled()).toBe(true);
+    expect(refresh).toHaveBeenCalled();
+    expect(material.isFrozen).toBe(true);
+    lamps[0]!.renderPriority = 10;
+    beginFrame(scene);
+    expect(lamps[0]!.isEnabled()).toBe(true);
+    expect(isForwardLightExcluded(lamps[1]!)).toBe(true);
+    setAuthoredLightEnabled(lamps[0]!, false);
+    beginFrame(scene);
+    expect(lamps[0]!.isEnabled()).toBe(false);
+    expect(lamps[1]!.isEnabled()).toBe(true);
+    expect(lamps[0]!.renderPriority).toBe(10);
+    expect(sceneLightingLimits(scene)).toEqual([]);
+  });
+
+  it("retains equal-distance incumbents and restores policy-excluded lights when capacity returns", () => {
+    const scene = host(false);
+    scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+    const left = new PointLight("left", new Vector3(-5, 0, 0), scene);
+    const right = new PointLight("right", new Vector3(5, 0, 0), scene);
+    syncForwardLightPolicy(scene, 1);
+    expect(left.isEnabled()).toBe(true);
+    (scene.activeCamera as UniversalCamera).position.x = 0.1;
+    syncForwardLightPolicy(scene, 1);
+    expect(left.isEnabled()).toBe(true);
+    expect(isForwardLightExcluded(right)).toBe(true);
+    syncForwardLightPolicy(scene, 2);
+    expect(right.isEnabled()).toBe(true);
+    syncForwardLightPolicy(scene, 0);
+    expect(left.isEnabled()).toBe(false);
+    expect(right.isEnabled()).toBe(false);
+    expect(isForwardLightExcluded(left)).toBe(true);
+    syncForwardLightPolicy(scene, 2);
+    expect(left.isEnabled()).toBe(true);
+    expect(right.isEnabled()).toBe(true);
+  });
+
+  it("does not spend shader slots on zero-intensity lights and restores their requested state", () => {
+    const scene = host(false);
+    const dark = new PointLight("dark", Vector3.Zero(), scene);
+    const visible = new PointLight("visible", new Vector3(10, 0, 0), scene);
+    dark.intensity = 0;
+    setAuthoredLightEnabled(dark, true);
+    expect(syncForwardLightPolicy(scene, 1)).toMatchObject({
+      requested: 1,
+      admitted: 1,
+    });
+    expect(dark.isEnabled()).toBe(false);
+    expect(isForwardLightExcluded(dark)).toBe(false);
+    expect(visible.isEnabled()).toBe(true);
+    dark.intensity = 1;
+    dark.renderPriority = 1;
+    syncForwardLightPolicy(scene, 1);
+    expect(dark.isEnabled()).toBe(true);
+    expect(isForwardLightExcluded(visible)).toBe(true);
+  });
+
   it("uses one directional light and transfers illumination without changing authored intent", () => {
     const scene = host(false);
     const first = new DirectionalLight("first", Vector3.Down(), scene);

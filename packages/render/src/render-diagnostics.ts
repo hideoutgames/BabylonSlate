@@ -6,6 +6,7 @@ import {
 import { sceneShadowController } from "./shadow-controller";
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
+import { sceneLightingLimits } from "./scene-lighting";
 
 const instruments = new WeakMap<AbstractEngine, EngineInstrumentation>();
 export type RenderDiagnostics = {
@@ -71,6 +72,7 @@ export function createRenderDiagnostics(
         ? sceneShadowController(scene).diagnostics()
         : [],
       qualityLimits: [
+        ...sceneLightingLimits(scene),
         ...effectiveShadowSettings(
           state.shadows,
           engine._features.supportCSM,
