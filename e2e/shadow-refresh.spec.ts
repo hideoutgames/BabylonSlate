@@ -284,19 +284,16 @@ test("cached local shadows match fresh maps after caster and light motion, resiz
     await settled(page);
     const cached = await pixels(page);
     const cachedState = await state(page);
-    // Rebuild a fresh map at the identical pose as the pixel correctness oracle.
-    // Movement above must already have updated the retained cached allocation.
-    const shadows = page.getByRole("checkbox", {
-      name: "Cast Shadows",
+    // Empty then freshly render the map at the identical pose as the pixel
+    // oracle. Keep the receiver's shader and the live allocation unchanged.
+    const visibility = page.getByRole("button", {
+      name: "Toggle visibility of Caster",
       exact: true,
     });
-    await shadows.uncheck();
-    await expect
-      .poll(async () => (await state(page)).render.shadowPasses)
-      .toBe(0);
-    await frames(page);
+    await visibility.click();
+    await settled(page);
     const unshadowed = await pixels(page);
-    await shadows.check();
+    await visibility.click();
     await expect
       .poll(async () => (await state(page)).cubes.count)
       .toBeGreaterThan(cachedState.cubes.count);
@@ -310,6 +307,14 @@ test("cached local shadows match fresh maps after caster and light motion, resiz
       // The unshadowed green surface identifies the receiver, including pixels
       // that turn completely black under the shadow in the other captures.
       if (!isReceiver(unshadowed, i)) continue;
+      if (
+        ![cached, fresh].every(
+          (image) =>
+            isReceiver(image, i) ||
+            (image[i]! < 15 && image[i + 1]! < 15 && image[i + 2]! < 15),
+        )
+      )
+        continue;
       receiverPixels++;
       if (Math.abs(cached[i + 1]! - fresh[i + 1]!) > 8) mismatches++;
       if (unshadowed[i + 1]! - fresh[i + 1]! > 20) shadowPixels++;
@@ -323,6 +328,9 @@ test("cached local shadows match fresh maps after caster and light motion, resiz
       mismatches / receiverPixels,
       `${pose} cached map must match a fresh map`,
     ).toBeLessThan(0.005);
+    expect((await state(page)).cubes.textureIds).toEqual(
+      cachedState.cubes.textureIds,
+    );
     evidence.push({
       pose,
       receiverPixels,
