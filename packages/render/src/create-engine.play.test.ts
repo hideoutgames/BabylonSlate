@@ -167,6 +167,101 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it("presents exactly one loading frame under a modal without resuming normal rendering", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const render = runLoop.mock.calls[0]![0];
+    handle.setPaused(true);
+    handle.scheduler.setObstructed(true);
+    let frames = 0;
+    handle.scene.onAfterRenderObservable.add(() => { frames += 1; });
+    let ready = false;
+    const presented = handle.presentFirstFrame().then(() => { ready = true; });
+    render();
+    expect(frames).toBe(1);
+    expect(ready).toBe(false);
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await presented;
+    render();
+    expect(frames).toBe(1);
+    expect(handle.scheduler.shouldRender(performance.now() + 1000)).toBe(false);
+  });
+
+  it("does not spend a loading permit on a sibling view or a hidden document", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle, canvas } = editorHandle(engine);
+    const { canvas: sibling } = editorHandle(engine);
+    const render = runLoop.mock.calls[0]![0];
+    handle.setPaused(true);
+    let frames = 0;
+    handle.scene.onAfterRenderObservable.add(() => { frames += 1; });
+    const presented = handle.presentFirstFrame();
+    engine.activeView = engine.views!.find((view) => view.target === sibling)!;
+    render();
+    expect(frames).toBe(0);
+    engine.activeView = engine.views!.find((view) => view.target === canvas)!;
+    handle.scheduler.setDocumentVisible(false);
+    render();
+    expect(frames).toBe(0);
+    handle.scheduler.setDocumentVisible(true);
+    render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await presented;
+    expect(frames).toBe(1);
+    engine.activeView = null;
+  });
+
+  it("rejects stale first-frame and shader completions after reload or disposal", async () => {
+    const engine = sharedEngine();
+    const { handle } = editorHandle(engine);
+    const oldFrame = expect(handle.presentFirstFrame()).rejects.toThrow("superseded");
+    handle.loadScene(createDefaultScene());
+    await oldFrame;
+    let finishCompile!: () => void;
+    vi.spyOn(handle.scene.defaultMaterial, "forceCompilationAsync").mockReturnValue(
+      new Promise((resolve) => { finishCompile = resolve; }),
+    );
+    const warming = expect(handle.prewarmSceneMaterials()).rejects.toThrow("cancelled");
+    const frame = expect(handle.presentFirstFrame()).rejects.toThrow("disposed");
+    handle.dispose();
+    finishCompile();
+    await Promise.all([warming, frame]);
+    await expect(handle.whenMaterialTexturesReady()).rejects.toThrow("disposed");
+  });
+
+  it("fails the loading transaction when its first render throws", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    handle.setPaused(true);
+    vi.spyOn(handle.scene, "render").mockImplementation(() => { throw new Error("allocation failed"); });
+    const frame = expect(handle.presentFirstFrame()).rejects.toThrow("allocation failed");
+    runLoop.mock.calls[0]![0]();
+    await frame;
+    engine.onEndFrameObservable.notifyObservers(engine);
+    expect(handle.scheduler.stats().renderedFrames).toBe(0);
+  });
+
+  it("does not evict shared GPU textures on restore or retain disposed handle callbacks", () => {
+    const engine = sharedEngine();
+    const { handle: first } = editorHandle(engine);
+    const { handle: live } = editorHandle(engine);
+    const release = vi.spyOn(live.resourceCache, "releaseGpuTextures");
+    const logs: string[] = [];
+    const unsubscribe = engineCommandBus.subscribe((command) => {
+      if (command.type === "log") logs.push(command.message);
+    });
+    first.dispose();
+    engine.onContextLostObservable.notifyObservers(engine);
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    expect(release).not.toHaveBeenCalled();
+    expect(live.scene.isDisposed).toBe(false);
+    expect(logs.filter((message) => /context restored/i.test(message))).toHaveLength(1);
+    unsubscribe();
+  });
+
   it("scopes editor Drop requests to one viewport and unregisters on disposal", () => {
     const engine = sharedEngine();
     const make = (editorViewportId: string, floorY: number) => {

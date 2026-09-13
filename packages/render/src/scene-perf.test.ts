@@ -4,6 +4,7 @@ import {
   NodeMaterial,
   NodeMaterialModes,
   NullEngine,
+  PBRMaterial,
   Scene,
   UniversalCamera,
   Vector3,
@@ -141,18 +142,26 @@ describe("applyEditorMaterialFreeze", () => {
 });
 
 describe("prewarmSceneMaterials", () => {
-  it("gives up when forceCompilationAsync never settles", async () => {
+  it("fails readiness when compilation times out and stops the late warm continuation", async () => {
     vi.useFakeTimers();
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const mesh = new Mesh("warm-mesh", scene);
     mesh.material = scene.defaultMaterial;
+    let finishCompile!: () => void;
     vi.spyOn(scene.defaultMaterial, "forceCompilationAsync").mockReturnValue(
-      new Promise(() => undefined),
+      new Promise((resolve) => { finishCompile = resolve; }),
     );
+    const next = new Mesh("next-mesh", scene);
+    next.material = new PBRMaterial("next-material", scene);
+    const nextCompile = vi.spyOn(next.material, "forceCompilationAsync");
     const done = prewarmSceneMaterials(scene);
+    const rejected = expect(done).rejects.toThrow("loading deadline");
     await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS);
-    await expect(done).resolves.toBeUndefined();
+    await rejected;
+    finishCompile();
+    await Promise.resolve();
+    expect(nextCompile).not.toHaveBeenCalled();
     scene.dispose();
     engine.dispose();
     vi.useRealTimers();

@@ -278,6 +278,8 @@ export interface EngineHandle {
   setEditingMaterialGuids: (guids: ReadonlySet<string>) => void;
   /** Compile shaders before the first editor draw (scene-load warm). */
   prewarmSceneMaterials: () => Promise<void>;
+  /** Present one loading frame without resuming normal paused/obstructed drawing. */
+  presentFirstFrame: () => Promise<void>;
   /** Unlock AudioV2 after a user gesture and drain the pre-unlock queue. */
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */
@@ -669,6 +671,29 @@ export function createEngine(
   }
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
+  let disposed = false;
+  let contextLost = false;
+  let loadGeneration = 0;
+  let pendingPresentation: {
+    promise: Promise<void>;
+    resolve: () => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+    rendered: boolean;
+  } | null = null;
+  const cancelPresentation = (error: Error) => {
+    const pending = pendingPresentation;
+    if (!pending) return;
+    pendingPresentation = null;
+    clearTimeout(pending.timer);
+    pending.reject(error);
+  };
+  const assertCurrent = (generation: number) => {
+    if (disposed || scene.isDisposed || generation !== loadGeneration) {
+      throw new Error("Scene loading was superseded or disposed.");
+    }
+    if (contextLost) throw new Error("Rendering context was lost during scene loading.");
+  };
   setSceneRenderSettings(scene, options.renderSettings ?? {});
   configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
@@ -1096,6 +1121,9 @@ export function createEngine(
 
   let lastRenderedSnapshotFrame: number | null = null;
   const loadScene = (sceneData: SerializedScene) => {
+    assertCurrent(loadGeneration);
+    loadGeneration += 1;
+    cancelPresentation(new Error("Scene loading was superseded."));
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -1466,8 +1494,14 @@ export function createEngine(
   const renderDiagnostics = createRenderDiagnostics(scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null);
   const tilemapPreviewStart = performance.now();
   const renderLoop = () => {
+    if (disposed || contextLost || registeredView?.enabled === false) return;
+    // Babylon invokes all render callbacks for each registered view. A loading
+    // permit belongs to this canvas and must not draw into a sibling's blit.
+    if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
     const frameStart = performance.now();
-    if (!scheduler.shouldRender(frameStart)) {
+    const loadingFrame = pendingPresentation !== null &&
+      !pendingPresentation.rendered && scheduler.canPresentLoadingFrame();
+    if (!loadingFrame && !scheduler.shouldRender(frameStart)) {
       return;
     }
     const sampled = interpolator.sample(interpAlpha);
@@ -1509,15 +1543,29 @@ export function createEngine(
     if (!options.playMode) {
       updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
     }
-    scene.render();
-    sceneLayerCompositor?.render();
-    if (rttPresent) rttPresent.blit();
+    try {
+      scene.render();
+      sceneLayerCompositor?.render();
+      if (rttPresent) rttPresent.blit();
+      if (pendingPresentation) pendingPresentation.rendered = true;
+    } catch (error) {
+      if (!pendingPresentation) throw error;
+      cancelPresentation(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
     if (sampled) lastRenderedSnapshotFrame = sampled.frameId;
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     lastRenderCpuMs = performance.now() - renderStart;
-    scaling.noteFrameTime(lastRenderCpuMs);
+    if (!loadingFrame) scaling.noteFrameTime(lastRenderCpuMs);
   };
+  const presentationObserver = engine.onEndFrameObservable.add(() => {
+    const pending = pendingPresentation;
+    if (!pending?.rendered) return;
+    pendingPresentation = null;
+    clearTimeout(pending.timer);
+    pending.resolve();
+  });
   engine.runRenderLoop(renderLoop);
 
   const onVisibility = () => {
@@ -1529,18 +1577,24 @@ export function createEngine(
     document.addEventListener("visibilitychange", onVisibility);
   }
 
-  engine.onContextLostObservable.add(() => {
+  const contextLostObserver = engine.onContextLostObservable.add(() => {
+    if (disposed) return;
+    contextLost = true;
+    loadGeneration += 1;
+    cancelPresentation(new Error("Rendering context was lost during scene loading."));
     engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
   });
-  engine.onContextRestoredObservable.add(() => {
+  const contextRestoredObserver = engine.onContextRestoredObservable.add(() => {
+    if (disposed) return;
+    contextLost = false;
     engineCommandBus.dispatch({
       type: "log",
       message: "WebGL context restored",
     });
     scaling.noteRestore();
-    resourceCache.releaseGpuTextures();
-    resourceCache.flushUnreferenced();
-    materialLibrary.invalidate();
+    // Babylon rebuilds retained textures/material effects before notifying.
+    // Releasing the shared cache here destroys those newly restored resources
+    // and leaves other live clients holding disposed wrappers.
     scheduler.invalidate("manual");
   });
 
@@ -1613,6 +1667,13 @@ export function createEngine(
     scaling,
     editor,
     dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      loadGeneration += 1;
+      cancelPresentation(new Error("Scene loading was disposed."));
+      engine.onContextLostObservable.remove(contextLostObserver);
+      engine.onContextRestoredObservable.remove(contextRestoredObserver);
+      engine.onEndFrameObservable.remove(presentationObserver);
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
@@ -2065,16 +2126,40 @@ export function createEngine(
       scheduler.invalidate("asset");
     },
     prewarmSceneMaterials: async () => {
-      await warmSceneMaterials(scene);
+      const generation = loadGeneration;
+      assertCurrent(generation);
+      await warmSceneMaterials(scene, () => assertCurrent(generation));
+      assertCurrent(generation);
       freezeLibraryMaterials();
       if (options.editor) freezeEditorActiveMeshes(scene);
     },
     whenMaterialTexturesReady: async () => {
+      const generation = loadGeneration;
+      assertCurrent(generation);
       const started = Date.now();
       while (!sceneNodeMaterialsSampleReady(scene)) {
-        if (Date.now() - started >= SCENE_SHADER_WARM_TIMEOUT_MS) return;
+        assertCurrent(generation);
+        if (Date.now() - started >= SCENE_SHADER_WARM_TIMEOUT_MS) {
+          throw new Error("Material textures did not become ready before the loading deadline.");
+        }
         await new Promise((resolve) => setTimeout(resolve, 16));
       }
+      assertCurrent(generation);
+    },
+    presentFirstFrame: () => {
+      try { assertCurrent(loadGeneration); } catch (error) { return Promise.reject(error); }
+      if (registeredView?.enabled === false) {
+        return Promise.reject(new Error("The loading viewport is not active."));
+      }
+      if (pendingPresentation) return pendingPresentation.promise;
+      let resolve!: () => void;
+      let reject!: (error: Error) => void;
+      const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+      const timer = setTimeout(() => {
+        cancelPresentation(new Error("The scene did not present a frame before the loading deadline."));
+      }, SCENE_SHADER_WARM_TIMEOUT_MS);
+      pendingPresentation = { promise, resolve, reject, timer, rendered: false };
+      return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {
@@ -2088,11 +2173,14 @@ export function createEngine(
       playFreeCam?.fly(forward, right);
     },
     whenEditorModelsReady: async () => {
+      const generation = loadGeneration;
+      assertCurrent(generation);
       await (editorSync?.whenEditorModelsReady() ?? Promise.resolve());
       const playLoads = [...(binding.slotAnimLoads?.values() ?? [])];
       if (playLoads.length > 0) {
         await Promise.all(playLoads);
       }
+      assertCurrent(generation);
     },
     modelLoadCount: () =>
       (editorSync?.pendingModelLoadCount() ?? 0) +
@@ -2130,8 +2218,8 @@ function materialTextureGuidMap(
 
 function sceneNodeMaterialsSampleReady(scene: Scene): boolean {
   for (const material of scene.materials) {
-    if (!(material instanceof NodeMaterial)) continue;
-    if (!nodeMaterialTexturesSampleReady(material)) return false;
+    if (material instanceof NodeMaterial && !nodeMaterialTexturesSampleReady(material)) return false;
+    if (material.getActiveTextures().some((texture) => !texture.isReady())) return false;
   }
   return true;
 }

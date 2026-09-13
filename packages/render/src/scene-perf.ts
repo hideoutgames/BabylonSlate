@@ -147,8 +147,8 @@ export async function settleOrTimeout(work: Promise<void>, ms: number): Promise<
   try {
     await Promise.race([
       work,
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, ms);
+      new Promise<void>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Scene shaders did not become ready before the loading deadline.")), ms);
       }),
     ]);
   } finally {
@@ -156,11 +156,19 @@ export async function settleOrTimeout(work: Promise<void>, ms: number): Promise<
   }
 }
 
-export async function prewarmSceneMaterials(scene: Scene): Promise<void> {
+export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => void): Promise<void> {
+  let finished = false;
+  const check = () => {
+    if (finished || scene.isDisposed) throw new Error("Scene shader warming was cancelled.");
+    assertCurrent?.();
+  };
+  check();
   syncSceneLighting(scene);
-  await settleOrTimeout((async () => {
+  try {
+    await settleOrTimeout((async () => {
     const warmed = new Set<Material>();
     for (const mesh of scene.meshes) {
+      check();
       if (!(mesh instanceof Mesh)) continue;
       const material = mesh.material;
       if (!material || warmed.has(material)) continue;
@@ -169,15 +177,20 @@ export async function prewarmSceneMaterials(scene: Scene): Promise<void> {
         await prewarmMaterial(material, mesh);
         continue;
       }
-      if (isEngineDefaultMaterial(material) || material === scene.defaultMaterial) {
-        warmed.add(material);
-        await material.forceCompilationAsync(mesh);
-      }
+      warmed.add(material);
+      await material.forceCompilationAsync(mesh);
     }
+    check();
     const fallback = scene.defaultMaterial;
     if (fallback && !warmed.has(fallback)) {
       const mesh = scene.meshes.find((entry): entry is Mesh => entry instanceof Mesh);
       if (mesh) await fallback.forceCompilationAsync(mesh);
     }
-  })(), SCENE_SHADER_WARM_TIMEOUT_MS);
+    })(), SCENE_SHADER_WARM_TIMEOUT_MS);
+    check();
+  } finally {
+    // A timeout cannot cancel Babylon's in-flight GPU compile. Its continuation
+    // must stop before touching any more meshes, freezing, or reporting ready.
+    finished = true;
+  }
 }
