@@ -474,7 +474,10 @@ describe("p20-editor-scene-freeze", () => {
     mesh.properties.materialGuid = "mat-1";
     handle.loadScene({
       ...createDefaultScene(),
-      actors: [createActor("hero", "Hero", { components: [mesh] })],
+      actors: [
+        createActor("hero", "Hero", { components: [mesh] }),
+        createActor("default", "Default", { components: [createMeshComponent("c2", "box")] }),
+      ],
     });
     const visual = handle.scene.getMeshByName(editorMeshName("hero"));
     const assigned = visual?.material;
