@@ -1101,6 +1101,7 @@ function attachSurfaceShading(
   };
 
   if (plan.shadingModel === "unlit") {
+    fragment.convertToGammaSpace = true;
     const color =
       baseColor && emissive
         ? addColor(baseColor, emissive, "unlitEmission")

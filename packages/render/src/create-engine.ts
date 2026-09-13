@@ -641,6 +641,7 @@ export function createEngine(
       adaptToDeviceRatio: false,
       antialias: false,
       useLargeWorldRendering: true,
+      useExactSrgbConversions: true,
     });
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: options.playMode === true,
@@ -2147,6 +2148,7 @@ export function createAppEngine(
     adaptToDeviceRatio: false,
     antialias: false,
     useLargeWorldRendering: true,
+      useExactSrgbConversions: true,
   });
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     caps: engine.getCaps(),

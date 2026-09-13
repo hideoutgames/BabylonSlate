@@ -1,10 +1,10 @@
+import { DisplayColorBlock } from "./display-color-block";
 import {
   AddBlock,
   FogBlock,
   FragmentOutputBlock,
   InputBlock,
   NodeMaterialSystemValues,
-  TextureBlock,
   VectorMergerBlock,
   type NodeMaterial,
   type NodeMaterialBlock,
@@ -35,10 +35,6 @@ export function installCelSurface(
 ): void {
   if (plan.shadingModel === "unlit") return;
   const state = sceneRenderingSettings(material.getScene());
-  const colorTextures = created.filter(
-    (block): block is TextureBlock =>
-      block instanceof TextureBlock && block.convertToLinearSpace,
-  );
   let cel: NodeMaterialBlock | undefined;
   let active = pbr;
   let disposed = false;
@@ -67,10 +63,6 @@ export function installCelSurface(
     material.removeOutputNode(active);
     material.addOutputNode(next);
     active = next;
-    for (const texture of colorTextures) {
-      texture.convertToLinearSpace = !useCel;
-      texture.convertToGammaSpace = useCel;
-    }
     if (!rebuild) return;
     const frozen = material.isFrozen;
     material.unfreeze();
@@ -105,8 +97,14 @@ function createCelSurface(
   plumbing.worldNormal4?.connectTo(lighting.worldNormal);
   plumbing.cameraPosition?.connectTo(lighting.cameraPosition);
   plumbing.view?.connectTo(lighting.view);
+  const toDisplay = (point: NodeMaterialConnectionPoint, suffix: string) => {
+    const conversion = new DisplayColorBlock(`${name}_${suffix}`);
+    created.push(conversion);
+    point.connectTo(conversion.color);
+    return conversion.output;
+  };
   const base = outputPoint("baseColor", `${name}_celBase`, true);
-  if (base) base.connectTo(lighting.diffuseColor);
+  if (base) toDisplay(base, "baseDisplay").connectTo(lighting.diffuseColor);
   else {
     const fallback = createConstantBlock(
       `${name}_celFallback`,
@@ -115,7 +113,7 @@ function createCelSurface(
       true,
     );
     created.push(fallback);
-    fallback.output.connectTo(lighting.diffuseColor);
+    toDisplay(fallback.output, "fallbackDisplay").connectTo(lighting.diffuseColor);
   }
   const normal = outputPoint("normal", `${name}_celNormal`, false);
   if (normal) {
@@ -135,7 +133,7 @@ function createCelSurface(
     const emission = new AddBlock(`${name}_celEmissive`);
     created.push(emission);
     color.connectTo(emission.left);
-    emissive.connectTo(emission.right);
+    toDisplay(emissive, "emissionDisplay").connectTo(emission.right);
     color = emission.output;
   }
   const fog = new FogBlock(`${name}_celFog`);
