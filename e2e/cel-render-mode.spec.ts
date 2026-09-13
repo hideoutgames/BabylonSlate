@@ -133,6 +133,8 @@ test("CEL preserves authored and texture colors, supports every light, and resto
 }, testInfo) => {
   test.setTimeout(180_000);
   const shaderErrors: string[] = [];
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
     if (
       message.type() === "error" &&
@@ -483,7 +485,9 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     transform: { position: [10000, 0, 10000], rotation: [0, 0, 0, 1], scale: [100, 100, 100] },
     components: [createMeshComponent("distant-mesh", "box")],
   }));
-  await setPreviewScene(page, scene);
+  // Save also waits for the changed static geometry's background audio bake;
+  // software-GPU CI can spend longer here while drawing the large receiver.
+  await setPreviewScene(page, scene, 30_000);
   await expect.poll(async () => {
     const largeMap = await framePixels(viewport);
     let changed = 0, count = 0;
@@ -538,6 +542,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     .poll(() => pixelsNear(viewport, authored), { timeout: 20_000 })
     .toBeGreaterThan(500);
   expect(shaderErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
 });
 
 test("CEL preserves sRGB image pixels on a native glTF surface", async ({

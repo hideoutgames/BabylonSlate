@@ -399,3 +399,5 @@ CEL thresholds filtered shadow visibility before applying its light ramp. Feedin
 Editor billboard icons multiply their unlit status tint through the diffuse texture channel. An additive emissive texture would wash red/yellow status back to white.
 
 SceneLayer camera preparation updates camera matrices only. Scene rendering owns scene-uniform uploads after Babylon selects the correct floating-origin context. Picking and resizing must not upload scene matrices while the world scene is current; doing so can cache a perspective world projection in an orthographic HUD. Regression tests exercise actual uniform-buffer values with world-first and layer-first rendering, including layer post-processing.
+
+Editor active-mesh freezing also evaluates within the owning scene's render frame after materials are ready. A pending freeze is cancelled by structural invalidation. This avoids asynchronous readiness callbacks uploading matrices through another or disposed scene's floating-origin context while retaining off-frustum membership and per-frame draw culling.

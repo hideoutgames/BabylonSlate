@@ -58,6 +58,7 @@ function evaluateEditorActiveMeshes(scene: Scene): void {
 }
 
 const freezeSkipGenerations = new WeakMap<Scene, number>();
+const pendingFrameFreezes = new WeakMap<Scene, () => void>();
 
 function beginSkipFrustumForFreeze(scene: Scene): () => void {
   const generation = (freezeSkipGenerations.get(scene) ?? 0) + 1;
@@ -70,15 +71,36 @@ function beginSkipFrustumForFreeze(scene: Scene): () => void {
 }
 
 export function freezeEditorActiveMeshes(scene: Scene): void {
-  scene.unfreezeActiveMeshes();
+  unfreezeEditorActiveMeshes(scene);
+  const engine = scene.getEngine();
+  if (!(engine instanceof NullEngine) || engine.supportsUniformBuffers) {
+    // Babylon's executeWhenReady callback can run between scenes, including
+    // after the last floating-origin scene has been disposed. Evaluate only
+    // inside this scene's render context, once its drawable materials are ready.
+    const observer = scene.onBeforeRenderObservable.add(() => {
+      if (!scene.activeCamera || !scene.isReady()) return;
+      cancel();
+      const restoreSkip = beginSkipFrustumForFreeze(scene);
+      try {
+        evaluateEditorActiveMeshes(scene);
+        scene._activeMeshesFrozen = true;
+        scene._activeMeshesFrozenButKeepClipping = true;
+      } finally {
+        restoreSkip();
+      }
+    });
+    const cancel = () => {
+      scene.onBeforeRenderObservable.remove(observer);
+      pendingFrameFreezes.delete(scene);
+    };
+    pendingFrameFreezes.set(scene, cancel);
+    return;
+  }
   // Membership must include off-frustum drawable meshes. keepFrustumCulling
   // still skips their draw; camera motion then reveals them without an apply.
   const restoreSkip = beginSkipFrustumForFreeze(scene);
   scene.freezeActiveMeshes(false, restoreSkip, restoreSkip, false, true);
-  // freezeActiveMeshes waits on executeWhenReady. Real Engines must keep
-  // that wait so unready PBR/GLB meshes are not frozen out of the list.
   // NullEngine PrePass never goes ready, so evaluate and stamp now.
-  if (!(scene.getEngine() instanceof NullEngine)) return;
   evaluateEditorActiveMeshes(scene);
   scene._activeMeshesFrozen = true;
   scene._activeMeshesFrozenButKeepClipping = true;
@@ -86,6 +108,7 @@ export function freezeEditorActiveMeshes(scene: Scene): void {
 }
 
 export function unfreezeEditorActiveMeshes(scene: Scene): void {
+  pendingFrameFreezes.get(scene)?.();
   scene.unfreezeActiveMeshes();
 }
 

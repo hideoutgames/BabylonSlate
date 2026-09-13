@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import type { SerializedScene } from "../packages/core/src/index.ts";
 import { saveAllIfEnabled } from "./save-all";
 
-export async function setPreviewScene(page: Page, scene: SerializedScene) {
+export async function setPreviewScene(page: Page, scene: SerializedScene, saveTimeout?: number) {
   expect(
     await page.evaluate(async (nextScene) => {
       const host = globalThis as unknown as {
@@ -16,7 +16,7 @@ export async function setPreviewScene(page: Page, scene: SerializedScene) {
   // Committed rendering changes coalesce before the scene-loading dialog opens.
   // Wait for that pending work too, so it cannot cover Save All during the click.
   await expect(page.getByTestId("viewport-panel")).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
-  await saveAllIfEnabled(page);
+  await saveAllIfEnabled(page, saveTimeout);
 }
 
 /** A free-falling or AABB-stopped sphere cannot travel downhill along the ramp. */

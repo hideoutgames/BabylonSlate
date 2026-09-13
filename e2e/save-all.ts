@@ -35,7 +35,7 @@ async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
  * One click, then a short window that must stay clean so a post-save mutation
  * cannot hide behind retries.
  */
-export async function saveAllIfEnabled(page: Page): Promise<void> {
+export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<void> {
   const button = page.getByTestId("save-all-project");
   await expect(button).toBeVisible();
   if (!(await button.isEnabled())) {
@@ -62,7 +62,7 @@ export async function saveAllIfEnabled(page: Page): Promise<void> {
             disabled: await button.isDisabled(),
           };
         },
-        { timeout: 15_000 },
+        { timeout },
       )
       .toEqual({ dirty: 0, disabled: true });
   } catch (error) {
