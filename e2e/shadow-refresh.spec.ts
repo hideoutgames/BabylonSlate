@@ -219,7 +219,7 @@ async function settled(page: Page) {
   expect((await state(page)).cubes).toEqual(before.cubes);
 }
 
-async function pixels(page: Page) {
+async function framePixels(page: Page) {
   const encoded = await page
     .getByTestId("viewport-canvas")
     .evaluate((canvas: HTMLCanvasElement) => {
@@ -235,6 +235,30 @@ async function pixels(page: Page) {
       return btoa(binary);
     });
   return Buffer.from(encoded, "base64");
+}
+
+function isReceiver(image: Buffer, offset: number) {
+  return (
+    image[offset + 1]! > 20 &&
+    image[offset + 1]! > image[offset]! * 1.5 &&
+    image[offset + 1]! > image[offset + 2]! * 1.25
+  );
+}
+
+async function pixels(page: Page) {
+  let image = Buffer.alloc(0);
+  // A live shadow toggle recompiles the receiver's material asynchronously;
+  // several completed scene frames alone do not prove its shader has drawn.
+  await expect
+    .poll(async () => {
+      image = await framePixels(page);
+      let green = 0;
+      for (let i = 0; i < image.length; i += 4)
+        if (isReceiver(image, i)) green++;
+      return green;
+    })
+    .toBeGreaterThan(500);
+  return image;
 }
 
 test("cached local shadows match fresh maps after caster and light motion, resize and reload", async ({
@@ -283,14 +307,9 @@ test("cached local shadows match fresh maps after caster and light motion, resiz
       mismatches = 0,
       shadowPixels = 0;
     for (let i = 0; i < fresh.length; i += 4) {
-      // Green receiver only: exclude caster, editor gizmos and geometry edges.
-      const receiver = [cached, fresh, unshadowed].every(
-        (image) =>
-          image[i + 1]! > 20 &&
-          image[i + 1]! > image[i]! * 1.5 &&
-          image[i + 1]! > image[i + 2]! * 1.25,
-      );
-      if (!receiver) continue;
+      // The unshadowed green surface identifies the receiver, including pixels
+      // that turn completely black under the shadow in the other captures.
+      if (!isReceiver(unshadowed, i)) continue;
       receiverPixels++;
       if (Math.abs(cached[i + 1]! - fresh[i + 1]!) > 8) mismatches++;
       if (unshadowed[i + 1]! - fresh[i + 1]! > 20) shadowPixels++;
