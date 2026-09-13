@@ -496,7 +496,7 @@ describe("syncAuthoredIllumination", () => {
     expect(
       (key!.getShadowGenerator() as ShadowGenerator).getShadowMap()?.getSize()
         .width,
-    ).toBe(1024);
+    ).toBe(2048);
     expect(bounce?.getShadowGenerator()).toBeInstanceOf(ShadowGenerator);
     expect(diagnostics).toEqual([]);
   });
@@ -594,7 +594,7 @@ describe("syncAuthoredIllumination", () => {
     expect(
       generator.usePercentageCloserFiltering || generator.usePoissonSampling,
     ).toBe(true);
-    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_MEDIUM);
+    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_HIGH);
     expect(generator.bias).toBeCloseTo(0.0001);
     expect(generator.normalBias).toBeCloseTo(0.005);
     expect(generator.frustumEdgeFalloff).toBe(0);
