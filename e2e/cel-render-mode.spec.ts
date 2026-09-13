@@ -525,6 +525,12 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   fill.components[0]!.properties.groundColor = [1, 1, 1];
   scene.settings.celShading = {};
   await setPreviewScene(page, scene);
+  // A directional light distinguishes smooth PBR response from discrete CEL bands;
+  // uniform white hemispheric illumination can now preserve authored colors in both.
+  sun.components[0]!.properties.intensity = 1;
+  sun.components[0]!.properties.castShadows = false;
+  scene.actors = [...subjects, sun];
+  await setPreviewScene(page, scene);
   await projectMode(page, "PBR");
   await expect.poll(() => pixelsNear(viewport, authored)).toBeLessThan(100);
   await projectMode(page, "CEL");
