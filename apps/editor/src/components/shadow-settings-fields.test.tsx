@@ -39,7 +39,7 @@ it("preserves the manual count across Auto, reset and shadow disablement", async
   fireEvent.click(manual);
   await waitFor(() => expect(count()).toHaveProperty("value", "16"));
   fireEvent.click(screen.getByRole("button", { name: "Override Shadows Enabled" }));
-  fireEvent.click(screen.getByLabelText("Shadows Enabled"));
+  fireEvent.click(screen.getByRole("switch", { name: "Shadows Enabled" }));
   await waitFor(() => expect(count()).toBeNull());
   expect(screen.queryByLabelText("Local Shadow Budget Mode")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Reset Shadows Enabled" }));
