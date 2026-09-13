@@ -219,17 +219,17 @@ function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   FloatingOriginCurrentScene.eyeAtCamera = true;
   let failed = false;
   let failure: unknown;
+  let result!: T;
+  const errors: unknown[] = [];
   try {
     // Ready checks can upload scene UBOs before the first Scene.render().
     if (camera && (!view || !projection)) scene.updateTransformMatrix();
     engine.currentRenderPassId = camera?.renderPassId ?? renderPassId;
-    return probe();
+    result = probe();
   } catch (error) {
     failed = true;
     failure = error;
-    throw error;
   } finally {
-    const errors: unknown[] = [];
     const restore = (action: () => void) => {
       try { action(); } catch (error) { errors.push(error); }
     };
@@ -245,9 +245,11 @@ function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
     restore(() => scene.resetCachedMaterial());
     FloatingOriginCurrentScene.getScene = previousScene;
     FloatingOriginCurrentScene.eyeAtCamera = previousEyeAtCamera;
-    if (errors.length) throw new AggregateError(failed ? [failure, ...errors] : errors,
-      "Scene readiness state restoration failed.", failed ? { cause: failure } : undefined);
   }
+  if (errors.length) throw new AggregateError(failed ? [failure, ...errors] : errors,
+    "Scene readiness state restoration failed.", failed ? { cause: failure } : undefined);
+  if (failed) throw failure;
+  return result;
 }
 
 /**

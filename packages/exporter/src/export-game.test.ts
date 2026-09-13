@@ -61,6 +61,8 @@ describe("exportGame", () => {
       startupSceneGuid: "scene-1",
       customResolution: {
         ...DEFAULT_RENDER_PROJECT_SETTINGS,
+        renderPath: "clusteredForward",
+        gpuBackend: "webgpu",
         mode: "cel",
         cel,
         shadows,
@@ -86,6 +88,8 @@ describe("exportGame", () => {
     expect(result.value.files.has("index.html")).toBe(true);
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
     expect(result.value.manifest.render).toEqual({
+      renderPath: "clusteredForward",
+      gpuBackend: "webgpu",
       mode: "cel",
       cel,
       shadows,

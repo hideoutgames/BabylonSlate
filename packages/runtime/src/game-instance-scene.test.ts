@@ -528,8 +528,7 @@ describe("Game Instance native events and scene APIs", () => {
         components: [createMeshComponent("overlay-mesh", "box")],
       })],
     };
-    let runtime: RuntimeDriver;
-    runtime = createInProcessRuntime({
+    const runtime: RuntimeDriver = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
       preferSoftwarePhysics: true,
