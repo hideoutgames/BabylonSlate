@@ -47,6 +47,8 @@ Scenes and Class logic graphs are `.babasset` files under `assets/` (`assets/mai
 
 Projects authored before this move still load: `ProjectService` reads a `.json` document as an unversioned-or-versioned payload and writes it back in the same format. Nothing rewrites a legacy file into a container behind the user's back.
 
+Scene payloads use schema version 4 for automatic versus manual local-shadow capacity. New Scene headers and migrated legacy JSON saves carry that version; legacy saves retain the existing explicit migration approval flow.
+
 ### Modes
 
 - **thin** — dependencies by guid; large chunks may externalise to the blob store.

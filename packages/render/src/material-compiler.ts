@@ -59,6 +59,7 @@ import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
 import { FlatNormalBlock } from "./flat-normal-block";
+import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
@@ -176,6 +177,8 @@ export function compileMaterialPlan(
   options: CompileMaterialOptions,
 ): CompileMaterialResult {
   const { scene } = options;
+  const cacheableShadowShape = plan.domain === "surface" && plan.blendMode === "opaque" &&
+    plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   const material = new NodeMaterial(options.name, scene);
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
@@ -598,6 +601,7 @@ export function compileMaterialPlan(
         return;
       }
       buildState = "ready";
+      if (cacheableShadowShape) registerCacheableShadowMaterial(material);
       settleBuild([]);
     }
   });

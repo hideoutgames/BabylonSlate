@@ -9,6 +9,7 @@ import {
   RenderTargetTexture,
   Scene,
   UniversalCamera,
+  TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
@@ -218,26 +219,28 @@ describe("shared shadow lifecycle", () => {
     expect(controller.generator(light)?.normalBias).toBe(0.025);
     expect(controller.generator(light)?.bias).toBe(0.002);
   });
-  it("retains allocation for small intensity changes but yields to a substantially stronger light or authored priority", () => {
+  it("selects nearest shadows independently of intensity and honors explicit priority immediately", () => {
     const { scene, controller } = fixture();
     const a = new PointLight("a", Vector3.Zero(), scene);
-    const b = new PointLight("b", Vector3.Zero(), scene);
+    const b = new PointLight("b", new Vector3(20, 0, 0), scene);
     controller.register(a, true);
     controller.register(b, true);
     controller.sync();
     b.intensity = 1.05;
     controller.sync();
     expect(controller.generator(a)).not.toBeNull();
-    b.intensity = 2;
-    controller.sync();
-    expect(controller.generator(a)).toBeNull();
-    expect(controller.generator(b)).not.toBeNull();
-    controller.register(a, true, 1);
+    b.intensity = 100;
     controller.sync();
     expect(controller.generator(a)).not.toBeNull();
     expect(controller.generator(b)).toBeNull();
+    controller.register(b, true, 1);
+    controller.sync();
+    expect(controller.generator(a)).toBeNull();
+    expect(controller.generator(b)).not.toBeNull();
   });
   it("follows a replacement active camera and preserves deterministic distance hysteresis", () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    try {
     const { scene, controller } = fixture();
     const a = new PointLight("near-start", new Vector3(0, 0, 0), scene);
     const b = new PointLight("near-destination", new Vector3(100, 0, 0), scene);
@@ -255,11 +258,96 @@ describe("shared shadow lifecycle", () => {
     const incumbent = controller.generator(b);
     expect(incumbent).not.toBeNull();
     scene.activeCamera.position.x = 50;
+    clock.mockReturnValue(100);
     controller.sync();
     expect(controller.generator(b)).toBe(incumbent);
     scene.activeCamera.position.x = 0;
     controller.sync();
+    expect(controller.generator(b)).toBe(incumbent);
+    clock.mockReturnValue(300);
+    controller.sync();
     expect(controller.generator(a)).not.toBeNull();
+    } finally { clock.mockRestore(); }
+  });
+
+  it("keeps newly selected maps resident across motion but releases ineligible owners immediately", () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    try {
+      const { scene, controller } = fixture();
+      const a = new PointLight("start", Vector3.Zero(), scene);
+      const b = new PointLight("destination", new Vector3(100, 0, 0), scene);
+      controller.register(a, true);
+      controller.register(b, true);
+      controller.sync();
+      const original = controller.generator(a);
+      expect(original).not.toBeNull();
+      scene.activeCamera!.position.x = 100;
+      clock.mockReturnValue(100);
+      controller.sync();
+      expect(controller.generator(a)).toBe(original);
+      clock.mockReturnValue(300);
+      controller.sync();
+      const promoted = controller.generator(b);
+      expect(promoted).not.toBeNull();
+      expect(controller.generator(a)).toBeNull();
+      scene.activeCamera!.position.x = 0;
+      clock.mockReturnValue(350);
+      controller.sync();
+      expect(controller.generator(b)).toBe(promoted);
+      b.intensity = 0;
+      controller.sync();
+      expect(controller.generator(b)).toBeNull();
+      expect(controller.generator(a)).not.toBeNull();
+    } finally { clock.mockRestore(); }
+  });
+
+  it("refreshes parented and detached light positions before shadow selection", () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    try {
+      const { scene, controller } = fixture();
+      scene.activeCamera!.position.set(0, 0, 0);
+      const parent = new TransformNode("parent", scene);
+      parent.position.x = -200;
+      const a = new PointLight("parented", new Vector3(100, 0, 0), scene);
+      a.parent = parent;
+      const b = new PointLight("other", new Vector3(50, 0, 0), scene);
+      controller.register(a, true);
+      controller.register(b, true);
+      controller.sync();
+      expect(controller.generator(a)).toBeNull();
+      expect(controller.generator(b)).not.toBeNull();
+      parent.position.x = -90;
+      clock.mockReturnValue(300);
+      controller.sync();
+      expect(controller.generator(a)).not.toBeNull();
+      expect(controller.generator(b)).toBeNull();
+      a.parent = null;
+      clock.mockReturnValue(600);
+      controller.sync();
+      expect(controller.generator(a)).toBeNull();
+      expect(controller.generator(b)).not.toBeNull();
+    } finally { clock.mockRestore(); }
+  });
+
+  it("promotes a nearer sub-unit light after residency expires", () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    try {
+      const { scene, controller } = fixture();
+      scene.activeCamera!.position.set(0, 0, 0);
+      const a = new PointLight("incumbent", new Vector3(0.9, 0, 0), scene);
+      const b = new PointLight("nearer", new Vector3(0.1, 0, 0), scene);
+      controller.register(a, true);
+      controller.sync();
+      const initial = controller.generator(a);
+      controller.register(b, true);
+      clock.mockReturnValue(100);
+      controller.sync();
+      expect(controller.generator(a)).toBe(initial);
+      clock.mockReturnValue(300);
+      controller.sync();
+      expect(controller.generator(a)).toBeNull();
+      expect(controller.generator(b)).not.toBeNull();
+    } finally { clock.mockRestore(); }
   });
   it("admits point cube memory and faces before construction, then lowers cost after Manual 16 and a Low preset", () => {
     const { scene, controller } = fixture();
