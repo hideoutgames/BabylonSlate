@@ -6,6 +6,12 @@ import {
   type ShadowOverrides,
 } from "@babylonslate/core";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
+
+// Base UI dispatches PointerEvent when activating its native switch input.
+if (typeof window.PointerEvent === "undefined") {
+  window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;
+}
+
 afterEach(cleanup);
 
 function SceneFields({ distance = 200 }: { distance?: number }) {
@@ -29,12 +35,12 @@ it("preserves the manual count across Auto, reset and shadow disablement", async
   const count = () => screen.queryByLabelText("Local Shadow Light Budget");
   await waitFor(() => expect(count()).toHaveProperty("value", "16"));
   fireEvent.click(screen.getByLabelText("Local Shadow Budget Mode"));
-  const automatic = await screen.findByRole("option", { name: "Auto", exact: true });
+  const automatic = await screen.findByRole("option", { name: "Auto" });
   fireEvent.pointerDown(automatic);
   fireEvent.click(automatic);
   await waitFor(() => expect(count()).toBeNull());
   fireEvent.click(screen.getByLabelText("Local Shadow Budget Mode"));
-  const manual = await screen.findByRole("option", { name: "Manual", exact: true });
+  const manual = await screen.findByRole("option", { name: "Manual" });
   fireEvent.pointerDown(manual);
   fireEvent.click(manual);
   await waitFor(() => expect(count()).toHaveProperty("value", "16"));

@@ -346,8 +346,8 @@ describe("SceneDetailsPanel authoring", () => {
   it("starts rendering override categories closed and restores manual collapse state after search", () => {
     harness.render.mode = "cel";
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    const shadows = () => screen.getByRole("button", { name: "Shadows", exact: true });
-    const cel = () => screen.getByRole("button", { name: "CEL Shading", exact: true });
+    const shadows = () => screen.getByRole("button", { name: "Shadows" });
+    const cel = () => screen.getByRole("button", { name: "CEL Shading" });
     const search = (value: string) => fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value } });
     expect(shadows().getAttribute("aria-expanded")).toBe("false");
     expect(cel().getAttribute("aria-expanded")).toBe("false");
@@ -371,14 +371,14 @@ describe("SceneDetailsPanel authoring", () => {
   it("keeps disclosure separate from override data and resets to live project shadows", () => {
     harness.render.shadows = normalizeShadowSettings({ distance: 200 });
     const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    fireEvent.click(screen.getByRole("button", { name: "Shadows", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Shadows" }));
     fireEvent.click(screen.getByRole("button", { name: "Override Shadow Distance" }));
     harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
     expect(scene().settings.shadowOverrides).toEqual({ distance: 200 });
-    fireEvent.click(screen.getByRole("button", { name: "Shadows", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Shadows" }));
     harness.render.shadows = normalizeShadowSettings({ distance: 350 });
     view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    fireEvent.click(screen.getByRole("button", { name: "Shadows", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Shadows" }));
     expect(screen.getByLabelText("Shadow Distance")).toHaveProperty("value", "200");
     fireEvent.click(screen.getByRole("button", { name: "Reset Shadow Distance" }));
     harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
@@ -861,7 +861,7 @@ it("hides scene CEL overrides in PBR and persists only explicitly overridden fie
   expect(screen.queryByTestId("scene-cel-settings")).toBeNull();
   harness.render.mode = "cel";
   view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-  fireEvent.click(screen.getByRole("button", { name: "CEL Shading", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "CEL Shading" }));
   expect((screen.getByLabelText("Shadow Bands") as HTMLInputElement).value).toBe("4");
   fireEvent.click(screen.getByRole("button", { name: "Override Shadow Bands" }));
   const next = harness.applySceneChange.mock.calls.at(-1)![1];
