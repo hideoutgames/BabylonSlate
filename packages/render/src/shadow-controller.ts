@@ -1,3 +1,4 @@
+import { syncDirectionalLightPolicy } from "./light-policy";
 import {
   CascadedShadowGenerator,
   DirectionalLight,
@@ -161,6 +162,7 @@ export class SceneShadowController {
   sync(): void {
     const scene = this.scene;
     if (scene.isDisposed) return;
+    syncDirectionalLightPolicy(scene);
     for (const mesh of this.pending) {
       if (mesh.isDisposed()) continue;
       if (!participatesInShadows(mesh)) {

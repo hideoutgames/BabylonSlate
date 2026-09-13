@@ -1,3 +1,4 @@
+import { setAuthoredLightEnabled } from "./light-policy";
 import {
   Camera,
   Color3,
@@ -178,7 +179,7 @@ export function applyAuthoredLightProperties(
     light instanceof HemisphericLight ? DEFAULT_HEMISPHERIC_FILL_INTENSITY : 1,
   );
   light.diffuse = asRgb(properties.color);
-  light.setEnabled(properties.enabled !== false);
+  setAuthoredLightEnabled(light, properties.enabled !== false);
   sceneShadowController(light.getScene()).register(light, properties.castShadows === true, properties.shadowPriority);
   const range = asNumber(properties.range, 10);
   if (light instanceof PointLight || light instanceof SpotLight) {

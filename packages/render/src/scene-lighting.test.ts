@@ -1,4 +1,6 @@
+import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-policy";
 import {
+  DirectionalLight,
   MaterialDefines,
   MaterialHelper,
   MeshBuilder,
@@ -74,6 +76,25 @@ function shaderLights(
 }
 
 describe("scene material lighting", () => {
+  it("uses one directional light and transfers illumination without changing authored intent", () => {
+    const scene = host(false);
+    const first = new DirectionalLight("first", Vector3.Down(), scene);
+    const second = new DirectionalLight("second", Vector3.Down(), scene);
+    setAuthoredLightEnabled(first, true);
+    setAuthoredLightEnabled(second, true);
+    expect(first.isEnabled()).toBe(true);
+    expect(second.isEnabled()).toBe(false);
+    setAuthoredLightEnabled(first, false);
+    expect(first.isEnabled()).toBe(false);
+    expect(second.isEnabled()).toBe(true);
+    setAuthoredLightEnabled(first, true);
+    expect(first.isEnabled()).toBe(true);
+    expect(second.isEnabled()).toBe(false);
+    first.dispose();
+    syncDirectionalLightPolicy(scene);
+    expect(second.isEnabled()).toBe(true);
+  });
+
   it("includes the fifth and sixth scene lights in the default material shader", () => {
     const scene = host();
     lights(scene, 6);

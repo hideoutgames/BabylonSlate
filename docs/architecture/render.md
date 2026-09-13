@@ -372,3 +372,5 @@ Rendering scalability uses neutral Low, Medium, High and Ultra labels. Engineeri
 | Ultra | 4096 | 4 | 2048 | High |
 
 The default local budget is four; users can choose any nonnegative safe integer. The authored shadow distance defaults to 200 world units and does not limit map size. Presets change neither value. PCSS remains an explicit PBR artistic choice. These are starting profiles, not sustained device performance measurements.
+
+Only the first enabled directional light in stable scene order illuminates a scene. Authored enabled values are preserved so disabling/removing the owner activates the next eligible sun. Editor billboards show red for lights with no illumination and yellow for illuminating point/spot/directional lights without a shadow allocation; hemispheric fills retain their authored color.

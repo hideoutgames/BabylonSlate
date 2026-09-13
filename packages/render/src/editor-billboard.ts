@@ -1,3 +1,5 @@
+import { sceneShadowController } from "./shadow-controller";
+import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import {
   Color3,
   Mesh,
@@ -148,6 +150,8 @@ export function createEditorBillboard(
   return mesh;
 }
 
+const billboardUpdaters = new WeakMap<Mesh, () => void>();
+
 export function applyEditorBillboardFromActor(
   mesh: Mesh,
   actor: SerializedActor,
@@ -163,7 +167,25 @@ export function applyEditorBillboardFromActor(
     return;
   }
   const color = lightColorOf(actor) ?? [1, 1, 1];
-  material.emissiveColor.set(color[0], color[1], color[2]);
+  const update = () => {
+    const light = mesh.getScene().getLightByName(`${AUTHORED_LIGHT_PREFIX}${actor.id}`);
+    const component = actor.components.find((entry) =>
+      entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent");
+    const disabled = light ? !light.isEnabled() || light.intensity <= 0
+      : component?.properties.enabled === false || component?.properties.intensity === 0;
+    const shadowsMissing = light && component?.classId === "LightComponent" &&
+      !sceneShadowController(mesh.getScene()).generator(light);
+    const tint = disabled ? [1, 0, 0] : shadowsMissing ? [1, 1, 0] : color;
+    material.emissiveColor.set(tint[0]!, tint[1]!, tint[2]!);
+  };
+  billboardUpdaters.get(mesh)?.();
+  const observer = mesh.getScene().onBeforeRenderObservable.add(update);
+  billboardUpdaters.set(mesh, () => mesh.getScene().onBeforeRenderObservable.remove(observer));
+  mesh.onDisposeObservable.addOnce(() => {
+    billboardUpdaters.get(mesh)?.();
+    billboardUpdaters.delete(mesh);
+  });
+  update();
 }
 
 function lightColorOf(
