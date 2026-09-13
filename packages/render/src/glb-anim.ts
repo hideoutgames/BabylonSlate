@@ -189,6 +189,7 @@ export function invalidateSlotAnimLoad(
   slotId: number,
 ): void {
   bumpSlotAnimEpoch(binding, slotId);
+  binding.slotAnimLoads?.delete(slotId);
   disposeSlotAnimationGroups(binding, slotId);
 }
 
@@ -411,9 +412,13 @@ export function beginSlotModelAnimLoad(
     return Promise.resolve();
   }
   const pending = pendingModelLoads.get(placeholder);
-  if (pending?.key === key) return pending.promise.then(() => {
-    if (!placeholder.isDisposed()) onAdopted?.(placeholder);
-  });
+  if (pending?.key === key) {
+    const adopted = pending.promise.then(() => {
+      if (!placeholder.isDisposed()) onAdopted?.(placeholder);
+    });
+    void adopted.catch(() => {});
+    return adopted;
+  }
   const request = { key, promise: Promise.resolve() };
   pendingModelLoads.set(placeholder, request);
   const epoch = bumpSlotAnimEpoch(binding, slotId);
@@ -483,17 +488,28 @@ export function beginSlotModelAnimLoad(
       onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
     } catch (error) {
-      // Loader / instantiate failures leave the empty named root in place.
+      // A superseded or disposed actor no longer owns this failure. Current
+      // failures must reach the scene readiness waiter, even when command
+      // delivery starts the load without awaiting it.
+      if (scene.isDisposed || placeholder.isDisposed() ||
+        binding.slotAnimEpoch?.get(slotId) !== epoch ||
+        pendingModelLoads.get(placeholder) !== request) return;
       reportGlbLoadFailure(clipAssetGuid, error);
+      throw error;
     }
   })();
+  // Loads run immediately, possibly before the prior slot load settles.
+  void load.catch(() => {});
   if (!binding.slotAnimLoads) binding.slotAnimLoads = new Map();
   const previous = binding.slotAnimLoads.get(slotId) ?? Promise.resolve();
-  const chained = previous.then(() => load).finally(() => {
+  const chained = previous.catch(() => {}).then(() => load).finally(() => {
     if (pendingModelLoads.get(placeholder) === request) pendingModelLoads.delete(placeholder);
   });
   request.promise = chained;
   binding.slotAnimLoads.set(slotId, chained);
+  // Observe fire-and-forget command delivery without converting the stored
+  // promise to success: a later readiness wait must still reject.
+  void chained.catch(() => {});
   return chained;
 }
 

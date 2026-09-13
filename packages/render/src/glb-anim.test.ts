@@ -8,6 +8,7 @@ import {
   animationRetargetHasMatches,
   beginSlotModelAnimLoad,
   createModelActorRoot,
+  invalidateSlotAnimLoad,
   reportGlbLoadFailure,
 } from "./glb-anim";
 import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
@@ -179,6 +180,22 @@ describe("beginSlotModelAnimLoad", () => {
     const root = createModelActorRoot(scene, "actor-2");
     await beginSlotModelAnimLoad(scene, binding, 2, "model-1", view, root);
     expect(visualMeshes(root).length).toBeGreaterThan(0);
+  });
+
+  it.each(["superseded", "disposed"])("ignores a late loader failure for a %s actor", async (reason) => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(handle.scene, "actor-2");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const load = beginSlotModelAnimLoad(handle.scene, binding, 2, "broken",
+        encodeGlbJsonBin({ asset: { version: "99.0" } }, null), root);
+      if (reason === "superseded") invalidateSlotAnimLoad(binding, 2);
+      else root.dispose();
+      await expect(load).resolves.toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
+    } finally { warn.mockRestore(); }
   });
 
   it("scales instantiated glTF under a child so actor scaling stays scene TRS", async () => {
