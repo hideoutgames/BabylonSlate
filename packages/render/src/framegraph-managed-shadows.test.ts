@@ -191,6 +191,81 @@ it("rechecks admission after scene callbacks so revoked maps are never rendered 
   graph.dispose();
 });
 
+it("retains binding observers on settled frames and refreshes them for camera and admission changes", async () => {
+  const { scene, camera, light, controller, graph, render } =
+    await fixture("spot");
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  render();
+  const renderer = scene.objectRenderers.find(
+    (renderer) => renderer.name === "Forward objects",
+  )!;
+  const before = renderer.onBeforeRenderObservable.observers.slice();
+  const after = renderer.onAfterRenderObservable.observers.slice();
+  render();
+  render();
+  expect(renderer.onBeforeRenderObservable.observers).toEqual(before);
+  expect(renderer.onAfterRenderObservable.observers).toEqual(after);
+  const second = new FreeCamera("second", new Vector3(1, 2, -7), scene);
+  second.setTarget(Vector3.Zero());
+  expect(graph.render(second, false)).toEqual({ path: "frameGraph" });
+  expect(renderer.onBeforeRenderObservable.observers).not.toEqual(before);
+  const changedCamera = renderer.onBeforeRenderObservable.observers.slice();
+  scene.onBeforeRenderObservable.addOnce(() => {
+    controller.register(light, false);
+    controller.sync();
+  });
+  expect(graph.render(second, false)).toEqual({ path: "frameGraph" });
+  expect(renderer.onBeforeRenderObservable.observers).not.toEqual(
+    changedCamera,
+  );
+  expect(light.getShadowGenerator()).toBeNull();
+  graph.dispose();
+});
+
+it("skips a later borrowed map revoked by an earlier shadow draw", async () => {
+  const { engine, scene, camera, controller, map, graph, framebuffer } =
+    await fixture("spot");
+  updateSceneRenderingSettings(scene, {
+    shadows: normalizeShadowSettings({
+      cascades: 1,
+      localMapSize: 256,
+      maxLocalLights: 2,
+    }),
+  });
+  const second = new SpotLight(
+    "second",
+    new Vector3(1, 3, -2),
+    new Vector3(0, -1, 0.5),
+    Math.PI / 2,
+    1,
+    scene,
+  );
+  controller.register(second, true);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const secondGenerator = controller.generator(second)!;
+  const secondMap = secondGenerator.getShadowMap()!;
+  const target = secondMap.renderTarget;
+  const bind = framebuffer.getMockImplementation()!;
+  let revoked = false;
+  let secondBinds = 0;
+  framebuffer.mockImplementation((current, ...args) => {
+    if (current === target) secondBinds++;
+    bind(current, ...args);
+    if (!revoked && current === map.renderTarget) {
+      revoked = true;
+      controller.register(second, false);
+      controller.sync();
+    }
+  });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(revoked).toBe(true);
+  expect(secondBinds).toBe(0);
+  expect(scene.textures).not.toContain(secondMap);
+  expect(second.getShadowGenerator()).not.toBe(secondGenerator);
+  expect(engine._currentRenderTarget).toBeNull();
+  graph.dispose();
+});
+
 it("keeps admitted maps alive when the graph build fails", async () => {
   const { scene, camera, light, controller, generator, map, graph } =
     await fixture("spot");

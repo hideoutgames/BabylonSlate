@@ -22,10 +22,37 @@ type BorrowedMap = {
 
 /** Official object renderer with the pinned, protected shadow-binding hook exposed. */
 export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTask {
+  private boundCamera: Camera | undefined;
+  private boundShadows: Array<{
+    generator: ShadowGenerator;
+    enabled: boolean;
+    shadowEnabled: boolean;
+  }> = [];
+
   bindManagedShadows(
     generators: readonly ShadowGenerator[],
     camera: Camera,
   ): void {
+    if (
+      this.boundCamera === camera &&
+      this.boundShadows.length === generators.length &&
+      generators.every((generator, index) => {
+        const previous = this.boundShadows[index];
+        const light = generator.getLight();
+        return (
+          previous.generator === generator &&
+          previous.enabled === light.isEnabled() &&
+          previous.shadowEnabled === light.shadowEnabled
+        );
+      })
+    )
+      return;
+    this.boundCamera = camera;
+    this.boundShadows = generators.map((generator) => ({
+      generator,
+      enabled: generator.getLight().isEnabled(),
+      shadowEnabled: generator.getLight().shadowEnabled,
+    }));
     // Babylon 9.20 reads only these three members in _setLightsForShadow. Its
     // official shadow task cannot adopt a generator and owns disposal. Supplying
     // this narrow read contract avoids invoking any allocating task setters.
@@ -139,10 +166,10 @@ export class ManagedShadowsTask extends FrameGraphTask {
         );
       });
       this.changedDuringFrame ||= this.recorded;
+      this.objects.dependencies = new Set(
+        this.borrowed.map((entry) => entry.handle),
+      );
     }
-    this.objects.dependencies = new Set(
-      this.borrowed.map((entry) => entry.handle),
-    );
     this.objects.bindManagedShadows(current, this.objects.camera);
   }
 
@@ -159,7 +186,14 @@ export class ManagedShadowsTask extends FrameGraphTask {
       this.bind();
       if (!this.scene.shadowsEnabled || !this.scene.renderTargetsEnabled)
         return;
-      for (const { generator, map } of this.borrowed) {
+      for (const entry of this.borrowed) {
+        // A preceding caster draw can revoke a later light synchronously. Check
+        // controller ownership before touching that later borrowed resource.
+        if (!this.isCurrent(entry)) {
+          this.changedDuringFrame = true;
+          continue;
+        }
+        const { generator, map } = entry;
         const light = generator.getLight();
         if (!light.isEnabled() || !light.shadowEnabled || !map._shouldRender())
           continue;
@@ -215,7 +249,28 @@ export class ManagedShadowsTask extends FrameGraphTask {
           );
         if (failed) throw failure;
       }
+      // Do not sample an allocation replaced during another shadow's callback.
+      // It has not participated in this pass and needs fresh preparation.
+      if (this.borrowed.some((entry) => !this.isCurrent(entry))) {
+        this.changedDuringFrame = true;
+        this.objects.bindManagedShadows(
+          this.borrowed
+            .filter((entry) => this.isCurrent(entry))
+            .map((entry) => entry.generator),
+          this.objects.camera,
+        );
+      }
     });
+  }
+
+  private isCurrent(entry: BorrowedMap): boolean {
+    const light = entry.generator.getLight();
+    return (
+      findSceneShadowController(this.scene)?.generator(light) ===
+        entry.generator &&
+      entry.generator.getShadowMap() === entry.map &&
+      entry.map.getInternalTexture() === entry.texture
+    );
   }
 
   override isReady(): boolean {
