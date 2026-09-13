@@ -1,6 +1,6 @@
 import {
   BufferAttribute, BufferGeometry, Color, DataTexture, FloatType, Mesh,
-  MeshPhysicalMaterial, NearestFilter, NoToneMapping, PerspectiveCamera, PointLight,
+  MeshPhysicalMaterial, NearestFilter, NoToneMapping, OrthographicCamera, PerspectiveCamera, PointLight,
   RGBAFormat, Scene, ShaderMaterial, WebGLRenderer,
 } from "three";
 import { WebGLPathTracer } from "three-gpu-pathtracer";
@@ -42,6 +42,7 @@ type InternalTracer = OwnedDisposable & {
   material: ShaderMaterial;
   stableNoise: boolean;
   isCompiling: boolean;
+  _compileFunction: () => void;
 };
 type TracerInternals = {
   _pathTracer: InternalTracer;
@@ -53,10 +54,21 @@ function internals(tracer: WebGLPathTracer): TracerInternals {
   const value = tracer as unknown as Partial<TracerInternals>;
   if (!(value._pathTracer?.material instanceof ShaderMaterial)
     || !(value._lowResPathTracer?.material instanceof ShaderMaterial)
-    || !(value._generator?.geometry instanceof BufferGeometry)) {
+    || !(value._generator?.geometry instanceof BufferGeometry)
+    || typeof value._pathTracer._compileFunction !== "function"
+    || typeof value._lowResPathTracer._compileFunction !== "function") {
     throw new Error("Unsupported three-gpu-pathtracer 0.0.24 resource layout");
   }
   return value as TracerInternals;
+}
+
+function ownCompilation(tracer: InternalTracer) {
+  // Three's compileAsync installs an uncancellable timer which dereferences disposed
+  // material programs. This isolated adapter polls owned GL programs instead.
+  const material = tracer.material as unknown as {
+    removeEventListener(type: string, listener: () => void): void;
+  };
+  material.removeEventListener("recompilation", tracer._compileFunction);
 }
 
 function texture(data: Float32Array, width: number, height: number) {
@@ -110,6 +122,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
   let tracer: WebGLPathTracer | undefined;
   const owned: OwnedDisposable[] = [];
   let failure: unknown;
+  let failed = false;
   let result: BakePrototypeResult | undefined;
   try {
     check();
@@ -177,6 +190,8 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     await checkpoint(true);
     tracer = new WebGLPathTracer(renderer);
     const native = internals(tracer);
+    ownCompilation(native._pathTracer);
+    ownCompilation(native._lowResPathTracer);
     const material = native._pathTracer.material;
     material.fragmentShader = patchBakePrototypeShader(material.fragmentShader);
     material.uniforms.bakePositions = { value: positions };
@@ -197,6 +212,23 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     // Scene/BVH building is indivisible upstream, bounded here to 512 triangles.
     tracer.setScene(scene, new PerspectiveCamera());
     material.needsUpdate = true;
+    const compileGeometry = new BufferGeometry();
+    owned.push(compileGeometry);
+    compileGeometry.setAttribute("position", new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+    compileGeometry.setAttribute("uv", new BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2));
+    renderer.compile(new Mesh(compileGeometry, material), new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+    const parallelCompile = context.getExtension("KHR_parallel_shader_compile");
+    for (const program of renderer.info.programs ?? []) {
+      const handle = program.program as WebGLProgram;
+      if (!context.isProgram(handle)) throw new Error("Bake shader program allocation failed");
+      while (parallelCompile && !context.getProgramParameter(handle, parallelCompile.COMPLETION_STATUS_KHR)) {
+        if (context.isContextLost()) throw new Error("Bake context was lost during shader compilation");
+        await checkpoint(true);
+      }
+      if (!context.getProgramParameter(handle, context.LINK_STATUS)) {
+        throw new Error(`Bake shader link failed: ${context.getProgramInfoLog(handle)}`);
+      }
+    }
     await checkpoint(true);
     while (tracer.samples < input.samples || native._pathTracer.isCompiling) {
       check();
@@ -222,6 +254,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     result = { irradiance, size: input.size, samples: input.samples, coveredTexels: atlas.coveredTexels,
       estimatedWorkingBytes: atlas.estimatedWorkingBytes, elapsedMs: performance.now() - started };
   } catch (error) {
+    failed = true;
     failure = error;
   }
   const cleanupErrors: unknown[] = [];
@@ -258,7 +291,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
   }
   active = false;
   try { options.onDisposed?.(disposal); } catch (error) { cleanupErrors.push(error); }
-  if (cleanupErrors.length) throw new AggregateError(failure === undefined ? cleanupErrors : [failure, ...cleanupErrors], "Bake cleanup failed", { cause: failure });
-  if (failure !== undefined) throw failure;
+  if (cleanupErrors.length) throw new AggregateError(failed ? [failure, ...cleanupErrors] : cleanupErrors, "Bake cleanup failed", { cause: failure });
+  if (failed) throw failure;
   return result!;
 }
