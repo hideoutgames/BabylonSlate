@@ -376,7 +376,8 @@ export function PlayOverlay({
   const initialInputMappingsRef = useRef(inputMappings);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
-  const initialRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
+  const initialRenderRef = useRef(render);
+  const initialConsoleRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
   const inspectSnapshot = useInspectWorldPoll(
@@ -486,6 +487,7 @@ export function PlayOverlay({
       materialFunctions: materialFunctionsRef.current,
       postProcessingEnabled,
       renderSettings: initialRenderRef.current,
+      consoleRenderSettings: initialConsoleRenderRef.current,
       hardwareScalingLevel,
       pixelsPerUnit: pixelsPerUnitRef.current,
       sortingLayers: sortingLayersRef.current,

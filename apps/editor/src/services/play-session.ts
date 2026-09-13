@@ -428,6 +428,7 @@ export function previewFixtureThrowHint(
  */
 export function startPlaySession(options: {
   renderSettings?: import("@babylonslate/render").RenderShadingSettings;
+  consoleRenderSettings?: import("@babylonslate/render").RenderShadingSettings;
   canvas: HTMLCanvasElement;
   sharedEngine: EngineHandle["engine"];
   injectFixtureThrow?: boolean;
@@ -803,7 +804,7 @@ export function startPlaySession(options: {
   });
   const loadControl = playLoadControl({
     frameCap: resolvePlayFrameCap(options.frameCap),
-    renderSettings: options.renderSettings,
+    renderSettings: options.consoleRenderSettings ?? options.renderSettings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,
     physicsWorld: physics.physicsWorld,
