@@ -329,8 +329,10 @@ describe("scene material lighting", () => {
     );
     expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
     expect(mesh.subMeshes[0]!.effect?.defines).toContain("#define LIGHT5");
+    // The UBO path reads the sixth block member rather than a standalone
+    // vLightData5 uniform. Assert actual point-light evaluation uses it.
     expect(mesh.subMeshes[0]!.effect?.fragmentSourceCode).toContain(
-      "vLightData5",
+      "computePointAndSpotPreLightingInfo(light5.vLightData",
     );
 
     added[2]!.dispose();
