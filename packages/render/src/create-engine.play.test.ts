@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, UniversalCamera, Vector3, type AbstractMesh } from "@babylonjs/core";
+import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -152,17 +152,17 @@ describe("Play createEngine view", () => {
     const oldActor = createActor("old", "Old", { components: [createMeshComponent("old-mesh", "box")] });
     const newActor = createActor("next", "Next", { components: [createMeshComponent("next-mesh", "box")] });
     handle.loadScene({ ...createDefaultScene(), actors: [oldActor] });
-    const created: AbstractMesh[] = [];
-    const observer = handle.scene.onNewMeshAddedObservable.add((mesh) => created.push(mesh));
+    const addMesh = vi.spyOn(handle.scene, "addMesh");
     await handle.loadSceneAsync({ ...createDefaultScene(), actors: [newActor] }, {
       signal: new AbortController().signal,
       assets: { pixelsPerUnit: 64 },
       materialDocuments: new Map(),
       materialFunctions: new Map(),
     });
-    handle.scene.onNewMeshAddedObservable.remove(observer);
-    expect(created.filter((mesh) => mesh.name === editorMeshName("old"))).toHaveLength(0);
-    expect(created.filter((mesh) => mesh.name === editorMeshName("next"))).toHaveLength(1);
+    const created = addMesh.mock.calls.map(([mesh]) => mesh.name);
+    addMesh.mockRestore();
+    expect(created.filter((name) => name === editorMeshName("old"))).toHaveLength(0);
+    expect(created.filter((name) => name === editorMeshName("next"))).toHaveLength(1);
     expect(handle.scene.getMeshByName(editorMeshName("old"))).toBeNull();
     expect(handle.scene.getMeshByName(editorMeshName("next"))?.isDisposed()).toBe(false);
   });

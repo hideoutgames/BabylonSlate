@@ -172,6 +172,24 @@ describe("cooperative editor realization", () => {
     expect(sync.serializedScene()).toBe(next);
   });
 
+  it("does not reuse successful readiness for an already-cancelled replacement", async () => {
+    const { sync, onAfterApply } = fixture();
+    const previous = document(1);
+    sync.apply(previous);
+    const root = sync.meshForActor("actor-0");
+    const controller = new AbortController();
+    const failure = new Error("cancelled before realization");
+    controller.abort(failure);
+    await expect(
+      sync.applyAsync(document(), { signal: controller.signal }),
+    ).rejects.toBe(failure);
+    await expect(sync.whenEditorModelsReady()).rejects.toBe(failure);
+    expect(sync.serializedScene()).toBe(previous);
+    expect(sync.meshForActor("actor-0")).toBe(root);
+    expect(sync.actorCount()).toBe(1);
+    expect(onAfterApply).toHaveBeenCalledOnce();
+  });
+
   it("does not resume an obsolete chunk after an immediate scene replacement", async () => {
     const { sync, onAfterApply } = fixture();
     let resume!: () => void;
@@ -183,6 +201,7 @@ describe("cooperative editor realization", () => {
         }),
     });
     const rejected = expect(old).rejects.toThrow("superseded");
+    await vi.waitFor(() => expect(resume).toBeTypeOf("function"));
     const next = document(1);
     sync.apply(next);
     resume();

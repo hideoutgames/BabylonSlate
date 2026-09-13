@@ -191,9 +191,13 @@ export class EditorSceneSync {
     if (options.signal.aborted) abort();
     this.applyingScene = sceneData;
     try {
-      controller.signal.throwIfAborted();
-      const rebuild = options.assets ? this.installAssets(options.assets).rebuild : false;
-      this.realization = runSceneWork(this.applySteps(sceneData, rebuild, true), { ...options, signal: controller.signal });
+      // Install the readiness latch before setup, progress callbacks or actor
+      // work can fail. Even a pre-aborted replacement owns a failed latch.
+      this.realization = Promise.resolve().then(() => {
+        controller.signal.throwIfAborted();
+        const rebuild = options.assets ? this.installAssets(options.assets).rebuild : false;
+        return runSceneWork(this.applySteps(sceneData, rebuild, true), { ...options, signal: controller.signal });
+      });
       await this.realization;
     } finally {
       options.signal.removeEventListener("abort", abort);
