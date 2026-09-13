@@ -465,6 +465,7 @@ export function syncAuthoredIllumination(
 ): void {
   for (const _progress of syncAuthoredIlluminationSteps(scene, sceneData, options)) {
     // Immediate consumers drain the same ordered work without yielding.
+    void _progress;
   }
 }
 

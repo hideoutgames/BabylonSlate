@@ -178,6 +178,7 @@ export class EditorSceneSync {
     try {
       for (const _progress of this.applySteps(sceneData)) {
         // Gizmos and other immediate consumers retain synchronous behavior.
+        void _progress;
       }
     } finally {
       this.applyingScene = null;
@@ -294,7 +295,10 @@ export class EditorSceneSync {
       assets: this.assets,
     })) yield 0.7 + 0.2 * progress;
     index = 0;
-    for (const _changed of this.collisionVisibilitySteps(sceneData)) yield 0.9 + 0.04 * ++index / actorCount;
+    for (const changed of this.collisionVisibilitySteps(sceneData)) {
+      void changed;
+      yield 0.9 + 0.04 * ++index / actorCount;
+    }
     index = 0;
     for (const actor of sceneData.actors) {
       const mesh = this.meshes.get(actor.id);
