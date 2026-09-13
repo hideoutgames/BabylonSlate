@@ -56,8 +56,11 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let lightCount = -1;
   let materialCount = -1;
   let sceneLightsEnabled = scene.lightsEnabled;
+  let sceneShadowsEnabled = scene.shadowsEnabled;
   let enabledLights: Light[] = [];
   let nextEnabled: Light[] = [];
+  let shadowLayout: unknown[] = [];
+  let nextShadowLayout: unknown[] = [];
   let admission = { requested: 0, admitted: 0, limited: [] as Light[] };
   let budget = forwardLightBudget(scene.getEngine());
   const watchedLights = new Map<Light, Observer<boolean>>();
@@ -72,12 +75,20 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // priority changes need no scene membership or Enabled event.
     admission = syncForwardLightPolicy(scene, budget.slots);
     nextEnabled.length = 0;
-    for (const light of scene.lights)
-      if (light.isEnabled()) nextEnabled.push(light);
+    nextShadowLayout.length = 0;
+    for (const light of scene.lights) {
+      if (!light.isEnabled()) continue;
+      nextEnabled.push(light);
+      nextShadowLayout.push(light.shadowEnabled,
+        light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator());
+    }
     const changed =
       sceneLightsEnabled !== scene.lightsEnabled ||
+      sceneShadowsEnabled !== scene.shadowsEnabled ||
       nextEnabled.length !== enabledLights.length ||
-      nextEnabled.some((light, index) => light !== enabledLights[index]);
+      nextEnabled.some((light, index) => light !== enabledLights[index]) ||
+      nextShadowLayout.length !== shadowLayout.length ||
+      nextShadowLayout.some((entry, index) => entry !== shadowLayout[index]);
     // Babylon defers its new-entity observables. These O(1) checks also catch
     // objects constructed immediately before prewarm or the first render.
     if (
@@ -91,6 +102,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     lightCount = scene.lights.length;
     materialCount = scene.materials.length;
     sceneLightsEnabled = scene.lightsEnabled;
+    sceneShadowsEnabled = scene.shadowsEnabled;
     const liveLights = new Set(scene.lights);
     for (const [light, observer] of watchedLights) {
       if (liveLights.has(light)) continue;
@@ -107,6 +119,9 @@ function installSceneLighting(scene: Scene): SceneLighting {
     const previousEnabled = enabledLights;
     enabledLights = nextEnabled;
     nextEnabled = previousEnabled;
+    const previousShadowLayout = shadowLayout;
+    shadowLayout = nextShadowLayout;
+    nextShadowLayout = previousShadowLayout;
     const capacity = Math.min(budget.slots, Math.max(4, enabledLights.length));
     const blocked = scene.blockMaterialDirtyMechanism;
     scene.blockMaterialDirtyMechanism = false;
@@ -117,7 +132,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
         material.maxSimultaneousLights = capacity;
         material.markAsDirty(Material.LightDirtyFlag);
         // Light defines alone do not invalidate a frozen material's cached
-        // readiness. Preserve its freeze policy while refreshing the shader.
+        // readiness, including when a disposed generator removes SHADOW defines.
+        // Preserve its freeze policy while refreshing the shader.
         material.markDirty();
       }
     } finally {

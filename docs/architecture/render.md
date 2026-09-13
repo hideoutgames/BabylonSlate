@@ -7,7 +7,12 @@ Optional `scene.settings.renderPath` inherits from the project. `resolveRenderin
 This contract slice exposes no new renderer. Its pure resolver reports effective Forward/WebGL2 with explicit limits for Auto/ClusteredForward or Auto/WebGPU requests; it preserves the authored values. It describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation, controls and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
 
 Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
+The blocking viewport paints its Presenting First Frame phase before permitting that frame, including when cached resources finish readiness within one microtask batch.
+Hidden Scene tabs defer viewport construction and blocking rendering transitions until their canvas has a nonzero layout size. Their loading dialogs and presentation deadlines start after activation, leaving the active workspace usable; superseding or closing a hidden load removes its size observer. Project opening therefore does not wait on a frame from an inactive tab.
+Hiding a viewport during blocking loading aborts that generation, releases its loading handle and rejects any pending presentation. Activation retries through fresh realization and readiness; hiding an already completed viewport preserves its handle and cached resources.
 Readiness probes enter and restore their scene's floating-origin context, so a newly created preview cannot supply missing or unrelated camera matrices to a loading viewport. The Babylon 9.20 adapter checks scene-owned meshes, passes, targets and registered readiness checks; unrelated effects in the shared Engine cache cannot block presentation or editor mesh freezing. Target probes restore camera, matrices, scene UBO, viewport, render-pass and color-write state even if Babylon callbacks throw, preserving sibling views.
+
+Model readiness retains real GLB loader and instantiation failures, including loads started during fire-and-forget Play command delivery. A failed assigned model cannot advance scene loading to warming or presentation. Replacing/despawning the assignment clears its retained failure; late failures from superseded or disposed actors do not fail the current load.
 
 ## Project PBR / CEL rendering
 
@@ -37,6 +42,8 @@ Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.
 Overlay Play collects Texture literals from **Set Material Texture Parameter** nodes and typed Texture defaults from class/local variables, including Array/Map entries. It uses the same project Class/Graph set as Play compilation, including classes spawned later, so parameter swaps can select a texture that no Material samples at startup. These textures use the existing GPU texture resolver and editor LOD settings; editor viewport loads stay scoped to their authored content.
 
 ## Runtime Material Parameters
+
+Compiler block names remove numeric-ID separator artifacts before Babylon allocates unique shader symbols. Editor-generated Texture Sample IDs therefore produce legal GLSL samplers; distinct operations retain separate texture bindings even when their sanitized names coincide. Custom GLSL function names encode the complete operation identity, including legacy expressions, so sanitizing block names cannot merge different function bodies. Authored graph IDs and public parameter names remain unchanged.
 
 Post-process material readiness completes Babylon's existing deferred camera passes and invalidates the viewport. It must not rebuild the stack: releasing its last material reference on readiness would start another asynchronous compile and freeze the editor. Stack, document, camera, and enable/disable changes still rebuild and release their owned resources.
 
@@ -339,6 +346,9 @@ distance, with a 15% retention bonus to avoid oscillation. A substantially more
 relevant light can replace an existing allocation without disabling it first.
 The current active camera supplies relevance, including possession changes.
 Compatible generators/maps survive camera, distance, bias, fade and filter edits.
+Lighting synchronization tracks shadow-generator membership and per-light/global
+shadow enablement as shader changes. Frozen surface graphs keep their freeze policy
+while refreshing their shadow defines, so retiring a map cannot leave a stale sampler.
 Structural resolution/cascade/type changes release old maps before replacement.
 Admission lowers map resolution to fit, with a 256-pixel floor, and reports limits;
 unchanged requests retain their admitted resolution to avoid movement-driven churn.

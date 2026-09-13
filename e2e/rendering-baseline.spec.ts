@@ -239,7 +239,10 @@ test.afterEach(async ({ page }, testInfo) => {
 test("local renderer baseline bounds sixteen eligible point and spot shadow lights across reloads", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(180_000);
+  // Three 30-second samples plus room realization and persistence on SwiftShader.
+  // CI can present fewer than six frames in five seconds; setup must not impose
+  // an implicit FPS requirement on this resource-safety measurement.
+  test.setTimeout(450_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await openMinimalTestProject(page);
@@ -250,14 +253,16 @@ test("local renderer baseline bounds sixteen eligible point and spot shadow ligh
     { id: "spot", kind: "spot" },
     { id: "point-repeat", kind: "point" },
   ] as const) {
-    await setPreviewScene(page, localLightRoom(kind, 16));
+    const setupStarted = Date.now();
+    await setPreviewScene(page, localLightRoom(kind, 16), 60_000);
+    const sceneAndSaveSetupMs = Date.now() - setupStarted;
     await expect(page.getByTestId("viewport-panel")).toHaveAttribute(
       "data-scene-ready",
       "true",
     );
     const initial = await baseline(page);
     await expect
-      .poll(async () => (await baseline(page)).frameCount)
+      .poll(async () => (await baseline(page)).frameCount, { timeout: 30_000 })
       .toBeGreaterThan(initial.frameCount + 5);
     const measurement = await measure(page);
     const capture = await baseline(page);
@@ -279,8 +284,13 @@ test("local renderer baseline bounds sixteen eligible point and spot shadow ligh
       fixture: id,
       lightKind: kind,
       eligibleLights: 16,
+      sceneAndSaveSetupMs,
       measurement: summarize(measurement),
       ...capture,
+    });
+    await testInfo.attach(`rendering-capture-${id}`, {
+      body: JSON.stringify(captures.at(-1), null, 2),
+      contentType: "application/json",
     });
     await page
       .getByTestId("viewport-canvas")
@@ -295,6 +305,7 @@ test("local renderer baseline bounds sixteen eligible point and spot shadow ligh
         "Local browser observation with test instrumentation; not A16 qualification, thermal evidence, or Safari GPU residency. No 60 fps assertion.",
         browserProject: testInfo.project.name,
         browserVersion: page.context().browser()?.version() ?? null,
+        traceMode: testInfo.project.use.trace,
         viewportCss: page.viewportSize(),
         captures,
       },

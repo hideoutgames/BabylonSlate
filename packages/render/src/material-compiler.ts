@@ -157,6 +157,14 @@ function colorPins(nodeType: string): Set<string> {
     : new Set();
 }
 
+/** Babylon removes digits before allocating unique shader symbols. Collapse the
+ * separators after that removal so generated node IDs cannot introduce GLSL's
+ * reserved double underscore, including when an adapter appends a suffix. */
+function operationBlockName(id: string): string {
+  const name = id.replace(/[^A-Za-z0-9_]/g, "_").replace(/[0-9]/g, "").replace(/_+/g, "_").replace(/^_|_$/g, "");
+  return !name || name.startsWith("gl_") ? `slate_${name || "node"}` : name;
+}
+
 /**
  * Compile a lowered plan into a real Babylon NodeMaterial.
  *
@@ -278,7 +286,7 @@ export function compileMaterialPlan(
         pin && pin.type.kind !== "generic"
           ? (pin.type.kind as MaterialValueType)
           : "float";
-      const block = createConstantBlock(operation.id, type, value, asColor);
+      const block = createConstantBlock(operationBlockName(operation.id), type, value, asColor);
       created.push(block);
       const blocks: NodeMaterialBlock[] = [block];
       const outputs: Record<string, NodeMaterialConnectionPoint> = {
@@ -324,7 +332,7 @@ export function compileMaterialPlan(
       realization = track(
         adapter({
           operation,
-          name: operation.id.replace(/[^A-Za-z0-9_]/g, "_"),
+          name: operationBlockName(operation.id),
           resolveTexture: options.resolveTexture,
           plumbing,
         }),
@@ -366,7 +374,7 @@ export function compileMaterialPlan(
       if (!target) continue;
       const point = pointForOperand(
         operand,
-        `${operation.id}_${pinId}`.replace(/[^A-Za-z0-9_]/g, "_"),
+        operationBlockName(`${operation.id}_${pinId}`),
         colored.has(pinId),
       );
       if (!point) continue;

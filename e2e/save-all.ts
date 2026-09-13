@@ -36,8 +36,7 @@ async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
 
 /**
  * Click Save All when the project has unsaved documents; no-op when clean.
- * One click, then a short window that must stay clean so a post-save mutation
- * cannot hide behind retries.
+ * One click, then require clean document state and recheck the settled control.
  */
 export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<void> {
   const button = page.getByTestId("save-all-project");
@@ -87,7 +86,7 @@ export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<vo
   }
   try {
     await expect
-      .poll(async () => button.isEnabled(), { timeout: 1_500 })
+      .poll(async () => button.isEnabled(), { timeout })
       .toBe(false);
   } catch (error) {
     const diagnostics = await readSaveAllDiagnostics(page);

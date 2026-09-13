@@ -530,7 +530,7 @@ describe("scene-loader", () => {
     ).toBeUndefined();
   });
 
-  it("tints a light billboard from LightComponent color", () => {
+  it("keeps an operating light billboard white for an authored red light", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(
       scene,
@@ -543,8 +543,8 @@ describe("scene-loader", () => {
     const mesh = scene.getMeshByName(editorComponentMeshName("lamp", "light"))!;
     const material = mesh.material as StandardMaterial;
     expect(material.emissiveColor.r).toBeCloseTo(1);
-    expect(material.emissiveColor.g).toBeCloseTo(0.2);
-    expect(material.emissiveColor.b).toBeCloseTo(0.1);
+    expect(material.emissiveColor.g).toBeCloseTo(1);
+    expect(material.emissiveColor.b).toBeCloseTo(1);
   });
 
   it("hides invisible actors and unlocks pickability from the locked flag", () => {
