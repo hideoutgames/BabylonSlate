@@ -134,6 +134,41 @@ describe("cooperative runtime scene realization", () => {
     } finally { chunks.release(); runtime.stop(); }
   });
 
+  it("reloads a same-guid Actor at its authored pose while retaining global-layer body motion", async () => {
+    const scene = largeScene(1);
+    scene.actors[0]!.parentId = null;
+    scene.settings.gravity = [0, 0, 0];
+    scene.actors[0]!.components.push({ id: "body", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 0 } });
+    const globalDocument = createDefaultSceneLayer();
+    globalDocument.settings.gravity = [0, 0, 0];
+    globalDocument.actors = [createActor("global", "Global", { classId: "SceneLayerActor", components: [
+      { id: "global-body", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 0 } },
+    ] })];
+    const runtime = makeRuntime({ seed: 1, playScene: scene, playSceneGuid: "same", cooperativeSceneLoading: true, sceneLayerLibrary: { global: globalDocument } });
+    try {
+      await runtime.realizePlayWorld();
+      const globalLayer = runtime.createSceneLayer("global")!;
+      runtime.start();
+      runtime.tick();
+      runtime.getPhysicsSync()!.setActorLinearVelocity("actor-0", { x: 60 });
+      runtime.getOverlayPhysicsSync()!.setActorLinearVelocity("global", { x: 6 });
+      runtime.tick();
+      const previous = runtime.getWorld().findActor("actor-0")!;
+      expect(previous.transform.position.x).toBeCloseTo(3);
+      const globalActor = runtime.getWorld().findActor("global")!;
+      const globalBefore = globalActor.transform.position.x;
+      runtime.executeConsoleCommand("changescene same");
+      await runtime.realizePlayWorld();
+      runtime.tick();
+      const replacement = runtime.getWorld().findActor("actor-0")!;
+      expect(replacement).not.toBe(previous);
+      expect(replacement.transform.position.x).toBeCloseTo(2);
+      expect(runtime.getWorld().findSceneLayer(globalLayer.guid)).toBe(globalLayer);
+      expect(runtime.getWorld().findActor("global")).toBe(globalActor);
+      expect(globalActor.transform.position.x).toBeCloseTo(globalBefore + 0.1);
+    } finally { runtime.stop(); }
+  });
+
   it("Stop cancels prepared and spawned objects without a late batch or successful retry latch", async () => {
     const chunks = controlledYields();
     const commands: CommandMessage[] = [];

@@ -1829,6 +1829,12 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.world.flushPending();
     if (!current()) return;
+    // Retire departing bodies before same-guid replacements can appear. This
+    // also preserves bodies belonging to retained global SceneLayers.
+    this.physicsSync.syncFromWorld(this.world);
+    if (!current()) return;
+    this.overlayPhysicsSync.syncFromWorld(this.world);
+    if (!current()) return;
     this.animEvalByComponent.clear();
     this.animInitializedBySlot.clear();
     this.pendingAnimJumpByComponent.clear();
