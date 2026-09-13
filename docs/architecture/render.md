@@ -239,7 +239,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | `selection-outline` | Highlight mesh(es) for selected actors |
 | `viewport-shading-mode` | Session **Viewport Mode** overlay (`PBR` / `Unlit` / `Wireframe`) on actor world materials. Unlit uses native material flags and compiled NodeMaterial `PBRMetallicRoughnessBlock.unlit` plus `scene.lightsEnabled = false` (independent of authored lights; does not require a default hemi). Changed shading invalidates shader defines and cached readiness while preserving frozen materials, texture bindings, and material identity. Original block flags are restored when leaving Unlit. Wireframe sets `Material.fillMode`. Authored Babylon `pointsCloud` fill is restored when returning to PBR/Unlit. Skips gizmos, grid, billboards, volumes, collider dashes, and debug overlays. Re-applied after `EditorSceneSync`. Model Preview reuses the overlay for a session **Preview Shading** radio dropdown (top-right, `size="sm"` outline, not `ModelPayload`) plus **Show Collision** (session, default on) and collider gizmos. Not Play console `wireframe`. |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes. Multi/offset visuals **and** Light / Camera / Audio / Particle / **RigidBody** / **NavMesh** / empty / volume billboards always use a **non-billboard** origin root at `actor.transform` (volumetric pick collider, `visibility = 0`); the gizmo stays on that origin so billboard facing is not written into rotation. `ColliderComponent` is a visual in the same pipeline as `MeshComponent`: opaque dashed segment meshes (`collider-visual.ts`, dash/gap 0.12 / 0.08), `renderingGroupId = world`, depth write on, full local TRS. 3D `MeshComponent` collision (`collisionMode` ≠ `none`) parents the same dash meshes onto the visual when Viewport **Show Collisions** is on (session, default off); 2D worlds skip them. Play does not draw Mesh dashes unless console `showcollision`. `NavMeshBlockerComponent` / `BlockingVolumeComponent` draw dotted unit volumes (`editor-volume.ts`) plus a `default` billboard at the actor pivot (the icon inverts origin local scale so non-uniform scale hits the volume only). Real meshes occlude dashes in front; dashes in front of meshes draw on top. Not UtilityLayer, `EditorDebugOverlay`, `RENDERING_GROUP.ui`, or `mesh.overlay`. Outline uses `visualMeshesForActor` (drawn glTF parts / primitives; skips the hidden Model placeholder and collider dashes), not the pick proxy. Model actors keep a hidden named root; instantiated glTF parents under a `__importScale` child so Model `importScale` does not share `mesh.scaling` with actor TRS. A collider (or extra visual) origin loads the GLB under the MeshComponent child. `setMeshAssets` that only adds `modelBytes` instantiates in place and does not dispose the scene. `whenEditorModelsReady()` settles pending GLB `slotAnimLoads` (empty scenes resolve immediately). `SkyboxComponent` is a visual (`createSkyboxMesh`); fingerprint includes `size` plus the six face guids. `Text3DComponent` is a visual (`createText3DMesh`); fingerprint includes text / size / depth / color / font. Editor and Prefab viewports bind `MeshComponent.materialGuid` through `MaterialLibrary.resolveMaterial` (whole-mesh override; skip `meshKind: "pivot"`). Rebind every apply so a Details-only edit or late document load does not need a mesh rebuild; `setMaterialDocuments` re-applies the last scene when the mesh-asset fingerprint is unchanged. |
-| `scene-illumination` | Incremental `authoredLight:<actorId>` / `authoredCamera:<actorId>` maps. `LightComponent` (point/dir/spot) plus `HemisphericFillLightComponent` (`light:hemispheric`, direction actor rotation × world +Y). No unnamed viewport hemi. Direction for point/dir/spot is (actor rotation × component rotation) × Babylon forward `(0,0,1)`. Position is actor TRS × Light/Camera `component.transform`. Game cameras are detached `UniversalCamera` (never ArcRotate); Euler `.rotation` is zeroed after `rotationQuaternion` so they do not fight. `syncAuthoredCamerasFromMeshes` copies a live origin-mesh world pose during gizmo drag so PIP / Game Camera preview do not wait for document commit. `applyAuthoredCameraLens(camera, properties, aspect)` is the single lens path: unfreeze, set `Camera.ORTHOGRAPHIC_CAMERA` / `PERSPECTIVE_CAMERA`, vertical FOV, ortho `±size` × live aspect (not hardcoded 16:9). Zero/invalid canvas size falls back to 16:9 so the first Play frame cannot write a degenerate ortho box. Perspective freezes the projection at that aspect so a later `getRenderWidth()` from the wrong canvas cannot leak in. `applyAuthoredCameraProperties` reads engine render size; `refreshAuthoredCameraLenses` runs from `createEngine` `resize` / `setSize` over illumination cameras and `authoredCamera:` scene cameras (not the 320×180 PIP). Editor keeps the orbit camera (`stealActiveCamera: false`) unless Viewport **Game Camera** preview is on. Play uses the named Default Camera; missing keeps the Play default. One `ShadowGenerator` on the first `castShadows` light, sized from `shadowquality` (`off`/`512`/`1024`/`2048`). Helpers (origin colliders, billboards, Play helper visuals), skyboxes, debug overlays (`debugLight:` / `debugCamera` / `navmeshDebug` / `playConsoleViz:`), and `LinesMesh` gizmos are excluded from that map — they neither cast nor receive, so a directional sun cannot stamp a black line from an edge-on icon. Real scene meshes still auto-cast/receive (no per-mesh authoring). The generator requests PCF at `QUALITY_LOW` (Poisson when shadow samplers are missing), bias `0.001` / normalBias `0.01`, and `frustumEdgeFalloff` 1; a directional owner also sets `autoCalcShadowZBounds`. Linear fog + optional IBL cube; `environmentColor` is Play and 3D-editor clear (2D editor keeps chrome clear). Contract: [engineplan §2.5](../engineplan.md). |
+| `scene-illumination` | Incremental `authoredLight:<actorId>` / `authoredCamera:<actorId>` maps. `LightComponent` (point/dir/spot) plus `HemisphericFillLightComponent` (`light:hemispheric`, direction actor rotation × world +Y). No unnamed viewport hemi. Direction for point/dir/spot is (actor rotation × component rotation) × Babylon forward `(0,0,1)`. Position is actor TRS × Light/Camera `component.transform`. Game cameras are detached `UniversalCamera` (never ArcRotate); Euler `.rotation` is zeroed after `rotationQuaternion` so they do not fight. `syncAuthoredCamerasFromMeshes` copies a live origin-mesh world pose during gizmo drag so PIP / Game Camera preview do not wait for document commit. `applyAuthoredCameraLens(camera, properties, aspect)` is the single lens path: unfreeze, set `Camera.ORTHOGRAPHIC_CAMERA` / `PERSPECTIVE_CAMERA`, vertical FOV, ortho `±size` × live aspect (not hardcoded 16:9). Zero/invalid canvas size falls back to 16:9 so the first Play frame cannot write a degenerate ortho box. Perspective freezes the projection at that aspect so a later `getRenderWidth()` from the wrong canvas cannot leak in. `applyAuthoredCameraProperties` reads engine render size; `refreshAuthoredCameraLenses` runs from `createEngine` `resize` / `setSize` over illumination cameras and `authoredCamera:` scene cameras (not the 320×180 PIP). Editor keeps the orbit camera (`stealActiveCamera: false`) unless Viewport **Game Camera** preview is on. Play uses the named Default Camera; missing keeps the Play default. Shared scene-owned shadow allocation uses project/scene settings, stabilized directional cascades and a separate local-light budget. Helpers, skyboxes and debug overlays neither cast nor receive; Mesh components expose independent participation. Linear fog + optional IBL cube; `environmentColor` is Play and 3D-editor clear (2D editor keeps chrome clear). Contract: [engineplan §2.5](../engineplan.md). |
 | `editor-billboard` | Camera-facing unlit PNG quads (`engine-content/billboards/`: `default`, `point_light`, `spot_light`, `directional_light`, `camera`, `audio`, `particles`, `navmesh`). Dedicated file when we have one (lights by `lightKind`; hemispheric fill reuses `directional_light`); **`default.png` otherwise** — Empty Actor, unknown helpers, solo non-visual components, and volume centers. Mesh / Sprite / Tilemap / Skybox / 3D Text skip the extra icon. Icons are children of the origin (`BILLBOARDMODE_ALL` on the icon, `NONE` on the origin; the icon inverts origin local scale so it stays square; double-sided). `renderingGroupId` is `foreground` (2) with `EDITOR_BILLBOARD_ALPHA_INDEX` 1000 so helpers draw in front of the world-group grid (`applyWorldVisualGroup` skips `metadata.editorBillboard`). Light icons tint via `emissiveColor`. There is no procedural 32×32 rasterizer and no 0.25 white cube. Play `assignMesh` still carries `light:*` / `camera` / `audio` / `rigidbody` so authored lights, cameras, and bodies exist, but those slots stay `playHelperVisual`. Empty actors emit no Play mesh. Actor-level visibility applies only to Mesh / Sprite / Tilemap / Skybox / 3D Text parts (and collider dashes when `renderInGame` is on). |
 | `editor-volume` | Unit box/cylinder editor volumes: pickable unlit **alpha 0** fill (`visibility === 1`) plus dotted outline (NavMesh Blocker amber, Blocking Volume blue). Always paired with a center `default` billboard. Play hides both; `shownav` redraws blocker volumes only. |
 | `nav-debug-overlay` | Translucent green Recast triangles with darker `EdgesRenderer` outlines, unpickable and shadow-skipped. 3D worlds lift them `0.04` on +Y; 2D worlds map Recast XZ onto XY and offset `-0.04` on Z, independently of camera view mode. Driven by Viewport **Show Navmesh** (`scene.settings.showNavmesh`) or a leftover `NavMeshComponent.debugOverlay`. When on, also draws authored NavMesh Blocker volumes. Play console `shownav` reuses the same overlay. Clearing or disposing cancels pending initialization and releases the navmesh material. |
@@ -260,3 +260,91 @@ See [bridge.md](bridge.md) for the snapshot wire format and [perf-budget.md](../
 `EditorTools.dropSelectedActors(ids, maxDistance?)` is a pure placement query in `editor-drop.ts`. It uses the current authored scene and resolved asset collision geometry, independently of editor picking and collision debug visibility. Bottom-center downward probes honor the strict limit supplied by the current Engine Settings `viewportDropDistance`. The shared `DEFAULT_EDITOR_DROP_DISTANCE` fallback is 10,000 units; non-positive or non-finite query limits produce no moves. All destinations are calculated before converting to actor-local positions, including compensation when a selected ancestor also moves. Collision transforms follow runtime TRS composition and shape scaling; visual source bounds traverse imported Model wrappers. `convexHullMesh(points)` in `@babylonslate/assets` exposes indexed hull triangles from the existing hull builder for convex probes and containment checks.
 
 React sends `editor.drop` with `maxDistance` through `engineCommandBus`; only the engine with the matching `editorViewportId` responds with `editor.drop.result`. `requestEditorDrop` pairs viewport and request identities and removes its temporary listener after synchronous dispatch. Results contain plain transforms; the Scene and Prefab document command paths own mutation, undo, and persistence. Closed viewports and empty results are no-ops. No Play session or physics simulation is started for this authoring action.
+
+### Camera-relative shadow settings
+
+Project Rendering owns normalized shadow defaults, including a 200-world-unit
+shadow distance independent of scene size. Scene Defaults stores sparse shadow
+overrides; resetting a field removes its key and resumes live project inheritance.
+The viewport reload key includes effective shadow settings alongside CEL settings.
+
+`SceneShadowController` owns authored-light shadow resources in both editor and
+Play. Mesh additions/removals update caster membership, disabled lights release
+allocation, and local lights have a separate budget from the directional light.
+Supported directional rendering uses stabilized cascades without a depth-reduction
+pass. Device profile limits resolve separately from authored settings. The A16
+preset is a starting budget, not a measured performance certification; final iPad
+validation is manual.
+CEL band and highlight edges use screen-space derivatives for subpixel antialiasing while retaining flat band interiors. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
+Graph system-matrix input names retain Babylon's `World`/`View` prefixes so its floating-origin adapter offsets geometry, lights and shadow coordinates consistently.
+Authored World Position and Camera Position graph inputs add the render origin
+back; lighting and view-direction calculations remain camera-relative. Moving
+the camera therefore does not move world-space procedural material coordinates.
+
+Engine Settings now applies a local shadow device profile to editor and Play.
+Play stats report CPU submission time, asynchronous engine GPU timing when
+supported, effective target size/sample count, allocated shadow passes and an
+attachment-memory estimate. Unsupported or pending GPU timing is labeled rather
+than reported as zero. Shared-engine GPU time can include other active views.
+Offscreen canvas targets honor hardware scaling as well as their maximum size.
+
+Directional cascades fade only across the configurable final distance fraction;
+the old whole-map radial fade is removed. Large static index ranges are split
+without copying vertices, UVs or indices; material assignments and face order
+remain intact. A refitted caster hierarchy rejects unrelated geometry, and
+per-submesh shadow culling retains upstream casters for depth-clamped PCF.
+Skinned, morphing and instanced geometry is not automatically partitioned.
+Skinned/morphing casters and materials with deformation padding bypass static
+bounds rejection; a bind-pose AABB cannot certify their animated shadow extent.
+Authored rendering changes coalesce for 150 ms before a full scene reload and shader warm-up. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth and normal bias derive from texel size and filter footprint; disabling automatic bias uses the authored offsets directly.
+
+The single-map fallback also follows the camera with texel-snapped XY coverage;
+only relevant upstream caster bounds extend its depth. Directional generators
+resolve the current camera for each render, including preview views. Legacy
+`shadowquality` commands remain explicit runtime overrides; merely opening a
+scene does not override the authored map size. Exported players use project
+quality by default, while local editor/Play can apply Engine Settings caps.
+Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
+and report completed RTT readback-plus-copy duration separately.
+
+Local shadow allocation follows authored priority, then intensity and camera
+distance, with a 15% retention bonus to avoid oscillation. A substantially more
+relevant light can replace an existing allocation without disabling it first.
+
+#### Manual iPad A16 validation
+
+The A16 preset is a candidate budget. Desktop correctness tests do not establish
+sustained iPad GPU or thermal performance. Validate the local browser build on the
+device before increasing its default quality:
+
+1. Record iPad model, OS/browser version, build revision, viewport dimensions,
+   hardware scaling, battery/charging state and active shadow profile.
+2. Use Basic 3D with a PBR Mannequin, plain sphere/box materials and a ground
+   receiver. Keep objects separated and resting on the receiver; hide the editor
+   grid. Compare PBR PCF against CEL with specular disabled, then enable highlights.
+3. Test white and colored directional, point and spot lights. Exercise Strongest
+   Light, Additive and Blend, independent Scene overrides and Reset To Project.
+   Toggle PBR/CEL repeatedly with unsaved scene changes and confirm meshes return,
+   camera framing/selection remain and the document stays editable.
+4. Fly across a large ground at the default 200-unit shadow distance. Add distant
+   geometry, move an off-screen caster into the light path, cross cascade splits,
+   change shadow distance and replace the active camera. Check contact, acne,
+   detached shadows, flicker and the far fade while moving.
+5. Run Play for at least 15 minutes with a moving camera, animated Mannequin and
+   the permitted local shadow lights. Record FPS, CPU/GPU time, target size,
+   shadow draws/triangles/passes and memory estimate at the start and end. Record
+   unsupported GPU timing as unsupported. Repeat the same route in the editor;
+   check the 60 FPS Play and 30 FPS editor targets, plus idle/hidden suspension.
+6. Compare Economy and A16 on the same scene before trying High/Ultra. Increase
+   one of map resolution, cascade count, local-light count or filtering at a
+   time. PCSS is a PBR option and is capped to PCF by the local A16 profile.
+
+Camera-relative rendering and the high/residual snapshot transport protect
+rendered coordinates; they do not give arbitrary precision to physics or
+navigation backends. Keep active simulation near a practical local origin and
+validate backend-specific scale limits. Shadow distance does not impose a map
+boundary. Animated/deformed shadow maps continue refreshing; the controller does
+not assume that a frozen world matrix makes a material or skeleton immutable.
+Bone attachment detach/retirement restores the snapshot pose even if the next
+snapshot contains unchanged TRS; an attachment's frozen world matrix is not a
+valid cache of that snapshot pose.

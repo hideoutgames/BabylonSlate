@@ -4,7 +4,7 @@ import {
   type Material,
   type Scene,
 } from "@babylonjs/core";
-import type { CelShadingOverrides } from "@babylonslate/core";
+import type { CelShadingOverrides, ShadowOverrides } from "@babylonslate/core";
 import { CelMaterial, canUseCelMaterial } from "./cel-material";
 import {
   sceneRenderingSettings,
@@ -21,8 +21,9 @@ export function setSceneRenderSettings(
   scene: Scene,
   project?: RenderShadingSettings,
   overrides?: CelShadingOverrides,
+  shadowOverrides?: ShadowOverrides,
 ): void {
-  updateSceneRenderingSettings(scene, project, overrides);
+  updateSceneRenderingSettings(scene, project, overrides, shadowOverrides);
   let sync = controllers.get(scene);
   if (!sync) {
     const replacements = new Map<Material, Material>();

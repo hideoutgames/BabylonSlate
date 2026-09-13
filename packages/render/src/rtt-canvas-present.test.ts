@@ -64,6 +64,15 @@ describe("createRttCanvasPresent", () => {
     expect(camera.outputRenderTarget).toBeNull();
   });
 
+  it("applies hardware scaling to the offscreen target", () => {
+    const { engine, scene, camera, canvas } = host();
+    vi.spyOn(engine, "getHardwareScalingLevel").mockReturnValue(2);
+    const present = createRttCanvasPresent(scene, canvas);
+    present.bind();
+    expect(camera.outputRenderTarget?.getSize()).toMatchObject({ width: 64, height: 32 });
+    present.dispose();
+  });
+
   it("reports at least 1x1 when the canvas has no layout size", () => {
     const { scene, canvas, fake } = host();
     fake.clientWidth = 0;

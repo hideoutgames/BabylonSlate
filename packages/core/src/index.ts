@@ -8,6 +8,7 @@ export * from "./text2d";
 export * from "./rich-text";
 export * from "./project";
 export * from "./cel-shading";
+export * from "./shadows";
 export * from "./project-appearance";
 export * from "./document";
 export * from "./editor-only";

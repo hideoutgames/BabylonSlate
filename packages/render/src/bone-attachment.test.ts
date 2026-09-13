@@ -185,6 +185,12 @@ describe("render bone attachment", () => {
     replacement.position.x = 8;
     apply();
     expect(child.getAbsolutePosition().x).toBe(8);
+    attach("Not Loaded Yet");
+    apply();
+    expect(child.getAbsolutePosition().x).toBe(0);
+    attach("Hand");
+    apply();
+    expect(child.getAbsolutePosition().x).toBe(8);
     snapshot.applyAttachToBone(binding, { type: "attachToBone", slotId: 1, targetSlotId: null, boneName: "" });
     apply();
     expect(child.getAbsolutePosition().x).toBe(0);
@@ -192,6 +198,7 @@ describe("render bone attachment", () => {
     apply();
     snapshot.retirePlaySlot(binding, 2);
     expect(child.isDisposed()).toBe(false);
+    expect(child.getAbsolutePosition().x).toBe(0);
     expect(binding.boneAttachments.size).toBe(0);
     snapshot.disposeSnapshotBinding(binding);
     expect(binding.boneAttachments.size).toBe(0);

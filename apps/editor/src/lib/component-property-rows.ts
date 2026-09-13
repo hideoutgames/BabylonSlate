@@ -509,12 +509,21 @@ export function componentPropertyRows(
           "Pick Material",
         ),
         ...meshCollisionRows(actorId, component, update, context),
+        ...(["castShadows", "receiveShadows"] as const).map((key) => ({
+          kind: "boolean" as const,
+          id: rowId(actorId, component.id, key),
+          label: key === "castShadows" ? "Cast Shadows" : "Receive Shadows",
+          value: component.properties[key] !== false,
+          onChange: (value: boolean) => update(key, value),
+        })),
         ...genericRows(
           actorId,
           component,
           update,
           new Set([
             "meshKind",
+            "castShadows",
+            "receiveShadows",
             "assetGuid",
             "materialGuid",
             "collisionMode",
@@ -1189,6 +1198,13 @@ export function componentPropertyRows(
           label: "Cast Shadows",
           value: component.properties.castShadows === true,
           onChange: (next) => update("castShadows", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "shadowPriority"),
+          label: "Shadow Priority",
+          value: asNumber(component.properties.shadowPriority, 0),
+          onChange: (next) => update("shadowPriority", next),
         },
       ];
       if (lightKind !== "directional") {

@@ -17,14 +17,17 @@ import { clickPlayAndWaitForOverlay } from "./play";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { encodeGlbJsonBin } from "../packages/assets/src/importers/glb-parse";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
+import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
+import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 
 async function pixelsNear(
   canvas: Locator,
   color: number[],
   tolerance = 3,
+  flatInterior = false,
 ): Promise<number> {
   return canvas.evaluate(
-    (node: HTMLCanvasElement, { color, tolerance }) => {
+    (node: HTMLCanvasElement, { color, tolerance, flatInterior }) => {
       if (!node.width || !node.height) return 0;
       const copy = document.createElement("canvas");
       copy.width = node.width;
@@ -34,6 +37,11 @@ async function pixelsNear(
       const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
       let count = 0;
       for (let i = 0; i < pixels.length; i += 4) {
+        // Derivative antialiasing legitimately creates intermediate colors at
+        // band edges. A flat 3x3 region would be an unwanted additional band.
+        if (flatInterior && ![-copy.width - 1, -copy.width, -copy.width + 1, -1, 1, copy.width - 1, copy.width, copy.width + 1].every((offset) =>
+          color.every((channel, index) => Math.abs((pixels[i + offset * 4 + index] ?? -255) - channel) <= tolerance),
+        )) continue;
         if (
           color.every(
             (channel, index) =>
@@ -44,7 +52,7 @@ async function pixelsNear(
       }
       return count;
     },
-    { color, tolerance },
+    { color, tolerance, flatInterior },
   );
 }
 
@@ -82,6 +90,43 @@ async function framePixels(canvas: Locator) {
   });
   return Buffer.from(encoded, "base64");
 }
+
+test("world-space material inputs remain anchored when the editor camera moves", async ({ page }) => {
+  const files = await minimalProjectFiles();
+  const material = createDefaultMaterialDocument("World Position");
+  material.shadingModel = "unlit";
+  material.twoSided = true;
+  material.nodes[0]!.type = "input.worldPosition";
+  material.nodes[0]!.properties = {};
+  material.edges[0]!.sourcePinId = "position";
+  const guid = "00000000-0000-4000-8000-000000000019";
+  files.set("assets/WorldPosition.material.babasset", await encodeAssetDocument({
+    guid, type: "Material", name: "World Position", version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown>,
+  }));
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  await projectMode(page, "CEL");
+  const scene = createDefaultScene();
+  scene.settings.environmentColor = [0, 0, 0];
+  scene.settings.grid.showGrid = false;
+  const mesh = createMeshComponent("plane-mesh", "plane");
+  mesh.properties.materialGuid = guid;
+  scene.actors = [createActor("plane", "World Coordinate Plane", {
+    transform: { position: [0, 0, 0.25], rotation: [0, 0, 0, 1], scale: [10, 10, 1] },
+    components: [mesh],
+  })];
+  await setPreviewScene(page, scene);
+  const canvas = page.getByTestId("viewport-canvas");
+  // The lower-left world quadrant is (0, 0, .25) after color clamping,
+  // regardless of the camera-relative coordinate used internally for lighting.
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 64])).toBeGreaterThan(100);
+  await canvas.hover();
+  await page.mouse.wheel(0, -240);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 64])).toBeGreaterThan(100);
+  scene.actors[0]!.transform.position[2] = 0.5;
+  await setPreviewScene(page, scene);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 128])).toBeGreaterThan(100);
+});
 
 test("CEL preserves authored and texture colors, supports every light, and restores PBR in viewport and Play", async ({
   page,
@@ -349,7 +394,11 @@ test("CEL preserves authored and texture colors, supports every light, and resto
         message: `${kind} colored light`,
         timeout: 20_000,
       })
-      .toBeGreaterThan(100);
+      .toBeGreaterThan(100)
+      .catch(async (error: unknown) => {
+        await viewport.screenshot({ path: testInfo.outputPath(`cel-${kind}-failure.png`) });
+        throw error;
+      });
     scene.settings.celShading.lightColorInfluence = 0;
     await setPreviewScene(page, scene);
     await expect
@@ -368,21 +417,24 @@ test("CEL preserves authored and texture colors, supports every light, and resto
       scene.settings.celShading.bandSoftness = 0;
       await setPreviewScene(page, scene);
       await expect
-        .poll(() => pixelsNear(viewport, [26, 77, 39]))
+        .poll(() => pixelsNear(viewport, [26, 77, 39], 3, true))
         .toBeLessThan(30);
     }
   }
 
-  // A large receiver makes a fixed world-space shadow offset sub-texel.
-  // Enabling shadows must cast onto the floor without mottling the sphere.
+  // Keep both primitives in contact with the receiver: sphere radius 1.875,
+  // box half-height 1.5. Intersections must not masquerade as shadow artifacts.
+  subjects[0]!.transform.position[1] = 0.375;
+  subjects[0]!.transform.position[0] = -2;
   const sun = createActor("shadow-sun", "Shadow Sun", {
-    transform: { position: [0, 5, -3], rotation: [0.353553, 0.353553, -0.146447, 0.853553], scale: [1, 1, 1] },
+    // No sideways component: neither test subject should cast onto the other.
+    transform: { position: [0, 5, -3], rotation: [0.382683, 0, 0, 0.923880], scale: [1, 1, 1] },
     components: [{ id: "sun-light", classId: "LightComponent", properties: {
       lightKind: "directional", color: [1, 1, 1], intensity: 1.5, castShadows: false,
     } }],
   });
   scene.actors = [...subjects, sun, createActor("receiver", "Receiver", {
-    transform: { position: [0, -1.25, 0], rotation: [0, 0, 0, 1], scale: [12, 1, 12] },
+    transform: { position: [0, -1.5, 0], rotation: [0, 0, 0, 1], scale: [12, 1, 12] },
     components: [createMeshComponent("receiver-mesh", "ground")],
   })];
   scene.settings.celShading = { specularEnabled: false, shadowStrength: 0.65 };
@@ -420,9 +472,32 @@ test("CEL preserves authored and texture colors, supports every light, and resto
         receiverChanges++;
       }
     }
-    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.05, cleanNativeSurface: nativePixels > 500 && nativeChanges / nativePixels < 0.02 };
+    return { castsShadow: receiverChanges > 40, cleanSurface: surfacePixels > 500 && surfaceChanges / surfacePixels < 0.01, cleanNativeSurface: nativePixels > 500 && nativeChanges / nativePixels < 0.01 };
   }).toEqual({ castsShadow: true, cleanSurface: true, cleanNativeSurface: true });
   await viewport.screenshot({ path: testInfo.outputPath("cel-cast-shadows.png") });
+
+  const localShadows = await framePixels(viewport);
+  scene.actors.find((actor) => actor.id === "receiver")!.transform.scale = [1200, 1, 1200];
+  scene.actors.push(createActor("distant-caster", "Distant Caster", {
+    transform: { position: [10000, 0, 10000], rotation: [0, 0, 0, 1], scale: [100, 100, 100] },
+    components: [createMeshComponent("distant-mesh", "box")],
+  }));
+  await setPreviewScene(page, scene);
+  await expect.poll(async () => {
+    const largeMap = await framePixels(viewport);
+    let changed = 0, count = 0;
+    for (let i = 0; i < localShadows.length; i += 4) {
+      const x = (i / 4 % frameSize.width) / frameSize.width;
+      const y = Math.floor(i / 4 / frameSize.width) / frameSize.height;
+      if (x <= 0.53 || x >= 0.69 || y <= 0.43 || y >= 0.61) continue;
+      count++;
+      if (Math.abs(localShadows[i + 1]! - largeMap[i + 1]!) > 15) changed++;
+    }
+    return count > 500 ? changed / count : 1;
+  }).toBeLessThan(0.01);
+  await viewport.screenshot({ path: testInfo.outputPath("cel-large-map-shadows.png") });
+  subjects[0]!.transform.position[1] = 0;
+  subjects[0]!.transform.position[0] = -1.5;
 
   scene.actors = [...subjects, fill];
   scene.settings.celShading = { specularStrength: 1, specularSize: 1 };

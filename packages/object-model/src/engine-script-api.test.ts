@@ -134,6 +134,8 @@ describe("engine script API catalog", () => {
       api?.variables?.map((entry) => [entry.name, entry.propertyKey]),
     ).toEqual([
       ["Mesh Kind", "meshKind"],
+      ["Cast Shadows", "castShadows"],
+      ["Receive Shadows", "receiveShadows"],
       ["Mesh", "assetGuid"],
       ["Material", "materialGuid"],
       ["Material Object", "materialObject"],
@@ -204,6 +206,7 @@ describe("engine script API catalog", () => {
       "innerAngle",
       "outerAngle",
       "castShadows",
+      "shadowPriority",
     ]);
     expect(
       engineScriptApiFor("HemisphericFillLightComponent")?.variables?.map(

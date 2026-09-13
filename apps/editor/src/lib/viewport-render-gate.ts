@@ -1,4 +1,5 @@
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "@babylonslate/vfs";
+import type { ShadowDeviceProfile } from "@babylonslate/core";
 import {
   receiveActiveAppSettingsUpdate,
   subscribeAppSettings,
@@ -43,6 +44,7 @@ export function dispatchEngineSettingsChanged(settings: {
 }
 
 export type LiveEngineSettingsTarget = {
+  setShadowDeviceProfile?: (profile: ShadowDeviceProfile) => void;
   scaling?: {
     setLevel: (level: number) => void;
     setSettingsLevel?: (level: number) => void;
@@ -55,6 +57,7 @@ export type LiveEngineSettingsTarget = {
 };
 
 export type LiveEngineSettings = {
+  shadowDeviceProfile?: ShadowDeviceProfile;
   viewportFrameCap?: number;
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
@@ -73,6 +76,7 @@ export function applyLiveEngineSettings(
   settings: LiveEngineSettings,
   options?: { applyFrameCap?: boolean },
 ): void {
+  if (settings.shadowDeviceProfile) target.setShadowDeviceProfile?.(settings.shadowDeviceProfile);
   if (
     options?.applyFrameCap !== false &&
     typeof settings.viewportFrameCap === "number" &&
@@ -185,6 +189,7 @@ export function canvasIsEditorVisible(
 }
 
 export function attachViewportRenderGate(options: {
+  setShadowDeviceProfile?: (profile: ShadowDeviceProfile) => void;
   canvas: HTMLCanvasElement;
   scheduler: ViewportRenderTarget;
   loadFrameCap?: () => Promise<number>;
@@ -244,6 +249,7 @@ export function attachViewportRenderGate(options: {
       {
         scheduler,
         scaling: options.scaling,
+        setShadowDeviceProfile: options.setShadowDeviceProfile,
         setPostProcessingEnabled: options.setPostProcessingEnabled,
         setTextureBudget: options.setTextureBudget,
         setAudioBudget: options.setAudioBudget,

@@ -9,6 +9,7 @@ import {
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { checkedShader } from "./checked-shader";
 import {
   bindCelSettings,
   celFunctions,
@@ -61,11 +62,11 @@ export class CelLightBlock extends LightBlock {
           state.functions[key]!,
           state.shaderLanguage === 1,
         );
-      const generated = state.compilationString
-        .slice(start)
+      const generated = checkedShader(state.compilationString.slice(start), state.shaderLanguage === 1 ? "graph WGSL" : "graph GLSL")
         .replaceAll(
           "#include<lightFragment>",
           "#include<slateCelLightFragment>",
+          1,
         )
         .replace(
           /(vec3 diffuseBase|var diffuseBase: vec3f)/,
@@ -78,12 +79,13 @@ export class CelLightBlock extends LightBlock {
         .replace(
           " = specularBase",
           " = slateCelSurfaceSpecular(specularBase, slateCelPeak, slateCelTotal)",
+          this.specularOutput.hasEndpoints ? 1 : 0,
         )
         .replace(
           ` = ${this.worldNormal.associatedVariableName}.xyz;`,
           ` = normalize(${this.worldNormal.associatedVariableName}.xyz);\n#ifdef SLATE_CEL_TWO_SIDED\n${state.shaderLanguage === 1 ? "normalW = select(-normalW, normalW, fragmentInputs.frontFacing);" : "normalW = gl_FrontFacing ? normalW : -normalW;"}\n#endif\n`,
         )
-        .replace("aggShadow / numLights", "aggShadow / max(1.0, numLights)");
+        .replace("aggShadow / numLights", "aggShadow / max(1.0, numLights)").value;
       state.compilationString =
         state.compilationString.slice(0, start) + generated;
     }

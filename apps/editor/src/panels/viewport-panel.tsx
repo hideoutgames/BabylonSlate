@@ -187,10 +187,16 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
-  const renderSettingsKey = sceneViewportRenderSettingsKey(
+  const requestedRenderSettingsKey = sceneViewportRenderSettingsKey(
     projectDocument?.settings.render,
     scene?.settings.celShading,
+    scene?.settings.shadowOverrides,
   );
+  const [renderSettingsKey, setRenderSettingsKey] = useState(requestedRenderSettingsKey);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRenderSettingsKey(requestedRenderSettingsKey), 150);
+    return () => window.clearTimeout(timer);
+  }, [requestedRenderSettingsKey]);
 
   useEffect(() => {
     sceneRef.current = scene;
@@ -346,6 +352,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       canvas,
       scheduler: handle.scheduler,
       scaling: handle.scaling,
+      setShadowDeviceProfile: handle.setShadowDeviceProfile,
       setPostProcessingEnabled: (enabled) =>
         handle.setPostProcessingEnabled(enabled),
       setTextureBudget: (bytes, enabled) =>
@@ -798,6 +805,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       ref={panelRef}
       className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
       data-testid="viewport-panel"
+      aria-busy={requestedRenderSettingsKey !== renderSettingsKey || sceneLoad.open}
       data-scene-ready={sceneReady ? "true" : "false"}
       {...bind}
     >

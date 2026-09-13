@@ -18,6 +18,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -268,6 +269,22 @@ export function EngineSettingsForm({
       {categoryId === "viewport" ? (
         <FieldSet>
           <FieldLegend>Viewport</FieldLegend>
+          <Field className="settings-field">
+            <FieldLabel htmlFor="setting-shadow-device-profile">Shadow Device Profile</FieldLabel>
+            <Select value={settings.shadowDeviceProfile} onValueChange={(value) => {
+              if (value === "project" || value === "economy" || value === "a16" || value === "high" || value === "ultra") void onChange({ shadowDeviceProfile: value });
+            }}>
+              <SelectTrigger id="setting-shadow-device-profile"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectGroup>
+                <SelectItem value="a16">iPad A16</SelectItem>
+                <SelectItem value="economy">Economy</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="ultra">Ultra</SelectItem>
+                <SelectItem value="project">Project Settings</SelectItem>
+              </SelectGroup></SelectContent>
+            </Select>
+            <FieldDescription>Limits GPU shadow cost on this device without rewriting authored settings. Shadow distance remains the project or scene value.</FieldDescription>
+          </Field>
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-frame-cap">
               Viewport Frame Cap (FPS)

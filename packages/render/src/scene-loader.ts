@@ -1,5 +1,6 @@
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
+import { sceneShadowController } from "./shadow-controller";
 import {
   identitySerializedTransform,
   overlayPanelDestFromScale,
@@ -1073,6 +1074,8 @@ function applyModelPlaceholderVisibility(mesh: Mesh, actor: SerializedActor): vo
 }
 
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
+  const component = actor.components.find((entry) => entry.classId === "MeshComponent");
+  if (component && !isEditorActorOrigin(mesh)) sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   applySerializedTransform(mesh, actor.transform);
   const origin = isEditorActorOrigin(mesh);
@@ -1121,6 +1124,7 @@ export function applyComponentChildTransforms(
     const childName = editorComponentMeshName(actor.id, component.id);
     const child = childMeshesOf(mesh).find((entry) => entry.name === childName);
     if (!child) continue;
+    if (component.classId === "MeshComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
     applySerializedTransform(
       child,
       component.transform ?? identitySerializedTransform(),

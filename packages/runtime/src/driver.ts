@@ -3157,6 +3157,7 @@ class InProcessRuntime implements RuntimeDriver {
           innerAngle: Number(light.getVariable("innerAngle") ?? 30),
           outerAngle: Number(light.getVariable("outerAngle") ?? 45),
           castShadows: light.getVariable("castShadows") === true,
+          shadowPriority: Number(light.getVariable("shadowPriority") ?? 0),
         },
         parts: [playMeshPartOf(light)],
       });
@@ -4078,6 +4079,9 @@ class InProcessRuntime implements RuntimeDriver {
     for (const resolve of due) resolve();
   }
 
+  private snapshotOrigin = { x: 0, y: 0, z: 0 };
+  private snapshotOriginGeneration = 0;
+
   private publishSnapshot(): void {
     const actors = this.world.getActors();
     const liveGuids = new Set(actors.map((actor) => actor.guid));
@@ -4091,6 +4095,12 @@ class InProcessRuntime implements RuntimeDriver {
     if (removedActors) this.emitBehaviourTreeSnapshot(true);
     const buf = this.snapshots.beginWrite();
     const worldTransforms = actorWorldTransforms(actors);
+    const cameraActor = this.playCameraActor();
+    const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
+    if (cameraPosition) {
+      const next = { x: Math.floor(cameraPosition.x / 1024) * 1024, y: Math.floor(cameraPosition.y / 1024) * 1024, z: Math.floor(cameraPosition.z / 1024) * 1024 };
+      if (next.x !== this.snapshotOrigin.x || next.y !== this.snapshotOrigin.y || next.z !== this.snapshotOrigin.z) { this.snapshotOrigin = next; this.snapshotOriginGeneration++; }
+    }
     let count = 0;
     for (const actor of actors) {
       const slotId = this.slotByGuid.get(actor.guid);
@@ -4107,7 +4117,7 @@ class InProcessRuntime implements RuntimeDriver {
             ? 0
             : SNAPSHOT_FLAG_VISIBLE) |
           (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0),
-      });
+      }, this.snapshotOrigin);
       count += 1;
     }
     writeSnapshotHeader(buf, {
@@ -4117,6 +4127,8 @@ class InProcessRuntime implements RuntimeDriver {
       scriptMs: this._lastScriptMs,
       physicsMs: this._lastPhysicsMs,
       layoutGeneration: this._snapshotGeneration,
+      origin: this.snapshotOrigin,
+      originGeneration: this.snapshotOriginGeneration,
     });
     this.snapshots.publish();
   }
@@ -4446,6 +4458,8 @@ function playMeshPartOf(
   const { position, rotation, scale } = component.transform;
   return {
     componentId: component.guid,
+    castShadows: component.getVariable("castShadows") !== false,
+    receiveShadows: component.getVariable("receiveShadows") !== false,
     meshKind: playMeshKindOf(component),
     meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
     parentId,

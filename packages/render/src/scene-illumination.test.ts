@@ -474,7 +474,7 @@ describe("syncAuthoredIllumination", () => {
     expect(scene.clearColor.r).toBeCloseTo(r);
   });
 
-  it("attaches one ShadowGenerator to the first castShadows light", () => {
+  it("allocates directional and local shadow lights independently", () => {
     const { scene } = createHandle();
     const diagnostics: string[] = [];
     syncAuthoredIllumination(
@@ -505,8 +505,8 @@ describe("syncAuthoredIllumination", () => {
       (key!.getShadowGenerator() as ShadowGenerator).getShadowMap()?.getSize()
         .width,
     ).toBe(1024);
-    expect(bounce?.getShadowGenerator()).toBeNull();
-    expect(diagnostics.some((line) => /castShadows/i.test(line))).toBe(true);
+    expect(bounce?.getShadowGenerator()).toBeInstanceOf(ShadowGenerator);
+    expect(diagnostics).toEqual([]);
   });
 
   it("keeps game meshes on the shadow map and excludes helpers", () => {
@@ -602,11 +602,12 @@ describe("syncAuthoredIllumination", () => {
     expect(
       generator.usePercentageCloserFiltering || generator.usePoissonSampling,
     ).toBe(true);
-    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_LOW);
-    expect(generator.bias).toBeCloseTo(0.001);
-    expect(generator.normalBias).toBeCloseTo(0.01);
-    expect(generator.frustumEdgeFalloff).toBe(1);
-    expect(key.autoCalcShadowZBounds).toBe(true);
+    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_MEDIUM);
+    expect(generator.bias).toBeCloseTo(0.0001);
+    expect(generator.normalBias).toBeCloseTo(0.005);
+    expect(generator.frustumEdgeFalloff).toBe(0);
+    expect(key.autoCalcShadowZBounds).toBe(false);
+    expect(key.customProjectionMatrixBuilder).toBeTypeOf("function");
   });
 
   it("disables the shadow map when shadowquality is off", () => {

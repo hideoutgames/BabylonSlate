@@ -24,7 +24,7 @@ Double-buffered `Float32Array`. Views are little-endian; header and per-actor sl
 | Index | Name | Type meaning |
 | --- | --- | --- |
 | 0 | `magic` | `0x42534e50` bits as f32 (“BSNP”) |
-| 1 | `version` | Layout version (`1`) |
+| 1 | `version` | Layout version (`2`) |
 | 2 | `frameId` | Monotonic render/sync frame |
 | 3 | `tickIndex` | Last completed simulation tick |
 | 4 | `actorCount` | Occupied slots |
@@ -32,7 +32,9 @@ Double-buffered `Float32Array`. Views are little-endian; header and per-actor sl
 | 6 | `physicsMs` | Physics phase time (separate from `scriptMs`; HUD reads the 5 Hz `stats` command, but this header field is per-tick) |
 | 7 | `seq` | Seq-lock sequence (even = stable) for SAB |
 | 8 | `layoutGeneration` | Installed snapshot-layout generation |
-| 9–15 | reserved | Zero |
+| 9–11 | origin high | Camera-relative origin, high float components |
+| 12–14 | origin low | Origin residual components |
+| 15 | origin generation | Origin change counter in the same published snapshot |
 
 ### Per-actor slot
 
@@ -47,7 +49,8 @@ Slot `i` starts at `16 + i * 16`:
 | 4–7 | `rotation` quaternion xyzw |
 | 8–10 | `scale` xyz |
 | 11 | `flags` (`SNAPSHOT_FLAG_VISIBLE` = bit 0, `SNAPSHOT_FLAG_OVERLAY` = bit 1 = SceneLayer HUD; layout version unchanged) |
-| 12–15 | reserved |
+| 12–14 | position residual | Low components of positions relative to the origin |
+| 15 | reserved |
 
 **Actor guid ↔ slotId** is maintained on the reliable command channel (`spawn` / `despawn` / `remap`). Guids never travel in the hot buffer.
 
@@ -106,3 +109,5 @@ The Worker's per-frame snapshot is produced by `TransferablePingPong` (`packages
 - [object-model.md](object-model.md) — JSON harness snapshot vs this layout
 - [design/perf-budget.md](../design/perf-budget.md) — editor viewport / Play budgets
 - [render.md](render.md) — snapshot apply + resource cache (P4)
+
+Snapshot layout version 2 retains the 16-float header and actor stride. Positions are relative to a camera-selected 1024-unit origin cell. Header origin and actor residuals preserve precision without increasing transport bytes. Readers reconstruct authored world coordinates before interpolation, so a change of origin is atomic and cannot create an interpolation jump. This does not change authored transforms or imply unlimited physics precision.

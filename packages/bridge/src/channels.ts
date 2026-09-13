@@ -327,6 +327,7 @@ export type CommandMessage =
         innerAngle?: number;
         outerAngle?: number;
         castShadows?: boolean;
+        shadowPriority?: number;
         groundColor?: [number, number, number];
       };
       camera?: {
@@ -340,6 +341,8 @@ export type CommandMessage =
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
         componentId: string;
+        castShadows?: boolean;
+        receiveShadows?: boolean;
         meshKind?: string | null;
         meshAssetGuid?: string | null;
         parentId?: string | null;

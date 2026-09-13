@@ -4,16 +4,16 @@ import {
   Color4,
   DirectionalLight,
   HemisphericLight,
-  LinesMesh,
   PointLight,
   Quaternion,
   Scene,
-  ShadowGenerator,
+
   SpotLight,
   UniversalCamera,
   Vector3,
-  type AbstractMesh,
+
   type Light,
+  type AbstractMesh,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";
@@ -23,28 +23,14 @@ import {
   identitySerializedTransform,
 } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
-import { isSkyboxMesh } from "./skybox";
-import { sceneRenderingSettings } from "./render-settings";
+import { sceneShadowController } from "./shadow-controller";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
 export const HEMISPHERIC_FILL_LIGHT_CLASS_ID = "HemisphericFillLightComponent";
 export const DEFAULT_HEMISPHERIC_FILL_INTENSITY = 0.9;
 
-const EXTRA_CASTER_DIAGNOSTIC =
-  "Only the first castShadows light owns a shadow map; extra casters are ignored.";
-const SHADOW_2048_WARN =
-  "shadowquality 2048 is expensive on the baseline device";
 
-const SHADOW_BIAS = 0.001;
-const SHADOW_NORMAL_BIAS = 0.01;
-const SHADOW_FRUSTUM_EDGE_FALLOFF = 1;
-const SHADOW_SKIP_NAME_PREFIXES = [
-  "debugLight:",
-  "debugCamera",
-  "navmeshDebug",
-  "playConsoleViz:",
-] as const;
 
 export type ShadowQualityLevel = "off" | "512" | "1024" | "2048";
 
@@ -63,6 +49,7 @@ export type AuthoredLightProperties = {
   innerAngle?: number;
   outerAngle?: number;
   castShadows?: boolean;
+  shadowPriority?: number;
   groundColor?: [number, number, number] | number[];
 };
 
@@ -88,8 +75,6 @@ type AuthoredState = {
   lights: Map<string, Light>;
   cameras: Map<string, Camera>;
   lightKinds: Map<string, string>;
-  shadow: ShadowGenerator | null;
-  shadowOwnerId: string | null;
 };
 
 const stateByScene = new WeakMap<Scene, AuthoredState>();
@@ -101,8 +86,6 @@ function stateOf(scene: Scene): AuthoredState {
       lights: new Map(),
       cameras: new Map(),
       lightKinds: new Map(),
-      shadow: null,
-      shadowOwnerId: null,
     };
     stateByScene.set(scene, state);
   }
@@ -196,6 +179,7 @@ export function applyAuthoredLightProperties(
   );
   light.diffuse = asRgb(properties.color);
   light.setEnabled(properties.enabled !== false);
+  sceneShadowController(light.getScene()).register(light, properties.castShadows === true, properties.shadowPriority);
   const range = asNumber(properties.range, 10);
   if (light instanceof PointLight || light instanceof SpotLight) {
     light.range = range > 0 ? range : 10;
@@ -428,95 +412,6 @@ export function syncAuthoredCamerasFromMeshes(
   }
 }
 
-function shadowSkipMetadata(mesh: AbstractMesh): boolean {
-  const meta = mesh.metadata as {
-    editorActorOrigin?: boolean;
-    editorPickProxy?: boolean;
-      editorBillboard?: string;
-      editorVolume?: boolean;
-      playHelperVisual?: boolean;
-    playActorOrigin?: boolean;
-    playDebugOverlay?: boolean;
-  } | null;
-  if (!meta) return false;
-  return Boolean(
-    meta.editorActorOrigin ||
-      meta.editorPickProxy ||
-      meta.editorBillboard ||
-      meta.editorVolume ||
-      meta.playHelperVisual ||
-      meta.playActorOrigin ||
-      meta.playDebugOverlay,
-  );
-}
-
-function participatesInShadows(mesh: AbstractMesh): boolean {
-  if (mesh.name.startsWith("__")) return false;
-  if (isSkyboxMesh(mesh)) return false;
-  if (mesh instanceof LinesMesh) return false;
-  if (SHADOW_SKIP_NAME_PREFIXES.some((prefix) => mesh.name.startsWith(prefix))) {
-    return false;
-  }
-  return !shadowSkipMetadata(mesh);
-}
-
-function refreshShadowCasters(scene: Scene, generator: ShadowGenerator): void {
-  const list = generator.getShadowMap()?.renderList;
-  if (list) list.length = 0;
-  for (const mesh of scene.meshes) {
-    if (!participatesInShadows(mesh)) {
-      mesh.receiveShadows = false;
-      continue;
-    }
-    generator.addShadowCaster(mesh, false);
-    mesh.receiveShadows = true;
-  }
-}
-
-export function attachSingleShadowGenerator(
-  scene: Scene,
-  light: Light,
-  mapSize: number | null,
-  existing: ShadowGenerator | null,
-): ShadowGenerator | null {
-  existing?.dispose();
-  if (mapSize === null) return null;
-  if (
-    !(
-      light instanceof DirectionalLight ||
-      light instanceof PointLight ||
-      light instanceof SpotLight
-    )
-  ) {
-    return null;
-  }
-  const generator = new ShadowGenerator(mapSize, light);
-  generator.usePercentageCloserFiltering = true;
-  generator.filteringQuality = ShadowGenerator.QUALITY_LOW;
-  generator.bias = SHADOW_BIAS;
-  generator.normalBias = SHADOW_NORMAL_BIAS;
-  generator.frustumEdgeFalloff = SHADOW_FRUSTUM_EDGE_FALLOFF;
-  if (light instanceof DirectionalLight) {
-    light.autoCalcShadowZBounds = true;
-    // Hard CEL thresholds amplify sub-texel self-shadow errors. Scale the
-    // depth offset with the actual projection, including large receivers.
-    // Moving along depth avoids seams from pushing adjacent box faces inward.
-    // Babylon updates these extents in its earlier before-render observer.
-    generator.getShadowMap()?.onBeforeRenderObservable.add(() => {
-      const extent = light.shadowFrustumSize > 0
-        ? light.shadowFrustumSize
-        : Math.max(light.orthoRight - light.orthoLeft, light.orthoTop - light.orthoBottom)
-          * (1 + 2 * light.shadowOrthoScale);
-      const depth = (light.shadowMaxZ ?? 0) - (light.shadowMinZ ?? 0);
-      generator.bias = sceneRenderingSettings(scene).mode === "cel" && Number.isFinite(extent) && depth > 0
-        ? Math.max(SHADOW_BIAS, 4 * extent / (mapSize * depth))
-        : SHADOW_BIAS;
-    });
-  }
-  refreshShadowCasters(scene, generator);
-  return generator;
-}
-
 export function applySceneEnvironment(
   scene: Scene,
   sceneData: SerializedScene,
@@ -582,7 +477,7 @@ export function syncAuthoredIllumination(
 
   const liveLights = new Set<string>();
   const liveCameras = new Set<string>();
-  const shadowCandidates: string[] = [];
+
 
   for (const actor of sceneData.actors) {
     const fillComponent = actor.components.find(
@@ -596,11 +491,6 @@ export function syncAuthoredIllumination(
       const kind = fillComponent ? "hemispheric" : lightKindOf(lightComponent);
       let light = state.lights.get(actor.id);
       if (light && state.lightKinds.get(actor.id) !== kind) {
-        if (state.shadowOwnerId === actor.id) {
-          state.shadow?.dispose();
-          state.shadow = null;
-          state.shadowOwnerId = null;
-        }
         light.dispose();
         light = undefined;
       }
@@ -627,9 +517,7 @@ export function syncAuthoredIllumination(
           },
         );
       }
-      if (!fillComponent && lightComponent.properties.castShadows === true) {
-        shadowCandidates.push(actor.id);
-      }
+
     }
     const cameraComponent = actor.components.find(
       (component) => component.classId === "CameraComponent",
@@ -664,11 +552,6 @@ export function syncAuthoredIllumination(
 
   for (const [actorId, light] of state.lights) {
     if (!liveLights.has(actorId)) {
-      if (state.shadowOwnerId === actorId) {
-        state.shadow?.dispose();
-        state.shadow = null;
-        state.shadowOwnerId = null;
-      }
       light.dispose();
       state.lights.delete(actorId);
       state.lightKinds.delete(actorId);
@@ -681,32 +564,9 @@ export function syncAuthoredIllumination(
     }
   }
 
-  const mapSize = shadowMapSizeFromQuality(options.shadowQuality ?? "1024");
-  const ownerId = shadowCandidates[0] ?? null;
-  if (ownerId && mapSize !== null) {
-    const owner = state.lights.get(ownerId);
-    if (owner && (state.shadowOwnerId !== ownerId || !state.shadow)) {
-      state.shadow = attachSingleShadowGenerator(scene, owner, mapSize, state.shadow);
-      state.shadowOwnerId = ownerId;
-    } else if (owner && state.shadow) {
-      const current = state.shadow.getShadowMap()?.getSize().width;
-      if (current !== mapSize) {
-        state.shadow = attachSingleShadowGenerator(scene, owner, mapSize, state.shadow);
-      } else {
-        refreshShadowCasters(scene, state.shadow);
-      }
-    }
-  } else if (state.shadow) {
-    state.shadow.dispose();
-    state.shadow = null;
-    state.shadowOwnerId = null;
-  }
-  if (shadowCandidates.length > 1) {
-    options.onDiagnostic?.(EXTRA_CASTER_DIAGNOSTIC);
-  }
-  if (options.shadowQuality === "2048") {
-    options.onDiagnostic?.(SHADOW_2048_WARN);
-  }
+  const shadows = sceneShadowController(scene);
+  shadows.setLegacyQuality(options.shadowQuality === undefined ? undefined : shadowMapSizeFromQuality(options.shadowQuality));
+
 
   const namedId = resolveDefaultCameraActorId(sceneData);
   const named = namedId ? state.cameras.get(namedId) : undefined;
@@ -717,4 +577,5 @@ export function syncAuthoredIllumination(
   } else if (previousActive) {
     scene.activeCamera = previousActive;
   }
+  shadows.sync();
 }

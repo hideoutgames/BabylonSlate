@@ -3,6 +3,7 @@ import {
   createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   normalizeCelShadingSettings,
+  normalizeShadowSettings,
 } from "@babylonslate/core";
 import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
 import { parseScriptRegistry } from "./scripts";
@@ -50,6 +51,7 @@ describe("exportGame", () => {
   });
   it("puts index.html at the zip root and records startupSceneGuid", async () => {
     const cel = normalizeCelShadingSettings({ shadowBands: 5, lightMixing: "blend" });
+    const shadows = normalizeShadowSettings({ distance: 350, profile: "high" });
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -57,6 +59,7 @@ describe("exportGame", () => {
         ...DEFAULT_RENDER_PROJECT_SETTINGS,
         mode: "cel",
         cel,
+        shadows,
         customResolution: true,
         width: 1280,
         height: 720,
@@ -80,6 +83,7 @@ describe("exportGame", () => {
     expect(result.value.manifest.render).toEqual({
       mode: "cel",
       cel,
+      shadows,
       customResolution: true,
       width: 1280,
       height: 720,

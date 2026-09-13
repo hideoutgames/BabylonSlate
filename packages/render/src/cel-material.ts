@@ -1,3 +1,4 @@
+import { checkedShader } from "./checked-shader";
 import {
   Color3,
   ImageProcessingConfiguration,
@@ -31,14 +32,14 @@ for (const wgsl of [false, true]) {
     ? "TEXRD(emissiveSampler,emissiveSamplerSampler,fragmentInputs.vEmissiveUV+uvOffset).rgb"
     : "TEXRD(emissiveSampler,vEmissiveUV+uvOffset).rgb";
   const emissiveLevel = wgsl ? "uniforms.vEmissiveInfos.y" : "vEmissiveInfos.y";
-  store.slateCelPixelShader = (
+  store.slateCelPixelShader = checkedShader((
     wgsl ? defaultPixelShaderWGSL : defaultPixelShader
-  ).shader
+  ).shader, wgsl ? "native WGSL" : "native GLSL")
     .replace(
       "#include<lightsFragmentFunctions>",
       `${uniforms}\n#include<slateCelLightsFragmentFunctions>`,
     )
-    .replaceAll("#include<lightFragment>", "#include<slateCelLightFragment>")
+    .replaceAll("#include<lightFragment>", "#include<slateCelLightFragment>", 1)
     .replace(
       /(vec3 diffuseBase|var diffuseBase: vec3f)/,
       `${celLightAccumulators(wgsl)}$1`,
@@ -54,7 +55,8 @@ for (const wgsl of [false, true]) {
     .replace(
       "#ifdef EMISSIVEASILLUMINATION",
       "diffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\n#ifdef SPECULARTERM\nspecularBase=slateCelSurfaceSpecular(specularBase,slateCelPeak,slateCelTotal);\n#endif\n#ifdef EMISSIVEASILLUMINATION",
-    );
+      2,
+    ).value;
 }
 
 /** Native non-PBR surface adapter for imported and engine fallback materials. */

@@ -1,3 +1,5 @@
+import { ShadowSettingsFields } from "./shadow-settings-fields";
+import { normalizeShadowSettings } from "@babylonslate/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CelShadingFields } from "./cel-shading-fields";
 import {
@@ -1001,6 +1003,7 @@ export function SettingsModal({
               </Select>
               <FieldDescription>CEL uses native banded surface lighting. Scene Defaults can override individual style settings.</FieldDescription>
             </Field>
+<ShadowSettingsFields project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
             {projectDocument.settings.render.mode === "cel" ? (
               <CelShadingFields
                 project={normalizeCelShadingSettings(projectDocument.settings.render.cel)}
