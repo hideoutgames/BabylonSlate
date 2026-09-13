@@ -16,6 +16,8 @@ Model readiness retains real GLB loader and instantiation failures, including lo
 
 ## Project PBR / CEL rendering
 
+The Mannequin browser regression keeps its 1% illumination-change limit on unoccluded surfaces under frontal light. A separate oblique-light phase requires visible self-shadows from the head/torso and requires live Cast Shadows removal to restore the matching unshadowed frame within the same limit. Expected geometric occlusion therefore cannot masquerade as an illumination regression or conceal a missing shadow.
+
 The Basic 3D template recalculates the bundled Mannequin's normals from its existing faces before import, separating shared triangle corners. The supplied unlit model has smoothed corner normals on flat cuboid faces; under lit materials these produced diagonal CEL bands even with cast shadows disabled. Shape, UVs, hierarchy, animation, and triangle count remain unchanged. General imports preserve their authored normals; existing project copies are not rewritten. Preparation runs only when creating the template, with no per-frame preparation or extra draws.
 
 - **Project Settings → Rendering → Render Mode** selects PBR (the default for new and existing projects) or native CEL surface lighting. CEL controls are hidden and inactive in PBR; switching modes retains their saved values.
