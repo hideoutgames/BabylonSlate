@@ -42,6 +42,20 @@ async function boxes(host: Locator) {
   });
 }
 
+async function renderedPixels(canvas: Locator) {
+  return canvas.evaluate((node: HTMLCanvasElement) => {
+    const copy = document.createElement("canvas");
+    copy.width = node.width;
+    copy.height = node.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(node, 0, 0);
+    const pixels = context.getImageData(0, 0, copy.width, copy.height).data;
+    let count = 0;
+    for (let i = 0; i < pixels.length; i += 4) if (pixels[i]! + pixels[i + 1]! + pixels[i + 2]! > 100) count++;
+    return count;
+  });
+}
+
 for (const mode of ["Play", "Preview Build"] as const) {
   test(`${mode} paints repeated Scene Loading transitions and Stop cancels the next reload`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
@@ -51,9 +65,12 @@ for (const mode of ["Play", "Preview Build"] as const) {
     const files = await minimalProjectFiles();
     const scene = createDefaultScene();
     scene.settings.environmentTextureGuid = null;
+    scene.settings.environmentColor = [0, 0, 0];
     scene.settings.grid.showGrid = false;
     scene.settings.shadowOverrides = { enabled: false };
     scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
+    scene.actors[0]!.transform.position = [0, 1.5, -10];
+    scene.actors[0]!.transform.rotation = [0, 0, 0, 1];
     scene.actors.push(createActor("fill", "Fill", { components: [{ id: "fill-light", classId: "HemisphericFillLightComponent", properties: { intensity: 1, color: [1, 1, 1], groundColor: [1, 1, 1] } }] }));
     for (let i = 0; i < 48; i++) scene.actors.push(createActor(`box-${i}`, `Box ${i}`, {
       transform: { position: [(i % 8) * 0.6 - 2.1, Math.floor(i / 8) * 0.6, 0], rotation: [0, 0, 0, 1], scale: [0.4, 0.4, 0.4] },
@@ -72,6 +89,8 @@ for (const mode of ["Play", "Preview Build"] as const) {
     const host = mode === "Play" ? page.getByTestId("play-overlay") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root");
     const dialog = mode === "Play" ? page.getByTestId("scene-loading-dialog") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("scene-loading-dialog");
     await expect(dialog).toBeHidden({ timeout: 30_000 });
+    const canvas = mode === "Play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
+    await expect.poll(() => renderedPixels(canvas)).toBeGreaterThan(500);
     await expect.poll(() => boxes(host)).toBe(48);
     const meshCount = mode === "Play" ? await host.evaluate(() => (globalThis as unknown as { __babylonslatePlayTest: { liveObjectCounts: () => { meshes: number } } }).__babylonslatePlayTest.liveObjectCounts().meshes) : null;
     if (mode === "Play") await page.getByTestId("play-console-open").click();
@@ -84,10 +103,14 @@ for (const mode of ["Play", "Preview Build"] as const) {
       await expect(dialog).toBeHidden({ timeout: 30_000 });
       expect(await observedPhases(host)).toContain("Presenting First Frame");
       await expect.poll(() => boxes(host)).toBe(48);
+      await expect.poll(() => renderedPixels(canvas)).toBeGreaterThan(500);
       if (meshCount !== null) await expect.poll(() => host.evaluate(() => (globalThis as unknown as { __babylonslatePlayTest: { liveObjectCounts: () => { meshes: number } } }).__babylonslatePlayTest.liveObjectCounts().meshes)).toBe(meshCount);
     }
-    const canvas = mode === "Play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
+    await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
+    await expect(page.getByTestId("debug-console")).toBeHidden();
     await canvas.screenshot({ path: testInfo.outputPath("scene-reloaded.png") });
+    if (mode === "Play") await page.getByTestId("play-console-open").click();
+    else await page.getByRole("button", { name: "Console", exact: true }).click();
     await trackLoading(host, true);
     await page.getByTestId("debug-console-input").fill(`changescene ${SCENE_GUID}`);
     await page.getByTestId("debug-console-submit").click();
