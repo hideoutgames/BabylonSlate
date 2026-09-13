@@ -1,8 +1,47 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CANVAS_RESIZE_HOLD_MS,
   createCanvasResizeGuard,
+  waitForCanvasSize,
 } from "./canvas-resize-guard";
+
+describe("waitForCanvasSize", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("releases its visibility observer when a hidden canvas is revealed", async () => {
+    let check!: () => void;
+    const disconnect = vi.fn();
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: () => void) { check = callback; }
+      observe() {}
+      disconnect = disconnect;
+    });
+    const canvas = { clientWidth: 0, clientHeight: 256 } as HTMLCanvasElement;
+    let ready = false;
+    const pending = waitForCanvasSize(canvas, new AbortController().signal).then(() => { ready = true; });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    Object.defineProperty(canvas, "clientWidth", { value: 256 });
+    check();
+    await pending;
+    expect(ready).toBe(true);
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a superseded hidden load and removes its observer", async () => {
+    const disconnect = vi.fn();
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect = disconnect;
+    });
+    const controller = new AbortController();
+    const canvas = { clientWidth: 0, clientHeight: 0 } as HTMLCanvasElement;
+    const result = expect(waitForCanvasSize(canvas, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await result;
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+});
 
 describe("createCanvasResizeGuard", () => {
   it("resizes once for a sized canvas and skips an unchanged integer size", () => {

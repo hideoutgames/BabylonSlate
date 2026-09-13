@@ -6,6 +6,40 @@ export type CanvasSize = {
   clientHeight: number;
 };
 
+/** Hidden dock tabs must not start a blocking load or its presentation deadline. */
+export async function waitForCanvasSize(
+  canvas: HTMLCanvasElement,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  if (canvas.clientWidth > 0 && canvas.clientHeight > 0) return;
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      observer.disconnect();
+      signal.removeEventListener("abort", abort);
+    };
+    const check = () => {
+      if (canvas.clientWidth <= 0 || canvas.clientHeight <= 0) return;
+      cleanup();
+      resolve();
+    };
+    const abort = () => {
+      cleanup();
+      reject(signal.reason);
+    };
+    const observer = new ResizeObserver(check);
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      observer.observe(canvas);
+      check();
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
+  signal.throwIfAborted();
+}
+
 export type CanvasResizeGuardOptions = {
   holdMs?: number;
   onHoldChange?: (holding: boolean) => void;
