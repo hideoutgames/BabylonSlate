@@ -34,6 +34,7 @@ import {
 } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { setupDefaultViewport } from "./viewport";
+import { sceneShadowController } from "./shadow-controller";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
 import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
 import { encodeUvHierarchyGlb } from "./model-mesh";
@@ -384,6 +385,51 @@ describe("scene material lighting", () => {
     expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
     expect(mesh.subMeshes[0]!.effect?.defines).not.toContain("#define LIGHT5");
     expect(material.isFrozen).toBe(true);
+  });
+
+  it.each(["pbr", "cel"] as const)("refreshes frozen %s graph shadow defines after allocation and enabled changes", async (mode) => {
+    const scene = host(false);
+    scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 1, -10), scene);
+    updateSceneRenderingSettings(scene, { mode });
+    scene.environmentBRDFTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+    vi.spyOn(scene.environmentBRDFTexture, "isReady").mockReturnValue(true);
+    const light = new PointLight("key", new Vector3(0, 3, -4), scene);
+    const controller = sceneShadowController(scene);
+    controller.register(light, true);
+    controller.sync();
+    const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+    if (!lowered.ok) throw new Error("Fixture material did not lower");
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "receiver" });
+    if (!compiled.ok) throw new Error("Fixture material did not compile");
+    const material = compiled.material;
+    const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
+    mesh.receiveShadows = true;
+    mesh.material = material;
+    material.allowShaderHotSwapping = false;
+    material.freeze();
+    const check = async (shadowed: boolean) => {
+      beginFrame(scene);
+      await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true));
+      const defines = mesh.subMeshes[0]!.effect!.defines;
+      expect(defines).toContain("#define LIGHT0");
+      expect(defines.includes("#define SHADOW0")).toBe(shadowed);
+      expect(material.isFrozen).toBe(true);
+    };
+    await check(true);
+    controller.register(light, false);
+    controller.sync();
+    await check(false);
+    controller.register(light, true);
+    controller.sync();
+    await check(true);
+    light.shadowEnabled = false;
+    await check(false);
+    light.shadowEnabled = true;
+    await check(true);
+    scene.shadowsEnabled = false;
+    await check(false);
+    scene.shadowsEnabled = true;
+    await check(true);
   });
 
   it("refreshes frozen shaders when scene lighting changes", async () => {
