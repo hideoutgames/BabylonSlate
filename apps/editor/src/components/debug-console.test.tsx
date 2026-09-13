@@ -111,12 +111,12 @@ describe("DebugConsole", () => {
       />,
     );
     fireEvent.change(screen.getByTestId("debug-console-input"), {
-      target: { value: "renderquality " },
+      target: { value: "quality resolution " },
     });
     fireEvent.click(screen.getByTestId("debug-console-suggest-high"));
     expect(
       (screen.getByTestId("debug-console-input") as HTMLInputElement).value,
-    ).toBe("renderquality high");
+    ).toBe("quality resolution high");
   });
 
   it("does not reset suggestion scrolling when live context refreshes", () => {

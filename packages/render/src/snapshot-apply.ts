@@ -69,7 +69,6 @@ import {
   AUTHORED_LIGHT_PREFIX,
   applyAuthoredCameraProperties,
   applyAuthoredLightProperties,
-  shadowMapSizeFromQuality,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
   type AuthoredCameraProperties,
@@ -159,7 +158,6 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   slotAnimReady?: (slotId: number) => void;
   defaultCameraSlotId: number | null;
   possessedCameraSlotId: number | null;
-  shadowQuality: string;
   /** Material asset guid per slot (whole actor), keyed by slotId. */
   materialAssetGuids: Map<number, string | null>;
   /** Material asset guid per component, keyed by `slotId|componentId`. */
@@ -215,7 +213,6 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     slotAnimEpoch: new Map(),
     defaultCameraSlotId: null,
     possessedCameraSlotId: null,
-    shadowQuality: "project",
     materialAssetGuids: new Map(),
     componentMaterialGuids: new Map(),
     primaryComponentIds: new Map(),
@@ -517,7 +514,6 @@ export function refreshPlayActiveCamera(
 
 function applyPlayShadows(scene: Scene, binding: SnapshotSceneBinding): void {
   const shadows = sceneShadowController(scene);
-  shadows.setLegacyQuality(binding.shadowQuality === "project" ? undefined : shadowMapSizeFromQuality(binding.shadowQuality));
   shadows.sync();
 }
 
@@ -813,15 +809,6 @@ export function applyPossessCamera(
 ): void {
   binding.possessedCameraSlotId = slotId;
   refreshPlayActiveCamera(scene, binding);
-}
-
-export function applyShadowQuality(
-  scene: Scene,
-  binding: SnapshotSceneBinding,
-  level: string,
-): void {
-  binding.shadowQuality = level;
-  applyPlayShadows(scene, binding);
 }
 
 function isWorldOverlayLeftoverName(name: string, slotId: number): boolean {

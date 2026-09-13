@@ -177,3 +177,5 @@ Make Structure exposes a Structure Type selector in Inspector and named Make/Bre
 
 `VariableTypeFields.showType=false` reuses container/key controls inside `PinListEditor` without repeating its existing value type picker.
 ShadowSettingsFields shares compact project and scene shadow controls, with Low/Medium/High/Ultra presets independent of the user-controlled local light budget and shadow distance. Scene overrides are independent and reset by removing the key; inherited fields display project values.
+
+`RenderQualityFields` composes project scalability presets and resolution controls from Field, Select, NumberField and Switch. Presets use neutral labels and preserve shadow distance/budget. Scene post-process entries expose an explicit Scalable Resolution switch; full-resolution behavior is the default.

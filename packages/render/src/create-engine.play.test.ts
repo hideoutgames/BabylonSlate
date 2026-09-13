@@ -1827,11 +1827,11 @@ describe("Play createEngine view", () => {
     ).toBe(false);
   });
 
-  it("applies setRenderQuality on Play views only, not the editor viewport", () => {
+  it("applies setRenderingQuality on Play views only, not the editor viewport", () => {
     const play = playHandle(sharedEngine());
     const editor = editorHandle(sharedEngine());
-    play.handle.applyCommand({ type: "setRenderQuality", level: "low" });
-    editor.handle.applyCommand({ type: "setRenderQuality", level: "low" });
+    play.handle.applyCommand({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, minScale: 0.5 } } });
+    editor.handle.applyCommand({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, minScale: 0.5 } } });
     expect(play.handle.scaling.getLevel()).toBe(2);
     expect(editor.handle.scaling.getLevel()).toBe(1);
   });

@@ -1,3 +1,4 @@
+import { lightsDebugText } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -780,6 +781,11 @@ export function PlayOverlay({
         }
       />
       <PrintOverlay entries={printEntries} />
+      {rendering && lightsDebugText(rendering) ? (
+        <pre className="pointer-events-none absolute top-12 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap rounded-md bg-background/80 p-2 font-mono text-xs text-foreground" data-testid="lights-debug-overlay">
+          <SelectableText>{lightsDebugText(rendering)}</SelectableText>
+        </pre>
+      ) : null}
       {audioDebugText !== null ? (
         <pre
           className="pointer-events-none absolute bottom-3 right-3 z-20 m-0 max-h-48 max-w-md overflow-hidden whitespace-pre rounded-md bg-background/80 p-2 font-mono text-xs text-foreground"

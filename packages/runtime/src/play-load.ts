@@ -20,6 +20,7 @@ export function runtimeOptionsFromLoadControl(
   RuntimeDriverOptions,
   | "seed"
   | "frameCap"
+  | "renderSettings"
   | "project"
   | "inputAssets"
   | "inputMappings"

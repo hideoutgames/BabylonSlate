@@ -146,6 +146,7 @@ export interface SceneSettings {
 
 /** One entry of the scene's ordered post-process chain. */
 export interface ScenePostProcessEntry {
+  scalable?: boolean;
   materialGuid: string;
   enabled: boolean;
 }
@@ -527,7 +528,7 @@ export function normalizeScenePostProcessStack(
     const record = entry as Record<string, unknown>;
     const materialGuid = record.materialGuid;
     if (typeof materialGuid !== "string" || materialGuid === "") return [];
-    return [{ materialGuid, enabled: record.enabled !== false }];
+    return [{ materialGuid, enabled: record.enabled !== false, ...(record.scalable === true ? { scalable: true } : {}) }];
   });
 }
 

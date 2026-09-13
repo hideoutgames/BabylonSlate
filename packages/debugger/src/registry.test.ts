@@ -1,3 +1,4 @@
+import { RenderingQualitySession } from "@babylonslate/core";
 import { describe, expect, it } from "vitest";
 import {
   createCommandRegistry,
@@ -8,21 +9,15 @@ import { createUserCommand } from "./user-commands";
 function recordingHost(): ConsoleCommandHost & { calls: string[] } {
   const calls: string[] = [];
   let dilation = 1;
-  let resolutionScale = 1;
+  const quality = new RenderingQualitySession();
   return {
     calls,
     changeScene: (scene) => {
       calls.push(`changeScene:${scene}`);
     },
-    setRenderQuality: (level) => {
-      calls.push(`renderquality:${level}`);
-    },
-    setShadowQuality: (level) => {
-      calls.push(`shadowquality:${level}`);
-    },
-    setResolutionScale: (scale) => {
-      resolutionScale = scale;
-      calls.push(`resolutionscale:${scale}`);
+    quality: (group, choice, value) => {
+      if (choice) calls.push(`quality:${group ?? "all"}:${choice}${value ? `:${value}` : ""}`);
+      return quality.execute(group, choice, value);
     },
     setFrameCap: (fps) => {
       calls.push(`framecap:${fps}`);
@@ -32,9 +27,6 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     },
     getVolume: () => 1,
     getFrameCap: () => 60,
-    getRenderQuality: () => "high",
-    getResolutionScale: () => resolutionScale,
-    getShadowQuality: () => "1024",
     quit: () => {
       calls.push("quit");
     },
@@ -124,9 +116,9 @@ describe("createCommandRegistry", () => {
       success: true,
       output: "changed scene to level-2",
     });
-    expect(registry.execute("renderquality high", host).success).toBe(true);
-    expect(registry.execute("shadowquality 1024", host).success).toBe(true);
-    expect(registry.execute("resolutionscale 0.75", host).success).toBe(true);
+    expect(registry.execute("quality high", host).success).toBe(true);
+    expect(registry.execute("quality shadows high", host).success).toBe(true);
+    expect(registry.execute("quality resolution scale 0.75", host).success).toBe(true);
     expect(registry.execute("framecap 30", host).success).toBe(true);
     expect(registry.execute("volume 0.5", host).success).toBe(true);
     expect(registry.execute("quit", host)).toEqual({
@@ -135,9 +127,9 @@ describe("createCommandRegistry", () => {
     });
     expect(host.calls).toEqual([
       "changeScene:level-2",
-      "renderquality:high",
-      "shadowquality:1024",
-      "resolutionscale:0.75",
+      "quality:all:high",
+      "quality:shadows:high",
+      "quality:resolution:scale:0.75",
       "framecap:30",
       "volume:0.5",
       "quit",
@@ -276,16 +268,8 @@ describe("createCommandRegistry", () => {
       success: false,
       output: 'parameter "fps" expects int, got "nope"',
     });
-    expect(registry.execute("renderquality ultra", recordingHost())).toEqual({
-      success: false,
-      output:
-        'parameter "level" expects one of low, medium, high, got "ultra"',
-    });
-    expect(registry.execute("shadowquality low", recordingHost())).toEqual({
-      success: false,
-      output:
-        'parameter "level" expects one of off, 512, 1024, 2048, got "low"',
-    });
+    expect(registry.execute("quality invalid", recordingHost()).success).toBe(false);
+    expect(registry.execute("quality shadows budget -1", recordingHost()).success).toBe(false);
     expect(registry.execute("changescene", recordingHost()).success).toBe(false);
   });
 
@@ -300,32 +284,15 @@ describe("createCommandRegistry", () => {
       success: true,
       output: "framecap 60",
     });
-    expect(registry.execute("renderquality", host)).toEqual({
-      success: true,
-      output: "renderquality high",
-    });
-    expect(registry.execute("resolutionscale", host)).toEqual({
-      success: true,
-      output: "resolutionscale 1",
-    });
-    expect(registry.execute("shadowquality", host)).toEqual({
-      success: true,
-      output: "shadowquality 1024",
-    });
+    expect(registry.execute("quality shadows", host).output).toContain('"distance":200');
     expect(host.calls).toEqual([]);
   });
 
-  it("prints the host resolutionscale after applying a value", () => {
+  it("queries the actual effective scale after a session override", () => {
     const host = recordingHost();
     const registry = createCommandRegistry({ includeDebug: false });
-    expect(registry.execute("resolutionscale 1.25", host)).toEqual({
-      success: true,
-      output: "resolutionscale 1.25",
-    });
-    expect(registry.execute("resolutionscale", host)).toEqual({
-      success: true,
-      output: "resolutionscale 1.25",
-    });
+    expect(registry.execute("quality resolution scale 0.5", host).success).toBe(true);
+    expect(registry.execute("quality resolution", host).output).toContain('"scale":0.5');
   });
 
   it("lists commands with help and details for one name", () => {

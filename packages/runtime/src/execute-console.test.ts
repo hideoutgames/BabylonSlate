@@ -316,50 +316,15 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       success: true,
       output: "framecap 30",
     });
-    expect(runtime.executeConsoleCommand("renderquality low")).toEqual({
-      success: true,
-      output: "renderquality low",
-    });
-    expect(runtime.executeConsoleCommand("resolutionscale 1.5")).toEqual({
-      success: true,
-      output: "resolutionscale 1.5",
-    });
-    expect(
-      commands.filter(
-        (command) =>
-          command.type === "setGlobalVolume" ||
-          command.type === "setFrameCap" ||
-          command.type === "setRenderQuality" ||
-          command.type === "setResolutionScale",
-      ),
-    ).toEqual([
-      { type: "setGlobalVolume", volume: 0.25 },
-      { type: "setFrameCap", fps: 30 },
-      { type: "setRenderQuality", level: "low" },
-      { type: "setResolutionScale", scale: 1.5 },
-    ]);
+    expect(runtime.executeConsoleCommand("quality low").success).toBe(true);
+    expect(runtime.executeConsoleCommand("quality resolution scale 0.5").success).toBe(true);
+    expect(commands.filter((command) => command.type === "setRenderingQuality")).toHaveLength(2);
+    expect(commands.at(-1)).toMatchObject({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, dynamic: false } } });
+    expect(runtime.executeConsoleCommand("quality resolution").output).toContain('"scale":0.5');
+    expect(runtime.executeConsoleCommand("quality resolution scale 8").success).toBe(false);
+    expect(commands.filter((command) => command.type === "setRenderingQuality")).toHaveLength(2);
     expect(runtime.executeConsoleCommand("volume").output).toBe("volume 0.25");
     expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 30");
-    expect(runtime.executeConsoleCommand("renderquality").output).toBe(
-      "renderquality low",
-    );
-    expect(runtime.executeConsoleCommand("resolutionscale").output).toBe(
-      "resolutionscale 1.5",
-    );
-    expect(runtime.executeConsoleCommand("resolutionscale 8")).toEqual({
-      success: true,
-      output: "resolutionscale 2",
-    });
-    expect(runtime.executeConsoleCommand("resolutionscale 0.25").output).toBe(
-      "resolutionscale 1",
-    );
-    expect(
-      commands.filter((command) => command.type === "setResolutionScale"),
-    ).toEqual([
-      { type: "setResolutionScale", scale: 1.5 },
-      { type: "setResolutionScale", scale: 2 },
-      { type: "setResolutionScale", scale: 1 },
-    ]);
     runtime.stop();
   });
 

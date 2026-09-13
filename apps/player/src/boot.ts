@@ -1,3 +1,4 @@
+import { lightsDebugText } from "@babylonslate/render";
 import { snapshotFloatCount } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
@@ -96,6 +97,7 @@ export function startPlayer(options: {
     scriptMs: number;
     physicsMs: number;
     draws: number;
+    lightsDebugText?: string | null;
   }) => void;
   onDiagnostic?: (diagnostics: readonly PlayerDiagnostic[]) => void;
   onConsoleEvent?: (
@@ -356,6 +358,7 @@ export function startPlayer(options: {
       ...next,
       draws: handle.drawCalls(),
       geometryBytes: handle.accountedGeometryBytes(),
+      lightsDebugText: manifest.bundleDebugger ? lightsDebugText(handle.renderDiagnostics()) : null,
     };
     options.onStats?.(hudStats);
   };

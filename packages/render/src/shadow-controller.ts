@@ -1,4 +1,4 @@
-import { syncDirectionalLightPolicy } from "./light-policy";
+import { syncDirectionalLightPolicy, isDirectionalLightExcluded } from "./light-policy";
 import {
   CascadedShadowGenerator,
   DirectionalLight,
@@ -49,7 +49,6 @@ export class SceneShadowController {
   private readonly meshes = new Set<AbstractMesh>();
   private readonly pending = new Set<AbstractMesh>();
   private readonly spatial = new ShadowSpatialIndex();
-  private quality: number | null | undefined;
   private drawCalls = 0;
   private triangles = 0;
   shadowDrawCalls(): number {
@@ -113,9 +112,6 @@ export class SceneShadowController {
     entry.requested = requested;
     entry.priority = Number.isFinite(priority) ? priority : 0;
   }
-  setLegacyQuality(size: number | null | undefined): void {
-    this.quality = size;
-  }
   setParticipation(mesh: AbstractMesh, value: ShadowParticipation): void {
     const previous = mesh.metadata?.slateShadowParticipation as
       ShadowParticipation | undefined;
@@ -137,27 +133,29 @@ export class SceneShadowController {
   generator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
   }
-  diagnostics(): {
-    name: string;
-    status: ShadowLightStatus;
-    passes: number;
-    mapSize: number;
-  }[] {
-    return Array.from(
-      this.entries.values(),
-      ({ light, generator, status }) => ({
+  metrics(): { passes: number; bytes: number } {
+    let passes = 0;
+    let bytes = 0;
+    for (const { light, generator } of this.entries.values()) {
+      if (!generator) continue;
+      const count = generator instanceof CascadedShadowGenerator ? generator.numCascades : light instanceof PointLight ? 6 : 1;
+      passes += count;
+      bytes += count * (generator.getShadowMap()?.getSize().width ?? 0) ** 2 * 8;
+    }
+    return { passes, bytes };
+  }
+  diagnostics() {
+    return this.scene.lights.map((light) => {
+      const entry = this.entries.get(light);
+      const generator = entry?.generator;
+      return {
         name: light.name,
-        status,
-        passes: generator
-          ? generator instanceof CascadedShadowGenerator
-            ? generator.numCascades
-            : light instanceof PointLight
-              ? 6
-              : 1
-          : 0,
+        illumination: isDirectionalLightExcluded(light) ? "directional-limit" : !light.isEnabled() || light.intensity <= 0 ? "disabled" : "active",
+        status: entry?.status ?? "unsupported",
+        passes: generator ? generator instanceof CascadedShadowGenerator ? generator.numCascades : light instanceof PointLight ? 6 : 1 : 0,
         mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
-      }),
-    );
+      };
+    });
   }
   sync(): void {
     const scene = this.scene;
@@ -191,14 +189,7 @@ export class SceneShadowController {
     this.pending.clear();
     const casterBounds = this.spatial.bounds();
     const state = sceneRenderingSettings(scene);
-    const requested =
-      this.quality === undefined
-        ? state.shadows
-        : {
-            ...state.shadows,
-            enabled: state.shadows.enabled && this.quality !== null,
-            mapSize: this.quality ?? state.shadows.mapSize,
-          };
+    const requested = state.shadows;
     const { settings } = effectiveShadowSettings(
       requested,
       CascadedShadowGenerator.IsSupported,

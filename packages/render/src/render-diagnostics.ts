@@ -50,7 +50,7 @@ export function createRenderDiagnostics(
     const available = supported && !!counter?.count;
     const target = scene.activeCamera?.outputRenderTarget;
     const size = target?.getSize();
-    const lights = sceneShadowController(scene).diagnostics();
+    const metrics = sceneShadowController(scene).metrics();
     const state = sceneRenderingSettings(scene);
     return {
       cpuMs: cpuMs(),
@@ -66,13 +66,9 @@ export function createRenderDiagnostics(
       width: size?.width ?? engine.getRenderWidth(),
       height: size?.height ?? engine.getRenderHeight(),
       samples: target?.samples ?? 1,
-      shadowPasses: lights.reduce((sum, light) => sum + light.passes, 0),
-      // Conservative depth + color attachment estimate, excluding driver overhead.
-      shadowMapBytes: lights.reduce(
-        (sum, light) => sum + light.passes * light.mapSize ** 2 * 8,
-        0,
-      ),
-      shadowLights: lights,
+      shadowPasses: metrics.passes,
+      shadowMapBytes: metrics.bytes,
+      shadowLights: state.lightsDebug ? sceneShadowController(scene).diagnostics() : [],
       qualityLimits: effectiveShadowSettings(
         state.shadows,
         CascadedShadowGenerator.IsSupported,
@@ -80,4 +76,9 @@ export function createRenderDiagnostics(
       ).limits,
     };
   };
+}
+
+export function lightsDebugText(diagnostics: RenderDiagnostics): string | null {
+  if (!diagnostics.shadowLights.length) return null;
+  return diagnostics.shadowLights.map((light) => `${light.name}: illumination ${light.illumination}; shadows ${light.status}; ${light.mapSize}px / ${light.passes} passes`).join("\n");
 }

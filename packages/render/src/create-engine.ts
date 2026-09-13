@@ -136,7 +136,6 @@ import {
   applySetMaterialParameter,
   applyAssignMesh,
   applyPossessCamera,
-  applyShadowQuality,
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
@@ -248,7 +247,6 @@ export interface EngineHandle {
   registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
   applySceneEnvironment: (sceneData: SerializedScene) => void;
-  setShadowQuality: (level: string) => void;
   /** Overlay Play SceneLayer scenes, back to front. */
   sceneLayerScenes: () => Array<{
     layerId: string;
@@ -540,7 +538,6 @@ export interface EditorTools {
   } | null;
   /** Preview the named Default Camera without replacing the stored orbit pose. */
   setPreviewGameCamera: (enabled: boolean) => void;
-  setShadowQuality: (level: string) => void;
   /**
    * World point under a client coordinate on this viewport canvas, or null when
    * the canvas has no layout size.
@@ -1402,10 +1399,6 @@ export function createEngine(
         editorSync.setGameCameraPreview(enabled, cameraController.camera);
         scheduler.invalidate("camera");
       },
-      setShadowQuality: (level: string) => {
-        editorSync.setShadowQuality(level);
-        scheduler.invalidate("asset");
-      },
       worldPositionAtClient: (clientX, clientY) => {
         const rect = canvas.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return null;
@@ -1999,11 +1992,6 @@ export function createEngine(
       viewportShading?.apply();
       if (options.editor && previousMode !== sceneRenderingSettings(scene).mode)
         freezeEditorActiveMeshes(scene);
-      scheduler.invalidate("asset");
-    },
-    setShadowQuality: (level: string) => {
-      applyShadowQuality(scene, binding, level);
-      editor?.setShadowQuality(level);
       scheduler.invalidate("asset");
     },
     postProcessPassCount: () => attachedStack?.passes.length ?? 0,
