@@ -5,12 +5,16 @@ import {
   NullEngine,
   PointLight,
   SpotLight,
+  RenderTargetTexture,
   Scene,
   UniversalCamera,
   Vector3,
 } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
-import { updateSceneRenderingSettings } from "./render-settings";
+import {
+  sceneRenderingSettings,
+  updateSceneRenderingSettings,
+} from "./render-settings";
 import { normalizeShadowSettings } from "@babylonslate/core";
 
 const engines: NullEngine[] = [];
@@ -35,7 +39,8 @@ function fixture() {
     const target = createCubeTarget(...args);
     if (!target.texture) {
       const texture = engine.getLoadedTexturesCache().at(-1);
-      if (!texture) throw new Error("NullEngine cube allocation has no texture");
+      if (!texture)
+        throw new Error("NullEngine cube allocation has no texture");
       target.setTexture(texture);
     }
     return target;
@@ -308,29 +313,142 @@ describe("shared shadow lifecycle", () => {
     previewController.sync();
     expect(previewController.metrics().passes).toBe(48);
   });
-  it("cleans failed allocations and admits healthy lights without retrying failures each frame", () => {
+  it("exhausts bounded smaller maps, admits healthy lights and retries after context recovery", async () => {
     const { scene, controller } = fixture();
     const light = new PointLight("point", Vector3.Zero(), scene);
     controller.register(light, true, 1);
     const fallback = new PointLight("fallback", Vector3.Zero(), scene);
     controller.register(fallback, true);
-    const allocation = vi
-      .spyOn(scene.getEngine(), "createRenderTargetCubeTexture")
-      .mockImplementationOnce(() => {
+    const engine = scene.getEngine();
+    const baselineTextures = [...scene.textures];
+    const baselineInternals = [...engine.getLoadedTexturesCache()];
+    const baselineWrappers = [...engine._renderTargetWrapperCache];
+    const baselineResizeObservers = engine.onResizeObservable.observers.length;
+    const baselineRenderPasses = engine.getRenderPassNames().filter(Boolean);
+    const allocation = vi.spyOn(engine, "createRenderTargetCubeTexture");
+    for (let attempt = 0; attempt < 3; attempt++)
+      allocation.mockImplementationOnce(() => {
         throw new Error("allocation failed");
       });
     controller.sync();
     expect(controller.metrics()).toEqual({ bytes: 0, passes: 0 });
+    expect(allocation.mock.calls.map(([size]) => size)).toEqual([
+      1024, 512, 256,
+    ]);
+    expect(scene.textures).toEqual(baselineTextures);
+    expect(engine.getLoadedTexturesCache()).toEqual(baselineInternals);
+    expect(engine._renderTargetWrapperCache).toEqual(baselineWrappers);
+    expect(engine.getRenderPassNames().filter(Boolean)).toEqual(
+      baselineRenderPasses,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(engine.onResizeObservable.observers).toHaveLength(
+      baselineResizeObservers,
+    );
     controller.sync();
     controller.sync();
     expect(controller.generator(light)).toBeNull();
     expect(controller.status(light)).toBe("allocation-failed");
-    expect(allocation).toHaveBeenCalledTimes(2);
+    expect(allocation).toHaveBeenCalledTimes(4);
     expect(controller.generator(fallback)).not.toBeNull();
-    updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ localMapSize: 512 }),
-    });
+    engine.onContextRestoredObservable.notifyObservers(engine);
     controller.sync();
     expect(controller.generator(light)).not.toBeNull();
+    expect(controller.generator(light)?.getShadowMap()?.getRenderSize()).toBe(
+      1024,
+    );
+    expect(controller.generator(fallback)).toBeNull();
+  });
+  it("releases a partially allocated cube before retrying smaller without changing authored settings", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    const preview = new RenderTargetTexture("existing-preview", 256, scene);
+    const previewTarget = preview.renderTarget;
+    const baselineTextures = [...scene.textures];
+    const baselineInternals = [...engine.getLoadedTexturesCache()];
+    const baselineWrappers = [...engine._renderTargetWrapperCache];
+    const baselineResizeObservers = engine.onResizeObservable.observers.length;
+    const authored = structuredClone(sceneRenderingSettings(scene).shadows);
+    const light = new PointLight("point", Vector3.Zero(), scene);
+    controller.register(light, true);
+    const allocate = engine.createRenderTargetCubeTexture.bind(engine);
+    const allocation = vi
+      .spyOn(engine, "createRenderTargetCubeTexture")
+      .mockImplementationOnce((...args) => {
+        allocate(...args);
+        throw new Error("driver rejected completed cube");
+      });
+    controller.sync();
+    const retained = controller.generator(light);
+    expect(retained?.getShadowMap()?.getRenderSize()).toBe(512);
+    expect(controller.metrics()).toEqual({ bytes: 18 * 1024 ** 2, passes: 6 });
+    expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
+    expect(
+      controller.diagnostics().find((entry) => entry.name === "point"),
+    ).toMatchObject({
+      status: "active",
+      reason: "shadow map reduced after allocation failure",
+      allocationError: "driver rejected completed cube",
+    });
+    expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512]);
+    controller.sync();
+    expect(controller.generator(light)).toBe(retained);
+    expect(allocation).toHaveBeenCalledTimes(2);
+    light.setEnabled(false);
+    controller.sync();
+    expect(scene.textures).toEqual(baselineTextures);
+    expect(engine.getLoadedTexturesCache()).toEqual(baselineInternals);
+    expect(engine._renderTargetWrapperCache).toEqual(baselineWrappers);
+    expect(preview.renderTarget).toBe(previewTarget);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(engine.onResizeObservable.observers).toHaveLength(
+      baselineResizeObservers,
+    );
+    light.setEnabled(true);
+    controller.sync();
+    expect(controller.generator(light)?.getShadowMap()?.getRenderSize()).toBe(
+      512,
+    );
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    controller.sync();
+    expect(controller.generator(light)?.getShadowMap()?.getRenderSize()).toBe(
+      1024,
+    );
+    const restoreObservers =
+      engine.onContextRestoredObservable.observers.length;
+    scene.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(engine.onContextRestoredObservable.observers).toHaveLength(
+      restoreObservers - 1,
+    );
+  });
+  it("propagates cleanup failure without attempting another allocation", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    const light = new PointLight("point", Vector3.Zero(), scene);
+    controller.register(light, true);
+    const allocate = engine.createRenderTargetCubeTexture.bind(engine);
+    let restoreFailedDispose: (() => void) | undefined;
+    const allocation = vi
+      .spyOn(engine, "createRenderTargetCubeTexture")
+      .mockImplementationOnce((...args) => {
+        const target = allocate(...args);
+        const failedDispose = vi
+          .spyOn(target, "dispose")
+          .mockImplementationOnce(() => {
+            throw new Error("driver cleanup failed");
+          });
+        restoreFailedDispose = () => failedDispose.mockRestore();
+        throw new Error("driver allocation failed");
+      });
+    try {
+      expect(() => controller.sync()).toThrow(
+        "Shadow allocation and resource cleanup failed",
+      );
+      expect(allocation).toHaveBeenCalledTimes(1);
+      expect(controller.status(light)).toBe("allocation-failed");
+    } finally {
+      restoreFailedDispose?.();
+    }
   });
 });
