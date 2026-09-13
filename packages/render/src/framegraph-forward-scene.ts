@@ -4,10 +4,15 @@ import {
   backbufferColorTextureHandle,
   backbufferDepthStencilTextureHandle,
 } from "@babylonjs/core/FrameGraph/frameGraphTypes";
-import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { withSceneReadinessState } from "./scene-perf";
+import { findSceneShadowController } from "./shadow-controller";
+import {
+  ManagedShadowObjectRendererTask,
+  ManagedShadowsTask,
+  unsupportedManagedShadows,
+} from "./framegraph-managed-shadows";
 
 /** Internal proof result; renderer selection and authored settings are untouched. */
 export type ForwardSceneGraphResult =
@@ -20,7 +25,8 @@ export type ForwardSceneGraphResult =
  */
 export class ForwardSceneFrameGraph {
   private graph: FrameGraph | undefined;
-  private objects: FrameGraphObjectRendererTask | undefined;
+  private objects: ManagedShadowObjectRendererTask | undefined;
+  private shadows: ManagedShadowsTask | undefined;
   private cull: FrameGraphCullObjectsTask | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
@@ -50,6 +56,7 @@ export class ForwardSceneFrameGraph {
   /** Build or resize the persistent tasks and await actual object/effect readiness. */
   prepare(camera: Camera): Promise<ForwardSceneGraphResult> {
     if (this.pending) return this.pending;
+    if (!this.unavailable(camera)) this.syncShadowAdmission(camera);
     const reason = this.unsupported(camera);
     if (reason) return Promise.resolve({ path: "classic", reason });
     const work = this.prepareGraph(camera);
@@ -65,10 +72,14 @@ export class ForwardSceneFrameGraph {
   render(camera: Camera, updateCameras = true): ForwardSceneGraphResult {
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable };
+    this.syncShadowAdmission(camera);
     const engine = this.scene.getEngine();
     const reason =
       this.unsupported(camera) ??
       this.failure ??
+      (this.shadows?.needsPreparation()
+        ? "Shadow allocation changes require FrameGraph preparation."
+        : undefined) ??
       (this.pending ||
       !this.graph ||
       this.preparedWidth !== engine.getRenderWidth(true) ||
@@ -163,15 +174,23 @@ export class ForwardSceneFrameGraph {
       scene.environmentTexture?.isRenderTarget
     )
       return "Scene render targets require classic rendering.";
-    if (scene.lights.some((light) => light.getShadowGenerators()?.size))
-      return "Managed shadows require classic rendering until an admitted shadow bridge exists.";
-    return undefined;
+    return unsupportedManagedShadows(scene);
+  }
+
+  private syncShadowAdmission(camera: Camera): void {
+    const controller = findSceneShadowController(this.scene);
+    if (!controller) return;
+    withSceneReadinessState(this.scene, () => {
+      this.scene.activeCamera = camera;
+      controller.sync();
+    });
   }
 
   private async prepareGraph(camera: Camera): Promise<ForwardSceneGraphResult> {
     const scene = this.scene;
     const engine = scene.getEngine();
     try {
+      if (this.shadows?.needsPreparation()) this.releaseGraph();
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         // Explicit owner: Scene.dispose must not race an asynchronous build.
@@ -187,7 +206,7 @@ export class ForwardSceneFrameGraph {
           this.graph,
           scene,
         );
-        this.objects = new FrameGraphObjectRendererTask(
+        this.objects = new ManagedShadowObjectRendererTask(
           "Forward objects",
           this.graph,
           scene,
@@ -195,6 +214,8 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
+        this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects);
+        this.graph.addTask(this.shadows);
         this.graph.addTask(this.clear);
         this.graph.addTask(this.cull);
         this.graph.addTask(this.objects);
@@ -271,10 +292,12 @@ export class ForwardSceneFrameGraph {
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.objects?.dispose();
+    this.shadows?.dispose();
     this.clear?.dispose();
     this.cull?.dispose();
     this.graph?.dispose();
     this.objects = undefined;
+    this.shadows = undefined;
     this.clear = undefined;
     this.cull = undefined;
     this.graph = undefined;

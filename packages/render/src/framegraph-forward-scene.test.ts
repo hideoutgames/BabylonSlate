@@ -160,7 +160,7 @@ it("restores floating-origin matrices, viewport and shadow flags when object rea
   graph.dispose();
 });
 
-it("falls back before replacing managed shadows or a shared-view target", async () => {
+it("falls back before replacing unmanaged shadows or a shared-view target", async () => {
   const { scene, camera } = host();
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
@@ -169,7 +169,7 @@ it("falls back before replacing managed shadows or a shared-view target", async 
   const texture = shadow.getShadowMap();
   expect(graph.render(camera)).toMatchObject({
     path: "classic",
-    reason: expect.stringContaining("Managed shadows"),
+    reason: expect.stringContaining("Unmanaged shadow allocations"),
   });
   expect(light.getShadowGenerator()).toBe(shadow);
   expect(shadow.getShadowMap()).toBe(texture);

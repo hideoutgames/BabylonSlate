@@ -13,6 +13,17 @@ initializeCapacitorAudioLifecycle();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("framegraphShadowProof")
+) {
+  void import("./testing/framegraph-shadow-proof").then(
+    ({ runFrameGraphShadowProof }) => {
+      Object.assign(window, {
+        __babylonslateFrameGraphShadowProof: runFrameGraphShadowProof,
+      });
+    },
+  );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("framegraphForwardProof")
 ) {
   void import("./testing/framegraph-forward-proof").then(
