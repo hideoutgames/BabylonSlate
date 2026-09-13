@@ -73,7 +73,22 @@ Structural and resource changes **never** go through the snapshot buffer.
 
 **Stats command:** `{ type: "stats" }` is **not** a hot-path channel. The worker emits it at ~5 Hz (`STATS_COMMAND_INTERVAL_MS` = 200). `scriptMs` / `physicsMs` / `tickIndex` on the snapshot header stay per-tick. Overlay Play and the packaged player stamp input from `snapshotTickIndex`, not from sparse `stats`.
 
-`load` may set `deferSceneModelsReady`. Overlay Play and the packaged player then post `{ type: "sceneModelsReady", sceneAssetGuid }` after `whenEditorModelsReady()` so Game Instance **On Scene Finish Loading** waits for mesh/model instantiation. Headless in-process tests omit the flag so finish is synchronous. Runtime emits `activeScene` before spawn; the host reloads and resets audio/particles only when the guid differs from the scene already on the handle.
+`load` may set `deferSceneModelsReady`. Runtime emits
+`activeScene { sceneAssetGuid, sceneLoadId }` before spawning and
+`sceneRealized { sceneAssetGuid, sceneLoadId }` after all world and owned SceneLayer
+resource commands. IDs start at one and increase for each load, including reloads
+of the same asset. The deferred finish latch is installed before `sceneRealized`,
+so an in-process host can acknowledge immediately without losing readiness.
+
+Overlay Play and the player post
+`{ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId }` only after the matching
+assignment batch, textures, shader warming and first frame are ready. Game Instance
+**On Scene Finish Loading** accepts only the exact pending GUID and load ID;
+early, stale, duplicate, empty-GUID and post-Stop acknowledgements do not complete
+another load. Game Instance ticks remain active while rendering loads. Headless
+hosts that omit `deferSceneModelsReady` finish synchronously after owned layers
+are realized. Hosts use load identity, rather than GUID equality, to recognize
+subsequent reloads of the same asset.
 
 `loadScripts` registers classes without creating Actors when `spawn` is omitted or empty. Editor Play and the player send an empty list; actors come from the authored scene or explicit Spawn Actor calls. Explicit `loadScripts.spawn` requests are filtered with `shouldSpawnScriptedActor` so `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, and `Scene` never become Actors.
 

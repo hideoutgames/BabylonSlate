@@ -185,7 +185,7 @@ export type ControlMessage =
       canvasHeight?: number;
     }
   | { type: "audioVoiceEnded"; voiceId: string }
-  | { type: "sceneModelsReady"; sceneAssetGuid: string };
+  | { type: "sceneModelsReady"; sceneAssetGuid: string; sceneLoadId: number };
 
 export type DebugColliderPrimitive = {
   id: string;
@@ -432,6 +432,14 @@ export type CommandMessage =
       /** Canonical scene after `changescene` / `ctx.changeScene`. */
       type: "activeScene";
       sceneAssetGuid: string;
+      /** Positive monotonically increasing ID, unique within this runtime session. */
+      sceneLoadId: number;
+    }
+  | {
+      /** All world/owned-layer resource commands for this load have been emitted. */
+      type: "sceneRealized";
+      sceneAssetGuid: string;
+      sceneLoadId: number;
     }
   | {
       /**

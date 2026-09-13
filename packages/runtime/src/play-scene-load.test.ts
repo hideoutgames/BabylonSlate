@@ -1333,8 +1333,8 @@ describe("p7-play-scene-load", () => {
     expect(
       commands.filter((command) => command.type === "activeScene"),
     ).toEqual([
-      { type: "activeScene", sceneAssetGuid: "scene-1" },
-      { type: "activeScene", sceneAssetGuid: "scene-2" },
+      { type: "activeScene", sceneAssetGuid: "scene-1", sceneLoadId: 1 },
+      { type: "activeScene", sceneAssetGuid: "scene-2", sceneLoadId: 2 },
     ]);
     runtime.stop();
   });
