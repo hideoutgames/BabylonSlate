@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 
 afterEach(() => {
@@ -23,5 +23,17 @@ describe("SceneLoadingDialog", () => {
       <SceneLoadingDialog open={false} progress={100} phase="Loading Models" />,
     );
     expect(screen.queryByTestId("scene-loading-dialog")).toBeNull();
+  });
+
+  it("offers Retry and Close after failure without showing successful progress", () => {
+    const onRetry = vi.fn();
+    const onDismiss = vi.fn();
+    render(<SceneLoadingDialog open failed progress={70} phase="Warming Shaders" onRetry={onRetry} onDismiss={onDismiss} />);
+    expect(screen.getByRole("dialog").textContent).toContain("Scene Loading Failed");
+    expect(screen.queryByTestId("scene-loading-progress")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onDismiss).toHaveBeenCalledOnce();
   });
 });

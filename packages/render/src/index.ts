@@ -90,3 +90,4 @@ export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
 
 export { lightsDebugText } from "./render-diagnostics";
+export { createSceneLoadReadiness, type SceneLoadIdentity } from "./scene-load-readiness";

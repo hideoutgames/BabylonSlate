@@ -1160,6 +1160,7 @@ export function componentPropertyRows(
           kind: "boolean",
           id: rowId(actorId, component.id, "enabled"),
           label: "Enabled",
+          description: "Viewport light icons: white means operating as configured, yellow means requested shadows are limited or unavailable, and red means disabled or not illuminating. Color remains the authored lighting color.",
           value: component.properties.enabled !== false,
           onChange: (next) => update("enabled", next),
         },

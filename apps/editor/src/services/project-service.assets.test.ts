@@ -266,7 +266,7 @@ describe("project documents as .babasset", () => {
       await storage.readBinary(MAIN_SCENE_FILE),
     );
     expect(header.type).toBe("Scene");
-    expect(header.version).toBe(3);
+    expect(header.version).toBe(4);
     expect(header.guid).toBeTruthy();
     expect(header.chunks[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -344,7 +344,7 @@ describe("project documents as .babasset", () => {
     await service.saveDocument("scene", "scenes/main.scene.json", scene);
     expect(
       JSON.parse(await storage.readText("scenes/main.scene.json")).version,
-    ).toBe(3);
+    ).toBe(4);
   });
 
   it("does not rebuild a search index on project open", async () => {

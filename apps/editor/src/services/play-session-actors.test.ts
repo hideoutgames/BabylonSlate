@@ -54,6 +54,7 @@ describe.each(["worker", "in-process"] as const)(
         actors?: ReturnType<typeof createActor>[];
         scripts?: ScriptBundleEntry[];
         gameInstanceClass?: string;
+        presentFirstFrame?: () => Promise<void>;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
@@ -65,6 +66,9 @@ describe.each(["worker", "in-process"] as const)(
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
         applyCommand() {},
         whenEditorModelsReady: () => Promise.resolve(),
+        whenMaterialTexturesReady: () => Promise.resolve(),
+        prewarmSceneMaterials: () => Promise.resolve(),
+        presentFirstFrame: options.presentFirstFrame ?? (() => Promise.resolve()),
         dispose() {},
       } as unknown as ReturnType<typeof createEngine>);
 
@@ -108,7 +112,7 @@ describe.each(["worker", "in-process"] as const)(
               boot.queueScripts(runtime, control.scripts, control.spawn ?? []);
             if (control.type === "play") void boot.play(runtime);
             if (control.type === "sceneModelsReady")
-              runtime.notifySceneModelsReady(control.sceneAssetGuid);
+              runtime.notifySceneModelsReady(control.sceneAssetGuid, control.sceneLoadId);
             if (control.type === "stop") runtime.stop();
           },
         });
@@ -132,6 +136,33 @@ describe.each(["worker", "in-process"] as const)(
       const runtime = await play();
       expect(runtime.getWorld().getActors()).toHaveLength(0);
       expect(session!.spawnedActorGuids()).toEqual([]);
+    });
+
+    it("keeps Game Instance ticking and withholds scene finish until the renderer presents", async () => {
+      let present!: () => void;
+      const presentFirstFrame = vi.fn(() => new Promise<void>((resolve) => { present = resolve; }));
+      const runtime = await play({
+        gameInstanceClass: "LoadingGame",
+        presentFirstFrame,
+        scripts: [{
+          assetGuid: "loading-game", classId: "LoadingGame", parentClassId: "GameInstance",
+          source: [
+            "export function onTick(ctx) { ctx.setVariable('ticked', true); }",
+            "export function onSceneFinishLoading(ctx) { ctx.setVariable('finished', true); }",
+          ].join("\n"),
+          anchors: [],
+          entryPoints: [
+            { name: "onTick", event: "onTick", isAsync: false },
+            { name: "onSceneFinishLoading", event: "onSceneFinishLoading", isAsync: false },
+          ],
+        }],
+      });
+      await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
+      runtime.tick();
+      expect(runtime.getWorld().gameInstance?.getVariable("ticked")).toBe(true);
+      expect(runtime.getWorld().gameInstance?.getVariable("finished")).not.toBe(true);
+      present();
+      await vi.waitFor(() => expect(runtime.getWorld().gameInstance?.getVariable("finished")).toBe(true));
     });
 
     it("keeps a placed main actor at its authored position and runs Begin Play", async () => {

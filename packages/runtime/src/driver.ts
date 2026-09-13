@@ -254,8 +254,8 @@ export interface RuntimeDriver {
    * Idempotent. Call after `loadScripts` so Begin Play binds on spawn.
    */
   realizePlayWorld(): void;
-  /** Complete a deferred scene load after the host finishes mesh instantiation. */
-  notifySceneModelsReady(sceneAssetGuid: string): void;
+  /** Complete the matching deferred load after the host presents its ready frame. */
+  notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void;
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
@@ -411,7 +411,12 @@ class InProcessRuntime implements RuntimeDriver {
   private playWorldRealized = false;
   private sceneLoadingProgress = 1;
   private readonly deferSceneModelsReady: boolean;
-  private pendingSceneFinish: { name: string; guid: string } | null = null;
+  private sceneLoadId = 0;
+  private pendingSceneFinish: {
+    name: string;
+    guid: string;
+    sceneLoadId: number;
+  } | null = null;
   private gameInstanceBound = false;
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
@@ -1489,6 +1494,8 @@ class InProcessRuntime implements RuntimeDriver {
   realizePlayWorld(): void {
     if (this.playWorldRealized) return;
     this.playWorldRealized = true;
+    const sceneLoadId = ++this.sceneLoadId;
+    this.pendingSceneFinish = null;
     this.tilemapAnimationTimeMs = 0;
     if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
     this.loopGuard.reset();
@@ -1515,7 +1522,7 @@ class InProcessRuntime implements RuntimeDriver {
           sceneName: name,
           variables: { gravity },
         });
-        this.emit({ type: "activeScene", sceneAssetGuid: guid });
+        this.emit({ type: "activeScene", sceneAssetGuid: guid, sceneLoadId });
       }
       if (scene) {
         const actors = createActorsFromSerializedScene(
@@ -1547,10 +1554,10 @@ class InProcessRuntime implements RuntimeDriver {
       this.registerNavAgents();
       this.registerNavObstacles();
       this.attemptPossessViewTarget();
-      if (scene) {
-        this.finishOrDeferSceneLoad(name, guid);
-      }
       this.spawnOwnedSceneLayers();
+      if (scene && sceneLoadId === this.sceneLoadId) {
+        this.finishOrDeferSceneLoad(name, guid, sceneLoadId);
+      }
     } catch (error) {
       if (!isInfiniteLoopError(error)) throw error;
     }
@@ -3758,12 +3765,20 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  private finishOrDeferSceneLoad(name: string, guid: string): void {
-    if (this.deferSceneModelsReady) {
-      this.pendingSceneFinish = { name, guid };
-      return;
-    }
-    this.completeSceneLoad(name);
+  private finishOrDeferSceneLoad(
+    name: string,
+    guid: string,
+    sceneLoadId: number,
+  ): void {
+    // Install the latch first: an in-process host may acknowledge synchronously
+    // from sceneRealized, after the full world and owned-layer assignment batch.
+    this.pendingSceneFinish = { name, guid, sceneLoadId };
+    this.emit({ type: "sceneRealized", sceneAssetGuid: guid, sceneLoadId });
+    if (
+      !this.deferSceneModelsReady &&
+      this.pendingSceneFinish?.sceneLoadId === sceneLoadId
+    )
+      this.completeSceneLoad(name);
   }
 
   private completeSceneLoad(name: string): void {
@@ -3772,11 +3787,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.world.finishSceneLoad(name);
   }
 
-  notifySceneModelsReady(sceneAssetGuid: string): void {
+  notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void {
     const pending = this.pendingSceneFinish;
     if (!pending) return;
-    const guid = String(sceneAssetGuid ?? "").trim();
-    if (guid && guid !== pending.guid) return;
+    if (sceneAssetGuid !== pending.guid || sceneLoadId !== pending.sceneLoadId)
+      return;
     this.completeSceneLoad(pending.name);
   }
 
@@ -3788,6 +3803,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   stop(): void {
     this.running = false;
+    this.sceneLoadId++;
     this.pendingSceneFinish = null;
     this.finalizeTrace();
     for (const actor of this.world.getActors()) {

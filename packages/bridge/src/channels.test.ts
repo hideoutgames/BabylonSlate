@@ -289,6 +289,7 @@ describe("Audio live commands", () => {
     const control = {
       type: "sceneModelsReady",
       sceneAssetGuid: "scene-1",
+      sceneLoadId: 1,
     } satisfies ControlMessage;
     expect(controlType(control)).toBe("sceneModelsReady");
   });

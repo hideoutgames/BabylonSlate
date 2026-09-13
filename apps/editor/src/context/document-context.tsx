@@ -13,6 +13,8 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
+import { SceneLoadingDialog } from "../components/scene-loading-dialog";
+import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import type {
   AssetDocumentKind,
   DocumentRef,
@@ -260,9 +262,11 @@ import {
 } from "../lib/play-particles";
 import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
+  beginSaveAllProgress,
   clearDocumentDirtyTrace,
   documentDirtyTrace,
   recordSaveAllTrace,
+  saveAllProgress,
   saveAllTrace,
 } from "../lib/dirty-trace";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
@@ -698,6 +702,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const settingsStore = useMemo(() => createAppSettingsStore(), []);
   const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());
+  const sceneDocumentLoadRef = useRef<AbortController | null>(null);
+  const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean } | null>(null);
+  useEffect(() => () => sceneDocumentLoadRef.current?.abort(), []);
+  const cancelSceneDocumentLoad = useCallback(() => {
+    sceneDocumentLoadRef.current?.abort();
+    sceneDocumentLoadRef.current = null;
+    setSceneDocumentLoad(null);
+  }, []);
   const sourceControlRef = useRef(new SourceControlService());
   const secretStore = useMemo(() => createSecretStore(), []);
   const nativeHttp = useMemo(() => createNativeHttp(), []);
@@ -1212,16 +1224,33 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       >["layouts"],
       pending: MigrationPending[] = [],
     ) => {
+      cancelSceneDocumentLoad();
+      const sceneLoadController = new AbortController();
+      sceneDocumentLoadRef.current = sceneLoadController;
       dockviewApisRef.current.clear();
       disposeDockSubscriptions();
       preFocusLayoutsRef.current.clear();
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
-      await documentService.initializeFromProject(
-        projectService,
-        document,
-        layouts,
-      );
+      try {
+        await documentService.initializeFromProject(
+          projectService,
+          document,
+          layouts,
+          {
+            signal: sceneLoadController.signal,
+            beforeLoad: async (ref) => {
+              setSceneDocumentLoad({ ref, failed: false });
+              await waitForSceneLoadingPaint(sceneLoadController.signal);
+            },
+          },
+        );
+      } finally {
+        if (sceneDocumentLoadRef.current === sceneLoadController) {
+          sceneDocumentLoadRef.current = null;
+          setSceneDocumentLoad(null);
+        }
+      }
       setProjectDocument(document);
       setMigrationPending(pending);
       setLastCompiledSignature(null);
@@ -1261,6 +1290,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       refreshProjectList,
       captureMtimeSnapshot,
       clearPlayPreviewScripts,
+      cancelSceneDocumentLoad,
     ],
   );
 
@@ -1391,6 +1421,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [attachEnginePlugins, enterEditor, projectService]);
 
   const saveProject = useCallback(async (): Promise<boolean> => {
+    const progress = beginSaveAllProgress();
     const document = projectDocumentRef.current;
     const dirtyBefore = documentService.getDirtyDocuments().length;
     if (!document) {
@@ -1400,6 +1431,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dirtyBefore,
         dirtyAfter: dirtyBefore,
       });
+      progress.finish();
       return false;
     }
     if (projectService.pendingMigrations.length > 0) {
@@ -1410,6 +1442,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dirtyBefore,
         dirtyAfter: dirtyBefore,
       });
+      progress.finish();
       // Caller must use approveMigrationsAndSave — never silently rewrite.
       return false;
     }
@@ -1418,12 +1451,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       saveDebounceRef.current = null;
     }
     try {
+      progress.phase("audio-reverb");
       await flushAudioReverbForSave();
+      progress.phase("navigation");
       await flushNavBakeForSave();
       captureAllLayouts();
       const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
       const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model" || doc.ref.kind === "animation");
+      progress.phase("documents");
       for (const doc of dirtyDocs) {
         if (
           isAssetDocumentKind(doc.ref.kind) &&
@@ -1441,6 +1477,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
         }
       }
+      progress.phase("compile");
       if (document.settings.compileOnSave) {
         const assets = projectService.registry?.list() ?? [];
         const graphs = documentService
@@ -1466,18 +1503,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setLastCompiledSignature(graphCompileSignature(graphs, inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()])));
       }
       const layouts = documentService.buildLayouts();
+      progress.phase("project");
       await projectService.saveProject(document, layouts);
       documentService.markAllClean(dirtyDocs);
       setMigrationPending([]);
+      progress.phase("mtime");
       await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
       const guid = projectService.guid;
       if (guid) {
+        progress.phase("journal");
         const derived = await ensureDerived();
         const cleared = await truncateJournal(derived, guid, () =>
           documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
         );
         if (cleared) setRecoveryAvailable(false);
       }
+      progress.phase("callbacks");
       if (savedScene) {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
       }
@@ -1514,6 +1555,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
+    } finally {
+      progress.finish();
     }
   }, [
     bump,
@@ -1594,6 +1637,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const saveAll = saveProject;
 
   const forceCloseProject = useCallback(async () => {
+    cancelSceneDocumentLoad();
     if (saveDebounceRef.current) {
       clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = null;
@@ -1633,6 +1677,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     projectService,
     refreshProjectList,
     clearPlayPreviewScripts,
+    cancelSceneDocumentLoad,
   ]);
 
   const closeProject = useCallback(async () => {
@@ -1902,22 +1947,45 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const finishOpenDocument = useCallback(
     async (ref: DocumentRef) => {
+      const controller = isSceneWorkspaceKind(ref.kind) ? new AbortController() : null;
+      if (controller) {
+        cancelSceneDocumentLoad();
+        sceneDocumentLoadRef.current = controller;
+      }
       const { activeDocumentId } = documentService.getState();
       if (activeDocumentId) {
         captureLayoutForId(activeDocumentId);
       }
-      if (ref.kind === "scene") {
-        const nextId = documentId(ref);
-        const others = documentService
-          .getOpenDocumentsOrdered()
-          .filter((doc) => doc.ref.kind === "scene" && doc.id !== nextId);
-        for (const other of others) {
-          closeDocument(other.id);
-        }
-      }
       const layouts = documentService.buildLayouts();
       const layout = layouts.documents[documentId(ref)] ?? null;
-      await documentService.openDocument(projectService, ref, layout, true);
+      try {
+        await documentService.openDocument(projectService, ref, layout, true, controller ? {
+          signal: controller.signal,
+          beforeLoad: async () => {
+            setSceneDocumentLoad({ ref, failed: false });
+            await waitForSceneLoadingPaint(controller.signal);
+          },
+          beforeCommit: () => {
+            if (ref.kind !== "scene") return;
+            // Keep the old scene and its edit session until replacement I/O succeeds.
+            const nextId = documentId(ref);
+            const others = documentService.getOpenDocumentsOrdered()
+              .filter((doc) => doc.ref.kind === "scene" && doc.id !== nextId);
+            for (const other of others) closeDocument(other.id);
+          },
+        } : undefined);
+      } catch (error) {
+        if (controller?.signal.aborted) return;
+        if (!controller) throw error;
+        console.error("[editor] failed to open scene document", error);
+        setSceneDocumentLoad({ ref, failed: true });
+        return;
+      }
+      if (controller?.signal.aborted) return;
+      if (controller && sceneDocumentLoadRef.current === controller) {
+        sceneDocumentLoadRef.current = null;
+        setSceneDocumentLoad(null);
+      }
       if (ref.kind === "scene") {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneOpen);
       }
@@ -1927,7 +1995,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await syncPrefabInstancesRef.current({ quiet: true });
       }
     },
-    [bump, captureLayoutForId, closeDocument, documentService, projectService],
+    [bump, captureLayoutForId, closeDocument, documentService, projectService, cancelSceneDocumentLoad],
   );
 
   const openDocument = useCallback(
@@ -3412,6 +3480,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         materialPreviewCameraRadius: () => number | null;
         documentDirtyTrace: () => { kind: string; id: string; via?: string }[];
         clearDocumentDirtyTrace: () => void;
+        saveAllProgress: typeof saveAllProgress;
         saveAllTrace: () => {
           ok: boolean;
           reason: string;
@@ -3673,6 +3742,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       materialPreviewCameraRadius,
       documentDirtyTrace,
       clearDocumentDirtyTrace,
+      saveAllProgress,
       saveAllTrace,
       dirtyDocuments: () =>
         documentService.getDirtyDocuments().map((doc) => ({
@@ -4347,6 +4417,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       <DockWindowTickContext.Provider value={dockWindowTick}>
         {children}
       </DockWindowTickContext.Provider>
+      <SceneLoadingDialog
+        open={sceneDocumentLoad !== null}
+        progress={0}
+        phase="Loading Document"
+        failed={sceneDocumentLoad?.failed}
+        onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
+        onDismiss={cancelSceneDocumentLoad}
+      />
     </DocumentContext.Provider>
   );
 }

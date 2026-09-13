@@ -53,7 +53,7 @@ Class recovery and state-preservation tests wait for a visible graph node before
 
 The plugin export/re-import journey has a two-minute test deadline because it authors two projects and transfers a real downloaded file. Its assertions and the other browser-test deadlines are unchanged.
 
-The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
+The Auto Bake On Save browser test waits for its original Save All invocation to report completion, successful persistence, and clean documents before reading the navmesh chunk from the reported scene path. Closing the bake dialog completes the navigation phase; document and project writes can still be pending. The test must not trigger a second overlapping save when that dialog closes.
 
 The shared Save All browser helper waits for scene reloads to finish and uses an actionable click, so a loading backdrop cannot consume the save. CEL pixel checks compare shadowed and unshadowed surfaces as well as cast shadows on a large receiver.
 
@@ -248,6 +248,7 @@ Low-memory also enables the shared build cache described below. `cacheDirectory`
 - Export smoke loads the player from the owned test server's verified artifact, so cached local runs and CI shards do not depend on a separate `apps/player/dist`. Combined pointer-menu scenarios dismiss overlays through the backdrop and confirm dismissal before the next interaction.
 - Small renderer consumers may import `@babylonslate/render/render-scheduler` and `@babylonslate/render/audio-playback-backend` without loading the full render barrel.
 - The agent-wait process-contract suite uses a small package-manager fixture and retains a real-pnpm argument-boundary integration case. Failure output is captured before final Git snapshots so diagnostics show the failed command.
+- Save All failures include the latest invocation's pending phase and elapsed time alongside the last completed outcome. The bounded test diagnostic distinguishes an unstarted save from audio/navigation bake, document/project persistence, and post-save waits without retrying the UI action.
 
 ### CI artifacts and measurement
 

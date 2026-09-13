@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
+import { SCENE_SCHEMA_VERSION, normalizeScene } from "@babylonslate/core";
 import { createDefaultMigrationRegistry } from "./migration";
 import { loadPayloadWithMigration } from "./migrate-on-load";
 
@@ -37,6 +37,32 @@ describe("Scene schema version", () => {
     expect(loaded.version).toBe(SCENE_SCHEMA_VERSION);
     expect(loaded.pending).not.toBeNull();
     expect(loaded.payload.name).toBe("Legacy");
+  });
+  it("migrates legacy shadow capacity once and preserves a subsequently reset mode", () => {
+    const registry = createDefaultMigrationRegistry();
+    const migrated = registry.migrate("Scene", 3, {
+      settings: { shadowOverrides: { maxLocalLights: 0, enabled: false } },
+      actors: [],
+    });
+    const scene = normalizeScene(migrated.payload);
+    expect(scene.settings.shadowOverrides).toEqual({
+      maxLocalLights: 0,
+      enabled: false,
+      localLightMode: "manual",
+    });
+    delete scene.settings.shadowOverrides!.localLightMode;
+    const reopened = registry.migrate(
+      "Scene",
+      migrated.version,
+      JSON.parse(JSON.stringify(scene)),
+    );
+    expect(normalizeScene(reopened.payload).settings.shadowOverrides).toEqual({
+      maxLocalLights: 0,
+      enabled: false,
+    });
+    expect(registry.migrate("Scene", 3, { settings: {} }).payload).toEqual({
+      settings: {},
+    });
   });
 });
 

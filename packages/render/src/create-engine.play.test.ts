@@ -17,6 +17,7 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { encodeGlbJsonBin } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
@@ -166,6 +167,213 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     return { handle, canvas };
   }
+
+  it.each(["editor", "play"] as const)("rolls back late %s construction failure without disturbing shared views", async (kind) => {
+    const engine = sharedEngine();
+    const { handle: sibling } = editorHandle(engine);
+    const { handle: hidden } = editorHandle(engine);
+    hidden.setRegisterViewEnabled(false);
+    // NullEngine hardcodes its scaling getter to 1; model the real engine's
+    // mutable scaling boundary so rollback must restore the prior value.
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
+    engine.setHardwareScalingLevel(2);
+    const scenes = [...engine.scenes];
+    const utilityScenes = [...engine._virtualScenes];
+    const views = [...engine.views];
+    const enabled = views.map((view) => view.enabled);
+    const loops = [...engine.activeRenderLoops];
+    const observers = [engine.onEndFrameObservable, engine.onContextLostObservable, engine.onContextRestoredObservable];
+    const observerCounts = observers.map((observable) => observable.observers.length);
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const retained = sibling.resourceCache.getTexture("sibling-texture", engine, bytes);
+    const cache = resourceCacheForEngine(engine);
+    sibling.setTextureBudget(100, true);
+    hidden.setTextureBudget(100, true);
+    const failedCanvas = new FakeCanvas();
+    const failure = new Error("Injected late construction failure");
+    // Cover partial loop registration and a later failure after context/pointer
+    // subscriptions have been installed by the Play view.
+    const originalRun = engine.runRenderLoop.bind(engine);
+    const injection = kind === "editor"
+      ? vi.spyOn(engine, "runRenderLoop").mockImplementationOnce((callback) => {
+        originalRun(callback);
+        throw failure;
+      })
+      : vi.spyOn(engineCommandBus, "subscribe").mockImplementationOnce(() => { throw failure; });
+    try {
+      expect(() => createEngine(failedCanvas as unknown as HTMLCanvasElement, {
+        sharedEngine: engine,
+        editor: kind === "editor",
+        playMode: kind === "play",
+        hardwareScalingLevel: 1.5,
+        textureBudgetEnabled: false,
+        textureBytes: new Map([["failed-view-texture", bytes]]),
+      })).toThrow(failure);
+    } finally {
+      injection.mockRestore();
+    }
+    expect(engine.scenes).toEqual(scenes);
+    expect(engine._virtualScenes).toEqual(utilityScenes);
+    expect(engine.views).toEqual(views);
+    expect(engine.views.map((view) => view.enabled)).toEqual(enabled);
+    expect(engine.activeRenderLoops).toEqual(loops);
+    expect(engine.getHardwareScalingLevel()).toBe(2);
+    expect([...failedCanvas.listeners.values()].every((listeners) => listeners.size === 0)).toBe(true);
+    await vi.waitFor(() => expect(observers.map((observable) => observable.observers.length)).toEqual(observerCounts));
+    expect(resourceCacheForEngine(engine)).toBe(cache);
+    expect(sibling.resourceCache.getTexture("sibling-texture", engine, bytes)).toBe(retained);
+    expect(isDisposedGpuTexture(retained)).toBe(false);
+    const retainedBytes = cache.accountedBytes();
+    // Accounting only: no GPU or CPU allocation. A failed view's disabled
+    // budget must not prevent the remaining clients from evicting unused data.
+    cache.account("unused-after-failure", 4 * 1024 ** 3);
+    cache.release("unused-after-failure");
+    cache.evictToCeiling();
+    expect(cache.accountedBytes()).toBe(retainedBytes);
+    sibling.scheduler.invalidate("manual");
+    const previousFrames = sibling.scheduler.stats().renderedFrames;
+    const now = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1_000);
+    try { loops[0]!(); } finally { now.mockRestore(); }
+    expect(sibling.scheduler.stats().renderedFrames).toBe(previousFrames + 1);
+  });
+
+  it("reports rollback errors while continuing to release remaining owners", () => {
+    const engine = sharedEngine();
+    const constructionError = new Error("Render loop failed");
+    const cleanupError = new Error("Scene cleanup failed");
+    const run = vi.spyOn(engine, "runRenderLoop").mockImplementationOnce(() => {
+      vi.spyOn(engine.scenes.at(-1)!, "dispose").mockImplementationOnce(() => { throw cleanupError; });
+      throw constructionError;
+    });
+    let failure: unknown;
+    try {
+      createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    } catch (error) { failure = error; } finally { run.mockRestore(); }
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).cause).toBe(constructionError);
+    expect((failure as AggregateError).errors).toEqual([constructionError, cleanupError]);
+    expect(engine.scenes).toEqual([]);
+    expect(engine.views).toEqual([]);
+    expect(engine.activeRenderLoops).toEqual([]);
+  });
+
+  it("presents exactly one loading frame under a modal without resuming normal rendering", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const render = runLoop.mock.calls[0]![0];
+    handle.setPaused(true);
+    handle.scheduler.setObstructed(true);
+    let frames = 0;
+    handle.scene.onAfterRenderObservable.add(() => { frames += 1; });
+    let ready = false;
+    const presented = handle.presentFirstFrame().then(() => { ready = true; });
+    render();
+    expect(frames).toBe(1);
+    expect(ready).toBe(false);
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await presented;
+    render();
+    expect(frames).toBe(1);
+    expect(handle.scheduler.shouldRender(performance.now() + 1000)).toBe(false);
+  });
+
+  it("does not spend a loading permit on a sibling view or a hidden document", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle, canvas } = playHandle(engine);
+    const { canvas: sibling } = editorHandle(engine);
+    const render = runLoop.mock.calls[0]![0];
+    handle.setPaused(true);
+    let frames = 0;
+    handle.scene.onAfterRenderObservable.add(() => { frames += 1; });
+    const presented = handle.presentFirstFrame();
+    engine.activeView = engine.views!.find((view) => view.target === sibling)!;
+    render();
+    expect(frames).toBe(0);
+    engine.activeView = engine.views!.find((view) => view.target === canvas)!;
+    handle.scheduler.setDocumentVisible(false);
+    render();
+    expect(frames).toBe(0);
+    handle.scheduler.setDocumentVisible(true);
+    render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await presented;
+    expect(frames).toBe(1);
+    engine.activeView = null;
+  });
+
+  it("keeps loading through skipped effects until a complete ready frame is presented", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    handle.setPaused(true);
+    const ready = vi.fn(() => false);
+    handle.scene.addIsReadyCheck({ isReady: ready });
+    let presented = false;
+    const frame = handle.presentFirstFrame().then(() => { presented = true; });
+    const render = runLoop.mock.calls[0]![0];
+    render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await Promise.resolve();
+    expect(presented).toBe(false);
+    ready.mockReturnValue(true);
+    render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await frame;
+    expect(presented).toBe(true);
+  });
+
+  it("rejects stale first-frame and shader completions after reload or disposal", async () => {
+    const engine = sharedEngine();
+    const { handle } = editorHandle(engine);
+    const oldFrame = expect(handle.presentFirstFrame()).rejects.toThrow("superseded");
+    handle.loadScene(createDefaultScene());
+    await oldFrame;
+    let finishCompile!: () => void;
+    vi.spyOn(handle.scene.defaultMaterial, "forceCompilationAsync").mockReturnValue(
+      new Promise((resolve) => { finishCompile = resolve; }),
+    );
+    const warming = expect(handle.prewarmSceneMaterials()).rejects.toThrow("cancelled");
+    const frame = expect(handle.presentFirstFrame()).rejects.toThrow("disposed");
+    handle.dispose();
+    finishCompile();
+    await Promise.all([warming, frame]);
+    await expect(handle.whenMaterialTexturesReady()).rejects.toThrow("disposed");
+  });
+
+  it("fails the loading transaction when its first render throws", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    handle.setPaused(true);
+    vi.spyOn(handle.scene, "render").mockImplementation(() => { throw new Error("allocation failed"); });
+    const frame = expect(handle.presentFirstFrame()).rejects.toThrow("allocation failed");
+    runLoop.mock.calls[0]![0]();
+    await frame;
+    engine.onEndFrameObservable.notifyObservers(engine);
+    expect(handle.scheduler.stats().renderedFrames).toBe(0);
+  });
+
+  it("does not evict shared GPU textures on restore or retain disposed handle callbacks", () => {
+    const engine = sharedEngine();
+    const { handle: first } = editorHandle(engine);
+    const { handle: live } = editorHandle(engine);
+    const release = vi.spyOn(live.resourceCache, "releaseGpuTextures");
+    const logs: string[] = [];
+    const unsubscribe = engineCommandBus.subscribe((command) => {
+      if (command.type === "log") logs.push(command.message);
+    });
+    first.dispose();
+    engine.onContextLostObservable.notifyObservers(engine);
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    expect(release).not.toHaveBeenCalled();
+    expect(live.scene.isDisposed).toBe(false);
+    expect(logs.filter((message) => /context restored/i.test(message))).toHaveLength(1);
+    unsubscribe();
+  });
 
   it("scopes editor Drop requests to one viewport and unregisters on disposal", () => {
     const engine = sharedEngine();
@@ -332,6 +540,27 @@ describe("Play createEngine view", () => {
     const root = handle.scene.getMeshByName("actor-2");
     await handle.whenEditorModelsReady();
     expect(visualMeshes(root!).length).toBeGreaterThan(0);
+  });
+
+  it("keeps failed Play GLB imports unready until the failed assignment is replaced", async () => {
+    const { handle } = playHandle(sharedEngine());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    handle.setMeshAssets({ modelBytes: new Map([
+      ["broken", encodeGlbJsonBin({ asset: { version: "99.0" } }, new Uint8Array())],
+      ["hero", encodeTriangleGlb()],
+    ]) });
+    try {
+      handle.applyCommand({ type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "broken" });
+      // Delivery does not await model promises. A later waiter must still see
+      // the real loader failure, with no unhandled fire-and-forget rejection.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await expect(handle.whenEditorModelsReady()).rejects.toThrow();
+      await expect(handle.whenEditorModelsReady()).rejects.toThrow();
+      expect(visualMeshes(handle.scene.getMeshByName("actor-2")!)).toHaveLength(0);
+      handle.applyCommand({ type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "hero" });
+      await handle.whenEditorModelsReady();
+      expect(visualMeshes(handle.scene.getMeshByName("actor-2")!)).toHaveLength(1);
+    } finally { warn.mockRestore(); }
   });
 
   it("does not throw when a shared view canvas has no getContext", () => {

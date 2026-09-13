@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeCelShadingSettings, normalizeShadowSettings } from "@babylonslate/core";
 import {
   isSceneViewportRemountLoad,
@@ -35,25 +35,104 @@ describe("isSceneViewportRemountLoad", () => {
 });
 
 describe("runSceneViewportBlockingLoad", () => {
-  it("reports collect then model-ready then shader-warm progress", async () => {
+  let frames: FrameRequestCallback[];
+  beforeEach(() => {
+    frames = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  const paint = () => {
+    frames.shift()?.(0);
+    frames.shift()?.(16);
+  };
+
+  it("yields for modal paint before realization and stays loading through the first frame", async () => {
     const progress: Array<{ value: number; phase: string }> = [];
+    const realize = vi.fn();
     const collect = vi.fn(async () => undefined);
     const whenModelsReady = vi.fn(async () => undefined);
     const warmShaders = vi.fn(async () => undefined);
-    await runSceneViewportBlockingLoad({
+    let present!: () => void;
+    const presentFirstFrame = vi.fn(() => new Promise<void>((resolve) => { present = resolve; }));
+    const task = runSceneViewportBlockingLoad({
+      signal: new AbortController().signal,
+      realize,
       collect,
       whenModelsReady,
       warmShaders,
+      presentFirstFrame,
       onProgress: (value, phase) => progress.push({ value, phase }),
     });
-    expect(collect).toHaveBeenCalledOnce();
-    expect(whenModelsReady).toHaveBeenCalledOnce();
-    expect(warmShaders).toHaveBeenCalledOnce();
+    expect(realize).not.toHaveBeenCalled();
+    expect(collect).not.toHaveBeenCalled();
+    paint();
+    await vi.waitFor(() => expect(progress.at(-1)?.value).toBe(90));
+    expect(progress.at(-1)).toEqual({ value: 90, phase: "Presenting First Frame" });
+    expect(presentFirstFrame).not.toHaveBeenCalled();
+    paint();
+    await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
+    present();
+    await task;
     expect(progress).toEqual([
-      { value: 0, phase: "Collecting Assets" },
-      { value: 34, phase: "Loading Models" },
-      { value: 67, phase: "Warming Shaders" },
-      { value: 100, phase: "Warming Shaders" },
+      { value: 0, phase: "Preparing Scene" },
+      { value: 10, phase: "Realizing Scene" },
+      { value: 20, phase: "Collecting Assets" },
+      { value: 45, phase: "Loading Models" },
+      { value: 70, phase: "Warming Shaders" },
+      { value: 90, phase: "Presenting First Frame" },
+      { value: 100, phase: "Presenting First Frame" },
     ]);
+  });
+
+  it.each(["realize", "collect", "whenModelsReady", "warmShaders", "presentFirstFrame"] as const)(
+    "rejects %s failures without reporting ready", async (stage) => {
+      const failure = new Error("Scene resource failed");
+      const onProgress = vi.fn();
+      const options = {
+        signal: new AbortController().signal,
+        realize: () => {},
+        collect: async () => {},
+        whenModelsReady: async () => {},
+        warmShaders: async () => {},
+        presentFirstFrame: async () => {},
+        onProgress,
+        [stage]: () => { throw failure; },
+      };
+      const task = runSceneViewportBlockingLoad(options);
+      const result = expect(task).rejects.toBe(failure);
+      paint();
+      if (stage === "presentFirstFrame") {
+        await vi.waitFor(() => expect(frames).toHaveLength(1));
+        paint();
+      }
+      await result;
+      expect(onProgress.mock.calls.some(([value]) => value === 100)).toBe(false);
+    },
+  );
+
+  it("does not warm, present, or report progress after an obsolete asset batch resolves", async () => {
+    const controller = new AbortController();
+    let finishCollection!: () => void;
+    const collect = vi.fn(() => new Promise<void>((resolve) => { finishCollection = resolve; }));
+    const whenModelsReady = vi.fn(async () => {});
+    const warmShaders = vi.fn(async () => {});
+    const presentFirstFrame = vi.fn(async () => {});
+    const onProgress = vi.fn();
+    const task = runSceneViewportBlockingLoad({
+      signal: controller.signal, realize: () => {}, collect, whenModelsReady,
+      warmShaders, presentFirstFrame, onProgress,
+    });
+    const result = expect(task).rejects.toMatchObject({ name: "AbortError" });
+    paint();
+    await vi.waitFor(() => expect(collect).toHaveBeenCalledOnce());
+    controller.abort();
+    const progressCount = onProgress.mock.calls.length;
+    finishCollection();
+    await result;
+    expect(whenModelsReady).not.toHaveBeenCalled();
+    expect(warmShaders).not.toHaveBeenCalled();
+    expect(presentFirstFrame).not.toHaveBeenCalled();
+    expect(onProgress).toHaveBeenCalledTimes(progressCount);
   });
 });

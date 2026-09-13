@@ -1,8 +1,9 @@
 import { normalizeCelShadingOverrides } from "./cel-shading";
 import { normalizeShadowOverrides } from "./shadows";
+import { normalizeRenderPathOverrides, type RenderPath } from "./render-path";
 
 /**
- * Scene document schema (v3): actors, components and scene settings.
+ * Scene document schema (v4): actors, components and scene settings.
  *
  * The 2D convention is fixed here and assumed by every consumer: 2D lives on
  * the XY plane with +Y up and +X right, and the editor camera sits at negative
@@ -17,7 +18,8 @@ import { normalizeShadowOverrides } from "./shadows";
  * color/start/end,
  * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
  * keys normalize to defaults; a Default Camera pick requires both actor and
- * component ids).
+ * component ids). v4 distinguishes automatic shadow capacity from a saved
+ * manual local-light limit.
  */
 
 export type ViewportMode = "3d" | "2d";
@@ -99,6 +101,8 @@ export interface SceneCameraBounds2D {
 }
 
 export interface SceneSettings {
+  /** Missing fields inherit the project path; the GPU backend is project-wide. */
+  renderPath?: RenderPath;
   shadowOverrides?: import("./shadows").ShadowOverrides;
   /** Absent CEL fields inherit from Project Settings. Inactive in PBR mode. */
   celShading?: import("./cel-shading").CelShadingOverrides;
@@ -173,7 +177,7 @@ export interface SerializedScene {
   overlayEditor?: boolean;
 }
 
-export const SCENE_SCHEMA_VERSION = 3;
+export const SCENE_SCHEMA_VERSION = 4;
 
 export function identitySerializedTransform(): SerializedTransform {
   return {
@@ -453,6 +457,7 @@ export function normalizeSceneSettings(
       ? source.physicsWorld
       : defaults.physicsWorld;
   return {
+    ...normalizeRenderPathOverrides(source),
     celShading: normalizeCelShadingOverrides(source.celShading),
     shadowOverrides: normalizeShadowOverrides(source.shadowOverrides),
     environmentColor: asNumberTuple3(

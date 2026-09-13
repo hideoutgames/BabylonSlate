@@ -3,6 +3,7 @@ import {
   normalizeInputAssetPayload,
   identitySerializedTransform,
   normalizeSceneLayer,
+  normalizeShadowOverrides,
 } from "@babylonslate/core";
 import {
   migrateLegacyShaderPayload,
@@ -130,6 +131,27 @@ function migrateSceneV2ToV3(
   return { ...payload };
 }
 
+/** Preserve legacy numeric capacity once; current sparse overrides stay independent. */
+function migrateSceneShadowCapacity(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!payload.settings || typeof payload.settings !== "object") return payload;
+  const settings = payload.settings as Record<string, unknown>;
+  const shadowOverrides = normalizeShadowOverrides(settings.shadowOverrides);
+  if (
+    shadowOverrides.maxLocalLights === undefined ||
+    shadowOverrides.localLightMode !== undefined
+  )
+    return payload;
+  return {
+    ...payload,
+    settings: {
+      ...settings,
+      shadowOverrides: { ...shadowOverrides, localLightMode: "manual" },
+    },
+  };
+}
+
 /** Default registry with Graph/Class logic-graph chains and Scene/Project. */
 export function createDefaultMigrationRegistry(): MigrationRegistry {
   const registry = new MigrationRegistry();
@@ -157,6 +179,7 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
       }),
       migrateSceneMeshesToActors,
       migrateSceneV2ToV3,
+      migrateSceneShadowCapacity,
     ],
   });
   registry.register({
@@ -186,7 +209,12 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   const asRecord = <T extends object>(value: T): Record<string, unknown> =>
     value as unknown as Record<string, unknown>;
   for (const type of ["InputAction", "InputAxis"] as const) {
-    registry.register({ type, migrations: [(payload) => asRecord(normalizeInputAssetPayload(type, payload))] });
+    registry.register({
+      type,
+      migrations: [
+        (payload) => asRecord(normalizeInputAssetPayload(type, payload)),
+      ],
+    });
   }
   registry.register({
     type: "Audio",
@@ -208,11 +236,15 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   });
   registry.register({
     type: "ParticleEmitter",
-    migrations: [(payload) => asRecord(normalizeParticleEmitterPayload(payload))],
+    migrations: [
+      (payload) => asRecord(normalizeParticleEmitterPayload(payload)),
+    ],
   });
   registry.register({
     type: "ParticleSystem",
-    migrations: [(payload) => asRecord(normalizeParticleSystemPayload(payload))],
+    migrations: [
+      (payload) => asRecord(normalizeParticleSystemPayload(payload)),
+    ],
   });
   registry.register({
     type: "SkyboxCreator",

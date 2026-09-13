@@ -1,4 +1,5 @@
 import { sceneShadowController } from "./shadow-controller";
+import { isForwardLightExcluded } from "./light-policy";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import {
   Color3,
@@ -32,6 +33,8 @@ const BILLBOARD_SIZE = 0.5;
 /** Later than the editor grid so helper icons are not sorted behind the plane. */
 export const EDITOR_BILLBOARD_ALPHA_INDEX = 1000;
 const DEFAULT_FILL = new Color3(1, 1, 1);
+const LIMITED_FILL = new Color3(1, 1, 0);
+const DISABLED_FILL = new Color3(1, 0, 0);
 const LIGHT_ICONS = new Set<EditorBillboardIcon>([
   "point_light",
   "spot_light",
@@ -167,17 +170,25 @@ export function applyEditorBillboardFromActor(
     material.emissiveColor.copyFrom(DEFAULT_FILL);
     return;
   }
-  const color = lightColorOf(actor) ?? [1, 1, 1];
   const update = () => {
     const light = mesh.getScene().getLightByName(`${AUTHORED_LIGHT_PREFIX}${actor.id}`);
     const component = actor.components.find((entry) =>
       entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent");
-    const disabled = light ? !light.isEnabled() || light.intensity <= 0
-      : component?.properties.enabled === false || component?.properties.intensity === 0;
+    const illuminationLimited = light && isForwardLightExcluded(light);
+    const disabled = light ? (!light.isEnabled() && !illuminationLimited) || light.intensity <= 0
+      : component?.properties.enabled === false ||
+        (typeof component?.properties.intensity === "number" && component.properties.intensity <= 0);
     const shadowsMissing = light && component?.classId === "LightComponent" &&
+      component.properties.castShadows === true &&
       !sceneShadowController(mesh.getScene()).generator(light);
-    const tint = disabled ? [1, 0, 0] : shadowsMissing ? [1, 1, 0] : color;
-    material.emissiveColor.set(tint[0]!, tint[1]!, tint[2]!);
+    material.emissiveColor.copyFrom(disabled ? DISABLED_FILL : illuminationLimited || shadowsMissing ? LIMITED_FILL : DEFAULT_FILL);
+    mesh.metadata.editorBillboardStatus = disabled
+      ? "Disabled: This Light Is Disabled Or Does Not Illuminate."
+      : illuminationLimited
+        ? "Limited: Requested Illumination Exceeds This Device's Forward Light Capacity."
+      : shadowsMissing
+        ? "Limited: Requested Shadows Are Unavailable."
+        : "Active: This Light Is Operating As Configured.";
   };
   const hasUpdater = billboardUpdaters.has(mesh);
   billboardUpdaters.get(mesh)?.();
@@ -188,23 +199,6 @@ export function applyEditorBillboardFromActor(
     billboardUpdaters.delete(mesh);
   });
   update();
-}
-
-function lightColorOf(
-  actor: SerializedActor,
-): [number, number, number] | null {
-  const component = actor.components.find(
-    (entry) =>
-      entry.classId === "LightComponent" ||
-      entry.classId === "HemisphericFillLightComponent",
-  );
-  const value = component?.properties.color;
-  if (!Array.isArray(value) || value.length < 3) return null;
-  const [r, g, b] = value;
-  if (typeof r !== "number" || typeof g !== "number" || typeof b !== "number") {
-    return null;
-  }
-  return [r, g, b];
 }
 
 function iconTexture(scene: Scene, icon: EditorBillboardIcon): Texture {

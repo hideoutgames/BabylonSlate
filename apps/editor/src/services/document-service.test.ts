@@ -28,6 +28,67 @@ function createMockProjectService(
 }
 
 describe("DocumentService", () => {
+  it("waits for blocking UI before reading a scene and only closes the previous scene after success", async () => {
+    const service = new DocumentService();
+    const previous = { kind: "scene" as const, path: "assets/Previous.scene.babasset", label: "Previous" };
+    const next = { kind: "scene" as const, path: "assets/Next.scene.babasset", label: "Next" };
+    await service.openDocument(createMockProjectService(), previous);
+    let paint!: () => void;
+    let read!: (scene: ReturnType<typeof createDefaultScene>) => void;
+    const loadDocument = vi.fn(() => new Promise<ReturnType<typeof createDefaultScene>>((resolve) => { read = resolve; }));
+    const beforeCommit = vi.fn(() => {
+      expect(service.getDocument(documentId(previous))).toBeDefined();
+    });
+    const opened = service.openDocument(createMockProjectService({ loadDocument }), next, null, true, {
+      beforeLoad: () => new Promise<void>((resolve) => { paint = resolve; }),
+      beforeCommit,
+    });
+    expect(loadDocument).not.toHaveBeenCalled();
+    paint();
+    await vi.waitFor(() => expect(loadDocument).toHaveBeenCalledOnce());
+    expect(service.getActiveDocument()?.id).toBe(documentId(previous));
+    expect(beforeCommit).not.toHaveBeenCalled();
+    read({ ...createDefaultScene(), name: "Next" });
+    await opened;
+    expect(beforeCommit).toHaveBeenCalledOnce();
+    expect(service.getActiveDocument()?.content).toMatchObject({ name: "Next" });
+    expect(service.getDocument(documentId(previous))).toBeUndefined();
+  });
+
+  it("keeps the current scene and dirty revision when a replacement read fails", async () => {
+    const service = new DocumentService();
+    const previous = { kind: "scene" as const, path: "assets/Previous.scene.babasset", label: "Previous" };
+    await service.openDocument(createMockProjectService(), previous);
+    const edited = { ...createDefaultScene(), name: "Edited" };
+    service.updateScene(documentId(previous), edited);
+    const beforeCommit = vi.fn();
+    const failure = new Error("Scene read failed");
+    await expect(service.openDocument(createMockProjectService({ loadDocument: vi.fn().mockRejectedValue(failure) }),
+      { kind: "scene", path: "assets/Missing.scene.babasset", label: "Missing" }, null, true, { beforeCommit },
+    )).rejects.toBe(failure);
+    expect(beforeCommit).not.toHaveBeenCalled();
+    expect(service.getActiveDocument()).toMatchObject({ id: documentId(previous), dirty: true, content: edited });
+  });
+
+  it("does not let a cancelled late read replace a newer exclusive scene", async () => {
+    const service = new DocumentService();
+    const controller = new AbortController();
+    let finishOldRead!: (scene: ReturnType<typeof createDefaultScene>) => void;
+    const oldRead = vi.fn(() => new Promise<ReturnType<typeof createDefaultScene>>((resolve) => { finishOldRead = resolve; }));
+    const beforeCommit = vi.fn();
+    const old = service.openDocument(createMockProjectService({ loadDocument: oldRead }),
+      { kind: "scene", path: "assets/Old.scene.babasset", label: "Old" }, null, true, { signal: controller.signal, beforeCommit });
+    const rejected = expect(old).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    const next = { kind: "scene" as const, path: "assets/New.scene.babasset", label: "New" };
+    await service.openDocument(createMockProjectService(), next);
+    finishOldRead({ ...createDefaultScene(), name: "Old" });
+    await rejected;
+    expect(beforeCommit).not.toHaveBeenCalled();
+    expect(service.getActiveDocument()?.id).toBe(documentId(next));
+    expect(service.getOpenDocumentsOrdered().filter((doc) => doc.ref.kind === "scene")).toHaveLength(1);
+  });
+
   it("H6: only clears the saved document revision, retaining edits made during a save", async () => {
     const service = new DocumentService();
     const project = createMockProjectService();

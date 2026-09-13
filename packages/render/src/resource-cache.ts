@@ -178,7 +178,7 @@ export function releaseResourceCacheForEngine(engine: AbstractEngine): void {
  */
 export class ResourceCache {
   private ceiling: number;
-  private readonly clientBudgets = new Map<object, number>();
+  private readonly clientBudgets = new Map<object, { bytes?: number; enabled?: boolean }>();
   private evictionTargetFactor: number;
   private budgetEnabled: boolean;
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
@@ -204,10 +204,18 @@ export class ResourceCache {
     this.evictToCeiling();
   }
 
-  /** A shared cache honors the largest live view budget, independent of update order. */
+  /** Largest live view cap wins; null releases that view's complete budget policy. */
   setClientBudget(client: object, bytes: number | null): void {
     if (bytes === null) this.clientBudgets.delete(client);
-    else if (Number.isFinite(bytes) && bytes > 0) this.clientBudgets.set(client, bytes);
+    else if (Number.isFinite(bytes) && bytes > 0) {
+      this.clientBudgets.set(client, { ...this.clientBudgets.get(client), bytes });
+    }
+    this.evictToCeiling();
+  }
+
+  /** Any live view that disables budgeting keeps shared eviction disabled. */
+  setClientBudgetEnabled(client: object, enabled: boolean): void {
+    this.clientBudgets.set(client, { ...this.clientBudgets.get(client), enabled });
     this.evictToCeiling();
   }
 
@@ -480,8 +488,11 @@ export class ResourceCache {
   }
 
   evictToCeiling(): void {
-    if (!this.budgetEnabled) return;
-    const ceiling = this.clientBudgets.size ? Math.max(...this.clientBudgets.values()) : this.ceiling;
+    const policies = [...this.clientBudgets.values()];
+    const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
+    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return;
+    const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
+    const ceiling = caps.length ? Math.max(...caps) : this.ceiling;
     if (this.totalBytes <= ceiling) return;
     const target = ceiling * this.evictionTargetFactor;
     const candidates = [...this.entries.values()]
@@ -549,6 +560,7 @@ export function bindResourceCacheToHandle(inner: ResourceCache): {
     get(target, prop) {
       if (prop === "dispose") return () => undefined;
       if (prop === "setByteCeiling") return (bytes: number) => inner.setClientBudget(budgetOwner, bytes);
+      if (prop === "setBudgetEnabled") return (enabled: boolean) => inner.setClientBudgetEnabled(budgetOwner, enabled);
       const value = Reflect.get(target, prop) as unknown;
       if (typeof value !== "function") return value;
       return (...args: unknown[]) => {

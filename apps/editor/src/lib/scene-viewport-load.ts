@@ -17,9 +17,13 @@ export function sceneViewportRenderSettingsKey(
 }
 
 export const SCENE_LOAD_PHASES = [
+  "Preparing Scene",
+  "Loading Document",
+  "Realizing Scene",
   "Collecting Assets",
   "Loading Models",
   "Warming Shaders",
+  "Presenting First Frame",
 ] as const;
 
 export type SceneViewportLoadPhase = (typeof SCENE_LOAD_PHASES)[number];
@@ -32,17 +36,56 @@ export function isSceneViewportRemountLoad(
   return engineGeneration !== completedGeneration;
 }
 
+/** Yield across a paint before starting synchronous GPU work. Abort cancels the wait. */
+export function waitForSceneLoadingPaint(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    let frame = 0;
+    const cancel = () => {
+      cancelAnimationFrame(frame);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        signal.removeEventListener("abort", cancel);
+        resolve();
+      });
+    });
+  });
+}
+
 export async function runSceneViewportBlockingLoad(options: {
+  signal: AbortSignal;
+  realize: () => void;
   collect: () => Promise<void>;
   whenModelsReady: () => Promise<void>;
   warmShaders: () => Promise<void>;
+  presentFirstFrame: () => Promise<void>;
   onProgress: (value: number, phase: SceneViewportLoadPhase) => void;
 }): Promise<void> {
-  options.onProgress(0, "Collecting Assets");
+  options.signal.throwIfAborted();
+  options.onProgress(0, "Preparing Scene");
+  await waitForSceneLoadingPaint(options.signal);
+  options.signal.throwIfAborted();
+  options.onProgress(10, "Realizing Scene");
+  options.realize();
+  options.signal.throwIfAborted();
+  options.onProgress(20, "Collecting Assets");
   await options.collect();
-  options.onProgress(34, "Loading Models");
+  options.signal.throwIfAborted();
+  options.onProgress(45, "Loading Models");
   await options.whenModelsReady();
-  options.onProgress(67, "Warming Shaders");
+  options.signal.throwIfAborted();
+  options.onProgress(70, "Warming Shaders");
   await options.warmShaders();
-  options.onProgress(100, "Warming Shaders");
+  options.signal.throwIfAborted();
+  options.onProgress(90, "Presenting First Frame");
+  // Cached assets can finish all readiness work in one microtask batch. Give
+  // the blocking phase a paint before a permitted frame can close the dialog.
+  await waitForSceneLoadingPaint(options.signal);
+  options.signal.throwIfAborted();
+  await options.presentFirstFrame();
+  options.signal.throwIfAborted();
+  options.onProgress(100, "Presenting First Frame");
 }

@@ -31,7 +31,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`.
 - MSAA off on iPad baseline.
 - `skipPointerMovePicking: true` on all scenes (touch has no hover).
-- Shadow maps default 1024. Authored post-process stacks default to empty. Engine Settings `postProcessingEnabled` defaults **on** and can skip attaching those stacks in the editor / Play preview without changing the scene or exported games.
+- Medium requests four 2048 directional cascades and 1024 local maps, with Auto capacity of two local shadow lights. Effective admission can reduce these requests to fit attachment, face/pass, sampler and shared-Engine budgets; see [rendering profiles](../architecture/render.md). Authored post-process stacks default to empty. Engine Settings `postProcessingEnabled` defaults **on** and can skip attaching those stacks in the editor / Play preview without changing the scene or exported games.
 - Pause render loop, game worker, and encode queue on `visibilitychange` / app background.
 - Visible editor viewports always render at `viewportFrameCap` (default 30); freeze when hidden (zero-size or fully off-screen), obstructed, or a modal is open. IntersectionObserver plus an on-screen rect fallback; continuous-render leases stay refcounted.
 - Idle-unmount inactive chrome-tab workspaces after 2 minutes (`p18-inactive-documents`); cap 3 warm non-CB DockViews. **Open Scene tabs always stay mounted** and count toward that cap. P4 freeze is not a substitute for unmount. Remount restores layout / camera / graph viewport.
@@ -59,3 +59,21 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Draw-call ceiling (`DRAW_CALL_WARN_CEILING` 400) as HUD warnings.
 
 A16 60fps and on-device reopen remain `p1-device-spikes`. Export unzip-serve-boot-tick is `e2e/p14-export.spec.ts`.
+
+## Renderer baseline fixtures
+
+`e2e/rendering-baseline.spec.ts` loads a primitive room with sixteen eligible point lights, compares sixteen spots with authored 45°/90° inner/outer cones, and reloads points. Each fixture records 30 seconds of viewport frame intervals and CPU timing, shared-Engine GPU query readings, actual drawing dimensions, capability limits, estimated shadow/texture/geometry bytes, resource churn and real canvas captures. Intervals are an Engine-end-frame presentation proxy; GPU queries may include sibling views or repeat the last completed sample, and sampled churn is a lower bound. `e2e/rendering-transitions.spec.ts` exercises settings close, unchanged close, and explicit reload with blocking loading progress. Run these explicit files through `pnpm --silent agent:wait local --script test:e2e -- <file>` (quote `'--'` in PowerShell).
+
+These are local browser safety and rendering checks. Chromium touch emulation is not Safari/iPad GPU validation, estimated bytes are not measured residency, and short fixture runs do not establish sustained 60 fps. The A16 crash mechanism remains unconfirmed without device evidence.
+
+### Local software-renderer observation
+
+Revision `e6d008c3`, Windows Chromium 151.0.7922.34, WebGL2 through ANGLE/SwiftShader, tracing off. Three 30-second samples rendered at 720×464 with a 30 fps editor cap and eleven of sixteen requested forward lights admitted. GPU timer queries were unavailable.
+
+| Fixture | Frame interval median / p95 / p99 (ms) | Estimated shadow MiB | Shadow faces/passes |
+| --- | --- | --- | --- |
+| Point | 479.9 / 493.1 / 499.3 | 360 | 48 |
+| Spot | 148.6 / 158.0 / 162.6 | 132 | 11 |
+| Point repeat | 641.0 / 660.7 / 684.6 | 360 | 48 |
+
+Software rendering stayed far below the viewport cap. Scene-render CPU medians were 3.2/2.1/3.1 ms; that counter does not measure total presentation time. Each sample observed zero texture/render-target churn and one live Engine scene. Engine texture counts were 23/30/24 across fixtures, so this is not proof of constant total resource use. Non-shadow byte counters omit this fixture's runtime primitives and default textures. Setup, including persisted saves, took 35.7/12.9/21.6 seconds before sampling. A16/Safari performance, total GPU residency and sustained thermal behavior remain unmeasured.

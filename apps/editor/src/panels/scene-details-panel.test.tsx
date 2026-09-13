@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedScene } from "@babylonslate/core";
+import type { SerializedScene, ShadowSettings } from "@babylonslate/core";
 import {
   createActor,
   createDefaultScene,
@@ -12,6 +12,7 @@ import {
   eulerDegreesToQuaternion,
   identitySerializedTransform,
   normalizeScene,
+  normalizeShadowSettings,
   quaternionToEulerDegrees,
 } from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
@@ -33,7 +34,7 @@ const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.babasset",
-  render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 } },
+  render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined },
   applySceneChange: vi.fn<
     (id: string, scene: SerializedScene) => Promise<boolean>
   >(async () => true),
@@ -149,6 +150,7 @@ beforeEach(() => {
   harness.documentKind = "scene";
   harness.documentId = "scene:assets/Main.scene.babasset";
   harness.render.mode = "pbr";
+  harness.render.shadows = undefined;
   harness.scene = createDefaultScene();
   harness.applySceneChange.mockClear();
 });
@@ -341,6 +343,50 @@ describe("shared actor Details", () => {
 });
 
 describe("SceneDetailsPanel authoring", () => {
+  it("starts rendering override categories closed and restores manual collapse state after search", () => {
+    harness.render.mode = "cel";
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const shadows = () => screen.getByRole("button", { name: "Shadows" });
+    const cel = () => screen.getByRole("button", { name: "CEL Shading" });
+    const search = (value: string) => fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value } });
+    expect(shadows().getAttribute("aria-expanded")).toBe("false");
+    expect(cel().getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByLabelText("Shadow Distance")).toBeNull();
+    search("normal bias");
+    expect(shadows().getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Shadow Normal Bias")).toBeTruthy();
+    expect(screen.queryByTestId("scene-post-process-stack")).toBeNull();
+    search("");
+    expect(shadows().getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(shadows());
+    search("shadow distance");
+    fireEvent.click(shadows());
+    expect(shadows().getAttribute("aria-expanded")).toBe("false");
+    search("");
+    expect(shadows().getAttribute("aria-expanded")).toBe("true");
+    expect(cel().getAttribute("aria-expanded")).toBe("false");
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps disclosure separate from override data and resets to live project shadows", () => {
+    harness.render.shadows = normalizeShadowSettings({ distance: 200 });
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Shadows" }));
+    fireEvent.click(screen.getByRole("button", { name: "Override Shadow Distance" }));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(scene().settings.shadowOverrides).toEqual({ distance: 200 });
+    fireEvent.click(screen.getByRole("button", { name: "Shadows" }));
+    harness.render.shadows = normalizeShadowSettings({ distance: 350 });
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Shadows" }));
+    expect(screen.getByLabelText("Shadow Distance")).toHaveProperty("value", "200");
+    fireEvent.click(screen.getByRole("button", { name: "Reset Shadow Distance" }));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(scene().settings.shadowOverrides).toEqual({});
+    expect(screen.getByLabelText("Shadow Distance")).toHaveProperty("value", "350");
+  });
+
   it("filters properties and reveals matching collapsed component fields", () => {
     harness.selectedActorIds = ["actor-1"];
     scene().actors[0]!.components = [createMeshComponent("mesh-a", "box")];
@@ -815,6 +861,7 @@ it("hides scene CEL overrides in PBR and persists only explicitly overridden fie
   expect(screen.queryByTestId("scene-cel-settings")).toBeNull();
   harness.render.mode = "cel";
   view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  fireEvent.click(screen.getByRole("button", { name: "CEL Shading" }));
   expect((screen.getByLabelText("Shadow Bands") as HTMLInputElement).value).toBe("4");
   fireEvent.click(screen.getByRole("button", { name: "Override Shadow Bands" }));
   const next = harness.applySceneChange.mock.calls.at(-1)![1];

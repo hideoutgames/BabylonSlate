@@ -45,6 +45,14 @@ export interface DocumentRegistryState {
   showPluginContent: boolean;
 }
 
+export interface DocumentLoadOptions {
+  signal?: AbortSignal;
+  /** Host paints blocking progress before storage access starts. */
+  beforeLoad?: (ref: DocumentRef) => Promise<void>;
+  /** Runs after a successful read, before replacing any open document. */
+  beforeCommit?: (ref: DocumentRef) => void;
+}
+
 export class DocumentService {
   private state: DocumentRegistryState = {
     openDocuments: new Map(),
@@ -131,7 +139,9 @@ export class DocumentService {
     projectService: ProjectService,
     _document: ProjectDocument,
     layouts: ProjectLayouts,
+    sceneLoadOptions?: DocumentLoadOptions,
   ): Promise<void> {
+    sceneLoadOptions?.signal?.throwIfAborted();
     this.state = {
       openDocuments: new Map(),
       tabOrder: [],
@@ -163,12 +173,14 @@ export class DocumentService {
           { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
           layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
           false,
+          isSceneWorkspaceKind(parsed.kind) ? sceneLoadOptions : { signal: sceneLoadOptions?.signal },
         );
       } catch (error) {
         if (parsed.kind !== "trace") throw error;
       }
     }
 
+    sceneLoadOptions?.signal?.throwIfAborted();
     this.pinStickyTabs();
 
     // Always land on the Content Browser when opening a project so users
@@ -181,7 +193,9 @@ export class DocumentService {
     ref: DocumentRef,
     layout: Record<string, unknown> | null = null,
     setActive = true,
+    options?: DocumentLoadOptions,
   ): Promise<string> {
+    options?.signal?.throwIfAborted();
     if (ref.kind === "content-browser") {
       this.ensureContentBrowserTab();
       if (setActive) {
@@ -193,6 +207,8 @@ export class DocumentService {
     const id = documentId(ref);
     const existing = this.state.openDocuments.get(id);
     if (existing) {
+      options?.beforeCommit?.(ref);
+      options?.signal?.throwIfAborted();
       if (setActive) {
         this.state.activeDocumentId = id;
       }
@@ -203,7 +219,10 @@ export class DocumentService {
       return id;
     }
 
+    if (options?.beforeLoad) await options.beforeLoad(ref);
+    options?.signal?.throwIfAborted();
     const loaded = await projectService.loadDocument(ref.kind, ref.path);
+    options?.signal?.throwIfAborted();
     const content = editorTabContentForKind(
       ref.kind,
       loaded,
@@ -218,6 +237,8 @@ export class DocumentService {
       dirty: false,
     };
 
+    options?.beforeCommit?.(ref);
+    options?.signal?.throwIfAborted();
     this.state.openDocuments.set(id, entry);
     this.state.tabOrder.push(id);
     if (ref.kind === "scene") {

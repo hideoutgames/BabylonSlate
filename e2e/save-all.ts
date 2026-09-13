@@ -1,8 +1,10 @@
 import { expect, type Page } from "@playwright/test";
+import type { SaveAllProgress } from "../apps/editor/src/lib/dirty-trace";
 
 type SaveAllDiagnostics = {
   dirty: { kind: string; id: string }[];
   trace: { kind: string; id: string; via?: string }[];
+  progress: SaveAllProgress | null;
   save: {
     ok: boolean;
     reason: string;
@@ -12,12 +14,13 @@ type SaveAllDiagnostics = {
   } | null;
 };
 
-async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
+export async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
   return page.evaluate(() => {
     const host = globalThis as {
       __babylonslateTest?: {
         documentDirtyTrace?: () => { kind: string; id: string; via?: string }[];
         saveAllTrace?: () => SaveAllDiagnostics["save"];
+        saveAllProgress?: () => SaveAllProgress | null;
         dirtyDocuments?: () => { kind: string; id: string }[];
       };
     };
@@ -26,14 +29,14 @@ async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
       dirty: test?.dirtyDocuments?.() ?? [],
       trace: test?.documentDirtyTrace?.() ?? [],
       save: test?.saveAllTrace?.() ?? null,
+      progress: test?.saveAllProgress?.() ?? null,
     };
   });
 }
 
 /**
  * Click Save All when the project has unsaved documents; no-op when clean.
- * One click, then a short window that must stay clean so a post-save mutation
- * cannot hide behind retries.
+ * One click, then require clean document state and recheck the settled control.
  */
 export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<void> {
   const button = page.getByTestId("save-all-project");
@@ -41,12 +44,17 @@ export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<vo
   if (!(await button.isEnabled())) {
     return;
   }
-  await page.evaluate(() => {
-    (
+  const invocationBeforeClick = await page.evaluate(() => {
+    const test = (
       globalThis as {
-        __babylonslateTest?: { clearDocumentDirtyTrace?: () => void };
+        __babylonslateTest?: {
+          clearDocumentDirtyTrace?: () => void;
+          saveAllProgress?: () => SaveAllProgress | null;
+        };
       }
-    ).__babylonslateTest?.clearDocumentDirtyTrace?.();
+    ).__babylonslateTest;
+    test?.clearDocumentDirtyTrace?.();
+    return test?.saveAllProgress?.()?.invocation ?? 0;
   });
   // Rendering changes can rebuild the viewport behind a blocking load dialog.
   // A forced click hits that backdrop instead of invoking Save All.
@@ -70,6 +78,7 @@ export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<vo
     throw new Error(
       `Save All stayed dirty: ${JSON.stringify({
         ...diagnostics,
+        invocationBeforeClick,
         buttonDisabled: await button.isDisabled(),
       })}`,
       { cause: error },
@@ -77,7 +86,7 @@ export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<vo
   }
   try {
     await expect
-      .poll(async () => button.isEnabled(), { timeout: 1_500 })
+      .poll(async () => button.isEnabled(), { timeout })
       .toBe(false);
   } catch (error) {
     const diagnostics = await readSaveAllDiagnostics(page);

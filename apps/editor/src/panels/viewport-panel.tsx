@@ -19,6 +19,7 @@ import {
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
+import { subscribeAppSettings } from "../context/app-settings-context";
 import {
   materialViewportTestSnapshot,
   type MaterialViewportTestSnapshot,
@@ -46,7 +47,7 @@ import {
   editorKtx2PublicBase,
   editorMeshoptPublicBase,
 } from "../lib/public-engine-assets";
-import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
+import { createCanvasResizeGuard, waitForCanvasSize } from "../lib/canvas-resize-guard";
 import {
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScene,
@@ -58,6 +59,7 @@ import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
   sceneViewportRenderSettingsKey,
+  waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
 
@@ -68,8 +70,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const releaseEngineRef = useRef<(() => void) | null>(null);
   const navDebugRef = useRef<NavMeshDebugOverlay | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
+  const appliedSceneRef = useRef<{ scene: SerializedScene; handle: EngineHandle } | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const {
@@ -149,16 +153,50 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   setMarqueeRectRef.current = setMarqueeRect;
   const engineGenerationRef = useRef(0);
   const completedLoadGenerationRef = useRef(-1);
+  const completedRenderSettingsRef = useRef<string | null>(null);
+  const appliedRenderSettingsRef = useRef<string | null>(null);
+  const loadTransitionRef = useRef(0);
+  const blockingLoadRef = useRef<AbortController | null>(null);
   const [sceneLoad, setSceneLoad] = useState<{
     open: boolean;
     progress: number;
     phase: SceneViewportLoadPhase;
-  }>({ open: false, progress: 0, phase: "Collecting Assets" });
+    failed?: boolean;
+    rendering?: boolean;
+  }>({ open: false, progress: 0, phase: "Preparing Scene" });
   const [sceneReady, setSceneReady] = useState(false);
   const [dropReady, setDropReady] = useState<{
     scene: SerializedScene;
     handle: EngineHandle;
   } | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let sized = canvas.clientWidth > 0 && canvas.clientHeight > 0;
+    let retryWhenVisible = false;
+    const observer = new ResizeObserver(() => {
+      const nextSized = canvas.clientWidth > 0 && canvas.clientHeight > 0;
+      if (sized && !nextSized && blockingLoadRef.current) {
+        const loading = blockingLoadRef.current;
+        blockingLoadRef.current = null;
+        retryWhenVisible = true;
+        loading.abort();
+        setSceneReady(false);
+        setDropReady(null);
+        setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
+        // Disposal rejects an outstanding first-frame promise immediately.
+        // Completed inactive viewports retain their handle and resources.
+        releaseEngineRef.current?.();
+      } else if (!sized && nextSized && retryWhenVisible) {
+        retryWhenVisible = false;
+        setReloadVersion((version) => version + 1);
+      }
+      sized = nextSized;
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -193,6 +231,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     scene?.settings.shadowOverrides,
   );
   const [renderSettingsKey, setRenderSettingsKey] = useState(requestedRenderSettingsKey);
+  // Shading changes replace compiled material ownership. Other rendering settings
+  // are reconciled by the existing scene quality, lighting and material controllers.
+  const renderMode = (JSON.parse(renderSettingsKey) as { mode: "pbr" | "cel" }).mode;
   useEffect(() => {
     const timer = window.setTimeout(() => setRenderSettingsKey(requestedRenderSettingsKey), 150);
     return () => window.clearTimeout(timer);
@@ -300,110 +341,153 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     if (!canvas || !sharedEngine) return;
     engineGenerationRef.current += 1;
     setSceneReady(false);
+    setDropReady(null);
+    setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
+    const controller = new AbortController();
+    blockingLoadRef.current = controller;
+    const disposers: Array<() => void> = [];
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      for (const dispose of disposers.reverse()) dispose();
+    };
+    releaseEngineRef.current = release;
+    void (async () => {
+      try {
+        await waitForCanvasSize(canvas, controller.signal);
+        controller.signal.throwIfAborted();
+        setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
+        await waitForSceneLoadingPaint(controller.signal);
+        controller.signal.throwIfAborted();
+        setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
 
-    const handle = createEngine(canvas, {
-      editor: true,
-      renderSettings: JSON.parse(renderSettingsKey),
-      editorViewportId: dropViewportId,
-      sharedEngine,
-      viewportMode,
-      overlayTransformBox,
-      colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
-      ktx2BasePath: editorKtx2PublicBase(),
-      dracoBasePath: editorDracoPublicBase(),
-      meshoptBasePath: editorMeshoptPublicBase(),
-      onPickActor: (actorId, pick) =>
-        selectActorRef.current(actorId, pick?.additive === true),
-      onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
-      onMarqueeMove: (rect) => setMarqueeRectRef.current(rect),
-      dragSelectActive: () => dragSelectActiveRef.current,
-      onDragSelectEnd: () => {
-        setDragSelectActiveRef.current(false);
-        setMarqueeRectRef.current(null);
-      },
-      onGizmoDragStart: () => {
-        dragStartSceneRef.current = sceneRef.current;
-      },
-      onGizmoDragEnd: () => commitGizmoTransformRef.current(),
-      editorFlyEnabled: () => !playingRef.current,
-      editorFlySpeed: () => flySpeedRef.current,
-    });
-    engineRef.current = handle;
-    setEngineEpoch((epoch) => epoch + 1);
-    const gridSettings = sceneRef.current?.settings;
-    if (gridSettings) {
-      handle.editor?.setGridSettings({
-        tileSize: gridSettings.grid.tileSize,
-        tileSubdivisions: gridSettings.grid.tileSubdivisions,
-        cameraBounds2D: gridSettings.cameraBounds2D,
-        showGrid: gridVisible,
-      });
-    }
-    handle.editor?.camera.importSessionState(loadEditorCameraPose());
-    navDebugRef.current = new NavMeshDebugOverlay(handle.scene);
-    setNavOverlayGeneration((generation) => generation + 1);
-    handle.editor?.setPreviewCanvas(previewCanvasRef.current);
-    registerSharedEngine(handle.engine);
-    const unregisterScheduler = registerScheduler({
-      setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
-      setPaused: (v) => handle.setPaused(v),
-    });
-    const detachRenderGate = attachViewportRenderGate({
-      canvas,
-      scheduler: handle.scheduler,
-      scaling: handle.scaling,
-      setLocalQualityOverrides: (overrides) => handle.setLocalQualityOverrides(overrides),
-      setPostProcessingEnabled: (enabled) =>
-        handle.setPostProcessingEnabled(enabled),
-      setTextureBudget: (bytes, enabled) =>
-        handle.setTextureBudget(bytes, enabled),
-      setAudioBudget: (bytes, enabled) => handle.setAudioBudget(bytes, enabled),
-      setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
-    });
+        const handle = createEngine(canvas, {
+          editor: true,
+          renderSettings: JSON.parse(renderSettingsKey),
+          editorViewportId: dropViewportId,
+          sharedEngine,
+          viewportMode,
+          overlayTransformBox,
+          colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
+          ktx2BasePath: editorKtx2PublicBase(),
+          dracoBasePath: editorDracoPublicBase(),
+          meshoptBasePath: editorMeshoptPublicBase(),
+          onPickActor: (actorId, pick) =>
+            selectActorRef.current(actorId, pick?.additive === true),
+          onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
+          onMarqueeMove: (rect) => setMarqueeRectRef.current(rect),
+          dragSelectActive: () => dragSelectActiveRef.current,
+          onDragSelectEnd: () => {
+            setDragSelectActiveRef.current(false);
+            setMarqueeRectRef.current(null);
+          },
+          onGizmoDragStart: () => {
+            dragStartSceneRef.current = sceneRef.current;
+          },
+          onGizmoDragEnd: () => commitGizmoTransformRef.current(),
+          editorFlyEnabled: () => !playingRef.current,
+          editorFlySpeed: () => flySpeedRef.current,
+        });
+        engineRef.current = handle;
+        appliedRenderSettingsRef.current = renderSettingsKey;
+        disposers.push(() => {
+          joystickLeaseRef.current?.();
+          joystickLeaseRef.current = null;
+          if (handle.editor) {
+            saveEditorCameraPose(handle.editor.camera.exportSessionState());
+          }
+          handle.dispose();
+          if (engineRef.current === handle) engineRef.current = null;
+        });
+        handle.setPaused(true);
+        setEngineEpoch((epoch) => epoch + 1);
+        const gridSettings = sceneRef.current?.settings;
+        if (gridSettings) {
+          handle.editor?.setGridSettings({
+            tileSize: gridSettings.grid.tileSize,
+            tileSubdivisions: gridSettings.grid.tileSubdivisions,
+            cameraBounds2D: gridSettings.cameraBounds2D,
+            showGrid: gridVisible,
+          });
+        }
+        handle.editor?.camera.importSessionState(loadEditorCameraPose());
+        const navDebug = new NavMeshDebugOverlay(handle.scene);
+        navDebugRef.current = navDebug;
+        disposers.push(() => {
+          navDebug.dispose();
+          if (navDebugRef.current === navDebug) navDebugRef.current = null;
+        });
+        setNavOverlayGeneration((generation) => generation + 1);
+        handle.editor?.setPreviewCanvas(previewCanvasRef.current);
+        registerSharedEngine(handle.engine);
+        disposers.push(() => registerSharedEngine(null));
+        const unregisterScheduler = registerScheduler({
+          setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
+          setPaused: (v) => handle.setPaused(v),
+        });
+        disposers.push(unregisterScheduler);
+        const detachRenderGate = attachViewportRenderGate({
+          canvas,
+          scheduler: handle.scheduler,
+          scaling: handle.scaling,
+          setLocalQualityOverrides: (overrides) => handle.setLocalQualityOverrides(overrides),
+          setPostProcessingEnabled: (enabled) =>
+            handle.setPostProcessingEnabled(enabled),
+          setTextureBudget: (bytes, enabled) =>
+            handle.setTextureBudget(bytes, enabled),
+          setAudioBudget: (bytes, enabled) => handle.setAudioBudget(bytes, enabled),
+          setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
+        });
+        disposers.push(detachRenderGate);
 
-    const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
-      onHoldChange: (holding) => handle.scheduler.setResizing(holding),
-    });
-    resizeIfSized(canvas);
+        const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
+          onHoldChange: (holding) => handle.scheduler.setResizing(holding),
+        });
+        disposers.push(() => resizeIfSized.dispose());
+        resizeIfSized(canvas);
 
-    const resizeObserver = new ResizeObserver(() => {
-      resizeIfSized(canvas);
-    });
-    resizeObserver.observe(canvas);
-
-    const intersectionObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
+        const resizeObserver = new ResizeObserver(() => {
           resizeIfSized(canvas);
+        });
+        disposers.push(() => resizeObserver.disconnect());
+        resizeObserver.observe(canvas);
+
+        const intersectionObserver = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              resizeIfSized(canvas);
+            }
+          }
+        });
+        disposers.push(() => intersectionObserver.disconnect());
+        intersectionObserver.observe(canvas);
+
+        const restoreObserver = handle.engine.onContextRestoredObservable.add(() => {
+          if (released || controller.signal.aborted) return;
+          // Restoration is another blocking transition, including on the same Engine.
+          setReloadVersion((version) => version + 1);
+        });
+        disposers.push(() => handle.engine.onContextRestoredObservable.remove(restoreObserver));
+        if (!sceneRef.current) setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
+      } catch (error) {
+        release();
+        if (controller.signal.aborted) return;
+        console.error("[viewport] failed to create scene", error);
+        setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true });
+      } finally {
+        // Keep construction covered until the scene-loading effect takes over.
+        if (blockingLoadRef.current === controller && (!engineRef.current || !sceneRef.current)) {
+          blockingLoadRef.current = null;
         }
       }
-    });
-    intersectionObserver.observe(canvas);
-
-    handle.engine.onContextRestoredObservable.add(() => {
-      resizeIfSized(canvas);
-      const currentScene = sceneRef.current;
-      if (currentScene) {
-        handle.loadScene(currentScene);
-      }
-    });
+    })();
 
     return () => {
-      resizeIfSized.dispose();
-      resizeObserver.disconnect();
-      intersectionObserver.disconnect();
-      detachRenderGate();
-      unregisterScheduler();
-      joystickLeaseRef.current?.();
-      joystickLeaseRef.current = null;
-      registerSharedEngine(null);
-      navDebugRef.current?.dispose();
-      navDebugRef.current = null;
-      if (handle.editor) {
-        saveEditorCameraPose(handle.editor.camera.exportSessionState());
-      }
-      handle.dispose();
-      engineRef.current = null;
+      controller.abort();
+      loadTransitionRef.current += 1;
+      release();
+      if (releaseEngineRef.current === release) releaseEngineRef.current = null;
     };
     // Mode, selection and tool changes are pushed by effects below.
     // Remount when overlay vs world manipulator kind is known.
@@ -414,7 +498,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     registerScheduler,
     sharedEngine,
     overlayTransformBox,
-    renderSettingsKey,
+    renderMode,
     reloadVersion,
   ]);
 
@@ -453,14 +537,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         engineRef.current,
         editorViewportPausedForSession({ playing, preparing }),
       );
+      // Keep the view registered so its loading permit can present one frame.
+      if (!sceneReady) engineRef.current.setPaused(true);
     }
-  }, [playing, preparing]);
-
-  // Loading scene structure stays separate from refreshing saved assets.
-  // Save All must not reload or re-dirty the scene through array identity.
-  useEffect(() => {
-    if (scene) engineRef.current?.loadScene(scene);
-  }, [scene, engineEpoch]);
+  }, [playing, preparing, sceneReady, engineEpoch]);
 
   const materialLibraryKey = savedMaterialLibraryKey(
     assetRegistry?.list() ?? [],
@@ -470,27 +550,54 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const handle = engineRef.current;
     if (!scene || !handle) return;
+    // Scene overrides arrive before the coalesced settings transaction. Do not
+    // apply them through incremental loadScene while its blocking UI is pending.
+    if (requestedRenderSettingsKey !== renderSettingsKey) return;
     setDropReady(null);
-    let cancelled = false;
+    setSceneReady(false);
+    const controller = new AbortController();
+    const transitionId = ++loadTransitionRef.current;
+    const isCurrent = () => !controller.signal.aborted &&
+      transitionId === loadTransitionRef.current && engineRef.current === handle;
     const generation = engineGenerationRef.current;
-    const blocking = isSceneViewportRemountLoad(
+    const remount = isSceneViewportRemountLoad(
       generation,
       completedLoadGenerationRef.current,
     );
+    const rendering = !remount && completedRenderSettingsRef.current !== renderSettingsKey;
+    const blocking = remount || rendering;
     if (blocking) {
-      setSceneLoad({ open: true, progress: 0, phase: "Collecting Assets" });
+      blockingLoadRef.current = controller;
+      handle.setPaused(true);
+      setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene", rendering });
     }
     void (async () => {
+      const realize = () => {
+        if (!isCurrent()) return;
+        if (appliedRenderSettingsRef.current !== renderSettingsKey) {
+          handle.setRenderSettings(JSON.parse(renderSettingsKey));
+          appliedRenderSettingsRef.current = renderSettingsKey;
+        }
+        // Saved Material refreshes must not realize or re-dirty scene structure.
+        if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
+        handle.loadScene(scene);
+        appliedSceneRef.current = { scene, handle };
+      };
       const applyCollectedAssets = async () => {
         const sprites = await collectPlaySpritePayloads(scene);
+        controller.signal.throwIfAborted();
         const tileContent = await collectPlayTilemapContent(scene);
+        controller.signal.throwIfAborted();
         const modelBytes = await collectPlayModelBytes(scene);
+        controller.signal.throwIfAborted();
         const modelPayloads = await collectPlayModelPayloads(scene);
+        controller.signal.throwIfAborted();
         const materials = await collectPlayMaterialLibrary(
           scene,
           [],
           modelSlotMaterialGuidsFromPayloads(modelPayloads),
         );
+        controller.signal.throwIfAborted();
         const extraTextureGuids = [
           ...materials.textureGuids,
           ...skyboxFaceGuidsFromScene(scene),
@@ -501,21 +608,24 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           tileContent.tilesets,
           extraTextureGuids,
         );
+        controller.signal.throwIfAborted();
         const texturePixelSizes = collectPlayTexturePixelSizes(
           sprites,
           tileContent.tilesets,
           extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
+        controller.signal.throwIfAborted();
         const msdf = fontMsdfMapsFromPairs(
           await collectPlayFontMsdfPair(scene),
         );
+        controller.signal.throwIfAborted();
         const fontFaceEntries = await collectPlayFontFaceEntries();
         const fontCss = collectPlayFontCssStacks();
-        if (cancelled || engineRef.current !== handle) return;
+        if (!isCurrent()) return;
         handle.setMaterialDocuments(materials.documents, materials.functions);
         await handle.registerFonts(fontFaceEntries);
-        if (cancelled || engineRef.current !== handle) return;
+        if (!isCurrent()) return;
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -536,51 +646,71 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       };
       try {
         if (blocking) {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          await waitForCanvasSize(canvas, controller.signal);
+          if (!isCurrent()) return;
+          setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
           await runSceneViewportBlockingLoad({
+            signal: controller.signal,
+            realize,
             collect: applyCollectedAssets,
             whenModelsReady: async () => {
-              if (cancelled || engineRef.current !== handle) return;
+              if (!isCurrent()) return;
               await handle.whenEditorModelsReady();
+              if (!isCurrent()) return;
+              await handle.whenMaterialTexturesReady();
             },
             warmShaders: async () => {
-              if (cancelled || engineRef.current !== handle) return;
+              if (!isCurrent()) return;
               await handle.prewarmSceneMaterials();
             },
+            presentFirstFrame: async () => {
+              if (!isCurrent()) return;
+              await handle.presentFirstFrame();
+            },
             onProgress: (progress, phase) => {
-              if (cancelled) return;
-              setSceneLoad({ open: true, progress, phase });
+              if (!isCurrent()) return;
+              setSceneLoad({ open: true, progress, phase, rendering });
             },
           });
         } else {
+          realize();
           await applyCollectedAssets();
-          if (!cancelled && engineRef.current === handle) {
+          if (isCurrent()) {
             await handle.whenEditorModelsReady();
           }
         }
-        if (!cancelled && engineRef.current === handle) {
+        if (isCurrent()) {
           setDropReady({ scene, handle });
-        }
-      } catch (error) {
-        console.error("[viewport] failed to load mesh assets", error);
-      } finally {
-        if (!cancelled) {
           if (blocking) {
             completedLoadGenerationRef.current = generation;
+            completedRenderSettingsRef.current = renderSettingsKey;
             setSceneLoad({
               open: false,
               progress: 100,
-              phase: "Warming Shaders",
+              phase: "Presenting First Frame",
+              rendering,
             });
           }
           setSceneReady(true);
         }
+      } catch (error) {
+        if (!isCurrent()) return;
+        console.error("[viewport] failed to load scene", error);
+        releaseEngineRef.current?.();
+        setSceneLoad((current) => ({ ...current, open: true, failed: true }));
+      } finally {
+        if (blockingLoadRef.current === controller) blockingLoadRef.current = null;
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     scene,
+    requestedRenderSettingsKey,
+    renderSettingsKey,
     materialLibraryKey,
     textureLodKey,
     collectPlaySpritePayloads,
@@ -617,7 +747,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       if (guid) guids.add(guid);
     }
     handle.setEditingMaterialGuids(guids);
-  }, [openDocuments, assetRegistry]);
+  }, [openDocuments, assetRegistry, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(selectedActorIds);
@@ -629,11 +759,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
-  }, [viewportMode]);
+  }, [viewportMode, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
-  }, [viewportShadingMode]);
+  }, [viewportShadingMode, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setDrawMeshCollision(collisionsVisible);
@@ -641,15 +771,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.setPreviewGameCamera(previewGameCamera);
-  }, [previewGameCamera]);
+  }, [previewGameCamera, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);
-  }, [pivotAroundCenter]);
+  }, [pivotAroundCenter, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);
-  }, [gizmoTool]);
+  }, [gizmoTool, engineEpoch]);
 
   useEffect(() => {
     const grid = scene?.settings.grid;
@@ -664,7 +794,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       rotateDeg: grid?.snapRotateDeg ?? 15,
       scale: grid?.snapScale ?? 0.25,
     });
-  }, [scene?.settings.grid, snapEnabled, viewportMode]);
+  }, [scene?.settings.grid, snapEnabled, viewportMode, engineEpoch]);
 
   useEffect(() => {
     const settings = scene?.settings;
@@ -682,7 +812,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);
-  }, [gridVisible]);
+  }, [gridVisible, engineEpoch]);
 
   useEffect(() => {
     const twoD = projectDocument?.settings.twoD;
@@ -715,11 +845,139 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         >;
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
+        renderingBaseline: () => Record<string, unknown> | null;
+        measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
       };
     };
     const host = globalThis as ViewportTestHost;
+    let viewportFrameCap: number | null = null;
+    const unsubscribeSettings = subscribeAppSettings(({ settings }) => {
+      viewportFrameCap = settings.viewportFrameCap;
+    });
+    const measurements = new Set<() => void>();
 
     host.__babylonslateViewportTest = {
+      measureRenderingBaseline: async (durationMs) => {
+        for (const cancel of measurements) cancel();
+        const handle = engineRef.current;
+        if (!handle) throw new Error("No active viewport for rendering measurement");
+        // Keep collection bounded even if a test supplies an invalid duration.
+        const requestedMs = Number.isFinite(durationMs)
+          ? Math.min(30_000, Math.max(1, durationMs)) : 30_000;
+        return new Promise((resolve) => {
+          const started = performance.now();
+          const frameSamples: Array<{
+            atMs: number; intervalMs: number | null; frameDelta: number;
+            cpuMs: number; gpuMs: number | null; gpuStatus: string;
+            viewportFrameCap: number | null; documentVisible: boolean;
+          }> = [];
+          const resourceSamples: Array<Record<string, number>> = [];
+          let lastFrame = handle.scheduler.stats().renderedFrames;
+          let lastPresented: number | null = null;
+          let lastResourceAt = -250;
+          let droppedSamples = 0;
+          let finished = false;
+          let previousTextures = new Set(handle.engine.getLoadedTexturesCache());
+          let previousTargets = new Set(handle.engine._renderTargetWrapperCache);
+          let texturesAdded = 0;
+          let texturesRemoved = 0;
+          let targetsAdded = 0;
+          let targetsRemoved = 0;
+          const sampleResources = (atMs: number) => {
+            const textures = new Set(handle.engine.getLoadedTexturesCache());
+            const targets = new Set(handle.engine._renderTargetWrapperCache);
+            for (const texture of textures) if (!previousTextures.has(texture)) texturesAdded += 1;
+            for (const texture of previousTextures) if (!textures.has(texture)) texturesRemoved += 1;
+            for (const target of targets) if (!previousTargets.has(target)) targetsAdded += 1;
+            for (const target of previousTargets) if (!targets.has(target)) targetsRemoved += 1;
+            previousTextures = textures;
+            previousTargets = targets;
+            resourceSamples.push({
+              atMs,
+              estimatedTextureBytes: handle.resourceCache.accountedBytes(),
+              estimatedGeometryBytes: handle.accountedGeometryBytes(),
+              estimatedShadowBytes: handle.renderDiagnostics().shadowMapBytes,
+              sceneMeshes: handle.scene.meshes.length,
+              engineScenes: handle.engine.scenes.length,
+              engineTextures: textures.size,
+              engineRenderTargets: targets.size,
+              texturesAdded, texturesRemoved, targetsAdded, targetsRemoved,
+            });
+            lastResourceAt = atMs;
+          };
+          const finish = (cancelled: string | null = null) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            handle.engine.onEndFrameObservable.remove(frameObserver);
+            handle.engine.onContextLostObservable.remove(lostObserver);
+            handle.scene.onDisposeObservable.remove(disposeObserver);
+            measurements.delete(cancel);
+            const elapsedMs = performance.now() - started;
+            if (!cancelled) sampleResources(elapsedMs);
+            resolve({ requestedMs, elapsedMs, cancelled, droppedSamples, frameSamples, resourceSamples });
+          };
+          const cancel = () => finish("Viewport measurement was superseded or disposed");
+          const frameObserver = handle.engine.onEndFrameObservable.add(() => {
+            if (engineRef.current !== handle || handle.scene.isDisposed) {
+              cancel();
+              return;
+            }
+            const frame = handle.scheduler.stats().renderedFrames;
+            // Shared Engine end-frame notifications from sibling views are not
+            // presentations of this viewport. Only its own scheduler advances.
+            if (frame === lastFrame) return;
+            const now = performance.now();
+            const atMs = now - started;
+            const diagnostics = handle.renderDiagnostics();
+            if (frameSamples.length < 6_000) {
+              frameSamples.push({
+                atMs, intervalMs: lastPresented === null ? null : now - lastPresented,
+                frameDelta: frame - lastFrame,
+                cpuMs: diagnostics.cpuMs, gpuMs: diagnostics.gpuMs,
+                gpuStatus: diagnostics.gpuStatus,
+                viewportFrameCap, documentVisible: document.visibilityState === "visible",
+              });
+            } else droppedSamples += 1;
+            lastFrame = frame;
+            lastPresented = now;
+            if (atMs - lastResourceAt >= 250) sampleResources(atMs);
+          });
+          const lostObserver = handle.engine.onContextLostObservable.add(() => finish("Rendering context was lost"));
+          const disposeObserver = handle.scene.onDisposeObservable.addOnce(cancel);
+          const timer = setTimeout(() => finish(), requestedMs);
+          measurements.add(cancel);
+          sampleResources(0);
+        });
+      },
+      renderingBaseline: () => {
+        const handle = engineRef.current;
+        if (!handle) return null;
+        const caps = handle.engine.getCaps();
+        return {
+          userAgent: navigator.userAgent,
+          backend: "webgl2",
+          webGLVersion: handle.engine.webGLVersion,
+          glInfo: handle.engine.getGlInfo(),
+          render: handle.renderDiagnostics(),
+          frameCount: handle.scheduler.stats().renderedFrames,
+          viewportFrameCap,
+          drawCalls: handle.drawCalls(),
+          liveObjects: handle.liveObjectCounts(),
+          engineScenes: handle.engine.scenes.length,
+          estimatedTextureBytes: handle.resourceCache.accountedBytes(),
+          estimatedGeometryBytes: handle.accountedGeometryBytes(),
+          sceneOverrides: sceneRef.current?.settings.shadowOverrides,
+          capabilities: {
+            maxTextureSize: caps.maxTextureSize,
+            maxCubemapTextureSize: caps.maxCubemapTextureSize,
+            maxTexturesImageUnits: caps.maxTexturesImageUnits,
+            textureFloatRender: caps.textureFloatRender,
+            textureHalfFloatRender: caps.textureHalfFloatRender,
+            timerQuery: !!caps.timerQuery,
+          },
+        };
+      },
       sceneVisuals: () => {
         const sync = engineRef.current?.editor?.sync;
         const actors = sceneRef.current?.actors ?? [];
@@ -796,6 +1054,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
 
     return () => {
+      for (const cancel of measurements) cancel();
+      unsubscribeSettings();
       delete host.__babylonslateViewportTest;
     };
   }, [commitGizmoTransform]);
@@ -874,6 +1134,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         open={sceneLoad.open}
         progress={sceneLoad.progress}
         phase={sceneLoad.phase}
+        failed={sceneLoad.failed}
+        rendering={sceneLoad.rendering}
+        onRetry={() => setReloadVersion((version) => version + 1)}
+        onDismiss={() => setSceneLoad((current) => ({ ...current, open: false }))}
       />
     </div>
   );

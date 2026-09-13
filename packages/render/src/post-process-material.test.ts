@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
+  createDefaultMaterialFunctionDocument,
+  lowerMaterialDocument,
   type MaterialDocument,
+  type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { createMaterialPreviewScene } from "./material-preview";
@@ -19,10 +22,10 @@ afterEach(() => {
   while (disposers.length > 0) disposers.pop()?.();
 });
 
-function host() {
+function host(functions: Record<string, MaterialFunctionDocument> = {}) {
   const engine = new NullEngine();
   const preview = createMaterialPreviewScene(engine as never);
-  const library = new MaterialLibrary();
+  const library = new MaterialLibrary({ functions: () => functions });
   disposers.push(() => {
     library.dispose();
     preview.dispose();
@@ -136,6 +139,56 @@ function normalSamplingDocument(): MaterialDocument {
     },
   );
   return document;
+}
+
+function nestedSamplingDocument(buffer: "sceneDepth" | "sceneNormal") {
+  const source =
+    buffer === "sceneDepth"
+      ? depthSamplingDocument()
+      : normalSamplingDocument();
+  const inner = createDefaultMaterialFunctionDocument("Sample Buffer");
+  inner.inputs = [];
+  inner.outputs = [{ id: "out_value", name: "Color", type: "vec4" }];
+  inner.nodes.push(...source.nodes.filter((node) => node.id !== "output"));
+  inner.edges = source.edges.map((edge) =>
+    edge.targetNodeId === "output"
+      ? { ...edge, targetNodeId: "outputs", targetPinId: "out_value" }
+      : edge,
+  );
+  const outer = createDefaultMaterialFunctionDocument("Nested Buffer");
+  outer.inputs = [];
+  outer.outputs = inner.outputs;
+  outer.nodes.push({
+    id: "nested",
+    type: "function.call",
+    position: { x: 0, y: 0 },
+    properties: { functionGuid: "inner" },
+  });
+  outer.edges = [
+    {
+      id: "e-nested-output",
+      sourceNodeId: "nested",
+      sourcePinId: "out_value",
+      targetNodeId: "outputs",
+      targetPinId: "out_value",
+    },
+  ];
+  const document = createDefaultMaterialDocument(
+    "Function Buffer",
+    "postProcess",
+  );
+  document.nodes.push({
+    id: "call",
+    type: "function.call",
+    position: { x: 0, y: 0 },
+    properties: { functionGuid: "outer" },
+  });
+  document.edges = document.edges.map((edge) =>
+    edge.id === "e-scene-output"
+      ? { ...edge, sourceNodeId: "call", sourcePinId: "out_value" }
+      : edge,
+  );
+  return { document, functions: { inner, outer } };
 }
 
 describe("post-process stack", () => {
@@ -261,6 +314,88 @@ describe("post-process stack", () => {
     expect(diagnostics[0]?.nodeId).toBe("depth");
     expect(diagnostics[0]?.code).toBe("material.capability");
   });
+
+  it.each([
+    ["sceneDepth", "depth", "Scene Depth"],
+    ["sceneNormal", "n", "Scene Normal"],
+  ] as const)(
+    "denies nested %s before acquisition while retaining neighboring passes",
+    (buffer, node, title) => {
+      const { document, functions } = nestedSamplingDocument(buffer);
+      const { preview, library } = host(functions);
+      const diagnostics: PostProcessStackDiagnostic[] = [];
+      const enableDepth = vi.spyOn(preview.scene, "enableDepthRenderer");
+      const enableNormal = vi.spyOn(preview.scene, "enablePrePassRenderer");
+      const attached = attachPostProcessStack({
+        scene: preview.scene,
+        camera: preview.camera,
+        library,
+        stack: ["before", "nested", "after"].map((materialGuid, order) => ({
+          materialGuid,
+          order,
+          enabled: true,
+        })),
+        documentFor: (guid) =>
+          guid === "nested"
+            ? document
+            : createDefaultMaterialDocument(guid, "postProcess"),
+        deviceBuffers: { sceneDepth: false, sceneNormal: false },
+        onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      });
+      disposers.push(() => attached.dispose());
+      expect(attached.passes).toHaveLength(2);
+      expect(library.materialFor(preview.scene, "nested")).toBeNull();
+      expect(diagnostics).toEqual([
+        expect.objectContaining({
+          code: "material.capability",
+          materialGuid: "nested",
+          nodeId: `call/nested/${node}`,
+          message: expect.stringContaining(title),
+        }),
+      ]);
+      expect(enableDepth).not.toHaveBeenCalled();
+      expect(enableNormal).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["sceneDepth", "sceneNormal"] as const)(
+    "leases and releases nested %s from the compiled plan",
+    (buffer) => {
+      const { document, functions } = nestedSamplingDocument(buffer);
+      const { preview, library } = host(functions);
+      // NullEngine reports no MRT support by default. Its pre-pass remains a real
+      // Babylon renderer; this test exercises attachment rather than GPU drawing.
+      preview.scene.getEngine().getCaps().drawBuffersExtension = true;
+      const enableDepth = vi.spyOn(preview.scene, "enableDepthRenderer");
+      const enableNormal = vi.spyOn(preview.scene, "enablePrePassRenderer");
+      const disableDepth = vi.spyOn(preview.scene, "disableDepthRenderer");
+      const disableNormal = vi.spyOn(preview.scene, "disablePrePassRenderer");
+      const diagnostics: PostProcessStackDiagnostic[] = [];
+      const attached = attachPostProcessStack({
+        scene: preview.scene,
+        camera: preview.camera,
+        library,
+        stack: [{ materialGuid: "nested", order: 0, enabled: true }],
+        documentFor: () => document,
+        deviceBuffers: { sceneDepth: true, sceneNormal: true },
+        onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      });
+      disposers.push(() => attached.dispose());
+      expect(diagnostics).toEqual([]);
+      expect(attached.passes).toHaveLength(1);
+      expect(
+        buffer === "sceneDepth" ? enableDepth : enableNormal,
+      ).toHaveBeenCalled();
+      expect(
+        buffer === "sceneDepth" ? enableNormal : enableDepth,
+      ).not.toHaveBeenCalled();
+      attached.dispose();
+      expect(
+        buffer === "sceneDepth" ? disableDepth : disableNormal,
+      ).toHaveBeenCalledTimes(1);
+      expect(library.materialFor(preview.scene, "nested")).toBeNull();
+    },
+  );
 
   it("enables a linear depth renderer for Scene Depth and releases it on detach", () => {
     const { preview, library } = host();
@@ -415,6 +550,12 @@ describe("post-process stack", () => {
     vi.spyOn(library, "acquire").mockReturnValue({
       ok: true,
       hash: "stub",
+      plan: (() => {
+        const lowered = lowerMaterialDocument(normalSamplingDocument());
+        if (!lowered.ok)
+          throw new Error("Expected a valid normal sampling plan");
+        return lowered.plan;
+      })(),
       material: {
         createPostProcess: () => ({ dispose: vi.fn() }),
       },

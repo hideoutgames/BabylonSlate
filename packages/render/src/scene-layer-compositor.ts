@@ -19,6 +19,7 @@ import {
   type SceneLayerHitTest,
 } from "@babylonslate/core";
 import { installEngineDefaultMaterial } from "./default-material";
+import { isSceneFrameReady } from "./scene-perf";
 import { configureCutoutSorting } from "./sorting";
 import {
   overlayCanvasToWorld,
@@ -223,6 +224,14 @@ export class SceneLayerCompositor {
         record.scene.render();
       }
     }
+  }
+
+  isReady(): boolean {
+    for (const record of this.byId.values()) {
+      if (!isSceneFrameReady(record.scene, record.rtt ? [record.rtt] : [])) return false;
+      if (record.rtt && (!record.blitScene || !isSceneFrameReady(record.blitScene))) return false;
+    }
+    return true;
   }
 
   pickHits(

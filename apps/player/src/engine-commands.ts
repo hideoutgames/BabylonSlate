@@ -22,11 +22,12 @@ export function applyPlayerActiveScene(
   scenes: ReadonlyMap<string, SerializedScene>,
   command: { type: string; sceneAssetGuid?: unknown },
   currentSceneGuid?: string | null,
+  forceReload = false,
 ): boolean {
   if (command.type !== "activeScene" || typeof command.sceneAssetGuid !== "string") {
     return false;
   }
-  if (command.sceneAssetGuid === currentSceneGuid) return true;
+  if (!forceReload && command.sceneAssetGuid === currentSceneGuid) return true;
   const scene = scenes.get(command.sceneAssetGuid);
   if (!scene) return false;
   handle.loadScene(scene);
@@ -34,32 +35,4 @@ export function applyPlayerActiveScene(
   handle.resetAudioSession?.();
   handle.resetParticleSession?.();
   return true;
-}
-
-/** Preview Build / packaged player: warm shaders after the first mesh exists. */
-export function schedulePlayerMaterialPrewarm(
-  handle: {
-    whenEditorModelsReady: () => Promise<void>;
-    whenMaterialTexturesReady?: () => Promise<void>;
-    prewarmSceneMaterials: () => Promise<void>;
-  },
-  commandType: string,
-  scheduled: { current: boolean },
-): void {
-  if (commandType !== "assignMesh" || scheduled.current) return;
-  scheduled.current = true;
-  void handle
-    .whenEditorModelsReady()
-    .then(() => handle.whenMaterialTexturesReady?.())
-    .then(() => handle.prewarmSceneMaterials());
-}
-
-export function schedulePlayerSceneModelsReady(
-  post: (message: { type: "sceneModelsReady"; sceneAssetGuid: string }) => void,
-  handle: { whenEditorModelsReady: () => Promise<void> },
-  sceneAssetGuid: string,
-): void {
-  void handle.whenEditorModelsReady().then(() => {
-    post({ type: "sceneModelsReady", sceneAssetGuid });
-  });
 }

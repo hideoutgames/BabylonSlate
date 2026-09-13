@@ -232,7 +232,7 @@ function handleControl(msg: ControlMessage): void {
       ensureRuntime().applyAudioVoiceEnded(msg);
       return;
     case "sceneModelsReady":
-      ensureRuntime().notifySceneModelsReady(msg.sceneAssetGuid);
+      ensureRuntime().notifySceneModelsReady(msg.sceneAssetGuid, msg.sceneLoadId);
       return;
   }
 }

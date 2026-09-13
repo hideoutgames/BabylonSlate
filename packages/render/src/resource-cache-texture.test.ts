@@ -481,6 +481,45 @@ describe("encode queue pause reasons (editor helper contract)", () => {
 });
 
 describe("bindResourceCacheToHandle", () => {
+  it.each(["enabled-first", "disabled-first"])("keeps a sibling's disabled budget policy regardless of update order (%s)", (order) => {
+    const inner = new ResourceCache({ byteCeiling: 100 });
+    const capped = bindResourceCacheToHandle(inner);
+    const uncapped = bindResourceCacheToHandle(inner);
+    const clients = order === "enabled-first" ? [capped, uncapped] : [uncapped, capped];
+    for (const client of clients) {
+      client.cache.setByteCeiling(100);
+      client.cache.setBudgetEnabled(client === capped);
+    }
+    inner.account("resident", 500);
+    inner.release("resident");
+    capped.cache.setBudgetEnabled(true);
+    expect(inner.accountedBytes()).toBe(500);
+    uncapped.releaseHandleRetains();
+    inner.account("after-detach", 500);
+    inner.release("after-detach");
+    inner.evictToCeiling();
+    expect(inner.accountedBytes()).toBe(0);
+    capped.releaseHandleRetains();
+    inner.dispose();
+  });
+
+  it.each([true, false])("restores the cache's baseline enabled=%s after the last explicit view policy detaches", (enabled) => {
+    const inner = new ResourceCache({ byteCeiling: 100, budgetEnabled: enabled });
+    const bound = bindResourceCacheToHandle(inner);
+    bound.cache.setByteCeiling(100);
+    bound.cache.setBudgetEnabled(!enabled);
+    inner.account("while-attached", 500);
+    inner.release("while-attached");
+    inner.evictToCeiling();
+    expect(inner.accountedBytes()).toBe(enabled ? 500 : 0);
+    bound.releaseHandleRetains();
+    inner.account("after-detach", 500);
+    inner.release("after-detach");
+    inner.evictToCeiling();
+    expect(inner.accountedBytes()).toBe(enabled ? 0 : 500);
+    inner.dispose();
+  });
+
   it("releases this handle's retains then flushes unreferenced GPU wrappers", () => {
     const engine = new NullEngine();
     const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });

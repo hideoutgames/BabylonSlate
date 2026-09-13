@@ -9,6 +9,7 @@ export {
 } from "./catalog-dialog";
 export { SearchInput, type SearchInputProps } from "./search-input";
 export { PanelFrame } from "./panel-frame";
+export { DisclosureSection, type DisclosureSectionProps } from "./disclosure-section";
 export { ToolbarStrip } from "./toolbar-strip";
 export { SelectableText } from "./selectable-text";
 export { ContextMenuOverlay } from "./context-menu-overlay";

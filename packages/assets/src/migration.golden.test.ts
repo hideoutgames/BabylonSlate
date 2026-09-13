@@ -79,7 +79,7 @@ describe("historical migration goldens", () => {
     expect(loaded.pending).toEqual({
       type: "Scene",
       fromVersion: 0,
-      toVersion: 3,
+      toVersion: 4,
       path: "assets/legacy.scene.babasset",
     });
     expect(loaded.payload.name).toBe("Legacy");
@@ -100,7 +100,7 @@ describe("historical migration goldens", () => {
       path: "assets/legacy.scene.babasset",
     });
 
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(4);
     expect(loaded.payload.actors).toEqual([
       {
         id: "cube",

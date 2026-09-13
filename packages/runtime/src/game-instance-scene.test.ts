@@ -3,6 +3,7 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import {
   createActor,
   createDefaultSceneSettings,
+  createDefaultSceneLayer,
   createMeshComponent,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -15,7 +16,7 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
-import { createInProcessRuntime } from "./driver";
+import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
 
 function node(
@@ -443,7 +444,7 @@ describe("Game Instance native events and scene APIs", () => {
     expect(
       logMessages(commands).some((message) => message.startsWith("finish:")),
     ).toBe(false);
-    runtime.notifySceneModelsReady("scene-1");
+    runtime.notifySceneModelsReady("scene-1", 1);
     expect(
       logMessages(commands).some((message) => message.startsWith("finish:Level1")),
     ).toBe(true);
@@ -476,6 +477,87 @@ describe("Game Instance native events and scene APIs", () => {
     expect(messages).toContain("end");
     expect(messages.indexOf("exit:Level1")).toBeLessThan(messages.indexOf("end"));
     expect(messages.some((message) => message.startsWith("finish:"))).toBe(false);
+  });
+
+  it("rejects stale same-scene and invalid acknowledgements while preserving Game Instance ticks", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      deferSceneModelsReady: true,
+      playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
+      playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(giLoggerGraph(registry), registry, "GameInstance", "gi", "GameInstance"),
+    ]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.executeConsoleCommand("changescene scene-1");
+    expect(commands.filter((command) => command.type === "activeScene")).toEqual([
+      { type: "activeScene", sceneAssetGuid: "scene-1", sceneLoadId: 1 },
+      { type: "activeScene", sceneAssetGuid: "scene-1", sceneLoadId: 2 },
+    ]);
+    for (const id of [1, 0, -1, NaN, Infinity, 1.5])
+      runtime.notifySceneModelsReady("scene-1", id);
+    runtime.notifySceneModelsReady("", 2);
+    runtime.notifySceneModelsReady("other-scene", 2);
+    runtime.tick();
+    expect(logMessages(commands)).toContain("tick");
+    expect(logMessages(commands).some((message) => message.startsWith("finish:"))).toBe(false);
+    runtime.notifySceneModelsReady("scene-1", 2);
+    runtime.notifySceneModelsReady("scene-1", 2);
+    expect(logMessages(commands).filter((message) => message.startsWith("finish:Level1"))).toHaveLength(1);
+    runtime.stop();
+    runtime.notifySceneModelsReady("scene-1", 2);
+    expect(logMessages(commands).filter((message) => message.startsWith("finish:Level1"))).toHaveLength(1);
+  });
+
+  it("accepts immediate readiness only after owned SceneLayer resource commands are emitted", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const scene = sceneNamed("Level1", [createActor("hero", "Hero")]);
+    scene.settings.sceneLayers = [{ assetGuid: "overlay", zOrder: 1, enabled: true }];
+    const overlay = {
+      ...createDefaultSceneLayer(),
+      actors: [createActor("overlay-actor", "Overlay", {
+        classId: "SceneLayerActor",
+        components: [createMeshComponent("overlay-mesh", "box")],
+      })],
+    };
+    const runtime: RuntimeDriver = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      deferSceneModelsReady: true,
+      playScene: scene,
+      playSceneGuid: "scene-1",
+      sceneLayerLibrary: { overlay },
+      onCommand: (command) => {
+        commands.push(command);
+        if (command.type === "activeScene") {
+          runtime.notifySceneModelsReady(command.sceneAssetGuid, command.sceneLoadId);
+          expect(logMessages(commands).some((message) => message.startsWith("finish:"))).toBe(false);
+        }
+        if (command.type === "sceneRealized") {
+          expect(runtime.getWorld().getSceneLayers()).toHaveLength(1);
+          expect(commands.some((entry) => entry.type === "assignMesh" && entry.sceneLayerId !== undefined)).toBe(true);
+          runtime.notifySceneModelsReady(command.sceneAssetGuid, command.sceneLoadId);
+        }
+      },
+    });
+    await runtime.loadScripts([
+      toScript(giLoggerGraph(registry), registry, "GameInstance", "gi", "GameInstance"),
+    ]);
+    runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "sceneRealized")).toEqual([
+      { type: "sceneRealized", sceneAssetGuid: "scene-1", sceneLoadId: 1 },
+    ]);
+    expect(logMessages(commands).filter((message) => message.startsWith("finish:Level1"))).toHaveLength(1);
+    runtime.stop();
   });
 
   it("Gets Scene Asset Guid and Get/Sets Gravity on a live Scene reference", async () => {
@@ -574,7 +656,7 @@ describe("Game Instance native events and scene APIs", () => {
     ]);
     runtime.realizePlayWorld();
     runtime.stop();
-    runtime.notifySceneModelsReady("scene-1");
+    runtime.notifySceneModelsReady("scene-1", 1);
     const messages = logMessages(commands);
     expect(messages).toContain("exit:Level1");
     expect(messages).toContain("end");
@@ -610,11 +692,11 @@ describe("Game Instance native events and scene APIs", () => {
     expect(afterChange.some((message) => message.startsWith("finish:"))).toBe(
       false,
     );
-    runtime.notifySceneModelsReady("scene-1");
+    runtime.notifySceneModelsReady("scene-1", 1);
     expect(
       logMessages(commands).some((message) => message.startsWith("finish:")),
     ).toBe(false);
-    runtime.notifySceneModelsReady("scene-2");
+    runtime.notifySceneModelsReady("scene-2", 2);
     expect(logMessages(commands)).toContainEqual(
       expect.stringMatching(/^finish:Level2/),
     );

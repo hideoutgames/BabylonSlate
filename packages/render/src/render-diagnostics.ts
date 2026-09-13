@@ -1,5 +1,4 @@
 import {
-  CascadedShadowGenerator,
   EngineInstrumentation,
   type AbstractEngine,
   type Scene,
@@ -7,6 +6,7 @@ import {
 import { sceneShadowController } from "./shadow-controller";
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
+import { sceneLightingLimits } from "./scene-lighting";
 
 const instruments = new WeakMap<AbstractEngine, EngineInstrumentation>();
 export type RenderDiagnostics = {
@@ -68,17 +68,28 @@ export function createRenderDiagnostics(
       samples: target?.samples ?? 1,
       shadowPasses: metrics.passes,
       shadowMapBytes: metrics.bytes,
-      shadowLights: state.lightsDebug ? sceneShadowController(scene).diagnostics() : [],
-      qualityLimits: effectiveShadowSettings(
-        state.shadows,
-        CascadedShadowGenerator.IsSupported,
-        state.mode,
-      ).limits,
+      shadowLights: state.lightsDebug
+        ? sceneShadowController(scene).diagnostics()
+        : [],
+      qualityLimits: [
+        ...sceneLightingLimits(scene),
+        ...effectiveShadowSettings(
+          state.shadows,
+          engine._features.supportCSM,
+          state.mode,
+        ).limits,
+        ...sceneShadowController(scene).limits(),
+      ],
     };
   };
 }
 
 export function lightsDebugText(diagnostics: RenderDiagnostics): string | null {
   if (!diagnostics.shadowLights.length) return null;
-  return diagnostics.shadowLights.map((light) => `${light.name}: illumination ${light.illumination}; shadows ${light.status}; ${light.mapSize}px / ${light.passes} passes`).join("\n");
+  return diagnostics.shadowLights
+    .map(
+      (light) =>
+        `${light.name}: illumination ${light.illumination}; shadows ${light.status}${light.reason ? ` (${light.reason})` : ""}; ${light.mapSize}px / ${light.passes} passes${light.effectiveFilter ? ` / ${light.effectiveFilter}` : ""}`,
+    )
+    .join("\n");
 }

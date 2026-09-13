@@ -1,4 +1,5 @@
 import { normalizeRenderingQuality, type RenderingQuality } from "./render-quality";
+import { normalizeRenderingPipeline, type RenderPath, type GpuBackend } from "./render-path";
 import { lookAtRotation } from "./euler";
 import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode } from "./cel-shading";
 import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
@@ -117,6 +118,10 @@ export const DEFAULT_AUDIO_PROJECT_SETTINGS: AudioProjectSettings = {
 };
 
 export interface RenderProjectSettings {
+  /** Missing legacy values normalize to Forward. Independent of PBR/CEL. */
+  renderPath?: RenderPath;
+  /** Missing legacy values normalize to WebGL2; owned by the project Engine. */
+  gpuBackend?: GpuBackend;
   quality?: RenderingQuality;
   shadows?: ShadowSettings;
   mode?: RenderMode;
@@ -142,6 +147,7 @@ export const DEFAULT_RENDER_HEIGHT = 1080;
 
 /** Missing field on existing projects — keep fill / Follow System. */
 export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
+  ...normalizeRenderingPipeline(undefined),
   quality: normalizeRenderingQuality(undefined),
   shadows: normalizeShadowSettings(undefined),
   mode: "pbr",
@@ -154,6 +160,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
 
 /** New projects default 1920×1080 custom resolution with Black Bars off (fill). */
 export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
+  ...normalizeRenderingPipeline(undefined),
   quality: normalizeRenderingQuality(undefined),
   shadows: normalizeShadowSettings(undefined),
   mode: "pbr",
@@ -519,6 +526,7 @@ function normalizeRender(
   value: Partial<RenderProjectSettings> | undefined,
 ): RenderProjectSettings {
   return {
+    ...normalizeRenderingPipeline(value),
     mode: value?.mode === "cel" ? "cel" : "pbr",
     cel: normalizeCelShadingSettings(value?.cel),
     shadows: normalizeShadowSettings(value?.shadows),

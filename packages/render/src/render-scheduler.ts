@@ -82,6 +82,11 @@ export class RenderScheduler {
     this.dirty = true;
   }
 
+  /** A loading transaction may draw under its modal, but never a hidden view. */
+  canPresentLoadingFrame(): boolean {
+    return this.documentVisible && this.visible && !this.resizing;
+  }
+
   setObstructed(value: boolean): void {
     this.obstructed = value;
   }

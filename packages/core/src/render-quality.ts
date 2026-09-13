@@ -1,5 +1,6 @@
 import {
   normalizeShadowSettings,
+  normalizeShadowOverrides,
   SHADOW_PROFILES,
   type ShadowOverrides,
   type ShadowSettings,
@@ -146,8 +147,8 @@ export function resolveRenderingQuality(
     }),
     shadows: normalizeShadowSettings({
       ...normalizeShadowSettings(project.shadows),
-      ...scene,
-      ...session.shadows,
+      ...normalizeShadowOverrides(scene),
+      ...normalizeShadowOverrides(session.shadows),
     }),
   };
 }
@@ -227,7 +228,12 @@ export class RenderingQualitySession {
       };
     } else if (choice !== undefined) {
       const numeric = value === undefined ? NaN : Number(value);
-      if (
+      if (group === "shadows" && choice === "budget" && value === "auto")
+        this.overrides = {
+          ...this.overrides,
+          shadows: { ...this.overrides.shadows, localLightMode: "auto" },
+        };
+      else if (
         group === "shadows" &&
         choice === "budget" &&
         Number.isSafeInteger(numeric) &&
@@ -235,7 +241,11 @@ export class RenderingQualitySession {
       )
         this.overrides = {
           ...this.overrides,
-          shadows: { ...this.overrides.shadows, maxLocalLights: numeric },
+          shadows: {
+            ...this.overrides.shadows,
+            localLightMode: "manual",
+            maxLocalLights: numeric,
+          },
         };
       else if (
         group === "shadows" &&

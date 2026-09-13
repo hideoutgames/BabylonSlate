@@ -1,5 +1,6 @@
 import "./texture-quality";
-import { syncDirectionalLightPolicy } from "./light-policy";
+import { syncForwardLightPolicy } from "./light-policy";
+import { forwardLightBudget } from "./forward-light-budget";
 import {
   Material,
   NodeMaterial,
@@ -30,13 +31,12 @@ function isLitMaterial(material: Material): material is LitMaterial {
   return typeof material.maxSimultaneousLights === "number";
 }
 
-type SceneLighting = { sync: () => void };
+type SceneLighting = { sync: () => void; limits: () => string[] };
 const lightingByScene = new WeakMap<Scene, SceneLighting>();
 
 /**
- * Forward shaders must have room for every enabled scene light. Keep Babylon's
- * small-scene default, growing only when the scene needs more lights. Changes
- * are batched before rendering; unchanged frames only check collection sizes.
+ * Bound conventional shader variants before compilation, then select effective
+ * lights within that budget without changing authored Enabled values.
  */
 export function syncSceneLighting(scene: Scene): void {
   let lighting = lightingByScene.get(scene);
@@ -47,12 +47,22 @@ export function syncSceneLighting(scene: Scene): void {
   lighting.sync();
 }
 
+export function sceneLightingLimits(scene: Scene): string[] {
+  return lightingByScene.get(scene)?.limits() ?? [];
+}
+
 function installSceneLighting(scene: Scene): SceneLighting {
   let dirty = true;
   let lightCount = -1;
   let materialCount = -1;
   let sceneLightsEnabled = scene.lightsEnabled;
+  let sceneShadowsEnabled = scene.shadowsEnabled;
   let enabledLights: Light[] = [];
+  let nextEnabled: Light[] = [];
+  let shadowLayout: unknown[] = [];
+  let nextShadowLayout: unknown[] = [];
+  let admission = { requested: 0, admitted: 0, limited: [] as Light[] };
+  let budget = forwardLightBudget(scene.getEngine());
   const watchedLights = new Map<Light, Observer<boolean>>();
   const invalidate = () => {
     dirty = true;
@@ -60,21 +70,39 @@ function installSceneLighting(scene: Scene): SceneLighting {
 
   const sync = (): void => {
     if (scene.isDisposed) return;
-    syncDirectionalLightPolicy(scene);
+    budget = forwardLightBudget(scene.getEngine());
+    // Selection precedes the collection fast path: camera/light movement and
+    // priority changes need no scene membership or Enabled event.
+    admission = syncForwardLightPolicy(scene, budget.slots);
+    nextEnabled.length = 0;
+    nextShadowLayout.length = 0;
+    for (const light of scene.lights) {
+      if (!light.isEnabled()) continue;
+      nextEnabled.push(light);
+      nextShadowLayout.push(light.shadowEnabled,
+        light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator());
+    }
+    const changed =
+      sceneLightsEnabled !== scene.lightsEnabled ||
+      sceneShadowsEnabled !== scene.shadowsEnabled ||
+      nextEnabled.length !== enabledLights.length ||
+      nextEnabled.some((light, index) => light !== enabledLights[index]) ||
+      nextShadowLayout.length !== shadowLayout.length ||
+      nextShadowLayout.some((entry, index) => entry !== shadowLayout[index]);
     // Babylon defers its new-entity observables. These O(1) checks also catch
     // objects constructed immediately before prewarm or the first render.
     if (
       !dirty &&
       lightCount === scene.lights.length &&
       materialCount === scene.materials.length &&
-      sceneLightsEnabled === scene.lightsEnabled
+      !changed
     )
       return;
     dirty = false;
     lightCount = scene.lights.length;
     materialCount = scene.materials.length;
-    const sceneLightingChanged = sceneLightsEnabled !== scene.lightsEnabled;
     sceneLightsEnabled = scene.lightsEnabled;
+    sceneShadowsEnabled = scene.shadowsEnabled;
     const liveLights = new Set(scene.lights);
     for (const [light, observer] of watchedLights) {
       if (liveLights.has(light)) continue;
@@ -88,13 +116,13 @@ function installSceneLighting(scene: Scene): SceneLighting {
         light.onEffectiveEnabledStateChangedObservable.add(invalidate),
       );
     }
-    const nextEnabled = scene.lights.filter((light) => light.isEnabled());
-    const changed =
-      sceneLightingChanged ||
-      nextEnabled.length !== enabledLights.length ||
-      nextEnabled.some((light, index) => light !== enabledLights[index]);
+    const previousEnabled = enabledLights;
     enabledLights = nextEnabled;
-    const capacity = Math.max(4, enabledLights.length);
+    nextEnabled = previousEnabled;
+    const previousShadowLayout = shadowLayout;
+    shadowLayout = nextShadowLayout;
+    nextShadowLayout = previousShadowLayout;
+    const capacity = Math.min(budget.slots, Math.max(4, enabledLights.length));
     const blocked = scene.blockMaterialDirtyMechanism;
     scene.blockMaterialDirtyMechanism = false;
     try {
@@ -104,7 +132,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
         material.maxSimultaneousLights = capacity;
         material.markAsDirty(Material.LightDirtyFlag);
         // Light defines alone do not invalidate a frozen material's cached
-        // readiness. Preserve its freeze policy while refreshing the shader.
+        // readiness, including when a disposed generator removes SHADOW defines.
+        // Preserve its freeze policy while refreshing the shader.
         material.markDirty();
       }
     } finally {
@@ -117,17 +146,32 @@ function installSceneLighting(scene: Scene): SceneLighting {
   const lightRemoved = scene.onLightRemovedObservable.add(invalidate);
   const materialAdded = scene.onNewMaterialAddedObservable.add(invalidate);
   const materialRemoved = scene.onMaterialRemovedObservable.add(invalidate);
+  const restored = scene
+    .getEngine()
+    .onContextRestoredObservable.add(invalidate);
   scene.onDisposeObservable.addOnce(() => {
     scene.onBeforeRenderObservable.remove(beforeRender);
     scene.onNewLightAddedObservable.remove(lightAdded);
     scene.onLightRemovedObservable.remove(lightRemoved);
     scene.onNewMaterialAddedObservable.remove(materialAdded);
     scene.onMaterialRemovedObservable.remove(materialRemoved);
+    scene.getEngine().onContextRestoredObservable.remove(restored);
     for (const [light, observer] of watchedLights) {
       light.onEffectiveEnabledStateChangedObservable.remove(observer);
     }
     watchedLights.clear();
     lightingByScene.delete(scene);
   });
-  return { sync };
+  return {
+    sync,
+    limits: () =>
+      admission.limited.length
+        ? [
+            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved). Limited: ${admission.limited
+              .slice(0, 16)
+              .map((light) => light.name)
+              .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`,
+          ]
+        : [],
+  };
 }

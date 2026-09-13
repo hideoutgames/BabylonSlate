@@ -2,6 +2,7 @@ import type { Mesh, NodeMaterial, Scene, Texture } from "@babylonjs/core";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import {
   lowerMaterialDocument,
+  type MaterialBuildPlan,
   type MaterialDiagnostic,
   type MaterialDocument,
   type MaterialFunctionDocument,
@@ -19,6 +20,8 @@ export interface AcquiredMaterial {
   ok: true;
   material: NodeMaterial;
   hash: string;
+  /** Fully resolved plan used for this acquisition, including nested functions. */
+  plan: MaterialBuildPlan;
   ready: Promise<readonly MaterialDiagnostic[]>;
 }
 
@@ -45,6 +48,8 @@ export function materialAvailable(
 export type MaterialAcquireOptions = {
   unlit?: boolean;
   instanceKey?: string;
+  /** Reject a resolved plan before compilation or taking a cached reference. */
+  validatePlan?: (plan: MaterialBuildPlan) => MaterialDiagnostic | undefined;
 };
 
 export type MaterialResolveOptions = MaterialAcquireOptions & {
@@ -154,6 +159,8 @@ export class MaterialLibrary {
     if (!lowered.ok) {
       return { ok: false, diagnostics: lowered.diagnostics };
     }
+    const denied = options?.validatePlan?.(lowered.plan);
+    if (denied) return { ok: false, diagnostics: [denied] };
     const key = cacheKey(assetGuid, unlit, options?.instanceKey);
     const entries = this.entriesFor(scene);
     const existing = entries.get(key);
@@ -161,7 +168,7 @@ export class MaterialLibrary {
     const waiting = pending.get(key);
     if (waiting?.hash === lowered.plan.hash && !isDisposedNodeMaterial(waiting.material, scene)) {
       waiting.refCount += 1;
-      return { ok: true, material: waiting.material, hash: waiting.hash, ready: waiting.ready };
+      return { ok: true, material: waiting.material, hash: waiting.hash, plan: lowered.plan, ready: waiting.ready };
     }
     if (waiting) { pending.delete(key); waiting.dispose(); }
     if (
@@ -170,7 +177,7 @@ export class MaterialLibrary {
       !isDisposedNodeMaterial(existing.material, scene)
     ) {
       existing.refCount += 1;
-      return { ok: true, material: existing.material, hash: existing.hash, ready: existing.ready };
+      return { ok: true, material: existing.material, hash: existing.hash, plan: lowered.plan, ready: existing.ready };
     }
 
     const compiled = compileMaterialPlan(lowered.plan, {
@@ -218,7 +225,7 @@ export class MaterialLibrary {
         this.options.onMaterialReady?.(scene, assetGuid);
       });
     }
-    return { ok: true, material: compiled.material, hash: lowered.plan.hash, ready: compiled.ready };
+    return { ok: true, material: compiled.material, hash: lowered.plan.hash, plan: lowered.plan, ready: compiled.ready };
   }
 
   release(
