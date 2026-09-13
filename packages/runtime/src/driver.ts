@@ -437,6 +437,7 @@ class InProcessRuntime implements RuntimeDriver {
   private realization: SceneRealization | null = null;
   private sceneWorkBlocked = false;
   private bootLoading = false;
+  private preparedBootScene: { work: SceneRealization; name: string } | null = null;
   private stopped = false;
   private lifecycleId = 0;
   private sceneChangeId = 0;
@@ -1589,6 +1590,14 @@ class InProcessRuntime implements RuntimeDriver {
   finishPlayLoading(): void {
     if (this.stopped) throw sceneRealizationCancelled();
     this.bootLoading = false;
+    const prepared = this.preparedBootScene;
+    this.preparedBootScene = null;
+    if (!prepared || this.realization !== prepared.work) return;
+    this.checkRealization(prepared.work);
+    // Game Instance may have changed poses or created actors during native boot.
+    this.publishSnapshot();
+    this.checkRealization(prepared.work);
+    this.finishOrDeferSceneLoad(prepared.name, prepared.work.guid, prepared.work.loadId);
   }
 
   private checkRealization(work: SceneRealization): void {
@@ -1601,6 +1610,7 @@ class InProcessRuntime implements RuntimeDriver {
     const work = this.realization;
     if (!work) return;
     this.realization = null;
+    if (this.preparedBootScene?.work === work) this.preparedBootScene = null;
     work.controller.abort(sceneRealizationCancelled());
     if (work.finished) return;
     for (const actor of work.actors) this.removeOwnedActor(actor);
@@ -1755,8 +1765,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.publishSnapshot();
     checkpoint();
     work.finished = true;
-    if (scene) this.finishOrDeferSceneLoad(name, guid, loadId);
-    else this.sceneWorkBlocked = false;
+    if (scene) {
+      if (this.bootLoading) this.preparedBootScene = { work, name };
+      else this.finishOrDeferSceneLoad(name, guid, loadId);
+    } else this.sceneWorkBlocked = false;
   }
 
   /**

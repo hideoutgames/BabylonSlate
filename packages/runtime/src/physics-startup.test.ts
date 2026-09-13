@@ -1,3 +1,4 @@
+import type { CommandMessage } from "@babylonslate/bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   HavokPhysicsBackend,
@@ -47,6 +48,31 @@ describe("Play physics startup", () => {
     } finally {
       runtime.stop();
     }
+  });
+
+  it("never announces scene readiness when native cooperative boot fails", async () => {
+    vi.spyOn(HavokPhysicsBackend, "create").mockRejectedValue(new Error("Havok download failed"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      cooperativeSceneLoading: true, deferSceneModelsReady: true,
+      playScene: { ...createDefaultScene(), actors: [createActor("box", "Box")] },
+      onCommand: (command) => {
+        commands.push(command);
+        if (command.type === "sceneRealized") runtime.notifySceneModelsReady(command.sceneAssetGuid, command.sceneLoadId);
+      },
+    });
+    let finished = false;
+    const world = runtime.getWorld();
+    world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onSceneFinishLoading: () => { finished = true; } } }));
+    await expect(createPlayBootCoordinator().play(runtime)).rejects.toThrow("Havok download failed");
+    expect(commands.some((command) => command.type === "activeScene")).toBe(true);
+    expect(commands.some((command) => command.type === "sceneRealized")).toBe(false);
+    expect(finished).toBe(false);
+    runtime.resume();
+    runtime.tick();
+    expect(world.clock.tickIndex).toBe(0);
+    runtime.stop();
   });
 
   it("releases a newly loaded world backend if overlay physics cannot load", async () => {
