@@ -179,6 +179,7 @@ describe("attachViewportRenderGate", () => {
     await Promise.resolve();
     dispatchEngineSettingsChanged({
       viewportFrameCap: 60,
+      renderingOverridesEnabled: true,
       postProcessingEnabled: false,
     });
     expect(setPostProcessingEnabled).toHaveBeenCalledWith(false);
