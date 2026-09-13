@@ -36,24 +36,8 @@ export function isSceneViewportRemountLoad(
   return engineGeneration !== completedGeneration;
 }
 
-/** Yield across a paint before starting synchronous GPU work. Abort cancels the wait. */
-export function waitForSceneLoadingPaint(signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    signal.throwIfAborted();
-    let frame = 0;
-    const cancel = () => {
-      cancelAnimationFrame(frame);
-      reject(signal.reason);
-    };
-    signal.addEventListener("abort", cancel, { once: true });
-    frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => {
-        signal.removeEventListener("abort", cancel);
-        resolve();
-      });
-    });
-  });
-}
+export { waitForSceneLoadingPaint } from "@babylonslate/render";
+import { waitForSceneLoadingPaint } from "@babylonslate/render";
 
 export async function runSceneViewportBlockingLoad(options: {
   signal: AbortSignal;

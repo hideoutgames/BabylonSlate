@@ -99,15 +99,17 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
-  it("forwards deferSceneModelsReady onto the runtime", () => {
+  it("forwards host paint and model readiness gates onto the runtime", () => {
     expect(
       runtimeOptionsFromLoadControl({
         type: "load",
         sceneAssetGuid: "play-scene",
         deferSceneModelsReady: true,
+        deferSceneLoadingPaint: true,
       }),
     ).toMatchObject({
       deferSceneModelsReady: true,
+      deferSceneLoadingPaint: true,
     });
   });
 

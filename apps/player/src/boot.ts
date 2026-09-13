@@ -18,6 +18,7 @@ import {
   attachLifecyclePause,
   createEngine,
   createSceneLoadReadiness,
+  waitForSceneLoadingPaint,
   navDebugBlockersFromActors,
   particleStats,
   type EngineHandle,
@@ -30,6 +31,7 @@ import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
 } from "./engine-commands";
+import { mountPlayerSceneLoading } from "./scene-loading-overlay";
 import { mountPlayerPrintOverlay } from "./print-overlay";
 import { packedBootControls, packedContentFromGame } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
@@ -339,6 +341,7 @@ export function startPlayer(options: {
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     animClipCatalog: content.animClipCatalog,
     deferSceneModelsReady: true,
+    deferSceneLoadingPaint: true,
   };
 
   let ticks = 0;
@@ -369,6 +372,7 @@ export function startPlayer(options: {
     resetBoot();
     pauseGate?.reset();
     sceneReadiness.dispose();
+    sceneLoading.dispose();
     detachLifecycle();
     handle.setPaused(true);
     cancelAnimationFrame(raf);
@@ -381,10 +385,20 @@ export function startPlayer(options: {
     printHud.dispose();
   };
 
+  const sceneLoading = mountPlayerSceneLoading(canvas.parentElement ?? document.body, () => stopPlayer());
   let hostSceneGuid: string | null = startup;
   let receivedActiveScene = false;
   const sceneReadiness = createSceneLoadReadiness({
     handle,
+    loading: {
+      acquire: () => handle.scheduler.acquireObstruction(),
+      progress: (state) => sceneLoading.update(state),
+      paint: waitForSceneLoadingPaint,
+      painted: ({ sceneAssetGuid, sceneLoadId }) => {
+        worker?.postControl({ type: "sceneLoadingPainted", sceneAssetGuid, sceneLoadId });
+        runtime?.notifySceneLoadingPainted(sceneAssetGuid, sceneLoadId);
+      },
+    },
     activate: ({ sceneAssetGuid }) => {
       if (!applyPlayerActiveScene(handle, game.scenes, { type: "activeScene", sceneAssetGuid }, hostSceneGuid, receivedActiveScene)) {
         throw new Error("The requested scene is not available in this build.");
@@ -602,29 +616,32 @@ export function startPlayer(options: {
     });
   }
 
+  function stopPlayer(): { diagnostics: PlayerDiagnostic[] } {
+    halted = true;
+    resetBoot();
+    pauseGate?.reset();
+    sceneReadiness.dispose();
+    sceneLoading.dispose();
+    detachLifecycle();
+    cancelAnimationFrame(raf);
+    resizeObserver?.disconnect();
+    input?.dispose();
+    releaseUnlock();
+    printHud.dispose();
+    worker?.terminate();
+    runtime?.stop();
+    consoleHost.dispose();
+    releaseConsole();
+    handle.dispose();
+    return { diagnostics };
+  }
+
   return {
     ticks: () => ticks,
     visuals: () => handle.playVisualStates(),
     meshMaterialNames: () => handle.playMeshMaterialNames(),
     executeConsoleCommand: (line) => consoleHost.execute(line),
     inspectWorld: () => consoleHost.inspectWorld(),
-    stop: () => {
-      halted = true;
-      resetBoot();
-      pauseGate?.reset();
-      sceneReadiness.dispose();
-      detachLifecycle();
-      cancelAnimationFrame(raf);
-      resizeObserver?.disconnect();
-      input?.dispose();
-      releaseUnlock();
-      printHud.dispose();
-      worker?.terminate();
-      runtime?.stop();
-      consoleHost.dispose();
-      releaseConsole();
-      handle.dispose();
-      return { diagnostics };
-    },
+    stop: stopPlayer,
   };
 }

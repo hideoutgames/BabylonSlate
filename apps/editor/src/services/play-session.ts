@@ -48,6 +48,8 @@ import {
 import {
   createEngine,
   createSceneLoadReadiness,
+  waitForSceneLoadingPaint,
+  type SceneLoadProgress,
   navDebugBlockersFromActors,
   type AudioLibrary,
   type EngineHandle,
@@ -512,6 +514,7 @@ export function startPlaySession(options: {
   onFatalDiagnostic?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
+  onSceneLoading?: (state: SceneLoadProgress | null) => void;
   onSessionPaused?: (paused: boolean) => void;
   onShowFps?: (enabled: boolean) => void;
   onStatHighlight?: (name: string, enabled: boolean) => void;
@@ -659,6 +662,15 @@ export function startPlaySession(options: {
   let receivedActiveScene = false;
   const sceneReadiness = createSceneLoadReadiness({
     handle,
+    loading: {
+      acquire: () => handle.scheduler.acquireObstruction(),
+      progress: (state) => options.onSceneLoading?.(state),
+      paint: waitForSceneLoadingPaint,
+      painted: ({ sceneAssetGuid, sceneLoadId }) => {
+        worker?.postControl({ type: "sceneLoadingPainted", sceneAssetGuid, sceneLoadId });
+        runtime?.notifySceneLoadingPainted(sceneAssetGuid, sceneLoadId);
+      },
+    },
     activate: ({ sceneAssetGuid }) => {
       hostSceneGuid = applyPlayActiveScene({
         handle,
