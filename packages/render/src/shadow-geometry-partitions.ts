@@ -1,11 +1,11 @@
 import { Mesh, SubMesh, type AbstractMesh } from "@babylonjs/core";
+import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
 /** Partition static index ranges without copying geometry or reordering faces. */
 export function partitionShadowGeometry(mesh: AbstractMesh): void {
   if (
     !(mesh instanceof Mesh) ||
-    mesh.skeleton ||
-    mesh.morphTargetManager ||
+    hasDeformingShadowBounds(mesh) ||
     mesh.hasThinInstances ||
     mesh.instances.length
   )

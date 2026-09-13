@@ -17,6 +17,7 @@ import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import {
   authoredShadowParticipation,
+  hasDeformingShadowBounds,
   participatesInShadows,
   type ShadowParticipation,
 } from "./shadow-mesh-policy";
@@ -395,6 +396,7 @@ export class SceneShadowController {
           return this.spatial.queryPlanes(activePlanes);
         };
       generator.customAllowRendering = (part) => {
+        if (hasDeformingShadowBounds(part.getMesh())) return true;
         if (!activePlanes || part.getMesh().subMeshes.length < 2) return true;
         const box = part.getBoundingInfo()?.boundingBox;
         if (!box) return true;

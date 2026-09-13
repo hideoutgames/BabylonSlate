@@ -56,3 +56,12 @@ export function participatesInShadows(mesh: AbstractMesh): boolean {
   }
   return !shadowSkipMetadata(mesh);
 }
+
+/** Bind-pose bounds cannot certify where GPU-deformed vertices will be. */
+export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
+  return (
+    !!mesh.skeleton ||
+    !!mesh.morphTargetManager ||
+    Number(mesh.material?.metadata?.boundsPadding ?? 0) > 0
+  );
+}

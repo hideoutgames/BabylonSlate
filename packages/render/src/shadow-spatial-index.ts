@@ -6,6 +6,7 @@ import {
   type Matrix,
   type Plane,
 } from "@babylonjs/core";
+import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
 type Bounds = { min: Vector3; max: Vector3 };
 type Node = Bounds & {
@@ -13,6 +14,7 @@ type Node = Bounds & {
   left?: Node;
   right?: Node;
   mesh?: AbstractMesh;
+  deforming?: boolean;
 };
 
 /** Balanced caster hierarchy. Membership changes rebuild; moving bounds only refit ancestors. */
@@ -34,6 +36,7 @@ export class ShadowSpatialIndex {
       min: box.minimumWorld.clone(),
       max: box.maximumWorld.clone(),
       mesh,
+      deforming: hasDeformingShadowBounds(mesh),
     });
     this.observers.set(
       mesh,
@@ -104,6 +107,7 @@ export class ShadowSpatialIndex {
     if (!node.left || !node.right) return;
     node.min.copyFrom(node.left.min).minimizeInPlace(node.right.min);
     node.max.copyFrom(node.left.max).maximizeInPlace(node.right.max);
+    node.deforming = node.left.deforming || node.right.deforming;
   }
   private build(nodes: Node[], depth = 0): Node | undefined {
     if (!nodes.length) return undefined;
@@ -132,6 +136,7 @@ export class ShadowSpatialIndex {
       const box = mesh.getBoundingInfo().boundingBox;
       node.min.copyFrom(box.minimumWorld);
       node.max.copyFrom(box.maximumWorld);
+      node.deforming = hasDeformingShadowBounds(mesh);
       for (let parent = node.parent; parent; parent = parent.parent)
         this.union(parent);
     }
@@ -157,17 +162,18 @@ export class ShadowSpatialIndex {
     const result: AbstractMesh[] = [];
     const visit = (node?: Node) => {
       if (!node) return;
-      for (const plane of planes) {
-        const n = plane.normal;
-        if (
-          n.x * (n.x >= 0 ? node.max.x : node.min.x) +
-            n.y * (n.y >= 0 ? node.max.y : node.min.y) +
-            n.z * (n.z >= 0 ? node.max.z : node.min.z) +
-            plane.d <
-          0
-        )
-          return;
-      }
+      if (!node.deforming)
+        for (const plane of planes) {
+          const n = plane.normal;
+          if (
+            n.x * (n.x >= 0 ? node.max.x : node.min.x) +
+              n.y * (n.y >= 0 ? node.max.y : node.min.y) +
+              n.z * (n.z >= 0 ? node.max.z : node.min.z) +
+              plane.d <
+            0
+          )
+            return;
+        }
       if (node.mesh) {
         if (
           node.mesh.isEnabled() &&

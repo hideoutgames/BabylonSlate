@@ -294,6 +294,8 @@ without copying vertices, UVs or indices; material assignments and face order
 remain intact. A refitted caster hierarchy rejects unrelated geometry, and
 per-submesh shadow culling retains upstream casters for depth-clamped PCF.
 Skinned, morphing and instanced geometry is not automatically partitioned.
+Skinned/morphing casters and materials with deformation padding bypass static
+bounds rejection; a bind-pose AABB cannot certify their animated shadow extent.
 Authored rendering changes coalesce for 150 ms before a full scene reload and shader warm-up. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth and normal bias derive from texel size and filter footprint; disabling automatic bias uses the authored offsets directly.
 
 The single-map fallback also follows the camera with texel-snapped XY coverage;

@@ -4,12 +4,30 @@ import {
   NullEngine,
   Plane,
   Scene,
+  Skeleton,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 
 describe("shadow caster spatial selection", () => {
+  it("retains skinned casters whose bind-pose bounds cannot describe the animated pose", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const index = new ShadowSpatialIndex();
+      const mesh = MeshBuilder.CreateBox("animated caster", {}, scene);
+      mesh.position.x = 100;
+      mesh.skeleton = new Skeleton("rig", "rig", scene);
+      index.add(mesh);
+      expect(index.queryPlanes([new Plane(-1, 0, 0, 10)])).toContain(mesh);
+      mesh.setEnabled(false);
+      expect(index.queryPlanes([new Plane(-1, 0, 0, 10)])).not.toContain(mesh);
+      index.dispose();
+    } finally {
+      engine.dispose();
+    }
+  });
   it("refits off-screen descendants when nested parents move or are replaced", () => {
     const engine = new NullEngine();
     try {
