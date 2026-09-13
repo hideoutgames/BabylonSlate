@@ -76,6 +76,23 @@ function host(documents: Array<MaterialDocument | null>, functions = {}) {
     lockstepMaxSteps: 4,
   });
   const scene = new Scene(engine);
+  // Babylon 9.20 NullEngine has no FrameGraph allocation overrides. Adapt only
+  // those hardware boundaries, retaining real textures, wrappers and refcounts.
+  vi.spyOn(engine, "_createInternalTexture").mockImplementation(
+    (size, options) => {
+      const wrapper = engine.createRenderTargetTexture(size, {
+        ...(typeof options === "object" ? options : {}),
+        generateDepthBuffer: false,
+      });
+      const texture = wrapper.texture!;
+      texture.format = typeof options === "object" ? (options.format ?? 5) : 5;
+      wrapper.dispose(true);
+      return texture;
+    },
+  );
+  vi.spyOn(engine, "createMultipleRenderTarget").mockImplementation((size) =>
+    engine._createHardwareRenderTargetWrapper(true, false, size),
+  );
   const source = RawTexture.CreateRGBATexture(
     new Uint8Array(16 * 16 * 4).fill(128),
     16,
