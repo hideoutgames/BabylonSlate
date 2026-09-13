@@ -12,7 +12,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() => {
   const handle = {
     engine: {
-      onContextRestoredObservable: { add: vi.fn() },
+      onContextRestoredObservable: { add: vi.fn((callback: () => void) => callback), remove: vi.fn() },
     },
     scene: {},
     editor: {
@@ -54,6 +54,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     setMaterialDocuments: vi.fn(),
     whenEditorModelsReady: vi.fn(async () => {}),
     prewarmSceneMaterials: vi.fn(async () => {}),
+    presentFirstFrame: vi.fn(async () => {}),
   };
   const createEngineMock = vi.fn<
     (
@@ -182,10 +183,6 @@ vi.mock("../components/viewport-joystick", () => ({
   ViewportJoystick: () => null,
 }));
 
-vi.mock("../components/scene-loading-dialog", () => ({
-  SceneLoadingDialog: () => null,
-}));
-
 vi.mock("../lib/viewport-render-gate", () => ({
   attachViewportRenderGate: () => () => {},
   ENGINE_SETTINGS_CHANGED_EVENT: "babylonslate:engine-settings",
@@ -226,12 +223,121 @@ describe("ViewportPanel engine", () => {
     handle.loadScene.mockClear();
     handle.setMeshAssets.mockClear();
     handle.setMaterialDocuments.mockClear();
+    handle.dispose.mockClear();
+    handle.engine.onContextRestoredObservable.add.mockClear();
+    handle.engine.onContextRestoredObservable.remove.mockClear();
+    handle.whenEditorModelsReady.mockReset().mockResolvedValue(undefined);
+    handle.prewarmSceneMaterials.mockReset().mockResolvedValue(undefined);
+    handle.presentFirstFrame.mockReset().mockResolvedValue(undefined);
     documents.collectPlayMaterialLibrary.mockReset().mockResolvedValue({
       documents: new Map(),
       functions: new Map(),
       textureGuids: [],
     });
     documents.collectPlayTextureBytes.mockReset().mockResolvedValue(new Map());
+    documents.collectPlaySpritePayloads.mockReset().mockResolvedValue([]);
+  });
+
+  it("mounts blocking UI before scene creation and keeps it until the first frame", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    createEngineMock.mockImplementationOnce(() => {
+      expect(screen.getByRole("dialog").textContent).toContain("Loading Scene");
+      return handle;
+    });
+    let present!: () => void;
+    handle.presentFirstFrame.mockReturnValueOnce(new Promise<void>((resolve) => { present = resolve; }));
+    renderViewport();
+    expect(createEngineMock).not.toHaveBeenCalled();
+    expect(handle.loadScene).not.toHaveBeenCalled();
+    await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledOnce());
+    expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
+    expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
+    await act(async () => present());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true");
+  });
+
+  it.each(["create", "realize", "assets", "shaders", "present"] as const)(
+    "keeps %s failures unready and retries with a fresh transition", async (stage) => {
+      documents.openDocuments = [{
+        id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+        content: createDefaultScene(),
+      }];
+      const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+      const failure = new Error("Unavailable scene resource");
+      if (stage === "create") createEngineMock.mockImplementationOnce(() => { throw failure; });
+      if (stage === "realize") handle.loadScene.mockImplementationOnce(() => { throw failure; });
+      if (stage === "assets") documents.collectPlayTextureBytes.mockRejectedValueOnce(failure);
+      if (stage === "shaders") handle.prewarmSceneMaterials.mockRejectedValueOnce(failure);
+      if (stage === "present") handle.presentFirstFrame.mockRejectedValueOnce(failure);
+      try {
+        renderViewport();
+        await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Scene Loading Failed"));
+        expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
+        if (stage !== "create") expect(handle.dispose).toHaveBeenCalledOnce();
+        fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+        await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+        expect(createEngineMock).toHaveBeenCalledTimes(2);
+        expect(screen.queryByRole("dialog")).toBeNull();
+      } finally {
+        errorLog.mockRestore();
+      }
+    },
+  );
+
+  it("blocks settings reloads on the same project Engine and ignores unchanged settings", async () => {
+    const scene = createDefaultScene();
+    const document = {
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: scene,
+    };
+    documents.openDocuments = [document];
+    const view = renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    let present!: () => void;
+    handle.presentFirstFrame.mockReturnValueOnce(new Promise<void>((resolve) => { present = resolve; }));
+    documents.openDocuments = [{ ...document, content: {
+      ...scene, settings: { ...scene.settings, shadowOverrides: { distance: 80 } },
+    } }];
+    view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledTimes(2));
+    expect(createEngineMock.mock.calls[1]?.[1]?.sharedEngine).toBe(createEngineMock.mock.calls[0]?.[1]?.sharedEngine);
+    expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
+    expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
+    await act(async () => present());
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    documents.openDocuments = [...documents.openDocuments];
+    view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 180)); });
+    expect(createEngineMock).toHaveBeenCalledTimes(2);
+    expect(handle.presentFirstFrame).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects stale same-handle asset completion while the replacement waits for presentation", async () => {
+    const document = {
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    };
+    documents.openDocuments = [document];
+    let finishOldAssets!: () => void;
+    documents.collectPlaySpritePayloads.mockReturnValueOnce(new Promise<[]>((resolve) => { finishOldAssets = () => resolve([]); }));
+    let present!: () => void;
+    handle.presentFirstFrame.mockReturnValueOnce(new Promise<void>((resolve) => { present = resolve; }));
+    const view = renderViewport();
+    await waitFor(() => expect(documents.collectPlaySpritePayloads).toHaveBeenCalledOnce());
+    documents.openDocuments = [{ ...document, content: { ...document.content, name: "Replacement" } }];
+    view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledOnce());
+    await act(async () => finishOldAssets());
+    expect(handle.setMeshAssets).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
+    expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
+    await act(async () => present());
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    expect(createEngineMock).toHaveBeenCalledOnce();
   });
 
   it("drops the selected actors in one scene edit and leaves no-hit actors untouched", async () => {
@@ -317,9 +423,9 @@ describe("ViewportPanel engine", () => {
     await waitFor(() => expect(button().disabled).toBe(false));
   });
 
-  it("does not recreate the Engine when applySceneChange identity changes", () => {
+  it("does not recreate the Engine when applySceneChange identity changes", async () => {
     const { rerender } = renderViewport();
-    expect(createEngineMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalledTimes(1));
     documents.applySceneChange = vi.fn(async () => false);
     rerender(
       <DocumentWorkspaceProvider documentId="scene:S">
@@ -329,8 +435,9 @@ describe("ViewportPanel engine", () => {
     expect(createEngineMock).toHaveBeenCalledTimes(1);
   });
 
-  it("creates the viewport Scene on the project Engine", () => {
+  it("creates the viewport Scene on the project Engine", async () => {
     renderViewport();
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalledOnce());
     expect(play.ensureSharedEngine).toHaveBeenCalled();
     expect(createEngineMock).toHaveBeenCalledWith(
       expect.any(HTMLCanvasElement),
@@ -344,7 +451,7 @@ describe("ViewportPanel engine", () => {
     );
   });
 
-  it("requests the overlay transform box for SceneLayer documents", () => {
+  it("requests the overlay transform box for SceneLayer documents", async () => {
     documents.openDocuments = [
       {
         id: "scene:S",
@@ -357,14 +464,16 @@ describe("ViewportPanel engine", () => {
       },
     ];
     renderViewport();
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalledOnce());
     expect(createEngineMock).toHaveBeenCalledWith(
       expect.any(HTMLCanvasElement),
       expect.objectContaining({ overlayTransformBox: true }),
     );
   });
 
-  it("remounts the engine when a SceneLayer document appears", () => {
+  it("remounts the engine when a SceneLayer document appears", async () => {
     const { rerender } = renderViewport();
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalledOnce());
     expect(createEngineMock.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({ overlayTransformBox: false }),
     );
@@ -384,7 +493,7 @@ describe("ViewportPanel engine", () => {
         <ViewportPanel {...({} as IDockviewPanelProps)} />
       </DocumentWorkspaceProvider>,
     );
-    expect(createEngineMock).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalledTimes(2));
     expect(createEngineMock.mock.calls.at(-1)?.[1]).toEqual(
       expect.objectContaining({ overlayTransformBox: true }),
     );
@@ -422,8 +531,9 @@ describe("ViewportPanel engine", () => {
     });
   });
 
-  it("pauses the editor viewport while Preview Build is preparing", () => {
+  it("pauses the editor viewport while Preview Build is preparing", async () => {
     const { rerender } = renderViewport();
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalledOnce());
     play.preparing = true;
     rerender(
       <DocumentWorkspaceProvider documentId="scene:S">

@@ -58,6 +58,7 @@ import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
   sceneViewportRenderSettingsKey,
+  waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
 
@@ -68,8 +69,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const releaseEngineRef = useRef<(() => void) | null>(null);
   const navDebugRef = useRef<NavMeshDebugOverlay | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
+  const appliedSceneRef = useRef<{ scene: SerializedScene; handle: EngineHandle } | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const {
@@ -149,11 +152,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   setMarqueeRectRef.current = setMarqueeRect;
   const engineGenerationRef = useRef(0);
   const completedLoadGenerationRef = useRef(-1);
+  const loadTransitionRef = useRef(0);
   const [sceneLoad, setSceneLoad] = useState<{
     open: boolean;
     progress: number;
     phase: SceneViewportLoadPhase;
-  }>({ open: false, progress: 0, phase: "Collecting Assets" });
+    failed?: boolean;
+  }>({ open: false, progress: 0, phase: "Preparing Scene" });
   const [sceneReady, setSceneReady] = useState(false);
   const [dropReady, setDropReady] = useState<{
     scene: SerializedScene;
@@ -300,110 +305,143 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     if (!canvas || !sharedEngine) return;
     engineGenerationRef.current += 1;
     setSceneReady(false);
+    setDropReady(null);
+    setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
+    const controller = new AbortController();
+    const disposers: Array<() => void> = [];
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      for (const dispose of disposers.reverse()) dispose();
+    };
+    releaseEngineRef.current = release;
+    void (async () => {
+      try {
+        await waitForSceneLoadingPaint(controller.signal);
+        controller.signal.throwIfAborted();
+        setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
 
-    const handle = createEngine(canvas, {
-      editor: true,
-      renderSettings: JSON.parse(renderSettingsKey),
-      editorViewportId: dropViewportId,
-      sharedEngine,
-      viewportMode,
-      overlayTransformBox,
-      colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
-      ktx2BasePath: editorKtx2PublicBase(),
-      dracoBasePath: editorDracoPublicBase(),
-      meshoptBasePath: editorMeshoptPublicBase(),
-      onPickActor: (actorId, pick) =>
-        selectActorRef.current(actorId, pick?.additive === true),
-      onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
-      onMarqueeMove: (rect) => setMarqueeRectRef.current(rect),
-      dragSelectActive: () => dragSelectActiveRef.current,
-      onDragSelectEnd: () => {
-        setDragSelectActiveRef.current(false);
-        setMarqueeRectRef.current(null);
-      },
-      onGizmoDragStart: () => {
-        dragStartSceneRef.current = sceneRef.current;
-      },
-      onGizmoDragEnd: () => commitGizmoTransformRef.current(),
-      editorFlyEnabled: () => !playingRef.current,
-      editorFlySpeed: () => flySpeedRef.current,
-    });
-    engineRef.current = handle;
-    setEngineEpoch((epoch) => epoch + 1);
-    const gridSettings = sceneRef.current?.settings;
-    if (gridSettings) {
-      handle.editor?.setGridSettings({
-        tileSize: gridSettings.grid.tileSize,
-        tileSubdivisions: gridSettings.grid.tileSubdivisions,
-        cameraBounds2D: gridSettings.cameraBounds2D,
-        showGrid: gridVisible,
-      });
-    }
-    handle.editor?.camera.importSessionState(loadEditorCameraPose());
-    navDebugRef.current = new NavMeshDebugOverlay(handle.scene);
-    setNavOverlayGeneration((generation) => generation + 1);
-    handle.editor?.setPreviewCanvas(previewCanvasRef.current);
-    registerSharedEngine(handle.engine);
-    const unregisterScheduler = registerScheduler({
-      setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
-      setPaused: (v) => handle.setPaused(v),
-    });
-    const detachRenderGate = attachViewportRenderGate({
-      canvas,
-      scheduler: handle.scheduler,
-      scaling: handle.scaling,
-      setLocalQualityOverrides: (overrides) => handle.setLocalQualityOverrides(overrides),
-      setPostProcessingEnabled: (enabled) =>
-        handle.setPostProcessingEnabled(enabled),
-      setTextureBudget: (bytes, enabled) =>
-        handle.setTextureBudget(bytes, enabled),
-      setAudioBudget: (bytes, enabled) => handle.setAudioBudget(bytes, enabled),
-      setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
-    });
-
-    const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
-      onHoldChange: (holding) => handle.scheduler.setResizing(holding),
-    });
-    resizeIfSized(canvas);
-
-    const resizeObserver = new ResizeObserver(() => {
-      resizeIfSized(canvas);
-    });
-    resizeObserver.observe(canvas);
-
-    const intersectionObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          resizeIfSized(canvas);
+        const handle = createEngine(canvas, {
+          editor: true,
+          renderSettings: JSON.parse(renderSettingsKey),
+          editorViewportId: dropViewportId,
+          sharedEngine,
+          viewportMode,
+          overlayTransformBox,
+          colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
+          ktx2BasePath: editorKtx2PublicBase(),
+          dracoBasePath: editorDracoPublicBase(),
+          meshoptBasePath: editorMeshoptPublicBase(),
+          onPickActor: (actorId, pick) =>
+            selectActorRef.current(actorId, pick?.additive === true),
+          onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
+          onMarqueeMove: (rect) => setMarqueeRectRef.current(rect),
+          dragSelectActive: () => dragSelectActiveRef.current,
+          onDragSelectEnd: () => {
+            setDragSelectActiveRef.current(false);
+            setMarqueeRectRef.current(null);
+          },
+          onGizmoDragStart: () => {
+            dragStartSceneRef.current = sceneRef.current;
+          },
+          onGizmoDragEnd: () => commitGizmoTransformRef.current(),
+          editorFlyEnabled: () => !playingRef.current,
+          editorFlySpeed: () => flySpeedRef.current,
+        });
+        engineRef.current = handle;
+        disposers.push(() => {
+          joystickLeaseRef.current?.();
+          joystickLeaseRef.current = null;
+          if (handle.editor) {
+            saveEditorCameraPose(handle.editor.camera.exportSessionState());
+          }
+          handle.dispose();
+          if (engineRef.current === handle) engineRef.current = null;
+        });
+        handle.setPaused(true);
+        setEngineEpoch((epoch) => epoch + 1);
+        const gridSettings = sceneRef.current?.settings;
+        if (gridSettings) {
+          handle.editor?.setGridSettings({
+            tileSize: gridSettings.grid.tileSize,
+            tileSubdivisions: gridSettings.grid.tileSubdivisions,
+            cameraBounds2D: gridSettings.cameraBounds2D,
+            showGrid: gridVisible,
+          });
         }
-      }
-    });
-    intersectionObserver.observe(canvas);
+        handle.editor?.camera.importSessionState(loadEditorCameraPose());
+        const navDebug = new NavMeshDebugOverlay(handle.scene);
+        navDebugRef.current = navDebug;
+        disposers.push(() => {
+          navDebug.dispose();
+          if (navDebugRef.current === navDebug) navDebugRef.current = null;
+        });
+        setNavOverlayGeneration((generation) => generation + 1);
+        handle.editor?.setPreviewCanvas(previewCanvasRef.current);
+        registerSharedEngine(handle.engine);
+        disposers.push(() => registerSharedEngine(null));
+        const unregisterScheduler = registerScheduler({
+          setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
+          setPaused: (v) => handle.setPaused(v),
+        });
+        disposers.push(unregisterScheduler);
+        const detachRenderGate = attachViewportRenderGate({
+          canvas,
+          scheduler: handle.scheduler,
+          scaling: handle.scaling,
+          setLocalQualityOverrides: (overrides) => handle.setLocalQualityOverrides(overrides),
+          setPostProcessingEnabled: (enabled) =>
+            handle.setPostProcessingEnabled(enabled),
+          setTextureBudget: (bytes, enabled) =>
+            handle.setTextureBudget(bytes, enabled),
+          setAudioBudget: (bytes, enabled) => handle.setAudioBudget(bytes, enabled),
+          setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
+        });
+        disposers.push(detachRenderGate);
 
-    handle.engine.onContextRestoredObservable.add(() => {
-      resizeIfSized(canvas);
-      const currentScene = sceneRef.current;
-      if (currentScene) {
-        handle.loadScene(currentScene);
+        const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
+          onHoldChange: (holding) => handle.scheduler.setResizing(holding),
+        });
+        disposers.push(() => resizeIfSized.dispose());
+        resizeIfSized(canvas);
+
+        const resizeObserver = new ResizeObserver(() => {
+          resizeIfSized(canvas);
+        });
+        disposers.push(() => resizeObserver.disconnect());
+        resizeObserver.observe(canvas);
+
+        const intersectionObserver = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              resizeIfSized(canvas);
+            }
+          }
+        });
+        disposers.push(() => intersectionObserver.disconnect());
+        intersectionObserver.observe(canvas);
+
+        const restoreObserver = handle.engine.onContextRestoredObservable.add(() => {
+          if (released || controller.signal.aborted) return;
+          // Restoration is another blocking transition, including on the same Engine.
+          setReloadVersion((version) => version + 1);
+        });
+        disposers.push(() => handle.engine.onContextRestoredObservable.remove(restoreObserver));
+        if (!sceneRef.current) setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
+      } catch (error) {
+        release();
+        if (controller.signal.aborted) return;
+        console.error("[viewport] failed to create scene", error);
+        setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true });
       }
-    });
+    })();
 
     return () => {
-      resizeIfSized.dispose();
-      resizeObserver.disconnect();
-      intersectionObserver.disconnect();
-      detachRenderGate();
-      unregisterScheduler();
-      joystickLeaseRef.current?.();
-      joystickLeaseRef.current = null;
-      registerSharedEngine(null);
-      navDebugRef.current?.dispose();
-      navDebugRef.current = null;
-      if (handle.editor) {
-        saveEditorCameraPose(handle.editor.camera.exportSessionState());
-      }
-      handle.dispose();
-      engineRef.current = null;
+      controller.abort();
+      loadTransitionRef.current += 1;
+      release();
+      if (releaseEngineRef.current === release) releaseEngineRef.current = null;
     };
     // Mode, selection and tool changes are pushed by effects below.
     // Remount when overlay vs world manipulator kind is known.
@@ -453,14 +491,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         engineRef.current,
         editorViewportPausedForSession({ playing, preparing }),
       );
+      // Keep the view registered so its loading permit can present one frame.
+      if (!sceneReady) engineRef.current.setPaused(true);
     }
-  }, [playing, preparing]);
-
-  // Loading scene structure stays separate from refreshing saved assets.
-  // Save All must not reload or re-dirty the scene through array identity.
-  useEffect(() => {
-    if (scene) engineRef.current?.loadScene(scene);
-  }, [scene, engineEpoch]);
+  }, [playing, preparing, sceneReady, engineEpoch]);
 
   const materialLibraryKey = savedMaterialLibraryKey(
     assetRegistry?.list() ?? [],
@@ -471,26 +505,42 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const handle = engineRef.current;
     if (!scene || !handle) return;
     setDropReady(null);
-    let cancelled = false;
+    setSceneReady(false);
+    const controller = new AbortController();
+    const transitionId = ++loadTransitionRef.current;
+    const isCurrent = () => !controller.signal.aborted &&
+      transitionId === loadTransitionRef.current && engineRef.current === handle;
     const generation = engineGenerationRef.current;
     const blocking = isSceneViewportRemountLoad(
       generation,
       completedLoadGenerationRef.current,
     );
     if (blocking) {
-      setSceneLoad({ open: true, progress: 0, phase: "Collecting Assets" });
+      setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
     }
     void (async () => {
+      const realize = () => {
+        if (!isCurrent()) return;
+        // Saved Material refreshes must not realize or re-dirty scene structure.
+        if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
+        handle.loadScene(scene);
+        appliedSceneRef.current = { scene, handle };
+      };
       const applyCollectedAssets = async () => {
         const sprites = await collectPlaySpritePayloads(scene);
+        controller.signal.throwIfAborted();
         const tileContent = await collectPlayTilemapContent(scene);
+        controller.signal.throwIfAborted();
         const modelBytes = await collectPlayModelBytes(scene);
+        controller.signal.throwIfAborted();
         const modelPayloads = await collectPlayModelPayloads(scene);
+        controller.signal.throwIfAborted();
         const materials = await collectPlayMaterialLibrary(
           scene,
           [],
           modelSlotMaterialGuidsFromPayloads(modelPayloads),
         );
+        controller.signal.throwIfAborted();
         const extraTextureGuids = [
           ...materials.textureGuids,
           ...skyboxFaceGuidsFromScene(scene),
@@ -501,21 +551,24 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           tileContent.tilesets,
           extraTextureGuids,
         );
+        controller.signal.throwIfAborted();
         const texturePixelSizes = collectPlayTexturePixelSizes(
           sprites,
           tileContent.tilesets,
           extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
+        controller.signal.throwIfAborted();
         const msdf = fontMsdfMapsFromPairs(
           await collectPlayFontMsdfPair(scene),
         );
+        controller.signal.throwIfAborted();
         const fontFaceEntries = await collectPlayFontFaceEntries();
         const fontCss = collectPlayFontCssStacks();
-        if (cancelled || engineRef.current !== handle) return;
+        if (!isCurrent()) return;
         handle.setMaterialDocuments(materials.documents, materials.functions);
         await handle.registerFonts(fontFaceEntries);
-        if (cancelled || engineRef.current !== handle) return;
+        if (!isCurrent()) return;
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -537,47 +590,54 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       try {
         if (blocking) {
           await runSceneViewportBlockingLoad({
+            signal: controller.signal,
+            realize,
             collect: applyCollectedAssets,
             whenModelsReady: async () => {
-              if (cancelled || engineRef.current !== handle) return;
+              if (!isCurrent()) return;
               await handle.whenEditorModelsReady();
             },
             warmShaders: async () => {
-              if (cancelled || engineRef.current !== handle) return;
+              if (!isCurrent()) return;
               await handle.prewarmSceneMaterials();
             },
+            presentFirstFrame: async () => {
+              if (!isCurrent()) return;
+              await handle.presentFirstFrame();
+            },
             onProgress: (progress, phase) => {
-              if (cancelled) return;
+              if (!isCurrent()) return;
               setSceneLoad({ open: true, progress, phase });
             },
           });
         } else {
+          realize();
           await applyCollectedAssets();
-          if (!cancelled && engineRef.current === handle) {
+          if (isCurrent()) {
             await handle.whenEditorModelsReady();
           }
         }
-        if (!cancelled && engineRef.current === handle) {
+        if (isCurrent()) {
           setDropReady({ scene, handle });
-        }
-      } catch (error) {
-        console.error("[viewport] failed to load mesh assets", error);
-      } finally {
-        if (!cancelled) {
           if (blocking) {
             completedLoadGenerationRef.current = generation;
             setSceneLoad({
               open: false,
               progress: 100,
-              phase: "Warming Shaders",
+              phase: "Presenting First Frame",
             });
           }
           setSceneReady(true);
         }
+      } catch (error) {
+        if (!isCurrent()) return;
+        console.error("[viewport] failed to load scene", error);
+        releaseEngineRef.current?.();
+        setSceneLoad((current) => ({ ...current, open: true, failed: true }));
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     scene,
@@ -617,7 +677,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       if (guid) guids.add(guid);
     }
     handle.setEditingMaterialGuids(guids);
-  }, [openDocuments, assetRegistry]);
+  }, [openDocuments, assetRegistry, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(selectedActorIds);
@@ -629,11 +689,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
-  }, [viewportMode]);
+  }, [viewportMode, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
-  }, [viewportShadingMode]);
+  }, [viewportShadingMode, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setDrawMeshCollision(collisionsVisible);
@@ -641,15 +701,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.setPreviewGameCamera(previewGameCamera);
-  }, [previewGameCamera]);
+  }, [previewGameCamera, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);
-  }, [pivotAroundCenter]);
+  }, [pivotAroundCenter, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);
-  }, [gizmoTool]);
+  }, [gizmoTool, engineEpoch]);
 
   useEffect(() => {
     const grid = scene?.settings.grid;
@@ -664,7 +724,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       rotateDeg: grid?.snapRotateDeg ?? 15,
       scale: grid?.snapScale ?? 0.25,
     });
-  }, [scene?.settings.grid, snapEnabled, viewportMode]);
+  }, [scene?.settings.grid, snapEnabled, viewportMode, engineEpoch]);
 
   useEffect(() => {
     const settings = scene?.settings;
@@ -682,7 +742,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);
-  }, [gridVisible]);
+  }, [gridVisible, engineEpoch]);
 
   useEffect(() => {
     const twoD = projectDocument?.settings.twoD;
@@ -874,6 +934,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         open={sceneLoad.open}
         progress={sceneLoad.progress}
         phase={sceneLoad.phase}
+        failed={sceneLoad.failed}
+        onRetry={() => setReloadVersion((version) => version + 1)}
+        onDismiss={() => setSceneLoad((current) => ({ ...current, open: false }))}
       />
     </div>
   );
