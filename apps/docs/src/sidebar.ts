@@ -52,6 +52,7 @@ export const docsSidebar: SidebarItem[] = [
     collapsed: false,
     items: [
       { text: "Performance budget", link: "/design/perf-budget" },
+      { text: "Rendering pass", link: "/design/rendering-pass" },
       { text: "Gestures", link: "/design/gestures" },
     ],
   },

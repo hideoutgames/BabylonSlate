@@ -12,6 +12,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [CODING_STANDARDS.md](CODING_STANDARDS.md) | Coding conventions |
 | [agents/instructions.md](agents/instructions.md) | Portable agent rules, skills, compatibility, and maintenance |
 | [design/perf-budget.md](design/perf-budget.md) | A16 iPad performance budget and render rules |
+| [design/rendering-pass.md](design/rendering-pass.md) | Rendering stability, conventional features, baking, GI, and validation tracker |
 | [design/gestures.md](design/gestures.md) | Touch and gesture design |
 | [architecture/](architecture/) | Package and subsystem notes |
 | [architecture/overview.md](architecture/overview.md) | Package and subsystem overview |
