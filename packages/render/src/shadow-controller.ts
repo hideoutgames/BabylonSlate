@@ -268,6 +268,12 @@ export class SceneShadowController {
     );
     const camera = scene.activeCamera;
     camera?.getViewMatrix();
+    const allocationRequestKey = (entry: Entry) => JSON.stringify([
+      entry.light instanceof DirectionalLight ? settings.mapSize : settings.localMapSize,
+      entry.light.needCube(),
+      entry.light instanceof DirectionalLight ? settings.cascades : 1,
+      settings.profile,
+    ]);
     const candidates = [...this.entries.values()].filter((entry) => {
       entry.status = "disabled";
       entry.reason = null;
@@ -282,6 +288,11 @@ export class SceneShadowController {
       }
       if (!settings.enabled) {
         entry.status = "shadows-disabled";
+        return false;
+      }
+      if (entry.failedKey === allocationRequestKey(entry)) {
+        entry.status = "allocation-failed";
+        entry.reason = "shadow allocation failed; change resolution or reload to retry";
         return false;
       }
       if (
@@ -347,7 +358,31 @@ export class SceneShadowController {
         Number(b.light instanceof DirectionalLight) -
         Number(a.light instanceof DirectionalLight),
     );
-    for (const entry of candidates) {
+    let plannedLocal = 0;
+    let plannedPasses = 0;
+    let plannedSamplers = 0;
+    let remainingLocalFaces = 0;
+    const planned = candidates.filter((entry) => {
+      const directional = entry.light instanceof DirectionalLight;
+      const passes = directional ? settings.cascades : entry.light.needCube() ? 6 : 1;
+      const samplers = settings.filter === "pcss" && !entry.light.needCube() ? 2 : 1;
+      entry.reason = !directional && plannedLocal >= settings.maxLocalLights
+        ? "local light capacity"
+        : plannedPasses + passes > passBudget
+          ? "shadow face/pass budget"
+          : plannedSamplers + samplers > samplerBudget
+            ? "material sampler headroom"
+            : null;
+      if (entry.reason) return false;
+      plannedPasses += passes;
+      plannedSamplers += samplers;
+      if (!directional) {
+        plannedLocal += 1;
+        remainingLocalFaces += passes;
+      }
+      return true;
+    });
+    for (const entry of planned) {
       const directional = entry.light instanceof DirectionalLight;
       const passes = directional
         ? settings.cascades
@@ -387,8 +422,11 @@ export class SceneShadowController {
       const peakPasses = directional && settings.cascades > 1 ? 4 : passes;
       const availableBytes = Math.min(
         byteBudget - admitted.bytes,
-        directional && reserveLocalMaps ? byteBudget / 2 : byteBudget,
+        directional
+          ? reserveLocalMaps ? byteBudget / 2 : byteBudget
+          : (byteBudget - admitted.bytes) * passes / remainingLocalFaces,
       );
+      if (!directional) remainingLocalFaces -= passes;
       while (
         mapSize >= 256 &&
         peakPasses * mapSize ** 2 * bytesPerTexel > availableBytes
@@ -460,12 +498,6 @@ export class SceneShadowController {
             );
           entry.light.forceProjectionMatrixCompute();
         }
-        continue;
-      }
-      if (entry.failedKey === key) {
-        entry.status = "allocation-failed";
-        entry.reason =
-          "shadow allocation failed; change resolution or reload to retry";
         continue;
       }
       try {
@@ -594,7 +626,7 @@ export class SceneShadowController {
         entry.failedKey = "";
       } catch {
         entry.light.getShadowGenerator()?.dispose();
-        entry.failedKey = key;
+        entry.failedKey = allocationRequestKey(entry);
         entry.status = "allocation-failed";
         entry.reason =
           "shadow allocation failed; change resolution or reload to retry";

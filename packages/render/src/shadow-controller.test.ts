@@ -295,21 +295,25 @@ describe("shared shadow lifecycle", () => {
     previewController.sync();
     expect(previewController.metrics().passes).toBe(48);
   });
-  it("cleans failed allocations without retrying the same request each frame", () => {
+  it("cleans failed allocations and admits healthy lights without retrying failures each frame", () => {
     const { scene, controller } = fixture();
     const light = new PointLight("point", Vector3.Zero(), scene);
-    controller.register(light, true);
+    controller.register(light, true, 1);
+    const fallback = new PointLight("fallback", Vector3.Zero(), scene);
+    controller.register(fallback, true);
     const allocation = vi
       .spyOn(scene.getEngine(), "createRenderTargetCubeTexture")
       .mockImplementationOnce(() => {
         throw new Error("allocation failed");
       });
     controller.sync();
+    expect(controller.metrics()).toEqual({ bytes: 0, passes: 0 });
+    controller.sync();
     controller.sync();
     expect(controller.generator(light)).toBeNull();
     expect(controller.status(light)).toBe("allocation-failed");
-    expect(allocation).toHaveBeenCalledTimes(1);
-    expect(controller.metrics()).toEqual({ bytes: 0, passes: 0 });
+    expect(allocation).toHaveBeenCalledTimes(2);
+    expect(controller.generator(fallback)).not.toBeNull();
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ localMapSize: 512 }),
     });

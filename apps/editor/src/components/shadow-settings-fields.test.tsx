@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { afterEach, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   normalizeShadowSettings,
   type ShadowOverrides,
@@ -27,21 +27,21 @@ function BudgetFields() {
 it("preserves the manual count across Auto, reset and shadow disablement", async () => {
   render(<BudgetFields />);
   const count = () => screen.queryByLabelText("Local Shadow Light Budget");
-  expect(count()).toHaveProperty("value", "16");
+  await waitFor(() => expect(count()).toHaveProperty("value", "16"));
   fireEvent.click(screen.getByLabelText("Local Shadow Budget Mode"));
   fireEvent.click(await screen.findByRole("option", { name: "Auto", exact: true }));
-  expect(count()).toBeNull();
+  await waitFor(() => expect(count()).toBeNull());
   fireEvent.click(screen.getByLabelText("Local Shadow Budget Mode"));
   fireEvent.click(await screen.findByRole("option", { name: "Manual", exact: true }));
-  expect(count()).toHaveProperty("value", "16");
+  await waitFor(() => expect(count()).toHaveProperty("value", "16"));
   fireEvent.click(screen.getByRole("button", { name: "Override Shadows Enabled" }));
   fireEvent.click(screen.getByLabelText("Shadows Enabled"));
-  expect(count()).toBeNull();
+  await waitFor(() => expect(count()).toBeNull());
   expect(screen.queryByLabelText("Local Shadow Budget Mode")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Reset Shadows Enabled" }));
-  expect(count()).toHaveProperty("value", "16");
+  await waitFor(() => expect(count()).toHaveProperty("value", "16"));
   fireEvent.click(screen.getByRole("button", { name: "Reset Local Shadow Budget Mode" }));
-  expect(count()).toBeNull();
+  await waitFor(() => expect(count()).toBeNull());
   expect(screen.getByLabelText("Local Shadow Budget Mode")).toHaveProperty("disabled", true);
 });
 it("keeps independent scene overrides and resets to live project shadow distance", () => {

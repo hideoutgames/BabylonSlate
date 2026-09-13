@@ -52,7 +52,7 @@ describe("migrate-on-load and migrate-on-save approval", () => {
     const scene = await service.loadDocument("scene", MAIN_SCENE_FILE);
     expect(scene).toMatchObject({ name: "Old", actors: [], viewportMode: "3d" });
     expect(service.pendingMigrations).toEqual([
-      { type: "Scene", fromVersion: 0, toVersion: 3, path: MAIN_SCENE_FILE },
+      { type: "Scene", fromVersion: 0, toVersion: 4, path: MAIN_SCENE_FILE },
     ]);
     expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(before);
   });

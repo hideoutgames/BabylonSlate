@@ -469,6 +469,7 @@ describe("syncAuthoredIllumination", () => {
 
   it("allocates directional and local shadow lights independently", () => {
     const { scene } = createHandle();
+    scene.getEngine().getCaps().maxTextureSize = 4096;
     const diagnostics: string[] = [];
     syncAuthoredIllumination(
       scene,

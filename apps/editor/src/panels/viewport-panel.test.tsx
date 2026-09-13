@@ -281,7 +281,7 @@ describe("ViewportPanel engine", () => {
         fireEvent.click(screen.getByRole("button", { name: "Retry" }));
         await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
         expect(createEngineMock).toHaveBeenCalledTimes(2);
-        expect(screen.queryByRole("dialog")).toBeNull();
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       } finally {
         errorLog.mockRestore();
       }
