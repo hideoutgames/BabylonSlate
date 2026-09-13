@@ -327,6 +327,10 @@ Project Rendering edits remain in a modal draft until Done or another close path
 The single-map fallback also follows the camera with texel-snapped XY coverage;
 only relevant upstream caster bounds extend its depth. Directional generators
 resolve the current camera for each render, including preview views. Runtime `quality shadows` overrides remain explicit; opening a scene does not override its authored map size. Exported players and editor previews inherit project quality unless an explicit local/session override applies.
+Cascade admission checks both the owning engine and Babylon 9.20's constructor
+capability gate, which reads the last-created engine. If either rejects cascades,
+the sun keeps a regular single-map shadow with one-pass accounting and an explicit
+diagnostic; authored cascade settings and global engine state remain unchanged.
 Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
 and report completed RTT readback-plus-copy duration separately.
 

@@ -325,9 +325,22 @@ export class SceneShadowController {
     const casterBounds = this.spatial.bounds();
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
+    const engineSupportsCascades = scene.getEngine()._features.supportCSM;
+    // Babylon 9.20's constructor also checks its static last-created-engine
+    // capability. Match both gates before admission; a rejected CSM constructor
+    // cannot be recovered by trying smaller cascaded maps.
+    const constructorSupportsCascades = CascadedShadowGenerator.IsSupported;
+    const cascadeFallback =
+      requested.cascades <= 1
+        ? null
+        : !engineSupportsCascades
+          ? "cascades: device capability; using single-map directional shadows"
+          : !constructorSupportsCascades
+            ? "cascades: Babylon constructor capability; using single-map directional shadows"
+            : null;
     const { settings } = effectiveShadowSettings(
       requested,
-      scene.getEngine()._features.supportCSM,
+      engineSupportsCascades && constructorSupportsCascades,
       state.mode,
     );
     const camera = scene.activeCamera;
@@ -745,6 +758,10 @@ export class SceneShadowController {
     const live: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
     for (const entry of this.entries.values()) {
       if (!entry.generator) continue;
+      if (entry.light instanceof DirectionalLight && cascadeFallback)
+        entry.reason = entry.reason
+          ? `${cascadeFallback}; ${entry.reason}`
+          : cascadeFallback;
       const cascaded = entry.generator instanceof CascadedShadowGenerator;
       const passes =
         entry.generator instanceof CascadedShadowGenerator

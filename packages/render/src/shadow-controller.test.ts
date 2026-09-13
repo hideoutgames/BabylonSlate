@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CascadedShadowGenerator,
   DirectionalLight,
   MeshBuilder,
   NullEngine,
@@ -16,6 +17,7 @@ import {
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { normalizeShadowSettings } from "@babylonslate/core";
+import { otherShadowReservations } from "./shadow-admission";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -64,6 +66,58 @@ function fixture() {
   return { scene, controller: sceneShadowController(scene) };
 }
 describe("shared shadow lifecycle", () => {
+  it.each([
+    {
+      ownerSupport: true,
+      latestSupport: false,
+      reason: "Babylon constructor capability",
+    },
+    {
+      ownerSupport: false,
+      latestSupport: true,
+      reason: "device capability",
+    },
+  ])(
+    "keeps directional shadows when CSM is blocked by $reason across engines",
+    ({ ownerSupport, latestSupport, reason }) => {
+      const { scene, controller } = fixture();
+      const owner = scene.getEngine();
+      owner._features.supportCSM = ownerSupport;
+      updateSceneRenderingSettings(scene, {
+        shadows: normalizeShadowSettings({ mapSize: 512, cascades: 4 }),
+      });
+      const authored = structuredClone(sceneRenderingSettings(scene).shadows);
+      const light = new DirectionalLight("sun", Vector3.Down(), scene);
+      controller.register(light, true);
+      const latest = new NullEngine();
+      engines.push(latest);
+      latest._features.supportCSM = latestSupport;
+
+      controller.sync();
+      const generator = controller.generator(light);
+      expect(generator).not.toBeNull();
+      expect(generator).not.toBeInstanceOf(CascadedShadowGenerator);
+      expect(controller.status(light)).toBe("active");
+      expect(controller.diagnostics()[0]).toMatchObject({
+        passes: 1,
+        mapSize: 512,
+        allocationError: null,
+        reason: `cascades: ${reason}; using single-map directional shadows`,
+      });
+      expect(controller.metrics()).toEqual({ bytes: 3 * 1024 ** 2, passes: 1 });
+      const preview = new Scene(owner);
+      expect(otherShadowReservations(preview)).toMatchObject({
+        bytes: 3 * 1024 ** 2,
+        passes: 1,
+      });
+      controller.sync();
+      expect(controller.generator(light)).toBe(generator);
+      expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
+      expect(owner._features.supportCSM).toBe(ownerSupport);
+      expect(latest._features.supportCSM).toBe(latestSupport);
+    },
+  );
+
   it("registers late meshes and releases removed meshes and disabled light allocations", async () => {
     const { scene, controller } = fixture();
     const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
