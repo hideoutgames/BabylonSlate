@@ -37,7 +37,7 @@ async function pixelsNear(
       const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
       let count = 0;
       for (let i = 0; i < pixels.length; i += 4) {
-        // Derivative antialiasing legitimately creates intermediate colors at
+        // Rasterized geometry edges can create intermediate colors at
         // band edges. A flat 3x3 region would be an unwanted additional band.
         if (flatInterior && ![-copy.width - 1, -copy.width, -copy.width + 1, -1, 1, copy.width - 1, copy.width, copy.width + 1].every((offset) =>
           color.every((channel, index) => Math.abs((pixels[i + offset * 4 + index] ?? -255) - channel) <= tolerance),
@@ -117,15 +117,15 @@ test("world-space material inputs remain anchored when the editor camera moves",
   })];
   await setPreviewScene(page, scene);
   const canvas = page.getByTestId("viewport-canvas");
-  // The lower-left world quadrant is (0, 0, .25) after color clamping,
+  // The lower-left world quadrant is linear (0, 0, .25), display encoded once,
   // regardless of the camera-relative coordinate used internally for lighting.
-  await expect.poll(() => pixelsNear(canvas, [0, 0, 64])).toBeGreaterThan(100);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 137])).toBeGreaterThan(100);
   await canvas.hover();
   await page.mouse.wheel(0, -240);
-  await expect.poll(() => pixelsNear(canvas, [0, 0, 64])).toBeGreaterThan(100);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 137])).toBeGreaterThan(100);
   scene.actors[0]!.transform.position[2] = 0.5;
   await setPreviewScene(page, scene);
-  await expect.poll(() => pixelsNear(canvas, [0, 0, 128])).toBeGreaterThan(100);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 188])).toBeGreaterThan(100);
 });
 
 test("CEL preserves authored and texture colors, supports every light, and restores PBR in viewport and Play", async ({
@@ -238,7 +238,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
       ...[-1, 1].map((side) =>
         createActor(`overlap-${side}`, "Overlap", {
           transform: {
-            position: [0, 0, 0],
+            position: [side * 3, 0, -10],
             rotation: [0, side * 0.173648, 0, 0.984808],
             scale: [1, 1, 1],
           },
@@ -247,7 +247,8 @@ test("CEL preserves authored and texture colors, supports every light, and resto
               id: `light-${side}`,
               classId: "LightComponent",
               properties: {
-                lightKind: "directional",
+                lightKind: "point",
+                range: 1000,
                 color: [1, 1, 1],
                 intensity: 0.6,
               },

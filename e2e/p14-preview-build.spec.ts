@@ -308,11 +308,17 @@ test.describe("P14 Preview Build", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
-  test("Preview Build preserves Mannequin source material without slim-stub red or the error sampler", async ({
+  test("Preview Build binds the template PBR Mannequin material without the error sampler", async ({
     page,
   }) => {
     test.setTimeout(180_000);
     await openTestProject(page);
+    const materialGuid = await page.evaluate(async () => {
+      const host = globalThis as unknown as { __babylonslateTest?: { readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null> } };
+      const bytes = await host.__babylonslateTest?.readAssetChunk("assets/Mannequin/mannequin.babasset", "document");
+      return bytes ? JSON.parse(new TextDecoder().decode(bytes)).materialSlots[0]?.materialGuid : null;
+    });
+    expect(materialGuid).toBeTruthy();
     await openMainScene(page);
     await page.getByTestId("debug-menu").click();
     await page.getByTestId("preview-build-toggle").click();
@@ -328,9 +334,8 @@ test.describe("P14 Preview Build", () => {
       .poll(
         async () => {
           const names = await previewSlotMaterialNames(page);
-          // The fixture declares KHR_texture_transform. Until graph import
-          // supports it, retain its loader material and embedded texture.
-          return names.includes("texture-d")
+          // Basic 3D explicitly assigns its authored PBR graph material.
+          return names.includes(`material:${materialGuid}`)
             ? "bound"
             : names.join(",") || "none";
         },

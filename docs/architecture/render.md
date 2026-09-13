@@ -354,7 +354,7 @@ disposes another view's live texture. Handles release the exact acquired resourc
 unused variants are reclaimed through the normal byte-accounted cache policy.
 
 Model previews stage material replacements, warm them against their actual meshes,
-and retain the displayed generation until a replacement succeeds. Closing or
+and retain the displayed generation until a replacement succeeds. The Model canvas marks material preparation as busy so assistive technology and preview checks can distinguish it from a settled pose. Closing or
 replacing a preview releases its material library and exact texture leases.
 Preview render and shader-readiness errors are reported without terminating frame scheduling. Asset-preview target resolution follows the shared project quality scale within the preview size limit.
 

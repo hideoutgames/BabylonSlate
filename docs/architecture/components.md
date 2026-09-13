@@ -181,3 +181,5 @@ ShadowSettingsFields shares compact project and scene shadow controls. RenderQua
 `RenderQualityFields` composes project scalability presets and resolution controls from Field, Select, NumberField and Switch. Presets use neutral labels and preserve shadow distance/budget. Scene post-process entries expose an explicit Scalable Resolution switch; full-resolution behavior is the default.
 
 EngineSettingsForm gates local resolution, texture budget and post-processing fields behind Override Project Rendering; project inheritance is the default. Settings search includes render mode, quality groups, shadow distance, local shadow budget and the local override switch.
+
+Post-process entry controls keep Enabled and Scalable Resolution in one compact desktop row, wrapping for coarse pointers without overlapping touch targets.

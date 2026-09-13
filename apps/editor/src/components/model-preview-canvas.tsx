@@ -89,6 +89,7 @@ export function ModelPreviewCanvas({
     useEditorViewportPrefs();
   const [engine, setEngine] = useState<Engine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
+  const [materialsReady, setMaterialsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const materialOwnerRef = useRef<(() => void) | null>(null);
   const materialRevision = savedMaterialLibraryKey(assetRegistry?.list() ?? []);
@@ -290,6 +291,7 @@ export function ModelPreviewCanvas({
     const slots = JSON.parse(slotKey) as ReturnType<
       typeof normalizeModelPayload
     >["materialSlots"];
+    setMaterialsReady(false);
     let releaseCandidate: (() => void) | undefined;
     let published = false;
     void (async () => {
@@ -337,6 +339,7 @@ export function ModelPreviewCanvas({
       const previous = materialOwnerRef.current;
       materialOwnerRef.current = releaseCandidate;
       published = true;
+      setMaterialsReady(true);
       previous?.();
       setLoadError(null);
       shadingRef.current?.apply();
@@ -510,6 +513,7 @@ export function ModelPreviewCanvas({
         ref={canvasRef}
         className="h-full w-full"
         data-testid="model-preview-canvas"
+        aria-busy={!materialsReady}
       />
       {loadError ? (
         <div

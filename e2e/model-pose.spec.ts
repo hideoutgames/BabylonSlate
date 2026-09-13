@@ -50,12 +50,14 @@ test("Model preview remains in its authored pose while Animation preview advance
   await expect
     .poll(() => renderedColors(model), { timeout: 30000 })
     .toBeGreaterThan(20);
-  const frames = await model.evaluate(async (canvas: HTMLCanvasElement) => {
+  await expect(model).toHaveAttribute("aria-busy", "false", { timeout: 30000 });
+  // Material preparation may finish just before its asynchronous RTT copy.
+  // A static pose must then stay identical across multiple preview ticks.
+  await expect.poll(() => model.evaluate(async (canvas: HTMLCanvasElement) => {
     const first = canvas.toDataURL();
     await new Promise<void>((resolve) => window.setTimeout(resolve, 2200));
-    return [first, canvas.toDataURL()];
-  });
-  expect(frames[1]).toBe(frames[0]);
+    return first === canvas.toDataURL();
+  }), { timeout: 10000 }).toBe(true);
   await model.screenshot({ path: testInfo.outputPath("authored-pose.png") });
   await openAssetFromBrowser(page, animationPath);
   const animation = page.getByTestId("animation-preview-canvas");
