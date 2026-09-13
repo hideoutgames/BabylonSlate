@@ -196,6 +196,18 @@ describe("Material preview panel", () => {
 });
 
 describe("Material details panel", () => {
+  it("edits and resets the fallback normals without changing Normal input links", async () => {
+    const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("property-defaultNormals").textContent).toContain("Model Normals");
+    fireEvent.click(screen.getByTestId("property-defaultNormals"));
+    fireEvent.click(await screen.findByRole("option", { name: "Flat Normals" }));
+    expect(lastCommit().defaultNormals).toBe("flat");
+    expect(lastCommit().edges).toEqual(createDefaultMaterialDocument().edges);
+    harness.content = lastCommit() as unknown as Record<string, unknown>;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset Default Normals" }));
+    expect(lastCommit().defaultNormals).toBe("model");
+  });
   it("edits a parameter name and its RGBA default", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({ id: "tint", type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint", value: [0.1, 0.2, 0.3, 0.4] } });

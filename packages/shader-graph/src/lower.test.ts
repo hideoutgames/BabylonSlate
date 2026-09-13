@@ -51,6 +51,20 @@ function surfaceWithMultiply(): MaterialDocument {
 }
 
 describe("material lowering", () => {
+  it("preserves the normal fallback through saving and invalidates both material cache keys", () => {
+    const doc = createDefaultMaterialDocument();
+    const model = lowerMaterialDocument(doc);
+    const flatDoc = normalizeMaterialDocument(JSON.parse(JSON.stringify({ ...doc, defaultNormals: "flat" })));
+    const flat = lowerMaterialDocument(flatDoc);
+    expect(model.ok && flat.ok).toBe(true);
+    if (!model.ok || !flat.ok) return;
+    expect(model.plan.defaultNormals).toBe("model");
+    expect(flat.plan.defaultNormals).toBe("flat");
+    expect(flat.plan.outputs.normal).toBeNull();
+    expect(flat.plan.hash).not.toBe(model.plan.hash);
+    expect(materialCompileKey(flatDoc)).not.toBe(materialCompileKey(doc));
+    expect(normalizeMaterialDocument({ ...doc, defaultNormals: "invalid" }).defaultNormals).toBe("model");
+  });
   it("lowers the default surface material to a build plan", () => {
     const plan = lowerMaterialDocument(createDefaultMaterialDocument());
     expect(plan.ok).toBe(true);

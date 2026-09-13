@@ -75,6 +75,7 @@ export interface MaterialBuildPlan {
   shadingModel: MaterialDocument["shadingModel"];
   blendMode: MaterialDocument["blendMode"];
   twoSided: boolean;
+  defaultNormals: MaterialDocument["defaultNormals"];
   alphaCutoff: number;
   boundsPadding?: number;
   /** Topologically ordered: every operand refers to an earlier operation. */
@@ -207,6 +208,7 @@ function compileFingerprint(document: MaterialDocument): string {
     shadingModel: document.shadingModel,
     blendMode: document.blendMode,
     twoSided: document.twoSided,
+    defaultNormals: document.defaultNormals,
     alphaCutoff: document.alphaCutoff,
     boundsPadding: document.boundsPadding ?? 0,
     nodes: document.nodes.map((node) => ({
@@ -461,6 +463,7 @@ export function lowerMaterialDocument(
     doc.shadingModel,
     doc.blendMode,
     doc.twoSided ? "two-sided" : "one-sided",
+    doc.defaultNormals,
     doc.alphaCutoff.toFixed(4),
     String(doc.boundsPadding ?? 0),
   ].join("|");
@@ -473,6 +476,7 @@ export function lowerMaterialDocument(
       shadingModel: doc.shadingModel,
       blendMode: doc.blendMode,
       twoSided: doc.twoSided,
+      defaultNormals: doc.defaultNormals,
       alphaCutoff: doc.alphaCutoff,
       boundsPadding: doc.boundsPadding ?? 0,
       operations,
