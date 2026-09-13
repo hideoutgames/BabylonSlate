@@ -47,8 +47,10 @@ for (const mode of ["pbr", "cel"]) {
     await openAssetFromBrowser(page, path);
     await compileMaterialPreview(page);
     const canvas = page.getByTestId("material-preview-canvas");
-    const model = await pixels(canvas);
+    // Shader readiness can precede the first presented frame. Capture after
+    // the compositor has painted, so the baseline isn't the previous shader.
     await canvas.screenshot({ path: testInfo.outputPath(`${mode}-model-normals.png`) });
+    const model = await pixels(canvas);
     await page.getByTestId("property-defaultNormals").click();
     await page.getByRole("option", { name: "Flat Normals", exact: true }).click();
     await compileMaterialPreview(page);

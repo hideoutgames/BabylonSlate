@@ -42,6 +42,11 @@ rendered triangle's face direction in PBR and CEL, including skinning, morphs,
 and world-position offsets. Unlit shading does not use this setting. Reset
 restores Model Normals; changing the setting invalidates material compilation
 and preview caches. It does not disable lighting or cast/received shadows.
+Face normals use fragment derivatives of the final world position, with the
+model normal selecting only their outward orientation. Shared model geometry,
+vertex counts, and draw counts are unchanged; the extra shader work runs only
+when the flat fallback is used.
+
 Unknown domain strings, including leftover HUD `interface`, parse as `surface`.
 There is no `output.interface` node and no WidgetComponent / HUD Material blit
 path.
