@@ -3,6 +3,25 @@ import { parseGlbForBrowse, splitGlbJsonBin } from "@babylonslate/assets";
 import { loadKenneyMannequinGlb } from "./kenney-mannequin";
 
 describe("Kenney Mannequin GLB", () => {
+  it("keeps the cuboid faces flat when used by the lit template", async () => {
+    const split = splitGlbJsonBin(await loadKenneyMannequinGlb())!;
+    const accessors = split.json.accessors as { bufferView: number; byteOffset?: number; count: number }[];
+    const views = split.json.bufferViews as { byteOffset?: number; byteStride?: number }[];
+    const data = new DataView(split.bin.buffer, split.bin.byteOffset, split.bin.byteLength);
+    const meshes = split.json.meshes as { primitives: { attributes: Record<string, number> }[] }[];
+    expect(meshes).toHaveLength(6);
+    for (const mesh of meshes) for (const primitive of mesh.primitives) {
+      const normal = accessors[primitive.attributes.NORMAL!]!;
+      const view = views[normal.bufferView]!;
+      for (let i = 0; i < normal.count; i++) {
+        const offset = (view.byteOffset ?? 0) + (normal.byteOffset ?? 0) + i * (view.byteStride ?? 12);
+        const components = [0, 4, 8].map((axis) => Math.abs(data.getFloat32(offset + axis, true)));
+        // Every face in this supplied model is an axis-aligned rectangle.
+        // Smoothed corner normals produce diagonal light bands on those faces.
+        expect(components.sort()).toEqual([0, 0, 1]);
+      }
+    }
+  });
   it("loads glTF-binary bytes from the engine-content pack", async () => {
     const bytes = await loadKenneyMannequinGlb();
     expect(bytes.byteLength).toBeGreaterThan(1000);

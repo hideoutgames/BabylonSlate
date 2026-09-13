@@ -2,6 +2,8 @@
 
 ## Project PBR / CEL rendering
 
+The Basic 3D template recalculates the bundled Mannequin's normals from its existing face topology before import. The supplied unlit model has smoothed corner normals on flat cuboid faces; under lit materials these produced diagonal CEL bands even with cast shadows disabled. Positions, UVs, hierarchy, and animation remain unchanged. General imports preserve their authored normals; existing project copies are not rewritten. This preparation runs only when creating the template, with no per-frame cost.
+
 - **Project Settings → Rendering → Render Mode** selects PBR (the default for new and existing projects) or native CEL surface lighting. CEL controls are hidden and inactive in PBR; switching modes retains their saved values.
 - CEL evaluates authored base colors and color textures in display space, without a PBR BRDF, metallic remapping, environment reflections, or automatic tone mapping. Neutral unit lighting preserves the fully lit base color; colored lights tint it. Native glTF surfaces re-encode automatically decoded sRGB samples and retain emissive texture modulation without changing their shared textures. Authored unlit surfaces and post-process materials keep their own shading. Explicit post-process passes can still change final colors.
 - **Shadow Bands**, **Shadow Threshold**, **Band Softness**, **Shadow Strength**, **Specular Strength / Size / Softness**, **Light Color Influence**, and **Light Mixing** control the style. The **Specular** switch disables highlights without losing their strength, size or softness; strength zero also disables them. No CEL outline pass is added.

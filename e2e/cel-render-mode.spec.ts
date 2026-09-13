@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   createActor,
   createDefaultScene,
+  createDefaultSkyboxActor,
   createMeshComponent,
 } from "../packages/core/src/index.ts";
 import { openMinimalTestProject } from "./minimal-project";
@@ -34,9 +35,9 @@ test("Mannequin illumination stays stable when directional shadows are enabled",
     } }],
   });
   scene.actors = [createActor("mannequin", "Mannequin", {
-    transform: { position: [0, -3, 0], rotation: [0, 0, 0, 1], scale: [4, 4, 4] },
+    transform: { position: [0, -1.5, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] },
     components: [mesh],
-  }), sun];
+  }), sun, createDefaultSkyboxActor()];
   scene.settings.celShading = { specularEnabled: false, bandSoftness: 0 };
   await openMainScene(page);
   await projectMode(page, "CEL");
