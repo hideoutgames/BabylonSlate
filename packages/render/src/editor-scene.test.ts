@@ -847,7 +847,7 @@ describe("EditorSceneSync", () => {
     ).toBe("point_light");
   });
 
-  it("keeps a shadow-disabled light billboard yellow when its authored color changes", () => {
+  it("keeps a light billboard active when its authored color changes without requesting shadows", () => {
     const { scene } = createHandle();
     const sync = new EditorSceneSync(scene);
     sync.apply(
@@ -884,7 +884,8 @@ describe("EditorSceneSync", () => {
     const material = icon!.material as StandardMaterial;
     expect(material.emissiveColor.r).toBeCloseTo(1);
     expect(material.emissiveColor.g).toBeCloseTo(1);
-    expect(material.emissiveColor.b).toBeCloseTo(0);
+    expect(material.emissiveColor.b).toBeCloseTo(1);
+    expect(icon!.metadata.editorBillboardStatus).toBe("Active: This Light Is Operating As Configured.");
   });
 
   it("rebuilds a box proxy into a sprite quad when SpriteComponent is added", () => {

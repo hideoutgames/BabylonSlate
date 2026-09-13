@@ -32,7 +32,7 @@ export async function runSceneWork(
     while (true) {
       options.signal.throwIfAborted();
       const step = steps.next();
-      if (step.done) return;
+      if (step.done === true) return;
       options.onProgress?.(step.value);
       if (++count >= 32 || performance.now() - start >= 8) {
         await yieldControl(options.signal);
