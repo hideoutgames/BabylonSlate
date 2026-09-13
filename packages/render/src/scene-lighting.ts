@@ -79,7 +79,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
     for (const light of scene.lights) {
       if (!light.isEnabled()) continue;
       nextEnabled.push(light);
-      nextShadowLayout.push(light.shadowEnabled, light.getShadowGenerator(scene.activeCamera));
+      nextShadowLayout.push(light.shadowEnabled,
+        light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator());
     }
     const changed =
       sceneLightsEnabled !== scene.lightsEnabled ||
