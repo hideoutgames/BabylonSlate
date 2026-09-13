@@ -1,7 +1,9 @@
+import { useAppSettings } from "../context/app-settings-context";
 import { lightsDebugText } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  resolveRenderingQuality,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -28,6 +30,7 @@ import type { StatsHudHighlight } from "./stats-hud";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
   applyLiveEngineSettings,
+  localRenderingQualityOverrides,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
 } from "../lib/viewport-render-gate";
@@ -372,7 +375,8 @@ export function PlayOverlay({
   const initialInputAssetsRef = useRef(inputAssets);
   const initialInputMappingsRef = useRef(inputMappings);
   const initialPlayPreviewRef = useRef(playPreview);
-  const initialRenderRef = useRef(render);
+  const { settings: localEngineSettings } = useAppSettings();
+  const initialRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
   const inspectSnapshot = useInspectWorldPoll(

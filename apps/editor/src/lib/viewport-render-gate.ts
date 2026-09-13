@@ -71,6 +71,16 @@ export type LiveEngineSettings = {
   audioMaxVoices?: number;
 };
 
+/** The same local baseline is supplied to renderer and console readback. */
+export function localRenderingQualityOverrides(settings: LiveEngineSettings): QualityOverrides {
+  if (settings.renderingOverridesEnabled !== true) return {};
+  const scale = 1 / Math.max(1, settings.hardwareScalingLevel ?? 1);
+  return {
+    resolution: { scale, minScale: scale, dynamic: false },
+    textures: { byteBudget: settings.textureBudgetEnabled === false ? Number.MAX_SAFE_INTEGER : settings.textureByteCeiling ?? 512 * 1024 * 1024 },
+  };
+}
+
 /** Apply local Engine Settings that must take effect without writing a scene. */
 export function applyLiveEngineSettings(
   target: LiveEngineSettingsTarget,
@@ -86,11 +96,7 @@ export function applyLiveEngineSettings(
     target.scheduler?.setFrameCap(settings.viewportFrameCap);
   }
   if (target.setLocalQualityOverrides) {
-    const scale = 1 / Math.max(1, settings.hardwareScalingLevel ?? 1);
-    target.setLocalQualityOverrides(settings.renderingOverridesEnabled === true ? {
-      resolution: { scale, minScale: scale, dynamic: false },
-      textures: { byteBudget: settings.textureBudgetEnabled === false ? Number.MAX_SAFE_INTEGER : settings.textureByteCeiling ?? 512 * 1024 * 1024 },
-    } : {});
+    target.setLocalQualityOverrides(localRenderingQualityOverrides(settings));
   }
   if (
     !target.setLocalQualityOverrides && settings.renderingOverridesEnabled === true &&
