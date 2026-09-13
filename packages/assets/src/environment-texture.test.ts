@@ -147,6 +147,7 @@ describe("environment texture import", () => {
       [112, 0x200, /six faces/],
       [28, 1, /complete mip/],
       [84, 0x31545844, /linear RGBA/],
+      [80, 0x44, /linear RGBA/],
     ] as const) {
       const source = buildFloatDdsCubeFixture();
       new DataView(source.buffer).setUint32(offset, value, true);

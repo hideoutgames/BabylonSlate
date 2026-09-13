@@ -11,6 +11,7 @@ export interface EnvironmentTextureInfo {
   mipLevels: number;
   /** DDS is required to be authored as prefiltered; headers cannot prove convolution. */
   prefiltered: true;
+  /** Irradiance supplied in the source; DDS may derive a polynomial on load. */
   hasIrradiance: boolean;
 }
 
@@ -267,7 +268,11 @@ function readDds(bytes: Uint8Array): EnvironmentTextureInfo {
     code = get(128) === 10 ? 113 : get(128) === 2 ? 116 : 0;
     dataOffset = 148;
   }
-  if (!(get(80) & 4) || (code !== 113 && code !== 116))
+  if (
+    !(get(80) & 4) ||
+    (get(80) & (0x40 | 0x20000)) !== 0 ||
+    (code !== 113 && code !== 116)
+  )
     throw new Error(
       "Environment DDS supports linear RGBA16F/RGBA32F only. Import a prefiltered float DDS or RGBD ENV; RGB/DXT encodings are ambiguous.",
     );
