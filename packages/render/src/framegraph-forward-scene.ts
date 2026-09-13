@@ -205,6 +205,10 @@ export class ForwardSceneFrameGraph {
       const width = engine.getRenderWidth(true);
       const height = engine.getRenderHeight(true);
       if (width !== this.preparedWidth || height !== this.preparedHeight) {
+        // Babylon buildAsync preserves External entries, including the old
+        // default-backbuffer dimensions. Refresh them through the public API
+        // before tasks record their viewport dimensions for the resized frame.
+        this.graph.textureManager.resetBackBufferTextures();
         await this.graph.buildAsync(false);
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.

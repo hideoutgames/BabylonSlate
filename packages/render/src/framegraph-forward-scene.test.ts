@@ -2,6 +2,7 @@ import {
   FreeCamera,
   MeshBuilder,
   NullEngine,
+  NullEngineOptions,
   PointLight,
   RenderTargetTexture,
   Scene,
@@ -229,4 +230,27 @@ it("settles a pending readiness wait when the scene is disposed", async () => {
     reason: expect.stringContaining("disposed"),
   });
   expect(scene.frameGraphs).toHaveLength(0);
+});
+
+it("refreshes the resized backbuffer dimensions while retaining the object renderer", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 80;
+  options.renderHeight = 64;
+  const { scene, camera } = host(new NullEngine(options));
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const renderer = scene.objectRenderers[0]!;
+  const probe = vi.spyOn(renderer, "isReadyForRendering");
+  // NullEngine owns no canvas; its options are the actual backbuffer boundary.
+  options.renderWidth = 96;
+  options.renderHeight = 72;
+  expect(graph.render(camera)).toMatchObject({
+    path: "classic",
+    reason: expect.stringContaining("preparation"),
+  });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(probe).toHaveBeenLastCalledWith(96, 72);
+  expect(scene.objectRenderers).toEqual([renderer]);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  graph.dispose();
 });
