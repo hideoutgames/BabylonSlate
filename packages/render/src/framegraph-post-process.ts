@@ -77,13 +77,12 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   private failed = false;
   private generation = 0;
   private pending: Promise<void>;
+  private readonly options: AuthoredPostProcessOptions;
   private readonly parameters = new Map<string, MaterialParameterValue>();
 
-  constructor(
-    name: string,
-    private readonly options: AuthoredPostProcessOptions,
-  ) {
+  constructor(name: string, options: AuthoredPostProcessOptions) {
     super(name, options.frameGraph);
+    this.options = options;
     this.outputTexture =
       options.frameGraph.textureManager.createDanglingHandle();
     this.pending = this.replaceDocument(options.document);
@@ -121,6 +120,14 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
 
   override isReady(): boolean {
     if (this.disposed || this.disabled || this.failed) return true;
+    for (const block of this.material?.getTextureBlocks() ?? []) {
+      if (block.texture?.loadingError) {
+        this.fail(
+          `Post-process texture "${block.texture.name}" failed to load`,
+        );
+        return true;
+      }
+    }
     const effect = this.postProcess?.getEffect();
     const error = effect?.getCompilationError();
     if (error) {
@@ -263,6 +270,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   }
 
   private createPostProcess(material: NodeMaterial): void {
+    this.failed = false;
     this.postProcess?.dispose();
     this.postProcess = new GraphBoundPostProcess(this.name, "", {
       engine: this._frameGraph.engine,

@@ -102,7 +102,10 @@ function host(documents: Array<MaterialDocument | null>, functions = {}) {
     false,
     Texture.NEAREST_SAMPLINGMODE,
   );
-  const library = new MaterialLibrary({ functions: () => functions });
+  const library = new MaterialLibrary({
+    functions: () => functions,
+    resolveTexture: () => source,
+  });
   const graph = new FrameGraph(scene);
   const sourceTexture = graph.textureManager.importTexture(
     "Scene Color",
@@ -306,4 +309,46 @@ it("disposal during deferred graph compilation cannot attach a late pass", async
   expect(
     scene.materials.filter((material) => material instanceof NodeMaterial),
   ).toHaveLength(0);
+});
+
+it("waits for an authored texture and copies through a terminal texture failure", async () => {
+  const document = gainDocument();
+  document.nodes = document.nodes.map((node) =>
+    node.id === "gain"
+      ? {
+          ...node,
+          type: "texture.sample",
+          properties: { textureGuid: "mask" },
+        }
+      : node,
+  );
+  document.edges = document.edges.map((edge) =>
+    edge.sourceNodeId === "gain" ? { ...edge, sourcePinId: "rgba" } : edge,
+  );
+  document.edges.push({
+    id: "uv-mask",
+    sourceNodeId: "screenUv",
+    sourcePinId: "uv",
+    targetNodeId: "gain",
+    targetPinId: "uv",
+  });
+  const { graph, source, diagnostics, engine } = host([
+    document,
+    gainDocument(),
+  ]);
+  await graph.buildAsync();
+  vi.spyOn(source, "isReady").mockReturnValue(false);
+  expect(graph.isReady()).toBe(false);
+  vi.spyOn(source, "loadingError", "get").mockReturnValue(true);
+  expect(graph.isReady()).toBe(true);
+  const downstream = vi.fn();
+  engine.postProcesses[1]!.onApplyObservable.add(downstream);
+  expect(() => graph.execute()).not.toThrow();
+  expect(downstream).toHaveBeenCalledOnce();
+  expect(diagnostics).toEqual([
+    expect.objectContaining({
+      materialGuid: "0",
+      message: expect.stringContaining("failed to load"),
+    }),
+  ]);
 });

@@ -220,16 +220,18 @@ export async function runFrameGraphPostProcessProof() {
     );
     await ready(() => legacy!.passes.every((pass) => pass.isReady()));
   };
+  const readPixels = async () => {
+    const view = await engine.readPixels(0, 0, canvas.width, canvas.height);
+    return Array.from(
+      new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
+    );
+  };
   const capture = async (name: string) => {
     scene.render();
     scene.postProcessManager.directRender(legacy!.passes, null, true);
-    const legacyPixels = Array.from(
-      await engine.readPixels(0, 0, canvas.width, canvas.height),
-    );
+    const legacyPixels = await readPixels();
     graph!.execute();
-    const graphPixels = Array.from(
-      await engine.readPixels(0, 0, canvas.width, canvas.height),
-    );
+    const graphPixels = await readPixels();
     const passSize = graph!.textureManager.getTextureDescription(
       stack!.outputTexture,
     ).size;
