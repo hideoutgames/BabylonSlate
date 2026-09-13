@@ -88,6 +88,8 @@ export interface MaterialPlumbing {
   position?: NodeMaterialConnectionPoint;
   world?: NodeMaterialConnectionPoint;
   worldPosition?: NodeMaterialConnectionPoint;
+  /** Offset used only to restore authored world-space graph input semantics. */
+  worldOrigin?: NodeMaterialConnectionPoint;
   view?: NodeMaterialConnectionPoint;
   /** Vector 3 for graph pins. */
   worldNormal?: NodeMaterialConnectionPoint;
@@ -591,14 +593,18 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     return single(block, {}, { time: block.output });
   },
   "input.cameraPosition": ({ name, plumbing }) => {
-    if (plumbing.cameraPosition) {
-      return { blocks: [], inputs: {}, outputs: { position: plumbing.cameraPosition } };
-    }
-    return systemInput(
+    const relative: BlockRealization = plumbing.cameraPosition
+      ? { blocks: [], inputs: {}, outputs: { position: plumbing.cameraPosition } }
+      : systemInput(
       NodeMaterialSystemValues.CameraPosition,
       NodeMaterialBlockConnectionPointTypes.Vector3,
       "position",
     )({ name, plumbing, operation: undefined as never });
+    if (!plumbing.worldOrigin) return relative;
+    const absolute = new AddBlock(`${name}_absolute`);
+    relative.outputs.position!.connectTo(absolute.left);
+    plumbing.worldOrigin.connectTo(absolute.right);
+    return { blocks: [...relative.blocks, absolute], inputs: {}, outputs: { position: absolute.output } };
   },
   "input.screenSize": ({ name }) => {
     const block = new ScreenSizeBlock(name);
@@ -714,6 +720,12 @@ ADAPTERS["input.worldPosition"] = ({ name, plumbing }) => {
   // The plumbed world position is a Vector 4; the graph pin is a Vector 3.
   const split = new VectorSplitterBlock(`${name}_xyz`);
   plumbing.worldPosition.connectTo(split.xyzw);
+  if (plumbing.worldOrigin) {
+    const absolute = new AddBlock(`${name}_absolute`);
+    split.xyzOut.connectTo(absolute.left);
+    plumbing.worldOrigin.connectTo(absolute.right);
+    return { blocks: [split, absolute], inputs: {}, outputs: { position: absolute.output } };
+  }
   return { blocks: [split], inputs: {}, outputs: { position: split.xyzOut } };
 };
 

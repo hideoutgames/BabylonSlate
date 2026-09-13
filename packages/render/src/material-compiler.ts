@@ -21,6 +21,7 @@ import {
   RemapBlock,
   TransformBlock,
   VectorMergerBlock,
+  Vector3,
   VectorSplitterBlock,
   VertexOutputBlock,
   ViewDirectionBlock,
@@ -180,6 +181,13 @@ export function compileMaterialPlan(
   const diagnostics: MaterialDiagnostic[] = [];
   const realized = new Map<string, BlockRealization>();
   const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview };
+  if (plan.operations.some((operation) => operation.nodeType === "input.worldPosition" || operation.nodeType === "input.cameraPosition")) {
+    const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
+    const zero = Vector3.Zero();
+    origin.valueCallback = () => scene.floatingOriginMode ? scene.floatingOriginOffset : zero;
+    plumbing.worldOrigin = origin.output;
+    created.push(origin);
+  }
   const outputNodes: NodeMaterialBlock[] = [];
 
   const fail = (): CompileMaterialResult => {

@@ -277,6 +277,9 @@ preset is a starting budget, not a measured performance certification; final iPa
 validation is manual.
 CEL band and highlight edges use screen-space derivatives for subpixel antialiasing while retaining flat band interiors. Checked shader hooks reject incompatible Babylon source changes. Engine creation explicitly disables context MSAA and enables Babylon large-world rendering.
 Graph system-matrix input names retain Babylon's `World`/`View` prefixes so its floating-origin adapter offsets geometry, lights and shadow coordinates consistently.
+Authored World Position and Camera Position graph inputs add the render origin
+back; lighting and view-direction calculations remain camera-relative. Moving
+the camera therefore does not move world-space procedural material coordinates.
 
 Engine Settings now applies a local shadow device profile to editor and Play.
 Play stats report CPU submission time, asynchronous engine GPU timing when

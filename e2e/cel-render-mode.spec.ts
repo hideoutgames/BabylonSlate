@@ -17,6 +17,7 @@ import { clickPlayAndWaitForOverlay } from "./play";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { encodeGlbJsonBin } from "../packages/assets/src/importers/glb-parse";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
+import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 
 async function pixelsNear(
   canvas: Locator,
@@ -88,6 +89,43 @@ async function framePixels(canvas: Locator) {
   });
   return Buffer.from(encoded, "base64");
 }
+
+test("world-space material inputs remain anchored when the editor camera moves", async ({ page }) => {
+  const files = await minimalProjectFiles();
+  const material = createDefaultMaterialDocument("World Position");
+  material.shadingModel = "unlit";
+  material.twoSided = true;
+  material.nodes[0]!.type = "input.worldPosition";
+  material.nodes[0]!.properties = {};
+  material.edges[0]!.sourcePinId = "position";
+  const guid = "00000000-0000-4000-8000-000000000019";
+  files.set("assets/WorldPosition.material.babasset", await encodeAssetDocument({
+    guid, type: "Material", name: "World Position", version: 1, payload: material,
+  }));
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  await projectMode(page, "CEL");
+  const scene = createDefaultScene();
+  scene.settings.environmentColor = [0, 0, 0];
+  scene.settings.grid.showGrid = false;
+  const mesh = createMeshComponent("plane-mesh", "plane");
+  mesh.properties.materialGuid = guid;
+  scene.actors = [createActor("plane", "World Coordinate Plane", {
+    transform: { position: [0, 0, 0.25], rotation: [0, 0, 0, 1], scale: [10, 10, 1] },
+    components: [mesh],
+  })];
+  await setPreviewScene(page, scene);
+  const canvas = page.getByTestId("viewport-canvas");
+  // The lower-left world quadrant is (0, 0, .25) after color clamping,
+  // regardless of the camera-relative coordinate used internally for lighting.
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 64])).toBeGreaterThan(100);
+  await canvas.hover();
+  await page.mouse.wheel(0, -240);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 64])).toBeGreaterThan(100);
+  scene.actors[0]!.transform.position[2] = 0.5;
+  await setPreviewScene(page, scene);
+  await expect.poll(() => pixelsNear(canvas, [0, 0, 128])).toBeGreaterThan(100);
+});
 
 test("CEL preserves authored and texture colors, supports every light, and restores PBR in viewport and Play", async ({
   page,
