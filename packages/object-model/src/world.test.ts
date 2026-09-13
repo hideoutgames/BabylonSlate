@@ -365,6 +365,27 @@ describe("World tick", () => {
     expect(replacement?.spawnIndex).toBe(0);
   });
 
+  it("keeps a SceneLayer and Actor recreated by departing destruction hooks", () => {
+    const world = createTestWorld();
+    const layer = world.createSceneLayer({ guid: "layer", assetGuid: "overlay", zOrder: 0 });
+    let replacementLayer: ReturnType<typeof world.createSceneLayer> | undefined;
+    let replacementActor: ReturnType<typeof world.createActor> | undefined;
+    const actor = world.createActor({ classId: "Actor", guid: "actor", sceneLayerId: layer.guid, hooks: {
+      onDestroyed: () => {
+        replacementLayer = world.createSceneLayer({ guid: "layer", assetGuid: "overlay", zOrder: 0 });
+        replacementActor = world.createActor({ classId: "Actor", guid: "actor", sceneLayerId: "layer" });
+        world.spawnActorNow(replacementActor);
+      },
+    } });
+    world.spawnActorNow(actor);
+    world.destroySceneLayer(layer.guid);
+    expect(layer.destroyed).toBe(true);
+    expect(actor.destroyed).toBe(true);
+    expect(world.getSceneLayers()).toEqual([replacementLayer]);
+    expect(world.getActors()).toEqual([replacementActor]);
+    expect(replacementActor?.destroyed).toBe(false);
+  });
+
   it("produces identical snapshots for the same seed", () => {
     const run = (seed: number) => {
       const world = createTestWorld(seed);

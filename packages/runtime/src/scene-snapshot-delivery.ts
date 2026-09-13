@@ -17,7 +17,7 @@ export function createSceneSnapshotDelivery(options: {
   };
   return {
     receive(command: CommandMessage): boolean {
-      if (command.type === "activeScene") pending = null;
+      if (command.type === "sceneLoading" || command.type === "activeScene") pending = null;
       if (command.type !== "sceneRealized") return false;
       pending = command;
       flush();

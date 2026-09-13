@@ -216,14 +216,14 @@ export class World {
     const index = this.sceneLayers.findIndex((layer) => layer.guid === guid);
     if (index < 0) return;
     const layer = this.sceneLayers[index]!;
+    this.sceneLayers.splice(index, 1);
     for (const actor of [...this.actors]) {
       if (actor.sceneLayerId === guid) {
-        this.commitDestroy(actor.guid);
+        this.commitDestroy(actor);
       }
     }
     layer.destroyed = true;
     layer.callOnDestroyed();
-    this.sceneLayers.splice(index, 1);
   }
 
   createScene(options: {

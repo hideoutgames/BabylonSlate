@@ -67,7 +67,7 @@ import {
   type RawInputEvent,
   type ResolvedInputTick,
 } from "@babylonslate/input";
-import { runSceneRealizationWork, sceneRealizationCancelled, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
+import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
@@ -212,6 +212,8 @@ export interface RuntimeDriverOptions {
    * the exported player set this; in-process tests leave it false.
    */
   deferSceneModelsReady?: boolean;
+  /** Wait for the host Loading UI to paint before retiring or realizing a Scene. */
+  deferSceneLoadingPaint?: boolean;
   /** Real Play/player yield actor work; immediate harnesses keep the default. */
   cooperativeSceneLoading?: boolean | CooperativeSceneLoadingOptions;
 }
@@ -263,6 +265,7 @@ export interface RuntimeDriver {
   finishPlayLoading(): void;
   /** Complete the matching deferred load after the host presents its ready frame. */
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void;
+  notifySceneLoadingPainted(sceneAssetGuid: string, sceneLoadId: number): void;
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
@@ -353,6 +356,13 @@ export function createInProcessRuntime(
   return new InProcessRuntime(options, "in-process");
 }
 
+interface SceneDeparture {
+  guid: string;
+  sceneInstance: Scene | null;
+  actors: Actor[];
+  layers: SceneLayer[];
+}
+
 interface SceneRealization {
   controller: AbortController;
   scene: SerializedScene | undefined;
@@ -363,6 +373,8 @@ interface SceneRealization {
   sceneInstance: Scene | null;
   promise: Promise<void> | null;
   finished: boolean;
+  departure: SceneDeparture | null;
+  painted: (() => void) | null;
 }
 
 class InProcessRuntime implements RuntimeDriver {
@@ -432,6 +444,7 @@ class InProcessRuntime implements RuntimeDriver {
   private playWorldRealized = false;
   private sceneLoadingProgress = 1;
   private readonly deferSceneModelsReady: boolean;
+  private readonly deferSceneLoadingPaint: boolean;
   private sceneLoadId = 0;
   private readonly cooperativeSceneLoading: CooperativeSceneLoadingOptions | null;
   private realization: SceneRealization | null = null;
@@ -530,6 +543,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
+    this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
     this.cooperativeSceneLoading = options.cooperativeSceneLoading
       ? (options.cooperativeSceneLoading === true ? {} : options.cooperativeSceneLoading)
       : null;
@@ -1285,17 +1299,12 @@ class InProcessRuntime implements RuntimeDriver {
     if (!layer) return;
     for (const actor of [...this.world.getActors()]) {
       if (actor.sceneLayerId !== layer.guid) continue;
-      this.emitAudioStops(actor);
-      this.emitParticleStops(actor);
-      const slotId = this.slotByGuid.get(actor.guid);
-      if (slotId !== undefined) {
-        this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
-        this.releaseSlot(actor.guid, slotId);
-      }
-      this.overlayDesignPose.delete(actor.guid);
+      if (this.world.findSceneLayer(layer.guid) !== layer) return;
+      this.removeOwnedActor(actor);
     }
-    this.world.destroySceneLayer(layer.guid);
+    if (this.world.findSceneLayer(layer.guid) !== layer) return;
     this.emit({ type: "sceneLayerRemove", layerId: layer.guid });
+    if (this.world.findSceneLayer(layer.guid) === layer) this.world.destroySceneLayer(layer.guid);
   }
 
   clearSceneLayers(): void {
@@ -1606,18 +1615,23 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   /** Clean up only objects acquired by this preparation, including unspawned actors. */
-  private cancelRealization(): void {
+  private cancelRealization(cleanup = true): SceneRealization | null {
     const work = this.realization;
-    if (!work) return;
+    if (!work) return null;
     this.realization = null;
     if (this.preparedBootScene?.work === work) this.preparedBootScene = null;
     work.controller.abort(sceneRealizationCancelled());
-    if (work.finished) return;
+    if (work.finished || !cleanup) return work;
+    for (const actor of work.departure?.actors ?? []) this.removeOwnedActor(actor);
+    for (const layer of work.departure?.layers ?? []) {
+      if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
+    }
     for (const actor of work.actors) this.removeOwnedActor(actor);
     for (const layer of work.layers) {
       if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
     }
     this.world.flushPending();
+    return work;
   }
 
   private removeOwnedActor(actor: Actor): void {
@@ -1661,29 +1675,42 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  private beginSceneRealization(): void {
-    this.cancelRealization();
+  private beginSceneRealization(departure: SceneDeparture | null = null): void {
+    const changeId = this.sceneChangeId;
+    const previous = this.cancelRealization(false);
+    if (this.stopped || this.sceneChangeId !== changeId) return;
+    if (previous && !previous.finished) {
+      departure ??= { guid: previous.guid, sceneInstance: previous.sceneInstance, actors: [], layers: [] };
+      departure.actors = [...new Set([...departure.actors, ...previous.actors, ...(previous.departure?.actors ?? [])])];
+      departure.layers = [...new Set([...departure.layers, ...previous.layers, ...(previous.departure?.layers ?? [])])];
+    }
     this.playWorldRealized = true;
     this.sceneWorkBlocked = true;
     this.pendingSceneFinish = null;
     const work: SceneRealization = {
       controller: new AbortController(), scene: this.playScene, guid: this.playSceneGuid,
       loadId: ++this.sceneLoadId, actors: [], layers: [], sceneInstance: null,
-      promise: null, finished: false,
+      promise: null, finished: false, departure, painted: null,
     };
     this.realization = work;
+    this.sceneLoadingProgress = 0;
     const steps = this.realizeSceneSteps(work);
     if (this.cooperativeSceneLoading) {
-      work.promise = Promise.resolve().then(() =>
-        runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading!),
-      ).catch((error: unknown) => {
+      work.promise = Promise.resolve().then(async () => {
+        await this.prepareSceneLoading(work);
+        await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading!);
+      }).catch((error: unknown) => {
         this.failRealization(work);
         throw error;
       });
       // Scene changes from scripts have no awaiting caller. Keep the failure
       // observable to boot waiters and report it once when it is still current.
       void work.promise.catch((error: unknown) => {
-        if (this.realization === work && !work.controller.signal.aborted) this.reportError(error);
+        if (this.realization === work && !work.controller.signal.aborted) {
+          this.emit({ type: "sceneLoadFailed", sceneAssetGuid: work.guid, sceneLoadId: work.loadId,
+            message: error instanceof Error ? error.message : String(error) });
+          this.reportError(error);
+        }
       });
       return;
     }
@@ -1697,11 +1724,79 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private async prepareSceneLoading(work: SceneRealization): Promise<void> {
+    this.checkRealization(work);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const painted = this.deferSceneLoadingPaint ? new Promise<void>((resolve, reject) => {
+      work.painted = resolve;
+      timer = setTimeout(() => reject(new Error("Scene Loading did not paint before the loading deadline.")), 30_000);
+    }) : Promise.resolve();
+    try {
+      // Install the latch before emitting: the in-process host can acknowledge immediately.
+      this.emit({ type: "sceneLoading", sceneAssetGuid: work.guid, sceneLoadId: work.loadId });
+      await waitForSceneWork(painted, work.controller.signal);
+      this.checkRealization(work);
+    } finally {
+      clearTimeout(timer);
+      work.painted = null;
+    }
+  }
+
+  notifySceneLoadingPainted(sceneAssetGuid: string, sceneLoadId: number): void {
+    const work = this.realization;
+    if (this.stopped || !work || work.controller.signal.aborted || work.guid !== sceneAssetGuid || work.loadId !== sceneLoadId) return;
+    work.painted?.();
+  }
+
+  private *retireSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
+    const departure = work.departure;
+    if (!departure) return;
+    const checkpoint = () => this.checkRealization(work);
+    checkpoint();
+    if (this.world.currentScene === departure.sceneInstance) this.world.exitActiveScene();
+    checkpoint();
+    // Exit hooks can add objects to the departing Scene. Retain exact identities
+    // so cancellation and a reentrant same-guid replacement cannot erase each other.
+    departure.layers = [...new Set([...departure.layers, ...this.world.getSceneLayers().filter((layer) => layer.ownerSceneGuid === departure.guid)])];
+    const departingLayers = new Set(departure.layers.map((layer) => layer.guid));
+    departure.actors = [...new Set([...departure.actors, ...this.world.getActors().filter((actor) => !actor.sceneLayerId || departingLayers.has(actor.sceneLayerId))])];
+    for (const actor of departure.actors) {
+      checkpoint();
+      this.removeOwnedActor(actor);
+      this.world.flushPending();
+      checkpoint();
+      yield;
+    }
+    for (const layer of departure.layers) {
+      checkpoint();
+      if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
+      checkpoint();
+      yield;
+    }
+    // Prune native bodies before new objects can reuse a departing guid. Global
+    // SceneLayers remain in the World, retaining their bodies and motion.
+    this.physicsSync.syncFromWorld(this.world);
+    checkpoint();
+    this.overlayPhysicsSync.syncFromWorld(this.world);
+    checkpoint();
+    this.animEvalByComponent.clear();
+    this.animInitializedBySlot.clear();
+    this.pendingAnimJumpByComponent.clear();
+    this.btEvalBySlot.clear();
+    this.lastBtStateJson.clear();
+    this.clearNavAgents();
+    work.departure = null;
+  }
+
   private failRealization(work: SceneRealization): void {
     if (this.realization !== work) return;
     // Keep the failed promise/gate attached: a later ready acknowledgement must
     // never turn a partial scene into a successful load.
     this.pendingSceneFinish = null;
+    for (const actor of work.departure?.actors ?? []) this.removeOwnedActor(actor);
+    for (const layer of work.departure?.layers ?? []) {
+      if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
+    }
     for (const actor of work.actors) this.removeOwnedActor(actor);
     for (const layer of work.layers) {
       if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
@@ -1712,6 +1807,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private *realizeSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
     const checkpoint = () => this.checkRealization(work);
+    checkpoint();
+    yield* this.retireSceneSteps(work);
     checkpoint();
     this.tilemapAnimationTimeMs = 0;
     if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
@@ -1812,35 +1909,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.sceneWorkBlocked = true;
     this.pendingSceneFinish = null;
     const departingSceneGuid = this.playSceneGuid;
-    this.cancelRealization();
-    if (!current()) return;
-    this.world.exitActiveScene();
-    if (!current()) return;
-    for (const layer of [...this.world.getSceneLayers()]) {
-      if (layer.ownerSceneGuid === departingSceneGuid) {
-        this.removeSceneLayer(layer.guid);
-        if (!current()) return;
-      }
-    }
-    for (const actor of [...this.world.getActors()]) {
-      if (actor.sceneLayerId) continue;
-      this.removeOwnedActor(actor);
-      if (!current()) return;
-    }
-    this.world.flushPending();
-    if (!current()) return;
-    // Retire departing bodies before same-guid replacements can appear. This
-    // also preserves bodies belonging to retained global SceneLayers.
-    this.physicsSync.syncFromWorld(this.world);
-    if (!current()) return;
-    this.overlayPhysicsSync.syncFromWorld(this.world);
-    if (!current()) return;
-    this.animEvalByComponent.clear();
-    this.animInitializedBySlot.clear();
-    this.pendingAnimJumpByComponent.clear();
-    this.btEvalBySlot.clear();
-    this.lastBtStateJson.clear();
-    this.clearNavAgents();
+    const departure: SceneDeparture = {
+      guid: departingSceneGuid, sceneInstance: this.world.currentScene,
+      actors: this.world.getActors().filter((actor) => !actor.sceneLayerId),
+      layers: this.world.getSceneLayers().filter((layer) => layer.ownerSceneGuid === departingSceneGuid),
+    };
     this.playScene = next;
     this.renderingQuality.scene = next.settings.shadowOverrides ?? {};
     this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
@@ -1849,7 +1922,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.cameraPossessedByScript = false;
     this.possessedCameraSlotId = null;
     // The realization owns its rejection and diagnostics; script commands remain synchronous.
-    this.beginSceneRealization();
+    this.beginSceneRealization(departure);
     if (!current()) return;
     if (this.canTickScene()) {
       this.emitNavigationDebug(true);

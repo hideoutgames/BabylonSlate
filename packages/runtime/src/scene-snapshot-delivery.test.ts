@@ -36,13 +36,13 @@ describe("Scene batch snapshot delivery", () => {
     } finally { runtime.stop(); }
   });
 
-  it.each(["replacement", "Stop"] as const)("discards an undelivered marker on %s", (action) => {
+  it.each(["sceneLoading", "activeScene", "Stop"] as const)("discards an undelivered marker on %s", (action) => {
     let available = false;
     const sent: CommandMessage[] = [];
     const delivery = createSceneSnapshotDelivery({ publishSnapshot: () => available, send: (command) => sent.push(command) });
     delivery.receive({ type: "sceneRealized", sceneAssetGuid: "same", sceneLoadId: 1 });
     if (action === "Stop") delivery.reset();
-    else delivery.receive({ type: "activeScene", sceneAssetGuid: "same", sceneLoadId: 2 });
+    else delivery.receive({ type: action, sceneAssetGuid: "same", sceneLoadId: 2 });
     available = true;
     delivery.flush();
     expect(sent).toEqual([]);
