@@ -1,7 +1,8 @@
 import type { Scene } from "@babylonjs/core";
 import {
   normalizeCelShadingSettings,
-  resolveShadowSettings,
+  resolveRenderingQuality,
+  type QualityOverrides,
   type ShadowSettings,
   type ShadowOverrides,
   resolveCelShadingSettings,
@@ -12,10 +13,12 @@ import {
 } from "@babylonslate/core";
 
 export type RenderShadingSettings = Partial<
-  Pick<RenderProjectSettings, "mode" | "cel" | "shadows">
+  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality">
 >;
 type SceneRendering = {
   mode: RenderMode;
+  qualityOverrides: QualityOverrides;
+  lightsDebug: boolean;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
   overrides: CelShadingOverrides;
@@ -30,10 +33,12 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
   if (!state) {
     state = {
       mode: "pbr",
+      qualityOverrides: {},
+      lightsDebug: false,
       cel: normalizeCelShadingSettings(undefined),
       project: {},
       overrides: {},
-      shadows: resolveShadowSettings(),
+      shadows: resolveRenderingQuality().shadows,
       shadowOverrides: {},
       listeners: new Set(),
     };
@@ -57,7 +62,7 @@ export function updateSceneRenderingSettings(
   if (project !== undefined) state.project = project;
   if (overrides !== undefined) state.overrides = overrides;
   if (shadowOverrides !== undefined) state.shadowOverrides = shadowOverrides;
-  state.shadows = resolveShadowSettings(state.project.shadows, state.shadowOverrides);
+  state.shadows = resolveRenderingQuality(state.project, state.shadowOverrides, state.qualityOverrides).shadows;
   const mode = state.project.mode === "cel" ? "cel" : "pbr";
   state.cel = resolveCelShadingSettings(state.project.cel, state.overrides);
   if (mode === state.mode) return;

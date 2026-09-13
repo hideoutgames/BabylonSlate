@@ -1,3 +1,4 @@
+import type { ResolutionQuality } from "@babylonslate/core";
 import type { Engine } from "@babylonjs/core";
 
 export interface HardwareScalingOptions {
@@ -15,11 +16,12 @@ export interface HardwareScalingOptions {
 export class HardwareScalingController {
   private readonly engine: Engine;
   private minLevel: number;
-  private readonly maxLevel: number;
-  private readonly targetFrameMs: number;
+  private maxLevel: number;
+  private targetFrameMs: number;
   private readonly cooldownFrames: number;
   private level: number;
   private cooldown = 0;
+  private dynamic = true;
   private samples: number[] = [];
 
   constructor(engine: Engine, options: HardwareScalingOptions = {}) {
@@ -30,6 +32,15 @@ export class HardwareScalingController {
     this.cooldownFrames = options.cooldownFrames ?? 30;
     this.level = Number.NaN;
     this.setLevel(options.initialLevel ?? 1);
+  }
+
+  configureQuality(settings: ResolutionQuality): void {
+    this.minLevel = 1 / settings.scale;
+    this.maxLevel = 1 / Math.min(settings.scale, settings.minScale);
+    this.targetFrameMs = 1000 / settings.targetFps;
+    this.dynamic = settings.dynamic;
+    this.samples = [];
+    this.setLevel(this.minLevel);
   }
 
   getLevel(): number {
@@ -70,6 +81,7 @@ export class HardwareScalingController {
   }
 
   noteFrameTime(frameMs: number): void {
+    if (!this.dynamic) return;
     this.samples.push(frameMs);
     if (this.samples.length > 15) this.samples.shift();
     if (this.cooldown > 0) {

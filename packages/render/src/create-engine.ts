@@ -1,4 +1,5 @@
-import { sceneShadowController } from "./shadow-controller";
+import type { BaseTexture } from "@babylonjs/core";
+import { resolveRenderingQuality } from "@babylonslate/core";
 import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
 import {
   Engine,
@@ -923,6 +924,7 @@ export function createEngine(
       library: materialLibrary,
       stack: postProcessStack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
+      resolutionScale: resolveRenderingQuality(sceneRenderingSettings(scene).project, {}, sceneRenderingSettings(scene).qualityOverrides).postprocessing.resolutionScale,
       deviceBuffers: probePostProcessDeviceBuffers(scene, camera),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
@@ -930,6 +932,35 @@ export function createEngine(
       },
     });
   };
+
+  let appliedQuality: ReturnType<typeof resolveRenderingQuality> | undefined;
+  let appliedProject: unknown;
+  let appliedSceneOverrides: unknown;
+  let appliedSessionOverrides: unknown;
+  const applyTextureAnisotropy = (texture: BaseTexture) => {
+    const anisotropy = appliedQuality?.textures.anisotropy ?? 4;
+    texture.anisotropicFilteringLevel = Math.min(anisotropy, engine.getCaps().maxAnisotropy ?? 1);
+  };
+  const applyRenderingQuality = () => {
+    const state = sceneRenderingSettings(scene);
+    if (appliedProject === state.project && appliedSceneOverrides === state.shadowOverrides && appliedSessionOverrides === state.qualityOverrides) return;
+    appliedProject = state.project;
+    appliedSceneOverrides = state.shadowOverrides;
+    appliedSessionOverrides = state.qualityOverrides;
+    const quality = resolveRenderingQuality(state.project, state.shadowOverrides, state.qualityOverrides);
+    const previous = appliedQuality;
+    appliedQuality = quality;
+    if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution))
+      scaling.configureQuality(quality.resolution);
+    if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
+      resourceCache.setByteCeiling(quality.textures.byteBudget);
+      for (const texture of scene.textures) applyTextureAnisotropy(texture);
+    }
+    if (previous && previous.postprocessing.resolutionScale !== quality.postprocessing.resolutionScale)
+      rebuildPostProcessStack();
+  };
+  scene.onBeforeRenderObservable.add(applyRenderingQuality);
+  scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
 
   const sceneLayerCompositor = options.playMode
     ? new SceneLayerCompositor({
@@ -1660,7 +1691,7 @@ export function createEngine(
         return;
       }
       if (options.playMode) {
-        applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
+        applyPlayConsoleRenderCommand({ scheduler }, command);
       }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
@@ -1792,10 +1823,14 @@ export function createEngine(
         rebuildIfActiveCameraChanged(previousCamera);
         scheduler.invalidate("camera");
       }
-      if (command.type === "setShadowQuality") {
-        applyShadowQuality(scene, binding, command.level);
+      if (command.type === "setRenderingQuality" && options.playMode) {
+        sceneRenderingSettings(scene).qualityOverrides = command.overrides;
+        setSceneRenderSettings(scene);
+        applyRenderingQuality();
         scheduler.invalidate("asset");
       }
+      if (command.type === "setLightsDebug")
+        sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");

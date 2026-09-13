@@ -315,6 +315,7 @@ export function startPlayer(options: {
   }));
   const loadControl = {
     frameCap: manifest.playFrameCap,
+    renderSettings: manifest.render,
     project: manifest.project,
     type: "load" as const,
     sceneAssetGuid: startup,

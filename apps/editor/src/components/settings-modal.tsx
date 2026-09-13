@@ -1,3 +1,4 @@
+import { RenderQualityFields } from "./render-quality-fields";
 import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 import { normalizeShadowSettings } from "@babylonslate/core";
@@ -1045,6 +1046,7 @@ export function SettingsModal({
               </Select>
               <FieldDescription>CEL uses native banded surface lighting. Scene Defaults can override individual style settings.</FieldDescription>
             </Field>
+<RenderQualityFields settings={projectDocument.settings.render} onChange={(render) => updateProjectSettings({ render })} />
 <ShadowSettingsFields project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
             {projectDocument.settings.render.mode === "cel" ? (
               <CelShadingFields

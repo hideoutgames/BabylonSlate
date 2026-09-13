@@ -1,23 +1,10 @@
+import { QUALITY_GROUPS, QUALITY_LEVELS, type QualityGroup } from "@babylonslate/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
   ConsoleCommandHost,
   RegisteredCommand,
 } from "./types";
-
-const QUALITY: CommandParameter = {
-  name: "level",
-  type: "enum",
-  enumValues: ["low", "medium", "high"],
-  optional: true,
-};
-
-const SHADOW_QUALITY: CommandParameter = {
-  name: "level",
-  type: "enum",
-  enumValues: ["off", "512", "1024", "2048"],
-  optional: true,
-};
 
 const FLAG: CommandParameter = {
   name: "enabled",
@@ -28,9 +15,8 @@ const FLAG: CommandParameter = {
 
 export const CORE_COMMAND_NAMES = [
   "changescene",
-  "renderquality",
-  "shadowquality",
-  "resolutionscale",
+  "quality",
+  ...QUALITY_GROUPS.map((group) => `quality ${group}`),
   "framecap",
   "volume",
   "quit",
@@ -39,6 +25,7 @@ export const CORE_COMMAND_NAMES = [
 
 export const DEBUG_COMMAND_NAMES = [
   "showfps",
+  "lightsdebug",
   "stat unit",
   "stat memory",
   "stat draws",
@@ -129,51 +116,16 @@ export function builtinCommands(): RegisteredCommand[] {
         return ok(`changed scene to ${scene}`);
       },
     },
-    {
-      name: "renderquality",
-      tier: "core",
-      category: "engine",
-      description: "Set render quality",
-      parameters: [QUALITY],
-      run(args, host) {
-        if (args.level === undefined) {
-          return ok(`renderquality ${host.getRenderQuality?.() ?? "high"}`);
-        }
-        const level = String(args.level);
-        host.setRenderQuality(level);
-        return ok(`renderquality ${level}`);
-      },
-    },
-    {
-      name: "shadowquality",
-      tier: "core",
-      category: "engine",
-      description: "Set shadow map size",
-      parameters: [SHADOW_QUALITY],
-      run(args, host) {
-        if (args.level === undefined) {
-          return ok(`shadowquality ${host.getShadowQuality?.() ?? "1024"}`);
-        }
-        const level = String(args.level);
-        host.setShadowQuality(level);
-        return ok(`shadowquality ${level}`);
-      },
-    },
-    {
-      name: "resolutionscale",
-      tier: "core",
-      category: "engine",
-      description: "Set resolution scale",
-      parameters: [{ name: "scale", type: "float", optional: true }],
-      run(args, host) {
-        if (args.scale === undefined) {
-          return ok(`resolutionscale ${host.getResolutionScale?.() ?? 1}`);
-        }
-        const scale = Number(args.scale);
-        host.setResolutionScale(scale);
-        return ok(`resolutionscale ${host.getResolutionScale?.() ?? scale}`);
-      },
-    },
+    ...([undefined, ...QUALITY_GROUPS] as (QualityGroup | undefined)[]).map((group): RegisteredCommand => ({
+      name: group ? `quality ${group}` : "quality", tier: "core", category: "engine",
+      description: "Query, set or reset rendering scalability",
+      parameters: [
+        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled"] : group === "resolution" ? ["scale"] : [])] },
+        { name: "value", type: "string", optional: true },
+      ],
+      run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),
+    })),
+    flagCommand("lightsdebug", (host, enabled) => host.setLightsDebug?.(enabled), "Show light illumination and shadow allocation diagnostics"),
     {
       name: "framecap",
       tier: "core",

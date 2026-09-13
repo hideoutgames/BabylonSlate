@@ -12,6 +12,7 @@ export interface PostProcessStackEntry {
   materialGuid: string;
   enabled: boolean;
   order: number;
+  scalable?: boolean;
 }
 
 /** Scene documents omit `order`; normalize fills it from array index. */
@@ -19,6 +20,7 @@ export type PostProcessStackInput = {
   materialGuid: string;
   enabled?: boolean;
   order?: number;
+  scalable?: boolean;
 };
 
 export function normalizePostProcessStack(
@@ -34,6 +36,7 @@ export function normalizePostProcessStack(
       return [
         {
           materialGuid,
+          ...(record.scalable === true ? { scalable: true } : {}),
           enabled: record.enabled !== false,
           order:
             typeof record.order === "number" && Number.isFinite(record.order)
@@ -64,6 +67,7 @@ export interface PostProcessStackDiagnostic {
 
 export interface AttachPostProcessStackOptions {
   scene: Scene;
+  resolutionScale?: number;
   camera: Camera;
   library: MaterialLibrary;
   stack: readonly PostProcessStackEntry[];
@@ -218,7 +222,7 @@ export function attachPostProcessStack(
       if (!hadPrePass) prePassHeld = true;
     }
     acquired.push(entry.materialGuid);
-    const pass = createPostProcessPass(compiled.material, options.camera);
+    const pass = createPostProcessPass(compiled.material, options.camera, entry.scalable ? options.resolutionScale ?? 1 : 1);
     if (pass) passes.push(pass);
   }
 
@@ -295,6 +299,7 @@ function bufferDenied(needed: boolean, available: boolean): boolean {
 function createPostProcessPass(
   material: NodeMaterial,
   camera: Camera,
+  ratio: number,
 ): PostProcess | null {
-  return material.createPostProcess(camera) ?? null;
+  return material.createPostProcess(camera, ratio) ?? null;
 }

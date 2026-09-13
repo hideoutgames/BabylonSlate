@@ -803,6 +803,7 @@ export function startPlaySession(options: {
   });
   const loadControl = playLoadControl({
     frameCap: resolvePlayFrameCap(options.frameCap),
+    renderSettings: options.renderSettings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,
     physicsWorld: physics.physicsWorld,

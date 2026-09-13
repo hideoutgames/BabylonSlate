@@ -152,7 +152,7 @@ export function ShadowSettingsFields({
       <FieldLegend>Shadows</FieldLegend>
       <FieldGroup className="gap-2">
         {fields
-          .filter(({ key }) => !scene || key !== "profile")
+          .filter(({ key }) => key !== "profile")
           .map(({ key, label, description }) => {
             const id = `${scene ? "scene" : "project"}-shadow-${key}`;
             const overridden = scene && Object.hasOwn(overrides, key);
