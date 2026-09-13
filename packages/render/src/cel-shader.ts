@@ -25,11 +25,12 @@ export function celFunctions(wgsl: boolean): string {
 vec3 slateCelTextureToDisplay(vec3 color) {
   return mix(12.92 * color, 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - vec3(0.055), step(vec3(0.0031308), color));
 }
+// Resolve round-off at exact hard thresholds consistently; no edge blending.
 float slateCelBand(float value) {
   float levels = slateCelBands.x - 1.0;
   float shifted = pow(clamp(value, 0.0, 1.0), log(0.5) / log(slateCelBands.z)) * levels;
   float lower = floor(shifted);
-  if (slateCelBands.y <= 0.0) { return clamp(floor(shifted + 0.5) / levels, 0.0, 1.0); }
+  if (slateCelBands.y <= 0.0) { return clamp(floor(shifted + 0.5001) / levels, 0.0, 1.0); }
   float width = slateCelBands.y;
   return clamp((lower + smoothstep(0.5 - width, 0.5 + width, fract(shifted))) / levels, 0.0, 1.0);
 }
@@ -54,7 +55,7 @@ vec3 slateCelSpecularTint(vec3 specular, vec3 diffuse) {
 }
 float slateCelHighlight(float ndh, float ndl) {
   float edge = 1.0 - slateCelSpecular.y;
-  if (slateCelSpecular.z <= 0.0) { return step(edge, ndh) * step(0.00001, ndl) * slateCelSpecular.x; }
+  if (slateCelSpecular.z <= 0.0) { return step(edge - 0.00001, ndh) * step(0.00001, ndl) * slateCelSpecular.x; }
   float width = slateCelSpecular.z;
   return smoothstep(edge - width, edge + width, ndh) * step(0.00001, ndl) * slateCelSpecular.x;
 }
@@ -125,7 +126,7 @@ for (const wgsl of [false, true]) {
         shadow: string,
       ) => `${wgsl ? "var slateCelIncoming{X}: f32" : "float slateCelIncoming{X}"}=slateCelStrength(info.diffuse*${shadow});
 slateCelWins=0.0;
-if (slateCelIncoming{X}>slateCelPeak) { slateCelWins=1.0; }
+if (slateCelIncoming{X}>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }
 slateCelPeak=max(slateCelPeak,slateCelIncoming{X});
 slateCelTotal+=slateCelIncoming{X};
 diffuseBase=slateCelAccumulate(diffuseBase,info.diffuse*${shadow},slateCelWins);`,

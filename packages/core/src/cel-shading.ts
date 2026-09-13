@@ -1,4 +1,4 @@
-/** Native surface lighting; PBR remains the default for legacy projects. */
+/** Native surface lighting; PBR is the default project mode. */
 export type RenderMode = "pbr" | "cel";
 
 export interface CelShadingSettings {
