@@ -341,6 +341,9 @@ distance, with a 15% retention bonus to avoid oscillation. A substantially more
 relevant light can replace an existing allocation without disabling it first.
 The current active camera supplies relevance, including possession changes.
 Compatible generators/maps survive camera, distance, bias, fade and filter edits.
+Lighting synchronization tracks shadow-generator membership and per-light/global
+shadow enablement as shader changes. Frozen surface graphs keep their freeze policy
+while refreshing their shadow defines, so retiring a map cannot leave a stale sampler.
 Structural resolution/cascade/type changes release old maps before replacement.
 Admission lowers map resolution to fit, with a 256-pixel floor, and reports limits;
 unchanged requests retain their admitted resolution to avoid movement-driven churn.
