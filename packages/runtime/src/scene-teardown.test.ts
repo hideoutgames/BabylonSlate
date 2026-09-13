@@ -26,8 +26,7 @@ describe("runtime departing Scene loading", () => {
     const layerDocument = createDefaultSceneLayer();
     layerDocument.actors = [createActor("global", "Global", { classId: "SceneLayerActor" })];
     const commands: CommandMessage[] = [];
-    let runtime: RuntimeDriver;
-    runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime: RuntimeDriver = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
       playScene: document, playSceneGuid: "world", sceneLayerLibrary: { global: layerDocument },
       cooperativeSceneLoading: chunks, deferSceneLoadingPaint: true,
       onCommand(command) { commands.push(command); if (command.type === "sceneLoading" && command.sceneLoadId === 1) runtime.notifySceneLoadingPainted("world", 1); },
@@ -73,8 +72,7 @@ describe("runtime departing Scene loading", () => {
 
   it("ignores a cancelled same-guid paint acknowledgment and follows the replacement without leaking departing actors", async () => {
     const commands: CommandMessage[] = [];
-    let runtime: RuntimeDriver;
-    runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true,
+    const runtime: RuntimeDriver = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true,
       onCommand(command) { commands.push(command); if (command.type === "sceneLoading" && command.sceneLoadId === 1) runtime.notifySceneLoadingPainted("world", 1); },
     });
     try {
