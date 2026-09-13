@@ -193,7 +193,7 @@ export class EditorSceneSync {
     try {
       controller.signal.throwIfAborted();
       const rebuild = options.assets ? this.installAssets(options.assets).rebuild : false;
-      this.realization = runSceneWork(this.applySteps(sceneData, rebuild), { ...options, signal: controller.signal });
+      this.realization = runSceneWork(this.applySteps(sceneData, rebuild, true), { ...options, signal: controller.signal });
       await this.realization;
     } finally {
       options.signal.removeEventListener("abort", abort);
@@ -204,9 +204,11 @@ export class EditorSceneSync {
     }
   }
 
-  private *applySteps(sceneData: SerializedScene, rebuild = false): Generator<number, void, unknown> {
+  private *applySteps(sceneData: SerializedScene, rebuild = false, cooperative = false): Generator<number, void, unknown> {
     rebuild ||= this.assetsNeedRebuild;
-    if (isStructuralEditorChange(this.lastScene, sceneData) || rebuild) unfreezeEditorActiveMeshes(this.scene);
+    // Blocking loads already require final readiness; skip the immediate path's
+    // full-document structural pre-scan and unfreeze before phased planning.
+    if (cooperative || rebuild || isStructuralEditorChange(this.lastScene, sceneData)) unfreezeEditorActiveMeshes(this.scene);
     const assets = this.meshAssetsForScene(sceneData);
     const liveIds = new Set<string>();
     const nextKinds = new Map<string, string | null>();

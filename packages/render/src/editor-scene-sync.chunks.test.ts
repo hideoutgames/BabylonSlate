@@ -48,7 +48,7 @@ describe("cooperative editor realization", () => {
       actor.components.push({
         id: `${actor.id}-light`,
         classId: "LightComponent",
-        properties: { kind: "point", castsShadows: false },
+        properties: { kind: "point", castShadows: false },
       });
     const partial: Array<{ actors: number; lights: number }> = [];
     const progress: number[] = [];
