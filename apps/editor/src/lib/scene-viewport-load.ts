@@ -81,6 +81,10 @@ export async function runSceneViewportBlockingLoad(options: {
   await options.warmShaders();
   options.signal.throwIfAborted();
   options.onProgress(90, "Presenting First Frame");
+  // Cached assets can finish all readiness work in one microtask batch. Give
+  // the blocking phase a paint before a permitted frame can close the dialog.
+  await waitForSceneLoadingPaint(options.signal);
+  options.signal.throwIfAborted();
   await options.presentFirstFrame();
   options.signal.throwIfAborted();
   options.onProgress(100, "Presenting First Frame");
