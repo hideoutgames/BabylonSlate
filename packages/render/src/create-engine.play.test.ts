@@ -193,6 +193,9 @@ describe("Play createEngine view", () => {
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle, canvas } = editorHandle(engine);
     const { canvas: sibling } = editorHandle(engine);
+    // NullEngine cannot complete the editor's pre-pass/image effects. This
+    // regression exercises view ownership; readiness has separate coverage.
+    vi.spyOn(handle.scene, "isReady").mockReturnValue(true);
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     let frames = 0;
