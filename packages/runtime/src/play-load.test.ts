@@ -26,6 +26,7 @@ describe("runtimeOptionsFromLoadControl", () => {
     } satisfies ControlMessage;
     expect(runtimeOptionsFromLoadControl(msg)).toEqual({
       seed: 7,
+      cooperativeSceneLoading: true,
       physicsWorld: "2d",
       gravity: [0, -20, 0],
       havokWasmUrl: "/havok/HavokPhysics.wasm",

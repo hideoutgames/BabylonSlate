@@ -24,6 +24,19 @@ function yieldTask(signal: AbortSignal): Promise<void> {
   });
 }
 
+/** Reject promptly on cancellation even if an external loader ignores the signal. */
+export function waitForSceneWork<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (!signal.aborted) signal.addEventListener("abort", abort, { once: true });
+    promise.then(
+      (value) => { signal.removeEventListener("abort", abort); resolve(value); },
+      (error: unknown) => { signal.removeEventListener("abort", abort); reject(error); },
+    );
+    if (signal.aborted) reject(signal.reason);
+  });
+}
+
 /** Actor operations stay indivisible; both time and item bounds force a yield. */
 export async function runSceneRealizationWork(
   steps: Generator<void, void, unknown>,
@@ -37,7 +50,7 @@ export async function runSceneRealizationWork(
       signal.throwIfAborted();
       if (steps.next().done) return;
       if (++count >= 32 || performance.now() - started >= 8) {
-        await (options.yieldControl ?? yieldTask)(signal);
+        await waitForSceneWork((options.yieldControl ?? yieldTask)(signal), signal);
         signal.throwIfAborted();
         count = 0;
         started = performance.now();

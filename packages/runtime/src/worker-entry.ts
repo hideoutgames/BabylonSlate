@@ -28,9 +28,15 @@ import { createPlayPauseGate } from "./play-pause-gate";
 import { applyInspectControl } from "./inspect-control";
 import { createWorkerScheduler } from "./worker-scheduler";
 import { captureConsoleLogs } from "./console-capture";
+import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 
 let runtime: RuntimeDriver | null = null;
 const boot = createPlayBootCoordinator();
+let bootGeneration = 0;
+const sceneSnapshots = createSceneSnapshotDelivery({
+  publishSnapshot: () => publishSnapshot(),
+  send: (command) => postMessage({ channel: "command", payload: command }),
+});
 // Recycled via the host's `recycleSnapshot` message so the per-frame
 // snapshot transfer never allocates a fresh ArrayBuffer once warmed up.
 let snapshotPing = new TransferablePingPong(256);
@@ -39,6 +45,7 @@ let pendingGeneration: number | null = null;
 let stopConsoleCapture: (() => void) | null = null;
 
 function onCommand(command: CommandMessage): void {
+  if (sceneSnapshots.receive(command)) return;
   if (command.type === "snapshotLayout") {
     try {
       snapshotPing = snapshotPing.grow(command.capacity);
@@ -69,6 +76,10 @@ const pauseGate = createPlayPauseGate({
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
     case "load": {
+      bootGeneration++;
+      boot.reset();
+      pauseGate.reset();
+      sceneSnapshots.reset();
       stopConsoleCapture?.();
       stopConsoleCapture = captureConsoleLogs(console, (message, severity) => {
         if (runtime) runtime.reportLog(message, severity);
@@ -79,7 +90,6 @@ function handleControl(msg: ControlMessage): void {
         runtime.stop();
         runtime = null;
       }
-      boot.reset();
       runtime = createRuntimeFromLoad(msg, onCommand);
       return;
     }
@@ -181,8 +191,16 @@ function handleControl(msg: ControlMessage): void {
     }
     case "play": {
       const rt = ensureRuntime();
-      void pauseGate.beginPlay(() => boot.play(rt)).then(() => {
+      const generation = bootGeneration;
+      void pauseGate.beginPlay((onStarted) => boot.play(rt, () => {
+        if (runtime !== rt || generation !== bootGeneration) return;
+        onStarted();
         scheduler.start();
+      })).catch((error: unknown) => {
+        if (runtime !== rt || generation !== bootGeneration) return;
+        scheduler.stop();
+        sceneSnapshots.reset();
+        rt.reportError(error);
       });
       return;
     }
@@ -197,6 +215,10 @@ function handleControl(msg: ControlMessage): void {
       return;
     }
     case "stop":
+      bootGeneration++;
+      boot.reset();
+      pauseGate.reset();
+      sceneSnapshots.reset();
       scheduler.stop();
       ensureRuntime().stop();
       stopConsoleCapture?.();
@@ -237,22 +259,24 @@ function handleControl(msg: ControlMessage): void {
   }
 }
 
+function publishSnapshot(): boolean {
+  const rt = runtime;
+  if (!rt || pendingGeneration !== null) return false;
+  const buf = snapshotPing.beginWrite();
+  if (!rt.copySnapshot(buf)) {
+    snapshotPing.cancelWrite();
+    return false;
+  }
+  const ab = snapshotPing.commitWrite();
+  postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration, transferable: true }, [ab]);
+  return true;
+}
+
 function pump(elapsed: number): void {
   const rt = runtime;
   if (!rt) return;
   rt.advance(elapsed);
-  if (pendingGeneration !== null) {
-    return;
-  }
-  const buf = snapshotPing.beginWrite();
-  if (rt.copySnapshot(buf)) {
-    const ab = snapshotPing.commitWrite();
-    postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration, transferable: true }, [
-      ab,
-    ]);
-  } else {
-    snapshotPing.cancelWrite();
-  }
+  if (!sceneSnapshots.flush()) publishSnapshot();
 }
 
 const scheduler = createWorkerScheduler(self, pump);
@@ -271,11 +295,13 @@ self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
   }
   if (msg.channel === "recycleSnapshot") {
     snapshotPing.recycle(msg.payload);
+    sceneSnapshots.flush();
     return;
   }
   if (msg.channel === "snapshotLayoutAck" && msg.generation === pendingGeneration) {
     installedGeneration = msg.generation;
     pendingGeneration = null;
+    sceneSnapshots.flush();
   }
 };
 

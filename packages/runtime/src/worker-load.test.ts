@@ -42,9 +42,9 @@ it("loading scripts without a spawn list does not create unplaced actors in the 
       onCommand,
       preferSoftwarePhysics: true,
     });
-    const resume = runtime.resume.bind(runtime);
-    vi.spyOn(runtime, "resume").mockImplementation(() => {
-      resume();
+    const finish = runtime.finishPlayLoading.bind(runtime);
+    vi.spyOn(runtime, "finishPlayLoading").mockImplementation(() => {
+      finish();
       finishBoot();
     });
     return runtime;

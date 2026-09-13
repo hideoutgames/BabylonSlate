@@ -40,6 +40,7 @@ export function runtimeOptionsFromLoadControl(
   | "audioAssetGuids"
   | "animClipCatalog"
   | "deferSceneModelsReady"
+  | "cooperativeSceneLoading"
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
   const sceneGuidByKey: Record<string, string> = {};
@@ -60,6 +61,7 @@ export function runtimeOptionsFromLoadControl(
   }
   return {
     seed: msg.seed ?? 1,
+    cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     renderSettings: msg.renderSettings,
     ...(msg.project ? { project: msg.project } : {}),

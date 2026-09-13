@@ -349,6 +349,7 @@ export function startPlayer(options: {
   const pauseState = createPlayerPauseState();
   let detachLifecycle = () => {};
   let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
+  let resetBoot = () => {};
   let hudStats: PlayerHudStats | undefined;
   let snapBuf = new Float32Array(snapshotFloatCount(256));
 
@@ -365,6 +366,8 @@ export function startPlayer(options: {
   const haltPlayback = () => {
     if (halted) return;
     halted = true;
+    resetBoot();
+    pauseGate?.reset();
     sceneReadiness.dispose();
     detachLifecycle();
     handle.setPaused(true);
@@ -417,6 +420,10 @@ export function startPlayer(options: {
     if (command.type === "snapshotLayout")
       handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
+    if (command.type === "sceneRealized" && runtime) {
+      if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
+      handle.pushSnapshot(snapBuf);
+    }
     sceneReadiness.receive(command);
     if (command.type === "print") {
       printHud.applyPrint({
@@ -483,6 +490,7 @@ export function startPlayer(options: {
       resume: () => inProcess.resume(),
     });
     const boot = createPlayBootCoordinator();
+    resetBoot = () => boot.reset();
     if (game.scripts.length > 0) {
       boot.queueScripts(inProcess, game.scripts, []);
     }
@@ -525,9 +533,9 @@ export function startPlayer(options: {
       boot.queueNavMesh(inProcess, content.navmeshBytes);
     }
     void pauseGate
-      .beginPlay(() => boot.play(inProcess))
-      .catch((error) => {
-        inProcess.reportError(error);
+      .beginPlay((onStarted) => boot.play(inProcess, onStarted))
+      .catch((error: unknown) => {
+        if (!halted) inProcess.reportError(error);
       });
   }
 
@@ -602,6 +610,8 @@ export function startPlayer(options: {
     inspectWorld: () => consoleHost.inspectWorld(),
     stop: () => {
       halted = true;
+      resetBoot();
+      pauseGate?.reset();
       sceneReadiness.dispose();
       detachLifecycle();
       cancelAnimationFrame(raf);
