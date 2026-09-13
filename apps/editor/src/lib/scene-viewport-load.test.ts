@@ -67,8 +67,11 @@ describe("runSceneViewportBlockingLoad", () => {
     expect(realize).not.toHaveBeenCalled();
     expect(collect).not.toHaveBeenCalled();
     paint();
-    await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(progress.at(-1)?.value).toBe(90));
     expect(progress.at(-1)).toEqual({ value: 90, phase: "Presenting First Frame" });
+    expect(presentFirstFrame).not.toHaveBeenCalled();
+    paint();
+    await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
     present();
     await task;
     expect(progress).toEqual([
@@ -99,6 +102,8 @@ describe("runSceneViewportBlockingLoad", () => {
     await vi.waitFor(() => expect(order).toEqual(["collect", "realize"]));
     expect(whenModelsReady).not.toHaveBeenCalled();
     finish();
+    await vi.waitFor(() => expect(frames).toHaveLength(1));
+    paint();
     await task;
     expect(whenModelsReady).toHaveBeenCalledOnce();
   });
@@ -120,6 +125,10 @@ describe("runSceneViewportBlockingLoad", () => {
       const task = runSceneViewportBlockingLoad(options);
       const result = expect(task).rejects.toBe(failure);
       paint();
+      if (stage === "presentFirstFrame") {
+        await vi.waitFor(() => expect(frames).toHaveLength(1));
+        paint();
+      }
       await result;
       expect(onProgress.mock.calls.some(([value]) => value === 100)).toBe(false);
     },
