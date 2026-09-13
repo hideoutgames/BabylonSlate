@@ -45,6 +45,13 @@ function fixture() {
     }
     return target;
   };
+  // NullEngine also leaves _releaseTexture empty. Match WebGL cache ownership
+  // so resource disposal assertions observe the same lifetime as a real GPU.
+  engine._releaseTexture = (texture) => {
+    const cache = engine.getLoadedTexturesCache();
+    const index = cache.indexOf(texture);
+    if (index !== -1) cache.splice(index, 1);
+  };
   const scene = new Scene(engine);
   scene.activeCamera = new UniversalCamera(
     "camera",
@@ -372,10 +379,12 @@ describe("shared shadow lifecycle", () => {
     const light = new PointLight("point", Vector3.Zero(), scene);
     controller.register(light, true);
     const allocate = engine.createRenderTargetCubeTexture.bind(engine);
+    let orphanDispose: ReturnType<typeof vi.spyOn> | undefined;
     const allocation = vi
       .spyOn(engine, "createRenderTargetCubeTexture")
       .mockImplementationOnce((...args) => {
-        allocate(...args);
+        const orphan = allocate(...args);
+        orphanDispose = vi.spyOn(orphan.texture!, "dispose");
         throw new Error("driver rejected completed cube");
       });
     controller.sync();
@@ -391,6 +400,7 @@ describe("shared shadow lifecycle", () => {
       allocationError: "driver rejected completed cube",
     });
     expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512]);
+    expect(orphanDispose).toHaveBeenCalledTimes(1);
     controller.sync();
     expect(controller.generator(light)).toBe(retained);
     expect(allocation).toHaveBeenCalledTimes(2);
