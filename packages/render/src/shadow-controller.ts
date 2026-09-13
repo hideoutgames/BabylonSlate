@@ -1,4 +1,7 @@
-import { syncDirectionalLightPolicy, isDirectionalLightExcluded } from "./light-policy";
+import {
+  syncDirectionalLightPolicy,
+  isDirectionalLightExcluded,
+} from "./light-policy";
 import {
   CascadedShadowGenerator,
   DirectionalLight,
@@ -7,14 +10,18 @@ import {
   ShadowGenerator,
   Vector3,
   Frustum,
+  Material,
   type AbstractMesh,
-  type Camera,
   type Light,
   type Scene,
   type Plane,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
-import { effectiveShadowSettings } from "@babylonslate/core";
+import {
+  effectiveShadowSettings,
+  SHADOW_CAPACITY_PROFILES,
+  type ShadowSettings,
+} from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import {
   authoredShadowParticipation,
@@ -28,17 +35,35 @@ import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import { calibratedShadowBias } from "./shadow-bias";
 import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { readEngineDrawCalls } from "./draw-calls";
+import {
+  ENGINE_SHADOW_BUDGET,
+  SHADOW_MATERIAL_SAMPLER_RESERVE,
+  otherShadowReservations,
+  reserveSceneShadows,
+  shadowBytesPerTexel,
+  type ShadowCost,
+} from "./shadow-admission";
 
 type ShadowLight = DirectionalLight | PointLight | SpotLight;
 export type ShadowLightStatus =
-  "active" | "disabled" | "outside-relevant-area" | "budget-limited";
+  | "active"
+  | "disabled"
+  | "not-requested"
+  | "non-illuminating"
+  | "shadows-disabled"
+  | "outside-relevant-area"
+  | "budget-limited"
+  | "allocation-failed";
 type Entry = {
   light: ShadowLight;
   requested: boolean;
   priority: number;
   generator: ShadowGenerator | null;
   key: string;
-  camera: Camera | null;
+  settings: ShadowSettings | null;
+  mapSize: number;
+  reason: string | null;
+  failedKey: string;
   status: ShadowLightStatus;
 };
 const controllers = new WeakMap<Scene, SceneShadowController>();
@@ -82,6 +107,7 @@ export class SceneShadowController {
       this.meshes.clear();
       this.pending.clear();
       this.spatial.dispose();
+      reserveSceneShadows(scene, { bytes: 0, passes: 0, samplers: 0 });
       controllers.delete(scene);
     });
   }
@@ -100,7 +126,10 @@ export class SceneShadowController {
         priority,
         generator: null,
         key: "",
-        camera: null,
+        settings: null,
+        mapSize: 0,
+        reason: null,
+        failedKey: "",
         status: "disabled",
       };
       this.entries.set(light, entry);
@@ -133,14 +162,38 @@ export class SceneShadowController {
   generator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
   }
+  status(light: Light): ShadowLightStatus | undefined {
+    return this.entries.get(light)?.status;
+  }
+  limits(): string[] {
+    const limits = new Set<string>();
+    for (const entry of this.entries.values()) {
+      if (entry.reason) limits.add(entry.reason);
+      if (entry.generator?.usePoissonSampling)
+        limits.add(
+          entry.light.needCube()
+            ? "point shadows: Poisson filter fallback"
+            : "shadows: Poisson filter capability fallback",
+        );
+    }
+    return [...limits];
+  }
   metrics(): { passes: number; bytes: number } {
     let passes = 0;
     let bytes = 0;
     for (const { light, generator } of this.entries.values()) {
       if (!generator) continue;
-      const count = generator instanceof CascadedShadowGenerator ? generator.numCascades : light instanceof PointLight ? 6 : 1;
+      const count =
+        generator instanceof CascadedShadowGenerator
+          ? generator.numCascades
+          : light instanceof PointLight
+            ? 6
+            : 1;
       passes += count;
-      bytes += count * (generator.getShadowMap()?.getSize().width ?? 0) ** 2 * 8;
+      bytes +=
+        count *
+        (generator.getShadowMap()?.getSize().width ?? 0) ** 2 *
+        shadowBytesPerTexel(this.scene.getEngine());
     }
     return { passes, bytes };
   }
@@ -150,9 +203,27 @@ export class SceneShadowController {
       const generator = entry?.generator;
       return {
         name: light.name,
-        illumination: isDirectionalLightExcluded(light) ? "directional-limit" : !light.isEnabled() || light.intensity <= 0 ? "disabled" : "active",
+        illumination: isDirectionalLightExcluded(light)
+          ? "directional-limit"
+          : !light.isEnabled() || light.intensity <= 0
+            ? "disabled"
+            : "active",
         status: entry?.status ?? "unsupported",
-        passes: generator ? generator instanceof CascadedShadowGenerator ? generator.numCascades : light instanceof PointLight ? 6 : 1 : 0,
+        reason: entry?.reason ?? null,
+        effectiveFilter: !generator
+          ? null
+          : generator.usePoissonSampling
+            ? "poisson"
+            : generator.useContactHardeningShadow
+              ? "pcss"
+              : "pcf",
+        passes: generator
+          ? generator instanceof CascadedShadowGenerator
+            ? generator.numCascades
+            : light instanceof PointLight
+              ? 6
+              : 1
+          : 0,
         mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
       };
     });
@@ -192,19 +263,27 @@ export class SceneShadowController {
     const requested = state.shadows;
     const { settings } = effectiveShadowSettings(
       requested,
-      CascadedShadowGenerator.IsSupported,
+      scene.getEngine()._features.supportCSM,
       state.mode,
     );
     const camera = scene.activeCamera;
+    camera?.getViewMatrix();
     const candidates = [...this.entries.values()].filter((entry) => {
       entry.status = "disabled";
-      if (
-        !settings.enabled ||
-        !entry.requested ||
-        !entry.light.isEnabled() ||
-        entry.light.intensity <= 0
-      )
+      entry.reason = null;
+      if (isDirectionalLightExcluded(entry.light)) {
+        entry.status = "non-illuminating";
         return false;
+      }
+      if (!entry.light.isEnabled() || entry.light.intensity <= 0) return false;
+      if (!entry.requested) {
+        entry.status = "not-requested";
+        return false;
+      }
+      if (!settings.enabled) {
+        entry.status = "shadows-disabled";
+        return false;
+      }
       if (
         camera &&
         !(entry.light instanceof DirectionalLight) &&
@@ -241,29 +320,127 @@ export class SceneShadowController {
         relevance(b) - relevance(a) ||
         a.light.uniqueId - b.light.uniqueId,
     );
-    let directional = 0;
+    const caps = scene.getEngine().getCaps();
+    const profile = SHADOW_CAPACITY_PROFILES[settings.profile];
+    const other = otherShadowReservations(scene);
+    const byteBudget = Math.max(
+      0,
+      Math.min(profile.byteBudget, ENGINE_SHADOW_BUDGET.bytes - other.bytes),
+    );
+    const passBudget = Math.max(
+      0,
+      Math.min(profile.passes, ENGINE_SHADOW_BUDGET.passes - other.passes),
+    );
+    const samplerBudget = Math.max(
+      0,
+      caps.maxTexturesImageUnits - SHADOW_MATERIAL_SAMPLER_RESERVE,
+    );
+    const bytesPerTexel = shadowBytesPerTexel(scene.getEngine());
+    const admitted: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
+    const reserveLocalMaps =
+      settings.maxLocalLights > 0 &&
+      candidates.some((entry) => !(entry.light instanceof DirectionalLight));
     let local = 0;
+    // Reserve the single sun before local maps regardless of local priorities.
+    candidates.sort(
+      (a, b) =>
+        Number(b.light instanceof DirectionalLight) -
+        Number(a.light instanceof DirectionalLight),
+    );
     for (const entry of candidates) {
+      const directional = entry.light instanceof DirectionalLight;
+      const passes = directional
+        ? settings.cascades
+        : entry.light.needCube()
+          ? 6
+          : 1;
+      const samplers =
+        settings.filter === "pcss" && !entry.light.needCube() ? 2 : 1;
+      entry.reason =
+        !directional && local >= settings.maxLocalLights
+          ? "local light capacity"
+          : admitted.passes + passes > passBudget
+            ? "shadow face/pass budget"
+            : admitted.samplers + samplers > samplerBudget
+              ? "material sampler headroom"
+              : null;
+      if (entry.reason) continue;
+      const requestedSize = directional
+        ? settings.mapSize
+        : settings.localMapSize;
+      let mapSize = Math.min(requestedSize, caps.maxTextureSize);
+      if (entry.light.needCube())
+        mapSize = Math.min(mapSize, caps.maxCubemapTextureSize);
       if (
-        entry.light instanceof DirectionalLight
-          ? directional++ < 1
-          : local++ < settings.maxLocalLights
+        entry.generator &&
+        entry.settings?.profile === settings.profile &&
+        (directional ? entry.settings.mapSize : entry.settings.localMapSize) ===
+          requestedSize
       )
-        entry.status = "active";
+        mapSize = Math.min(
+          mapSize,
+          entry.generator.getShadowMap()?.getSize().width ?? mapSize,
+        );
+      mapSize = 2 ** Math.floor(Math.log2(mapSize));
+      // CSM constructs four layers before applying an authored lower count.
+      // Admit that temporary peak as well as the final attachments.
+      const peakPasses = directional && settings.cascades > 1 ? 4 : passes;
+      const availableBytes = Math.min(
+        byteBudget - admitted.bytes,
+        directional && reserveLocalMaps ? byteBudget / 2 : byteBudget,
+      );
+      while (
+        mapSize >= 256 &&
+        peakPasses * mapSize ** 2 * bytesPerTexel > availableBytes
+      )
+        mapSize /= 2;
+      if (mapSize < 256) {
+        entry.reason = "shadow attachment memory budget";
+        continue;
+      }
+      entry.mapSize = mapSize;
+      entry.reason =
+        mapSize < requestedSize
+          ? "shadow map reduced by memory or texture capability"
+          : null;
+      entry.status = "active";
+      admitted.bytes += peakPasses * mapSize ** 2 * bytesPerTexel;
+      admitted.passes += passes;
+      admitted.samplers += samplers;
+      if (!directional) local++;
     }
+    // Release incompatible and retired maps before reserving/constructing their
+    // replacements; old and new sets must never overlap outside this envelope.
     for (const entry of this.entries.values()) {
-      if (entry.status !== "active") {
+      const key = JSON.stringify([
+        entry.mapSize,
+        entry.light.needCube(),
+        entry.light instanceof DirectionalLight ? settings.cascades : 1,
+      ]);
+      if (entry.status !== "active" || entry.key !== key) {
         entry.generator?.dispose();
         entry.generator = null;
         entry.key = "";
-        continue;
       }
+    }
+    reserveSceneShadows(scene, admitted);
+    for (const entry of this.entries.values()) {
+      if (entry.status !== "active") continue;
       const directionalLight = entry.light instanceof DirectionalLight;
-      const mapSize = directionalLight
-        ? settings.mapSize
-        : settings.localMapSize;
-      const key = JSON.stringify([settings, mapSize, state.mode]);
-      if (key === entry.key && entry.camera === camera && entry.generator) {
+      const mapSize = entry.mapSize;
+      const key = JSON.stringify([
+        mapSize,
+        entry.light.needCube(),
+        directionalLight ? settings.cascades : 1,
+      ]);
+      const previousSettings = entry.settings;
+      entry.settings = settings;
+      if (entry.generator) {
+        this.applySettings(entry.generator, settings);
+        if (previousSettings?.fadeFraction !== settings.fadeFraction)
+          scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
+        if (entry.generator instanceof CascadedShadowGenerator)
+          entry.generator.shadowMaxZ = settings.distance;
         if (casterBounds && entry.generator instanceof CascadedShadowGenerator)
           entry.generator.shadowCastersBoundingInfo.reConstruct(
             casterBounds.min,
@@ -272,143 +449,193 @@ export class SceneShadowController {
         if (
           entry.light instanceof DirectionalLight &&
           !(entry.generator instanceof CascadedShadowGenerator)
-        )
+        ) {
+          if (previousSettings?.distance !== settings.distance)
+            configureDirectionalShadowProjection(
+              entry.light,
+              scene,
+              settings.distance,
+              mapSize,
+              this.spatial,
+            );
           entry.light.forceProjectionMatrixCompute();
+        }
         continue;
       }
-      entry.generator?.dispose();
-      const generator =
-        directionalLight && settings.cascades > 1
-          ? new CascadedShadowGenerator(
-              mapSize,
-              entry.light as DirectionalLight,
-            )
-          : new ShadowGenerator(mapSize, entry.light);
-      if (generator instanceof CascadedShadowGenerator) {
-        generator.numCascades = settings.cascades;
-        generator.stabilizeCascades = true;
-        generator.lambda = 0.7;
-        generator.shadowMaxZ = settings.distance;
-        generator.cascadeBlendPercentage = 0.05;
-        generator.autoCalcDepthBounds = false;
-        generator.depthClamp = true;
-        generator.freezeShadowCastersBoundingInfo = true;
-        if (casterBounds)
-          generator.shadowCastersBoundingInfo.reConstruct(
-            casterBounds.min,
-            casterBounds.max,
-          );
-        const prepare = generator.prepareDefines.bind(generator);
-        generator.prepareDefines = (defines, lightIndex) => {
-          prepare(defines, lightIndex);
-          defines[`SLATE_SHADOW_FADE${lightIndex}`] = settings.fadeFraction;
-          defines.rebuild();
-        };
-      } else if (entry.light instanceof DirectionalLight) {
-        configureDirectionalShadowProjection(
-          entry.light,
-          scene,
-          settings.distance,
-          mapSize,
-          this.spatial,
-        );
+      if (entry.failedKey === key) {
+        entry.status = "allocation-failed";
+        entry.reason =
+          "shadow allocation failed; change resolution or reload to retry";
+        continue;
       }
-      generator.usePercentageCloserFiltering = settings.filter === "pcf";
-      generator.useContactHardeningShadow = settings.filter === "pcss";
-      generator.contactHardeningLightSizeUVRatio = settings.softness;
-      generator.filteringQuality =
-        settings.filterQuality === "high"
-          ? ShadowGenerator.QUALITY_HIGH
-          : settings.filterQuality === "medium"
-            ? ShadowGenerator.QUALITY_MEDIUM
-            : ShadowGenerator.QUALITY_LOW;
-      generator.bias = settings.depthBias;
-      generator.normalBias = settings.normalBias;
-      generator.frustumEdgeFalloff = 0;
-      for (const mesh of this.meshes) generator.addShadowCaster(mesh, false);
-      const map = generator.getShadowMap();
-      let drawsBefore = 0;
-      let indicesBefore = 0;
-      map?.onBeforeBindObservable.add(() => {
-        drawsBefore = readEngineDrawCalls(scene.getEngine());
-        indicesBefore = scene.getActiveIndices();
-      });
-      map?.onAfterUnbindObservable.add(() => {
-        this.drawCalls += Math.max(
-          0,
-          readEngineDrawCalls(scene.getEngine()) - drawsBefore,
-        );
-        this.triangles +=
-          Math.max(0, scene.getActiveIndices() - indicesBefore) / 3;
-      });
-      if (generator instanceof CascadedShadowGenerator)
-        map?.onBeforeBindObservable.add(
-          () => generator.splitFrustum(),
-          -1,
-          true,
-        );
-      if (settings.autoBias && generator instanceof CascadedShadowGenerator)
-        map?.onBeforeRenderObservable.add((layer) => {
-          const min = generator.getCascadeMinExtents(layer);
-          const max = generator.getCascadeMaxExtents(layer);
-          if (min && max) {
-            const extent = Math.max(max.x - min.x, max.y - min.y);
-            generator.bias = calibratedShadowBias(
-              mapSize,
-              extent,
-              max.z - min.z,
-              settings.filterQuality,
-              settings.depthBias,
+      try {
+        const generator =
+          directionalLight && settings.cascades > 1
+            ? new CascadedShadowGenerator(
+                mapSize,
+                entry.light as DirectionalLight,
+              )
+            : new ShadowGenerator(mapSize, entry.light);
+        if (generator instanceof CascadedShadowGenerator) {
+          generator.numCascades = settings.cascades;
+          generator.stabilizeCascades = true;
+          generator.lambda = 0.7;
+          generator.shadowMaxZ = settings.distance;
+          generator.cascadeBlendPercentage = 0.05;
+          generator.autoCalcDepthBounds = false;
+          generator.depthClamp = true;
+          generator.freezeShadowCastersBoundingInfo = true;
+          if (casterBounds)
+            generator.shadowCastersBoundingInfo.reConstruct(
+              casterBounds.min,
+              casterBounds.max,
             );
-            const kernelRadius =
-              settings.filterQuality === "high"
-                ? 2.5
-                : settings.filterQuality === "medium"
-                  ? 1.5
-                  : 0.5;
-            generator.normalBias = Math.max(
-              settings.normalBias,
-              (kernelRadius * extent) / mapSize,
-            );
-          }
-        });
-      let activePlanes: Plane[] | null = null;
-      if (map)
-        map.getCustomRenderList = (layer) => {
-          const transform =
-            generator instanceof CascadedShadowGenerator
-              ? generator.getCascadeTransformMatrix(layer)
-              : generator.getTransformMatrix();
-          if (!transform) return null;
-          const planes = Frustum.GetPlanes(transform);
-          activePlanes =
-            directionalLight && settings.filter === "pcf"
-              ? planes.slice(1)
-              : planes;
-          return this.spatial.queryPlanes(activePlanes);
-        };
-      generator.customAllowRendering = (part) => {
-        if (hasDeformingShadowBounds(part.getMesh())) return true;
-        if (!activePlanes || part.getMesh().subMeshes.length < 2) return true;
-        const box = part.getBoundingInfo()?.boundingBox;
-        if (!box) return true;
-        for (const plane of activePlanes) {
-          const n = plane.normal;
-          if (
-            n.x * (n.x >= 0 ? box.maximumWorld.x : box.minimumWorld.x) +
-              n.y * (n.y >= 0 ? box.maximumWorld.y : box.minimumWorld.y) +
-              n.z * (n.z >= 0 ? box.maximumWorld.z : box.minimumWorld.z) +
-              plane.d <
-            0
-          )
-            return false;
+          const prepare = generator.prepareDefines.bind(generator);
+          generator.prepareDefines = (defines, lightIndex) => {
+            prepare(defines, lightIndex);
+            defines[`SLATE_SHADOW_FADE${lightIndex}`] =
+              entry.settings!.fadeFraction;
+            defines.rebuild();
+          };
+        } else if (entry.light instanceof DirectionalLight) {
+          configureDirectionalShadowProjection(
+            entry.light,
+            scene,
+            settings.distance,
+            mapSize,
+            this.spatial,
+          );
         }
-        return true;
-      };
-      entry.generator = generator;
-      entry.key = key;
-      entry.camera = camera;
+        this.applySettings(generator, settings);
+        for (const mesh of this.meshes) generator.addShadowCaster(mesh, false);
+        const map = generator.getShadowMap();
+        let drawsBefore = 0;
+        let indicesBefore = 0;
+        map?.onBeforeBindObservable.add(() => {
+          drawsBefore = readEngineDrawCalls(scene.getEngine());
+          indicesBefore = scene.getActiveIndices();
+        });
+        map?.onAfterUnbindObservable.add(() => {
+          this.drawCalls += Math.max(
+            0,
+            readEngineDrawCalls(scene.getEngine()) - drawsBefore,
+          );
+          this.triangles +=
+            Math.max(0, scene.getActiveIndices() - indicesBefore) / 3;
+        });
+        if (generator instanceof CascadedShadowGenerator)
+          map?.onBeforeBindObservable.add(
+            () => generator.splitFrustum(),
+            -1,
+            true,
+          );
+        if (generator instanceof CascadedShadowGenerator)
+          map?.onBeforeRenderObservable.add((layer) => {
+            const settings = entry.settings!;
+            if (!settings.autoBias) return;
+            const min = generator.getCascadeMinExtents(layer);
+            const max = generator.getCascadeMaxExtents(layer);
+            if (min && max) {
+              const extent = Math.max(max.x - min.x, max.y - min.y);
+              generator.bias = calibratedShadowBias(
+                mapSize,
+                extent,
+                max.z - min.z,
+                settings.filterQuality,
+                settings.depthBias,
+              );
+              const kernelRadius =
+                settings.filterQuality === "high"
+                  ? 2.5
+                  : settings.filterQuality === "medium"
+                    ? 1.5
+                    : 0.5;
+              generator.normalBias = Math.max(
+                settings.normalBias,
+                (kernelRadius * extent) / mapSize,
+              );
+            }
+          });
+        let activePlanes: Plane[] | null = null;
+        if (map)
+          map.getCustomRenderList = (layer) => {
+            const transform =
+              generator instanceof CascadedShadowGenerator
+                ? generator.getCascadeTransformMatrix(layer)
+                : generator.getTransformMatrix();
+            if (!transform) return null;
+            const planes = Frustum.GetPlanes(transform);
+            activePlanes =
+              directionalLight && entry.settings!.filter === "pcf"
+                ? planes.slice(1)
+                : planes;
+            return this.spatial.queryPlanes(activePlanes);
+          };
+        generator.customAllowRendering = (part) => {
+          if (hasDeformingShadowBounds(part.getMesh())) return true;
+          if (!activePlanes || part.getMesh().subMeshes.length < 2) return true;
+          const box = part.getBoundingInfo()?.boundingBox;
+          if (!box) return true;
+          for (const plane of activePlanes) {
+            const n = plane.normal;
+            if (
+              n.x * (n.x >= 0 ? box.maximumWorld.x : box.minimumWorld.x) +
+                n.y * (n.y >= 0 ? box.maximumWorld.y : box.minimumWorld.y) +
+                n.z * (n.z >= 0 ? box.maximumWorld.z : box.minimumWorld.z) +
+                plane.d <
+              0
+            )
+              return false;
+          }
+          return true;
+        };
+        entry.generator = generator;
+        entry.key = key;
+        entry.failedKey = "";
+      } catch {
+        entry.light.getShadowGenerator()?.dispose();
+        entry.failedKey = key;
+        entry.status = "allocation-failed";
+        entry.reason =
+          "shadow allocation failed; change resolution or reload to retry";
+      }
     }
+    // Failed constructors own no allocation. Retain conservative CSM creation
+    // headroom for live generators so another client cannot consume it mid-sync.
+    const live: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
+    for (const entry of this.entries.values()) {
+      if (!entry.generator) continue;
+      const cascaded = entry.generator instanceof CascadedShadowGenerator;
+      const passes =
+        entry.generator instanceof CascadedShadowGenerator
+          ? entry.generator.numCascades
+          : entry.light.needCube()
+            ? 6
+            : 1;
+      live.bytes +=
+        (cascaded ? 4 : passes) * entry.mapSize ** 2 * bytesPerTexel;
+      live.passes += passes;
+    }
+    reserveSceneShadows(scene, live);
+  }
+  private applySettings(
+    generator: ShadowGenerator,
+    settings: ShadowSettings,
+  ): void {
+    generator.filter =
+      settings.filter === "pcss"
+        ? ShadowGenerator.FILTER_PCSS
+        : ShadowGenerator.FILTER_PCF;
+    generator.contactHardeningLightSizeUVRatio = settings.softness;
+    generator.filteringQuality =
+      settings.filterQuality === "high"
+        ? ShadowGenerator.QUALITY_HIGH
+        : settings.filterQuality === "medium"
+          ? ShadowGenerator.QUALITY_MEDIUM
+          : ShadowGenerator.QUALITY_LOW;
+    generator.bias = settings.depthBias;
+    generator.normalBias = settings.normalBias;
+    generator.frustumEdgeFalloff = 0;
   }
 }
 

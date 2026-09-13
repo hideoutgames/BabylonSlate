@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DirectionalLight,
   MeshBuilder,
   NullEngine,
   PointLight,
+  SpotLight,
   Scene,
   UniversalCamera,
   Vector3,
@@ -19,6 +20,13 @@ afterEach(() => {
 function fixture() {
   const engine = new NullEngine();
   engines.push(engine);
+  Object.assign(engine.getCaps(), {
+    maxTexturesImageUnits: 16,
+    maxTextureSize: 4096,
+    maxCubemapTextureSize: 4096,
+    textureHalfFloatRender: true,
+    textureHalfFloatLinearFiltering: true,
+  });
   const scene = new Scene(engine);
   scene.activeCamera = new UniversalCamera(
     "camera",
@@ -113,7 +121,23 @@ describe("shared shadow lifecycle", () => {
       scene,
     );
     controller.sync();
-    expect(controller.generator(light)).not.toBe(previous);
+    expect(controller.generator(light)).toBe(previous);
+    const map = previous?.getShadowMap();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({
+        cascades: 1,
+        distance: 100,
+        autoBias: false,
+        normalBias: 0.025,
+        depthBias: 0.002,
+        filter: "pcss",
+      }),
+    });
+    controller.sync();
+    expect(controller.generator(light)).toBe(previous);
+    expect(controller.generator(light)?.getShadowMap()).toBe(map);
+    expect(controller.generator(light)?.normalBias).toBe(0.025);
+    expect(controller.generator(light)?.bias).toBe(0.002);
   });
   it("retains allocation for small intensity changes but yields to a substantially stronger light or authored priority", () => {
     const { scene, controller } = fixture();
@@ -133,5 +157,163 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(controller.generator(a)).not.toBeNull();
     expect(controller.generator(b)).toBeNull();
+  });
+  it("follows a replacement active camera and preserves deterministic distance hysteresis", () => {
+    const { scene, controller } = fixture();
+    const a = new PointLight("near-start", new Vector3(0, 0, 0), scene);
+    const b = new PointLight("near-destination", new Vector3(100, 0, 0), scene);
+    controller.register(a, true);
+    controller.register(b, true);
+    controller.sync();
+    expect(controller.generator(a)).not.toBeNull();
+    scene.activeCamera = new UniversalCamera(
+      "possessed",
+      new Vector3(100, 0, -5),
+      scene,
+    );
+    controller.sync();
+    expect(controller.generator(a)).toBeNull();
+    const incumbent = controller.generator(b);
+    expect(incumbent).not.toBeNull();
+    scene.activeCamera.position.x = 50;
+    controller.sync();
+    expect(controller.generator(b)).toBe(incumbent);
+    scene.activeCamera.position.x = 0;
+    controller.sync();
+    expect(controller.generator(a)).not.toBeNull();
+  });
+  it("admits point cube memory and faces before construction, then lowers cost after Manual 16 and a Low preset", () => {
+    const { scene, controller } = fixture();
+    const allocation = vi.spyOn(
+      scene.getEngine(),
+      "createRenderTargetCubeTexture",
+    );
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({
+        profile: "ultra",
+        maxLocalLights: 16,
+        localMapSize: 2048,
+      }),
+    });
+    const points = Array.from(
+      { length: 16 },
+      (_, i) => new PointLight(`point-${i}`, Vector3.Zero(), scene),
+    );
+    points.forEach((light) => controller.register(light, true));
+    controller.sync();
+    const active = points.filter((light) => controller.generator(light));
+    expect(active).toHaveLength(8);
+    expect(allocation).toHaveBeenCalledTimes(8);
+    expect(controller.metrics().passes).toBe(48);
+    expect(controller.metrics().bytes).toBeLessThanOrEqual(384 * 1024 ** 2);
+    expect(controller.limits()).toContain(
+      "point shadows: Poisson filter fallback",
+    );
+    controller.sync();
+    expect(allocation).toHaveBeenCalledTimes(8);
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ profile: "low", maxLocalLights: 16 }),
+    });
+    controller.sync();
+    expect(points.filter((light) => controller.generator(light))).toHaveLength(
+      1,
+    );
+    expect(controller.metrics().passes).toBe(6);
+    expect(controller.metrics().bytes).toBe(18 * 1024 ** 2);
+  });
+  it("charges spot shadows by one face and reserves sampler headroom for materials", () => {
+    const { scene, controller } = fixture();
+    const caps = scene.getEngine().getCaps();
+    caps.maxTexturesImageUnits = 32;
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({
+        profile: "ultra",
+        maxLocalLights: 16,
+        localMapSize: 256,
+      }),
+    });
+    const lights = Array.from(
+      { length: 16 },
+      (_, i) =>
+        new SpotLight(
+          `spot-${i}`,
+          Vector3.Zero(),
+          Vector3.Forward(),
+          Math.PI / 2,
+          1,
+          scene,
+        ),
+    );
+    lights.forEach((light) => controller.register(light, true));
+    controller.sync();
+    expect(controller.metrics().passes).toBe(16);
+    caps.maxTexturesImageUnits = 11;
+    controller.sync();
+    expect(controller.metrics().passes).toBe(3);
+    expect(
+      controller
+        .diagnostics()
+        .filter((light) => light.reason === "material sampler headroom"),
+    ).toHaveLength(13);
+  });
+  it("shares the Engine allowance with previews and releases reservations on scene disposal", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    const preview = new Scene(engine);
+    preview.activeCamera = new UniversalCamera(
+      "preview-camera",
+      Vector3.Zero(),
+      preview,
+    );
+    const previewController = sceneShadowController(preview);
+    for (const [client, owner] of [
+      [scene, controller],
+      [preview, previewController],
+    ] as const) {
+      updateSceneRenderingSettings(client, {
+        shadows: normalizeShadowSettings({
+          profile: "ultra",
+          maxLocalLights: 16,
+          localMapSize: 2048,
+        }),
+      });
+      for (let i = 0; i < 16; i++)
+        owner.register(
+          new PointLight(`point-${i}`, Vector3.Zero(), client),
+          true,
+        );
+      owner.sync();
+    }
+    expect(
+      controller.metrics().passes + previewController.metrics().passes,
+    ).toBeLessThanOrEqual(64);
+    expect(
+      controller.metrics().bytes + previewController.metrics().bytes,
+    ).toBeLessThanOrEqual(512 * 1024 ** 2);
+    expect(previewController.metrics().passes).toBe(12);
+    scene.dispose();
+    previewController.sync();
+    expect(previewController.metrics().passes).toBe(48);
+  });
+  it("cleans failed allocations without retrying the same request each frame", () => {
+    const { scene, controller } = fixture();
+    const light = new PointLight("point", Vector3.Zero(), scene);
+    controller.register(light, true);
+    const allocation = vi
+      .spyOn(scene.getEngine(), "createRenderTargetCubeTexture")
+      .mockImplementationOnce(() => {
+        throw new Error("allocation failed");
+      });
+    controller.sync();
+    controller.sync();
+    expect(controller.generator(light)).toBeNull();
+    expect(controller.status(light)).toBe("allocation-failed");
+    expect(allocation).toHaveBeenCalledTimes(1);
+    expect(controller.metrics()).toEqual({ bytes: 0, passes: 0 });
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ localMapSize: 512 }),
+    });
+    controller.sync();
+    expect(controller.generator(light)).not.toBeNull();
   });
 });

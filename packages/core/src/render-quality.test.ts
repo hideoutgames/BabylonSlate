@@ -70,4 +70,21 @@ describe("rendering quality sessions", () => {
     expect(session.execute("shadows").output).toContain('"distance":321');
     expect(session.execute("shadows").output).toContain("custom");
   });
+  it("switches runtime capacity between Manual and Auto while retaining the authored limit", () => {
+    const session = new RenderingQualitySession();
+    session.execute("shadows", "budget", "16");
+    session.execute("shadows", "low");
+    expect(session.effective().shadows).toMatchObject({
+      localLightMode: "manual",
+      maxLocalLights: 16,
+      profile: "low",
+    });
+    expect(session.execute("shadows", "budget", "auto").success).toBe(true);
+    expect(session.effective().shadows).toMatchObject({
+      localLightMode: "auto",
+      maxLocalLights: 16,
+    });
+    session.execute("shadows", "reset");
+    expect(session.effective().shadows.localLightMode).toBe("auto");
+  });
 });

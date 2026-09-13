@@ -173,7 +173,7 @@ export interface SerializedScene {
   overlayEditor?: boolean;
 }
 
-export const SCENE_SCHEMA_VERSION = 3;
+export const SCENE_SCHEMA_VERSION = 4;
 
 export function identitySerializedTransform(): SerializedTransform {
   return {
