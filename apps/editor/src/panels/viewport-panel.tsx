@@ -47,7 +47,7 @@ import {
   editorKtx2PublicBase,
   editorMeshoptPublicBase,
 } from "../lib/public-engine-assets";
-import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
+import { createCanvasResizeGuard, waitForCanvasSize } from "../lib/canvas-resize-guard";
 import {
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScene,
@@ -313,7 +313,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     engineGenerationRef.current += 1;
     setSceneReady(false);
     setDropReady(null);
-    setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
+    setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
     const controller = new AbortController();
     const disposers: Array<() => void> = [];
     let released = false;
@@ -325,6 +325,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     releaseEngineRef.current = release;
     void (async () => {
       try {
+        await waitForCanvasSize(canvas, controller.signal);
+        controller.signal.throwIfAborted();
+        setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene" });
         await waitForSceneLoadingPaint(controller.signal);
         controller.signal.throwIfAborted();
         setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
@@ -530,7 +533,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const blocking = remount || rendering;
     if (blocking) {
       handle.setPaused(true);
-      setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
+      setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene", rendering });
     }
     void (async () => {
       const realize = () => {
@@ -607,6 +610,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       };
       try {
         if (blocking) {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          await waitForCanvasSize(canvas, controller.signal);
+          if (!isCurrent()) return;
+          setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
           await runSceneViewportBlockingLoad({
             signal: controller.signal,
             realize,
