@@ -424,6 +424,7 @@ describe("scene material lighting", () => {
     await check(false);
     controller.register(light, true);
     controller.sync();
+    expect(controller.generator(light)?.getShadowMap()?.renderList).toContain(mesh);
     await check(true);
     light.shadowEnabled = false;
     await check(false);
