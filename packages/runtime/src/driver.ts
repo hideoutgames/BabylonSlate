@@ -1697,6 +1697,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
     }
     this.world.flushPending();
+    if (this.world.currentScene === work.sceneInstance) this.world.exitActiveScene();
   }
 
   private *realizeSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
@@ -4119,6 +4120,7 @@ class InProcessRuntime implements RuntimeDriver {
     } catch (error) {
       if (!isInfiniteLoopError(error)) throw error;
     }
+    if (this.stopped) return;
     this.advanceDelays();
     if (this.canTickScene()) this.tickAnimGraphs();
     if (this.canTickScene()) {

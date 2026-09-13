@@ -162,6 +162,7 @@ describe("runtimeOptionsFromLoadControl", () => {
       }),
     ).toEqual({
       seed: 1,
+      cooperativeSceneLoading: true,
       physicsWorld: "3d",
       gravity: [0, -9.81, 0],
       havokWasmUrl: undefined,

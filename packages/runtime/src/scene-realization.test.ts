@@ -177,6 +177,24 @@ describe("cooperative runtime scene realization", () => {
     } finally { runtime.stop(); }
   });
 
+  it("Stop from Game Instance ends the current driver tick without later frame commands", async () => {
+    const commands: CommandMessage[] = [];
+    let stoppedAt = 0;
+    const runtime = makeRuntime({ seed: 1, playScene: largeScene(1), cooperativeSceneLoading: true, onCommand: (command) => commands.push(command) });
+    await runtime.realizePlayWorld();
+    const world = runtime.getWorld();
+    world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onTick: () => {
+      runtime.stop();
+      stoppedAt = commands.length;
+    } } }));
+    runtime.start();
+    runtime.tick();
+    expect(stoppedAt).toBeGreaterThan(0);
+    expect(commands).toHaveLength(stoppedAt);
+    runtime.tick();
+    expect(world.clock.tickIndex).toBe(1);
+  });
+
   it("rolls back a renderer assignment failure and keeps the load failed", async () => {
     const commands: CommandMessage[] = [];
     let failed = false;
@@ -187,6 +205,7 @@ describe("cooperative runtime scene realization", () => {
     try {
       await expect(runtime.realizePlayWorld()).rejects.toThrow("Renderer assignment failed");
       expect(runtime.getWorld().getActors()).toHaveLength(0);
+      expect(runtime.getWorld().currentScene).toBeNull();
       expect(commands.some((command) => command.type === "sceneRealized")).toBe(false);
       runtime.notifySceneModelsReady("large", 1);
       await expect(runtime.realizePlayWorld()).rejects.toThrow("Renderer assignment failed");
