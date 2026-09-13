@@ -44,6 +44,7 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
       async (_root: string, _path: string, result: ImportResult) => result,
     );
     const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("scaffold.babproject");
     await storage.writeBinary(created[0]!.path, await encodeBabasset({
       header: {
         ...created[0]!.header,
