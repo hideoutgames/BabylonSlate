@@ -18,6 +18,7 @@ import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { encodeGlbJsonBin } from "../packages/assets/src/importers/glb-parse";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
+import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 
 async function pixelsNear(
   canvas: Locator,
@@ -100,7 +101,7 @@ test("world-space material inputs remain anchored when the editor camera moves",
   material.edges[0]!.sourcePinId = "position";
   const guid = "00000000-0000-4000-8000-000000000019";
   files.set("assets/WorldPosition.material.babasset", await encodeAssetDocument({
-    guid, type: "Material", name: "World Position", version: 1, payload: material,
+    guid, type: "Material", name: "World Position", version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown>,
   }));
   await openMinimalTestProject(page, files);
   await openMainScene(page);
