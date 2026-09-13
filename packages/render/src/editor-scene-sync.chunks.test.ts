@@ -8,7 +8,7 @@ import {
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createEditorCamera } from "./editor-camera";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 import * as modelContainer from "./model-container";
 import * as modelLoads from "./glb-anim";
@@ -23,15 +23,16 @@ afterEach(() => {
     engine.dispose();
   }
 });
-function holdModelContainer() {
+function holdModelContainer(name?: string) {
   const load = modelContainer.loadModelContainer;
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   releaseLoads.push(release);
   let loaded!: (container: Awaited<ReturnType<typeof load>>) => void;
   const ready = new Promise<Awaited<ReturnType<typeof load>>>((resolve) => { loaded = resolve; });
-  vi.spyOn(modelContainer, "loadModelContainer").mockImplementationOnce(async (...args) => {
+  vi.spyOn(modelContainer, "loadModelContainer").mockImplementation(async (...args) => {
     const container = await load(...args);
+    if (name && args[2] !== name) return container;
     loaded(container);
     await gate;
     return container;
@@ -295,6 +296,36 @@ describe("cooperative editor realization", () => {
     await readiness;
     expect(sync.actorCount()).toBe(0);
     expect(sync.serializedScene()).toBe(replacement);
+  });
+
+  it("waits for retarget sources when replacing a model whose hierarchy was already instantiated", async () => {
+    const { sync, scene } = fixture();
+    const next = document(1);
+    next.actors[0]!.components[0]!.properties.assetGuid = "model";
+    const delayed = holdModelContainer("retarget-source.glb");
+    const bytes = encodeParentedAnimatedTriangleGlb();
+    sync.setMeshAssets({
+      modelBytes: new Map([["model", bytes], ["retarget-source", bytes]]),
+      retargetAnimationLoads: new Map([["model", [{
+        animationGuid: "retargeted-idle",
+        clipName: "Idle",
+        sourceModelGuid: "retarget-source",
+      }]]]),
+    });
+    sync.apply(next);
+    await delayed.ready;
+    const root = sync.meshForActor("actor-0")!;
+    expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
+    await sync.applyAsync(next, { signal: new AbortController().signal });
+    expect(sync.meshForActor("actor-0")).toBe(root);
+    let ready = false;
+    const readiness = sync.whenEditorModelsReady().then(() => { ready = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(ready).toBe(false);
+    delayed.release();
+    await readiness;
+    expect(ready).toBe(true);
+    expect(modelLoads.glbContainerLoadCount(scene)).toBe(2);
   });
 
   it("restores a static actor matrix when its model lands during the final freeze phase", async () => {

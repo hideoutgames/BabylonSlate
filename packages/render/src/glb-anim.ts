@@ -357,6 +357,7 @@ function disposePlaceholderInstance(placeholder: AbstractMesh): void {
   const meta = asPlaceholderMeta(placeholder);
   const instance = meta[MODEL_INSTANCE_KEY];
   meta[MODEL_INSTANCE_KEY] = undefined;
+  meta[MODEL_LOAD_KEY] = undefined;
   instance?.dispose();
 }
 
@@ -449,7 +450,6 @@ export function beginSlotModelAnimLoad(
         container,
         importScale,
       );
-      meta[MODEL_LOAD_KEY] = key;
       if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
       const clipGuids = binding.modelClipAnimationGuids?.get(clipAssetGuid);
       const retargets = binding.retargetAnimationLoads?.get(clipAssetGuid) ?? [];
@@ -492,6 +492,9 @@ export function beginSlotModelAnimLoad(
         }
       }
       binding.slotAnimationGroups.set(slotId, [...existing, ...wrapped]);
+      // An instantiated hierarchy is not ready until all retarget sources and
+      // groups are installed. A replacement must own that remaining work.
+      meta[MODEL_LOAD_KEY] = key;
       onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
     } catch (error) {
