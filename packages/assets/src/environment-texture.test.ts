@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit";
+import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { readEnvironmentTextureInfo } from "./environment-texture";
 import { importByExtension } from "./importers";

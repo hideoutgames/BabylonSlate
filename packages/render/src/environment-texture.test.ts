@@ -1,16 +1,30 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { CubeTexture, NullEngine, Scene, type Texture } from "@babylonjs/core";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit";
+import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { getMaterialTexture, ResourceCache } from "./resource-cache";
 import { validMaterialParameterValue } from "./material-parameters";
 
 const disposers: Array<() => void> = [];
 afterEach(() => {
   while (disposers.length) disposers.pop()!();
+  vi.restoreAllMocks();
 });
 
-it("loads DDS through the prefiltered Blob route and preserves shared Engine ownership", () => {
+function nullHost() {
   const engine = new NullEngine();
+  // NullEngine has no XHR/GPU cube upload. Preserve its real InternalTexture
+  // cache/disposal boundary and all real CubeTexture wrapper behavior; browser
+  // coverage exercises native DDS/ENV loading and reads actual face texels.
+  vi.spyOn(engine, "createPrefilteredCubeTexture").mockImplementation((url) => {
+    const texture = engine.createTexture(url, false, false, null);
+    texture.isCube = true;
+    return texture;
+  });
+  return engine;
+}
+
+it("loads DDS through the prefiltered Blob route and preserves shared Engine ownership", () => {
+  const engine = nullHost();
   const scene = new Scene(engine);
   const cache = new ResourceCache();
   disposers.push(() => {
@@ -43,7 +57,7 @@ it("loads DDS through the prefiltered Blob route and preserves shared Engine own
 });
 
 it("rejects cubes at 2D material and dynamic parameter admission without allocating a 2D wrapper", () => {
-  const engine = new NullEngine();
+  const engine = nullHost();
   const cache = new ResourceCache();
   disposers.push(() => {
     cache.dispose();

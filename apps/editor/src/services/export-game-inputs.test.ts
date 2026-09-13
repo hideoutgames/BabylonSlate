@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { loadExportDocuments } from "./export-game-inputs";
-import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit";
+import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { importEnvironmentTexture } from "@babylonslate/assets";
 import { assetHeaderDependencies, assetReferencesIncludingOpenDocuments } from "../lib/content-browser-helpers";
 
