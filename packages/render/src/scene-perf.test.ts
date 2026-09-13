@@ -182,6 +182,25 @@ describe("prewarmSceneMaterials", () => {
     }
   });
 
+  it("probes shadow readiness in its own floating-origin scene after another scene is created", () => {
+    const engine = new NullEngine();
+    vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
+    const scene = new Scene(engine);
+    scene.activeCamera = new UniversalCamera("editor", new Vector3(2000, 3, -10), scene);
+    const light = new SpotLight("shadow", new Vector3(2000, 5, 0), Vector3.Down(), 1, 1, scene);
+    new ShadowGenerator(256, light);
+    // A newly mounted helper/preview owns Babylon's global floating-origin
+    // context but has never rendered, so it has no view/projection matrices.
+    const sibling = new Scene(engine);
+    try {
+      expect(() => isSceneFrameReady(scene)).not.toThrow();
+    } finally {
+      sibling.dispose();
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
   it("fails readiness when compilation times out and stops the late warm continuation", async () => {
     vi.useFakeTimers();
     const engine = new NullEngine();
