@@ -34,6 +34,10 @@ float slateCelBand(float value) {
   float width = slateCelBands.y;
   return clamp((lower + smoothstep(0.5 - width, 0.5 + width, fract(shifted))) / levels, 0.0, 1.0);
 }
+float slateCelShadowVisibility(float visibility) {
+  if (slateCelBands.y <= 0.0) { return step(0.49999, visibility); }
+  return smoothstep(0.5 - slateCelBands.y, 0.5 + slateCelBands.y, visibility);
+}
 float slateCelStrength(vec3 color) {
   return max(color.r, max(color.g, color.b));
 }
@@ -124,17 +128,17 @@ for (const wgsl of [false, true]) {
       (
         _match,
         shadow: string,
-      ) => `${wgsl ? "var slateCelIncoming{X}: f32" : "float slateCelIncoming{X}"}=slateCelStrength(info.diffuse*${shadow});
+      ) => `${wgsl ? "var slateCelIncoming{X}: f32" : "float slateCelIncoming{X}"}=slateCelStrength(info.diffuse*${shadow === "shadow" ? "slateCelShadowVisibility(shadow)" : shadow});
 slateCelWins=0.0;
 if (slateCelIncoming{X}>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }
 slateCelPeak=max(slateCelPeak,slateCelIncoming{X});
 slateCelTotal+=slateCelIncoming{X};
-diffuseBase=slateCelAccumulate(diffuseBase,info.diffuse*${shadow},slateCelWins);`,
+diffuseBase=slateCelAccumulate(diffuseBase,info.diffuse*${shadow === "shadow" ? "slateCelShadowVisibility(shadow)" : shadow},slateCelWins);`,
       2,
     )
     .replace(
       "specularBase+=info.specular*shadow;",
-      "specularBase=slateCelAccumulate(specularBase,info.specular*slateCelBand(shadow),slateCelWins);",
+      "specularBase=slateCelAccumulate(specularBase,info.specular*slateCelShadowVisibility(shadow),slateCelWins);",
     ).value;
   store.slateCelLightsFragmentFunctions =
     celFunctions(wgsl) +

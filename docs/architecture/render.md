@@ -392,3 +392,5 @@ Dynamic resolution targets 60 FPS with hysteresis. Texture anisotropy is limited
 Shared engine texture caches honor the largest budget requested by a live view, independent of settings-update order. Releasing a view removes its budget request. Graph-bound cache textures apply anisotropy at binding because engine-owned wrappers need not appear in a Scene texture list.
 
 CEL hard thresholds include a small numerical tie tolerance. Without it, an exactly flat face at a band boundary (for example a 45-degree white directional light) can alternate bands from floating-point interpolation round-off, even with shadows disabled. The tolerance does not blend the boundary. Nearly tied strongest lights likewise retain stable scene order.
+
+CEL thresholds filtered shadow visibility before applying its light ramp. Feeding near-one PCF values directly into a hard light band can amplify harmless filter variation into surface speckling at a band boundary. Zero band softness gives a hard shadow edge; positive softness explicitly blends shadow visibility. PBR retains its continuous filtered shadows.
