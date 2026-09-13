@@ -317,7 +317,7 @@ describe("ViewportPanel engine", () => {
     await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
     expect(createEngineMock).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await act(async () => {
       width.mockReturnValue(0);
       for (const callback of [...callbacks]) callback();
