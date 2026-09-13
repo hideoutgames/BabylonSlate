@@ -343,3 +343,6 @@ navigation backends. Keep active simulation near a practical local origin and
 validate backend-specific scale limits. Shadow distance does not impose a map
 boundary. Animated/deformed shadow maps continue refreshing; the controller does
 not assume that a frozen world matrix makes a material or skeleton immutable.
+Bone attachment detach/retirement restores the snapshot pose even if the next
+snapshot contains unchanged TRS; an attachment's frozen world matrix is not a
+valid cache of that snapshot pose.

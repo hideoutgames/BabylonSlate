@@ -24,9 +24,17 @@ export interface BoneAttachmentBinding {
   boneAttachments: Map<number, BoneAttachment>;
 }
 
+function restoreSnapshotPose(binding: BoneAttachmentBinding, slotId: number): void {
+  if (!binding.boneAttachments.get(slotId)?.applied) return;
+  // Attachment matrices override world space without changing snapshot TRS.
+  // Restore that TRS even when the next snapshot is numerically unchanged.
+  binding.meshes.get(slotId)?.unfreezeWorldMatrix();
+}
+
 /** Store intent before the model exists; resolving each frame also handles replacements. */
 export function applyAttachToBone(binding: BoneAttachmentBinding, command: BoneAttachmentCommand): void {
   if (command.targetSlotId === null) {
+    restoreSnapshotPose(binding, command.slotId);
     binding.boneAttachments.delete(command.slotId);
     return;
   }
@@ -46,9 +54,13 @@ export function applyAttachToBone(binding: BoneAttachmentBinding, command: BoneA
 }
 
 export function retireBoneAttachments(binding: BoneAttachmentBinding, slotId: number): void {
+  restoreSnapshotPose(binding, slotId);
   binding.boneAttachments.delete(slotId);
   for (const [childId, attachment] of binding.boneAttachments) {
-    if (attachment.targetSlotId === slotId) binding.boneAttachments.delete(childId);
+    if (attachment.targetSlotId === slotId) {
+      restoreSnapshotPose(binding, childId);
+      binding.boneAttachments.delete(childId);
+    }
   }
 }
 
@@ -73,6 +85,7 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
   const attachment = binding.boneAttachments.get(slotId);
   if (!attachment || attachment.frame === frame) return;
   attachment.frame = frame;
+  restoreSnapshotPose(binding, slotId);
   attachment.applied = false;
   updateAttachedSlot(binding, attachment.targetSlotId, frame);
   const child = binding.meshes.get(slotId);

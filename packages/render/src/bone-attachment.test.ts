@@ -192,6 +192,7 @@ describe("render bone attachment", () => {
     apply();
     snapshot.retirePlaySlot(binding, 2);
     expect(child.isDisposed()).toBe(false);
+    expect(child.getAbsolutePosition().x).toBe(0);
     expect(binding.boneAttachments.size).toBe(0);
     snapshot.disposeSnapshotBinding(binding);
     expect(binding.boneAttachments.size).toBe(0);
