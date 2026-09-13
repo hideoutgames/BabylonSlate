@@ -22,10 +22,10 @@ export function prepareMannequinNormals(bytes: Uint8Array): Uint8Array {
       const positions = accessors[primitive.attributes.POSITION!]!;
       const normals = accessors[primitive.attributes.NORMAL!]!;
       const indices = accessors[primitive.indices]!;
-      const indexSize = indices.componentType === 5125 ? 4 : 2;
+      const indexSize = indices.componentType === 5125 ? 4 : indices.componentType === 5123 ? 2 : 1;
       const indexAt = (i: number) => indexSize === 4
         ? data.getUint32(offset(indices, i, 4), true)
-        : data.getUint16(offset(indices, i, 2), true);
+        : indexSize === 2 ? data.getUint16(offset(indices, i, 2), true) : data.getUint8(offset(indices, i, 1));
       const position = (i: number) => [0, 4, 8].map((axis) => data.getFloat32(offset(positions, i, 12) + axis, true));
       const sums = new Float64Array(normals.count * 3);
       for (let i = 0; i < indices.count; i += 3) {
