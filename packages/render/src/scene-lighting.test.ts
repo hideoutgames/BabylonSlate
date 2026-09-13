@@ -389,6 +389,15 @@ describe("scene material lighting", () => {
 
   it.each(["pbr", "cel"] as const)("refreshes frozen %s graph shadow defines after allocation and enabled changes", async (mode) => {
     const scene = host(false);
+    const engine = scene.getEngine();
+    // Babylon 9.20 NullEngine omits attaching its cube InternalTexture to the
+    // wrapper. Complete that headless allocation boundary, keeping real maps.
+    const createCube = engine.createRenderTargetCubeTexture.bind(engine);
+    engine.createRenderTargetCubeTexture = (...args) => {
+      const target = createCube(...args);
+      target.setTexture(engine.getLoadedTexturesCache().at(-1)!);
+      return target;
+    };
     scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 1, -10), scene);
     updateSceneRenderingSettings(scene, { mode });
     scene.environmentBRDFTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
