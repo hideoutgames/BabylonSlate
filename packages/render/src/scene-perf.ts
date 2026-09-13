@@ -81,7 +81,7 @@ export function freezeEditorActiveMeshes(scene: Scene): void {
     // after the last floating-origin scene has been disposed. Evaluate only
     // inside this scene's render context, once its drawable materials are ready.
     const observer = scene.onBeforeRenderObservable.add(() => {
-      if (!scene.activeCamera || !scene.isReady()) return;
+      if (!scene.activeCamera || !isSceneFrameReady(scene)) return;
       cancel();
       const restoreSkip = beginSkipFrustumForFreeze(scene);
       try {
@@ -197,26 +197,120 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
   }
 }
 
-/** Readiness of the actual scene passes, including shadow render targets. */
-export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTexture[] = []): boolean {
-  // Babylon 9.20 readiness probes write scene UBOs outside Scene.render(). A
-  // newly constructed sibling can own the global origin without camera matrices.
-  // Scope this synchronous probe exactly as Babylon scopes its render entry.
+/** Babylon exposes registration, but no enumeration, of custom readiness checks. */
+type SceneReadinessInternals = { _isReadyChecks: readonly { isReady(): boolean }[] };
+
+/** Preserve shared render state even when Babylon's RTT probe throws mid-pass. */
+function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
+  const engine = scene.getEngine();
+  const camera = scene.activeCamera;
+  const sceneUbo = scene.getSceneUniformBuffer();
+  const view = scene.getViewMatrix()?.clone();
+  const projection = scene.getProjectionMatrix()?.clone();
+  const viewport = engine.currentViewport;
+  const width = engine.getRenderWidth();
+  const height = engine.getRenderHeight();
+  const renderPassId = engine.currentRenderPassId;
+  const colorWrite = engine.getColorWrite();
+  const imageProcessing = scene.imageProcessingConfiguration.applyByPostProcess;
   const previousScene = FloatingOriginCurrentScene.getScene;
   const previousEyeAtCamera = FloatingOriginCurrentScene.eyeAtCamera;
   FloatingOriginCurrentScene.getScene = () => scene.floatingOriginMode ? scene : undefined;
   FloatingOriginCurrentScene.eyeAtCamera = true;
+  let failed = false;
+  let failure: unknown;
   try {
-    if (!scene.isReady(true)) return false;
+    // Ready checks can upload scene UBOs before the first Scene.render().
+    if (camera && (!view || !projection)) scene.updateTransformMatrix();
+    engine.currentRenderPassId = camera?.renderPassId ?? renderPassId;
+    return probe();
+  } catch (error) {
+    failed = true;
+    failure = error;
+    throw error;
+  } finally {
+    const errors: unknown[] = [];
+    const restore = (action: () => void) => {
+      try { action(); } catch (error) { errors.push(error); }
+    };
+    // Do not invoke RTT after-render observers: some perform blur passes.
+    scene._activeCamera = camera;
+    FloatingOriginCurrentScene.eyeAtCamera = true;
+    restore(() => scene.setSceneUniformBuffer(sceneUbo));
+    if (view && projection) restore(() => scene.setTransformMatrix(view, projection));
+    restore(() => { scene.imageProcessingConfiguration.applyByPostProcess = imageProcessing; });
+    restore(() => engine.setViewport(viewport ?? { x: 0, y: 0, width: 1, height: 1 }, width, height));
+    restore(() => engine.setColorWrite(colorWrite));
+    engine.currentRenderPassId = renderPassId;
+    restore(() => scene.resetCachedMaterial());
+    FloatingOriginCurrentScene.getScene = previousScene;
+    FloatingOriginCurrentScene.eyeAtCamera = previousEyeAtCamera;
+    if (errors.length) throw new AggregateError(failed ? [failure, ...errors] : errors,
+      "Scene readiness state restoration failed.", failed ? { cause: failure } : undefined);
+  }
+}
+
+/**
+ * Babylon 9.20 Scene.isReady also waits for every cached Engine effect. Mirror
+ * its scene-owned checks so an unrelated preview cannot block this viewport.
+ */
+export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTexture[] = []): boolean {
+  if (scene.isDisposed) return false;
+  return withSceneReadinessState(scene, () => {
+    const engine = scene.getEngine();
+    let ready = scene.getWaitingItemsCount() === 0;
+    scene.prePassRenderer?.update();
+    if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer && !scene.depthPeelingRenderer.isReady()) ready = false;
+    const renderTargets = new Set([...scene.customRenderTargets, ...targets]);
+    const materials = new Set<Material>();
+    for (const mesh of scene.meshes) {
+      if (!mesh.subMeshes?.length) continue;
+      // Start all consumers' compilation even when an earlier one is unready.
+      if (!mesh.isReady(true)) { ready = false; continue; }
+      const instanced = mesh.hasThinInstances || mesh.getClassName() === "InstancedMesh" ||
+        mesh.getClassName() === "InstancedLinesMesh" || Boolean(engine.getCaps().instancedArrays && mesh instanceof Mesh && mesh.instances.length);
+      for (const step of scene._isReadyForMeshStage) {
+        if (!step.action(mesh, instanced)) ready = false;
+      }
+      const material = mesh.material ?? scene.defaultMaterial;
+      if (material._storeEffectOnSubMeshes) {
+        for (const subMesh of mesh.subMeshes) {
+          const entry = subMesh.getMaterial();
+          if (entry) materials.add(entry);
+        }
+      } else materials.add(material);
+    }
+    for (const material of materials) {
+      if (material.hasRenderTargetTextures) {
+        const textures = material.getRenderTargetTextures?.();
+        if (textures) for (let index = 0; index < textures.length; index += 1) renderTargets.add(textures.data[index]!);
+      }
+    }
+    for (const geometry of scene.geometries) if (geometry.delayLoadState === 2) ready = false;
+    const cameras = scene.activeCameras?.length ? scene.activeCameras : scene.activeCamera ? [scene.activeCamera] : [];
+    for (const camera of cameras) {
+      if (!camera.isReady(true)) ready = false;
+      if (camera.outputRenderTarget) renderTargets.add(camera.outputRenderTarget);
+    }
+    for (const particle of scene.particleSystems) if (!particle.isReady()) ready = false;
+    if (scene.proceduralTexturesEnabled) {
+      for (const texture of scene.proceduralTextures ?? []) if (!texture.isReady()) ready = false;
+    }
+    for (const layer of scene.layers ?? []) if (!layer.isReady()) ready = false;
+    for (const layer of scene.effectLayers ?? []) if (!layer.isLayerReady()) ready = false;
+    for (const check of (scene as unknown as SceneReadinessInternals)._isReadyChecks) {
+      if (!check.isReady()) ready = false;
+    }
     for (const light of scene.lights) {
       for (const generator of light.getShadowGenerators()?.values() ?? []) {
         const map = generator.getShadowMap();
-        if (map && !map.isReadyForRendering()) return false;
+        if (map) renderTargets.add(map);
       }
     }
-    return targets.every((target) => target.isReadyForRendering());
-  } finally {
-    FloatingOriginCurrentScene.getScene = previousScene;
-    FloatingOriginCurrentScene.eyeAtCamera = previousEyeAtCamera;
-  }
+    for (const target of renderTargets) {
+      const owner = target.getScene() ?? scene;
+      if (!withSceneReadinessState(owner, () => target.isReadyForRendering())) ready = false;
+    }
+    return ready;
+  });
 }
