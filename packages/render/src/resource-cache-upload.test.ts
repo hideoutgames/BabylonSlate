@@ -80,7 +80,10 @@ it("reserves RGBA then independently accounts compressed and fallback sampling v
   // its RGBA uploader leaves dimensions at the final 1x1 mip.
   uploaded(fallback, Constants.TEXTUREFORMAT_RGBA, 1, 1);
   expect(cache.accountedBytes()).toBe(252);
+  const otherOwnerDisposed = vi.fn();
+  compressed.onDisposeObservable.add(otherOwnerDisposed);
   compressed.dispose();
+  expect(otherOwnerDisposed).toHaveBeenCalledOnce();
   expect(cache.accountedBytes()).toBe(172);
   fallback.dispose();
   expect(cache.accountedBytes()).toBe(0);

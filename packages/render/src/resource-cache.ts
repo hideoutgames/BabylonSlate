@@ -555,7 +555,10 @@ export class ResourceCache {
       }, size.ktx2MipLevels) : null);
       if (estimate !== null) this.setSamplingBytes(entry, sampling, estimate);
     };
-    const load = texture.onLoadObservable.add(update);
+    // Texture and CubeTexture declare distinct generic Observable overloads.
+    const load = texture instanceof CubeTexture
+      ? texture.onLoadObservable.add(update)
+      : texture.onLoadObservable.add(update);
     const disposed = texture.onDisposeObservable.add(() => {
       if (!current()) return;
       cancel();
@@ -565,8 +568,10 @@ export class ResourceCache {
     });
     const cancel = () => {
       active = false;
-      load?.remove(false);
-      disposed?.remove(false);
+      // Babylon iterates the live observer array. Defer removal so disposing
+      // inside our observer cannot skip a later owner's cleanup callback.
+      load?.remove(true);
+      disposed?.remove(true);
     };
     entry.samplingDisposers.set(sampling, cancel);
     update();
