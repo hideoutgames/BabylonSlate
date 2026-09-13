@@ -37,6 +37,7 @@ import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import { calibratedShadowBias } from "./shadow-bias";
 import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { readEngineDrawCalls } from "./draw-calls";
+import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import {
   ENGINE_SHADOW_BUDGET,
   SHADOW_MATERIAL_SAMPLER_RESERVE,
@@ -595,6 +596,9 @@ export class SceneShadowController {
       while (mapSize >= 256) {
         const cleanup = shadowAllocationCheckpoint(scene);
         try {
+          const validateAllocation = beginShadowAllocationValidation(
+            scene.getEngine(),
+          );
           const generator =
             directionalLight && settings.cascades > 1
               ? new CascadedShadowGenerator(
@@ -633,6 +637,7 @@ export class SceneShadowController {
             );
           }
           this.applySettings(generator, settings);
+          validateAllocation(generator);
           for (const mesh of this.meshes)
             generator.addShadowCaster(mesh, false);
           const map = generator.getShadowMap();

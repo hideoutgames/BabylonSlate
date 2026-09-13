@@ -486,6 +486,95 @@ describe("shared shadow lifecycle", () => {
       restoreObservers - 1,
     );
   });
+  it("releases a non-throwing WebGL allocation failure and retains the validated smaller cube", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    const authored = structuredClone(sceneRenderingSettings(scene).shadows);
+    const light = new PointLight("point", Vector3.Zero(), scene);
+    controller.register(light, true);
+    const errors: number[] = [];
+    const framebuffers = new Set<unknown>();
+    const textures = new Set<unknown>();
+    const renderbuffers = new Set<unknown>();
+    const previousFramebuffer = {};
+    let framebuffer: unknown = previousFramebuffer;
+    const gl = {
+      NO_ERROR: 0,
+      OUT_OF_MEMORY: 0x0505,
+      CONTEXT_LOST_WEBGL: 0x9242,
+      FRAMEBUFFER: 0x8d40,
+      FRAMEBUFFER_BINDING: 0x8ca6,
+      FRAMEBUFFER_COMPLETE: 0x8cd5,
+      COLOR_ATTACHMENT0: 0x8ce0,
+      DEPTH_ATTACHMENT: 0x8d00,
+      DEPTH_STENCIL_ATTACHMENT: 0x821a,
+      RENDERBUFFER: 0x8d41,
+      TEXTURE_2D: 0x0de1,
+      TEXTURE_CUBE_MAP_POSITIVE_X: 0x8515,
+      getError: vi.fn(() => errors.shift() ?? 0),
+      isContextLost: () => false,
+      isTexture: (resource: unknown) => textures.has(resource),
+      isFramebuffer: (resource: unknown) => framebuffers.has(resource),
+      isRenderbuffer: (resource: unknown) => renderbuffers.has(resource),
+      getParameter: () => framebuffer,
+      createFramebuffer: () => ({}),
+      deleteFramebuffer: vi.fn(),
+      bindFramebuffer: (_target: number, resource: unknown) => {
+        framebuffer = resource;
+      },
+      framebufferTexture2D: vi.fn(),
+      framebufferRenderbuffer: vi.fn(),
+      checkFramebufferStatus: () => 0x8cd5,
+    };
+    const engineGl = Object.getOwnPropertyDescriptor(engine, "_gl");
+    Object.defineProperty(engine, "_gl", { configurable: true, value: gl });
+    const allocate = engine.createRenderTargetCubeTexture.bind(engine);
+    let rejectedDispose: ReturnType<typeof vi.spyOn> | undefined;
+    const allocation = vi
+      .spyOn(engine, "createRenderTargetCubeTexture")
+      .mockImplementation((...args) => {
+        const target = allocate(...args);
+        const targetFramebuffer = {};
+        const depth = {};
+        Object.assign(target, {
+          _framebuffer: targetFramebuffer,
+          _depthStencilBuffer: depth,
+        });
+        framebuffers.add(targetFramebuffer);
+        renderbuffers.add(depth);
+        textures.add(target.texture!._hardwareTexture!.underlyingResource);
+        if (!rejectedDispose) {
+          rejectedDispose = vi.spyOn(target.texture!, "dispose");
+          // Babylon still returns a ready InternalTexture when the driver reports
+          // OOM through its error flag instead of throwing from texImage2D.
+          errors.push(gl.OUT_OF_MEMORY);
+        }
+        return target;
+      });
+    try {
+      controller.sync();
+      const retained = controller.generator(light);
+      expect(retained?.getShadowMap()?.getRenderSize()).toBe(512);
+      expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512]);
+      expect(rejectedDispose).toHaveBeenCalledTimes(1);
+      expect(controller.diagnostics()[0]).toMatchObject({
+        status: "active",
+        allocationError: "Shadow allocation WebGL errors: 0x505",
+      });
+      expect(controller.metrics()).toEqual({ bytes: 18 * 1024 ** 2, passes: 6 });
+      expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
+      expect(framebuffer).toBe(previousFramebuffer);
+      const errorReads = gl.getError.mock.calls.length;
+      controller.sync();
+      expect(controller.generator(light)).toBe(retained);
+      expect(allocation).toHaveBeenCalledTimes(2);
+      expect(gl.getError).toHaveBeenCalledTimes(errorReads);
+    } finally {
+      if (engineGl) Object.defineProperty(engine, "_gl", engineGl);
+      else Reflect.deleteProperty(engine, "_gl");
+    }
+  });
+
   it("propagates cleanup failure without attempting another allocation", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();

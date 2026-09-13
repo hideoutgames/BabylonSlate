@@ -345,6 +345,11 @@ unchanged requests retain their admitted resolution to avoid movement-driven chu
 When eligible local maps exist, the sun may consume at most half the scene allowance.
 Allocation failures release newly owned partial targets, attachments and observers,
 then retry at half resolution down to 256 pixels without changing authored values.
+Before accepting a new WebGL map, allocation validation checks driver errors,
+live GPU attachments and framebuffer completeness for every cube face or cascade
+layer. Its temporary probe restores prior framebuffer bindings; existing GL errors
+are kept separate from errors raised by the allocation. These checks run
+only when constructing a map, so unchanged frames do not poll driver errors.
 Exhausted requests remain suppressed until settings change, scene reload or context
 restoration. Cleanup failures stop retries and propagate a recovery error.
 Dirty-map scheduling, mobility-aware refresh and a distinct free-camera inspection
