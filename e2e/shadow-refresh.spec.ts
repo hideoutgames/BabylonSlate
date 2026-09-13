@@ -412,13 +412,24 @@ test("CEL graph receiver stays illuminated after local shadows are disabled", as
   }
 });
 
-test("CEL graph receiver presents a ready frame after project reload", async ({
+test("CEL graph receiver presents a ready frame after edited project reload", async ({
   page,
 }, testInfo) => {
   await observeCubeDraws(page);
   await openMinimalTestProject(page, await fixture());
   await openMainScene(page);
   await pixels(page);
+  for (const [actor, position] of [
+    ["caster", "1.5"],
+    ["key", "4"],
+  ] as const) {
+    await page.getByTestId(`tree-row-actor:${actor}`).click();
+    await page.getByTestId("property-actor-position-x").fill(position);
+    await page.getByTestId("property-actor-position-x").press("Tab");
+  }
+  await page.setViewportSize({ width: 1100, height: 820 });
+  await pixels(page);
+  await saveAllIfEnabled(page, 30_000);
   await page
     .getByTestId("viewport-canvas")
     .screenshot({ path: testInfo.outputPath("before-reload.png") });
