@@ -63,7 +63,7 @@ test("settings close and manual reload finish blocking transitions without losin
   await trackLoading(page);
   await openMainScene(page);
   expect((await loadingResult(page)).phases).toContain("Loading Document");
-  const scene = createDefaultScene("Rendering Transitions");
+  const scene = { ...createDefaultScene(), name: "Rendering Transitions" };
   scene.settings.environmentTextureGuid = null;
   scene.actors.push(
     createActor("subject", "Subject", { components: [createMeshComponent("subject-mesh", "box")] }),

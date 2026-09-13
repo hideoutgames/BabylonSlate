@@ -48,7 +48,7 @@ describe("DocumentService", () => {
     await vi.waitFor(() => expect(loadDocument).toHaveBeenCalledOnce());
     expect(service.getActiveDocument()?.id).toBe(documentId(previous));
     expect(beforeCommit).not.toHaveBeenCalled();
-    read(createDefaultScene("Next"));
+    read({ ...createDefaultScene(), name: "Next" });
     await opened;
     expect(beforeCommit).toHaveBeenCalledOnce();
     expect(service.getActiveDocument()?.content).toMatchObject({ name: "Next" });
@@ -59,7 +59,7 @@ describe("DocumentService", () => {
     const service = new DocumentService();
     const previous = { kind: "scene" as const, path: "assets/Previous.scene.babasset", label: "Previous" };
     await service.openDocument(createMockProjectService(), previous);
-    const edited = createDefaultScene("Edited");
+    const edited = { ...createDefaultScene(), name: "Edited" };
     service.updateScene(documentId(previous), edited);
     const beforeCommit = vi.fn();
     const failure = new Error("Scene read failed");
@@ -82,7 +82,7 @@ describe("DocumentService", () => {
     controller.abort();
     const next = { kind: "scene" as const, path: "assets/New.scene.babasset", label: "New" };
     await service.openDocument(createMockProjectService(), next);
-    finishOldRead(createDefaultScene("Old"));
+    finishOldRead({ ...createDefaultScene(), name: "Old" });
     await rejected;
     expect(beforeCommit).not.toHaveBeenCalled();
     expect(service.getActiveDocument()?.id).toBe(documentId(next));
