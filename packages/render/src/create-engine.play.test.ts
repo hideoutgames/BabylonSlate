@@ -172,6 +172,11 @@ describe("Play createEngine view", () => {
     const { handle: sibling } = editorHandle(engine);
     const { handle: hidden } = editorHandle(engine);
     hidden.setRegisterViewEnabled(false);
+    // NullEngine hardcodes its scaling getter to 1; model the real engine's
+    // mutable scaling boundary so rollback must restore the prior value.
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
     engine.setHardwareScalingLevel(2);
     const scenes = [...engine.scenes];
     const utilityScenes = [...engine._virtualScenes];
