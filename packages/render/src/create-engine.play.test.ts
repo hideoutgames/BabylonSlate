@@ -546,7 +546,7 @@ describe("Play createEngine view", () => {
     const { handle } = playHandle(sharedEngine());
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     handle.setMeshAssets({ modelBytes: new Map([
-      ["broken", encodeGlbJsonBin({ asset: { version: "99.0" } }, null)],
+      ["broken", encodeGlbJsonBin({ asset: { version: "99.0" } }, new Uint8Array())],
       ["hero", encodeTriangleGlb()],
     ]) });
     try {
