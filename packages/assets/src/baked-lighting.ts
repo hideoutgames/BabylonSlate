@@ -171,7 +171,9 @@ export function bakedReceiverKey(
 export function parseBakedLightingManifest(
   value: unknown,
 ): BakedLightingManifest {
-  const manifest = manifestSchema.parse(value);
+  // The editor uses non-strict null checking, which makes Zod's union output
+  // appear optional. The strict schema enforces every required field first.
+  const manifest = manifestSchema.parse(value) as BakedLightingManifest;
   unique(manifest.dependencies, "dependency");
   if (manifest.dependencies.includes(manifest.sceneGuid))
     throw new Error("A bake must not depend on its owning Scene.");

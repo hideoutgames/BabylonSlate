@@ -117,7 +117,8 @@ it("hashes canonical inputs independently of object key order but requires every
   await expect(
     fingerprintBakeInputs({ ...input, settings: { samples: NaN } }),
   ).rejects.toThrow();
-  const { uv: _uv, ...missing } = input;
+  const missing: Partial<typeof input> = { ...input };
+  delete missing.uv;
   await expect(fingerprintBakeInputs(missing as typeof input)).rejects.toThrow(
     "Every bake input category",
   );
@@ -135,6 +136,15 @@ it("rejects unsupported data, ambiguous receiver bindings and duplicate lighting
   ).toThrow();
   expect(() =>
     parseBakedLightingManifest({ ...manifest, uniqueId: 42 }),
+  ).toThrow();
+  expect(() =>
+    parseBakedLightingManifest({
+      ...manifest,
+      receivers: [{
+        ...manifest.receivers[0],
+        identity: { actorId: "actor", componentId: "component" },
+      }],
+    }),
   ).toThrow();
   expect(() =>
     parseBakedLightingManifest({

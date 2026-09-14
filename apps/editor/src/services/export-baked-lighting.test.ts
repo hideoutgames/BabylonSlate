@@ -118,7 +118,7 @@ it("retains Scene references, all atlas chunks and source dependencies through p
     ]),
   });
   expect(result.ok).toBe(true);
-  if (!result.ok) throw new Error(JSON.stringify(result.error));
+  if (result.ok === false) throw new Error(JSON.stringify(result.error));
   expect(
     result.value.manifest.assets.map((asset) => asset.guid).sort(),
   ).toEqual(["bake", "cube", "model", "scene"]);
