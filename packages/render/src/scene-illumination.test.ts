@@ -576,17 +576,14 @@ describe("syncAuthoredIllumination", () => {
 
   it("uses PCF, bias, frustum falloff, and auto Z bounds on directional shadows", () => {
     const { scene } = createHandle();
-    syncAuthoredIllumination(
-      scene,
-      sceneWith([
+    const data = sceneWith([
         lightActor("key", {
           lightKind: "directional",
           intensity: 1,
           castShadows: true,
         }),
-      ]),
-      { stealActiveCamera: false },
-    );
+      ]);
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
     const key = scene.getLightByName(
       `${AUTHORED_LIGHT_PREFIX}key`,
     ) as DirectionalLight;
@@ -608,6 +605,7 @@ describe("syncAuthoredIllumination", () => {
       setSceneRenderSettings(scene, {
         shadows: normalizeShadowSettings({ filterQuality }),
       });
+      syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
       expect(key.getShadowGenerator()?.filteringQuality).toBe(expected);
     }
   });
