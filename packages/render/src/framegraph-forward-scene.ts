@@ -29,6 +29,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     // the official cull task, without clearing or invoking RTT render observers.
     try {
       engine.bindFramebuffer(target);
+      this.camera.getViewMatrix();
+      this.camera.getProjectionMatrix(true);
       super._execute();
     } finally {
       engine.restoreDefaultFramebuffer();
