@@ -46,8 +46,13 @@ test(`opt-in Forward FrameGraph preserves surface pixels and scene ownership on 
   expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
   expect(result.captures).toHaveLength(12);
   for (const capture of result.captures) {
-    expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
-    expect(capture.result, capture.name).toEqual({ path: "frameGraph" });
+    if (capture.name.endsWith("-frozen")) {
+      expect(capture.prepared, capture.name).toMatchObject({ path: "classic", reason: expect.stringContaining("Frozen active-mesh queues") });
+      expect(capture.result, capture.name).toEqual(capture.prepared);
+    } else {
+      expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
+      expect(capture.result, capture.name).toEqual({ path: "frameGraph" });
+    }
     expect(capture.readinessDraws, capture.name).toBe(0);
     expect(capture.frames, capture.name).toEqual([1, 1]);
     expect(capture.classicDraws, capture.name).toBeGreaterThanOrEqual(4);
@@ -82,6 +87,9 @@ test(`opt-in Forward FrameGraph preserves surface pixels and scene ownership on 
     expect(entry.retainedGraphs, entry.mode).toBe(0);
     expect(entry.siblingAfter, entry.mode).toEqual(entry.siblingBefore);
     if (output === "texture") {
+      const expectedSibling = [153, 51, 179, 255];
+      for (let channel = 0; channel < 4; channel++)
+        expect(Math.abs(entry.siblingBefore[channel]! - expectedSibling[channel]!)).toBeLessThanOrEqual(1);
       expect(entry.siblingPreservedDuringTarget, entry.mode).toEqual(entry.siblingBefore);
       expect(entry.targetReferencesAfter, entry.mode).toEqual([1, 1]);
       expect(entry.classicAfterDispose, entry.mode).toEqual(entry.targetAfterDispose);

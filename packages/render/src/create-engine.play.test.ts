@@ -23,6 +23,7 @@ import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
+import { prewarmSceneMaterials } from "./scene-perf";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -179,6 +180,13 @@ describe("Play createEngine view", () => {
       texture.isReady = true;
       return texture;
     });
+    // Keep production FrameGraph ownership, replacing only absent NullEngine
+    // MRT driver calls.
+    vi.spyOn(engine, "buildTextureLayout").mockImplementation((enabled, backbuffer) =>
+      backbuffer ? [0x0405] : enabled.map((value, index) => value ? 0x8ce0 + index : 0));
+    vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(() => {});
     engines.push(engine);
     return engine;
   }
@@ -295,10 +303,12 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     handle.scheduler.setObstructed(true);
     let frames = 0;
+    handle.scene.onBeforeRenderObservable.add(() => { expect(handle.scene.frameGraph).not.toBeNull(); });
     handle.scene.onAfterRenderObservable.add(() => { frames += 1; });
     let ready = false;
     const presented = handle.presentFirstFrame().then(() => { ready = true; });
@@ -316,6 +326,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const loop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     let signaled = false;
     const gl = {
       NO_ERROR: 0, CONTEXT_LOST_WEBGL: 37442, SYNC_GPU_COMMANDS_COMPLETE: 37143,
@@ -379,6 +390,7 @@ describe("Play createEngine view", () => {
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle, canvas } = playHandle(engine);
     const { canvas: sibling } = editorHandle(engine);
+    await handle.prewarmSceneMaterials();
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     let frames = 0;
@@ -403,6 +415,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     handle.setPaused(true);
     const ready = vi.fn(() => false);
     const draw = vi.spyOn(handle.scene, "render");
@@ -445,6 +458,7 @@ describe("Play createEngine view", () => {
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
     handle.setPaused(true);
+    await handle.prewarmSceneMaterials();
     vi.spyOn(handle.scene, "render").mockImplementation(() => { throw new Error("allocation failed"); });
     const frame = expect(handle.presentFirstFrame()).rejects.toThrow("allocation failed");
     runLoop.mock.calls[0]![0]();
@@ -464,9 +478,11 @@ describe("Play createEngine view", () => {
       return engine.scenes.at(-1)!;
     };
     const global = addLayer("global", 1);
+    await handle.prewarmSceneMaterials({ layerId: "global", layerLoadId: 1 });
     const frames: string[] = [];
     handle.scene.onAfterRenderObservable.add(() => { frames.push("world"); });
     global.onAfterRenderObservable.add(() => { frames.push("global"); });
+    global.onBeforeRenderObservable.add(() => { expect(global.frameGraph).not.toBeNull(); });
     const release = handle.scheduler.acquireObstruction();
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
     const first = handle.presentFirstFrame({ layerId: "global", layerLoadId: 1 });
@@ -1267,7 +1283,7 @@ describe("Play createEngine view", () => {
     expect(livePassCount(overlay?.scene.activeCamera)).toBe(0);
   });
 
-  it("parents overlay spawn meshes into the SceneLayer scene and draws by z-order", () => {
+  it("parents overlay spawn meshes into the SceneLayer scene and draws by z-order", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -1276,6 +1292,7 @@ describe("Play createEngine view", () => {
       playMode: true,
     });
     handles.push(handle);
+    handle.setPaused(true);
     handle.applyCommand({
       type: "sceneLayerCreate",
       layerId: "back",
@@ -1308,19 +1325,20 @@ describe("Play createEngine view", () => {
     const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
     expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    await prewarmSceneMaterials(front!.scene);
 
     const order: string[] = [];
-    const worldRender = vi.spyOn(handle.scene, "render").mockImplementation(() => {
+    handle.scene.onAfterRenderObservable.add(() => {
       order.push("world");
     });
     for (const layer of handle.sceneLayerScenes()) {
-      vi.spyOn(layer.scene, "render").mockImplementation(() => {
+      layer.scene.onAfterRenderObservable.add(() => {
         order.push(layer.layerId);
       });
     }
+    handle.setPaused(false);
     runRenderLoop.mock.calls[0]?.[0]?.();
     expect(order).toEqual(["world", "back", "front"]);
-    worldRender.mockRestore();
   });
 
   it("does not parent overlay spawn meshes into the world when the layer scene is missing", () => {
@@ -2597,6 +2615,7 @@ describe("Play createEngine view", () => {
       expect(canvas.pixel).toBe(color);
       expect([canvas.width, canvas.height]).toEqual([256, 256]);
       color = 0x40a0ff;
+      await handle.prewarmSceneMaterials();
       const presented = handle.presentFirstFrame();
       frame();
       await presented;

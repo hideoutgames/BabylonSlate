@@ -186,11 +186,69 @@ it("falls back before replacing unmanaged shadows or a shared-view target", asyn
   await new Promise<void>((resolve) =>
     scene.freezeActiveMeshes(false, resolve),
   );
+  expect(await graph.prepare(camera)).toMatchObject({ path: "classic", reason: expect.stringContaining("Frozen active-mesh queues") });
+  expect(graph.render(camera)).toMatchObject({ path: "classic" });
+  scene.unfreezeActiveMeshes();
+  await new Promise<void>((resolve) =>
+    scene.freezeActiveMeshes(false, resolve, undefined, true, true),
+  );
   expect(await graph.prepare(camera)).toMatchObject({
     path: "classic",
-    reason: expect.stringContaining("Frozen active-mesh lists"),
+    reason: expect.stringContaining("Frozen active-mesh queues"),
   });
   scene.unfreezeActiveMeshes();
+  graph.dispose();
+});
+
+it("preserves the native frozen queue across camera-mask changes before returning to graph culling", async () => {
+  const { scene, camera } = host();
+  const visible = MeshBuilder.CreateBox("visible", {}, scene);
+  visible.layerMask = camera.layerMask = 1;
+  const hidden = MeshBuilder.CreateBox("outside frustum", {}, scene);
+  hidden.layerMask = 1;
+  hidden.position.x = 1000;
+  await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
+  const otherCamera = new FreeCamera("different mask", camera.position.clone(), scene);
+  otherCamera.layerMask = 2;
+  scene.activeCamera = otherCamera;
+  const visibleDraw = vi.spyOn(visible, "render");
+  const hiddenDraw = vi.spyOn(hidden, "render");
+  scene.render(false);
+  expect(visibleDraw).toHaveBeenCalledTimes(1);
+  expect(hiddenDraw).not.toHaveBeenCalled();
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(otherCamera)).toMatchObject({ path: "classic" });
+  expect(graph.render(otherCamera, false)).toMatchObject({ path: "classic" });
+  expect(visibleDraw).toHaveBeenCalledTimes(2);
+  expect(hiddenDraw).not.toHaveBeenCalled();
+  scene.unfreezeActiveMeshes();
+  hidden.position.x = 0;
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(hiddenDraw).toHaveBeenCalledTimes(1);
+  graph.dispose();
+});
+
+it("applies unfreeze from a before-render observer in that same frame", async () => {
+  const { scene, camera } = host();
+  MeshBuilder.CreateBox("visible", {}, scene);
+  const hidden = MeshBuilder.CreateBox("outside frustum", {}, scene);
+  hidden.position.x = 1000;
+  const graph = new ForwardSceneFrameGraph(scene);
+  await graph.prepare(camera);
+  await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
+  const hiddenDraw = vi.spyOn(hidden, "render");
+  scene.onBeforeRenderObservable.addOnce(() => {
+    scene.unfreezeActiveMeshes();
+    hidden.position.x = 0;
+  });
+  // This frame retains native scene ownership so its observer can rebuild the
+  // active queue immediately. The following frame can use graph culling again.
+  expect(graph.render(camera, false)).toMatchObject({ path: "classic" });
+  expect(hiddenDraw).toHaveBeenCalledTimes(1);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(hiddenDraw).toHaveBeenCalledTimes(2);
   graph.dispose();
 });
 
