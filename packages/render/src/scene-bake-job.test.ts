@@ -218,7 +218,7 @@ it("publishes complete mixed-source physical irradiance, padded UV bindings and 
   expect(values.getFloat32(center - 16, true)).toBe(1.5);
   expect(values.getFloat32(center - 4, true)).toBe(0); // Padding has radiance but is not receiver coverage.
   expect(new Set(stages)).toEqual(
-    new Set(["preparing", "unwrapping", "baking", "assembling", "writing"]),
+    new Set(["preparing", "unwrapping", "building", "compiling", "baking", "readback", "assembling", "writing"]),
   );
 });
 
