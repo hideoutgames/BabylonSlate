@@ -1,4 +1,4 @@
-import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderMaterial, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
+import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderLanguage, ShaderMaterial, ShaderStore, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
@@ -172,6 +172,48 @@ export function gridViewFade(
 function ensureGridShaders(): void {
   const vertexKey = `${GRID_SHADER_NAME}VertexShader`;
   const fragmentKey = `${GRID_SHADER_NAME}FragmentShader`;
+  ShaderStore.ShadersStoreWGSL[vertexKey] = `
+attribute position: vec3f;
+uniform worldViewProjection: mat4x4f;
+uniform gridExtent: f32;
+varying vGridPosition: vec2f;
+@vertex
+fn main(input: VertexInputs) -> FragmentInputs {
+  vertexOutputs.vGridPosition = vertexInputs.position.xy * uniforms.gridExtent;
+  vertexOutputs.position = uniforms.worldViewProjection * vec4f(vertexInputs.position, 1.0);
+}
+`;
+  ShaderStore.ShadersStoreWGSL[fragmentKey] = `
+varying vGridPosition: vec2f;
+uniform majorColor: vec3f;
+uniform minorColor: vec3f;
+uniform spacing: f32;
+uniform subdivisions: f32;
+uniform fadeStart: f32;
+uniform fadeEnd: f32;
+uniform viewFade: f32;
+uniform gridVisible: f32;
+uniform lineWidth: f32;
+fn gridLine(coord: vec2f, cell: f32) -> f32 {
+  let uv = coord / cell;
+  let wrapped = abs(fract(uv - 0.5) - 0.5);
+  let deriv = fwidth(uv);
+  let line = 1.0 - smoothstep(vec2f(0.0), deriv * uniforms.lineWidth, wrapped);
+  return max(line.x, line.y);
+}
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let coord = fragmentInputs.vGridPosition;
+  let cell = max(uniforms.spacing, 0.0001);
+  let major = gridLine(coord, cell);
+  let minor = select(0.0, gridLine(coord, cell / max(uniforms.subdivisions, 1.0)), uniforms.subdivisions > 1.5);
+  let fade = 1.0 - smoothstep(uniforms.fadeStart, uniforms.fadeEnd, length(coord));
+  let color = mix(uniforms.minorColor, uniforms.majorColor, clamp(major, 0.0, 1.0));
+  let alpha = max(major, minor * 0.45) * fade * uniforms.viewFade * uniforms.gridVisible;
+  if (uniforms.gridVisible < 0.5 || alpha < 0.02) { discard; }
+  fragmentOutputs.color = vec4f(color, alpha);
+}
+`;
   Effect.ShadersStore[vertexKey] = `
 attribute vec3 position;
 uniform mat4 worldViewProjection;
@@ -226,6 +268,32 @@ void main() {
 function ensureBoundsShaders(): void {
   const vertexKey = `${BOUNDS_SHADER_NAME}VertexShader`;
   const fragmentKey = `${BOUNDS_SHADER_NAME}FragmentShader`;
+  ShaderStore.ShadersStoreWGSL[vertexKey] = `
+attribute position: vec3f;
+uniform worldViewProjection: mat4x4f;
+varying vBoundsPosition: vec2f;
+@vertex
+fn main(input: VertexInputs) -> FragmentInputs {
+  vertexOutputs.vBoundsPosition = vertexInputs.position.xy;
+  vertexOutputs.position = uniforms.worldViewProjection * vec4f(vertexInputs.position, 1.0);
+}
+`;
+  ShaderStore.ShadersStoreWGSL[fragmentKey] = `
+varying vBoundsPosition: vec2f;
+uniform lineColor: vec3f;
+uniform lineWidth: f32;
+uniform boundsVisible: f32;
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let coord = fragmentInputs.vBoundsPosition;
+  let deriv = fwidth(coord);
+  let distX = (0.5 - abs(coord.x)) / max(deriv.x, 0.00000001);
+  let distY = (0.5 - abs(coord.y)) / max(deriv.y, 0.00000001);
+  let dist = min(distX, distY);
+  if (uniforms.boundsVisible < 0.5 || dist < 0.0 || dist >= uniforms.lineWidth) { discard; }
+  fragmentOutputs.color = vec4f(uniforms.lineColor, 1.0);
+}
+`;
   Effect.ShadersStore[vertexKey] = `
 attribute vec3 position;
 uniform mat4 worldViewProjection;
@@ -303,6 +371,7 @@ export function createEditorGrid(
     scene,
     { vertex: GRID_SHADER_NAME, fragment: GRID_SHADER_NAME },
     {
+      shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
       attributes: ["position"],
       uniforms: [
         "worldViewProjection",
@@ -356,6 +425,7 @@ export function createEditorGrid(
     scene,
     { vertex: BOUNDS_SHADER_NAME, fragment: BOUNDS_SHADER_NAME },
     {
+      shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
       attributes: ["position"],
       uniforms: [
         "worldViewProjection",
