@@ -491,12 +491,12 @@ export class ForwardSceneFrameGraph {
       this.failure = undefined;
       return { path: "frameGraph" };
     } catch (error) {
+      this.releaseGraph();
+      // Cancellation belongs to the old loading owner. Validate before latching
+      // a fallback so a superseded build cannot poison its replacement.
+      assertCurrent();
       this.failure = error instanceof Error ? error.message : String(error);
       this.failedOutput = { ...this.output(camera), camera };
-      this.releaseGraph();
-      // Cancellation must reach the loading owner, never become a successful
-      // classic fallback for a superseded scene/camera/output generation.
-      assertCurrent();
       if (!this.disposed && !scene.isDisposed) this.postProcessOwner?.useNative(camera);
       return { path: "classic", reason: this.failure };
     }
