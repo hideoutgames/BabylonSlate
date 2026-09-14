@@ -67,6 +67,7 @@ describe.each(["worker", "in-process"] as const)(
         scheduler: { invalidate() {}, acquireObstruction: () => () => {} },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
         applyCommand() {},
+        pushSnapshot() {},
         whenEditorModelsReady: () => Promise.resolve(),
         whenMaterialTexturesReady: () => Promise.resolve(),
         prewarmSceneMaterials: () => Promise.resolve(),
