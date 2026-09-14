@@ -87,6 +87,7 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   QualityGroup | "independent" | "non-rendering"
 >;
 export const POST_PROCESS_ENTRY_SETTING_OWNERS = {
+  id: "independent",
   materialGuid: "independent",
   enabled: "independent",
   scalable: "independent",
