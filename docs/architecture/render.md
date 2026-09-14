@@ -2,7 +2,7 @@
 
 The isolated WebGPU proof initializes Babylon's asynchronous backend and checks native and authored PBR/CEL surfaces with texture upload and readback. Authored NodeMaterials select the owning Engine's native shader language, avoiding an implicit GLSL translation dependency. This proof does not switch the project's default Engine or qualify WebGPU on iPad; project-wide restart, compatibility policy and recovery remain separate integration work.
 
-The explicit local WebGPU browser case selects Chromium's SwiftShader WebGPU adapter as well as its software WebGL adapter. An unsafe-WebGPU flag alone did not supply an adapter on the test host. The fixture rejects external shader-compiler downloads and records the actual adapter; this is software functional evidence only.
+The explicit local WebGPU browser case requests Chromium's SwiftShader WebGPU adapter and a software WebGL adapter (D3D11 WARP on Windows, SwiftShader elsewhere). Windows requires ANGLE to expose a D3D11 device to the WebGPU decoder. The fixture rejects external shader-compiler downloads and records the actual adapter; this is software functional evidence only.
 
 The public rendering contract separates project `settings.render.renderPath` (`auto`, `forward`, `clusteredForward`), `settings.render.gpuBackend` (`auto`, `webgl2`, `webgpu`), and existing PBR/CEL `mode`. Project normalization migrates absent or invalid axes to Forward/WebGL2; new projects keep these defaults until Auto is qualified. This additive migration preserves existing shading, environment, and feature settings without changing asset schema versions.
 

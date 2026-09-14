@@ -6,7 +6,10 @@ test.use({
   launchOptions: {
     args: [
       "--enable-unsafe-webgpu",
-      "--use-angle=swiftshader",
+      // Dawn's Windows decoder needs the D3D11 device exposed by ANGLE.
+      process.platform === "win32"
+        ? "--use-angle=d3d11-warp"
+        : "--use-angle=swiftshader",
       "--use-webgpu-adapter=swiftshader",
     ],
   },
