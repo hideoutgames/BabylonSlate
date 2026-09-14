@@ -617,8 +617,8 @@ export async function runEnvironmentIrradianceWebGpuProof() {
       await new Promise((resolve) => setTimeout(resolve, 16));
     }
   };
-  const capture = async (name: string, scene: Scene, mesh: Mesh) => {
-    await mesh.material!.forceCompilationAsync(mesh);
+  const capture = async (name: string, scene: Scene, mesh: Mesh, precompile = true) => {
+    if (precompile) await mesh.material!.forceCompilationAsync(mesh);
     await wait(() => isSceneFrameReady(scene));
     engine.beginFrame();
     scene.render();
@@ -804,7 +804,7 @@ export async function runEnvironmentIrradianceWebGpuProof() {
                 intensity: 0.5,
               }),
             });
-            await capture("graph-before-environment", lateScene, lateMesh);
+            await capture("graph-before-environment", lateScene, lateMesh, false);
             graph.freeze();
             const buildId = graph.buildId;
             const noCubeBefore =
@@ -818,9 +818,9 @@ export async function runEnvironmentIrradianceWebGpuProof() {
             };
             applyEnvironmentLighting(lateScene, kind, graphAssets);
             await wait(() => isEnvironmentLightingReady(lateScene));
-            await capture("graph-late-environment", lateScene, lateMesh);
+            await capture("graph-late-environment", lateScene, lateMesh, false);
             applyEnvironmentLighting(lateScene, null, graphAssets);
-            await capture("graph-removed-environment", lateScene, lateMesh);
+            await capture("graph-removed-environment", lateScene, lateMesh, false);
             applyEnvironmentLighting(lateScene, kind, graphAssets);
             setSceneRenderSettings(lateScene, {
               environmentLighting: normalizeEnvironmentLightingSettings({
@@ -829,7 +829,7 @@ export async function runEnvironmentIrradianceWebGpuProof() {
               }),
             });
             await wait(() => isEnvironmentLightingReady(lateScene));
-            await capture("graph-reassigned-environment", lateScene, lateMesh);
+            await capture("graph-reassigned-environment", lateScene, lateMesh, false);
             optionalGraph = {
               sameBuild: graph.buildId === buildId,
               frozen: graph.isFrozen,
