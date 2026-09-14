@@ -6,7 +6,7 @@ import {
 } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
-import { withSceneReadinessState } from "./scene-perf";
+import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import {
@@ -272,15 +272,11 @@ export class ForwardSceneFrameGraph {
       this.objects!.objectList = this.cull!.objectList;
       return withSceneReadinessState(this.scene, () => {
         const camera = this.objects!.camera;
-        // Babylon retains camera-pass material/shadow readiness alongside the
-        // ObjectRenderer's pass. Warming only the latter leaves the first PCF
-        // spot map different until a later Scene.isReady probe initializes it.
+        // Keep scene-owned camera/material/pass readiness alongside the task's
+        // own render-pass variants, without waiting on unrelated Engine effects.
         this.scene._activeCamera = camera;
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
-        let cameraReady = true;
-        for (const mesh of this.scene.meshes)
-          if (mesh.subMeshes?.length && !mesh.isReady(true))
-            cameraReady = false;
+        const cameraReady = isSceneFrameReady(this.scene);
         const graphReady = this.graph!.isReady();
         return cameraReady && graphReady;
       });
