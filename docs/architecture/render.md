@@ -397,6 +397,20 @@ cluster, pending and total reserved managed-lighting bytes. Context restoration
 releases each owner's old resources before allowing its replacement; it never
 clears a sibling's reservation globally.
 
+The same Engine ledger now accepts SceneColor, geometry, depth and post-process
+leases through `beginManagedRenderAllocation`; existing lighting callers keep
+their lower limits and cluster accounting. Category totals partition physical
+handles; a texture aliased across categories is counted once in `sharedBytes`.
+Declared render-target recipes reserve dimensions, array/cube/volume mip storage,
+resolved textures and full lazy MSAA capacity before construction. Actual wrapper
+metadata reconciles InternalTexture identities and separate WebGL depth buffers.
+RGB expansion and implementation-defined depth/stencil formats use conservative
+representation bounds; unknown layouts are rejected. WebGL callers must retain
+allocated mip counts when generation is disabled. Mutating a live allocation in
+place is unsupported: replacement leases retain the previous generation until its
+owned resources are disposed. The service performs no GPU allocation/query during
+accounting and does not yet connect these extra categories to production graphs.
+
 These are conservative policy allowances, not measured VRAM or A16 performance.
 The ledger covers managed shadow attachments and cluster mask/data textures only;
 proxy geometry/UBOs, material caches, effects, reflection targets, transition copies
