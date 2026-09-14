@@ -914,7 +914,7 @@ describe("Play createEngine view", () => {
     expect(handle.editor!.gizmos.attachedMesh()).toBeNull();
   });
 
-  it("snaps a live Scene canvas drawing buffer to CSS pixels on resize", () => {
+  it("prepares Scene resizing without clearing its last visible drawing buffer", () => {
     const canvas = new FakeCanvas();
     canvas.width = 256;
     canvas.height = 256;
@@ -926,8 +926,8 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.resize();
-    expect(canvas.width).toBe(800);
-    expect(canvas.height).toBe(360);
+    expect(canvas.width).toBe(256);
+    expect(canvas.height).toBe(256);
   });
 
   it("reports hidden pre-snapshot visuals and their published world positions", () => {
@@ -2509,8 +2509,8 @@ describe("Play createEngine view", () => {
     handle.resize();
     expect(resize).not.toHaveBeenCalled();
     expect(setSize).toHaveBeenCalledWith(800, 450);
-    expect(canvas.width).toBe(800);
-    expect(canvas.height).toBe(450);
+    expect(canvas.width).toBe(300);
+    expect(canvas.height).toBe(150);
   });
 
   it("sizes a shared editor framebuffer from the viewport canvas instead of engine.resize", () => {
@@ -2559,12 +2559,52 @@ describe("Play createEngine view", () => {
     expect(canvas.height).toBe(450);
   });
 
-  it("matches the overlay drawing buffer to a locked Play setSize", () => {
-    const { handle, canvas } = playHandle(sharedEngine());
-    Object.assign(canvas, { width: 300, height: 150 });
-    handle.setSize(1920, 1080);
-    expect(canvas.width).toBe(1920);
-    expect(canvas.height).toBe(1080);
+  it.each(["CSS", "locked"] as const)("retains the last visible Play frame through a loading %s resize and replaces it only with an admitted frame", async (sizing) => {
+    const engine = sharedEngine();
+    const pixels = () => {
+      const surface = Object.assign(new FakeCanvas(), { pixel: 0 });
+      let width = surface.width, height = surface.height;
+      Object.defineProperties(surface, {
+        width: { get: () => width, set: (next: number) => { width = next; surface.pixel = 0; } },
+        height: { get: () => height, set: (next: number) => { height = next; surface.pixel = 0; } },
+      });
+      surface.getContext = () => ({ clearRect: () => { surface.pixel = 0; }, drawImage: (source: typeof surface) => { surface.pixel = source.pixel; } });
+      return surface;
+    };
+    const source = pixels(), canvas = pixels();
+    vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(source as unknown as HTMLCanvasElement);
+    vi.spyOn(engine, "setSize").mockImplementation((width, height) => {
+      if (source.width !== width) source.width = width;
+      if (source.height !== height) source.height = height;
+      return true;
+    });
+    vi.spyOn(engine, "getRenderWidth").mockImplementation(() => source.width);
+    vi.spyOn(engine, "getRenderHeight").mockImplementation(() => source.height);
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    let color = 0xff8040;
+    handle.scene.onAfterRenderObservable.add(() => { source.pixel = color; });
+    let now = performance.now();
+    const time = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const frame = () => { now += 1000; engine.beginFrame(); engine._renderViews(); engine.endFrame(); };
+    try {
+      frame();
+      expect(canvas.pixel).toBe(color);
+      handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
+      if (sizing === "CSS") { canvas.clientWidth = 512; canvas.clientHeight = 288; handle.resize(); }
+      else handle.setSize(512, 288);
+      frame();
+      expect(canvas.pixel).toBe(color);
+      expect([canvas.width, canvas.height]).toEqual([256, 256]);
+      color = 0x40a0ff;
+      const presented = handle.presentFirstFrame();
+      frame();
+      await presented;
+      expect(canvas.pixel).toBe(color);
+      expect([canvas.width, canvas.height]).toEqual([512, 288]);
+      frame();
+      expect([canvas.width, canvas.height]).toEqual([512, 288]);
+    } finally { time.mockRestore(); }
   });
 
   it("shares depth across Play rendering groups so debug is not an underlay", () => {

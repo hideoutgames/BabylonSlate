@@ -86,7 +86,7 @@ import {
   accountedGeometryBytesForScene,
   isEditorModelPlaceholder,
 } from "./glb-anim";
-import { snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
+import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { actorFramingRadius, actorFramingTarget } from "./actor-framing";
 import {
   isSkyboxMesh,
@@ -670,9 +670,17 @@ function initializeEngine(
 
   const ownsEngine = !options.sharedEngine;
   const presentRtt = options.present === "rtt";
+  // The visible bitmap must survive skipped/loading frames and backend RTT
+  // work. Keep owned browser engines on a private constructor canvas, using
+  // the same admitted native view copy as project-shared handles.
+  const visibleContext = typeof canvas.getContext === "function" &&
+    (options.sharedEngine || typeof document !== "undefined")
+    ? canvas.getContext("2d") : null;
+  const constructorCanvas = ownsEngine && visibleContext && typeof document !== "undefined"
+    ? document.createElement("canvas") : canvas;
   const engine =
     options.sharedEngine ??
-    new Engine(canvas, false, {
+    new Engine(constructorCanvas, false, {
       preserveDrawingBuffer: true,
       stencil: true,
       adaptToDeviceRatio: false,
@@ -681,6 +689,7 @@ function initializeEngine(
       useExactSrgbConversions: true,
     });
   if (ownsEngine) {
+    engine.inputElement = canvas;
     onRollback(() => engine.dispose());
     onRollback(() => releaseResourceCacheForEngine(engine));
   }
@@ -716,12 +725,8 @@ function initializeEngine(
     ).getGlInfo?.().renderer,
   });
 
-  const sharedViewBlit =
-    options.sharedEngine &&
-    !presentRtt &&
-    typeof canvas.getContext === "function"
-      ? canvas.getContext("2d")
-      : null;
+  const sharedViewBlit = !presentRtt && visibleContext &&
+    (options.sharedEngine || constructorCanvas !== canvas);
   // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
   // clear, skipped render-on-demand frames composite additively.
   const registeredView = sharedViewBlit
@@ -1637,8 +1642,14 @@ function initializeEngine(
       return;
     }
     if (presentRtt) {
-      rttPresent?.clear();
-    } else if (options.sharedEngine && !presentRtt) {
+      // Resize owned GPU targets while keeping the last completed canvas copy.
+      rttPresent?.bind();
+    } else if (registeredView) {
+      registeredView.customResize = undefined;
+      const size = cssCanvasPixelSize(canvas);
+      const scale = engine.getHardwareScalingLevel();
+      engine.setSize(Math.max(1, Math.floor(size.width / scale)), Math.max(1, Math.floor(size.height / scale)));
+    } else if (options.sharedEngine) {
       const size = snapCanvasDrawingBuffer(canvas);
       engine.setSize(size.width, size.height);
     } else {
@@ -1997,7 +2008,16 @@ function initializeEngine(
     setSize: (width: number, height: number) => {
       const nextWidth = Math.max(1, Math.floor(width));
       const nextHeight = Math.max(1, Math.floor(height));
-      if (options.sharedEngine && !presentRtt) {
+      if (registeredView) {
+        // Native view admission runs before this callback. Defer visible bitmap
+        // writes until that frame can replace them, and retain the authored
+        // locked resolution instead of letting native CSS sizing override it.
+        registeredView.customResize = () => {
+          if (canvas.width !== nextWidth) canvas.width = nextWidth;
+          if (canvas.height !== nextHeight) canvas.height = nextHeight;
+          engine.setSize(nextWidth, nextHeight);
+        };
+      } else if (options.sharedEngine && !presentRtt) {
         canvas.width = nextWidth;
         canvas.height = nextHeight;
       }

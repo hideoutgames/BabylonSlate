@@ -1,0 +1,203 @@
+import { expect, test, type Locator } from "@playwright/test";
+import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent, MAIN_SCENE_FILE, PROJECT_FILE, type SerializedGraph } from "../packages/core/src/index.ts";
+import { encodeAssetDocument } from "../packages/assets/src/asset-document";
+import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
+import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
+import { openMinimalTestProject } from "./minimal-project";
+import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
+import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+
+const WORLD = "00000000-0000-4000-8000-000000000001";
+const LAYER = "00000000-0000-4000-8000-000000000031";
+const LAYER_CLASS = "00000000-0000-4000-8000-000000000032";
+const GAME_CLASS = "00000000-0000-4000-8000-000000000033";
+
+async function filesForContinuity() {
+  const files = await minimalProjectFiles();
+  const versions = createDefaultMigrationRegistry();
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.gameInstanceClass = "LoadingGame";
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  const game: SerializedGraph = {
+    nodes: [
+      { id: "first", type: "flow.event.firstSceneLoaded", data: {}, position: { x: 0, y: 0 } },
+      { id: "create", type: "scene-layer.create", data: { "default:asset": LAYER, "default:zOrder": 10 }, position: { x: 220, y: 0 } },
+    ],
+    edges: [{ id: "first-create", source: "first", sourceHandle: "execOut", target: "create", targetHandle: "execIn" }],
+  };
+  const moving: SerializedGraph = {
+    nodes: [
+      { id: "tick", type: "flow.event.tick", data: {}, position: { x: 0, y: 0 } },
+      { id: "move", type: "debug.executeJavaScript", data: { body: 'const tick = Number(ctx.self.getVariable("ticks") ?? 0) + 1; ctx.self.setVariable("ticks", tick); ctx.setActorLocation(ctx.self, { x: -10 + (tick % 40) * 0.06, y: 3, z: 0 });' }, position: { x: 220, y: 0 } },
+    ],
+    edges: [{ id: "tick-move", source: "tick", sourceHandle: "execOut", target: "move", targetHandle: "execIn" }],
+  };
+  for (const [guid, name, payload, parentClass, dependencies] of [
+    [GAME_CLASS, "LoadingGame", game, "GameInstance", [LAYER]],
+    [LAYER_CLASS, "MovingHud", moving, "SceneLayerActor", []],
+  ] as const) files.set(`assets/${name}.class.babasset`, await encodeAssetDocument({ guid, type: "Class", name,
+    version: versions.currentVersion("Class"), payload: payload as unknown as Record<string, unknown> }, { parentClass, dependencies: [...dependencies] }));
+  const layer = createDefaultSceneLayer();
+  layer.actors = [createActor("moving-hud", "Moving HUD", { classId: "MovingHud",
+    transform: { position: [-10, 3, 0], rotation: [0, 0, 0, 1], scale: [3, 1.5, 1] },
+    components: [{ id: "hud-image", classId: "2DTextureComponent", properties: {} }] })];
+  files.set("assets/MovingHud.scenelayer.babasset", await encodeAssetDocument({ guid: LAYER, type: "SceneLayer", name: "Moving HUD",
+    version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown> }, { dependencies: [LAYER_CLASS] }));
+  const scene = createDefaultScene();
+  scene.settings.environmentTextureGuid = null;
+  scene.settings.environmentColor = [0, 0, 0];
+  scene.settings.shadowOverrides = { enabled: false };
+  scene.settings.grid.showGrid = false;
+  scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
+  scene.actors[0]!.transform.position = [0, 1.5, -10];
+  scene.actors[0]!.transform.rotation = [0, 0, 0, 1];
+  scene.actors.push(createActor("fill", "Fill", { components: [{ id: "fill-light", classId: "HemisphericFillLightComponent",
+    properties: { intensity: 1, color: [1, 1, 1], groundColor: [1, 1, 1] } }] }));
+  for (let i = 0; i < 96; i++) scene.actors.push(createActor(`box-${i}`, `Box ${i}`, {
+    transform: { position: [(i % 12) * 0.4 - 2.2, Math.floor(i / 12) * 0.4, 0], rotation: [0, 0, 0, 1], scale: [0.3, 0.3, 0.3] },
+    components: [createMeshComponent(`mesh-${i}`, "box")],
+  }));
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ guid: WORLD, type: "Scene", name: "Main", version: versions.currentVersion("Scene"),
+    payload: scene as unknown as Record<string, unknown> }, { dependencies: [GAME_CLASS] }));
+  return files;
+}
+
+type Sample = { phase: string; lit: number; hud: number; center: number; hudX: number | null; width: number; height: number };
+type Observation = { samples: Sample[]; phases: string[]; resizing: boolean; stop: () => void };
+
+async function observeCanvas(canvas: Locator) {
+  await canvas.evaluate((node: HTMLCanvasElement) => {
+    const host = globalThis as unknown as { continuity?: Observation;
+      __babylonslatePlayTest?: { visuals: () => Array<{ visible: boolean; position: number[] }> };
+      __babylonslatePlayerTest?: { visuals: () => Array<{ visible: boolean; position: number[] }> } };
+    host.continuity?.stop();
+    const copy = document.createElement("canvas");
+    copy.width = 96; copy.height = 64;
+    const context = copy.getContext("2d", { willReadFrequently: true })!;
+    context.imageSmoothingEnabled = false;
+    let frame = 0;
+    const initialWidth = node.style.width;
+    const observation: Observation = { samples: [], phases: [], resizing: false,
+      stop: () => { cancelAnimationFrame(frame); node.style.width = initialWidth; } };
+    const sample = () => {
+      const dialog = document.querySelector('[data-testid="scene-loading-dialog"]');
+      const shown = dialog && !dialog.closest("[data-closed]") && (!(dialog instanceof HTMLDialogElement) || dialog.open);
+      const phase = shown ? dialog.querySelector('[data-slot="progress-label"], [role="status"]')?.textContent ?? "" : "";
+      if (phase && !observation.phases.includes(phase)) observation.phases.push(phase);
+      if (phase === "Preparing Scene" && !observation.resizing) {
+        observation.resizing = true;
+        node.style.width = "94%";
+      }
+      context.clearRect(0, 0, 96, 64);
+      context.drawImage(node, 0, 0, 96, 64);
+      const pixels = context.getImageData(0, 0, 96, 64).data;
+      let lit = 0, hud = 0, sumX = 0;
+      for (let y = 0; y < 64; y++) for (let x = 0; x < 96; x++) {
+        const i = (y * 96 + x) * 4;
+        if (pixels[i]! + pixels[i + 1]! + pixels[i + 2]! > 180) lit++;
+        if (x < 29 && y < 29 && pixels[i]! > 230 && pixels[i + 1]! > 230 && pixels[i + 2]! > 230) { hud++; sumX += x; }
+      }
+      const visual = (host.__babylonslatePlayTest ?? host.__babylonslatePlayerTest)?.visuals()
+        .find((value) => value.visible && value.position[0]! < -6 && Math.abs(value.position[1]! - 3) < .01);
+      observation.samples.push({ phase, lit, hud, center: hud ? sumX / hud : 0, hudX: visual?.position[0] ?? null, width: node.width, height: node.height });
+      if (observation.samples.length < 3000 && node.isConnected) frame = requestAnimationFrame(sample);
+    };
+    host.continuity = observation;
+    frame = requestAnimationFrame(sample);
+  });
+}
+
+async function samples(canvas: Locator) {
+  return canvas.evaluate(() => (globalThis as unknown as { continuity: Observation }).continuity.samples);
+}
+
+for (const mode of ["Play", "Preview Build"] as const) {
+  test(`${mode} retains a moving global SceneLayer across world loading, visible resize and modal dismissal`, async ({ page }, testInfo) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    // Install in both the editor document and future Preview iframe before
+    // their runtime canvas exists, so initial modal dismissal is observable.
+    await page.addInitScript(() => {
+      const copy = document.createElement("canvas");
+      copy.width = 96; copy.height = 64;
+      const context = copy.getContext("2d", { willReadFrequently: true })!;
+      let frame = 0, released = false, sawPresenting = false;
+      const samples: Array<{ phase: string; lit: number }> = [];
+      const state = { samples, stop: () => cancelAnimationFrame(frame) };
+      (globalThis as unknown as { startupCanvasContinuity: typeof state }).startupCanvasContinuity = state;
+      const inspect = () => {
+        const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="play-canvas"], [data-testid="player-canvas"]');
+        if (canvas) {
+          const dialog = document.querySelector('[data-testid="scene-loading-dialog"]');
+          const shown = dialog && !dialog.closest("[data-closed]") && (!(dialog instanceof HTMLDialogElement) || dialog.open);
+          const phase = shown ? dialog.querySelector('[data-slot="progress-label"], [role="status"]')?.textContent ?? "" : "";
+          if (phase === "Presenting First Frame") sawPresenting = true;
+          if (sawPresenting && !shown) released = true;
+          if (released) {
+            context.clearRect(0, 0, 96, 64);
+            context.drawImage(canvas, 0, 0, 96, 64);
+            const pixels = context.getImageData(0, 0, 96, 64).data;
+            let lit = 0;
+            for (let i = 0; i < pixels.length; i += 4) if (pixels[i]! + pixels[i + 1]! + pixels[i + 2]! > 180) lit++;
+            samples.push({ phase, lit });
+          }
+        }
+        if (samples.length < 1000) frame = requestAnimationFrame(inspect);
+      };
+      frame = requestAnimationFrame(inspect);
+    });
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["warning", "error"].includes(message.type()) && /GPUValidation|validation error|InvalidCommandBuffer|OUT_OF_MEMORY|CONTEXT_LOST|invalid uniform|destroyed texture|Scene loading failed|Unable to compile|RGBD texture decode failed/i.test(message.text())) errors.push(message.text());
+    });
+    await openMinimalTestProject(page, await filesForContinuity());
+    await openMainScene(page);
+    await waitForSceneViewportReady(page);
+    if (mode === "Play") await clickPlayAndWaitForOverlay(page);
+    else {
+      await page.getByTestId("debug-menu").click();
+      await page.getByTestId("preview-build-toggle").click();
+      await page.getByTestId("play-preview").click();
+      await waitForPreviewBuildBoot(page);
+    }
+    const canvas = mode === "Play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
+    const dialog = mode === "Play" ? page.getByTestId("scene-loading-dialog") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("scene-loading-dialog");
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+    await observeCanvas(canvas);
+    await expect.poll(async () => (await samples(canvas)).some((sample) => sample.hud > 5)).toBe(true);
+    await expect.poll(() => canvas.evaluate(() =>
+      (globalThis as unknown as { startupCanvasContinuity: { samples: unknown[] } }).startupCanvasContinuity.samples.length)).toBeGreaterThan(2);
+    const startup = await canvas.evaluate(() => {
+      const state = (globalThis as unknown as { startupCanvasContinuity: { samples: Array<{ phase: string; lit: number }>; stop: () => void } }).startupCanvasContinuity;
+      state.stop(); return state.samples;
+    });
+    expect(Math.min(...startup.map((sample) => sample.lit))).toBeGreaterThan(5);
+    expect(await canvas.evaluate((node: HTMLCanvasElement) => Boolean(node.getContext("2d")))).toBe(true);
+    await testInfo.attach("initial-modal-dismissal.json", { body: JSON.stringify(startup), contentType: "application/json" });
+    if (mode === "Play") await page.getByTestId("play-console-open").click();
+    else await page.getByRole("button", { name: "Console", exact: true }).click();
+    for (let reload = 0; reload < 2; reload++) {
+      await observeCanvas(canvas);
+      await page.getByTestId("debug-console-input").fill(`changescene ${WORLD}`);
+      await page.getByTestId("debug-console-submit").click();
+      await expect.poll(async () => (await samples(canvas)).some((sample) => sample.phase === "Preparing Scene")).toBe(true);
+      await expect(dialog).toBeHidden({ timeout: 30_000 });
+      await expect.poll(async () => (await samples(canvas)).filter((sample) => sample.phase === "").length).toBeGreaterThan(2);
+      const result = await samples(canvas);
+      expect(result.some((sample) => sample.phase === "Presenting First Frame")).toBe(true);
+      expect(Math.min(...result.map((sample) => sample.lit))).toBeGreaterThan(5);
+      expect(Math.min(...result.map((sample) => sample.hud))).toBeGreaterThan(5);
+      const loading = result.filter((sample) => sample.phase && sample.phase !== "Presenting First Frame");
+      expect(new Set(loading.map((sample) => sample.hudX)).size).toBeGreaterThan(1);
+      expect(new Set(loading.map((sample) => sample.center)).size).toBeGreaterThan(1);
+      expect(new Set(result.map((sample) => `${sample.width}x${sample.height}`)).size).toBeGreaterThan(1);
+      await testInfo.attach(`continuity-${reload}.json`, { body: JSON.stringify(result), contentType: "application/json" });
+    }
+    await canvas.evaluate(() => (globalThis as unknown as { continuity: Observation }).continuity.stop());
+    await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
+    await canvas.screenshot({ path: testInfo.outputPath("retained-global-layer.png") });
+    await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
+    await waitForSceneViewportReady(page);
+    expect(errors).toEqual([]);
+  });
+}
