@@ -39,6 +39,7 @@ export class SceneRenderCoordinator {
   invalidate(): void {
     this.generation += 1;
     this.failure = undefined;
+    this.graph.invalidate();
   }
 
   /** No drawing: a resize or camera change restarts preparation within one deadline. */

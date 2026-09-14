@@ -1,3 +1,6 @@
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
+import { limitManagedRenderBytes } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
 import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
@@ -246,4 +249,30 @@ it("releases replaced stack tasks without a frame and rejects stale facade dispo
     second.dispose();
     expect(scene.objectRenderers).not.toContain(current);
   } finally { await renderer.retire(); library.dispose(); }
+});
+
+
+it("keeps the native fallback alive while its shader warms after graph allocation is rejected", async () => {
+  const { scene, camera, engine, renderer } = host();
+  engine.getCaps().depthTextureExtension = true;
+  limitManagedRenderBytes(engine, 1);
+  const library = new MaterialLibrary();
+  const document = createDefaultMaterialDocument("Scene Color", "postProcess");
+  const probe = vi.spyOn(PostProcess.prototype, "isReady").mockReturnValue(false);
+  try {
+    renderer.attachPostProcess({ scene, camera, library, documentFor: () => document,
+      deviceBuffers: { sceneDepth: false, sceneNormal: false },
+      stack: [{ id: "pass", materialGuid: "color", enabled: true, order: 0 }] });
+    const preparing = renderer.prepare();
+    await vi.waitFor(() => expect(camera._postProcesses.filter(Boolean)).toHaveLength(1));
+    const warming = camera._postProcesses.find(Boolean);
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(camera._postProcesses.find(Boolean)).toBe(warming);
+    expect(renderer.isReady()).toBe(false);
+    probe.mockRestore();
+    await expect(preparing).resolves.toMatchObject({ path: "classic", reason: expect.stringContaining("reservation") });
+    renderer.invalidate();
+    await renderer.prepare();
+    expect(camera._postProcesses.find(Boolean)).not.toBe(warming);
+  } finally { probe.mockRestore(); await renderer.retire(); library.dispose(); }
 });

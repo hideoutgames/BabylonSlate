@@ -734,3 +734,6 @@ Post-process graph resources reserve declared capacity before construction and r
 
 
 Replacing or detaching a prepared stack releases its old graph tasks immediately, including while the view is paused. Pending preparation is cancelled at the owning generation boundary before cleanup. A stale attachment facade cannot detach its replacement. Cleanup failures remain recorded so later retirement cannot incorrectly permit host-owned target destruction.
+
+
+Entry reads and resets resolve owned authored overrides and reachable root defaults from the same function-aware lowered plan as gameplay metadata, including disabled entries and the gap between GPU instances. They allocate no Material for an inactive pass. Graph admission/build failure remains on its native fallback while native shaders warm; retry requires explicit invalidation or a changed camera/output, rather than repeatedly discarding the warming fallback.
