@@ -33,7 +33,11 @@ export async function runWebGpuProof() {
     canvas.width = canvas.height = 64;
     document.getElementById("root")!.append(canvas);
     const swapChainFormat =
-      backend === "webgpu" ? navigator.gpu.getPreferredCanvasFormat() : null;
+      backend === "webgpu"
+        ? (navigator as unknown as {
+            gpu: { getPreferredCanvasFormat(): "rgba8unorm" | "bgra8unorm" };
+          }).gpu.getPreferredCanvasFormat()
+        : null;
     const engine =
       backend === "webgpu"
         ? new WebGPUEngine(canvas, {
