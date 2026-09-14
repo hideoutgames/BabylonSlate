@@ -4,7 +4,7 @@ import {
   type HostMemoryStats,
 } from "@babylonslate/vfs";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
-import { startPlayer } from "./boot";
+import { startPlayerWithBackend } from "./player-backend";
 import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
 import { applyPlayerLayout } from "./layout";
 import { registerPackedFonts } from "./fonts";
@@ -29,6 +29,16 @@ import {
 } from "./preview-protocol";
 
 const previewHostOrigin = window.location.origin;
+const startupAbort = new AbortController();
+let stopCurrentPlayer: (() => void) | undefined;
+// Install before pack loading, fonts or asynchronous backend initialization.
+window.addEventListener("message", (event) => {
+  if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) return;
+  if (event.data?.type !== PREVIEW_STOP_MESSAGE) return;
+  startupAbort.abort();
+  try { stopCurrentPlayer?.(); }
+  finally { rootEl().dataset.booted = "false"; }
+});
 
 function rootEl(): HTMLElement {
   return document.getElementById("player-root") ?? document.body;
@@ -72,7 +82,9 @@ async function launchFromHttp(): Promise<void> {
 async function launchLoaded(
   game: Awaited<ReturnType<typeof loadGameFromFiles>>,
 ): Promise<void> {
+  startupAbort.signal.throwIfAborted();
   await registerPackedFonts(game.fontBytes, undefined, game.fontFamilies);
+  startupAbort.signal.throwIfAborted();
   const canvas = canvasEl();
   layoutFromManifest(game.manifest);
   const hud = mountPlayerHud(
@@ -101,9 +113,10 @@ async function launchLoaded(
   };
   refreshHostMemory();
   // Session-scoped HUD feed; cleared with the page, same as the render loop.
-  window.setInterval(refreshHostMemory, 1000);
+  const memoryInterval = window.setInterval(refreshHostMemory, 1000);
 
-  const session = startPlayer({
+  const session = await startPlayerWithBackend({
+    signal: startupAbort.signal,
     canvas,
     game,
     onConsoleEvent: (command) => {
@@ -152,7 +165,21 @@ async function launchLoaded(
         previewHostOrigin,
       );
     },
+  }).catch((error: unknown) => {
+    window.clearInterval(memoryInterval);
+    stopAudioOverlays();
+    throw error;
   });
+  if (startupAbort.signal.aborted) {
+    try { session.stop(); } finally {
+      window.clearInterval(memoryInterval);
+      stopAudioOverlays();
+    }
+    return;
+  }
+  rootEl().dataset.requestedBackend = session.backend.requestedBackend;
+  rootEl().dataset.effectiveBackend = session.backend.effectiveBackend;
+  rootEl().dataset.backendFallback = session.backend.fallbackReason ?? "";
   const layoutObserver =
     typeof ResizeObserver === "undefined"
       ? null
@@ -196,7 +223,24 @@ async function launchLoaded(
   }
   let inspecting = false;
   let stopped = false;
-  window.addEventListener("message", (event) => {
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    stopCurrentPlayer = undefined;
+    window.removeEventListener("message", onSessionMessage);
+    window.clearInterval(memoryInterval);
+    layoutObserver?.disconnect();
+    stopAudioOverlays();
+    const result = session.stop();
+    if (window.parent !== window && result.diagnostics.length > 0) {
+      window.parent.postMessage(
+        { type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics: result.diagnostics },
+        previewHostOrigin,
+      );
+    }
+  };
+  stopCurrentPlayer = stop;
+  function onSessionMessage(event: MessageEvent) {
     if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin))
       return;
     if (stopped) return;
@@ -238,26 +282,8 @@ async function launchLoaded(
       });
       return;
     }
-    if (
-      event.data &&
-      typeof event.data === "object" &&
-      (event.data as { type?: string }).type === PREVIEW_STOP_MESSAGE
-    ) {
-      stopped = true;
-      const result = session.stop();
-      layoutObserver?.disconnect();
-      stopAudioOverlays();
-      if (window.parent !== window && result.diagnostics.length > 0) {
-        window.parent.postMessage(
-          {
-            type: PREVIEW_DIAGNOSTICS_MESSAGE,
-            diagnostics: result.diagnostics,
-          },
-          previewHostOrigin,
-        );
-      }
-    }
-  });
+  }
+  window.addEventListener("message", onSessionMessage);
 }
 
 function previewMode(): boolean {
@@ -266,6 +292,7 @@ function previewMode(): boolean {
 }
 
 function bootFailure(error: unknown): void {
+  if (startupAbort.signal.aborted) return;
   const message = error instanceof Error ? error.message : String(error);
   rootEl().dataset.error = message;
   if (window.parent !== window) {
