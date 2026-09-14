@@ -54,6 +54,11 @@ import {
   pickImportFiles,
 } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@babylonslate/ui/components/resizable";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from "@babylonslate/ui/components/empty";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
@@ -2306,14 +2311,35 @@ export function ContentBrowserWorkspace({
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <ResizablePanelGroup
+        orientation="horizontal"
+        className="min-h-0 flex-1 overflow-hidden"
+      >
         {!phone ? (
-          <aside className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-hidden border-r border-border bg-sidebar p-2">
-            {folderNavigation}
-          </aside>
+          <>
+            <ResizablePanel
+              id="content-browser-folders"
+              defaultSize="224px"
+              minSize="160px"
+              style={{ overflow: "hidden" }}
+            >
+              <aside
+                className="flex h-full min-h-0 flex-col gap-1 overflow-hidden bg-sidebar p-2"
+                data-testid="content-browser-sidebar"
+              >
+                {folderNavigation}
+              </aside>
+            </ResizablePanel>
+            <ResizableHandle aria-label="Resize Folders" />
+          </>
         ) : null}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <ResizablePanel
+          id="content-browser-assets"
+          minSize={phone ? 0 : "240px"}
+          className="flex h-full min-h-0 min-w-0 flex-col"
+          style={{ overflow: "hidden" }}
+        >
           <div className="shrink-0 border-b border-border/60 bg-sidebar px-1 py-0.5">
             <FolderBreadcrumbs
               root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_ROOT_ID ? "Content" : folderRoot.label }}
@@ -2469,8 +2495,8 @@ export function ContentBrowserWorkspace({
               </div>
             )}
           </div>
-        </div>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {phone && selectionCount > 0 ? (
         <div

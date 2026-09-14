@@ -36,7 +36,8 @@ import {
   type SerializedComponent,
   type SkyboxFaceKey,
 } from "@babylonslate/core";
-import { parseMeshCollisionMode } from "@babylonslate/assets";
+import { parseMeshCollisionMode, type ModelMaterialSlot } from "@babylonslate/assets";
+import { MODEL_MATERIALS_PICKER_VALUE } from "./mesh-material-properties";
 import {
   parseColliderProperties,
   type ColliderShape,
@@ -67,6 +68,7 @@ export type ComponentPropertyContext = {
   collisionLayers: readonly string[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType?: (guid: string | null | undefined) => string | undefined;
+  modelMaterialSlots?: (guid: string) => readonly ModelMaterialSlot[];
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
   fontHasMsdfJson?: (guid: string | null | undefined) => boolean;
   fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
@@ -486,6 +488,34 @@ export function componentPropertyRows(
               onChange: (next) => update("meshKind", next),
             },
           ];
+      const materialRow = assetRow(
+        actorId,
+        component,
+        "materialGuid",
+        "Material",
+        ["Material"],
+        update,
+        context,
+        "Pick Material",
+      );
+      if (assetGuid && materialRow.kind === "asset") {
+        materialRow.defaultValue = MODEL_MATERIALS_PICKER_VALUE;
+        if (
+          !guidValue(component.properties.materialGuid) &&
+          component.properties.materialSource !== "override"
+        ) {
+          const slots = context.modelMaterialSlots?.(assetGuid) ?? [];
+          const slot = slots.length === 1 ? slots[0] : undefined;
+          const name = slot?.materialGuid
+            ? context.assetLabel(slot.materialGuid) ?? slot.name
+            : slot?.name;
+          Object.assign(materialRow, assetRowIdentity({
+            name: name || "Model Materials",
+            type: "Material",
+          }));
+          materialRow.value = MODEL_MATERIALS_PICKER_VALUE;
+        }
+      }
       return [
         ...meshKindRow,
         assetRow(
@@ -498,16 +528,7 @@ export function componentPropertyRows(
           context,
           "Pick Mesh",
         ),
-        assetRow(
-          actorId,
-          component,
-          "materialGuid",
-          "Material",
-          ["Material"],
-          update,
-          context,
-          "Pick Material",
-        ),
+        materialRow,
         ...meshCollisionRows(actorId, component, update, context),
         ...(["castShadows", "receiveShadows"] as const).map((key) => ({
           kind: "boolean" as const,
@@ -526,6 +547,7 @@ export function componentPropertyRows(
             "receiveShadows",
             "assetGuid",
             "materialGuid",
+            "materialSource",
             "collisionMode",
             "layer",
             "mask",
@@ -1862,6 +1884,13 @@ export function applyPrefabPropertyDefaults(
   return rows.map((row) => {
     for (const key of Object.keys(prefab.properties)) {
       if (!row.id.endsWith(`-${key}`)) continue;
+      if (
+        key === "materialGuid" && prefab.classId === "MeshComponent" &&
+        prefab.properties.assetGuid && !guidValue(prefab.properties.materialGuid) &&
+        prefab.properties.materialSource !== "override"
+      ) {
+        return { ...row, defaultValue: MODEL_MATERIALS_PICKER_VALUE } as PropertyRow;
+      }
       return { ...row, defaultValue: prefab.properties[key] } as PropertyRow;
     }
     return row;

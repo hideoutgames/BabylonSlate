@@ -10,6 +10,8 @@ import {
   normalizeEnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
   type EnvironmentLightingSettings,
+  resolveRenderingPipeline,
+  type RenderPathOverrides,
 } from "@babylonslate/core";
 
 /** Only effective rendering changes rebuild GPU scene resources. */

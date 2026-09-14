@@ -39,7 +39,9 @@ test("gallery primitives, dialogs, and editor composites", async ({ page }) => {
     await expect(page.getByTestId("component-gallery")).toBeVisible();
     await expect(page.getByTestId("gallery-panel-frame")).toBeVisible();
     await expect(page.getByTestId("gallery-toolbar-strip")).toBeVisible();
-    await expect(page.getByText("Primary")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Primary", exact: true }),
+    ).toBeVisible();
     await expect(page.getByTestId("gallery-touch-button")).toBeVisible();
     await expect(page.getByTestId("gallery-toggle-group")).toBeVisible();
     await expect(page.getByTestId("gallery-prefab-tab-note")).toBeVisible();

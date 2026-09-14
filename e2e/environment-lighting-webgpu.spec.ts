@@ -9,6 +9,14 @@ test.use({
         ? "--use-angle=d3d11-warp"
         : "--use-angle=swiftshader",
       "--use-webgpu-adapter=swiftshader",
+      // Match the validated Dawn/Vulkan compositor used by the backend proof.
+      ...(process.platform === "linux"
+        ? [
+            "--enable-features=Vulkan",
+            "--use-vulkan=swiftshader",
+            "--disable-vulkan-surface",
+          ]
+        : []),
     ],
   },
 });
@@ -22,7 +30,7 @@ test("WebGPU prepares directional base irradiance while preserving another targe
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (
-      /WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:/i.test(
+      /WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:|not found in the material context/i.test(
         message.text(),
       )
     )
@@ -55,6 +63,24 @@ test("WebGPU prepares directional base irradiance while preserving another targe
   expect(externalRequests).toEqual([]);
   expect(result.failure).toBeUndefined();
   expect(result.retainedEngines).toBe(0);
+  expect(result.optionalGraph).toEqual({
+    sameBuild: true,
+    frozen: true,
+    noCubeBefore: true,
+  });
+  expect(result.captures["graph-before-environment"]).toEqual([0, 0, 0, 255]);
+  expect(result.captures["graph-removed-environment"]).toEqual([0, 0, 0, 255]);
+  for (const [graph, reference] of [
+    ["graph-late-environment", "graph-preassigned-0"],
+    ["graph-reassigned-environment", "graph-preassigned-90"],
+  ]) {
+    expect(Math.max(...result.captures[reference]!.slice(0, 3))).toBeGreaterThan(20);
+    result.captures[graph]!.forEach((value, index) =>
+      expect(
+        Math.abs(value - result.captures[reference]![index]!),
+      ).toBeLessThanOrEqual(2),
+    );
+  }
   expect(result.states).toHaveLength(2);
   for (const state of result.states) {
     expect(state.restored).toBe(true);

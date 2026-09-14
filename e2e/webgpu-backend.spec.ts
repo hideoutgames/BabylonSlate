@@ -38,7 +38,7 @@ test("project backend changes rebuild one Engine while preserving scene edits an
   });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
-    if (/WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:/i.test(message.text())) errors.push(message.text());
+    if (isGpuFailure(message.type(), message.text())) errors.push(message.text());
   });
   await openMinimalTestProject(page);
   await openMainScene(page);
@@ -106,9 +106,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (
-      /WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(
-        message.text(),
-      )
+      isGpuFailure(message.type(), message.text())
     )
       errors.push(message.text());
   });
@@ -132,6 +130,23 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);
   expect(result.helpers).toHaveLength(6);
+  expect(result.shadows).toHaveLength(4);
+  for (const capture of result.shadows) {
+    expect(capture.shadowed).toHaveLength(96 * 72 * 4);
+    expect(capture.unshadowed).toHaveLength(96 * 72 * 4);
+    for (const half of [0, 1]) {
+      let shadowPixels = 0;
+      for (let y = 0; y < 72; y++)
+        for (let x = half * 48; x < half * 48 + 48; x++) {
+          const index = (y * 96 + x) * 4;
+          const green = capture.unshadowed[index + 1];
+          if (green > 30 && green > capture.unshadowed[index] * 1.4 &&
+              green > capture.unshadowed[index + 2] * 1.2 &&
+              green - capture.shadowed[index + 1] > 8) shadowPixels++;
+        }
+      expect(shadowPixels, `${capture.backend}/${capture.mode}/${half} visible sun shadows`).toBeGreaterThan(10);
+    }
+  }
   for (const capture of result.captures) {
     expect(capture.shaderLanguage).toBe(capture.backend === "webgpu" ? 1 : 0);
     expect(capture.maxTextureSize).toBeGreaterThanOrEqual(64);
@@ -236,3 +251,8 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     ).toBeGreaterThan(40);
   }
 });
+
+function isGpuFailure(type: string, message: string): boolean {
+  return ["error", "warning"].includes(type) &&
+    /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message);
+}
