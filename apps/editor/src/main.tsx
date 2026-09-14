@@ -13,6 +13,17 @@ initializeCapacitorAudioLifecycle();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("clusteredLightProof")
+) {
+  void import("./testing/clustered-light-proof").then(
+    ({ runClusteredLightProof }) => {
+      Object.assign(window, {
+        __babylonslateClusteredLightProof: runClusteredLightProof,
+      });
+    },
+  );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("framegraphShadowProof")
 ) {
   void import("./testing/framegraph-shadow-proof").then(

@@ -100,7 +100,8 @@ export class ClusteredSceneLights {
       return undefined;
     for (const light of this.container.lights) {
       light.parent?.computeWorldMatrix(true);
-      light.computeTransformedInformation();
+      if (light instanceof PointLight || light instanceof SpotLight)
+        light.computeTransformedInformation();
     }
     return this.container._updateBatches(camera);
   }
