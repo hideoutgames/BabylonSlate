@@ -18,10 +18,9 @@ export async function startPlayerWithBackend(
   const content = packedContentFromGame(options.game);
   const owner = await createBackendEngineSession({
     requestedBackend: options.game.manifest.render.backend,
-    webGpuCompatibilityReason: webGpuMaterialCompatibilityReason(
-      content.materialDocuments,
-      content.materialFunctions,
-    ),
+    webGpuCompatibilityReason: options.game.manifest.render.backend === "webgpu"
+      ? webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions)
+      : undefined,
     signal: options.signal,
     createCanvas: () => {
       const canvas = document.createElement("canvas");
@@ -45,6 +44,7 @@ export async function startPlayerWithBackend(
       message: owner.fallbackReason,
     }]);
     options.signal?.throwIfAborted();
+    owner.engine.inputElement = options.canvas;
     player = startPlayer({ ...options, content, sharedEngine: owner.engine });
   } catch (error) {
     try { owner.dispose(); }

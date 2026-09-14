@@ -82,6 +82,7 @@ describe("packed player backend lifetime", () => {
     const boot = start.mock.calls[0]![0] as PlayerBootOptions;
     expect(boot.sharedEngine).toBe(owner.engine);
     expect(boot.canvas).toBe(canvas);
+    expect(owner.engine.inputElement).toBe(canvas);
     expect(boot.content?.materialDocuments.get("material")?.name).toBe("Packed Surface");
     expect(handle.backend.effectiveBackend).toBe("webgpu");
     handle.stop();
