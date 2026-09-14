@@ -173,7 +173,7 @@ describe("standalone SceneLayer loading", () => {
       const retainedActor = runtime.getWorld().getActors()[0]!;
       const failed = runtime.createSceneLayer("large")!;
       runtime.notifySceneLayerLoadingPainted(failed.guid, token(failed.guid));
-      await vi.waitFor(() => expect(runtime.getWorld().findSceneLayer(failed.guid)).toBeNull());
+      await vi.waitFor(() => expect(runtime.getWorld().findSceneLayer(failed.guid)).toBeUndefined());
       const failure = commands.findIndex((command) => command.type === "sceneLayerLoadFailed" && command.layerId === failed.guid);
       const removal = commands.findIndex((command) => command.type === "sceneLayerRemove" && command.layerId === failed.guid);
       expect(failure).toBeGreaterThan(-1);

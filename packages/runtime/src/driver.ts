@@ -1308,6 +1308,7 @@ class InProcessRuntime implements RuntimeDriver {
     work?.layers.push(layer);
     const layerLoad = { layer, loadId: ++this.layerLoadId, realized: false, presented: false, ready: false };
     this.layerLoads.set(layer.guid, layerLoad);
+    const actors: Actor[] = [];
     let completed = false;
     try {
     independent?.created(layer, layerLoad.loadId);
@@ -1334,7 +1335,6 @@ class InProcessRuntime implements RuntimeDriver {
       layer.guid,
       (id) => this.slotByGuid.has(id) || this.world.findActor(id) != null,
     );
-    const actors: Actor[] = [];
     for (const serialized of remapped) {
       checkpoint();
       const actor = createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layer.guid);
@@ -1386,7 +1386,12 @@ class InProcessRuntime implements RuntimeDriver {
       independent?.failed(error);
       throw error;
     } finally {
-      if (!completed && this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
+      if (!completed) {
+        // Creation and spawn are separate passes. An aborted creation pass can
+        // own Actors which never entered the World or received a render slot.
+        for (const actor of actors) if (!actor.destroyed && !actor.world) this.removeOwnedActor(actor);
+        if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
+      }
     }
   }
 
@@ -4308,7 +4313,12 @@ class InProcessRuntime implements RuntimeDriver {
     this.lifecycleId++;
     this.sceneChangeId++;
     this.running = false;
-    for (const work of this.independentLayerWork.values()) work.controller.abort(sceneRealizationCancelled());
+    for (const work of [...this.independentLayerWork.values()]) {
+      work.controller.abort(sceneRealizationCancelled());
+      // Finish live ownership cleanup before Stop returns; a later rejected
+      // paint/yield continuation must not emit commands into a disposed host.
+      if (this.world.findSceneLayer(work.layer.guid) === work.layer) this.removeSceneLayer(work.layer.guid);
+    }
     this.independentLayerWork.clear();
     this.cancelRealization();
     this.sceneLoadId++;
