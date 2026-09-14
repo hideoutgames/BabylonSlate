@@ -177,3 +177,38 @@ it("admits the native frozen queue as an explicit ready fallback", async () => {
   expect(drawn).toHaveBeenCalledTimes(1);
   renderer.dispose();
 });
+
+
+it("retires pending allocation before the host releases a borrowed target", async () => {
+  const { scene, camera, renderer } = host();
+  const target = new RenderTargetTexture("borrowed output", 32, scene);
+  // NullEngine has no depth-texture driver; this cancellation case never builds
+  // or draws attachments. Supply the supported-target boundary only.
+  vi.spyOn(target, "depthStencilTexture", "get").mockReturnValue(target.getInternalTexture());
+  camera.outputRenderTarget = target;
+  const borrowedRenderers = [...scene.objectRenderers];
+  const { started, release } = holdGraphInitialization();
+  const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
+  await started;
+  let retired = false;
+  const retirement = renderer.retire().then(() => { retired = true; });
+  await Promise.resolve();
+  expect(retired).toBe(false);
+  expect(target.getInternalTexture()).not.toBeNull();
+  release();
+  await pending;
+  await retirement;
+  expect(scene.objectRenderers).toEqual(borrowedRenderers);
+  expect(target.getInternalTexture()).not.toBeNull();
+  target.dispose();
+});
+
+
+it("rejects retirement when owned task cleanup fails instead of permitting target destruction", async () => {
+  const { scene, renderer } = host();
+  await renderer.prepare();
+  const taskRenderer = scene.objectRenderers[0]!;
+  const dispose = vi.spyOn(taskRenderer, "dispose").mockImplementationOnce(() => { throw new Error("native cleanup failed"); });
+  await expect(renderer.retire()).rejects.toThrow("native cleanup failed");
+  dispose.mockRestore();
+});
