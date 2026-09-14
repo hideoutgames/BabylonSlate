@@ -16,7 +16,12 @@ import {
   Vector3,
   type RenderTargetWrapper,
 } from "@babylonjs/core";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
+import {
+  normalizeRenderingQuality,
+  normalizeShadowSettings,
+} from "@babylonslate/core";
+import { ClusteredSceneLights } from "@babylonslate/render/clustered-scene-lights";
 import {
   applyAuthoredLightProperties,
   beginEngineDrawCallFrame,
@@ -26,27 +31,39 @@ import {
   setSceneRenderSettings,
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
-import { isSceneFrameReady, withSceneReadinessState } from "@babylonslate/render/scene-perf";
+import {
+  isSceneFrameReady,
+  withSceneReadinessState,
+} from "@babylonslate/render/scene-perf";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "webgl2", output: "backbuffer" | "texture" = "backbuffer") {
+export async function runFrameGraphShadowProof(
+  backend: "webgl2" | "webgpu" = "webgl2",
+  output: "backbuffer" | "texture" = "backbuffer",
+  options: { clustered?: boolean } = {},
+) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 72;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
-    preserveDrawingBuffer: true,
-    stencil: true,
-    disableWebGL2Support: false,
-  });
+  const engine =
+    backend === "webgpu"
+      ? await createAppWebGpuEngine(canvas)
+      : new Engine(canvas, false, {
+          preserveDrawingBuffer: true,
+          stencil: true,
+          disableWebGL2Support: false,
+        });
   const boundTargets: RenderTargetWrapper[] = [];
   let readinessDrawStacks: string[] | undefined;
   const drawElements = engine.drawElementsType.bind(engine);
   engine.drawElementsType = (...args) => {
-    readinessDrawStacks?.push(new Error("Readiness draw").stack ?? "Unknown draw");
+    readinessDrawStacks?.push(
+      new Error("Readiness draw").stack ?? "Unknown draw",
+    );
     drawElements(...args);
   };
   const bind = engine.bindFramebuffer.bind(engine);
@@ -74,9 +91,15 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
     camera.minZ = 0.1;
     camera.maxZ = 30;
     scene.activeCamera = camera;
-    const outputTarget = output === "texture"
-      ? new RenderTargetTexture("owned shadow output", { width: 80, height: 64 }, scene, false)
-      : null;
+    const outputTarget =
+      output === "texture"
+        ? new RenderTargetTexture(
+            "owned shadow output",
+            { width: 80, height: 64 },
+            scene,
+            false,
+          )
+        : null;
     outputTarget?.createDepthStencilTexture();
     camera.outputRenderTarget = outputTarget;
     new HemisphericLight("fill", Vector3.Up(), scene).intensity = 0.12;
@@ -97,12 +120,46 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         castShadows: enabled,
       });
     setShadows(true);
+    const extraLights = options.clustered
+      ? Array.from({ length: 48 }, (_, index) => {
+          const position = new Vector3(index % 2 ? 2 : -2, 3, 1);
+          const extra =
+            index % 2
+              ? new SpotLight(
+                  `cluster-${index}`,
+                  position,
+                  position.negate().normalize(),
+                  Math.PI / 2,
+                  1,
+                  scene,
+                )
+              : new PointLight(`cluster-${index}`, position, scene);
+          applyAuthoredLightProperties(extra, {
+            intensity: 0.015,
+            range: 20,
+            outerAngle: 90,
+            innerAngle: 60,
+            castShadows: false,
+          });
+          return extra;
+        })
+      : [];
     const native = new PBRMaterial("native", scene);
     native.albedoColor = new Color3(0.05, 0.55, 0.12);
     native.metallic = 0;
     native.roughness = 1;
     setSceneRenderSettings(scene, {
       mode,
+      ...(options.clustered
+        ? {
+            quality: normalizeRenderingQuality({
+              lighting: {
+                localLightMode: "manual",
+                maxLocalLights: 64,
+              },
+            }),
+          }
+        : {}),
       shadows: normalizeShadowSettings({
         cascades: 2,
         mapSize: 256,
@@ -150,12 +207,20 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
       casters.push(caster);
     }
     setSceneRenderSettings(scene);
+    const owner = options.clustered
+      ? new ClusteredSceneLights(scene, [light, ...extraLights])
+      : undefined;
+    const mask = () => owner?.target(camera);
     // Native PBR construction queues an RGBD BRDF decode even when CEL will
     // not sample the LUT. Finish fixture asset upload before measuring graph
     // preparation; this decode legitimately draws to its own texture target.
     const textureDeadline = performance.now() + 10_000;
-    while (scene.environmentBRDFTexture && !scene.environmentBRDFTexture.isReady()) {
-      if (performance.now() >= textureDeadline) throw new Error("BRDF upload timed out");
+    while (
+      scene.environmentBRDFTexture &&
+      !scene.environmentBRDFTexture.isReady()
+    ) {
+      if (performance.now() >= textureDeadline)
+        throw new Error("BRDF upload timed out");
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     const graph = new ForwardSceneFrameGraph(scene);
@@ -165,16 +230,21 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
     const render = async (path: "graph" | "classic", force = false) => {
       // Graph readiness warms its own ObjectRenderer render-pass variants. The
       // independent classic oracle must also be ready on the camera's pass.
-      const classicReadyBefore = path === "classic" ? withSceneReadinessState(scene, () => {
-        scene.activeCamera = camera;
-        engine.currentRenderPassId = outputTarget?.renderPassId ?? camera.renderPassId;
-        return isSceneFrameReady(scene);
-      }) : null;
+      const classicReadyBefore =
+        path === "classic"
+          ? withSceneReadinessState(scene, () => {
+              scene.activeCamera = camera;
+              engine.currentRenderPassId =
+                outputTarget?.renderPassId ?? camera.renderPassId;
+              return isSceneFrameReady(scene);
+            })
+          : null;
       if (path === "classic") await scene.whenReadyAsync(true);
       if (force) map()?.resetRefreshCounter();
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
       const target = map();
+      const clusterTarget = mask()?.renderTarget;
       let shadowDraws = 0;
       let shadowBefore = 0;
       const before = target?.onBeforeBindObservable.add(() => {
@@ -186,9 +256,10 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
       engine.beginFrame();
       let result;
       try {
-        result = path === "graph"
-          ? graph.render(camera, false)
-          : (scene.render(false), { path: "classic" });
+        result =
+          path === "graph"
+            ? graph.render(camera, false)
+            : (scene.render(false), { path: "classic" });
       } finally {
         engine.endFrame();
       }
@@ -204,6 +275,8 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         draws,
         faces,
         shadowDraws,
+        maskPasses: boundTargets.filter((target) => target === clusterTarget)
+          .length,
         classicReadyBefore,
         activeMeshes: active.data
           .slice(0, active.length)
@@ -220,6 +293,8 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
       readinessDrawStacks = undefined;
       const readinessDraws = readEngineDrawCalls(engine);
       const readinessFaces = boundTargets.length;
+      const currentMask = mask();
+      const maskTexture = currentMask?.getInternalTexture();
       const currentMap = map();
       const texture = currentMap?.getInternalTexture();
       const graphFrame = await render("graph");
@@ -238,10 +313,22 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         forceGraph,
         width: outputTarget?.getSize().width ?? canvas.width,
         height: outputTarget?.getSize().height ?? canvas.height,
+        clusterCount: owner?.status().clustered ?? 0,
+        keyContributions:
+          Number(scene.lights.includes(light) && light.isEnabled()) +
+          scene.lights.filter(
+            (entry) =>
+              entry instanceof ClusteredLightContainer &&
+              entry.lights.includes(light),
+          ).length,
+        sameMask:
+          currentMask === mask() &&
+          maskTexture === mask()?.getInternalTexture(),
         sameMap:
           currentMap === map() && texture === map()?.getInternalTexture(),
-        allocations: scene.textures.filter((texture) => texture.isRenderTarget && texture !== outputTarget)
-          .length,
+        allocations: scene.textures.filter(
+          (texture) => texture.isRenderTarget && texture !== outputTarget,
+        ).length,
         generatorEntries: light.getShadowGenerators()?.size ?? 0,
         cascades:
           light.getShadowGenerator() instanceof CascadedShadowGenerator
@@ -253,6 +340,9 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
     };
     return {
       scene,
+      owner,
+      mask,
+      extraLights,
       camera,
       light,
       graph,
@@ -269,6 +359,8 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
       for (const kind of ["point", "spot", "sun"] as const) {
         engine.setSize(96, 72);
         const host = await fixture(mode, kind);
+        const initialMask = host.mask();
+        const initialMaskTexture = initialMask?.getInternalTexture();
         const initialMap = host.map();
         const initialTexture = initialMap?.getInternalTexture();
         const initial = await host.capture("initial");
@@ -294,26 +386,43 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         const unshadowed = await host.capture("disabled");
         host.setShadows(true);
         await host.capture("reenabled");
+        const stableMask =
+          host.mask() === initialMask &&
+          host.mask()?.getInternalTexture() === initialMaskTexture;
         // Sequential client switching on the same Engine must not render or
         // release the sibling's admitted maps, even while disposing the first.
         const sibling = await fixture(mode, "spot");
         const siblingMap = sibling.map();
+        const siblingMask = sibling.mask();
         const siblingBefore = await sibling.render("classic", true);
         await host.capture("after-sibling");
         host.graph.dispose();
         const outputReferences = host.outputTarget
-          ? [host.outputTarget.getInternalTexture()!._references, host.outputTarget.depthStencilTexture!._references]
+          ? [
+              host.outputTarget.getInternalTexture()!._references,
+              host.outputTarget.depthStencilTexture!._references,
+            ]
           : null;
         const outputUsable = host.outputTarget
-          ? host.outputTarget.getInternalTexture()!.isReady && host.outputTarget.depthStencilTexture!.isReady
+          ? host.outputTarget.getInternalTexture()!.isReady &&
+            host.outputTarget.depthStencilTexture!.isReady
           : true;
         const ownedAfterGraphDispose = host.map() !== null;
+        const maskOwnedAfterGraphDispose = host.mask() === initialMask;
+        host.owner?.dispose();
+        const liveChildrenAfterOwnerDispose = host.extraLights.filter(
+          (light) => !light.isDisposed() && host.scene.lights.includes(light),
+        ).length;
+        const remainingClusterMaps = host.scene.lights.filter(
+          (light) => light instanceof ClusteredLightContainer,
+        ).length;
         const retainedGraphObjects = host.scene.objectRenderers.filter(
           (renderer) => renderer.name === "Forward objects",
         ).length;
         host.scene.dispose();
         const siblingAfter = await sibling.render("classic", true);
-        const siblingPreserved = sibling.map() === siblingMap;
+        const siblingPreserved =
+          sibling.map() === siblingMap && sibling.mask() === siblingMask;
         sibling.graph.dispose();
         sibling.scene.dispose();
         engine.setSize(96, 72);
@@ -324,6 +433,10 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         lifecycle.push({
           name: `${mode}-${kind}`,
           stableAllocation,
+          stableMask,
+          maskOwnedAfterGraphDispose,
+          liveChildrenAfterOwnerDispose,
+          remainingClusterMaps,
           shadowed,
           unshadowed,
           initial,
@@ -338,7 +451,14 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
           remainingScenes: engine.scenes.length,
         });
       }
-    return { backend, output, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null, captures, lifecycle };
+    return {
+      backend,
+      output,
+      info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(),
+      webGLVersion: engine instanceof Engine ? engine.webGLVersion : null,
+      captures,
+      lifecycle,
+    };
   } finally {
     engine.dispose();
     canvas.remove();

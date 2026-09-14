@@ -157,7 +157,9 @@ export class SceneShadowController {
     });
     for (const mesh of scene.meshes) this.pending.add(mesh);
     scene.onNewMeshAddedObservable.add((mesh) => {
-      if (!mesh.isDisposed()) this.pending.add(mesh);
+      // Babylon defers this notification. RTT-only proxies can already have
+      // left the Scene before it arrives; removal must win over a stale add.
+      if (!mesh.isDisposed() && scene.meshes.includes(mesh)) this.pending.add(mesh);
     });
     scene.onMeshRemovedObservable.add((mesh) => {
       this.pending.delete(mesh);
@@ -252,6 +254,10 @@ export class SceneShadowController {
   status(light: Light): ShadowLightStatus | undefined {
     return this.entries.get(light)?.status;
   }
+  /** Authored request, independent of admission, visibility and global shadow enablement. */
+  requestsShadow(light: Light): boolean {
+    return this.entries.get(light)?.requested ?? false;
+  }
   limits(): string[] {
     const limits = new Set<string>();
     for (const entry of this.entries.values()) {
@@ -328,7 +334,7 @@ export class SceneShadowController {
     if (scene.isDisposed) return;
     syncDirectionalLightPolicy(scene);
     for (const mesh of this.pending) {
-      if (mesh.isDisposed()) continue;
+      if (mesh.isDisposed() || !scene.meshes.includes(mesh)) continue;
       if (!participatesInShadows(mesh)) {
         mesh.receiveShadows = false;
         this.meshes.delete(mesh);

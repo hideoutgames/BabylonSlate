@@ -9,6 +9,8 @@ import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Tex
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
+import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
+import { isManagedClusteredLight } from "./clustered-light-policy";
 import {
   ManagedShadowObjectRendererTask,
   ManagedShadowsTask,
@@ -48,6 +50,7 @@ export class ForwardSceneFrameGraph {
   private graph: FrameGraph | undefined;
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
+  private clustered: FrameGraphClusteredLightsTask | undefined;
   private cull: FrameGraphCullObjectsTask | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
@@ -101,14 +104,16 @@ export class ForwardSceneFrameGraph {
     const reason =
       this.unsupported(camera) ??
       this.failure ??
-      (this.shadows?.needsPreparation()
-        ? "Shadow allocation changes require FrameGraph preparation."
+      (this.shadows?.needsPreparation() ||
+      this.clustered?.needsPreparation(camera)
+        ? "Lighting allocation changes require FrameGraph preparation."
         : undefined) ??
       (this.pending ||
       !this.graph ||
       this.preparedWidth !== output.width ||
       this.preparedHeight !== output.height ||
-      this.outputColor !== output.color || this.outputDepth !== output.depth
+      this.outputColor !== output.color ||
+      this.outputDepth !== output.depth
         ? "FrameGraph preparation is required."
         : undefined);
     this.scene.activeCamera = camera;
@@ -172,9 +177,11 @@ export class ForwardSceneFrameGraph {
       return "FrameGraph coordinator is disposed.";
     if (camera.getScene() !== this.scene || camera.isDisposed())
       return "Camera does not belong to this live scene.";
-    if (camera.outputRenderTarget &&
+    if (
+      camera.outputRenderTarget &&
       (camera.outputRenderTarget.getScene() !== this.scene ||
-        !camera.outputRenderTarget.getInternalTexture()))
+        !camera.outputRenderTarget.getInternalTexture())
+    )
       return "Render target does not belong to this live scene.";
     return undefined;
   }
@@ -183,6 +190,14 @@ export class ForwardSceneFrameGraph {
     const scene = this.scene;
     const unavailable = this.unavailable(camera);
     if (unavailable) return unavailable;
+    if (
+      scene.lights.some(
+        (light) =>
+          light.getClassName() === "ClusteredLightContainer" &&
+          !isManagedClusteredLight(scene, light),
+      )
+    )
+      return "Unmanaged clustered light masks require classic rendering.";
     if (scene.frameGraph || scene.customRenderFunction)
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
@@ -195,8 +210,13 @@ export class ForwardSceneFrameGraph {
     if (scene.getEngine()._currentRenderTarget)
       return "A caller-bound render target requires classic rendering.";
     const target = camera.outputRenderTarget;
-    if (target && (target.isCube || target.is2DArray || target.samples !== 1 ||
-      !target.depthStencilTexture))
+    if (
+      target &&
+      (target.isCube ||
+        target.is2DArray ||
+        target.samples !== 1 ||
+        !target.depthStencilTexture)
+    )
       return "FrameGraph output requires a single-sample 2D color/depth texture.";
     if (camera._postProcesses.some(Boolean) || scene.postProcesses.length)
       return "Scene post-processing requires classic rendering.";
@@ -210,10 +230,9 @@ export class ForwardSceneFrameGraph {
 
   private syncShadowAdmission(camera: Camera): void {
     const controller = findSceneShadowController(this.scene);
-    if (!controller) return;
     withSceneReadinessState(this.scene, () => {
       this.scene.activeCamera = camera;
-      controller.sync();
+      controller?.sync();
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
       // invalidate the variants we just declared ready for the first frame.
@@ -225,8 +244,13 @@ export class ForwardSceneFrameGraph {
     const scene = this.scene;
     try {
       const output = this.output(camera);
-      if (this.shadows?.needsPreparation() || this.outputColor !== output.color ||
-        this.outputDepth !== output.depth) this.releaseGraph();
+      if (
+        this.shadows?.needsPreparation() ||
+        this.clustered?.needsPreparation(camera) ||
+        this.outputColor !== output.color ||
+        this.outputDepth !== output.depth
+      )
+        this.releaseGraph();
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         // Explicit owner: Scene.dispose must not race an asynchronous build.
@@ -248,7 +272,9 @@ export class ForwardSceneFrameGraph {
           // since wrapper.dispose releases both. Scope this to this graph only.
           textures.createRenderTarget = (...args) => {
             const target = createTarget(...args);
-            if (target.renderTargetWrapper?.depthStencilTexture === borrowedDepth)
+            if (
+              target.renderTargetWrapper?.depthStencilTexture === borrowedDepth
+            )
               borrowedDepth.incrementReferences();
             return target;
           };
@@ -259,11 +285,7 @@ export class ForwardSceneFrameGraph {
         );
         this.clear.targetTexture = color;
         this.clear.depthTexture = depth;
-        this.cull = new CameraOutputCullTask(
-          "Forward cull",
-          this.graph,
-          scene,
-        );
+        this.cull = new CameraOutputCullTask("Forward cull", this.graph, scene);
         this.objects = new ManagedShadowObjectRendererTask(
           "Forward objects",
           this.graph,
@@ -276,7 +298,13 @@ export class ForwardSceneFrameGraph {
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects);
+        this.clustered = new FrameGraphClusteredLightsTask(
+          this.graph,
+          scene,
+          this.objects,
+        );
         this.graph.addTask(this.shadows);
+        this.graph.addTask(this.clustered);
         this.graph.addTask(this.clear);
         this.graph.addTask(this.cull);
         this.graph.addTask(this.objects);
@@ -374,11 +402,13 @@ export class ForwardSceneFrameGraph {
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.objects?.dispose();
     this.shadows?.dispose();
+    this.clustered?.dispose();
     this.clear?.dispose();
     this.cull?.dispose();
     this.graph?.dispose();
     this.objects = undefined;
     this.shadows = undefined;
+    this.clustered = undefined;
     this.clear = undefined;
     this.cull = undefined;
     this.graph = undefined;
