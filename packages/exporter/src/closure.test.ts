@@ -831,7 +831,8 @@ describe("collectExportClosure", () => {
       ...createDefaultScene(),
       settings: {
         ...createDefaultScene().settings,
-        postProcessStack: [{ materialGuid: "mat-bloom", enabled: true }],
+        postProcessStack: [{ materialGuid: "mat-bloom", enabled: false,
+          parameters: { Mask: { kind: "texture", textureAssetGuid: "tex-pass-mask" } } }],
       },
       actors: [createActor("hero", "Hero", { components: [mesh] })],
     };
@@ -853,6 +854,7 @@ describe("collectExportClosure", () => {
         }),
         asset({ guid: "fn-tint", type: "MaterialFunction", name: "Tint" }),
         asset({ guid: "tex-albedo", type: "Texture", name: "Albedo" }),
+        asset({ guid: "tex-pass-mask", type: "Texture", name: "Pass Mask" }),
         asset({ guid: "unused-mat", type: "Material", name: "Unused" }),
       ],
       pluginEnabledGuids: new Set(),
@@ -867,6 +869,7 @@ describe("collectExportClosure", () => {
         "scene-1",
         "mat-rock",
         "mat-bloom",
+        "tex-pass-mask",
         "fn-tint",
         "tex-albedo",
       ]),

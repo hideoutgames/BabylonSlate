@@ -116,9 +116,15 @@ export class RenderScheduler {
     this.frameCap = cap;
   }
 
-  shouldRender(now: number = nowMs()): boolean {
+  /** Ready owners may continue under a loading blocker, respecting Pause and cadence. */
+  shouldRenderReadyOwners(now: number = nowMs()): boolean {
+    return this.shouldRender(now, true);
+  }
+
+  shouldRender(now: number = nowMs(), loadingOwners = false): boolean {
     if (this.paused && !this.pausedFrameRequested) return false;
-    if (!this.documentVisible || !this.visible || this.obstructed || this.obstructionLeases > 0 || this.resizing) return false;
+    if (!this.documentVisible || !this.visible || this.resizing) return false;
+    if (!loadingOwners && (this.obstructed || this.obstructionLeases > 0)) return false;
     const wants =
       this.alwaysRender || this.continuous > 0 || this.dirty;
     if (!wants) return false;

@@ -46,6 +46,7 @@ export function materialAvailable(
 }
 
 export type MaterialAcquireOptions = {
+  logicalSceneBuffers?: boolean;
   unlit?: boolean;
   instanceKey?: string;
   /** Reject a resolved plan before compilation or taking a cached reference. */
@@ -60,9 +61,11 @@ function cacheKey(
   assetGuid: string,
   unlit?: boolean,
   instanceKey?: string,
+  logicalSceneBuffers?: boolean,
 ): string {
   const key = unlit ? `${assetGuid}:unlit` : assetGuid;
-  return instanceKey === undefined ? key : JSON.stringify([key, instanceKey]);
+  return logicalSceneBuffers ? JSON.stringify([key, instanceKey ?? null, "logicalSceneBuffers"])
+    : instanceKey === undefined ? key : JSON.stringify([key, instanceKey]);
 }
 
 function documentForPlan(
@@ -87,6 +90,8 @@ interface CacheEntry {
   refCount: number;
   dispose: () => void;
   setParameter: (name: string, parameter: MaterialParameterValue) => boolean;
+  getParameter: (name: string) => MaterialParameterValue | null;
+  resetParameter: (name: string) => boolean;
   instanceKey?: string;
   ready: Promise<readonly MaterialDiagnostic[]>;
 }
@@ -135,7 +140,7 @@ export class MaterialLibrary {
     const lowered = this.planFor(doc, options?.unlit);
     if (!lowered.ok) return false;
     const entries = this.entriesFor(scene);
-    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey);
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
     const entry = this.pending.get(scene)?.get(key) ?? entries.get(key);
     return (
       entry !== undefined &&
@@ -161,7 +166,7 @@ export class MaterialLibrary {
     }
     const denied = options?.validatePlan?.(lowered.plan);
     if (denied) return { ok: false, diagnostics: [denied] };
-    const key = cacheKey(assetGuid, unlit, options?.instanceKey);
+    const key = cacheKey(assetGuid, unlit, options?.instanceKey, options?.logicalSceneBuffers);
     const entries = this.entriesFor(scene);
     const existing = entries.get(key);
     const pending = this.pending.get(scene)!;
@@ -184,6 +189,7 @@ export class MaterialLibrary {
       scene,
       name: unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`,
       particlePreview: this.options.particlePreview,
+      logicalSceneBuffers: options?.logicalSceneBuffers,
       resolveTexture: this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
     });
@@ -196,6 +202,8 @@ export class MaterialLibrary {
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
       dispose: compiled.dispose,
       setParameter: compiled.setParameter,
+      getParameter: compiled.getParameter,
+      resetParameter: compiled.resetParameter,
       instanceKey: options?.instanceKey,
       ready: compiled.ready,
     };
@@ -234,7 +242,7 @@ export class MaterialLibrary {
     options?: MaterialAcquireOptions,
   ): void {
     const entries = this.scenes.get(scene);
-    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey);
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
     const waiting = this.pending.get(scene)?.get(key);
     if (waiting) {
       waiting.refCount -= 1;
@@ -330,10 +338,22 @@ export class MaterialLibrary {
     parameter: MaterialParameterValue,
     options?: MaterialAcquireOptions,
   ): boolean {
-    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey);
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
     const entry = this.pending.get(scene)?.get(key) ?? this.scenes.get(scene)?.get(key);
     if (!entry || isDisposedNodeMaterial(entry.material, scene)) return false;
     return entry.setParameter(name, parameter);
+  }
+
+  getParameter(scene: Scene, assetGuid: string, name: string, options?: MaterialAcquireOptions): MaterialParameterValue | null {
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
+    const entry = this.pending.get(scene)?.get(key) ?? this.scenes.get(scene)?.get(key);
+    return entry && !isDisposedNodeMaterial(entry.material, scene) ? entry.getParameter(name) : null;
+  }
+
+  resetParameter(scene: Scene, assetGuid: string, name: string, options?: MaterialAcquireOptions): boolean {
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
+    const entry = this.pending.get(scene)?.get(key) ?? this.scenes.get(scene)?.get(key);
+    return !!entry && !isDisposedNodeMaterial(entry.material, scene) && entry.resetParameter(name);
   }
 
   /**
@@ -346,7 +366,7 @@ export class MaterialLibrary {
 
   isReady(scene: Scene, assetGuid: string, doc: MaterialDocument, options?: MaterialAcquireOptions): boolean {
     const plan = this.planFor(doc, options?.unlit);
-    const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey));
+    const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers));
     return plan.ok && !!entry && entry.hash === plan.plan.hash && !isDisposedNodeMaterial(entry.material, scene);
   }
 
@@ -390,7 +410,7 @@ export class MaterialLibrary {
     assetGuid: string,
     options?: MaterialAcquireOptions,
   ): NodeMaterial | null {
-    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey);
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
     const entry = this.scenes.get(scene)?.get(key) ?? this.pending.get(scene)?.get(key);
     if (!entry) return null;
     if (isDisposedNodeMaterial(entry.material, scene)) return null;

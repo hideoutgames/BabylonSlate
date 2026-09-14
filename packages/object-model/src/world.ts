@@ -48,6 +48,8 @@ export interface WorldOptions {
   input?: WorldInputProvider;
   /** Rechecked after Game Instance and between scene objects during loading. */
   canTickScene?: () => boolean;
+  /** Owner readiness, independent for world actors and each SceneLayer. */
+  canTickActor?: (actor: Actor) => boolean;
   /** Script lifecycle binding shared by authored and dynamically added components. */
   componentHooksFor?: (classId: string) => LifecycleHooks<ActorComponent> | undefined;
 }
@@ -63,6 +65,7 @@ export class World {
   private readonly onPostPhysics?: (ctx: TickContext) => void;
   private inputProvider: WorldInputProvider | null;
   private readonly canTickScene: () => boolean;
+  private readonly canTickActor: (actor: Actor) => boolean;
   private readonly componentHooksFor?: WorldOptions["componentHooksFor"];
 
   gameInstance: GameInstance | null = null;
@@ -90,6 +93,7 @@ export class World {
     this.onPostPhysics = options.onPostPhysics;
     this.inputProvider = options.input ?? null;
     this.canTickScene = options.canTickScene ?? (() => true);
+    this.canTickActor = options.canTickActor ?? (() => true);
     this.componentHooksFor = options.componentHooksFor;
   }
 
@@ -236,6 +240,7 @@ export class World {
     guid?: Guid;
     assetGuid: string;
     sceneName: string;
+    postProcessStack?: ScenePostProcessEntry[];
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): Scene {
@@ -332,15 +337,15 @@ export class World {
         case "actors":
           for (const actor of [...this.actors]) {
             if (!this.canTickScene()) break;
-            if (!actor.destroyed) actor.callOnTick(ctx);
+            if (!actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
           }
           break;
         case "components":
           for (const actor of [...this.actors]) {
             if (!this.canTickScene()) break;
-            if (actor.destroyed) continue;
+            if (actor.destroyed || !this.canTickActor(actor)) continue;
             for (const component of [...actor.components]) {
-              if (!this.canTickScene()) break;
+              if (!this.canTickScene() || !this.canTickActor(actor)) break;
               if (!component.destroyed) component.callOnTick(ctx);
             }
           }

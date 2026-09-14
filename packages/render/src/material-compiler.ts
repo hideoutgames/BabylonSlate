@@ -21,6 +21,7 @@ import {
   RemapBlock,
   ScaleBlock,
   TransformBlock,
+  TextureBlock,
   VectorMergerBlock,
   Vector3,
   VectorSplitterBlock,
@@ -63,12 +64,15 @@ import { retainEnvironmentSample } from "./environment-lighting";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { SceneReflectionBlock } from "./scene-reflection-block";
 import { FlatNormalBlock } from "./flat-normal-block";
+import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
+  /** Internal FrameGraph variant; shared resources are bound by its render pass. */
+  logicalSceneBuffers?: boolean;
   /** Editor-only single-quad preview; live particle systems retain Particle mode. */
   particlePreview?: boolean;
   scene: Scene;
@@ -86,6 +90,8 @@ export interface CompiledMaterial {
   ready: Promise<readonly MaterialDiagnostic[]>;
   readonly buildState: "pending" | "ready" | "failed";
   setParameter: (name: string, parameter: MaterialParameterValue) => boolean;
+  getParameter: (name: string) => MaterialParameterValue | null;
+  resetParameter: (name: string) => boolean;
   /** Idempotent: disposes the material and every block it created. */
   dispose: () => void;
 }
@@ -203,7 +209,8 @@ export function compileMaterialPlan(
   const pendingTextures: Texture[] = [];
   const diagnostics: MaterialDiagnostic[] = [];
   const realized = new Map<string, BlockRealization>();
-  const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview };
+  const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
+    logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
   if (plan.operations.some((operation) => operation.nodeType === "input.worldPosition" || operation.nodeType === "input.cameraPosition")) {
     const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
     const zero = Vector3.Zero();
@@ -728,6 +735,8 @@ export function compileMaterialPlan(
     ready,
     get buildState() { return buildState; },
     setParameter: parameters.setParameter,
+    getParameter: parameters.getParameter,
+    resetParameter: parameters.resetParameter,
     dispose: () => {
       if (disposed) return;
       disposed = true;
@@ -749,6 +758,10 @@ export function compileMaterialPlan(
 /** Drop ResourceCache textures so NodeMaterial.dispose cannot free engine-owned GPU wrappers. */
 function detachEngineOwnedTextures(material: NodeMaterial): void {
   for (const block of material.attachedBlocks) {
+    // A connected sample's getter forwards its ImageSourceBlock texture, while
+    // its setter addresses separate, possibly uninitialized storage. Clear the
+    // source owner instead so Babylon never scans materials with an undefined texture.
+    if (block instanceof TextureBlock && block.hasImageSource) continue;
     const textured = block as { texture?: Texture | null };
     if (!textured.texture || !isEngineOwnedGpuTexture(textured.texture)) {
       continue;
@@ -1117,7 +1130,8 @@ function attachSurfaceShading(
     asColor: boolean,
   ) => NodeMaterialConnectionPoint | null,
 ): NodeMaterialBlock {
-  const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
+  const fragment = new GeometrySurfaceOutputBlock(`${options.name}_fragment`);
+  connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${options.name}_geometryNormal`, false), created);
   created.push(fragment);
 
   const baseColor = outputPoint("baseColor", `${options.name}_baseColor`, true);

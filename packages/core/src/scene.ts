@@ -1,4 +1,5 @@
 import { normalizeCelShadingOverrides } from "./cel-shading";
+import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 import { normalizeRenderPathOverrides, type RenderPath } from "./render-path";
@@ -158,6 +159,7 @@ export interface ScenePostProcessEntry {
   scalable?: boolean;
   materialGuid: string;
   enabled: boolean;
+  parameters?: Record<string, MaterialParameterValue>;
 }
 
 /** World-scene default overlay to spawn with that scene. */
@@ -540,11 +542,13 @@ export function normalizeScenePostProcessStack(
     const record = entry as Record<string, unknown>;
     const materialGuid = record.materialGuid;
     if (typeof materialGuid !== "string" || materialGuid === "") return [];
+    const parameters = normalizeMaterialParameterOverrides(record.parameters);
     return [{
       id: typeof record.id === "string" && record.id.trim() ? record.id : undefined,
       materialGuid,
       enabled: record.enabled !== false,
       ...(record.scalable === true ? { scalable: true } : {}),
+      ...(Object.keys(parameters).length ? { parameters } : {}),
     }];
   });
   // Reserve authored IDs before migration so an early legacy entry cannot take

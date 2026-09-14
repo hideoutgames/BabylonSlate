@@ -59,3 +59,5 @@ export * from "./unique-names";
 export * from "./worker-encode";
 export * from "./model-animation-duration";
 export * from "./environment-texture";
+
+export { materialParameterTextureAssetGuids } from "./material-parameter-textures";

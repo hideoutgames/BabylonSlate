@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, InputBlock, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -23,6 +23,7 @@ import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
+import { prewarmSceneMaterials } from "./scene-perf";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -170,6 +171,22 @@ describe("Play createEngine view", () => {
 
   function sharedEngine(): NullEngine {
     const engine = new NullEngine();
+    // NullEngine stores raw bytes but never marks the upload complete. Model
+    // the real synchronous raw-texture upload boundary without bypassing the
+    // scene's texture readiness checks (individual tests can hold a texture).
+    const upload = engine.createRawTexture.bind(engine);
+    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+      const texture = upload(...args);
+      texture.isReady = true;
+      return texture;
+    });
+    // Keep production FrameGraph ownership, replacing only absent NullEngine
+    // MRT driver calls.
+    vi.spyOn(engine, "buildTextureLayout").mockImplementation((enabled, backbuffer) =>
+      backbuffer ? [0x0405] : enabled.map((value, index) => value ? 0x8ce0 + index : 0));
+    vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(() => {});
     engines.push(engine);
     return engine;
   }
@@ -286,10 +303,12 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     handle.scheduler.setObstructed(true);
     let frames = 0;
+    handle.scene.onBeforeRenderObservable.add(() => { expect(handle.scene.frameGraph).not.toBeNull(); });
     handle.scene.onAfterRenderObservable.add(() => { frames += 1; });
     let ready = false;
     const presented = handle.presentFirstFrame().then(() => { ready = true; });
@@ -303,11 +322,75 @@ describe("Play createEngine view", () => {
     expect(handle.scheduler.shouldRender(performance.now() + 1000)).toBe(false);
   });
 
+  it("does not acknowledge a copied first frame until its owning GPU fence completes", async () => {
+    const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    let signaled = false;
+    const gl = {
+      NO_ERROR: 0, CONTEXT_LOST_WEBGL: 37442, SYNC_GPU_COMMANDS_COMPLETE: 37143,
+      WAIT_FAILED: 37149, ALREADY_SIGNALED: 37146, CONDITION_SATISFIED: 37148,
+      getError: () => 0, isContextLost: () => false, fenceSync: () => ({}),
+      clientWaitSync: () => signaled ? 37148 : 37147, deleteSync: vi.fn(), flush: () => {},
+    };
+    Object.assign(engine, { _gl: gl });
+    handle.setPaused(true);
+    let ready = false;
+    const presented = handle.presentFirstFrame().then(() => { ready = true; });
+    loop.mock.calls[0]![0]();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    signaled = true;
+    await presented;
+    expect(ready).toBe(true);
+    expect(gl.deleteSync).toHaveBeenCalledOnce();
+    Reflect.deleteProperty(engine, "_gl");
+  });
+
+  it("waits for the exact RTT canvas copy after engine end-frame", async () => {
+    const engine = sharedEngine();
+    const loops = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    let copied = false;
+    vi.spyOn(canvas, "getContext").mockImplementation(() => ({ putImageData: () => { copied = true; } }));
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, present: "rtt", playMode: true });
+    handles.push(handle);
+    handle.setPaused(true);
+    let resolve!: (pixels: Uint8Array) => void;
+    const pixels = new Promise<Uint8Array>((done) => { resolve = done; });
+    const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockReturnValue(pixels);
+    const previousImageData = globalThis.ImageData;
+    globalThis.ImageData = class { constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) {} } as unknown as typeof ImageData;
+    let ready = false;
+    const presented = handle.presentFirstFrame().then(() => { ready = true; });
+    void presented.catch(() => {});
+    try {
+      loops.mock.calls[0]![0]();
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await Promise.resolve();
+      expect(ready).toBe(false);
+      expect(copied).toBe(false);
+      expect(read).toHaveBeenCalledOnce();
+      resolve(new Uint8Array(256 * 256 * 4));
+      await presented;
+      expect(ready).toBe(true);
+      expect(copied).toBe(true);
+    } finally {
+      handle.dispose();
+      await presented.catch(() => {});
+      read.mockRestore();
+      globalThis.ImageData = previousImageData;
+    }
+  });
+
   it("does not spend a loading permit on a sibling view or a hidden document", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle, canvas } = playHandle(engine);
     const { canvas: sibling } = editorHandle(engine);
+    await handle.prewarmSceneMaterials();
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     let frames = 0;
@@ -332,8 +415,10 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     handle.setPaused(true);
     const ready = vi.fn(() => false);
+    const draw = vi.spyOn(handle.scene, "render");
     handle.scene.addIsReadyCheck({ isReady: ready });
     let presented = false;
     const frame = handle.presentFirstFrame().then(() => { presented = true; });
@@ -342,6 +427,7 @@ describe("Play createEngine view", () => {
     engine.onEndFrameObservable.notifyObservers(engine);
     await Promise.resolve();
     expect(presented).toBe(false);
+    expect(draw).not.toHaveBeenCalled();
     ready.mockReturnValue(true);
     render();
     engine.onEndFrameObservable.notifyObservers(engine);
@@ -372,12 +458,75 @@ describe("Play createEngine view", () => {
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
     handle.setPaused(true);
+    await handle.prewarmSceneMaterials();
     vi.spyOn(handle.scene, "render").mockImplementation(() => { throw new Error("allocation failed"); });
     const frame = expect(handle.presentFirstFrame()).rejects.toThrow("allocation failed");
     runLoop.mock.calls[0]![0]();
     await frame;
     engine.onEndFrameObservable.notifyObservers(engine);
     expect(handle.scheduler.stats().renderedFrames).toBe(0);
+  });
+
+  it("keeps a ready global layer drawing while a different owner waits, and cancels only the removed layer's frame", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const render = runLoop.mock.calls[0]![0];
+    const addLayer = (layerId: string, layerLoadId: number) => {
+      handle.applyCommand({ type: "sceneLayerLoading", layerId, layerLoadId, assetGuid: "overlay" });
+      handle.applyCommand({ type: "sceneLayerCreate", layerId, assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [] });
+      return engine.scenes.at(-1)!;
+    };
+    const global = addLayer("global", 1);
+    await handle.prewarmSceneMaterials({ layerId: "global", layerLoadId: 1 });
+    const frames: string[] = [];
+    handle.scene.onAfterRenderObservable.add(() => { frames.push("world"); });
+    global.onAfterRenderObservable.add(() => { frames.push("global"); });
+    global.onBeforeRenderObservable.add(() => { expect(global.frameGraph).not.toBeNull(); });
+    const release = handle.scheduler.acquireObstruction();
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
+    const first = handle.presentFirstFrame({ layerId: "global", layerLoadId: 1 });
+    render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await first;
+    expect(frames).toEqual(["global"]);
+    const pending = addLayer("pending", 2);
+    pending.onAfterRenderObservable.add(() => { frames.push("pending"); });
+    const notReady = { isReady: () => false };
+    pending.addIsReadyCheck(notReady);
+    const time = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1000);
+    render();
+    expect(frames).toEqual(["global", "global"]);
+    handle.setPaused(true);
+    render();
+    expect(frames).toHaveLength(2);
+    const cancelled = expect(handle.presentFirstFrame({ layerId: "pending", layerLoadId: 2 })).rejects.toThrow("removed");
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "pending" });
+    await cancelled;
+    handle.setPaused(false);
+    time.mockRestore();
+    release();
+  });
+
+  it("waits for owned BRDF decode after texture load without waiting on an unrelated scene texture", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene, false);
+    const internal = texture.getInternalTexture()!;
+    handle.scene.environmentBRDFTexture = texture;
+    internal.isReady = false;
+    texture.onLoadObservable.notifyObservers(texture);
+    let ready = false;
+    const loaded = handle.whenMaterialTexturesReady().then(() => { ready = true; });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    const unrelated = new Scene(engine);
+    const other = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 0, 255]), 1, 1, unrelated, false);
+    other.getInternalTexture()!.isReady = false;
+    internal.isReady = true;
+    await loaded;
+    expect(ready).toBe(true);
+    unrelated.dispose();
   });
 
   it("does not evict shared GPU textures on restore or retain disposed handle callbacks", () => {
@@ -781,7 +930,7 @@ describe("Play createEngine view", () => {
     expect(handle.editor!.gizmos.attachedMesh()).toBeNull();
   });
 
-  it("snaps a live Scene canvas drawing buffer to CSS pixels on resize", () => {
+  it("prepares Scene resizing without clearing its last visible drawing buffer", () => {
     const canvas = new FakeCanvas();
     canvas.width = 256;
     canvas.height = 256;
@@ -793,8 +942,8 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.resize();
-    expect(canvas.width).toBe(800);
-    expect(canvas.height).toBe(360);
+    expect(canvas.width).toBe(256);
+    expect(canvas.height).toBe(256);
   });
 
   it("reports hidden pre-snapshot visuals and their published world positions", () => {
@@ -1089,6 +1238,72 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("routes current-owner entry writes into independent instances and replays disabled passes after rebuild", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const document = createDefaultMaterialDocument("Gain", "postProcess");
+    document.nodes.push(
+      { id: "gain", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Gain", value: [0.5] } },
+      { id: "multiply", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+    );
+    document.edges = document.edges.filter((edge) => edge.id !== "e-scene-output");
+    document.edges.push(
+      { id: "color", sourceNodeId: "sceneColor", sourcePinId: "color", targetNodeId: "multiply", targetPinId: "a" },
+      { id: "gain", sourceNodeId: "gain", sourcePinId: "out", targetNodeId: "multiply", targetPinId: "b" },
+      { id: "out", sourceNodeId: "multiply", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+    );
+    const authored = [
+      { id: "first", materialGuid: "gain", enabled: true, parameters: { Gain: { kind: "float" as const, value: 0.25 } } },
+      { id: "second", materialGuid: "gain", enabled: true },
+      { id: "disabled", materialGuid: "gain", enabled: false },
+    ];
+    const before = structuredClone({ document, authored });
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, materialDocuments: new Map([["gain", document]]), postProcessStack: authored,
+    });
+    handles.push(handle);
+    const draw = runLoop.mock.calls[0]![0];
+    const values = (scene: Scene) => scene.materials.filter((material): material is NodeMaterial => material instanceof NodeMaterial && material.name === "material:gain")
+      .map((material) => (material.getBlockByName("gain") as InputBlock).value);
+    const worldOwner = { kind: "scene" as const, sceneAssetGuid: "world", sceneLoadId: 1 };
+    const write = (owner: Extract<import("@babylonslate/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
+      handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 });
+    write(worldOwner, "first", 0.7);
+    expect(values(handle.scene)).toEqual([0.25, 0.5]);
+    const present = async (owner?: { layerId: string; layerLoadId: number }) => {
+      await handle.prewarmSceneMaterials(owner);
+      const frame = handle.presentFirstFrame(owner);
+      draw(); engine.onEndFrameObservable.notifyObservers(engine); await frame;
+    };
+    await present();
+    write(worldOwner, "first", 0.7); write(worldOwner, "disabled", 0.9);
+    expect(values(handle.scene)).toEqual([0.7, 0.5]);
+    handle.setPostProcessStack(authored.map((entry) => ({ ...entry, enabled: true })));
+    expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    handle.setPostProcessingEnabled(false); expect(values(handle.scene)).toEqual([]);
+    handle.setPostProcessingEnabled(true); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    handle.applyCommand({ type: "sceneLayerLoading", layerId: "overlay", layerLoadId: 1, assetGuid: "overlay-asset" });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: authored });
+    const layer = handle.sceneLayerScenes()[0]!.scene;
+    const layerOwner = { kind: "sceneLayer" as const, layerId: "overlay", layerLoadId: 1 };
+    write(layerOwner, "first", 0.6); expect(values(layer)).toEqual([0.25, 0.5]);
+    await present({ layerId: "overlay", layerLoadId: 1 });
+    write(layerOwner, "first", 0.6); write(layerOwner, "disabled", 0.8);
+    handle.applyCommand({ type: "sceneLayerPostProcess", layerId: "overlay", postProcessStack: authored.map((entry) => ({ ...entry, enabled: true })) });
+    expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    write({ ...worldOwner, sceneLoadId: 0 }, "first", 0.1);
+    write({ ...layerOwner, layerLoadId: 0 }, "first", 0.1);
+    expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 2 });
+    const reloaded = createDefaultScene(); reloaded.settings.postProcessStack = authored;
+    handle.loadScene(reloaded); write(worldOwner, "first", 0.1);
+    expect(values(handle.scene)).toEqual([0.25, 0.5]);
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "overlay" }); write(layerOwner, "first", 0.1);
+    expect(handle.sceneLayerScenes()).toEqual([]);
+    expect({ document, authored }).toEqual(before);
+  });
+
   it("attaches an authored post-process stack when the local gate is on", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -1134,7 +1349,7 @@ describe("Play createEngine view", () => {
     expect(livePassCount(overlay?.scene.activeCamera)).toBe(0);
   });
 
-  it("parents overlay spawn meshes into the SceneLayer scene and draws by z-order", () => {
+  it("parents overlay spawn meshes into the SceneLayer scene and draws by z-order", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -1143,6 +1358,7 @@ describe("Play createEngine view", () => {
       playMode: true,
     });
     handles.push(handle);
+    handle.setPaused(true);
     handle.applyCommand({
       type: "sceneLayerCreate",
       layerId: "back",
@@ -1175,19 +1391,20 @@ describe("Play createEngine view", () => {
     const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
     expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    await prewarmSceneMaterials(front!.scene);
 
     const order: string[] = [];
-    const worldRender = vi.spyOn(handle.scene, "render").mockImplementation(() => {
+    handle.scene.onAfterRenderObservable.add(() => {
       order.push("world");
     });
     for (const layer of handle.sceneLayerScenes()) {
-      vi.spyOn(layer.scene, "render").mockImplementation(() => {
+      layer.scene.onAfterRenderObservable.add(() => {
         order.push(layer.layerId);
       });
     }
+    handle.setPaused(false);
     runRenderLoop.mock.calls[0]?.[0]?.();
     expect(order).toEqual(["world", "back", "front"]);
-    worldRender.mockRestore();
   });
 
   it("does not parent overlay spawn meshes into the world when the layer scene is missing", () => {
@@ -2376,8 +2593,8 @@ describe("Play createEngine view", () => {
     handle.resize();
     expect(resize).not.toHaveBeenCalled();
     expect(setSize).toHaveBeenCalledWith(800, 450);
-    expect(canvas.width).toBe(800);
-    expect(canvas.height).toBe(450);
+    expect(canvas.width).toBe(300);
+    expect(canvas.height).toBe(150);
   });
 
   it("sizes a shared editor framebuffer from the viewport canvas instead of engine.resize", () => {
@@ -2426,12 +2643,53 @@ describe("Play createEngine view", () => {
     expect(canvas.height).toBe(450);
   });
 
-  it("matches the overlay drawing buffer to a locked Play setSize", () => {
-    const { handle, canvas } = playHandle(sharedEngine());
-    Object.assign(canvas, { width: 300, height: 150 });
-    handle.setSize(1920, 1080);
-    expect(canvas.width).toBe(1920);
-    expect(canvas.height).toBe(1080);
+  it.each(["CSS", "locked"] as const)("retains the last visible Play frame through a loading %s resize and replaces it only with an admitted frame", async (sizing) => {
+    const engine = sharedEngine();
+    const pixels = () => {
+      const surface = Object.assign(new FakeCanvas(), { pixel: 0 });
+      let width = surface.width, height = surface.height;
+      Object.defineProperties(surface, {
+        width: { get: () => width, set: (next: number) => { width = next; surface.pixel = 0; } },
+        height: { get: () => height, set: (next: number) => { height = next; surface.pixel = 0; } },
+      });
+      surface.getContext = () => ({ clearRect: () => { surface.pixel = 0; }, drawImage: (source: typeof surface) => { surface.pixel = source.pixel; } });
+      return surface;
+    };
+    const source = pixels(), canvas = pixels();
+    vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(source as unknown as HTMLCanvasElement);
+    vi.spyOn(engine, "setSize").mockImplementation((width, height) => {
+      if (source.width !== width) source.width = width;
+      if (source.height !== height) source.height = height;
+      return true;
+    });
+    vi.spyOn(engine, "getRenderWidth").mockImplementation(() => source.width);
+    vi.spyOn(engine, "getRenderHeight").mockImplementation(() => source.height);
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    let color = 0xff8040;
+    handle.scene.onAfterRenderObservable.add(() => { source.pixel = color; });
+    let now = performance.now();
+    const time = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const frame = () => { now += 1000; engine.beginFrame(); engine._renderViews(); engine.endFrame(); };
+    try {
+      frame();
+      expect(canvas.pixel).toBe(color);
+      handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
+      if (sizing === "CSS") { canvas.clientWidth = 512; canvas.clientHeight = 288; handle.resize(); }
+      else handle.setSize(512, 288);
+      frame();
+      expect(canvas.pixel).toBe(color);
+      expect([canvas.width, canvas.height]).toEqual([256, 256]);
+      color = 0x40a0ff;
+      await handle.prewarmSceneMaterials();
+      const presented = handle.presentFirstFrame();
+      frame();
+      await presented;
+      expect(canvas.pixel).toBe(color);
+      expect([canvas.width, canvas.height]).toEqual([512, 288]);
+      frame();
+      expect([canvas.width, canvas.height]).toEqual([512, 288]);
+    } finally { time.mockRestore(); }
   });
 
   it("shares depth across Play rendering groups so debug is not an underlay", () => {

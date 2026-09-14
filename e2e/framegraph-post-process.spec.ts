@@ -60,6 +60,11 @@ test(`authored Post Process bindings preserve pixels through the opt-in FrameGra
     result.captures.find((capture) => capture.name === name)!.graph;
   expect(pixels("color").slice(0, 3)).toEqual([80, 40, 20]);
   expect(pixels("parameter").slice(0, 3)).toEqual([120, 60, 30]);
+  expect(pixels("duplicate-entry-parameters").slice(0, 3)).toEqual([30, 15, 8]);
+  expect(pixels("duplicate-entry-authored").slice(0, 3)).toEqual([26, 13, 6]);
+  expect(pixels("duplicate-entry-reset-first").slice(0, 3)).toEqual([24, 12, 6]);
+  expect(pixels("duplicate-entry-reset-both")).toEqual(pixels("duplicate-entry-authored"));
+  expect(pixels("compiled-default-reset").slice(0, 3)).toEqual([80, 40, 20]);
   expect(pixels("hot-rebuild")).toEqual(pixels("parameter"));
   expect(pixels("nested-function").slice(0, 3)).toEqual([40, 20, 10]);
   expect(pixels("time-next")).not.toEqual(pixels("time-first"));

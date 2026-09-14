@@ -22,6 +22,7 @@ export * from "./print-hud";
 export * from "./map-default";
 export * from "./class-variable-references";
 export * from "./material-parameter-assets";
+export * from "./material-parameter-value";
 export * from "./play-preview-aspect";
 export * from "./nine-slice";
 export * from "./input-assets";
@@ -35,3 +36,5 @@ export * from "./render-quality";
 export * from "./render-setting-ownership";
 export * from "./render-path";
 export * from "./environment-lighting";
+
+export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";

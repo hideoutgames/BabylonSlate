@@ -37,6 +37,8 @@ export function runtimeOptionsFromLoadControl(
   | "includeDebugCommands"
   | "infiniteLoopDetection"
   | "loopCount"
+  | "materialParameterCatalog"
+  | "materialTextureAssetGuids"
   | "audioAssetGuids"
   | "animClipCatalog"
   | "deferSceneModelsReady"
@@ -65,6 +67,8 @@ export function runtimeOptionsFromLoadControl(
     cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     renderSettings: msg.renderSettings,
+    ...(msg.materialParameterCatalog !== undefined ? { materialParameterCatalog: msg.materialParameterCatalog } : {}),
+    ...(msg.materialTextureAssetGuids !== undefined ? { materialTextureAssetGuids: msg.materialTextureAssetGuids } : {}),
     ...(msg.project ? { project: msg.project } : {}),
     ...(msg.inputAssets !== undefined ? { inputAssets: msg.inputAssets } : {}),
     ...(msg.inputMappings !== undefined ? { inputMappings: normalizeInputMappings(msg.inputMappings) } : {}),

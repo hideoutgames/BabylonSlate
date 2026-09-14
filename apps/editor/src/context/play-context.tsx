@@ -101,6 +101,7 @@ import {
   playPrefabDependencyScene,
   skyboxFaceGuidsFromScene,
   environmentTextureGuidsFromScenes,
+  postProcessTextureGuidsFromScenes,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import {
@@ -924,6 +925,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         const environmentTextureGuids = environmentTextureGuidsFromScenes([
           resolvedScene.scene, ...playLibrary.map((entry) => entry.scene), ...resourceScenes,
         ]);
+        const postProcessTextureGuids = postProcessTextureGuidsFromScenes([
+          resolvedScene.scene, ...playLibrary.map((entry) => entry.scene), ...resourceScenes,
+        ]);
         let playGraphs: typeof playAnimGraphs = [];
         try {
           playGraphs = await collectPlayAnimGraphs(
@@ -1057,6 +1061,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...skyboxTextureGuids,
               ...environmentTextureGuids,
               ...overlayTextureGuidsFromScenes(resourceScenes),
+              ...postProcessTextureGuids,
             ],
             spriteAnimations,
             true,
@@ -1070,6 +1075,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...skyboxTextureGuids,
               ...environmentTextureGuids,
               ...overlayTextureGuidsFromScenes(resourceScenes),
+              ...postProcessTextureGuids,
             ],
             spriteAnimations,
           );
@@ -1090,6 +1096,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
                 ...skyboxTextureGuids,
                 ...environmentTextureGuids,
                 ...overlayTextureGuidsFromScenes(resourceScenes),
+                ...postProcessTextureGuids,
               ],
               spriteAnimations,
               true,
@@ -1101,6 +1108,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
                 ...skyboxTextureGuids,
                 ...environmentTextureGuids,
                 ...overlayTextureGuidsFromScenes(resourceScenes),
+                ...postProcessTextureGuids,
               ],
               spriteAnimations,
             );

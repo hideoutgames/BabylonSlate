@@ -39,6 +39,7 @@ import {
   spriteAssetGuidsFromScene,
   skyboxFaceGuidsFromScene,
   environmentTextureGuidsFromScenes,
+  postProcessTextureGuidsFromScenes,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
@@ -857,4 +858,17 @@ describe("readPlayAudioReverbBytes", () => {
       await readPlayAudioReverbBytes("assets/Main.scene.babasset", async () => null),
     ).toBeNull();
   });
+});
+
+it("includes textures from disabled and duplicate post-process entry overrides in Play preparation", () => {
+  const scene = createDefaultScene();
+  scene.settings.postProcessStack = [
+    { id: 'first', materialGuid: 'gain', enabled: false, parameters: {
+      Mask: { kind: 'texture', textureAssetGuid: 'mask' }, Gain: { kind: 'float', value: 0.5 },
+    } },
+    { id: 'second', materialGuid: 'gain', enabled: true, parameters: {
+      Mask: { kind: 'texture', textureAssetGuid: 'mask' }, Cleared: { kind: 'texture', textureAssetGuid: null },
+    } },
+  ];
+  expect(postProcessTextureGuidsFromScenes([null, scene, scene])).toEqual(['mask']);
 });

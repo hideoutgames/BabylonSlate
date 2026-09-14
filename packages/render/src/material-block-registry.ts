@@ -1,5 +1,6 @@
 import { QualityTextureBlock } from "./texture-quality";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
+import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
 import {
   AddBlock,
   AnimatedInputBlockTypes,
@@ -84,6 +85,7 @@ export interface BlockRealization {
  * post-process materials.
  */
 export interface MaterialPlumbing {
+  logicalSceneBuffers?: boolean;
   particlePreview?: boolean;
   localNormal?: NodeMaterialConnectionPoint;
   localTangent?: NodeMaterialConnectionPoint;
@@ -794,14 +796,22 @@ ADAPTERS["input.viewDirection"] = ({ name, plumbing }) => {
   return single(block, {}, { direction: block.output });
 };
 
-ADAPTERS["input.sceneDepth"] = ({ name }) => {
+ADAPTERS["input.sceneDepth"] = ({ name, plumbing }) => {
+  if (plumbing.logicalSceneBuffers) {
+    const block = new LogicalSceneTextureBlock(name, "sceneDepth");
+    return single(block, { uv: block.uv }, { depth: block.r });
+  }
   const block = new SceneDepthBlock(name);
   block.useNonLinearDepth = false;
   block.storeCameraSpaceZ = false;
   return single(block, { uv: block.uv }, { depth: block.depth });
 };
 
-ADAPTERS["input.sceneNormal"] = ({ name }) => {
+ADAPTERS["input.sceneNormal"] = ({ name, plumbing }) => {
+  if (plumbing.logicalSceneBuffers) {
+    const block = new LogicalSceneTextureBlock(name, "sceneNormal");
+    return single(block, { uv: block.uv }, { normal: block.rgb });
+  }
   const prepass = new PrePassTextureBlock(name);
   const sample = new TextureBlock(`${name}_sample`, true);
   prepass.worldNormal.connectTo(sample.source);
