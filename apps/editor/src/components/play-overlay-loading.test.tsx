@@ -23,7 +23,9 @@ vi.mock("../services/lifecycle-pause", () => ({ attachLifecyclePause: () => () =
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   // HUD polling is unrelated to the boot callback boundary exercised here.
-  vi.spyOn(window, "setInterval").mockReturnValue(0);
+  const setInterval = window.setInterval.bind(window);
+  vi.spyOn(window, "setInterval").mockImplementation((handler, delay, ...args) =>
+    delay === 200 ? 0 : setInterval(handler, delay, ...args));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
