@@ -1,6 +1,4 @@
-import type { Camera, Effect, NodeMaterial, Observer } from "@babylonjs/core";
-import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import type { NodeMaterial, Observer } from "@babylonjs/core";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
@@ -14,91 +12,12 @@ import type {
 } from "@babylonslate/shader-graph";
 import { materialUnavailable, type MaterialLibrary } from "./material-library";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
-import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
+import { OwnedPostProcess } from "./owned-post-process";
 import { LOGICAL_SCENE_SAMPLERS, type LogicalSceneBuffer } from "./logical-scene-texture-block";
 import type {
   PostProcessStackDiagnostic,
   PostProcessStackEntry,
 } from "./post-process-material";
-
-const guardedEffects = new WeakSet<Effect>();
-
-function guardDisposedEffectPolling(effect: Effect): void {
-  if (guardedEffects.has(effect)) return;
-  // Pinned Babylon 9.20: _checkIsReady probes _isReadyInternal BEFORE checking
-  // _isDisposed. EffectWrapper.dispose(true) can already have deleted the GPU
-  // program. Keep its native retry exit, receiver, result and live errors; only
-  // the disposed owner's probe must avoid touching that deleted pipeline.
-  const owned = effect as unknown as { _isReadyInternal(): boolean };
-  const ready = owned._isReadyInternal;
-  owned._isReadyInternal = function (this: Effect) {
-    return this.isDisposed ? false : ready.call(this);
-  };
-  guardedEffects.add(effect);
-}
-
-/** Babylon 9.20's public PostProcess binding protocol, without activate()/RTTs. */
-class GraphBoundPostProcess extends PostProcess {
-  private disposed = false;
-  private readonly shaderSources = new Map<string, string>();
-  private retirement: OwnedEffectRetirement | null = null;
-
-  get isReleased(): boolean { return this.retirement?.isReleased() ?? false; }
-  whenDisposed(): Promise<void> { return this.retirement!.completion; }
-  whenReleased(): Promise<void> { return this.retirement!.released; }
-
-  get drawWrapper() {
-    return this._effectWrapper.drawWrapper;
-  }
-
-  override updateEffect(
-    ...args: Parameters<PostProcess["updateEffect"]>
-  ): void {
-    // NodeMaterial can enqueue updateEffect from its apply-time defines update.
-    if (this.disposed) return;
-    // createEffectForPostProcess registers these explicit names before calling
-    // updateEffect. Each task has its own NodeMaterial/build id, so it owns them.
-    // Babylon's camera-less PP and NodeMaterial disposal leave these strings.
-    for (const [name, suffix] of [
-      [args[6], "VertexShader"],
-      [args[7], "PixelShader"],
-    ]) {
-      if (!name) continue;
-      const key = name + suffix;
-      const source = ShaderStore.GetShadersStore(this.shaderLanguage)[key];
-      if (typeof source === "string") this.shaderSources.set(key, source);
-    }
-    super.updateEffect(...args);
-    guardDisposedEffectPolling(this.getEffect());
-  }
-
-  override dispose(camera?: Camera): void {
-    if (this.disposed) return;
-    this.disposed = true;
-    // These passes are camera-less. Engine.dispose drains this public list by
-    // repeatedly disposing its first entry, so logical retirement must remove
-    // the entry even while its Effect still waits for native compilation.
-    const registered = this.getEngine().postProcesses;
-    const index = registered.indexOf(this);
-    if (index !== -1) registered.splice(index, 1);
-    // Babylon returns early from camera-less disposal before clearing these.
-    this.onApplyObservable.clear();
-    this.onBeforeRenderObservable.clear();
-    this.onAfterRenderObservable.clear();
-    this.onActivateObservable.clear();
-    this.onSizeChangedObservable.clear();
-    this.onEffectCreatedObservable.clear();
-    this.onDisposeObservable.clear();
-    this.retirement = retireOwnedEffect(this.getEffect() ?? null, () => {
-      super.dispose(camera);
-      const store = ShaderStore.GetShadersStore(this.shaderLanguage);
-      for (const [key, source] of this.shaderSources) {
-        if (store[key] === source) delete store[key];
-      }
-      this.shaderSources.clear();
-    });
-  }
-}
 
 interface AuthoredPostProcessOptions {
   /** Caller-owned normalized view depth and encoded world normal, shared across entries. */
@@ -125,7 +44,7 @@ let nextInstance = 0;
 export class AuthoredPostProcessTask extends FrameGraphTask {
   readonly outputTexture: FrameGraphTextureHandle;
   private readonly instanceKey = `framegraph-post-process:${nextInstance++}`;
-  private postProcess: GraphBoundPostProcess | null = null;
+  private postProcess: OwnedPostProcess | null = null;
   private material: NodeMaterial | null = null;
   private buildObserver: Observer<NodeMaterial> | null = null;
   private acquired = false;
@@ -138,9 +57,17 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   private readonly parameters = new Map<string, MaterialParameterValue>();
   private readonly authoredParameters: Record<string, MaterialParameterValue>;
   private readonly requiredBuffers = new Set<LogicalSceneBuffer>();
-  private readonly ownedPasses = new Set<GraphBoundPostProcess>();
+  private readonly ownedPasses = new Set<OwnedPostProcess>();
   private readonly pendingWork = new Set<Promise<void>>();
-  private readonly cleanupErrors: unknown[] = [];
+  private readonly cleanupErrors = new Set<unknown>();
+  private readonly pendingReleases = new Set<Promise<void>>();
+  private readonly releaseErrors = new Set<unknown>();
+  private resolveRelease!: () => void;
+  private rejectRelease!: (error: unknown) => void;
+  private readonly release = new Promise<void>((resolve, reject) => {
+    this.resolveRelease = resolve;
+    this.rejectRelease = reject;
+  });
   private resolveDisposal!: () => void;
   private rejectDisposal!: (error: unknown) => void;
   private readonly disposal = new Promise<void>((resolve, reject) => {
@@ -152,6 +79,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   constructor(name: string, options: AuthoredPostProcessOptions) {
     super(name, options.frameGraph);
     void this.disposal.catch(() => {});
+    void this.release.catch(() => {});
     this.options = { ...options,
       logicalBuffers: options.logicalBuffers ? { ...options.logicalBuffers } : undefined };
     this.document = options.document;
@@ -192,6 +120,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       ? Promise.resolve()
       : this.prepare(document, generation);
     this.trackCleanup(this.pending);
+    this.trackRelease(this.pending);
     return this.pending;
   }
 
@@ -400,8 +329,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
 
   private createPostProcess(material: NodeMaterial): void {
     this.failed = false;
-    this.postProcess?.dispose();
-    this.postProcess = new GraphBoundPostProcess(this.name, "", {
+    this.retirePass(this.postProcess);
+    this.postProcess = new OwnedPostProcess(this.name, "", {
       engine: this._frameGraph.engine,
       blockCompilation: true,
       shaderLanguage: material.shaderLanguage,
@@ -427,7 +356,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     if (this.buildObserver)
       this.material?.onBuildObservable.remove(this.buildObserver);
     this.buildObserver = null;
-    this.postProcess?.dispose();
+    this.retirePass(this.postProcess);
     this.postProcess = null;
     this.material = null;
     const passes = [...this.ownedPasses];
@@ -452,6 +381,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       // Even if a deadline reports uncertain cleanup, retain the library owner
       // until actual release. Do not leave its later failure unobserved.
       void released.catch(() => {});
+      this.trackRelease(released);
       const cleanup = Promise.all(passes.map((pass) => pass.whenDisposed())).then(() => released);
       void cleanup.catch(() => {});
       this.trackCleanup(cleanup);
@@ -462,22 +392,44 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     this.pendingWork.add(work);
     void work.then(
       () => { this.pendingWork.delete(work); },
-      (error) => { this.pendingWork.delete(work); this.cleanupErrors.push(error); },
+      (error) => { this.pendingWork.delete(work); this.cleanupErrors.add(error); },
     );
+  }
+
+  private trackRelease(work: Promise<void>): void {
+    this.pendingReleases.add(work);
+    void work.then(
+      () => { this.pendingReleases.delete(work); },
+      (error) => { this.pendingReleases.delete(work); this.releaseErrors.add(error); },
+    );
+  }
+
+  private retirePass(pass: OwnedPostProcess | null): void {
+    if (!pass) return;
+    pass.dispose();
+    this.trackCleanup(pass.whenDisposed());
+    if (pass.isReleased) this.ownedPasses.delete(pass);
+    else void pass.whenReleased().then(() => this.ownedPasses.delete(pass));
   }
 
   /** CPU/native ownership only; a managed GPU lease drains separately afterward. */
   whenDisposed(): Promise<void> { return this.disposal; }
+  /** Actual native/material release; resolving this permits host Scene disposal. */
+  whenReleased(): Promise<void> { return this.release; }
 
   override dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    try { this.releaseMaterial(); } catch (error) { this.cleanupErrors.push(error); }
+    try { this.releaseMaterial(); } catch (error) { this.cleanupErrors.add(error); this.releaseErrors.add(error); }
     this.generation++;
-    try { super.dispose(); } catch (error) { this.cleanupErrors.push(error); }
+    try { super.dispose(); } catch (error) { this.cleanupErrors.add(error); this.releaseErrors.add(error); }
     void Promise.allSettled(this.pendingWork).then(() => {
-      if (this.cleanupErrors.length) this.rejectDisposal(new AggregateError(this.cleanupErrors, "Authored post-process cleanup failed"));
+      if (this.cleanupErrors.size) this.rejectDisposal(new AggregateError(this.cleanupErrors, "Authored post-process cleanup failed"));
       else this.resolveDisposal();
+    });
+    void Promise.allSettled(this.pendingReleases).then(() => {
+      if (this.releaseErrors.size) this.rejectRelease(new AggregateError(this.releaseErrors, "Authored post-process release failed"));
+      else this.resolveRelease();
     });
   }
 }
@@ -516,6 +468,7 @@ export function addAuthoredPostProcessTasks(options: {
   outputTexture: FrameGraphTextureHandle;
   dispose: () => void;
   whenDisposed: () => Promise<void>;
+  whenReleased: () => Promise<void>;
 } {
   const tasks: AuthoredPostProcessTask[] = [];
   let sourceTexture = options.sourceTexture;
@@ -546,5 +499,6 @@ export function addAuthoredPostProcessTasks(options: {
       for (const task of tasks) task.dispose();
     },
     whenDisposed: () => Promise.all(tasks.map((task) => task.whenDisposed())).then(() => {}),
+    whenReleased: () => Promise.all(tasks.map((task) => task.whenReleased())).then(() => {}),
   };
 }
