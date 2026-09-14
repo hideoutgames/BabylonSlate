@@ -82,24 +82,25 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(errors).toEqual([]);
       expect(external).toEqual([]);
     } finally {
-      const canvas = page.getByTestId("player-canvas");
-      if (await canvas.count()) {
-        const state = await canvas.evaluate((node: HTMLCanvasElement) => {
-          const copy = document.createElement("canvas");
-          copy.width = node.width; copy.height = node.height;
-          const context = copy.getContext("2d")!;
-          context.drawImage(node, 0, 0);
-          const data = context.getImageData(0, 0, copy.width, copy.height).data;
-          const colors = new Set<number>();
-          for (let i = 0; i < data.length; i += 4) colors.add((data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!);
-          return { width: node.width, height: node.height, colors: [...colors].slice(0, 32), colorCount: colors.size,
-            root: { ...document.querySelector<HTMLElement>('[data-testid="player-root"]')?.dataset },
-            loading: document.querySelector('[data-testid="scene-loading-dialog"]')?.textContent ?? null };
-        });
-        await testInfo.attach("player-final-state", { body: JSON.stringify({ backend, state, errors, external }), contentType: "application/json" });
-        await testInfo.attach("player-final-canvas", { body: await canvas.screenshot(), contentType: "image/png" });
-      }
-      await server.close();
+      try {
+        const canvas = page.getByTestId("player-canvas");
+        if (await canvas.count()) {
+          const state = await canvas.evaluate((node: HTMLCanvasElement) => {
+            const copy = document.createElement("canvas");
+            copy.width = node.width; copy.height = node.height;
+            const context = copy.getContext("2d")!;
+            context.drawImage(node, 0, 0);
+            const data = context.getImageData(0, 0, copy.width, copy.height).data;
+            const colors = new Set<number>();
+            for (let i = 0; i < data.length; i += 4) colors.add((data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!);
+            return { width: node.width, height: node.height, colors: [...colors].slice(0, 32), colorCount: colors.size,
+              root: { ...document.querySelector<HTMLElement>('[data-testid="player-root"]')?.dataset },
+              loading: document.querySelector('[data-testid="scene-loading-dialog"]')?.textContent ?? null };
+          });
+          await testInfo.attach("player-final-state", { body: JSON.stringify({ backend, state, errors, external }), contentType: "application/json" });
+          await testInfo.attach("player-final-canvas", { body: await canvas.screenshot(), contentType: "image/png" });
+        }
+      } finally { await server.close(); }
     }
   });
 }

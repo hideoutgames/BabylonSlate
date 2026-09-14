@@ -62,12 +62,13 @@ async function filesForContinuity() {
   return files;
 }
 
-type Sample = { atMs: number; phase: string; lit: number; hud: number; center: number; hudX: number | null; width: number; height: number };
+type Sample = { atMs: number; paintHeld: boolean; phase: string; lit: number; hud: number; center: number; hudX: number | null; width: number; height: number };
 type Observation = { samples: Sample[]; phases: string[]; resizing: boolean; stop: () => void };
+type LoadingPaintGate = { held: boolean; arm: () => void; release: () => void };
 
 async function observeCanvas(canvas: Locator) {
   await canvas.evaluate((node: HTMLCanvasElement) => {
-    const host = globalThis as unknown as { continuity?: Observation;
+    const host = globalThis as unknown as { continuity?: Observation; loadingPaintGate: LoadingPaintGate;
       __babylonslatePlayTest?: { visuals: () => Array<{ visible: boolean; position: number[] }> };
       __babylonslatePlayerTest?: { visuals: () => Array<{ visible: boolean; position: number[] }> } };
     host.continuity?.stop();
@@ -99,7 +100,7 @@ async function observeCanvas(canvas: Locator) {
       }
       const visual = (host.__babylonslatePlayTest ?? host.__babylonslatePlayerTest)?.visuals()
         .find((value) => value.visible && value.position[0]! < -6 && Math.abs(value.position[1]! - 3) < .01);
-      observation.samples.push({ atMs: performance.now(), phase, lit, hud, center: hud ? sumX / hud : 0, hudX: visual?.position[0] ?? null, width: node.width, height: node.height });
+      observation.samples.push({ atMs: performance.now(), paintHeld: host.loadingPaintGate.held, phase, lit, hud, center: hud ? sumX / hud : 0, hudX: visual?.position[0] ?? null, width: node.width, height: node.height });
       if (observation.samples.length < 3000 && node.isConnected) frame = requestAnimationFrame(sample);
     };
     host.continuity = observation;
@@ -111,6 +112,14 @@ async function samples(canvas: Locator) {
   return canvas.evaluate(() => (globalThis as unknown as { continuity: Observation }).continuity.samples);
 }
 
+async function holdLoadingPaint(canvas: Locator) {
+  await canvas.evaluate(() => (globalThis as unknown as { loadingPaintGate: LoadingPaintGate }).loadingPaintGate.arm());
+}
+
+async function releaseLoadingPaint(canvas: Locator) {
+  await canvas.evaluate(() => (globalThis as unknown as { loadingPaintGate: LoadingPaintGate }).loadingPaintGate.release());
+}
+
 for (const mode of ["Play", "Preview Build"] as const) {
   test(`${mode} retains a moving global SceneLayer across world loading, visible resize and modal dismissal`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
@@ -118,6 +127,24 @@ for (const mode of ["Play", "Preview Build"] as const) {
     // Install in both the editor document and future Preview iframe before
     // their runtime canvas exists, so initial modal dismissal is observable.
     await page.addInitScript(() => {
+      const nativePost = Worker.prototype.postMessage;
+      let armed = false;
+      let pending: (() => void) | undefined;
+      const gate: LoadingPaintGate = {
+        get held() { return pending !== undefined; },
+        arm: () => { armed = true; },
+        release: () => { armed = false; const send = pending; pending = undefined; send?.(); },
+      };
+      (globalThis as unknown as { loadingPaintGate: LoadingPaintGate }).loadingPaintGate = gate;
+      Worker.prototype.postMessage = function(this: Worker, ...args: Parameters<Worker["postMessage"]>) {
+        const message = args[0] as { channel?: unknown; payload?: { type?: unknown } };
+        if (armed && message?.channel === "control" && message.payload?.type === "sceneLoadingPainted") {
+          armed = false;
+          pending = () => Reflect.apply(nativePost, this, args);
+          return;
+        }
+        Reflect.apply(nativePost, this, args);
+      };
       const copy = document.createElement("canvas");
       copy.width = 96; copy.height = 64;
       const context = copy.getContext("2d", { willReadFrequently: true })!;
@@ -178,9 +205,24 @@ for (const mode of ["Play", "Preview Build"] as const) {
     else await page.getByRole("button", { name: "Console", exact: true }).click();
     for (let reload = 0; reload < 2; reload++) {
       await observeCanvas(canvas);
-      await page.getByTestId("debug-console-input").fill(`changescene ${WORLD}`);
-      await page.getByTestId("debug-console-submit").click();
-      await expect.poll(async () => (await samples(canvas)).some((sample) => sample.phase === "Preparing Scene")).toBe(true);
+      await holdLoadingPaint(canvas);
+      try {
+        await page.getByTestId("debug-console-input").fill(`changescene ${WORLD}`);
+        await page.getByTestId("debug-console-submit").click();
+        // The actual runtime waits for this host ACK before teardown. Retained
+        // owners must move on the visible canvas throughout that waiting period.
+        await expect.poll(async () => {
+          const held = (await samples(canvas)).filter((sample) => sample.paintHeld);
+          const latest = held.at(-1);
+          if (!latest) return 0;
+          const sameSize = held.filter((sample) => sample.width === latest.width && sample.height === latest.height);
+          return new Set(sameSize.map((sample) => sample.center)).size;
+        }).toBeGreaterThan(1);
+        expect((await samples(canvas)).filter((sample) => sample.paintHeld).every((sample) => sample.phase === "Preparing Scene")).toBe(true);
+      } finally {
+        try { await testInfo.attach(`held-loading-${reload}.json`, { body: JSON.stringify(await samples(canvas)), contentType: "application/json" }); }
+        finally { await releaseLoadingPaint(canvas); }
+      }
       await expect(dialog).toBeHidden({ timeout: 30_000 });
       await expect.poll(async () => (await samples(canvas)).filter((sample) => sample.phase === "").length).toBeGreaterThan(2);
       const result = await samples(canvas);
@@ -196,12 +238,16 @@ for (const mode of ["Play", "Preview Build"] as const) {
     await canvas.evaluate(() => (globalThis as unknown as { continuity: Observation }).continuity.stop());
     await canvas.screenshot({ path: testInfo.outputPath("retained-global-layer.png") });
     if (mode === "Preview Build") {
-      await page.getByTestId("debug-console-input").fill(`changescene ${WORLD}`);
-      await page.getByTestId("debug-console-submit").click();
-      await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
-      await dialog.getByRole("button", { name: "Stop", exact: true }).click();
-      await expect(dialog).toBeHidden();
-      await expect(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root")).toHaveAttribute("data-booted", "false");
+      await holdLoadingPaint(canvas);
+      try {
+        await page.getByTestId("debug-console-input").fill(`changescene ${WORLD}`);
+        await page.getByTestId("debug-console-submit").click();
+        await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
+        await expect.poll(() => canvas.evaluate(() => (globalThis as unknown as { loadingPaintGate: LoadingPaintGate }).loadingPaintGate.held)).toBe(true);
+        await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+        await expect(dialog).toBeHidden();
+        await expect(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root")).toHaveAttribute("data-booted", "false");
+      } finally { await releaseLoadingPaint(canvas); }
     } else await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
     await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
     await waitForSceneViewportReady(page);
