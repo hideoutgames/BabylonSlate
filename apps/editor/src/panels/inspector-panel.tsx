@@ -21,6 +21,7 @@ import {
   formatEventMemberName,
   resolveTypeVisual,
   selectedPickerIdentity,
+  walkAncestry,
   ASSET_REF_PICKER_TYPES,
   type ClassPickerEntry,
   type PinListRow,
@@ -847,7 +848,13 @@ function PrefabComponentDetails({
         <div className="flex items-center gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
           <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
             <TypeVisualIcon
-              visual={resolveTypeVisual({ classId: component.classId })}
+              visual={resolveTypeVisual({
+                classId: component.classId,
+                ancestry: walkAncestry(
+                  component.classId,
+                  classParentLookup(assetRegistry?.list() ?? []),
+                ),
+              })}
               data-testid={`inspector-prefab-type-icon-${component.id}`}
             />
             {component.classId}
@@ -855,7 +862,6 @@ function PrefabComponentDetails({
         </div>
         <PropertyGrid
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
-            logicClasses: subclassClassEntries("ComponentLogic", assetRegistry?.list() ?? []),
             sortingLayers,
             collisionLayers,
             assetLabel,

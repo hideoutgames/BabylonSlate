@@ -202,6 +202,47 @@ describe("pinDefaultPreview", () => {
     );
   });
 
+  it.each([
+    {
+      properties: { "default:classId": "Mannequin", classId: "Actor" },
+      want: "Mannequin",
+    },
+    { properties: { classId: "Mannequin" }, want: "Mannequin" },
+    { properties: { "default:Class ID": "Mannequin" }, want: "Mannequin" },
+    { properties: { "default:classId": "" }, want: "" },
+  ])(
+    "shows the selected class with defaults $properties",
+    ({ properties, want }) => {
+      const classPin: SerializedPin = {
+        id: "classId",
+        name: "Class ID",
+        kind: "data",
+        direction: "in",
+        type: { kind: "classRef", classId: "Actor" },
+      };
+      expect(pinDefaultPreview(classPin, properties, false)).toEqual({
+        kind: "classRef",
+        text: want,
+      });
+      expect(pinDefaultPreview(classPin, properties, true)).toBeNull();
+    },
+  );
+
+  it("previews the catalog class default when no class is authored", () => {
+    const classPin: SerializedPin = {
+      id: "classId",
+      name: "Class ID",
+      kind: "data",
+      direction: "in",
+      type: { kind: "classRef", classId: "Actor" },
+      defaultValue: "Mannequin",
+    };
+    expect(pinDefaultPreview(classPin, {}, false)).toEqual({
+      kind: "classRef",
+      text: "Mannequin",
+    });
+  });
+
   it("returns an assetRef type name instead of the authored guid", () => {
     const assetPin = pin({
       id: "asset",

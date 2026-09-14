@@ -7,8 +7,7 @@ import {
   pinDefaultAsVec3Tuple,
   pinDefaultAsVec4Tuple,
   pinDefaultColorRgb,
-  pinDefaultPropertyKey,
-  readPinDefault,
+  readPinDefaultForPin,
   type PinType,
 } from "@babylonslate/scripting";
 import type { SerializedPin } from "./graph-types";
@@ -99,9 +98,7 @@ function readPreviewValue(
   pin: SerializedPin,
   properties: Record<string, unknown>,
 ): unknown {
-  const byId = properties[pinDefaultPropertyKey(pin.id)];
-  if (byId !== undefined) return byId;
-  const stored = readPinDefault(properties, pin.name);
+  const stored = readPinDefaultForPin(properties, pin);
   if (stored !== undefined) return stored;
   if (pin.defaultValue !== undefined) return pin.defaultValue;
   return undefined;
@@ -160,6 +157,12 @@ export function pinDefaultPreview(
   if (pin.type.kind === "structRef" && pin.type.guid === "engine:InputBinding") {
     const binding = readPreviewValue(pin, properties) as { Input?: { Name?: string } } | undefined;
     return binding?.Input?.Name ? { kind: "structRef", text: binding.Input.Name } : null;
+  }
+  if (pin.type.kind === "classRef") {
+    const selectedClass = readPreviewValue(pin, properties);
+    if (selectedClass !== undefined) {
+      return { kind: "classRef", text: pinDefaultAsString(selectedClass) };
+    }
   }
   const constraint = pinConstraintPreview(pin, pinTypeNames);
   if (constraint) return constraint;
