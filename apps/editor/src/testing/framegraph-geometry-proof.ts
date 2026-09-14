@@ -38,6 +38,7 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
       for (const buffer of ["depth", "normal", "post-depth", "post-normal"] as const) {
         const graph = new FrameGraph(scene);
         const graphDiagnostics: unknown[] = [];
+        let replaceAfterBuild: (() => Promise<void>) | undefined;
         try {
           const depth = graph.textureManager.createRenderTargetTexture("Geometry Z", {
             size: { width: 32, height: 32 },
@@ -92,13 +93,22 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
               frameGraph: graph, library, sourceTexture: resource === "sceneDepth" ? geometry.geometryWorldNormalTexture : geometry.geometryNormViewDepthTexture,
               logicalBuffers: { sceneDepth: geometry.geometryNormViewDepthTexture, sceneNormal: geometry.geometryWorldNormalTexture },
               stack: [0, 1].map((order) => ({ id: `entry-${order}`, materialGuid: "logical", order, enabled: true })),
-              documentFor: () => post,
+              documentFor: () => buffer === "post-normal" ? createDefaultMaterialDocument("Initial Scene Color", "postProcess") : post,
               onDiagnostic: (diagnostic) => { graphDiagnostics.push(diagnostic); },
             });
+            if (buffer === "post-normal") {
+              // Geometry normal initially has no consumer. Default allocation
+              // aliasing must not overwrite it when a hot replacement starts
+              // sampling it without changing this caller-owned handle set.
+              replaceAfterBuild = async () => {
+                for (const task of stack.tasks) await task.replaceDocument(post);
+              };
+            }
             copy.sourceTexture = stack.outputTexture;
           }
           graph.addTask(copy);
           await graph.buildAsync(false);
+          await replaceAfterBuild?.();
           if (graphDiagnostics.length) throw new Error(JSON.stringify(graphDiagnostics));
           const deadline = performance.now() + 10_000;
           while (!graph.isReady()) {
