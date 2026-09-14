@@ -1,5 +1,6 @@
 import { decodeBabasset } from "../babasset";
 import { BAKED_LIGHTING_ASSET_TYPE, validateBakedLightingChunks } from "../baked-lighting";
+import { stableStringify } from "../bytes";
 import { remapImportResultGuids } from "./guid-remap";
 import type { ImportOptions, ImportResult } from "./types";
 
@@ -39,8 +40,13 @@ async function collect(bytes: Uint8Array, out: ImportResult[]): Promise<void> {
       data: decoded.chunks.get(entry.id) ?? new Uint8Array(0),
     }));
 
-  if (decoded.header.type === BAKED_LIGHTING_ASSET_TYPE)
-    await validateBakedLightingChunks(decoded.header, chunks);
+  if (decoded.header.type === BAKED_LIGHTING_ASSET_TYPE) {
+    const validated = await validateBakedLightingChunks(decoded.header, chunks);
+    // Import owns the validated snapshots, not views into the caller's container.
+    chunks.find((chunk) => chunk.id === "document")!.data = new TextEncoder().encode(stableStringify(validated.manifest));
+    for (const atlas of validated.manifest.atlases)
+      chunks.find((chunk) => chunk.id === atlas.chunkId)!.data = validated.atlases.get(atlas.guid)!;
+  }
 
   out.push({
     type: decoded.header.type,

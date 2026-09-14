@@ -104,6 +104,7 @@ it("validates imports before admission and refuses source GUID rebinding while a
   const bytes = await encodeBakedLightingAsset(result);
   const [imported] = await importBabasset(bytes, { fileName: "Bake.babasset", existingGuids: new Set(["bake"]) });
   expect(imported!.guid).not.toBe("bake");
+  bytes.fill(0);
   expect((await validateBakedLightingChunks(imported!, imported!.chunks)).manifest.sceneGuid).toBe("scene");
   const corrupt = result.chunks.map((chunk) => ({ ...chunk, data: chunk.data.slice() }));
   corrupt[1]!.data[0] = 1;
