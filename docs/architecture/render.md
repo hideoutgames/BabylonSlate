@@ -150,6 +150,8 @@ Meshes with no authored surface Material render the engine default, not Babylon�
 
 Model MeshComponent **Material** initially shows the imported color-map material name for a single slot, or **Model Materials** for several slots. Picking a Material overrides the scene component in the editor, Play and Preview Play. Picking **None** uses the same checker as primitives, including after a delayed model load. Reset or **Model Materials** in the picker restores all Model slots. These scene/prefab edits never change the Model asset's slot defaults; Model Editor slot None still restores the original glTF material. Serialized `materialSource: "override"` distinguishes an explicit component None (`materialGuid: null`) from legacy/inherited null (`materialSource` absent or `"model"`). A nonempty `materialGuid` remains a whole-component override for older scenes. The picker’s Model Materials value is UI-only and is never saved as an asset guid.
 
+Prefab instances track Material GUID and source as one override: explicit None survives later prefab material edits, and resetting to the prefab selection clears both override keys. Named Material and Model Materials picks remove redundant source markers.
+
 ## Skybox mesh
 
 `createSkyboxMesh` (editor `createMeshForComponent` and Play `createPlayMesh`) matches Babylon’s documented skybox, but does **not** call `scene.createDefaultSkybox` (that helper can write IBL and is not incremental):

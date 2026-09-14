@@ -88,7 +88,8 @@ describe("componentPropertyRows", () => {
     expect(materialRow()).toMatchObject({ value: "scene-material" });
     component = { ...component, properties: patchInspectorComponentProperty(component, "materialGuid", MODEL_MATERIALS_PICKER_VALUE) };
     expect(materialRow()).toMatchObject({ displayLabel: "Body Color Map", value: MODEL_MATERIALS_PICKER_VALUE });
-    expect(component.properties).toMatchObject({ materialGuid: null, materialSource: "model" });
+    expect(component.properties).toMatchObject({ materialGuid: null });
+    expect(component.properties).not.toHaveProperty("materialSource");
     expect(modelSlots).toEqual([{ index: 0, name: "Body", materialGuid: "body-map" }]);
   });
 

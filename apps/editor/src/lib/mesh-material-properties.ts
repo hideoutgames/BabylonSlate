@@ -16,11 +16,15 @@ export function patchInspectorComponentProperty(
 ): Record<string, unknown> {
   if (component.classId === "MeshComponent" && property === "materialGuid") {
     const inherit = value === MODEL_MATERIALS_PICKER_VALUE;
-    return {
+    const properties: Record<string, unknown> = {
       ...component.properties,
       materialGuid: inherit ? null : value,
-      materialSource: inherit ? "model" : "override",
     };
+    // Only None needs a marker. Removing redundant source keys lets prefab
+    // resets resume inheriting subsequent changes to the prefab's material.
+    if (!inherit && !value) properties.materialSource = "override";
+    else delete properties.materialSource;
+    return properties;
   }
   return patchComponentProperties(component.properties, property, value);
 }

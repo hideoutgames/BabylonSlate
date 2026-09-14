@@ -368,8 +368,9 @@ describe("SceneDetailsPanel authoring", () => {
     view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(materialButton().textContent).toContain("Rock");
     expect(scene().actors[0]!.components[0]!.properties).toMatchObject({
-      materialGuid: null, materialSource: "model",
+      materialGuid: null,
     });
+    expect(scene().actors[0]!.components[0]!.properties).not.toHaveProperty("materialSource");
   });
 
   it("starts rendering override categories closed and restores manual collapse state after search", () => {
