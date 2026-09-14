@@ -46,8 +46,13 @@ test(`opt-in Forward FrameGraph preserves surface pixels and scene ownership on 
   expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
   expect(result.captures).toHaveLength(12);
   for (const capture of result.captures) {
-    expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
-    expect(capture.result, capture.name).toEqual({ path: "frameGraph" });
+    if (capture.name.endsWith("-frozen")) {
+      expect(capture.prepared, capture.name).toMatchObject({ path: "classic", reason: expect.stringContaining("Frozen active-mesh queues") });
+      expect(capture.result, capture.name).toEqual(capture.prepared);
+    } else {
+      expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
+      expect(capture.result, capture.name).toEqual({ path: "frameGraph" });
+    }
     expect(capture.readinessDraws, capture.name).toBe(0);
     expect(capture.frames, capture.name).toEqual([1, 1]);
     expect(capture.classicDraws, capture.name).toBeGreaterThanOrEqual(4);

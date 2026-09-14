@@ -233,6 +233,9 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         scene.freezeActiveMeshes(false, resolve, reject),
       );
       await capture("frozen");
+      // The classic owner retains native submesh queues while active membership
+      // is frozen. After unfreeze, every subsequent capture must use the graph.
+      scene.unfreezeActiveMeshes();
       expectedCamera = secondCamera;
       await capture("camera-switched");
       secondCamera.position.x = -2;

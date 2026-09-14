@@ -1,4 +1,4 @@
-import type { AbstractMesh, Camera, InternalTexture, Observer, Scene } from "@babylonjs/core";
+import type { Camera, InternalTexture, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import {
   backbufferColorTextureHandle,
@@ -58,7 +58,6 @@ export class ForwardSceneFrameGraph {
   private disposed = false;
   private failure: string | undefined;
   private renderingCamera: Camera | undefined;
-  private readonly frozenMeshes: AbstractMesh[] = [];
   private readonly beforeRender: Observer<Scene>;
   private readonly onDispose: Observer<Scene>;
   private readonly scene: Scene;
@@ -188,9 +187,10 @@ export class ForwardSceneFrameGraph {
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
       return "Multiple and rig cameras require classic rendering.";
-    // Pinned Scene flag also used by the official culling task.
-    if (scene._activeMeshesFrozen && scene._activeMeshesFrozenButKeepClipping)
-      return "Frozen active-mesh lists with retained frustum clipping require classic rendering.";
+    // Native freezing retains a submesh/LOD render queue, not just mesh
+    // membership. A new ObjectRenderer would re-filter it for the new camera.
+    if (scene._activeMeshesFrozen)
+      return "Frozen active-mesh queues require classic rendering.";
     // FrameGraph restores the default framebuffer around execution. Only take
     // a camera's explicit output from an otherwise unbound frame boundary.
     if (scene.getEngine()._currentRenderTarget)
@@ -367,22 +367,7 @@ export class ForwardSceneFrameGraph {
       meshes: this.scene.meshes,
       particleSystems: this.scene.particleSystems,
     };
-    if (this.scene._activeMeshesFrozen) {
-      // The scene may have frozen before this graph existed. The official cull
-      // task then retains its old output, which can be empty or contain every
-      // scene mesh. Use the scene's actual frozen membership instead. SmartArray
-      // capacity can exceed its length, so never expose its backing array.
-      const active = this.scene.getActiveMeshes();
-      this.frozenMeshes.length = active.length;
-      for (let index = 0; index < active.length; index++)
-        this.frozenMeshes[index] = active.data[index]!;
-      this.objects!.objectList = {
-        meshes: this.frozenMeshes,
-        particleSystems: this.scene.particleSystems,
-      };
-    } else {
-      this.objects!.objectList = this.cull!.outputObjectList;
-    }
+    this.objects!.objectList = this.cull!.outputObjectList;
   }
 
   private releaseGraph(): void {
