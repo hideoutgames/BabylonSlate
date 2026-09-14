@@ -210,7 +210,8 @@ describe.each(["worker", "in-process"] as const)(
       expect(actors).toHaveLength(1);
       expect(actors[0]!.guid).toBe("placed-main");
       expect(actors[0]!.transform.position).toEqual({ x: 4, y: 5, z: 6 });
-      expect(actors[0]!.getVariable("began")).toBe(true);
+      // Authored Begin Play follows the renderer's completed first-frame ACK.
+      await vi.waitFor(() => expect(actors[0]!.getVariable("began")).toBe(true));
     });
 
     it("allows the GameInstance to explicitly SpawnActor without an extra default instance", async () => {
@@ -233,7 +234,8 @@ describe.each(["worker", "in-process"] as const)(
       expect(actors).toHaveLength(1);
       expect(actors[0]!.classId).toBe("main");
       expect(actors[0]!.transform.position).toEqual({ x: 7, y: 8, z: 9 });
-      expect(actors[0]!.getVariable("began")).toBe(true);
+      // Authored Begin Play follows the renderer's completed first-frame ACK.
+      await vi.waitFor(() => expect(actors[0]!.getVariable("began")).toBe(true));
     });
   },
 );

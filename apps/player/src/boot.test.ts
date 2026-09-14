@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultScene } from "@babylonslate/core";
+import { createDefaultScene, DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
 import { exportGame } from "@babylonslate/exporter";
 import * as rendering from "@babylonslate/render";
 import * as runtimes from "@babylonslate/runtime";
@@ -49,7 +49,7 @@ afterEach(() => {
 
 async function fixture() {
   const scene = { ...createDefaultScene(), actors: [] };
-  const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [],
+  const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
     assets: [{ guid: "world", type: "Scene", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(scene)) }] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
