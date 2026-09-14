@@ -261,6 +261,7 @@ export class ComponentLogic extends BObject {
 
 /** Engine-neutral reference to one mesh component's current material instance. */
 export class MaterialObject extends BObject {
+  readonly targetKind = "mesh" as const;
   readonly component: ActorComponent;
   readonly materialAssetGuid: string;
 
@@ -331,6 +332,7 @@ export class SceneLayer extends BObject {
 
 export class Scene extends BObject {
   assetGuid: string;
+  postProcessStack: ScenePostProcessEntry[];
 
   constructor(options: {
     classId?: string;
@@ -338,6 +340,7 @@ export class Scene extends BObject {
     guidFactory?: GuidFactory;
     assetGuid: string;
     sceneName: string;
+    postProcessStack?: ScenePostProcessEntry[];
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }) {
@@ -353,7 +356,54 @@ export class Scene extends BObject {
       hooks: options.hooks,
     });
     this.assetGuid = options.assetGuid;
+    this.postProcessStack = normalizeScenePostProcessStack(options.postProcessStack);
   }
+}
+
+/** A pass reference shares the reflected MaterialObject type without inventing a mesh owner. */
+export class PostProcessMaterialObject extends BObject {
+  readonly targetKind = "postProcess" as const;
+  readonly materialAssetGuid: string;
+  readonly owner: Scene | SceneLayer;
+  readonly entry: ScenePostProcessEntry;
+
+  constructor(
+    owner: Scene | SceneLayer,
+    entry: ScenePostProcessEntry,
+  ) {
+    super({ classId: "MaterialObject" });
+    this.owner = owner;
+    this.entry = entry;
+    this.materialAssetGuid = entry.materialGuid;
+  }
+
+  isCurrent(): boolean {
+    return !this.destroyed && !this.owner.destroyed &&
+      this.owner.postProcessStack.includes(this.entry) &&
+      this.entry.materialGuid === this.materialAssetGuid;
+  }
+}
+
+export type MaterialInstanceObject = MaterialObject | PostProcessMaterialObject;
+
+const postProcessReferences = new WeakMap<Scene | SceneLayer, WeakMap<ScenePostProcessEntry, PostProcessMaterialObject>>();
+
+/** Reordering preserves identity; removal/replacement invalidates references even if an ID is reused. */
+export function getPostProcessMaterialObject(
+  owner: Scene | SceneLayer,
+  entryId: string,
+): PostProcessMaterialObject | null {
+  if (owner.destroyed) return null;
+  const entry = owner.postProcessStack.find((candidate) => candidate.id === entryId);
+  if (!entry) return null;
+  let references = postProcessReferences.get(owner);
+  const previous = references?.get(entry);
+  if (previous?.isCurrent()) return previous;
+  if (previous) previous.destroyed = true;
+  if (!references) postProcessReferences.set(owner, references = new WeakMap());
+  const reference = new PostProcessMaterialObject(owner, entry);
+  references.set(entry, reference);
+  return reference;
 }
 
 export class GameInstance extends BObject {

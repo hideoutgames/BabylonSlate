@@ -236,6 +236,7 @@ export class World {
     guid?: Guid;
     assetGuid: string;
     sceneName: string;
+    postProcessStack?: ScenePostProcessEntry[];
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): Scene {

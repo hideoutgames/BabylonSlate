@@ -26,6 +26,7 @@ import {
   ComponentLogic,
   GameInstance,
   MaterialObject,
+  PostProcessMaterialObject,
   Scene,
   hydrateClassVariableValue,
   SceneLayer,
@@ -1715,6 +1716,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private canRunOwner(owner: BObject): boolean {
     if (this.stopped || owner.destroyed) return false;
+    if (owner instanceof PostProcessMaterialObject)
+      return owner.isCurrent() && this.canRunOwner(owner.owner);
     if (owner === this.world.gameInstance) return true;
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner
       : owner instanceof ComponentLogic || owner instanceof MaterialObject ? owner.component.owner : null;
@@ -2015,7 +2018,8 @@ class InProcessRuntime implements RuntimeDriver {
         z: Number(authoredGravity?.[2] ?? this.gravity[2]),
       };
       this.setWorldGravity(gravity);
-      work.sceneInstance = this.world.createScene({ assetGuid: guid, sceneName: name, variables: { gravity } });
+      work.sceneInstance = this.world.createScene({ assetGuid: guid, sceneName: name,
+        postProcessStack: scene.settings.postProcessStack, variables: { gravity } });
       checkpoint();
       this.emit({ type: "activeScene", sceneAssetGuid: guid, sceneLoadId: loadId });
       checkpoint();
