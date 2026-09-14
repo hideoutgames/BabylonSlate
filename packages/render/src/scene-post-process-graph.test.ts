@@ -477,19 +477,28 @@ it.each(["released", "uncertain"] as const)(
     owner.reconcile();
     const task = owner.postProcessTasks[0]!;
     const nativeRetirement = task.whenDisposed.bind(task);
+    const nativeRelease = task.whenReleased.bind(task);
     let resolveNative!: () => void;
     let rejectNative!: (error: Error) => void;
     const native = new Promise<void>((resolve, reject) => {
       resolveNative = resolve;
       rejectNative = reject;
     });
+    let confirmRelease!: () => void;
+    const confirmed = new Promise<void>((resolve) => {
+      confirmRelease = resolve;
+    });
     // Keep the real task disposal, but control its asynchronous native boundary.
     vi.spyOn(task, "whenDisposed").mockImplementation(() =>
       nativeRetirement().then(() => native),
     );
+    vi.spyOn(task, "whenReleased").mockImplementation(() =>
+      nativeRelease().then(() => confirmed),
+    );
     Object.defineProperty(h.engine, "isWebGPU", { get: () => true });
     h.disposeGraph();
     const cpu = owner.whenDisposed();
+    const actual = owner.whenReleased();
     const gpu = owner.releaseAfterGraphDisposal();
     void cpu.catch(() => {});
     void gpu.catch(() => {});
@@ -503,24 +512,27 @@ it.each(["released", "uncertain"] as const)(
       if (outcome === "uncertain") {
         rejectNative(new Error("Native retirement deadline"));
         await expect(cpu).rejects.toThrow("Native retirement deadline");
-        await expect(gpu).rejects.toThrow("Native retirement deadline");
         h.engine.endFrame();
         expect(
           managedRenderReservations(h.engine).reservedBytes,
         ).toBeGreaterThan(0);
+        expect(beginManagedRenderAllocation(h.engine, 2048)).toBeUndefined();
       } else {
         resolveNative();
         await cpu;
-        expect(
-          managedRenderReservations(h.engine).reservedBytes,
-        ).toBeGreaterThan(0);
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        h.engine.endFrame();
-        await gpu;
-        expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
       }
+      confirmRelease();
+      await actual;
+      expect(managedRenderReservations(h.engine).reservedBytes).toBeGreaterThan(
+        0,
+      );
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      h.engine.endFrame();
+      await gpu;
+      expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
     } finally {
       resolveNative();
+      confirmRelease();
       h.engine.dispose();
     }
   },

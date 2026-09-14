@@ -428,12 +428,13 @@ after culling and before surfaces, then the authored pass chain and final copy.
 Actual graph-owned InternalTextures reconcile the declared replacement peak after
 build, including every scaled pass output and aliased attachment. Entry-ID setters,
 getters and resets address only that owner's Material instances. Teardown disposes
-task services and the caller-owned graph. The owner's `whenDisposed()` waits for
-task-owned Effect/Material retirement before the caller releases its host Scene,
-library or output target. It does not wait for a GPU frame, so a paused Engine can
-retire the host. `releaseAfterGraphDisposal()` waits for that same retirement and
-then the managed GPU destruction drain; uncertain native cleanup rejects and keeps
-the reservation held.
+task services and the caller-owned graph. The owner's `whenDisposed()` reports
+bounded task-owned Effect/Material cleanup; `whenReleased()` confirms actual native
+release, including completion after a reported deadline. The caller retains its
+host Scene, library and output target until actual release. Neither signal waits
+for a GPU frame, so a paused Engine can retire the host. `releaseAfterGraphDisposal()`
+waits for actual task release and then the managed GPU destruction drain. Uncertain
+native cleanup keeps the reservation held until release is confirmed.
 This helper does not select a production render path or own a scene render loop.
 
 These are conservative policy allowances, not measured VRAM or A16 performance.
