@@ -10,8 +10,6 @@ import {
   normalizeEnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
   type EnvironmentLightingSettings,
-  resolveRenderingPipeline,
-  type RenderPathOverrides,
 } from "@babylonslate/core";
 
 /** Requested path changes enter the same shader/presentation barrier as other structural settings. */
