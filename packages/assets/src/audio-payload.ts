@@ -503,8 +503,9 @@ export function normalizeSoundAttenuationPayload(
   value: unknown,
 ): SoundAttenuationPayload {
   const source = asRecord(value);
-  let innerRadius = nonNegative(source.innerRadius, 1);
-  let maxRadius = nonNegative(source.maxRadius, 50);
+  const defaults = createDefaultSoundAttenuationPayload();
+  let innerRadius = nonNegative(source.innerRadius, defaults.innerRadius);
+  let maxRadius = nonNegative(source.maxRadius, defaults.maxRadius);
   if (maxRadius < innerRadius) {
     const swap = innerRadius;
     innerRadius = maxRadius;

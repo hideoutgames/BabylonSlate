@@ -209,6 +209,7 @@ describe("Inspector prefab component details", () => {
       renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
       expect(screen.queryByTestId("inspector-actor-defaults")).toBeNull();
       expect(screen.queryByTestId("inspector-prefab-origin")).toBeNull();
+      expect(screen.getByTestId("inspector-parent-class").textContent).toContain(parentClass);
     },
   );
 

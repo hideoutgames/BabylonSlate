@@ -685,11 +685,11 @@ describe("audio payloads", () => {
   it("keeps attenuation full inside the inner radius and silent at max", () => {
     const atten = createDefaultSoundAttenuationPayload();
     expect(computeAttenuationGain(0, atten)).toBe(1);
-    expect(computeAttenuationGain(1, atten)).toBe(1);
-    expect(computeAttenuationGain(50, atten)).toBe(0);
-    expect(computeAttenuationGain(25.5, atten)).toBeCloseTo(0.5);
-    const farther = computeAttenuationGain(40, atten);
-    const nearer = computeAttenuationGain(10, atten);
+    expect(computeAttenuationGain(10, atten)).toBe(1);
+    expect(computeAttenuationGain(250, atten)).toBe(0);
+    expect(computeAttenuationGain(130, atten)).toBeCloseTo(0.5);
+    const farther = computeAttenuationGain(200, atten);
+    const nearer = computeAttenuationGain(50, atten);
     expect(farther).toBeLessThan(nearer);
     expect(farther).toBeGreaterThan(0);
   });
@@ -716,6 +716,9 @@ describe("audio payloads", () => {
   });
 
   it("enforces attenuation radii and known distance models", () => {
+    expect(normalizeSoundAttenuationPayload({})).toMatchObject({ innerRadius: 10, maxRadius: 250 });
+    expect(normalizeSoundAttenuationPayload({ innerRadius: NaN, maxRadius: Infinity })).toMatchObject({ innerRadius: 10, maxRadius: 250 });
+    expect(normalizeSoundAttenuationPayload({ innerRadius: 1, maxRadius: 50 })).toMatchObject({ innerRadius: 1, maxRadius: 50 });
     const swapped = normalizeSoundAttenuationPayload({
       innerRadius: 20,
       maxRadius: 5,

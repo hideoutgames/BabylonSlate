@@ -1282,11 +1282,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   if (
     prefabSelectedId === PREFAB_ROOT_ID &&
     doc?.ref.kind === "graph" &&
-    graph &&
-    classDocumentShowsPrefab(parentClass, parentOf, {
-      assetType: indexed?.header.type,
-    })
+    graph
   ) {
+    const showActorDefaults = classDocumentShowsPrefab(parentClass, parentOf, {
+      assetType: indexed?.header.type,
+    });
     const defaults = graph.actorDefaults ?? {};
     const selfClassId = classIdFromClassAsset({
       path: doc.ref.path,
@@ -1353,6 +1353,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             });
           }}
         />
+        {showActorDefaults ? <>
         <PropertyGrid
           title="Actor Defaults"
           data-testid="inspector-actor-defaults"
@@ -1390,6 +1391,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           Prefab Origin is the actor transform in the Scene. Drag the viewport
           gizmo on Prefab Root to move that origin relative to the components.
         </p>
+        </> : null}
       </PanelFrame>
     );
   }
