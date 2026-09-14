@@ -9,6 +9,7 @@ import {
   type BakedLightingSource,
   type BakedReceiverIdentity,
   type EnvironmentLightingSettings,
+  type GeneratedBakeTopology,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
@@ -16,6 +17,7 @@ import {
 } from "@babylonslate/core";
 import {
   fingerprintBakeGeometry,
+  remapBakeGeometry,
   sha256Hex,
   stableStringify,
 } from "@babylonslate/assets";
@@ -71,6 +73,34 @@ export class StaleSceneBakeError extends Error {
     );
     this.name = "StaleSceneBakeError";
   }
+}
+
+/** Attach generated UVs using the same corner conversion as world-space transport. */
+export function preparedBakeReceiverTransport(
+  mesh: PreparedBakeMesh,
+  topology: GeneratedBakeTopology,
+): BakePrototypeMesh {
+  if (!mesh.receiver)
+    throw new Error("Only Static Receivers can own bake atlas coordinates.");
+  remapBakeGeometry(mesh.source, topology);
+  const order =
+    Matrix.FromArray(mesh.world).determinant() < 0 ? [0, 1, 2] : [0, 2, 1];
+  const uv2 = new Float32Array(topology.indices.length * 2);
+  for (let triangle = 0; triangle < topology.indices.length; triangle += 3) {
+    for (let corner = 0; corner < 3; corner++) {
+      const vertex = topology.indices[triangle + order[corner]];
+      uv2[(triangle + corner) * 2] = topology.uv2[vertex * 2];
+      uv2[(triangle + corner) * 2 + 1] = topology.uv2[vertex * 2 + 1];
+    }
+  }
+  return {
+    positions: mesh.transport.positions.slice(),
+    uv2,
+    material: {
+      ...mesh.transport.material,
+      albedo: [...mesh.transport.material.albedo],
+    },
+  };
 }
 
 const hash = (value: unknown) =>
