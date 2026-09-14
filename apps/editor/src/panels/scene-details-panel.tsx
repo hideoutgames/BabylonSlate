@@ -1,3 +1,4 @@
+import { scenePipelineKey, useScenePipelineStatus } from "../lib/scene-pipeline-status";
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
 import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
 import { isEnvironmentTexturePayload, normalizeModelPayload } from "@babylonslate/assets";
@@ -105,8 +106,9 @@ import { prefabTemplatesByClassId } from "../lib/prefab-instance-sync";
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, projectDocument, assetRegistry } =
+  const { openDocuments, applySceneChange, projectDocument, projectGuid, assetRegistry } =
     useDocuments();
+  const activePipeline = useScenePipelineStatus(scenePipelineKey(projectGuid, documentId));
   const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
   const navBake = useOptionalNavBake();
   const [propertyQuery, setPropertyQuery] = useState("");
@@ -707,7 +709,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         {showPipeline ? (
           <div className="px-2 pb-3">
             <DisclosureSection title="Rendering" open={overrideOpen("rendering")} onOpenChange={(open) => setOverrideOpen("rendering", open)}>
-              <RenderPipelineFields hideTitle scope="scene" project={projectDocument?.settings.render}
+              <RenderPipelineFields hideTitle scope="scene" activePipeline={activePipeline} project={projectDocument?.settings.render}
                 overrides={scene.settings} onChange={(pipeline) => {
                   const settings = { ...scene.settings };
                   delete settings.renderPath;

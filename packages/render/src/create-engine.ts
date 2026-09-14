@@ -1,5 +1,7 @@
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
+import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
+import type { ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
@@ -236,6 +238,7 @@ export interface EngineHandle {
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
   drawCalls: () => number;
   renderDiagnostics: () => RenderDiagnostics;
+  renderPathStatus: () => ResolvedRenderingPipeline;
   /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
   accountedGeometryBytes: () => number;
   /** Explicit tap pick (hover picking is disabled). */
@@ -374,6 +377,8 @@ export interface CreateEngineOptions {
   /** Optional fps cap. Play sessions pass project `playFrameCap` (default 60). */
   frameCap?: number;
   renderSettings?: RenderShadingSettings;
+  /** Plain scene-owned requested/effective selection, emitted only when it changes. */
+  onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
@@ -788,6 +793,9 @@ function initializeEngine(
     cancelPresentation(new Error("Scene construction failed."));
   });
   setSceneRenderSettings(scene, options.renderSettings ?? {});
+  const unsubscribeRenderPath = options.onRenderPathChanged
+    ? subscribeSceneRenderPath(scene, options.onRenderPathChanged) : () => {};
+  onRollback(unsubscribeRenderPath);
   configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
@@ -1308,7 +1316,7 @@ function initializeEngine(
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
-    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
     postProcessParameters.clear();
     postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
     await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
@@ -1325,7 +1333,7 @@ function initializeEngine(
     loadGeneration += 1;
     worldRenderer?.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
-    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
     postProcessParameters.clear();
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -1985,6 +1993,7 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      unsubscribeRenderPath();
       loadGeneration += 1;
       cancelPresentation(new Error("Scene loading was disposed."));
       engine.onContextLostObservable.remove(contextLostObserver);
@@ -2305,6 +2314,7 @@ function initializeEngine(
     }),
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
+    renderPathStatus: () => sceneRenderPathStatus(scene),
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
@@ -2385,7 +2395,7 @@ function initializeEngine(
       }
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
-      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
       applySerializedSceneEnvironment(scene, sceneData, {
         applyClearColor: true,
         assets: binding,

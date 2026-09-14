@@ -1,6 +1,4 @@
 import {
-  resolveRenderingPipeline,
-  type RenderPathOverrides,
   resolveShadowSettings,
   type ShadowOverrides,
   resolveCelShadingSettings,
@@ -10,9 +8,11 @@ import {
   normalizeEnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
   type EnvironmentLightingSettings,
+  resolveRenderingPipeline,
+  type RenderPathOverrides,
 } from "@babylonslate/core";
 
-/** Only effective rendering changes rebuild GPU scene resources. */
+/** Requested path changes enter the same shader/presentation barrier as other structural settings. */
 export function sceneViewportRenderSettingsKey(
   project: Partial<RenderProjectSettings> = {},
   overrides?: CelShadingOverrides,
@@ -23,7 +23,7 @@ export function sceneViewportRenderSettingsKey(
 ): string {
   return JSON.stringify({
     ...project,
-    ...resolveRenderingPipeline(project, pipelineOverrides).effective,
+    ...resolveRenderingPipeline(project, pipelineOverrides).requested,
     mode: project.mode ?? "pbr",
     environmentLighting: {
       enabled: resolveEnvironmentLightingSettings(

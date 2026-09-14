@@ -20,13 +20,12 @@ if (
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("environmentWebgpuProof")
+  new URLSearchParams(location.search).has("clusteredLightProof")
 ) {
-  void import("./lib/environment-lighting-proof").then(
-    ({ runEnvironmentIrradianceWebGpuProof }) => {
+  void import("./testing/clustered-light-proof").then(
+    ({ runClusteredLightProof }) => {
       Object.assign(window, {
-        __babylonslateEnvironmentWebGpuProof:
-          runEnvironmentIrradianceWebGpuProof,
+        __babylonslateClusteredLightProof: runClusteredLightProof,
       });
     },
   );
@@ -70,6 +69,18 @@ if (
   void import("./testing/webgpu-proof").then(({ runWebGpuProof }) => {
     Object.assign(window, { __babylonslateWebGpuProof: runWebGpuProof });
   });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("environmentWebgpuProof")
+) {
+  void import("./lib/environment-lighting-proof").then(
+    ({ runEnvironmentIrradianceWebGpuProof }) => {
+      Object.assign(window, {
+        __babylonslateEnvironmentWebGpuProof:
+          runEnvironmentIrradianceWebGpuProof,
+      });
+    },
+  );
 } else {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

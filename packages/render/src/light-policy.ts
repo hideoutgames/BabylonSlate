@@ -7,15 +7,21 @@ import {
   type Scene,
 } from "@babylonjs/core";
 
+import {
+  isClusteredLocalAllowed,
+  isManagedClusteredLight,
+} from "./clustered-light-policy";
+
 const authoredEnabled = new WeakMap<
   Light,
   { enabled: boolean; effective: boolean }
 >();
 const excluded = new WeakSet<Light>();
 const forwardExcluded = new WeakSet<Light>();
+const clusteredMembers = new WeakSet<Light>();
 const forwardSelections = new WeakMap<Scene, Set<Light>>();
 
-function requestedEnabled(light: Light): boolean {
+export function isAuthoredLightEnabled(light: Light): boolean {
   const current = light.isEnabled(false);
   const previous = authoredEnabled.get(light);
   return !previous || current !== previous.effective
@@ -28,13 +34,21 @@ function applyEnabled(light: Light, enabled: boolean): void {
     enabled &&
     light.intensity > 0 &&
     !excluded.has(light) &&
-    !forwardExcluded.has(light);
+    (!forwardExcluded.has(light) || clusteredMembers.has(light));
   const previous = authoredEnabled.get(light);
   if (previous) {
     previous.enabled = enabled;
     previous.effective = effective;
   } else authoredEnabled.set(light, { enabled, effective });
   if (light.isEnabled(false) !== effective) light.setEnabled(effective);
+}
+
+/** A borrowed clustered child does not consume its previous conventional slot. */
+export function setClusteredLightMember(light: Light, member: boolean): void {
+  const enabled = isAuthoredLightEnabled(light);
+  if (member) clusteredMembers.add(light);
+  else clusteredMembers.delete(light);
+  applyEnabled(light, enabled);
 }
 
 /** Authored state stays separate from Babylon's effective illumination state. */
@@ -48,7 +62,11 @@ export function isDirectionalLightExcluded(light: Light): boolean {
 }
 
 export function isForwardLightExcluded(light: Light): boolean {
-  return forwardExcluded.has(light) && requestedEnabled(light);
+  return (
+    !clusteredMembers.has(light) &&
+    forwardExcluded.has(light) &&
+    isAuthoredLightEnabled(light)
+  );
 }
 
 /** Stable scene order selects one enabled sun, regardless of shadow settings. */
@@ -56,7 +74,7 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
   let owner: Light | undefined;
   for (const light of scene.lights) {
     if (!(light instanceof DirectionalLight)) continue;
-    const enabled = requestedEnabled(light);
+    const enabled = isAuthoredLightEnabled(light);
     const illuminating =
       enabled &&
       light.intensity > 0 &&
@@ -81,19 +99,80 @@ export function syncForwardLightPolicy(
 } {
   syncDirectionalLightPolicy(scene);
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
-  const camera = scene.activeCamera;
-  camera?.getViewMatrix();
   const eligible = (light: Light) =>
-    requestedEnabled(light) &&
+    isAuthoredLightEnabled(light) &&
     light.intensity > 0 &&
     !excluded.has(light) &&
     (!light.parent || light.parent.isEnabled());
-  const candidates = scene.lights.filter(eligible);
-  const global = (light: Light) =>
-    light instanceof DirectionalLight || light instanceof HemisphericLight;
-  const distance = (light: Light) => {
+  const global = isGlobalLight;
+  const local = (light: Light) =>
+    !global(light) && !isManagedClusteredLight(scene, light);
+  const candidates = scene.lights.filter(
+    (light) =>
+      eligible(light) &&
+      (!local(light) || isClusteredLocalAllowed(scene, light)),
+  );
+  const capacity = Math.max(0, Math.floor(slots));
+  const localCapacity = Math.max(0, Math.floor(localSlots));
+  if (
+    candidates.length > capacity ||
+    candidates.filter(local).length > localCapacity
+  )
+    candidates.sort(compareLightAdmission(scene, candidates, previous));
+  const selected = previous;
+  selected.clear();
+  let selectedLocals = 0;
+  const limited: Light[] = [];
+  for (const light of candidates) {
+    const authoredLocal = local(light);
+    if (
+      selected.size >= capacity ||
+      (authoredLocal && selectedLocals >= localCapacity)
+    )
+      limited.push(light);
+    else {
+      selected.add(light);
+      if (authoredLocal) selectedLocals++;
+    }
+  }
+  for (const light of scene.lights) {
+    const enabled = isAuthoredLightEnabled(light);
+    if (eligible(light) && !selected.has(light)) {
+      forwardExcluded.add(light);
+      if (!candidates.includes(light)) limited.push(light);
+    } else forwardExcluded.delete(light);
+    applyEnabled(light, enabled);
+  }
+  forwardSelections.set(scene, selected);
+  return {
+    requested: selected.size + limited.length,
+    admitted: selected.size,
+    limited,
+  };
+}
+
+function isGlobalLight(light: Light): boolean {
+  return light instanceof DirectionalLight || light instanceof HemisphericLight;
+}
+
+/** Shared authored-local ordering before clustered and conventional resource admission. */
+export function compareLightAdmission(
+  scene: Scene,
+  candidates: readonly Light[],
+  previous: ReadonlySet<Light>,
+): (a: Light, b: Light) => number {
+  const camera = scene.activeCamera;
+  camera?.getViewMatrix();
+  const distances = new Map<Light, number>();
+  for (const light of candidates) {
+    if (light instanceof ShadowLight && !isGlobalLight(light)) {
+      // Excluded children never reach normal shader binding. Refresh parented
+      // positions before either quality or shader-capacity selection.
+      light.parent?.computeWorldMatrix(true);
+      light.computeTransformedInformation();
+    }
     const squared =
-      camera && !global(light)
+      camera && !isGlobalLight(light)
         ? Vector3.DistanceSquared(
             light instanceof ShadowLight && !light.parent
               ? light.position
@@ -101,50 +180,17 @@ export function syncForwardLightPolicy(
             camera.globalPosition,
           )
         : 0;
-    // An incumbent remains selected around equal-distance boundaries. A clearly
-    // nearer light or explicitly higher renderPriority still replaces it.
-    return Math.max(1, squared) / (previous.has(light) ? 1.15 : 1);
-  };
-  const capacity = Math.max(0, Math.floor(slots));
-  const localCapacity = Math.max(0, Math.floor(localSlots));
-  if (candidates.length > capacity || candidates.filter((light) => !global(light)).length > localCapacity) {
-    if (camera) {
-      for (const light of candidates) {
-        if (!(light instanceof ShadowLight) || global(light)) continue;
-        // Excluded lights do not reach Babylon's shader binding path, which
-        // normally refreshes this cached position. Update ancestors too, even
-        // when admission runs again before the next scene render.
-        light.parent?.computeWorldMatrix(true);
-        light.computeTransformedInformation();
-      }
-    }
-    candidates.sort(
-      (a, b) =>
-        Number(global(b)) - Number(global(a)) ||
-        (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
-          (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
-        distance(a) - distance(b) ||
-        a.uniqueId - b.uniqueId,
+    distances.set(
+      light,
+      Math.max(1, squared) / (previous.has(light) ? 1.15 : 1),
     );
   }
-  const selected = previous;
-  selected.clear();
-  let selectedLocals = 0;
-  const limited: Light[] = [];
-  for (const light of candidates) {
-    const local = !global(light);
-    if (selected.size >= capacity || (local && selectedLocals >= localCapacity)) limited.push(light);
-    else {
-      selected.add(light);
-      if (local) selectedLocals++;
-    }
-  }
-  for (const light of scene.lights) {
-    const enabled = requestedEnabled(light);
-    if (eligible(light) && !selected.has(light)) forwardExcluded.add(light);
-    else forwardExcluded.delete(light);
-    applyEnabled(light, enabled);
-  }
-  forwardSelections.set(scene, selected);
-  return { requested: candidates.length, admitted: selected.size, limited };
+  return (a, b) =>
+    Number(isGlobalLight(b)) - Number(isGlobalLight(a)) ||
+    Number(isManagedClusteredLight(scene, b)) -
+      Number(isManagedClusteredLight(scene, a)) ||
+    (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
+      (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
+    distances.get(a)! - distances.get(b)! ||
+    a.uniqueId - b.uniqueId;
 }

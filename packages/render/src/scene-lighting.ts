@@ -1,6 +1,12 @@
+import { syncSceneRenderPath, publishSceneRenderPath } from "./scene-render-path";
 import "./texture-quality";
 import { syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import {
+  clusteredLightingLimits,
+  clusteredLocalContributionCount,
+  syncClusteredLightPolicy,
+} from "./clustered-light-policy";
 import { sceneRenderingSettings } from "./render-settings";
 import {
   Material,
@@ -49,7 +55,10 @@ export function syncSceneLighting(scene: Scene): void {
 }
 
 export function sceneLightingLimits(scene: Scene): string[] {
-  return lightingByScene.get(scene)?.limits() ?? [];
+  return [
+    ...clusteredLightingLimits(scene),
+    ...(lightingByScene.get(scene)?.limits() ?? []),
+  ];
 }
 
 function installSceneLighting(scene: Scene): SceneLighting {
@@ -71,17 +80,31 @@ function installSceneLighting(scene: Scene): SceneLighting {
 
   const sync = (): void => {
     if (scene.isDisposed) return;
+    syncSceneRenderPath(scene);
+    syncClusteredLightPolicy(scene);
+    publishSceneRenderPath(scene);
     budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
-    admission = syncForwardLightPolicy(scene, budget.slots, sceneRenderingSettings(scene).localLightBudget);
+    admission = syncForwardLightPolicy(
+      scene,
+      budget.slots,
+      Math.max(
+        0,
+        sceneRenderingSettings(scene).localLightBudget -
+          clusteredLocalContributionCount(scene),
+      ),
+    );
     nextEnabled.length = 0;
     nextShadowLayout.length = 0;
     for (const light of scene.lights) {
       if (!light.isEnabled()) continue;
       nextEnabled.push(light);
-      nextShadowLayout.push(light.shadowEnabled,
-        light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator());
+      nextShadowLayout.push(
+        light.shadowEnabled,
+        light.getShadowGenerator(scene.activeCamera) ??
+          light.getShadowGenerator(),
+      );
     }
     const changed =
       sceneLightsEnabled !== scene.lightsEnabled ||

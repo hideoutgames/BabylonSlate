@@ -674,10 +674,12 @@ export function PlayOverlay({
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
         tickIndex: () => number;
+        rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
       };
     };
     host.__babylonslatePlayTest = {
       actorPositions: () => sessionRef.current?.lastActorPositions() ?? [],
+      rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
       whenModelsReady: () =>

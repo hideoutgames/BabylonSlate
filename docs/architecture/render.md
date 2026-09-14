@@ -26,7 +26,11 @@ Optional `scene.settings.renderPath` inherits from the project. `resolveRenderin
 
 Project Settings → Rendering exposes independent Render Path and GPU Backend preferences alongside PBR/CEL. Scene Defaults → Rendering starts closed and supports a per-field path override; Reset To Project removes that key without changing other Scene settings. Property search temporarily expands the matching category. SceneLayer documents cannot author project Engine or normal Scene paths.
 
-The effective-selection feedback resolves Auto to Forward/WebGL2. Explicit Clustered Forward currently falls back to Forward. The editor reports the initialized WebGPU or WebGL2 backend and any fallback reason while preserving the authored preference through Save/reopen and export. Settings commit on Done/close; a backend change uses the project transition above, while a path preference with the same effective renderer does not rebuild the viewport. Engine creation verifies actual backend support. Eligible Play worlds and SceneLayers use the scene-owned Forward FrameGraph below; ClusteredForward selection remains separate integration work. No Deferred or real-time GI path is defined.
+`scene-render-path` owns explicit Clustered Forward and Auto selection for each Scene before shared light admission and shader readiness. Forward remains the default for existing and new projects. Auto selects clustering only when the authored eligible-local count, bounded by the shared Lighting allowance, exceeds the remaining conventional shader slots. It uses authored topology and settings, not camera/light motion, intensity or camera-selected shadow maps. A scene owns at most one cluster container and returns its borrowed lights before Forward fallback or disposal. Context restoration repeats the actual capability probe. Unknown surface/custom material contracts, incompatible CEL Strongest order, unsupported cameras/backends, or failed float rendering/blending retain the request and report a concrete Forward fallback. Known native PBR/Standard/CEL and successfully lowered surface graphs without custom code are admitted; owned unlit editor grid shaders do not block selection. Graph rebuilds require a fresh compiler opt-in.
+
+Requested path changes enter the existing viewport loading/shader/first-presentation barrier. Sparse Scene overrides and Play/player serialized settings reach the same renderer policy. The editor shows the active Scene's requested/effective result and the initialized Engine backend without replacing the saved preference. A viewport-generation lease rejects stale status callbacks and cleanup. `EngineHandle.renderPathStatus()` and `RenderDiagnostics.pipeline` expose plain metadata. The path controller does not call `Scene.render` or replace FrameGraph ownership. Device performance, WebGPU clustering and unsupported material/layout parity remain separate gates; no Apple A16 qualification is implied.
+
+The `ClusteredSceneLights` owner borrows an explicit authored light registry, retaining enabled values and returning children to conventional lighting before shadow promotion or disposal. WebGL2 admission tests an actual R32F framebuffer and additive mask precision, restores caller GL state, and caches the result only until context restoration. Eligible finite-range default-falloff point/spot lights exclude live shadow maps, projection/IES textures and per-mesh filters; unsupported lights keep bounded conventional admission. Container resources have separate dimension/count limits. The shared Lighting quality allowance selects authored locals by priority, camera distance and hysteresis before clustering. Clustered children and conventional shadowed/unsupported locals share that total; the container itself consumes a shader slot but no authored-local slot. Auto derives the shared tier target, while Manual may exceed it subject to real shader/storage admission. Zero local allowance retains the separately admitted sun. Diagnostics report retained allocation capacity when membership shrinks; Babylon reuses that high-water allocation until the owner releases the container. Physical PBR has no finite authored cutoff: a guarded proxy-shader adapter covers every camera tile and depth slice while preserving the original packed attenuation and authored range. This conservative mode saves conventional shader slots but does not cull individual physical lights. Finite-range CEL retains native bounds. The borrowed mask pass restores blend mode/equation and depth state before surface rendering, treating Babylon's invalid alpha-cache sentinel as disabled blending. An owned container subclass registers first-use NodeMaterial cluster defines; scene-owned light-block wrappers add the newly required samplers when an existing conventional slot changes type and restore the original methods on release. Orthographic cameras retain conventional rendering pending a compatible mask projection. The borrowed FrameGraph mask task renders once before objects, preserves shadow texture dependencies, performs no readiness draw, and never releases the container-owned map. A guarded Babylon 9.20 packing adapter restores authored child order after native camera-depth packing, remaps each slice to a conservative enclosing index interval, and uploads only when the order differs. It borrows the data texture and reuses its scratch storage. CEL continues each child comparison from the preceding conventional peak and carries whether a child won, preserving the sequential epsilon rule before the existing final ramp. An aggregate maximum cannot substitute for that sequence. Strongest admits only a contiguous authored tail after conventional lights; interleaved or oversized tails report conventional fallback. The decision changes with authored topology, priority, style or quality, not camera movement or shadow-map admission. Authored shadow requests remain conventional even when disabled globally or waiting for a map. Turning the authored request off can extend a compatible tail without replacing its mask. Returning borrowed children restores scene and per-mesh order; a cluster does not enable priority sorting on a previously unsorted scene. Native/graph pixel parity and device benefit remain prototype acceptance gates. The numeric browser oracle pairs the managed-shadow fixture with 48 clustered locals: shadow promotion/demotion must keep one key-light contribution, reuse the mask, and preserve the existing first-frame, motion, resize, reload and sibling-scene pixel invariants. Readiness must draw neither masks nor shadow maps; presented frames render exactly one mask pass. Shadow membership checks current Scene ownership when Babylon delivers deferred mesh-added events, so the already-removed cluster proxy cannot become a caster or force static maps to refresh continuously. The Forward coordinator rejects unmanaged containers. These absolute storage limits are safety bounds, independent of the shared quality categories; Forward remains the saved default; explicit Clustered Forward and Auto use the scene policy above.
 
 Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
 
@@ -376,15 +380,54 @@ Authored World Position and Camera Position graph inputs add the render origin
 back; lighting and view-direction calculations remain camera-relative. Moving
 the camera therefore does not move world-space procedural material coordinates.
 
-All Scene, Play and preview controllers share an Engine shadow reservation ceiling
-of 512 MiB and 64 faces/passes. Per-quality scene ceilings further restrict admission.
-Maps are admitted before construction, including all six cube faces, RGBA
-half/float/byte attachments selected from capabilities, conservative four-byte depth,
-and the temporary four-layer CSM constructor. Eight fragment samplers are reserved
-for materials; PCSS costs two shadow samplers, other supported filters one.
+All Scene, Play and preview controllers share a 512 MiB managed lighting texture
+reservation ceiling; shadows also retain their 64-face/pass ceiling and lower
+per-quality scene limits. Shadow maps are admitted before construction, including
+all six cube faces, capability-selected RGBA half/float/byte attachments,
+conservative four-byte depth and the temporary four-layer CSM constructor.
+Cluster mask and light-data textures consume the same Engine allowance, including
+clusters owned by the same Scene. Native construction and growth reserve the
+entire replacement peak while the previous textures remain leased. Failed owned
+allocations release a pending lease only after confirmed cleanup; uncertain cleanup
+retains it. Membership shrink retains native high-water storage until disposal.
+Actual unique InternalTexture handles reconcile declared float format, dimensions,
+mips and sample/resolve storage before publication; graph imports borrow the same
+handles without reserving duplicate storage. Diagnostics distinguish shadow,
+cluster, pending and total reserved managed-lighting bytes. Context restoration
+releases each owner's old resources before allowing its replacement; it never
+clears a sibling's reservation globally.
+
+The same Engine ledger now accepts SceneColor, geometry, depth and post-process
+leases through `beginManagedRenderAllocation`; existing lighting callers keep
+their lower limits and cluster accounting. Category totals partition physical
+handles; a texture aliased across categories is counted once in `sharedBytes`.
+Declared render-target recipes reserve dimensions, array/cube/volume mip storage,
+resolved textures and full lazy MSAA capacity before construction. Actual InternalTexture metadata can reconcile graph-owned handles before lazy
+wrappers exist; the wrapper collector also accounts separate WebGL depth buffers.
+RGB expansion and implementation-defined depth/stencil formats use conservative
+representation bounds; unknown layouts are rejected. WebGL callers must retain
+allocated mip counts when generation is disabled. Mutating a live allocation in
+place is unsupported: replacement leases retain the previous generation until its
+owned resources are disposed. The service performs no GPU allocation/query during
+accounting and does not yet connect these extra categories to production graphs.
+After confirmed object disposal, WebGPU callers use
+`releaseManagedRenderLeaseAfterDisposal` to hold the charge until the next natural
+end-frame destruction drain or confirmed Engine disposal. Registration waits one
+microtask so disposal from an end-frame observer cannot release in that same
+notification after the drain has already run. Paused engines retain the charge;
+the helper never forces a shared frame. Uncertain cleanup keeps the lease.
+
 These are conservative policy allowances, not measured VRAM or A16 performance.
-The ledger covers shadows only; full engine accounting of textures, effects,
-reflection targets and transition copies remains future work.
+The ledger covers managed shadow attachments and cluster mask/data textures only;
+proxy geometry/UBOs, material caches, effects, reflection targets, transition copies
+and separate authoring GPU contexts remain outside this ledger. Eight fragment
+samplers remain conservative legacy shadow headroom; PCSS costs two shadow
+samplers and other supported filters one. This does not qualify every combined
+material/cluster sampler layout. Enabled native Clear Coat, Anisotropy, Iridescence,
+Sheen, Subsurface and Detail Map features retain the requested path but explicitly
+fall back to Forward pending their combined binding/pixel matrix. General sampler
+admission derived from fully lowered graph/native feature bindings remains separate
+work; this texture reservation slice makes no universal sampler-safety claim.
 Play stats report CPU submission time, asynchronous engine GPU timing when
 supported, effective target size/sample count, allocated shadow passes and an
 attachment-memory estimate. Unsupported or pending GPU timing is labeled rather
@@ -563,7 +606,7 @@ Material color inputs and Color (sRGB) samples decode to linear graph values; Da
 
 The shared core ownership registry covers every scalability field: Shadows owns all shadow controls; Resolution owns scale, dynamic/minimum scale and target FPS; Textures owns residency budget, anisotropy and LOD bias; Post Processing owns opt-in pass resolution; Lighting owns local direct-light Auto/Manual capacity (4/16/64/256). Local illumination and shadow-map counts are independent. Manual illumination counts override the Auto target; Forward shader or clustered storage admission can still reduce the effective count. Global sun/fill slots remain separate. The same resolver drives project controls, typed Play/player commands and console queries.
 
-Each category saves `preset` provenance independently from its `profile` admission tier. Any manual cost edit makes the category Custom, even if it matches another preset. Reload preserves Custom; reapplying a category preset resets its complete cost settings. Legacy values are retained and classified by their actual complete settings. Scene sparse shadow overrides and local/session overrides report Custom until reset to inheritance or replaced by an explicit preset. Artistic and structural choices are independent: CEL/PBR and CEL style, IBL enablement/intensity/orientation/strength, render path/backend, output design size/aspect and frame caps neither change nor mark categories Custom. Authored post-process passes stay enabled and ordered; only passes marked scalable may render below full resolution.
+Each category saves `preset` provenance independently from its `profile` admission tier. Any manual cost edit makes the category Custom, even if it matches another preset. Reload preserves Custom; reapplying a category preset resets its complete cost settings. Legacy values are retained and classified by their actual complete settings. Scene sparse shadow overrides and local/session overrides report Custom until reset to inheritance or replaced by an explicit preset. Artistic and structural choices are independent: CEL/PBR and CEL style, IBL enablement/intensity/orientation/strength, render path/backend, output design size/aspect and frame caps neither change nor mark categories Custom. Authored post-process entry IDs remain independent of scalability. Passes stay enabled and ordered; only passes marked scalable may render below full resolution.
 
 Project-only settings/version edits enable Save All and participate in close/reload warnings and Play preparation. The exact successfully saved snapshot acknowledges them; failed writes and newer edits remain dirty. Loading or closing a project resets this ownership, so an old pending save cannot acknowledge its successor. Registry path refreshes do not independently dirty authored settings.
 
