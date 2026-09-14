@@ -73,6 +73,7 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
 export function syncForwardLightPolicy(
   scene: Scene,
   slots: number,
+  localSlots = Number.MAX_SAFE_INTEGER,
 ): {
   requested: number;
   admitted: number;
@@ -105,7 +106,8 @@ export function syncForwardLightPolicy(
     return Math.max(1, squared) / (previous.has(light) ? 1.15 : 1);
   };
   const capacity = Math.max(0, Math.floor(slots));
-  if (candidates.length > capacity) {
+  const localCapacity = Math.max(0, Math.floor(localSlots));
+  if (candidates.length > capacity || candidates.filter((light) => !global(light)).length > localCapacity) {
     if (camera) {
       for (const light of candidates) {
         if (!(light instanceof ShadowLight) || global(light)) continue;
@@ -127,9 +129,16 @@ export function syncForwardLightPolicy(
   }
   const selected = previous;
   selected.clear();
-  for (let index = 0; index < Math.min(capacity, candidates.length); index++)
-    selected.add(candidates[index]!);
-  const limited = candidates.slice(capacity);
+  let selectedLocals = 0;
+  const limited: Light[] = [];
+  for (const light of candidates) {
+    const local = !global(light);
+    if (selected.size >= capacity || (local && selectedLocals >= localCapacity)) limited.push(light);
+    else {
+      selected.add(light);
+      if (local) selectedLocals++;
+    }
+  }
   for (const light of scene.lights) {
     const enabled = requestedEnabled(light);
     if (eligible(light) && !selected.has(light)) forwardExcluded.add(light);

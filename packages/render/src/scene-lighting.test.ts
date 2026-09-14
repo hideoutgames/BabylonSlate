@@ -40,6 +40,7 @@ import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
 import { encodeUvHierarchyGlb } from "./model-mesh";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
 import { visualMeshes } from "./visual-meshes";
+import { normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
 
 const engines: NullEngine[] = [];
 
@@ -66,6 +67,32 @@ function lights(scene: Scene, count: number) {
       new PointLight(`lamp-${index}`, new Vector3(index, 3, 0), scene),
   );
 }
+
+it("applies local lighting scalability without suppressing the sun and restores eligible lights on a higher preset", () => {
+  const scene = host(false);
+  scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+  const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+  const locals = lights(scene, 7);
+  const apply = (level: "low" | "medium") => {
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
+    syncSceneLighting(scene);
+  };
+  apply("low");
+  expect(sun.isEnabled()).toBe(true);
+  expect(locals.filter((light) => light.isEnabled())).toHaveLength(4);
+  expect(locals.filter(isForwardLightExcluded)).toHaveLength(3);
+  expect(sceneLightingLimits(scene).join()).toContain("4 scalability local lights");
+  const manual = normalizeRenderingQuality(qualityPresetPatch("low"));
+  manual.lighting.localLightMode = "manual";
+  manual.lighting.maxLocalLights = 5;
+  updateSceneRenderingSettings(scene, { quality: manual });
+  syncSceneLighting(scene);
+  expect(sun.isEnabled()).toBe(true);
+  expect(locals.filter((light) => light.isEnabled())).toHaveLength(5);
+  apply("medium");
+  expect(sun.isEnabled()).toBe(true);
+  expect(locals.every((light) => light.isEnabled())).toBe(true);
+});
 
 function beginFrame(scene: Scene) {
   scene.incrementRenderId();
