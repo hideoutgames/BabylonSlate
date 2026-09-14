@@ -64,7 +64,10 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
     if (!result.rendered || !result.readyForPresentation || prepared.path !== result.path)
       throw new Error(`${name}: unprepared presentation ${JSON.stringify({ prepared, result })}`);
     const bytes = await engine.readPixels(Math.floor(engine.getRenderWidth() / 2), Math.floor(engine.getRenderHeight() / 2), 1, 1);
-    captures.push({ name, path: result.path, pixel: Array.from(new Uint8Array(bytes.buffer, bytes.byteOffset, 4)),
+    const pixel = Array.from(new Uint8Array(bytes.buffer, bytes.byteOffset, 4));
+    if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
+      [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
+    captures.push({ name, path: result.path, pixel,
       reservedBytes: managedLightingReservations(engine).reservedBytes });
   };
   try {
