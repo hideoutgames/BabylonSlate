@@ -69,8 +69,16 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
               { id: "uv-buffer", sourceNodeId: "screenUv", sourcePinId: "uv", targetNodeId: "buffer", targetPinId: "uv" },
               { id: "buffer-output", sourceNodeId: "buffer", sourcePinId: resource === "sceneDepth" ? "depth" : "normal", targetNodeId: "output", targetPinId: "color" },
             ];
+            if (resource === "sceneDepth") {
+              post.nodes.push({ id: "gray", type: "vector.combine", properties: {}, position: { x: 0, y: 0 } });
+              post.edges.splice(1, 1,
+                ...["x", "y", "z"].map((channel) => ({ id: `depth-${channel}`, sourceNodeId: "buffer", sourcePinId: "depth", targetNodeId: "gray", targetPinId: channel })),
+                { id: "gray-output", sourceNodeId: "gray", sourcePinId: "xyzw", targetNodeId: "output", targetPinId: "color" },
+              );
+            }
             const stack = addAuthoredPostProcessTasks({
-              frameGraph: graph, library, sourceTexture: copy.sourceTexture,
+              // Opposite buffer makes a silent scene-color passthrough fail the oracle.
+              frameGraph: graph, library, sourceTexture: resource === "sceneDepth" ? geometry.geometryWorldNormalTexture : geometry.geometryNormViewDepthTexture,
               logicalBuffers: { sceneDepth: geometry.geometryNormViewDepthTexture, sceneNormal: geometry.geometryWorldNormalTexture },
               stack: [0, 1].map((order) => ({ id: `entry-${order}`, materialGuid: "logical", order, enabled: true })),
               documentFor: () => post,
