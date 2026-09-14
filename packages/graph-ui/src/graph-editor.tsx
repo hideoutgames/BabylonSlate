@@ -1131,25 +1131,43 @@ function GraphEditorCanvas({
 
   const handleNodeDrag: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
+      const moving = dragged.length ? dragged : [node];
       const zoom = storeApi.getState().transform[2];
-      if (interactions.shakeEnabled && !readOnly && nodesDraggable && proximityDragRef.current) {
-        shakenRef.current ||= shakeTracker.current.move(node.position.x * zoom, node.position.y * zoom, performance.now());
+      if (
+        interactions.shakeEnabled && !readOnly && nodesDraggable &&
+        proximityDragRef.current && !shakenRef.current &&
+        shakeTracker.current.move(node.position.x * zoom, node.position.y * zoom, performance.now())
+      ) {
+        // Disconnect as soon as the gesture crosses the threshold, and keep
+        // assistance suppressed until release so these pins stay disconnected.
+        shakenRef.current = true;
+        const ids = new Set(moving.map((entry) => entry.id));
+        const nextEdges = graphStateRef.current.edges.filter(
+          (edge) => !ids.has(edge.source) && !ids.has(edge.target),
+        );
+        if (nextEdges.length !== graphStateRef.current.edges.length) {
+          const positions = new Map(moving.map((entry) => [entry.id, entry.position]));
+          const nextNodes = graphStateRef.current.nodes.map((entry) =>
+            positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry,
+          );
+          graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
+          setNodes(nextNodes);
+          setEdges(nextEdges);
+          emitChange(nextNodes, nextEdges);
+        }
       }
-      const paths = collectProximityConnections(
-        dragged.length ? dragged : [node],
-      );
+      const paths = collectProximityConnections(moving);
       proximityPathsRef.current = paths;
       setProximityPaths(paths);
     },
-    [collectProximityConnections, interactions.shakeEnabled, nodesDraggable, readOnly, storeApi],
+    [collectProximityConnections, emitChange, interactions.shakeEnabled, nodesDraggable, readOnly, storeApi],
   );
 
   const handleNodeDragStop: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
       const moving = dragged.length ? dragged : [node];
       if (shakenRef.current && interactions.shakeEnabled && !readOnly && nodesDraggable) {
-        const ids = new Set(moving.map((entry) => entry.id));
-        const nextEdges = graphStateRef.current.edges.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target));
+        const nextEdges = graphStateRef.current.edges;
         const positions = new Map(moving.map((entry) => [entry.id, entry.position]));
         const nextNodes = graphStateRef.current.nodes.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry);
         cancelProximityConnections();

@@ -181,6 +181,86 @@ describe("SceneOutlinerPanel menus", () => {
     expect(next.actors.find((actor) => actor.id === "actor-1")).toBeUndefined();
   });
 
+  it.each([
+    {
+      clicked: "parent",
+      choice: "Cancel",
+      remaining: null,
+      selected: ["parent", "child", "other"],
+    },
+    {
+      clicked: "parent",
+      choice: "Delete This Object",
+      remaining: ["other", "unselected", "untouched"],
+      selected: ["other"],
+    },
+    {
+      clicked: "parent",
+      choice: "Delete Selected (3)",
+      remaining: ["unselected", "untouched"],
+      selected: [],
+    },
+    {
+      clicked: "unselected",
+      choice: "Delete This Object",
+      remaining: ["parent", "child", "other", "untouched"],
+      selected: ["parent", "child", "other"],
+    },
+    {
+      clicked: "unselected",
+      choice: "Delete Selected (3)",
+      remaining: ["unselected", "untouched"],
+      selected: [],
+    },
+  ])("offers $choice from $clicked's menu without losing the selection", async ({
+    clicked, choice, remaining, selected,
+  }) => {
+    const scene = createDefaultScene();
+    scene.actors = [
+      createActor("parent", "Parent"),
+      createActor("child", "Child", { parentId: "parent" }),
+      createActor("other", "Other"),
+      createActor("unselected", "Unselected"),
+      createActor("untouched", "Untouched"),
+    ];
+    harness.scene = scene;
+    render(
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>,
+    );
+    for (const id of ["parent", "child", "other"]) {
+      fireEvent.click(screen.getByTestId(`outliner-menu-${id}`));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Select" }));
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    }
+
+    const menu = screen.getByTestId(`outliner-menu-${clicked}`);
+    fireEvent.pointerDown(menu, { pointerType: "mouse", button: 0 });
+    fireEvent.pointerUp(menu, { pointerType: "mouse", button: 0 });
+    fireEvent.click(menu);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(applySceneChange).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("treeitem", { hidden: true }).map((row) =>
+      row.getAttribute("aria-selected"),
+    )).toEqual(["true", "true", "true", "false", "false"]);
+
+    fireEvent.click(screen.getByRole("button", { name: choice, exact: true }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    if (remaining) {
+      // Parent and child selections still produce one undoable scene edit.
+      expect(applySceneChange).toHaveBeenCalledTimes(1);
+      expect(applySceneChange.mock.calls[0]?.[1].actors.map((actor) => actor.id))
+        .toEqual(remaining);
+    } else {
+      expect(applySceneChange).not.toHaveBeenCalled();
+    }
+    expect(screen.getAllByRole("treeitem").map((row) =>
+      row.getAttribute("aria-selected"),
+    )).toEqual(scene.actors.map((actor) => String(selected.includes(actor.id))));
+  });
+
   it("omits Open Actor for engine Actor classes", () => {
     const scene = createDefaultScene();
     scene.actors = [createActor("actor-1", "Cube")];
