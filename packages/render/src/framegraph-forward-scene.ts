@@ -19,6 +19,23 @@ import {
 export type ForwardSceneGraphResult =
   { path: "frameGraph" } | { path: "classic"; reason: string };
 
+/** Native camera frustum calculation reads the currently bound target's aspect. */
+class CameraOutputCullTask extends FrameGraphCullObjectsTask {
+  override _execute(): void {
+    const target = this.camera.outputRenderTarget?.renderTarget;
+    if (!target) return super._execute();
+    const engine = this.camera.getEngine();
+    // Every preceding graph render pass restores the backbuffer. Bind only for
+    // the official cull task, without clearing or invoking RTT render observers.
+    try {
+      engine.bindFramebuffer(target);
+      super._execute();
+    } finally {
+      engine.restoreDefaultFramebuffer();
+    }
+  }
+}
+
 /**
  * Opt-in Forward proof for the backbuffer or an explicit 2D color/depth target.
  * The caller retains its existing frame
@@ -240,7 +257,7 @@ export class ForwardSceneFrameGraph {
         );
         this.clear.targetTexture = color;
         this.clear.depthTexture = depth;
-        this.cull = new FrameGraphCullObjectsTask(
+        this.cull = new CameraOutputCullTask(
           "Forward cull",
           this.graph,
           scene,
@@ -249,6 +266,9 @@ export class ForwardSceneFrameGraph {
           "Forward objects",
           this.graph,
           scene,
+          // The pinned graph initializes ObjectRenderer before binding its
+          // target. Recompute projection after binding, as Scene.render does.
+          { doNotChangeAspectRatio: false },
         );
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;

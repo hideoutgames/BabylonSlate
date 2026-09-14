@@ -283,6 +283,8 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         await host.capture("camera-moved");
         engine.setSize(112, 80);
         host.outputTarget?.resize({ width: 100, height: 76 });
+        // Explicit sampleable depth is owned separately from RTT resize options.
+        host.outputTarget?.createDepthStencilTexture();
         const shadowed = await host.capture("resized");
         const stableAllocation =
           host.map() === initialMap &&
