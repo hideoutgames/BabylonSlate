@@ -1,3 +1,4 @@
+import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import {
   AddBlock,
   BonesBlock,
@@ -17,7 +18,6 @@ import {
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   NodeMaterialSystemValues,
-  PBRMetallicRoughnessBlock,
   ReflectionBlock,
   RemapBlock,
   TransformBlock,
@@ -1140,7 +1140,7 @@ function attachSurfaceShading(
     return fragment;
   }
 
-  const pbr = new PBRMetallicRoughnessBlock(`${options.name}_pbr`);
+  const pbr = new ScenePbrLightingBlock(`${options.name}_pbr`);
   pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
   pbr.alpha.connectTo(fragment.a);
   const reflection = new ReflectionBlock(`${options.name}_reflection`);

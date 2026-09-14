@@ -17,7 +17,6 @@ test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene 
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (
-      message.type() === "error" &&
       /shader|ERROR: 0:|VALIDATE_STATUS|context lost|WebGPU uncaptured/i.test(message.text())
     )
       errors.push(message.text());

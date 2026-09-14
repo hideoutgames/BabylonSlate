@@ -25,6 +25,7 @@ import {
   setSceneRenderSettings,
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+import { isSceneFrameReady, withSceneReadinessState } from "@babylonslate/render/scene-perf";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
@@ -141,8 +142,11 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
     const render = async (path: "graph" | "classic", force = false) => {
       // Graph readiness warms its own ObjectRenderer render-pass variants. The
       // independent classic oracle must also be ready on the camera's pass.
-      const classicReadyBefore =
-        path === "classic" ? scene.isReady(true) : null;
+      const classicReadyBefore = path === "classic" ? withSceneReadinessState(scene, () => {
+        scene.activeCamera = camera;
+        engine.currentRenderPassId = camera.renderPassId;
+        return isSceneFrameReady(scene);
+      }) : null;
       if (path === "classic") await scene.whenReadyAsync(true);
       if (force) map()?.resetRefreshCounter();
       boundTargets.length = 0;
