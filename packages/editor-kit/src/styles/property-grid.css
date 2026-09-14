@@ -17,6 +17,12 @@
   width: 100%;
 }
 
+[data-slot="property-grid"] [data-orientation="horizontal"] > [data-slot="field-label"]:not(.sr-only) {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 @container property-grid (min-width: 28rem) {
   [data-slot="property-grid"]:not([data-hide-labels="true"]) [data-slot="field"][data-orientation="horizontal"] {
     grid-template-columns: min(35%, 10rem) minmax(0, 1fr);

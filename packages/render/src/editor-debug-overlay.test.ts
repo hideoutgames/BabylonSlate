@@ -27,7 +27,7 @@ import {
   CAMERA_PREVIEW_WIDTH,
   EditorDebugOverlay,
 } from "./editor-debug-overlay";
-import { editorMeshName } from "./scene-loader";
+import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 
 function sceneWith(
@@ -230,8 +230,9 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
-  it("draws selected audio attenuation at the live emitter with unscaled green/yellow radii", () => {
+  it("draws green/yellow audio radii and follows an emitter realized after the selection", () => {
     const { scene } = createHandle();
+    const hadObservers = scene.onBeforeRenderObservable.hasObservers();
     const overlay = new EditorDebugOverlay(scene);
     const actor = createActor("speaker", "Speaker", {
       transform: { ...identitySerializedTransform(), position: [10, 0, 0], scale: [2, 3, 4] },
@@ -241,9 +242,6 @@ describe("EditorDebugOverlay", () => {
         properties: { audioAssetGuid: "sound" },
       }],
     });
-    const origin = MeshBuilder.CreateBox(editorMeshName(actor.id), {}, scene);
-    origin.position.x = 10;
-    origin.scaling.set(2, 3, 4);
     const audioLibrary = {
       audio: new Map([["sound", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
       attenuations: new Map([["near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 3, maxRadius: 12 }]]),
@@ -268,13 +266,26 @@ describe("EditorDebugOverlay", () => {
         expect(maxRadius).toBeCloseTo(radius, 4);
       }
     }
+    const origin = MeshBuilder.CreateBox(editorMeshName(actor.id), {}, scene);
+    origin.position.x = 10;
+    origin.scaling.set(2, 3, 4);
+    const parent = new TransformNode("parent", scene);
+    parent.position.x = 100;
+    origin.parent = parent;
+    const visual = MeshBuilder.CreateBox(editorComponentMeshName(actor.id, "audio"), {}, scene);
+    visual.parent = origin;
+    visual.position.x = 1;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.position.asArray()).toEqual([112, 0, 0]);
+    expect(root.scaling.asArray()).toEqual([1, 1, 1]);
     origin.position.x = 20;
     overlay.followLivePose();
-    expect(root.position.asArray()).toEqual([22, 0, 0]);
+    expect(root.position.asArray()).toEqual([122, 0, 0]);
     overlay.sync({ sceneData: sceneWith([actor]), selectedActorIds: [], audioLibrary });
     expect(root.isDisposed()).toBe(true);
     expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);
     overlay.dispose();
+    expect(scene.onBeforeRenderObservable.hasObservers()).toBe(hadObservers);
   });
 
   it("only draws selected Audio Components whose attenuation asset resolves", () => {

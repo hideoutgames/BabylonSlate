@@ -8,6 +8,7 @@ import {
   Vector3,
   type LinesMesh,
   type Node,
+  type Observer,
   type Scene,
 } from "@babylonjs/core";
 import {
@@ -160,6 +161,7 @@ export class EditorDebugOverlay {
   private previewCanvas: HTMLCanvasElement | null = null;
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private readonly audioPoseObserver: Observer<Scene> | null;
   private audioDebug: Array<{
     root: TransformNode;
     actor: SerializedActor;
@@ -170,6 +172,7 @@ export class EditorDebugOverlay {
     this.scene = scene;
     this.now = options?.now ?? (() => Date.now());
     this.useExternalClock = Boolean(options?.now);
+    this.audioPoseObserver = scene.onBeforeRenderObservable.add(() => this.updateAudioDebugPoses());
   }
 
   setPreviewCanvas(canvas: HTMLCanvasElement | null): void {
@@ -211,20 +214,7 @@ export class EditorDebugOverlay {
    * the preview tracks a gizmo drag before the document commit.
    */
   followLivePose(): void {
-    for (const { root, actor, component } of this.audioDebug) {
-      const visual = this.scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
-      const origin = this.scene.getMeshByName(editorMeshName(actor.id));
-      if (visual) {
-        visual.computeWorldMatrix(true);
-        root.position.copyFrom(visual.getAbsolutePosition());
-      } else if (origin) {
-        origin.computeWorldMatrix(true);
-        const local = component.transform?.position ?? [0, 0, 0];
-        root.position.copyFrom(Vector3.TransformCoordinates(Vector3.FromArray(local), origin.getWorldMatrix()));
-      } else {
-        root.position.copyFrom(composeActorComponentTransform(actor, component).position);
-      }
-    }
+    this.updateAudioDebugPoses();
     const root = this.frustumMesh;
     const camera = this.previewCamera;
     if (!root || !camera) return;
@@ -260,6 +250,7 @@ export class EditorDebugOverlay {
   }
 
   dispose(): void {
+    this.scene.onBeforeRenderObservable.remove(this.audioPoseObserver);
     this.clearTimer();
     this.disposeVisuals();
     this.previewCanvas = null;
@@ -407,6 +398,23 @@ export class EditorDebugOverlay {
       dashedLines(`debugLight:${actor.id}:mer2`, ringPoints(origin, Vector3.Forward(), range), this.scene, root);
     }
     this.lightDebugMesh = root;
+  }
+
+  private updateAudioDebugPoses(): void {
+    for (const { root, actor, component } of this.audioDebug) {
+      const visual = this.scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
+      const origin = this.scene.getMeshByName(editorMeshName(actor.id));
+      if (visual) {
+        visual.computeWorldMatrix(true);
+        root.position.copyFrom(visual.getAbsolutePosition());
+      } else if (origin) {
+        origin.computeWorldMatrix(true);
+        const local = component.transform?.position ?? [0, 0, 0];
+        root.position.copyFrom(Vector3.TransformCoordinates(Vector3.FromArray(local), origin.getWorldMatrix()));
+      } else {
+        root.position.copyFrom(composeActorComponentTransform(actor, component).position);
+      }
+    }
   }
 
   private buildAudioDebug(
