@@ -1,4 +1,5 @@
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
+import { isEnvironmentTexturePayload } from "@babylonslate/assets";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -182,6 +183,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       type: asset.header.type,
       path: asset.path,
     }));
+  const environmentGuids = new Set((assetRegistry?.list() ?? [])
+    .filter((asset) => isEnvironmentTexturePayload(asset.header.payload))
+    .map((asset) => asset.header.guid));
+  const environmentPickerAssets = pickerAssets.filter((entry) => environmentGuids.has(entry.guid));
   const classEntries = gameInstanceClassEntries(assetRegistry?.list() ?? []);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
@@ -789,7 +794,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         <AssetPicker
           open={envTexturePickOpen}
           onOpenChange={setEnvTexturePickOpen}
-          assets={pickerAssets}
+          assets={environmentPickerAssets}
           allowedTypes={["Texture"]}
           title="Pick Environment Texture"
           allowNone

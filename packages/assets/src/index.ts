@@ -58,3 +58,4 @@ export * from "./trace";
 export * from "./unique-names";
 export * from "./worker-encode";
 export * from "./model-animation-duration";
+export * from "./environment-texture";

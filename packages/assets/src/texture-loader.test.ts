@@ -133,6 +133,16 @@ describe("HUD GUI Image packing", () => {
 });
 
 describe("selectTextureChunk authored variant", () => {
+  it("selects canonical 2D pixels or retained cube source independently of chunk order", () => {
+    const pixels = { id: "pixels", kind: "pixels", mime: "image/png", sha256: "pixels", locator: { inline: { offset: 0, length: 1 } } };
+    const source = { ...pixels, id: "source", kind: "source", mime: "image/vnd-ms.dds" };
+    for (const chunks of [[source, pixels], [pixels, source]]) {
+      const header = textureHeader(chunks);
+      expect(selectTextureChunk(header).chunk.id).toBe("pixels");
+      header.payload = { dimension: "cube", container: "dds" };
+      expect(selectTextureChunk(header).chunk.id).toBe("source");
+    }
+  });
   it("picks the preferred ktx2 chunk instead of the first ktx2", () => {
     const header = textureHeader([
       {
