@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { BakeInputHashes, BakedLightingManifest, BakedLightingValidity } from "@babylonslate/core";
-import { decodeBabasset, encodeBabasset, type BabassetHeader, type ChunkInput } from "./babasset";
-import { sha256Hex, stableStringify } from "./bytes";
+import { readBabassetHeader, encodeBabasset, type BabassetHeader, type ChunkInput, type ChunkEntry } from "./babasset";
+import { readU32LE, sha256Hex, stableStringify } from "./bytes";
 import type { ImportResult } from "./importers/types";
 
 export const BAKED_LIGHTING_ASSET_TYPE = "BakedLighting";
@@ -155,6 +155,14 @@ export async function validateBakedLightingChunks(
   header: Pick<BabassetHeader, "guid" | "type" | "version" | "dependencies">,
   chunks: readonly ChunkInput[],
 ): Promise<DecodedBakedLighting> {
+  return validateChunks(header, chunks, true);
+}
+
+async function validateChunks(
+  header: Pick<BabassetHeader, "guid" | "type" | "version" | "dependencies">,
+  chunks: readonly ChunkInput[],
+  copy: boolean,
+): Promise<DecodedBakedLighting> {
   if (header.type !== BAKED_LIGHTING_ASSET_TYPE || header.version !== 1)
     throw new Error("Unsupported baked lighting asset type or version.");
   const guid = id.parse(header.guid);
@@ -173,7 +181,7 @@ export async function validateBakedLightingChunks(
       chunk.data.byteLength !== atlas.width * atlas.height * 16)
       throw new Error(`Missing or malformed irradiance atlas ${atlas.guid}.`);
     // Snapshot every bounded input before the first asynchronous hash operation.
-    atlases.set(atlas.guid, chunk.data.slice());
+    atlases.set(atlas.guid, copy ? chunk.data.slice() : chunk.data);
   }
   for (const atlas of manifest.atlases) {
     const data = atlases.get(atlas.guid)!;
@@ -227,8 +235,75 @@ export async function decodeBakedLightingAsset(
   bytes: Uint8Array,
   readBlob?: (sha256: string) => Promise<Uint8Array>,
 ): Promise<DecodedBakedLighting> {
-  const decoded = await decodeBabasset(bytes, readBlob);
-  return validateBakedLightingChunks(decoded.header, decoded.header.chunks.map((entry) => ({
-    id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)!,
-  })));
+  if (bytes.byteLength < 12) throw new Error("Truncated baked lighting container.");
+  const headerLength = readU32LE(bytes, 8);
+  const payloadStart = 12 + headerLength;
+  if (headerLength > MAX_MANIFEST_BYTES || payloadStart > bytes.byteLength)
+    throw new Error("Baked lighting header exceeds its size limit or is truncated.");
+  const header = readBabassetHeader(bytes);
+  for (const entry of header.chunks) {
+    if (!("inline" in entry.locator)) continue;
+    const { offset, length } = entry.locator.inline;
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0 ||
+      offset + length > bytes.byteLength - payloadStart)
+      throw new Error("Baked lighting chunk is outside its container.");
+  }
+  return readBakedLightingAssetChunks(header, async (entry) => {
+    if ("inline" in entry.locator) {
+      const { offset, length } = entry.locator.inline;
+      return bytes.subarray(payloadStart + offset, payloadStart + offset + length);
+    }
+    if (!readBlob) throw new Error(`Chunk ${entry.id} requires a blob reader.`);
+    return readBlob(entry.locator.blob);
+  });
+}
+
+/** Validate manifest and declared atlas lengths before requesting any atlas payload. */
+export async function readBakedLightingAssetChunks(
+  sourceHeader: BabassetHeader,
+  readChunk: (entry: ChunkEntry) => Promise<Uint8Array>,
+): Promise<DecodedBakedLighting> {
+  const header = structuredClone(sourceHeader);
+  if (header.type !== BAKED_LIGHTING_ASSET_TYPE || header.version !== 1)
+    throw new Error("Unsupported baked lighting asset type or version.");
+  if (header.chunks.length < 2 || header.chunks.length > 17)
+    throw new Error("Unexpected baked lighting asset chunks.");
+  unique(header.chunks.map((entry) => entry.id), "asset chunk");
+  const document = header.chunks.find((entry) => entry.id === BAKED_LIGHTING_MANIFEST_CHUNK);
+  if (!document || document.kind !== "document" || document.mime !== "application/json")
+    throw new Error("Baked lighting manifest chunk is missing or malformed.");
+  for (const entry of header.chunks) {
+    hash.parse(entry.sha256);
+    if (entry !== document && (entry.kind !== "diffuseIrradiance" || entry.mime !== "application/octet-stream"))
+      throw new Error("Unexpected baked lighting asset chunks.");
+    if ("inline" in entry.locator) {
+      const { offset, length } = entry.locator.inline;
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0 ||
+        length > (entry === document ? MAX_MANIFEST_BYTES : BAKED_LIGHTING_MAX_BYTES))
+        throw new Error("Baked lighting chunk exceeds its size limit or has an invalid locator.");
+    } else if (entry.locator.blob !== entry.sha256) throw new Error("Baked lighting blob identity does not match its chunk hash.");
+  }
+  const readOwned = async (entry: ChunkEntry, maximum: number, exact?: number): Promise<Uint8Array> => {
+    const data = await readChunk(entry);
+    if (data.byteLength > maximum || (exact !== undefined && data.byteLength !== exact))
+      throw new Error(`Baked lighting chunk ${entry.id} has an invalid byte length.`);
+    return data.slice();
+  };
+  const documentBytes = await readOwned(document, MAX_MANIFEST_BYTES);
+  if (await sha256Hex(documentBytes) !== document.sha256) throw new Error("Baked lighting manifest hash mismatch.");
+  const manifest = parseBakedLightingManifest(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(documentBytes)));
+  if (header.chunks.length !== manifest.atlases.length + 1 ||
+    stableStringify([...header.dependencies].sort()) !== stableStringify([...manifest.dependencies].sort()))
+    throw new Error("Baked lighting chunks or dependencies do not match the manifest.");
+  const declared = manifest.atlases.map((atlas) => {
+    const entry = header.chunks.find((chunk) => chunk.id === atlas.chunkId);
+    const length = atlas.width * atlas.height * 16;
+    if (!entry || entry.sha256 !== atlas.sha256 ||
+      ("inline" in entry.locator && entry.locator.inline.length !== length))
+      throw new Error(`Irradiance atlas ${atlas.guid} metadata does not match the manifest.`);
+    return { entry, length };
+  });
+  const chunks: ChunkInput[] = [{ ...document, data: documentBytes }];
+  for (const { entry, length } of declared) chunks.push({ ...entry, data: await readOwned(entry, length, length) });
+  return validateChunks(header, chunks, false);
 }

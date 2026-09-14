@@ -6,7 +6,9 @@ import {
 import {
   AUDIO_REVERB_CHUNK_ID,
   BAKED_LIGHTING_ASSET_TYPE,
+  bakedLightingImportResult,
   encodeBakedLightingAsset,
+  readBakedLightingAssetChunks,
   collectPackedAudioClipBlobs,
   encodePackedAudioAsset,
   encodePackedModelAsset,
@@ -86,13 +88,13 @@ async function bytesForAsset(
     }
   }
   if (asset.header.type === BAKED_LIGHTING_ASSET_TYPE) {
-    const chunks = [];
-    for (const entry of asset.header.chunks) {
+    const decoded = await readBakedLightingAssetChunks(asset.header, async (entry) => {
       const data = await readAssetChunk(asset.path, entry.id);
       if (!data) throw new Error(`Missing baked lighting chunk ${entry.id}.`);
-      chunks.push({ id: entry.id, kind: entry.kind, mime: entry.mime, data });
-    }
-    return encodeBakedLightingAsset({ ...asset.header, chunks });
+      return data;
+    });
+    return encodeBakedLightingAsset(await bakedLightingImportResult({ guid: decoded.guid,
+      name: asset.header.name, manifest: decoded.manifest, atlases: decoded.atlases }));
   }
   if (asset.header.type === "Audio") {
     const payload = normalizeAudioPayload(document ?? asset.header.payload);

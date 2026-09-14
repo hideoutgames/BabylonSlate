@@ -1,5 +1,5 @@
 import { createBakedLightingFixture } from "@babylonslate/test-kit/baked-lighting-fixtures";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { BakeInputHashes, BakedLightingManifest } from "@babylonslate/core";
 import { sha256Hex } from "./bytes";
 import { encodeBabasset } from "./babasset";
@@ -116,4 +116,25 @@ it("validates imports before admission and refuses source GUID rebinding while a
   const bundled = await encodeBabasset({ header: { ...result, engineVersion: "0", mode: "bundled" }, chunks: result.chunks,
     nestedAssets: [{ guid: "model", bytes: source }] });
   await expect(importBabasset(bundled, { fileName: "Bundle.babasset", existingGuids: new Set(["model"]) })).rejects.toThrow("source GUID remapping requires a new bake");
+});
+
+it("rejects invalid thin manifest sizes and unexpected chunks before fetching any atlas blob", async () => {
+  const { result, manifest } = await fixture();
+  manifest.atlases[0]!.width = 4096;
+  manifest.atlases[0]!.height = 4096;
+  const chunks = result.chunks.map((chunk) => ({ ...chunk, data: chunk.id === "document"
+    ? new TextEncoder().encode(JSON.stringify(manifest)) : chunk.data }));
+  const blobs = new Map<string, Uint8Array>();
+  const writeBlob = async (sha: string, data: Uint8Array) => { blobs.set(sha, data); };
+  const bytes = await encodeBabasset({ header: { ...result, engineVersion: "0", mode: "thin" }, chunks,
+    blobThreshold: 1, writeBlob });
+  const readBlob = vi.fn(async (sha: string) => blobs.get(sha)!);
+  await expect(decodeBakedLightingAsset(bytes, readBlob)).rejects.toThrow("64 MiB");
+  expect(readBlob.mock.calls).toEqual([[await sha256Hex(chunks[0]!.data)]]);
+  readBlob.mockClear();
+  const unexpected = await encodeBabasset({ header: { ...result, engineVersion: "0", mode: "thin" },
+    chunks: [...result.chunks, { id: "unexpected", kind: "source", mime: "application/octet-stream", data: new Uint8Array([1]) }],
+    blobThreshold: 1, writeBlob });
+  await expect(decodeBakedLightingAsset(unexpected, readBlob)).rejects.toThrow("Unexpected baked lighting asset chunks");
+  expect(readBlob).not.toHaveBeenCalled();
 });
