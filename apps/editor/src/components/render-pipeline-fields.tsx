@@ -88,7 +88,7 @@ export function RenderPipelineFields(props: Props) {
         <Field>
           <FieldLabel>{scene ? "Effective Selection" : "Active Scene Selection"}</FieldLabel>
           <FieldDescription role="status" data-testid={`${props.scope}-render-pipeline-status`}>
-            {pathLabels[resolved.effective.renderPath]} · {backendLabels[resolved.effective.gpuBackend]}
+            {pathLabels[effective.renderPath]} · {backendLabels[effective.gpuBackend]}
             {limits.length ? `. ${limits.join(" ")} Your preferences are retained.` : ""}
             {active && scene && active.requested.renderPath !== resolved.requested.renderPath ? " Render path changes apply after scene loading completes." : ""}
             {!scene ? " Selection is resolved for the active scene; scene overrides can choose another path." : ""}
