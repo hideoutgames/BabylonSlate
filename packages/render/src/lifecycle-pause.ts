@@ -16,9 +16,10 @@ export function attachLifecyclePause(
   };
   visibility.addEventListener("visibilitychange", publish);
   host.addEventListener("babylonslate:appstate", onAppState);
-  publish();
-  return () => {
+  const release = () => {
     visibility.removeEventListener("visibilitychange", publish);
     host.removeEventListener("babylonslate:appstate", onAppState);
   };
+  try { publish(); } catch (error) { release(); throw error; }
+  return release;
 }

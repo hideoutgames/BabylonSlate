@@ -5,7 +5,8 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on ${backend}`, async ({
+for (const output of ["backbuffer", "texture"] as const) {
+test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on ${backend} ${output}`, async ({
   page,
 }, testInfo) => {
   test.setTimeout(150_000);
@@ -30,12 +31,12 @@ test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene 
         window as unknown as { __babylonslateFrameGraphShadowProof?: unknown }
       ).__babylonslateFrameGraphShadowProof === "function",
   );
-  const result = await page.evaluate((backend) =>
+  const result = await page.evaluate(({ backend, output }) =>
     (
       window as unknown as {
         __babylonslateFrameGraphShadowProof: typeof runFrameGraphShadowProof;
       }
-    ).__babylonslateFrameGraphShadowProof(backend), backend,
+    ).__babylonslateFrameGraphShadowProof(backend, output), { backend, output },
   );
   await testInfo.attach("framegraph-managed-shadow-proof", {
     body: JSON.stringify(result),
@@ -44,6 +45,7 @@ test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene 
   expect(errors).toEqual([]);
   expect(externalRequests).toEqual([]);
   expect(result.backend).toBe(backend);
+  expect(result.output).toBe(output);
   expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
   expect(result.captures).toHaveLength(54);
   const difference = (a: number[], b: number[]) => {
@@ -95,6 +97,8 @@ test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene 
   for (const entry of result.lifecycle) {
     expect(entry.stableAllocation, entry.name).toBe(true);
     expect(entry.ownedAfterGraphDispose, entry.name).toBe(true);
+    expect(entry.outputReferences, entry.name).toEqual(output === "texture" ? [1, 1] : null);
+    expect(entry.outputUsable, entry.name).toBe(true);
     expect(entry.retainedGraphObjects, entry.name).toBe(0);
     expect(entry.siblingPreserved, entry.name).toBe(true);
     expect(entry.remainingScenes, entry.name).toBe(0);
@@ -129,4 +133,5 @@ test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene 
     expect(pose("light-moved"), entry.name).not.toEqual(pose("caster-moved"));
   }
 });
+}
 }
