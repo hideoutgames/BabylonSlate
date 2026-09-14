@@ -188,6 +188,7 @@ export type ControlMessage =
     }
   | { type: "audioVoiceEnded"; voiceId: string }
   | { type: "sceneLoadingPainted"; sceneAssetGuid: string; sceneLoadId: number }
+  | { type: "sceneLayerReady"; layerId: string; layerLoadId: number }
   | { type: "sceneModelsReady"; sceneAssetGuid: string; sceneLoadId: number };
 
 export type DebugColliderPrimitive = {
@@ -433,6 +434,8 @@ export type CommandMessage =
   | { type: "possessCamera"; slotId: number }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneLoadFailed"; sceneAssetGuid: string; sceneLoadId: number; message: string }
+  | { type: "sceneLayerLoading"; layerId: string; assetGuid: string; layerLoadId: number }
+  | { type: "sceneLayerRealized"; layerId: string; layerLoadId: number }
   | {
       /** Canonical scene after `changescene` / `ctx.changeScene`. */
       type: "activeScene";

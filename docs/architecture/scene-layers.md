@@ -26,6 +26,8 @@ flowchart TB
 
 Graph-created layers (`ownerSceneGuid === null`) survive world travel until Remove / Clear / Play stop. Scene-owned layers spawn from `SceneSettings.sceneLayers` and despawn when that world scene unloads. The same asset may exist as two instances (scene-owned + graph-created). Clear removes every layer.
 
+Runtime readiness is per layer instance. `sceneLayerLoading` opens a monotonically identified load before its structural commands; `sceneLayerRealized` follows its complete assignments and snapshot. `sceneLayerReady` acknowledges that exact layer/load pair. Authored Begin Play, Logic Component creation, ticks, delays, physics and automatic playback wait for owner readiness; structural spawning continues so it can produce the resources being loaded. Ready global layers keep their script and physics state during world replacement. Game Instance world-loaded events wait for the world's presentation acknowledgment and all its owned layers. Removed, stopped and superseded identities cannot be activated by a late acknowledgment. Headless immediate consumers acknowledge after structural realization.
+
 ## Asset
 
 Content Browser type `SceneLayer` → document kind `scene-layer`. Payload is a slim scene cousin (actors, folders, 2D gravity, post-process stack). Always 2D. World `SceneSettings.sceneLayers` is `{ assetGuid, zOrder, enabled }[]`.
