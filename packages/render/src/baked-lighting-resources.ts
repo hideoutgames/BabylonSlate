@@ -53,10 +53,40 @@ export function reserveBakedGpuBytes(
   pool.bytes += bytes;
   let released = false;
   return {
+    reconcile(actualBytes: number) {
+      if (released || !Number.isSafeInteger(actualBytes) || actualBytes < 0) {
+        pool.quarantined = true;
+        throw new Error("Baked graphics allocation capacity is invalid.");
+      }
+      // Preserve the admitted estimate if the backend uses less. Unexpected
+      // native capacity is still charged, including when admission must fail.
+      if (actualBytes <= bytes) return;
+      pool.bytes += actualBytes - bytes;
+      bytes = actualBytes;
+      if (pool.bytes > ceiling) {
+        pool.quarantined = true;
+        throw new Error(
+          "Baked native buffers exceeded their admitted allocation budget.",
+        );
+      }
+    },
     release() {
       if (released) return;
       released = true;
-      pool.bytes -= bytes;
+      if (engine.isWebGPU && !engine.isDisposed) {
+        // Pinned 9.20 destroys deferred GPU buffers/textures before onEndFrame.
+        // Scene/view disposal alone does not make these bytes available to a sibling.
+        let accounted = true;
+        const finish = () => {
+          if (!accounted) return;
+          accounted = false;
+          frame?.remove(true);
+          disposed?.remove(true);
+          pool.bytes -= bytes;
+        };
+        const frame = engine.onEndFrameObservable.add(finish);
+        const disposed = engine.onDisposeObservable.add(finish);
+      } else pool.bytes -= bytes;
     },
     quarantine() {
       pool.quarantined = true;
@@ -128,9 +158,14 @@ export async function acquireBakedAtlas(
     );
   let entry = pool.atlases.get(key);
   if (!entry) {
+    const atlasBytes = atlas.width * atlas.height * 16;
+    // WebGPUTextureManager uses a same-size mapped staging buffer for aligned rows.
+    // Conservatively retain that allowance for the atlas lease; no private buffer ownership is changed.
+    const stagingBytes =
+      engine.isWebGPU && (atlas.width * 16) % 256 === 0 ? atlasBytes : 0;
     const reservation = reserveBakedGpuBytes(
       engine,
-      atlas.width * atlas.height * 16,
+      atlasBytes + stagingBytes,
       ceiling,
     );
     let texture: RawTexture | undefined;

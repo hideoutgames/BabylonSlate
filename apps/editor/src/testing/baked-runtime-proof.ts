@@ -9,6 +9,7 @@ import {
   ShaderMaterial,
   Vector3,
   Vector4,
+  VertexBuffer,
   type AbstractEngine,
 } from "@babylonjs/core";
 import { createAppEngine, createAppWebGpuEngine } from "@babylonslate/render";
@@ -41,6 +42,13 @@ const source: BakeGeometrySource = {
         new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]).buffer,
       ),
     },
+    {
+      name: "packed",
+      componentType: "u8",
+      components: 1,
+      normalized: false,
+      data: new Uint8Array([11, 22, 33, 44]),
+    },
   ],
 };
 const topology = {
@@ -68,20 +76,20 @@ async function assets(sceneGuid: string, offset: number) {
     primitive: { kind: "mesh" as const },
   };
   const contentHash = await sha256Hex(encodeBakeTopology(topology, 4));
-  const atlas = new Uint8Array(8 * 8 * 16);
+  const atlas = new Uint8Array(16 * 16 * 16);
   const values = new DataView(atlas.buffer);
-  for (let y = 0; y < 8; y++)
-    for (let x = 0; x < 8; x++) {
+  for (let y = 0; y < 16; y++)
+    for (let x = 0; x < 16; x++) {
       const color =
-        y < 4
-          ? x < 4
+        y < 8
+          ? x < 8
             ? [0.2, 0, 0, 1]
             : [0, 0.4, 0, 1]
-          : x < 4
+          : x < 8
             ? [0, 0, 0.6, 1]
             : [0.8, 0.8, 0, 1];
       color.forEach((value, channel) =>
-        values.setFloat32((y * 8 + x) * 16 + channel * 4, value, true),
+        values.setFloat32((y * 16 + x) * 16 + channel * 4, value, true),
       );
     }
   const geometryGuid = `geometry-${sceneGuid}`,
@@ -123,8 +131,8 @@ async function assets(sceneGuid: string, offset: number) {
       {
         guid: "atlas",
         chunkId: "atlas",
-        width: 8,
-        height: 8,
+        width: 16,
+        height: 16,
         sha256: await sha256Hex(atlas),
         encoding: "rgba32float-le",
         colorSpace: "linear",
@@ -154,8 +162,8 @@ async function assets(sceneGuid: string, offset: number) {
         contentHash,
         provider: manifest.provider,
         layout: {
-          width: 8,
-          height: 8,
+          width: 16,
+          height: 16,
           paddingTexels: 0,
           uvSet: 1,
           coordinates: "normalized-bottom-first",
@@ -193,6 +201,20 @@ function geometry(scene: Scene) {
     3,
   );
   geometry.setIndices(source.indices.slice(), 4);
+  geometry.setVerticesBuffer(
+    new VertexBuffer(
+      scene.getEngine(),
+      source.attributes[1].data.slice(),
+      "packed",
+      {
+        size: 1,
+        stride: 1,
+        useBytes: true,
+        type: VertexBuffer.UNSIGNED_BYTE,
+      },
+    ),
+    4,
+  );
   geometry.applyToMesh(mesh);
   return mesh;
 }
@@ -320,23 +342,71 @@ export async function runBakedRuntimeProof() {
       const internal = a.binding.texture.getInternalTexture()!;
       const shared = internal === b.binding.texture.getInternalTexture();
       const bytesBefore = bakedGpuAllocationStatus(engine);
+      let alignmentRejected = false;
+      if (engine.isWebGPU) {
+        const scene = new Scene(engine);
+        scenes.push(scene);
+        const mesh = geometry(scene),
+          original = mesh.geometry;
+        const data = await assets("budget", 0);
+        const owner = new SceneBakedLighting(
+          scene,
+          bytesBefore.managedBytes + 150,
+        );
+        try {
+          await owner.load({
+            assetGuid: data.bakeGuid,
+            sceneGuid: "budget",
+            inputs: data.inputs,
+            receivers: [
+              {
+                mesh,
+                identity: data.receiver.identity,
+                hashes: data.receiver.hashes,
+              },
+            ],
+            readAsset: async (guid) => {
+              const bytes = data.payloads.get(guid);
+              return bytes && { bytes };
+            },
+            isCurrent: () => true,
+          });
+        } catch (error) {
+          alignmentRejected =
+            error instanceof Error &&
+            /allocation budget/.test(error.message) &&
+            mesh.geometry === original &&
+            mesh.getTotalVertices() === 4 &&
+            bakedGpuAllocationStatus(engine).managedBytes ===
+              bytesBefore.managedBytes;
+        } finally {
+          scene.dispose();
+        }
+      }
       a.owner.invalidate();
       const restored =
         a.mesh.geometry === a.original && a.mesh.getTotalVertices() === 4;
       a.scene.dispose();
       const remaining = await capture(engine, b.scene, canvas);
       b.scene.dispose();
+      const bytesAwaitingRelease =
+        bakedGpuAllocationStatus(engine).managedBytes;
+      // This isolated harness owns its Engine; the service itself never submits a sibling's frame.
+      engine.beginFrame();
+      engine.endFrame();
       result.push({
         backend,
-        driver: engine.getGlInfo(),
+        driver: "getGlInfo" in engine ? engine.getGlInfo() : engine.getInfo(),
         caps: {
           float: engine.getCaps().textureFloat,
           linear: engine.getCaps().textureFloatLinearFiltering,
         },
         captures: { left: a.capture, right: b.capture, remaining },
         shared,
+        alignmentRejected,
         restored,
         bytesBefore,
+        bytesAwaitingRelease,
         bytesAfter: bakedGpuAllocationStatus(engine),
         atlasReleased: !engine.getLoadedTexturesCache().includes(internal),
       });

@@ -213,6 +213,35 @@ it("keeps a still-valid previous binding when the replacement peak exceeds admis
   owner.dispose();
 });
 
+it("accounts unexpected native buffer capacity and keeps realtime geometry after admission fails", async () => {
+  const f = await fixture();
+  const original = f.mesh.geometry;
+  // Model a backend allocation boundary returning more capacity than requested.
+  // Actual wrapper ownership/disposal remains Babylon's.
+  const create = f.engine.createVertexBuffer.bind(f.engine);
+  const allocate = vi
+    .spyOn(f.engine, "createVertexBuffer")
+    .mockImplementation((...args) => {
+      const buffer = create(...args);
+      buffer.capacity = 512;
+      return buffer;
+    });
+  const owner = new SceneBakedLighting(f.scene, 300);
+  await expect(owner.load(f.optionsFor(f.mesh))).rejects.toThrow(
+    /native buffers exceeded/,
+  );
+  expect(f.mesh.geometry).toBe(original);
+  expect(owner.bindingFor(f.mesh)).toBeUndefined();
+  expect(bakedGpuAllocationStatus(f.engine).quarantined).toBe(true);
+  expect(
+    bakedGpuAllocationStatus(f.engine).managedBytes,
+  ).toBeGreaterThanOrEqual(2048);
+  const allocations = allocate.mock.calls.length;
+  await expect(owner.load(f.optionsFor(f.mesh))).rejects.toThrow(/quarantined/);
+  expect(allocate).toHaveBeenCalledTimes(allocations);
+  owner.dispose();
+});
+
 it("discards uploads when a receiver moves and restores realtime geometry on later invalidation", async () => {
   const f = await fixture();
   const owner = new SceneBakedLighting(f.scene);

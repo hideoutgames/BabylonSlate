@@ -97,10 +97,13 @@ async function prepareGeometry(
   ceiling?: number,
 ) {
   const engine = scene.getEngine();
+  // Pinned WebGPUBufferManager aligns every separate native buffer, not their sum.
+  const capacity = (bytes: number) =>
+    engine.isWebGPU ? Math.ceil(bytes / 4) * 4 : bytes;
   const bytes =
-    source.indices.byteLength +
+    capacity(source.indices.byteLength) +
     source.attributes.reduce(
-      (total, attribute) => total + attribute.data.byteLength,
+      (total, attribute) => total + capacity(attribute.data.byteLength),
       0,
     );
   const reservation = reserveBakedGpuBytes(engine, bytes, ceiling);
@@ -141,6 +144,15 @@ async function prepareGeometry(
       )
     )
       throw new Error("Baked receiver buffers are not ready.");
+    const buffers = new Set([
+      geometry.getIndexBuffer()!,
+      ...Object.values(geometry.getVertexBuffers() ?? {}).map((buffer) =>
+        buffer.getBuffer()!,
+      ),
+    ]);
+    reservation.reconcile(
+      [...buffers].reduce((total, buffer) => total + buffer.capacity, 0),
+    );
     geometry.releaseForMesh(staging);
     staging.dispose();
     staging = undefined;
@@ -192,11 +204,12 @@ export class SceneBakedLighting {
   };
   private readonly sceneObserver;
   private readonly contextObserver;
+  private readonly scene: Scene;
+  private readonly managedByteCeiling?: number;
 
-  constructor(
-    private readonly scene: Scene,
-    private readonly managedByteCeiling?: number,
-  ) {
+  constructor(scene: Scene, managedByteCeiling?: number) {
+    this.scene = scene;
+    this.managedByteCeiling = managedByteCeiling;
     this.sceneObserver = scene.onDisposeObservable.add(() => this.dispose());
     this.contextObserver = scene
       .getEngine()
