@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { loadExportDocuments } from "./export-game-inputs";
+import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+import { importEnvironmentTexture } from "@babylonslate/assets";
+import { assetHeaderDependencies, assetReferencesIncludingOpenDocuments } from "../lib/content-browser-helpers";
 
 function textureAsset(): IndexedAsset {
   return {
@@ -37,6 +40,27 @@ function textureAsset(): IndexedAsset {
 }
 
 describe("loadExportDocuments", () => {
+  it("exports retained HDR cube bytes and dimensional metadata without transcoding", async () => {
+    const source = buildFloatDdsCubeFixture();
+    const [imported] = await importEnvironmentTexture(source, { fileName: "Studio.dds", existingGuids: new Set() });
+    const asset = textureAsset();
+    asset.header.guid = imported!.guid;
+    asset.header.payload = imported!.payload;
+    asset.header.chunks = [{ ...asset.header.chunks[0]!, id: "source", kind: "source", mime: "image/vnd-ms.dds" }, asset.header.chunks[1]!];
+    const loaded = await loadExportDocuments({ assets: [asset], loadDocument: async () => null, transcoderAvailable: true,
+      readAssetChunk: async (_path, id) => id === "source" ? source : new Uint8Array([9]) });
+    expect(loaded.bytesByGuid(imported!.guid)).toEqual(source);
+    expect(loaded.payloadByGuid(imported!.guid)).toMatchObject({ dimension: "cube", container: "dds", encoding: "linearFloat32", width: 2, mipLevels: 2 });
+    const scene = createDefaultScene();
+    scene.settings.environmentTextureGuid = imported!.guid;
+    const payload = scene as unknown as Record<string, unknown>;
+    const dependencies = assetHeaderDependencies("Scene", payload);
+    expect(dependencies).toContain(imported!.guid);
+    const sceneAsset = { ...asset, path: "assets/main.scene.babasset", header: { ...asset.header, guid: "scene-1", type: "Scene", payload: {}, dependencies: [] } };
+    expect(assetReferencesIncludingOpenDocuments(imported!.guid, [asset, sceneAsset], [{ ref: { path: sceneAsset.path }, content: payload }]).inbound).toEqual(["scene-1"]);
+    scene.settings.environmentTextureGuid = null;
+    expect(assetHeaderDependencies("Scene", payload)).not.toContain(imported!.guid);
+  });
   it("exposes authored Texture payload size for overlay 2DTexture layout", async () => {
     const loaded = await loadExportDocuments({
       assets: [

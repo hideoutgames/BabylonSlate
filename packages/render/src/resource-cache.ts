@@ -1,13 +1,15 @@
-import { copyTextureBytesForUpload, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import {
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
 } from "./perf-ceilings";
 import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
+import { uploadedTextureBytes } from "./uploaded-texture-bytes";
 
 export interface ResourceCacheOptions {
   /** Accounted byte ceiling before evicting unreferenced LRU entries. */
@@ -39,6 +41,7 @@ interface CacheEntry {
   contentKey: string;
   textures: Map<string, BaseTexture>;
   samplingBytes?: Map<string, number>;
+  samplingDisposers?: Map<string, () => void>;
 }
 
 /**
@@ -71,6 +74,40 @@ import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 
 function asUint8Array(bytes: Uint8Array | Blob): Uint8Array | null {
   return bytes instanceof Uint8Array ? bytes : null;
+}
+
+interface TextureSourceSize {
+  width: number;
+  height: number;
+  ktx2MipLevels?: number;
+  mipLevels?: number;
+  reserveType?: number;
+}
+
+function textureSourceSize(bytes: Uint8Array): TextureSourceSize | null {
+  if (environmentTextureContainer(bytes)) {
+    // Full source validation belongs to import. A bounded Blob header may omit
+    // the face data; wait for its real upload instead of accepting partial data.
+    try {
+      const info = readEnvironmentTextureInfo(bytes);
+      return { width: info.width, height: info.height, mipLevels: info.mipLevels,
+        reserveType: info.encoding === "linearFloat32" ? Constants.TEXTURETYPE_FLOAT : Constants.TEXTURETYPE_HALF_FLOAT };
+    } catch { return null; }
+  }
+  const ktx2 = sniffKtx2Size(bytes);
+  if (ktx2 && bytes.byteLength >= 44) {
+    // KTX2 levelCount follows faceCount at byte 40. Zero denotes a base level.
+    const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return { ...ktx2, ktx2MipLevels: Math.max(1, header.getUint32(40, true)) };
+  }
+  return ktx2 ?? sniffImageSize(bytes);
+}
+
+function environmentContainer(bytes: Uint8Array | Blob): "env" | "dds" | null {
+  if (bytes instanceof Uint8Array) return environmentTextureContainer(bytes);
+  if (bytes.type === "application/vnd.babylon.env") return "env";
+  if (bytes.type === "image/vnd-ms.dds") return "dds";
+  return null;
 }
 
 function ktx2LoaderHints(bytes: Uint8Array | Blob): {
@@ -141,6 +178,8 @@ function anyLiveTexture(entry: CacheEntry): BaseTexture | undefined {
 }
 
 function disposeEntryTextures(entry: CacheEntry): void {
+  for (const cancel of entry.samplingDisposers?.values() ?? []) cancel();
+  entry.samplingDisposers?.clear();
   for (const texture of entry.textures.values()) {
     texture.dispose();
   }
@@ -308,6 +347,10 @@ export class ResourceCache {
     bytes: Uint8Array | Blob,
     options: TextureSamplingOptions = {},
   ): Texture | CubeTexture {
+    const environment = environmentContainer(bytes);
+    if (options.isCube && bytes instanceof Blob && !environment) throw new Error("Environment Blob inputs require application/vnd.babylon.env or image/vnd-ms.dds MIME; use Uint8Array to detect the container from its bytes.");
+    if (environment && !options.isCube) throw new Error("Environment cube textures cannot be used as 2D textures.");
+    if (environment && bytes instanceof Uint8Array) readEnvironmentTextureInfo(bytes);
     const key = samplingKey(options);
     const variantKey = `${assetGuid}\0${contentKey(bytes)}`;
     const existing = this.entries.get(variantKey);
@@ -317,16 +360,19 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
-    const canonical = this.blobUrlFor(assetGuid, bytes);
+    this.blobUrlFor(assetGuid, bytes);
     const entry = this.entries.get(variantKey)!;
     const blobUrl = this.blobUrlForSamplingKey(entry);
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
     const loaderUrl = ktx2LoaderUrl(blobUrl, bytes);
     const texture = options.isCube
-      ? new CubeTexture(canonical, engine, {
+      ? new CubeTexture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
-          useSRGBBuffer: options.useSRGBBuffer ?? false,
+          useSRGBBuffer: environment ? false : options.useSRGBBuffer ?? false,
+          forcedExtension: environment ? `.${environment}` : undefined,
+          prefiltered: !!environment,
+          createPolynomials: !!environment,
         })
       : new Texture(loaderUrl, engine, {
           noMipmap: options.noMipmap ?? false,
@@ -339,7 +385,7 @@ export class ResourceCache {
         });
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
-    this.accountLoadedBytes(variantKey, key, bytes, options.noMipmap !== true);
+    this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true);
     return texture;
   }
 
@@ -388,9 +434,10 @@ export class ResourceCache {
       existing.textures.set(key, texture);
       existing.refCount += 1;
       existing.lastUsed = ++this.clock;
+      this.trackTextureBytes(existing, key, texture, undefined, !noMipmap);
       return texture;
     }
-    this.entries.set(variantKey, {
+    const entry: CacheEntry = {
       assetGuid,
       key: variantKey,
       blobUrl: "",
@@ -400,7 +447,9 @@ export class ResourceCache {
       lastUsed: ++this.clock,
       contentKey: files.join(":"),
       textures: new Map([[key, texture]]),
-    });
+    };
+    this.entries.set(variantKey, entry);
+    this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
     return texture;
   }
 
@@ -504,21 +553,75 @@ export class ResourceCache {
     }
   }
 
-  private accountLoadedBytes(
-    variantKey: string,
+  private trackTextureBytes(
+    entry: CacheEntry,
     sampling: string,
-    bytes: Uint8Array | Blob,
+    texture: Texture | CubeTexture,
+    bytes: Uint8Array | Blob | undefined,
     withMips: boolean,
   ): void {
-    const raw = asUint8Array(bytes);
-    if (!raw) return;
-    const compressed = sniffKtx2Size(raw);
-    const dimensions = compressed ?? sniffImageSize(raw);
-    const entry = this.entries.get(variantKey);
-    if (!dimensions || !entry) return;
+    entry.samplingDisposers ??= new Map();
+    entry.samplingDisposers.get(sampling)?.();
+    let active = true;
+    let headerPending = bytes instanceof Blob;
+    let size = bytes instanceof Uint8Array ? textureSourceSize(bytes) : null;
+    const current = () => active && this.entries.get(entry.key) === entry && entry.textures.get(sampling) === texture;
+    const update = () => {
+      if (!current() || headerPending || isDisposedGpuTexture(texture)) return;
+      const internal = texture.getInternalTexture();
+      // Babylon 9.20's RGBA KTX2 uploader leaves internal width/height at the
+      // final mip. Header base dimensions and levelCount describe its uploads.
+      const uploaded = uploadedTextureBytes(internal, size?.ktx2MipLevels ?? size?.mipLevels, size?.ktx2MipLevels !== undefined ? size : undefined);
+      const estimate = uploaded ?? (size ? uploadedTextureBytes({
+        isReady: true, width: size.width, height: size.height, depth: 1,
+        isCube: texture.isCube, is3D: false, is2DArray: false,
+        format: Constants.TEXTUREFORMAT_RGBA, type: size.reserveType ?? Constants.TEXTURETYPE_UNSIGNED_BYTE,
+        generateMipMaps: withMips,
+      }, size.ktx2MipLevels ?? size.mipLevels) : null);
+      if (estimate !== null) this.setSamplingBytes(entry, sampling, estimate);
+    };
+    // Texture and CubeTexture declare distinct generic Observable overloads.
+    const load = texture instanceof CubeTexture
+      ? texture.onLoadObservable.add(update)
+      : texture.onLoadObservable.add(update);
+    const disposed = texture.onDisposeObservable.add(() => {
+      if (!current()) return;
+      cancel();
+      entry.samplingDisposers!.delete(sampling);
+      entry.textures.delete(sampling);
+      this.setSamplingBytes(entry, sampling, 0);
+    });
+    const cancel = () => {
+      active = false;
+      // Babylon iterates the live observer array. Defer removal so disposing
+      // inside our observer cannot skip a later owner's cleanup callback.
+      load?.remove(true);
+      disposed?.remove(true);
+    };
+    entry.samplingDisposers.set(sampling, cancel);
+    update();
+    if (bytes instanceof Blob) {
+      // Bound temporary header storage; unusual raster headers can still be
+      // measured from the real upload when their dimensions are unavailable.
+      void bytes.slice(0, 64 * 1024).arrayBuffer().then((header) => {
+        if (!current()) return;
+        size = textureSourceSize(new Uint8Array(header));
+        headerPending = false;
+        update();
+      }, () => {
+        if (!current()) return;
+        headerPending = false;
+        update();
+      });
+    }
+  }
+
+  private setSamplingBytes(entry: CacheEntry, sampling: string, bytes: number): void {
+    if (this.entries.get(entry.key) !== entry) return;
     entry.samplingBytes ??= new Map();
-    entry.samplingBytes.set(sampling, accountedTextureBytes(dimensions.width, dimensions.height, compressed ? "astc4x4" : "rgba8", withMips));
-    this.account(variantKey, [...entry.samplingBytes.values()].reduce((total, value) => total + value, 0));
+    if (entry.samplingBytes.get(sampling) === bytes) return;
+    entry.samplingBytes.set(sampling, bytes);
+    this.account(entry.key, [...entry.samplingBytes.values()].reduce((total, value) => total + value, 0));
   }
 
   flushUnreferenced(): void {
@@ -605,6 +708,7 @@ export function getMaterialTexture(
   engine: AbstractEngine,
   bytes: Uint8Array | Blob,
 ): Texture | null {
+  if (environmentContainer(bytes)) return null;
   const texture = cache.getTexture(
     assetGuid,
     engine,

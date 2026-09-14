@@ -120,6 +120,8 @@ export type ControlMessage =
        * `sceneModelsReady`. Headless tests omit this so finish is synchronous.
        */
       deferSceneModelsReady?: boolean;
+      /** Acquire/paint host Loading UI before departing Scene teardown. */
+      deferSceneLoadingPaint?: boolean;
     }
   | {
       type: "loadScripts";
@@ -185,6 +187,7 @@ export type ControlMessage =
       canvasHeight?: number;
     }
   | { type: "audioVoiceEnded"; voiceId: string }
+  | { type: "sceneLoadingPainted"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneModelsReady"; sceneAssetGuid: string; sceneLoadId: number };
 
 export type DebugColliderPrimitive = {
@@ -428,6 +431,8 @@ export type CommandMessage =
       };
     }
   | { type: "possessCamera"; slotId: number }
+  | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
+  | { type: "sceneLoadFailed"; sceneAssetGuid: string; sceneLoadId: number; message: string }
   | {
       /** Canonical scene after `changescene` / `ctx.changeScene`. */
       type: "activeScene";

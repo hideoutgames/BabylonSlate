@@ -47,6 +47,7 @@ vi.mock("../context/document-context", () => ({
     applyAssetDocumentChange: harness.applyAssetDocumentChange,
     assetRegistry: {
       list: () => [
+        { header: { guid: "env-1", name: "Studio Cube", type: "Texture", payload: { dimension: "cube", container: "env" } }, path: "assets/Studio.babasset" },
         {
           header: { guid: "tex-1", name: "Bark", type: "Texture" },
           path: "assets/Bark.babasset",
@@ -309,7 +310,7 @@ describe("Material details panel", () => {
     );
   });
 
-  it("shows a texture picker for a Texture Sample with an inline default", () => {
+  it("shows a 2D texture picker for a Texture Sample and excludes environment cubes", async () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.nodes.push({
       id: "sample",
@@ -323,6 +324,9 @@ describe("Material details panel", () => {
     expect(screen.getByTestId("material-node-texture").textContent).toContain(
       "Bark",
     );
+    fireEvent.click(screen.getByTestId("material-node-texture"));
+    expect(await screen.findByRole("option", { name: /Bark/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /Studio Cube/ })).toBeNull();
   });
 
   it("writes an authored pin default from Details", () => {

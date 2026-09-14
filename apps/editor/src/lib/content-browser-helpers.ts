@@ -1757,6 +1757,11 @@ export function assetHeaderDependencies(
     ...(assetType === "Skeleton" ? skeletonAssetGuids(payload) : []),
     ...(assetType === "Animation" ? animationAssetGuids(payload) : []),
   ]);
+  if (assetType === "Scene") {
+    const settings = payload.settings as Record<string, unknown> | undefined;
+    const environment = settings?.environmentTextureGuid;
+    if (typeof environment === "string" && environment.length > 0) unique.add(environment);
+  }
   if (["Scene", "SceneLayer", "Class", "Graph"].includes(assetType)) {
     const addClass = (classId: unknown) => {
       if (typeof classId !== "string" || !classId) return;
