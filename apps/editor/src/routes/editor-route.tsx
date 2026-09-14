@@ -168,6 +168,7 @@ function EditorLayout() {
     forceCloseProject,
     saveAll,
     dirtyDocuments,
+    projectDirty,
     migrationPending,
     pendingExclusiveScene,
     confirmExclusiveSceneOpen,
@@ -202,19 +203,22 @@ function EditorLayout() {
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!shouldPromptBeforeUnload(dirtyDocuments.length)) return;
+      if (!shouldPromptBeforeUnload(dirtyDocuments.length + Number(Boolean(projectDirty)))) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirtyDocuments.length]);
+  }, [dirtyDocuments.length, projectDirty]);
 
   const requestClose = async () => {
     const result = await closeProject();
     if (result.blocked) {
-      setDirtyPrompt(result.dirty.map((d) => d.ref.label));
-    }
+      setDirtyPrompt([
+        ...result.dirty.map((d) => d.ref.label),
+        ...(result.projectDirty ? ["Project Settings"] : []),
+      ]);
+    } else setDirtyPrompt(null);
   };
 
   const exclusiveDirtyNames = pendingExclusiveScene
@@ -256,9 +260,9 @@ function EditorLayout() {
   const requestSave = async () => {
     if (migrationPending.length > 0) {
       setShowMigrate(true);
-      return;
+      return false;
     }
-    await saveAll();
+    return saveAll();
   };
 
   return (
@@ -318,9 +322,7 @@ function EditorLayout() {
             return;
           }
           void (async () => {
-            await requestSave();
-            setDirtyPrompt(null);
-            await forceCloseProject();
+            if (await requestSave()) await requestClose();
           })();
         }}
       />
@@ -353,7 +355,7 @@ function EditorLayout() {
         onDismiss={dismissExternalChange}
       />
       <span className="sr-only" data-testid="dirty-count">
-        {dirtyDocuments.length}
+        {dirtyDocuments.length + Number(Boolean(projectDirty))}
       </span>
     </div>
   );

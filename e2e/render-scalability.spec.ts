@@ -139,6 +139,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
   await page.getByLabel("Texture Budget (MiB)", { exact: true }).press("Tab");
   await expect(value(page, "Textures Quality")).toHaveText("Custom");
   await commitRendering(page);
+  await expect(page.getByTestId("save-all-project")).toBeEnabled();
   await saveAllIfEnabled(page, 30_000);
   await openTestProject(page);
   await openMainScene(page);

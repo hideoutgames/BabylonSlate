@@ -272,6 +272,7 @@ export function EditorChromeBar({
     reorderClosableTabs,
     saveAll,
     dirtyDocuments,
+    projectDirty,
     undoActiveDocument,
     redoActiveDocument,
     canUndoActiveDocument,
@@ -622,13 +623,13 @@ export function EditorChromeBar({
           <span className="relative inline-flex">
             <IconActionButton
               label={
-                dirtyDocuments.length > 0
+                dirtyDocuments.length > 0 || projectDirty
                   ? "Save All (unsaved changes)"
                   : "Save All"
               }
               data-testid="save-all-project"
               className="chrome-icon-button"
-              disabled={!projectName || dirtyDocuments.length === 0}
+              disabled={!projectName || (dirtyDocuments.length === 0 && !projectDirty)}
               onClick={() => {
                 if (onSaveProject) onSaveProject();
                 else void saveAll();
@@ -636,7 +637,7 @@ export function EditorChromeBar({
             >
               <SaveAllIcon />
             </IconActionButton>
-            {dirtyDocuments.length > 0 ? (
+            {dirtyDocuments.length > 0 || projectDirty ? (
               <span
                 data-testid="save-all-dirty"
                 className="pointer-events-none absolute top-0.5 end-0.5 size-1.5 rounded-full bg-destructive"
