@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Camera,
   FreeCamera,
+  DirectionalLight,
   HemisphericLight,
   TransformNode,
   MeshBuilder,
@@ -23,7 +24,7 @@ import {
 import { applyAuthoredLightProperties } from "./scene-illumination";
 import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { normalizeRenderingQuality, normalizeShadowSettings } from "@babylonslate/core";
 import { syncSceneLighting } from "./scene-lighting";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import {
@@ -67,6 +68,9 @@ function fixture() {
     return texture;
   });
   const scene = new Scene(engine);
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({
+    lighting: { localLightMode: "manual", maxLocalLights: 256 },
+  }) });
   const camera = new FreeCamera("camera", new Vector3(0, 3, -5), scene);
   camera.minZ = 0.1;
   camera.maxZ = 50;
@@ -135,6 +139,67 @@ describe("explicit clustered light ownership", () => {
           texture.name === "TileMaskTexture",
       ),
     ).toBe(false);
+  });
+
+  it("shares one quality allowance across clustered children and admitted shadows while preserving sun and authored state", () => {
+    const { scene, mesh, lights } = fixture();
+    for (const light of lights.slice(6)) setAuthoredLightEnabled(light, false);
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+    applyAuthoredLightProperties(sun, { enabled: true, castShadows: false });
+    const spot = new SpotLight("shadowed", new Vector3(0, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
+    spot.renderPriority = 2;
+    const settings = (manual?: number) => updateSceneRenderingSettings(scene, {
+      quality: normalizeRenderingQuality({ lighting: { profile: "low",
+        localLightMode: manual === undefined ? "auto" : "manual", maxLocalLights: manual ?? 4 } }),
+      shadows: normalizeShadowSettings({ enabled: true, localMapSize: 64,
+        localLightMode: "manual", maxLocalLights: 1 }),
+    });
+    settings();
+    applyAuthoredLightProperties(spot, { enabled: true, castShadows: true, range: 12 });
+    const locals = [...lights.slice(0, 6), spot];
+    const owner = new ClusteredSceneLights(scene, locals);
+    const controller = sceneShadowController(scene);
+    expect(controller.generator(spot)).not.toBeNull();
+    expect(owner.status().clustered).toBe(3);
+    expect(locals.filter((light) => light.isEnabled())).toHaveLength(4);
+    expect(sun.isEnabled()).toBe(true);
+    expect(mesh.lightSources.filter((light) => light === spot)).toHaveLength(1);
+    expect(lights.slice(0, 6).every(isAuthoredLightEnabled)).toBe(true);
+    expect(owner.limits().join()).toContain("quality budget");
+
+    // Manual overrides the Low Auto target, but it remains one total allowance.
+    settings(5);
+    syncSceneLighting(scene);
+    expect(owner.status().clustered).toBe(4);
+    expect(locals.filter((light) => light.isEnabled())).toHaveLength(5);
+    expect(sun.isEnabled()).toBe(true);
+    settings(2);
+    syncSceneLighting(scene);
+    expect(owner.status().clustered).toBe(1);
+    expect(locals.filter((light) => light.isEnabled())).toHaveLength(2);
+
+    const parent = new TransformNode("moved excluded parent", scene);
+    const moved = lights[5]!;
+    moved.parent = parent;
+    parent.position.set(-moved.position.x, 1, -5);
+    syncSceneLighting(scene);
+    expect(moved.isEnabled()).toBe(true);
+    expect(lights[0]!.isEnabled()).toBe(false);
+    expect(locals.filter((light) => light.isEnabled())).toHaveLength(2);
+    expect(controller.generator(spot)).not.toBeNull();
+
+    settings(0);
+    syncSceneLighting(scene);
+    expect(owner.status().clustered).toBe(0);
+    expect(locals.some((light) => light.isEnabled())).toBe(false);
+    expect(sun.isEnabled()).toBe(true);
+    expect(locals.every(isAuthoredLightEnabled)).toBe(true);
+    owner.dispose();
+    const late = new PointLight("after disposal", Vector3.Zero(), scene);
+    const observers = late.onDisposeObservable.observers.length;
+    owner.setLights([late]);
+    expect(late.onDisposeObservable.observers).toHaveLength(observers);
+    expect(scene.lights).toContain(late);
   });
 
   it("promotes an admitted spotlight out of the cluster and demotes it after shadow removal", () => {
