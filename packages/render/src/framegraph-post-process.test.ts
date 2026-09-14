@@ -384,8 +384,8 @@ it.each(["replace", "dispose"] as const)(
       const sibling = engine.postProcesses[1]!;
       const errors = vi.fn();
       retiring.onErrorObservable.add(errors);
+      await vi.waitFor(() => expect(sibling.getEffect().isReady()).toBe(true));
       expect(retiring.isReady()).toBe(false);
-      expect(sibling.getEffect().isReady()).toBe(true);
       const applied = vi.fn();
       sibling.onApplyObservable.add(applied);
 
