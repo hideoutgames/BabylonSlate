@@ -40,7 +40,7 @@ const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
   },
 };
 const fields: {
-  key: keyof ShadowSettings;
+  key: Exclude<keyof ShadowSettings, "profile" | "preset">;
   label: string;
   description: string;
 }[] = [

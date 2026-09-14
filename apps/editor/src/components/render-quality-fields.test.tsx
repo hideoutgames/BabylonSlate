@@ -56,12 +56,12 @@ async function select(label: string, option: string) {
   const item = await screen.findByRole("option", { name: option, exact: true });
   fireEvent.pointerDown(item);
   fireEvent.click(item);
-  await waitFor(() =>
-    expect(selected(label)).toBe(option),
-  );
+  await waitFor(() => expect(selected(label)).toBe(option));
 }
 function selected(label: string) {
-  return screen.getByLabelText(label).querySelector('[data-slot="select-value"]')?.textContent;
+  return screen
+    .getByLabelText(label)
+    .querySelector('[data-slot="select-value"]')?.textContent;
 }
 
 it("applies the local shadow count with each preset and makes its category Custom after an edit", async () => {
@@ -73,9 +73,7 @@ it("applies the local shadow count with each preset and makes its category Custo
   expect(selected("Shadows Quality")).toBe("Custom");
   expect(selected("Overall Quality")).toBe("Custom");
   await select("Overall Quality", "Low");
-  expect(selected("Local Shadow Budget Mode")).toBe(
-    "Auto",
-  );
+  expect(selected("Local Shadow Budget Mode")).toBe("Auto");
   expect(
     screen.getByText(/Current Auto Budget: 1 local shadow lights/),
   ).toBeTruthy();
@@ -109,9 +107,7 @@ it("keeps a manually matched tier Custom through saved normalization until expli
   fireEvent.change(screen.getByLabelText("Post Processing Resolution Scale"), {
     target: { value: "0.8" },
   });
-  expect(selected("Post Processing Quality")).toBe(
-    "Custom",
-  );
+  expect(selected("Post Processing Quality")).toBe("Custom");
   expect(selected("Textures Quality")).toBe("Ultra");
 });
 

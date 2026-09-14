@@ -190,7 +190,7 @@ function mergeQualityValues<T extends QualitySelection>(
   base: T,
   patch?: Partial<T>,
 ): T {
-  const values = patch ?? {};
+  const values: Partial<T> = patch ?? {};
   const edited = Object.keys(values).some(
     (key) => key !== "preset" && key !== "profile",
   );
