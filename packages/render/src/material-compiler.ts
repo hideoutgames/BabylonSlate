@@ -1,4 +1,3 @@
-import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import {
   AddBlock,
   BonesBlock,
