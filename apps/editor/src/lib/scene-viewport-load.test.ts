@@ -29,7 +29,7 @@ it("keeps environment scalar edits live while loading newly admitted resources b
   const project = { environmentLighting };
   const initial = sceneViewportRenderSettingsKey(project, {}, {}, {}, {}, "cube-a");
   const latest = { ...environmentLighting, intensity: 4, rotationYDegrees: -90, celStrength: 0.5 };
-  expect(sceneViewportRenderSettingsKey({ environmentLighting: latest }, {}, {}, {}, { intensity: 2 }, "cube-a")).toBe(initial);
+  expect(sceneViewportRenderSettingsKey({ environmentLighting: latest }, {}, {}, { renderPath: "auto" }, { intensity: 2 }, "cube-a")).toBe(initial);
   expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, { enabled: false }, "cube-a")).not.toBe(initial);
   expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, {}, "cube-b")).not.toBe(initial);
   const settings = sceneViewportRenderSettings(initial, latest);

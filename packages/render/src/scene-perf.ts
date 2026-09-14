@@ -219,8 +219,25 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   };
   try {
     capture(mesh.material ?? scene.defaultMaterial);
-    if (mesh.subMeshes)
-      for (const part of mesh.subMeshes) capture(part.getMaterial());
+    if (mesh.subMeshes) {
+      for (const part of mesh.subMeshes) {
+        const material = part.getMaterial();
+        capture(material);
+        // A strict probe can replace a ready effect with a compiling variant.
+        // Babylon 9.20 otherwise retains the previous effect's frozen/same-frame
+        // readiness and can bind the new effect before its pipeline exists.
+        if (material?._storeEffectOnSubMeshes) {
+          const wrapper = part._drawWrapperOverride ?? part._getDrawWrapper();
+          if (wrapper) wrapper._wasPreviouslyReady = false;
+          const defines = part.materialDefines;
+          if (defines) defines._renderId = -1;
+        }
+      }
+    }
+    for (const material of states.keys()) {
+      if (!material._storeEffectOnSubMeshes)
+        material._getDrawWrapper()._wasPreviouslyReady = false;
+    }
     return mesh.isReady(true);
   } finally {
     for (const [material, [hotSwap, everyCall, onlyOnce]] of states) {

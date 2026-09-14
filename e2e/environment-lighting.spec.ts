@@ -20,6 +20,11 @@ test("renders scene-isolated PBR and CEL environment response and raw graph samp
         environmentLightingProof(): Promise<{
           sharedUpload: boolean;
           distinctViews: boolean;
+          optionalGraph?: {
+            sameBuild: boolean;
+            frozen: boolean;
+            noCubeBefore: boolean;
+          };
           hardware: unknown;
           failure?: string;
           captures: Record<string, { pixel: number[]; png: string }>;
@@ -49,6 +54,15 @@ test("renders scene-isolated PBR and CEL environment response and raw graph samp
   expect(result.failure).toBeUndefined();
   expect(result.sharedUpload).toBe(true);
   expect(result.distinctViews).toBe(true);
+  expect(result.optionalGraph).toEqual({
+    sameBuild: true,
+    frozen: true,
+    noCubeBefore: true,
+  });
+  close("graph-before-environment", [0, 0, 0]);
+  close("graph-removed-environment", [0, 0, 0]);
+  close("graph-late-environment", pixel("graph-pbr-0.25"));
+  close("graph-reassigned-environment", pixel("graph-pbr-0.25"));
   for (const material of ["native", "graph"]) {
     close(`${material}-pbr-0`, [0, 0, 0]);
     expect(pixel(`${material}-pbr-0.25`)[1]).toBeGreaterThan(20);
