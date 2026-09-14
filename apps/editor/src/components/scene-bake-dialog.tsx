@@ -28,7 +28,10 @@ import {
 const phaseLabel: Record<SceneBakePhase, string> = {
   preparing: "Preparing Sources",
   unwrapping: "Generating UVs",
+  building: "Preparing Lighting",
+  compiling: "Compiling Lighting",
   baking: "Baking Lighting",
+  readback: "Reading Lighting",
   assembling: "Preparing Atlases",
   writing: "Saving Bake",
 };

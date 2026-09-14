@@ -176,7 +176,7 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
   await expect(dialog.getByLabel("Samples", { exact: true })).toHaveValue("1");
   await dialog.getByLabel("Samples", { exact: true }).fill("4096");
   await dialog.getByLabel("Samples", { exact: true }).press("Tab");
-  // Cancel after the real job module and offline worker have loaded. Restarting
+  // Cancel during actual sampling, after native shader compilation. Restarting
   // offline below proves the job uses its bundled transport/UV resources.
   await dialog
     .getByRole("button", { name: "Bake Lighting", exact: true })

@@ -21,7 +21,7 @@ import {
 } from "./scene-bake-preparation";
 
 export type SceneBakePhase =
-  "preparing" | "unwrapping" | "baking" | "assembling" | "writing";
+  "preparing" | "unwrapping" | "building" | "compiling" | "baking" | "readback" | "assembling" | "writing";
 export interface SceneBakeProgress {
   phase: SceneBakePhase;
   progress: number;
@@ -287,7 +287,7 @@ export async function runSceneBakeJob(options: {
       ) {
         const batch = prepared.batches[batchIndex];
         let released = false;
-        progress("baking", baseProgress + 15 / receiverCount);
+        progress("building", baseProgress + 15 / receiverCount);
         let baked;
         try {
           baked = await adapter.bake(
@@ -310,7 +310,13 @@ export async function runSceneBakeJob(options: {
                 // Cancellation cannot interrupt disposal or turn its progress callback into a cleanup failure.
                 if (value.phase !== "disposing")
                   progress(
-                    "baking",
+                    value.phase === "sampling"
+                      ? "baking"
+                      : value.phase === "compiling"
+                        ? "compiling"
+                        : value.phase === "readback"
+                          ? "readback"
+                          : "building",
                     baseProgress +
                       (15 +
                         ((batchIndex +
