@@ -14,6 +14,16 @@ test.use({
         ? "--use-angle=d3d11-warp"
         : "--use-angle=swiftshader",
       "--use-webgpu-adapter=swiftshader",
+      // Linux canvas presentation must use Chromium's Vulkan SwiftShader path
+      // as well as Dawn. Its GPU pixel tests use this combination so shared
+      // images do not cross an incompatible GL compositor during readback.
+      ...(process.platform === "linux"
+        ? [
+            "--enable-features=Vulkan",
+            "--use-vulkan=swiftshader",
+            "--disable-vulkan-surface",
+          ]
+        : []),
     ],
   },
 });
@@ -96,7 +106,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (
-      /WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:/i.test(
+      /WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(
         message.text(),
       )
     )
