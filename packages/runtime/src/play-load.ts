@@ -40,6 +40,8 @@ export function runtimeOptionsFromLoadControl(
   | "audioAssetGuids"
   | "animClipCatalog"
   | "deferSceneModelsReady"
+  | "deferSceneLoadingPaint"
+  | "cooperativeSceneLoading"
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
   const sceneGuidByKey: Record<string, string> = {};
@@ -60,6 +62,7 @@ export function runtimeOptionsFromLoadControl(
   }
   return {
     seed: msg.seed ?? 1,
+    cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     renderSettings: msg.renderSettings,
     ...(msg.project ? { project: msg.project } : {}),
@@ -86,6 +89,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.animClipCatalog && msg.animClipCatalog.length > 0
       ? { animClipCatalog: msg.animClipCatalog }
       : {}),
+    ...(msg.deferSceneLoadingPaint ? { deferSceneLoadingPaint: true } : {}),
     ...(msg.deferSceneModelsReady ? { deferSceneModelsReady: true } : {}),
   };
 }

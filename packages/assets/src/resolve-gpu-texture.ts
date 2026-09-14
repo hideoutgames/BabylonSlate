@@ -1,4 +1,5 @@
 import type { BabassetHeader } from "./babasset";
+import { isEnvironmentTexturePayload, readEnvironmentTextureInfo } from "./environment-texture";
 import { longestEdge, sniffImageSize } from "./image-size";
 import {
   authoredTextureMaxDimension,
@@ -61,6 +62,13 @@ export async function resolveGpuTexture(
   options: ResolveGpuTextureOptions,
 ): Promise<ResolvedGpuTexture | null> {
   const { header, readChunk } = options;
+  if (isEnvironmentTexturePayload(header.payload)) {
+    const selected = selectTextureChunk(header);
+    const bytes = await readChunk(selected.chunk.id);
+    if (!bytes?.byteLength) return null;
+    const info = readEnvironmentTextureInfo(bytes);
+    return { bytes, kind: "source", chunkId: selected.chunk.id, sourceEdge: info.width, targetEdge: info.width, preferredChunkId: null, missingPreferred: false };
+  }
   const raster = await readPixelsOrSource(header, readChunk);
   const sniffed =
     (raster ? sniffImageSize(raster.bytes) : null) ??

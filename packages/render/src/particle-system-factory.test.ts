@@ -1,6 +1,8 @@
-import { NodeMaterialModes, ParticleSystem, RawTexture } from "@babylonjs/core";
+import { Effect, NodeMaterial, NodeMaterialModes, ParticleSystem, RawTexture } from "@babylonjs/core";
 import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { MaterialLibrary, materialUnavailable } from "./material-library";
 import {
   PARTICLE_BLENDMODE_STANDARD,
   PARTICLE_BILLBOARDMODE_ALL,
@@ -22,6 +24,7 @@ describe("particle-system-factory", () => {
     [];
 
   afterEach(() => {
+    vi.restoreAllMocks();
     while (handles.length > 0) {
       const handle = handles.pop();
       handle?.scene.dispose();
@@ -146,29 +149,74 @@ describe("particle-system-factory", () => {
     cone.dispose(false);
   });
 
-  it("copies particleTexture onto ParticleTextureBlock before createEffectForParticles", () => {
+  it("copies particleTexture onto ParticleTextureBlock before createEffectForParticles", async () => {
     const { scene, texture } = host();
     const system = createBabylonParticleSystem("nme", scene, 16, false);
     const block = new ParticleTextureBlock("particleTex");
     let boundDuringEffect: unknown = null;
-    const material = {
-      mode: NodeMaterialModes.Particle,
-      attachedBlocks: [block],
-      createEffectForParticles: () => {
-        boundDuringEffect = block.texture;
-      },
-    };
+    const material = new NodeMaterial("particle", scene);
+    material.mode = NodeMaterialModes.Particle;
+    material.attachedBlocks.push(block);
+    material.createEffectForParticles = () => { boundDuringEffect = block.texture; };
     applyParticleLook({
       system,
       emitter: createDefaultParticleEmitterPayload(),
       systemPayload: createDefaultParticleSystemPayload(),
       gpu: false,
       texture,
-      material: material as never,
+      material,
     });
-    expect(boundDuringEffect).toBe(texture);
+    await vi.waitFor(() => expect(boundDuringEffect).toBe(texture));
     expect(block.texture).toBe(texture);
     expect(system.particleTexture).toBe(texture);
     system.dispose(false);
+  });
+
+  it("waits for actual compiled particle source before creating effects", async () => {
+    const { scene, texture } = host();
+    const library = new MaterialLibrary();
+    const acquired = library.acquire(scene, "particle-source", createDefaultMaterialDocument("Sparks", "particle"));
+    if (materialUnavailable(acquired)) throw new Error("Particle fixture must compile");
+    const registered = vi.spyOn(Effect, "RegisterShader");
+    const effectCreation = vi.spyOn(acquired.material, "createEffectForParticles");
+    const system = createBabylonParticleSystem("compiled", scene, 16, false);
+    applyParticleLook({ system, emitter: createDefaultParticleEmitterPayload(),
+      systemPayload: createDefaultParticleSystemPayload(), gpu: false, texture, material: acquired.material });
+    expect(effectCreation).not.toHaveBeenCalled();
+    await acquired.ready;
+    await vi.waitFor(() => expect(effectCreation).toHaveBeenCalledOnce());
+    expect(registered.mock.calls.length).toBeGreaterThan(0);
+    // Empty registration makes Babylon fall back to fetching a generated .fx URL.
+    for (const [, source] of registered.mock.calls) expect(source).toContain("void main");
+    for (const blend of [ParticleSystem.BLENDMODE_ONEONE, ParticleSystem.BLENDMODE_MULTIPLY]) {
+      await vi.waitFor(() => expect(system.getCustomEffect(blend)?.fragmentSourceCode).toContain("void main"));
+    }
+    system.dispose(false);
+    library.dispose();
+  });
+
+  it("does not bind an obsolete material after replacement or system disposal", async () => {
+    const { scene, texture } = host();
+    const library = new MaterialLibrary();
+    const first = library.acquire(scene, "first", createDefaultMaterialDocument("First", "particle"));
+    const second = library.acquire(scene, "second", createDefaultMaterialDocument("Second", "particle"));
+    if (materialUnavailable(first) || materialUnavailable(second)) throw new Error("Particle fixtures must compile");
+    const oldEffect = vi.spyOn(first.material, "createEffectForParticles");
+    const newEffect = vi.spyOn(second.material, "createEffectForParticles");
+    const live = createBabylonParticleSystem("live", scene, 16, false);
+    const removed = createBabylonParticleSystem("removed", scene, 16, false);
+    const apply = (system: typeof live, material: NodeMaterial | null) => applyParticleLook({ system,
+      emitter: createDefaultParticleEmitterPayload(), systemPayload: createDefaultParticleSystemPayload(),
+      gpu: false, texture, material });
+    apply(live, first.material);
+    apply(live, second.material);
+    apply(removed, first.material);
+    removed.dispose(false);
+    await Promise.all([first.ready, second.ready]);
+    await vi.waitFor(() => expect(newEffect).toHaveBeenCalledOnce());
+    expect(newEffect).toHaveBeenCalledWith(live);
+    expect(oldEffect).not.toHaveBeenCalled();
+    live.dispose(false);
+    library.dispose();
   });
 });

@@ -77,3 +77,15 @@ Revision `e6d008c3`, Windows Chromium 151.0.7922.34, WebGL2 through ANGLE/SwiftS
 | Point repeat | 641.0 / 660.7 / 684.6 | 360 | 48 |
 
 Software rendering stayed far below the viewport cap. Scene-render CPU medians were 3.2/2.1/3.1 ms; that counter does not measure total presentation time. Each sample observed zero texture/render-target churn and one live Engine scene. Engine texture counts were 23/30/24 across fixtures, so this is not proof of constant total resource use. Non-shadow byte counters omit this fixture's runtime primitives and default textures. Setup, including persisted saves, took 35.7/12.9/21.6 seconds before sampling. A16/Safari performance, total GPU residency and sustained thermal behavior remain unmeasured.
+
+### Static shadow reuse comparison
+
+A later run at `1b575657` uses the same fixture, browser version, software backend, dimensions, cap, and three 30-second untraced samples. Other local agent checks were held during both runs. The reference at `fc735530` predates static caching and nearest-light selection; this is a revision comparison, not an isolated attribution of each change.
+
+| Fixture | Reference median / p95 / p99 (ms) | Cached median / p95 / p99 (ms) | Cached interval samples | Estimated shadow MiB |
+| --- | --- | --- | --- | --- |
+| Point | 484.7 / 510.3 / 541.4 | 67.6 / 82.2 / 91.7 | 435 | 360 |
+| Spot | 163.3 / 178.2 / 189.4 | 143.9 / 168.9 / 175.0 | 203 | 132 |
+| Point repeat | 652.6 / 665.4 / 670.8 | 205.3 / 293.9 / 313.8 | 135 | 360 |
+
+Settled captures reported zero shadow draws while keeping 48/11/48 allocated shadow faces and 8/11/8 render targets. Shadow memory did not shrink. CPU medians were 1.16/1.28/1.24 ms; setup including saves took 6.9/10.3/15.0 seconds. Every sample retained one Engine scene and observed zero sampled texture/target churn; texture counts remained 23/30/24. The slower repeated point fixture remains unexplained by these counters. These results do not establish hardware GPU time, leak freedom, iPad performance, or a 60 fps result.

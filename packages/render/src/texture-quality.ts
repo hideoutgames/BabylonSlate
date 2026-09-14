@@ -70,7 +70,7 @@ RegisterClass("BABYLON.QualityTextureBlock", QualityTextureBlock);
 
 const MATERIAL_SAMPLERS =
   "(?:albedo|diffuse|ambient|opacity|emissive|specular|reflectivity|metallicReflectance|reflectance|microSurface|bump|lightmap)Sampler";
-class TextureQualityPlugin extends MaterialPluginBase {
+export class TextureQualityPlugin extends MaterialPluginBase {
   constructor(material: Material) {
     super(material, "SlateTextureQuality", 210, {}, true, false);
     this.registerForExtraEvents = true;

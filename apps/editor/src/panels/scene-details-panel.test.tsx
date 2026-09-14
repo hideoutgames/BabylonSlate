@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedScene, ShadowSettings } from "@babylonslate/core";
+import type { SerializedScene, ShadowSettings, RenderPath } from "@babylonslate/core";
 import {
   createActor,
   createDefaultScene,
@@ -34,7 +34,7 @@ const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.babasset",
-  render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined },
+  render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined, renderPath: undefined as RenderPath | undefined },
   applySceneChange: vi.fn<
     (id: string, scene: SerializedScene) => Promise<boolean>
   >(async () => true),
@@ -151,6 +151,7 @@ beforeEach(() => {
   harness.documentId = "scene:assets/Main.scene.babasset";
   harness.render.mode = "pbr";
   harness.render.shadows = undefined;
+  harness.render.renderPath = undefined;
   harness.scene = createDefaultScene();
   harness.applySceneChange.mockClear();
 });
@@ -873,4 +874,38 @@ it("hides scene CEL overrides in PBR and persists only explicitly overridden fie
   harness.render.mode = "pbr";
   view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
   expect(screen.queryByTestId("scene-cel-settings")).toBeNull();
+});
+
+
+it("starts Rendering closed and resets only the Scene path to live project inheritance", () => {
+  harness.render.renderPath = "auto";
+  scene().settings.shadowOverrides = { distance: 80 };
+  const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  const disclosure = screen.getByRole("button", { name: "Rendering" });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(harness.applySceneChange).not.toHaveBeenCalled();
+  fireEvent.click(disclosure);
+  expect((screen.getByTestId("scene-render-path") as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByTestId("scene-render-path").textContent).toContain("Auto");
+  expect(screen.queryByTestId("project-gpu-backend")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Override Render Path" }));
+  harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+  expect(scene().settings.renderPath).toBe("auto");
+  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  harness.render.renderPath = "clusteredForward";
+  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  expect(screen.getByTestId("scene-render-path").textContent).toContain("Auto");
+  fireEvent.click(screen.getByRole("button", { name: "Reset Render Path To Project Settings" }));
+  harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+  expect(scene().settings).not.toHaveProperty("renderPath");
+  expect(scene().settings.shadowOverrides).toEqual({ distance: 80 });
+  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  expect(screen.getByTestId("scene-render-path").textContent).toContain("Clustered Forward");
+  fireEvent.click(disclosure);
+  harness.applySceneChange.mockClear();
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "Render Path" } });
+  expect(screen.getByRole("button", { name: "Rendering" }).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "" } });
+  expect(screen.getByRole("button", { name: "Rendering" }).getAttribute("aria-expanded")).toBe("false");
+  expect(harness.applySceneChange).not.toHaveBeenCalled();
 });

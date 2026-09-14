@@ -3,26 +3,37 @@ export type PlayPauseTarget = {
   resume: () => void;
 };
 
-/**
- * Hold Pause / Resume until `boot.play` finishes. `play()` always ends in
- * `start()` + `resume()`, which would otherwise undo a Pause On Play
- * `setPaused(true)` that arrived while scripts/physics were still loading.
- */
+/** Apply explicit Pause as soon as cooperative Game Instance ticks can begin. */
 export function createPlayPauseGate(target: PlayPauseTarget) {
   let booting = false;
+  let started = false;
   let pauseWhenReady = false;
+  let generation = 0;
 
   return {
-    beginPlay(play: () => Promise<void>): Promise<void> {
+    reset() {
+      generation++;
+      booting = false;
+      started = false;
+      pauseWhenReady = false;
+    },
+    beginPlay(play: (onStarted: () => void) => Promise<void>): Promise<void> {
+      const current = ++generation;
       booting = true;
-      return play().then(
+      started = false;
+      return play(() => {
+        if (current !== generation) return;
+        started = true;
+        if (pauseWhenReady) target.pause();
+      }).then(
         () => {
+          if (current !== generation) return;
           booting = false;
-          if (pauseWhenReady) target.pause();
+          if (!started && pauseWhenReady) target.pause();
           pauseWhenReady = false;
         },
         (error: unknown) => {
-          booting = false;
+          if (current === generation) booting = false;
           throw error;
         },
       );
@@ -30,7 +41,7 @@ export function createPlayPauseGate(target: PlayPauseTarget) {
     setPaused(paused: boolean) {
       if (booting) {
         pauseWhenReady = paused;
-        return;
+        if (!started) return;
       }
       if (paused) target.pause();
       else target.resume();

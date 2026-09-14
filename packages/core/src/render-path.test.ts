@@ -120,12 +120,17 @@ describe("rendering pipeline contract", () => {
     expect(normalizeScene({}).settings).not.toHaveProperty("renderPath");
   });
 
-  it.each([
-    { renderPath: "auto", gpuBackend: "auto" },
-    { renderPath: "clusteredForward", gpuBackend: "webgpu" },
-  ] as const)(
-    "reports unavailable renderer requests without activating them: %j",
-    (requested) => {
+  it("resolves Auto deterministically without treating Auto itself as unavailable", () => {
+    const result = resolveRenderingPipeline({ renderPath: "auto", gpuBackend: "auto" });
+    expect(result).toEqual({
+      requested: { renderPath: "auto", gpuBackend: "auto" },
+      effective: { renderPath: "forward", gpuBackend: "webgl2" },
+      limits: [],
+    });
+  });
+
+  it("reports unavailable renderer requests without activating them", () => {
+      const requested = { renderPath: "clusteredForward", gpuBackend: "webgpu" } as const;
       const saved = { ...requested };
       const result = resolveRenderingPipeline(requested);
       expect(result.requested).toEqual(saved);
@@ -135,7 +140,7 @@ describe("rendering pipeline contract", () => {
         gpuBackend: "webgl2",
       });
       expect(result.limits).toEqual([
-        expect.stringContaining("ClusteredForward"),
+        expect.stringContaining("Clustered Forward"),
         expect.stringContaining("WebGPU"),
       ]);
       expect(
@@ -144,6 +149,5 @@ describe("rendering pipeline contract", () => {
           gpuBackend: "webgl2",
         }).limits,
       ).toEqual([]);
-    },
-  );
+  });
 });

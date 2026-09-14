@@ -196,6 +196,14 @@ import {
 } from "./scene-perf";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 
+export interface EditorSceneLoadOptions {
+  signal: AbortSignal;
+  assets?: MeshAssetContext;
+  materialDocuments?: ReadonlyMap<string, MaterialDocument>;
+  materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  onProgress?: (progress: number) => void;
+}
+
 export interface EngineHandle {
   engine: AbstractEngine;
   scene: Scene;
@@ -206,6 +214,8 @@ export interface EngineHandle {
   resize: () => void;
   setSize: (width: number, height: number) => void;
   loadScene: (sceneData: SerializedScene) => void;
+  /** Blocking editor realization; callers keep the view obstructed until readiness. */
+  loadSceneAsync: (sceneData: SerializedScene, options: EditorSceneLoadOptions) => Promise<void>;
   /** Push a worker snapshot and invalidate the viewport. */
   pushSnapshot: (buffer: Float32Array) => void;
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
@@ -1188,6 +1198,70 @@ function initializeEngine(
   };
 
   let lastRenderedSnapshotFrame: number | null = null;
+  const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
+      binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
+      binding.textureBytes = assets.textureBytes;
+      binding.texturePixelSizes = assets.texturePixelSizes;
+      pinClientTextures();
+      binding.fontFacetypeBytes = assets.fontFacetypeBytes;
+      binding.fontMsdfJson = assets.fontMsdfJson;
+      binding.fontMsdfPng = assets.fontMsdfPng;
+      binding.fontCssStack = assets.fontCssStack;
+      binding.fontCssStackByGuid = assets.fontCssStackByGuid;
+      binding.modelBytes = assets.modelBytes;
+      binding.modelPayloads = assets.modelPayloads;
+      binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;
+      binding.retargetAnimationLoads = assets.retargetAnimationLoads;
+      binding.spritePayloads = assets.spritePayloads ?? binding.spritePayloads;
+      binding.spriteAnimations =
+        assets.spriteAnimations ?? binding.spriteAnimations;
+      binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
+      binding.tilesets = assets.tilesets ?? binding.tilesets;
+      binding.sortingLayers = assets.sortingLayers ?? binding.sortingLayers;
+      if (assets.materialTextureGuids) {
+        binding.materialTextureGuids = assets.materialTextureGuids;
+      }
+      if (typeof assets.pixelsPerUnit === "number") {
+        binding.pixelsPerUnit = assets.pixelsPerUnit;
+      }
+      return { ...assets, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
+  };
+  const installMaterialDocuments = (
+    documents: ReadonlyMap<string, MaterialDocument>,
+    functions?: ReadonlyMap<string, MaterialFunctionDocument>,
+  ) => {
+      materialDocuments.clear();
+      for (const [guid, document] of documents) {
+        materialDocuments.set(guid, document);
+      }
+      binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
+      if (functions) {
+        materialFunctions.clear();
+        for (const [guid, document] of functions) {
+          materialFunctions.set(guid, document);
+        }
+      }
+  };
+
+  const loadSceneAsync = async (sceneData: SerializedScene, load: EditorSceneLoadOptions) => {
+    load.signal.throwIfAborted();
+    assertCurrent(loadGeneration);
+    if (!editorSync) throw new Error("Chunked scene realization requires an editor scene.");
+    const generation = ++loadGeneration;
+    cancelPresentation(new Error("Scene loading was superseded."));
+    if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
+    const assets = load.assets ? installMeshAssets(load.assets) : undefined;
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+    postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
+    await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
+    load.signal.throwIfAborted();
+    assertCurrent(generation);
+    freezeLibraryMaterials();
+    rebuildPostProcessStack();
+    pinClientTextures();
+    if (lastSelectedActorIds.length > 0) editor?.setSelectedActors(lastSelectedActorIds);
+  };
+
   const loadScene = (sceneData: SerializedScene) => {
     assertCurrent(loadGeneration);
     loadGeneration += 1;
@@ -1839,6 +1913,7 @@ function initializeEngine(
       notifyOverlayResize();
     },
     loadScene,
+    loadSceneAsync,
     pushSnapshot: (buffer: Float32Array) => {
       interpolator.push(buffer);
       interpAlpha = 1;
@@ -2116,37 +2191,9 @@ function initializeEngine(
       if (fontRegistry.consumeDirty()) scheduler.invalidate("asset");
     },
     setMeshAssets: (assets: MeshAssetContext) => {
-      binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
-      binding.textureBytes = assets.textureBytes;
-      binding.texturePixelSizes = assets.texturePixelSizes;
-      pinClientTextures();
-      binding.fontFacetypeBytes = assets.fontFacetypeBytes;
-      binding.fontMsdfJson = assets.fontMsdfJson;
-      binding.fontMsdfPng = assets.fontMsdfPng;
-      binding.fontCssStack = assets.fontCssStack;
-      binding.fontCssStackByGuid = assets.fontCssStackByGuid;
-      binding.modelBytes = assets.modelBytes;
-      binding.modelPayloads = assets.modelPayloads;
-      binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;
-      binding.retargetAnimationLoads = assets.retargetAnimationLoads;
-      binding.spritePayloads = assets.spritePayloads ?? binding.spritePayloads;
-      binding.spriteAnimations =
-        assets.spriteAnimations ?? binding.spriteAnimations;
-      binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
-      binding.tilesets = assets.tilesets ?? binding.tilesets;
-      binding.sortingLayers = assets.sortingLayers ?? binding.sortingLayers;
-      if (assets.materialTextureGuids) {
-        binding.materialTextureGuids = assets.materialTextureGuids;
-      }
-      if (typeof assets.pixelsPerUnit === "number") {
-        binding.pixelsPerUnit = assets.pixelsPerUnit;
-      }
+      const installed = installMeshAssets(assets);
       const rebuilt =
-        editorSync?.setMeshAssets({
-          ...assets,
-          materialTextureGuids: binding.materialTextureGuids,
-          compiledMaterialGuids,
-        }) === true;
+        editorSync?.setMeshAssets(installed) === true;
       if (rebuilt && lastSelectedActorIds.length > 0) {
         editor?.setSelectedActors(lastSelectedActorIds);
       }
@@ -2207,17 +2254,7 @@ function initializeEngine(
       documents: ReadonlyMap<string, MaterialDocument>,
       functions?: ReadonlyMap<string, MaterialFunctionDocument>,
     ) => {
-      materialDocuments.clear();
-      for (const [guid, document] of documents) {
-        materialDocuments.set(guid, document);
-      }
-      binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
-      if (functions) {
-        materialFunctions.clear();
-        for (const [guid, document] of functions) {
-          materialFunctions.set(guid, document);
-        }
-      }
+      installMaterialDocuments(documents, functions);
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);

@@ -72,11 +72,11 @@ export function resolveRenderingPipeline(
     ...normalizeRenderPathOverrides(session),
   };
   const limits: string[] = [];
-  if (requested.renderPath !== "forward") {
-    limits.push("ClusteredForward is not implemented; using Forward.");
+  if (requested.renderPath === "clusteredForward") {
+    limits.push("Clustered Forward is unavailable; using Forward.");
   }
-  if (requested.gpuBackend !== "webgl2") {
-    limits.push("WebGPU is not implemented; using WebGL2.");
+  if (requested.gpuBackend === "webgpu") {
+    limits.push("WebGPU is unavailable; using WebGL2.");
   }
   return {
     requested,

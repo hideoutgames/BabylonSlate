@@ -13,11 +13,13 @@ import {
   ProgressValue,
 } from "@babylonslate/ui/components/progress";
 import type { SceneViewportLoadPhase } from "../lib/scene-viewport-load";
+import type { SceneLoadPhase } from "@babylonslate/render";
 
 export type SceneLoadingDialogProps = {
   open: boolean;
   progress: number;
-  phase: SceneViewportLoadPhase;
+  phase: SceneViewportLoadPhase | SceneLoadPhase;
+  onStop?: () => void;
   failed?: boolean;
   rendering?: boolean;
   onRetry?: () => void;
@@ -32,6 +34,7 @@ export function SceneLoadingDialog({
   rendering = false,
   onRetry,
   onDismiss,
+  onStop,
 }: SceneLoadingDialogProps) {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
@@ -60,6 +63,7 @@ export function SceneLoadingDialog({
           <ProgressLabel>{phase}</ProgressLabel>
           <ProgressValue />
         </Progress>}
+        {!failed && onStop ? <DialogFooter><Button variant="outline" size="sm" onClick={onStop}>Stop</Button></DialogFooter> : null}
       </DialogContent>
     </Dialog>
   );
