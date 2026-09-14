@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, InputBlock, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, InputBlock, InternalTexture, InternalTextureSource, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -264,6 +264,18 @@ describe("Play createEngine view", () => {
     });
     vi.spyOn(engine, "createMultipleRenderTarget").mockImplementation((size) =>
       engine._createHardwareRenderTargetWrapper(true, false, size));
+    // The host layer also owns a sampleable depth attachment. NullEngine has no
+    // native depth allocator; retain the actual InternalTexture/RTT lifecycle.
+    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
+      const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
+      const dimensions = typeof size === "number" ? { width: size, height: size } : size;
+      texture.width = texture.baseWidth = dimensions.width;
+      texture.height = texture.baseHeight = dimensions.height;
+      texture.format = options.depthTextureFormat ?? Constants.TEXTUREFORMAT_DEPTH24;
+      texture.isReady = true;
+      engine.getLoadedTexturesCache().push(texture);
+      return texture;
+    });
     return engine;
   }
 
