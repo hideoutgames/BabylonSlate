@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import type {
   ParticleEmitterPayload,
   ParticleSystemPayload,
@@ -85,7 +85,7 @@ export function ParticlePreviewCanvas({
   const play = useOptionalPlay();
   const { assetRegistry, readAssetChunk, collectPlayMaterialLibrary } =
     useDocuments();
-  const [engine, setEngine] = useState<Engine | null>(null);
+  const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [booted, setBooted] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [skipped, setSkipped] = useState<ParticleServiceDiagnostic | null>(

@@ -7,7 +7,7 @@ import {
   Scene,
   Vector3,
   type AssetContainer,
-  type Engine,
+  type AbstractEngine,
   type Material,
   type Mesh,
   type NodeMaterial,
@@ -113,7 +113,7 @@ export interface MaterialPreviewScene {
  * presented via RTT rather than a second WebGL context or `registerView`.
  */
 export function createMaterialPreviewScene(
-  engine: Engine,
+  engine: AbstractEngine,
   options: {
     mesh?: MaterialPreviewMesh;
     customMeshBytes?: Uint8Array | null;
@@ -496,11 +496,9 @@ export function createMaterialPreviewPresenter(
         const { width, height } = texture.getSize();
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
-        const bytes =
-          buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
         ctx.putImageData(
           new ImageData(
-            flipReadPixelsRgba(bytes, width, height),
+            flipReadPixelsRgba(buffer, width, height),
             width,
             height,
           ),

@@ -1,4 +1,4 @@
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import {
   createAppEngine,
   releaseResourceCacheForEngine,
@@ -11,12 +11,12 @@ import {
 import { isUsableEngine } from "./shared-engine-generation";
 
 export type ProjectEngineSession = {
-  engine: Engine;
+  engine: AbstractEngine;
   dispose: () => void;
 };
 
 export type ProjectEngineController = {
-  sync: (projectOpen: boolean) => Engine | null;
+  sync: (projectOpen: boolean) => AbstractEngine | null;
   dispose: () => void;
 };
 
