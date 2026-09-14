@@ -50,6 +50,7 @@ test("Forward FrameGraph borrows admitted shadows with pixel, refresh and scene 
     });
     expect(capture.readinessDraws, capture.name).toBe(0);
     expect(capture.readinessFaces, capture.name).toBe(0);
+    expect(capture.classic.classicReadyBefore, capture.name).toBe(true);
     expect(capture.sameMap, capture.name).toBe(true);
     expect(capture.graph.pixels.length, capture.name).toBe(
       capture.width * capture.height * 4,

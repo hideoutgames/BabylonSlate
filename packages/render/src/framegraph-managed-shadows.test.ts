@@ -157,6 +157,40 @@ it.each(["point", "spot", "sun"] as const)(
   },
 );
 
+it("waits for camera-pass materials as well as graph-pass effects without consuming the first shadow draw", async () => {
+  const { scene, engine, camera, mesh, graph, faces, render } =
+    await fixture("spot");
+  // A material can be ready in the task's own pass while its camera variant is
+  // still compiling. Keep the real Babylon readiness path for every other pass.
+  const material = mesh.material!;
+  const isReady = material.isReadyForSubMesh.bind(material);
+  let cameraReady = false;
+  let cameraProbed = false;
+  mesh.position.x = 100; // Offscreen candidates must still become ready.
+  vi.spyOn(material, "isReadyForSubMesh").mockImplementation((...args) => {
+    if (engine.currentRenderPassId === camera.renderPassId) {
+      cameraProbed = true;
+      if (!cameraReady) return false;
+    }
+    return isReady(...args);
+  });
+  let prepared = false;
+  const preparing = graph.prepare(camera).then((result) => {
+    prepared = true;
+    return result;
+  });
+  await vi.waitFor(() => expect(cameraProbed).toBe(true));
+  expect(prepared).toBe(false);
+  expect(faces()).toBe(0);
+  expect(scene.activeCamera).toBe(camera);
+  cameraReady = true;
+  expect(await preparing).toEqual({ path: "frameGraph" });
+  expect(faces()).toBe(0);
+  mesh.position.x = 0;
+  expect(render()).toBe(1);
+  expect(render()).toBe(0);
+});
+
 it("rechecks admission after scene callbacks so revoked maps are never rendered or rebound", async () => {
   const {
     scene,

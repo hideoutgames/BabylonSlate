@@ -270,7 +270,20 @@ export class ForwardSceneFrameGraph {
       // The previous frame's culled list may omit a newly visible mesh. Probe
       // all current candidates before presenting; culling itself never draws.
       this.objects!.objectList = this.cull!.objectList;
-      return withSceneReadinessState(this.scene, () => this.graph!.isReady());
+      return withSceneReadinessState(this.scene, () => {
+        const camera = this.objects!.camera;
+        // Babylon retains camera-pass material/shadow readiness alongside the
+        // ObjectRenderer's pass. Warming only the latter leaves the first PCF
+        // spot map different until a later Scene.isReady probe initializes it.
+        this.scene._activeCamera = camera;
+        this.scene.getEngine().currentRenderPassId = camera.renderPassId;
+        let cameraReady = true;
+        for (const mesh of this.scene.meshes)
+          if (mesh.subMeshes?.length && !mesh.isReady(true))
+            cameraReady = false;
+        const graphReady = this.graph!.isReady();
+        return cameraReady && graphReady;
+      });
     } finally {
       this.objects!.objectList = objectList;
       // ObjectRenderer's shadow toggles also lack finally around readiness
