@@ -9,6 +9,14 @@ test.use({
         ? "--use-angle=d3d11-warp"
         : "--use-angle=swiftshader",
       "--use-webgpu-adapter=swiftshader",
+      // Match the validated Dawn/Vulkan compositor used by the backend proof.
+      ...(process.platform === "linux"
+        ? [
+            "--enable-features=Vulkan",
+            "--use-vulkan=swiftshader",
+            "--disable-vulkan-surface",
+          ]
+        : []),
     ],
   },
 });
