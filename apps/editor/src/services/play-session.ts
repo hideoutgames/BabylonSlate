@@ -656,6 +656,7 @@ export function startPlaySession(options: {
   // Aggregates diagnostics received over the command channel (Worker mode).
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
+  const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
   let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
@@ -666,6 +667,10 @@ export function startPlaySession(options: {
       acquire: () => handle.scheduler.acquireObstruction(),
       progress: (state) => options.onSceneLoading?.(state),
       paint: waitForSceneLoadingPaint,
+      layerPainted: ({ layerId, layerLoadId }) => {
+        worker?.postControl({ type: "sceneLayerLoadingPainted", layerId, layerLoadId });
+        runtime?.notifySceneLayerLoadingPainted(layerId, layerLoadId);
+      },
       painted: ({ sceneAssetGuid, sceneLoadId }) => {
         worker?.postControl({ type: "sceneLoadingPainted", sceneAssetGuid, sceneLoadId });
         runtime?.notifySceneLoadingPainted(sceneAssetGuid, sceneLoadId);
@@ -686,9 +691,17 @@ export function startPlaySession(options: {
       worker?.postControl({ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId });
       runtime?.notifySceneModelsReady(sceneAssetGuid, sceneLoadId);
     },
-    onFailed: (_scene, error) => {
-      options.onLog?.(`Scene loading failed: ${error instanceof Error ? error.message : String(error)}`, "error");
-      queueMicrotask(() => options.onFatalDiagnostic?.());
+    onLayerReady: ({ layerId, layerLoadId }) => {
+      worker?.postControl({ type: "sceneLayerReady", layerId, layerLoadId });
+      runtime?.notifySceneLayerReady(layerId, layerLoadId);
+    },
+    onFailed: (scene, error) => {
+      const message = `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`;
+      hostDiagnostics.push({ code: "scene.loading.failed", severity: "error", message,
+        assetGuid: scene.sceneAssetGuid, frameId: 0,
+        stack: error instanceof Error ? error.stack : undefined });
+      try { options.onLog?.(message, "error"); }
+      finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
     },
   });
   const consoleWaiters: Array<
@@ -732,7 +745,7 @@ export function startPlaySession(options: {
     ) {
       handle.applyCommand(command);
     }
-    if (command.type === "sceneRealized" && runtime) {
+    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized") && runtime) {
       if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
       handle.pushSnapshot(snapBuf);
     }
@@ -1142,6 +1155,8 @@ export function startPlaySession(options: {
         sessionDiagnostics = workerDiagnostics.entries();
         droppedDiagnostics = workerDiagnostics.droppedCount();
       }
+      sessionDiagnostics.push(...hostDiagnostics.entries());
+      droppedDiagnostics += hostDiagnostics.droppedCount();
       worker?.postControl({ type: "stop" });
       worker?.terminate();
       const liveAfter = handle.liveObjectCounts();
