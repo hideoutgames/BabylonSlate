@@ -92,6 +92,9 @@ export async function createScenePostProcessHostProof(backend: "webgl2" | "webgp
   engine.createTexture = (url, ...args) => {
     if (interceptNext && typeof url === "string" && url.startsWith("blob:")) {
       interceptNext = false; interceptedTextures++;
+      // The cache supplies bytes as well as a URL. Clear only this transport's
+      // buffer so the real loader waits for the browser-controlled HTTP source.
+      args[6] = null;
       return createTexture("/__host-numeric-mask.png", ...args);
     }
     return createTexture(url, ...args);
@@ -102,7 +105,7 @@ export async function createScenePostProcessHostProof(backend: "webgl2" | "webgp
     const context = canvas.getContext("2d")!;
     const pixel = (x: number, y: number) => Array.from(context.getImageData(Math.floor(canvas.width * x), Math.floor(canvas.height * y), 1, 1).data);
     return { overlay: pixel(0.25, 0.5), world: pixel(0.75, 0.75), sibling: pixel(0.75, 0.25), frames,
-      presented, error, paths: { ...paths }, interceptedTextures };
+      presented, error, paths: { ...paths }, interceptedTextures, diagnostics: [...diagnostics] };
   };
   let cleanup: Promise<{ scenes: number; reservedBytes: number; engineDisposed: boolean; diagnostics: unknown[] }> | undefined;
   const dispose = () => cleanup ??= (async () => {

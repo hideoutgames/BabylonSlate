@@ -2439,7 +2439,7 @@ function initializeEngine(
         freezeEditorActiveMeshes(scene);
       scheduler.invalidate("asset");
     },
-    postProcessPassCount: () => attachedStack?.passes.length ?? 0,
+    postProcessPassCount: () => worldRenderer?.postProcessPassCount() ?? attachedStack?.passes.length ?? 0,
     sceneLayerScenes: () =>
       (sceneLayerCompositor?.sortedLayers() ?? []).map((layer) => ({
         layerId: layer.layerId,

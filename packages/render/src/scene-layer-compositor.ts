@@ -525,6 +525,9 @@ export class SceneLayerCompositor {
       false,
       true,
     );
+    // StandardMaterial only blends sampled alpha when the source advertises it.
+    // The layer clear is transparent; preserve world pixels outside its content.
+    layer.rtt.hasAlpha = true;
     // The graph borrows both native attachments; the host retains their owner.
     // Unsupported devices keep the coordinator's classic fallback available.
     if (this.engine.getCaps().depthTextureExtension)

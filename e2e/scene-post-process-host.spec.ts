@@ -34,6 +34,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     });
     try {
       const initial = await page.evaluate(() => window.__hostPostProcess.sample());
+      await testInfo.attach("initial-layer", { body: JSON.stringify(initial), contentType: "application/json" });
       await page.evaluate(() => window.__hostPostProcess.beginReplacement());
       await expect.poll(() => requested).toBe(true);
       const pending = await page.evaluate(() => window.__hostPostProcess.sample());
@@ -59,6 +60,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(resized.world).toEqual(replacement.world);
       expect(cleanup).toEqual({ scenes: 0, reservedBytes: 0, engineDisposed: false, diagnostics: [] });
       expect(errors).toEqual([]);
+    } catch (error) {
+      const state = await page.evaluate(() => window.__hostPostProcess.sample()).catch((reason: unknown) => String(reason));
+      await testInfo.attach("failed-host-state", { body: JSON.stringify({ state, requested, errors }), contentType: "application/json" });
+      throw error;
     } finally {
       release();
       await page.evaluate(() => window.__hostPostProcess.dispose()).catch(() => {});

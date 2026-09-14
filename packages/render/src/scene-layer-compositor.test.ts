@@ -317,6 +317,7 @@ describe("SceneLayerCompositor", () => {
     expect(acknowledged).toBe(true);
     const first = layer.camera.outputRenderTarget!;
     const oldBlit = engine.scenes.find((scene) => scene.getMaterialByName("sceneLayerBlit:overlay"))!;
+    expect(oldBlit.getMaterialByName("sceneLayerBlit:overlay")!.needAlphaBlending()).toBe(true);
     const disposeFirst = vi.spyOn(first, "dispose");
     const fallbackDraw = vi.spyOn(oldBlit, "render");
     compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);

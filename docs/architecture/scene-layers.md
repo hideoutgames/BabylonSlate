@@ -131,4 +131,6 @@ The shared host readiness coordinator tracks world and SceneLayer transitions in
 
 In cooperative Play/player sessions, `createSceneLayer` returns the live loading layer before creating its actors. Its tokenized `sceneLayerLoadingPainted` acknowledgement must arrive within 30 seconds; document normalization and bounded remap/create/spawn/anchor/assignment passes then run after the host paint. Game Instance and previously activated owners keep ticking between batches. Removal or Stop cancels the exact layer identity, cleans partial actors, and suppresses late assignment/ready markers. Immediate consumers retain synchronous creation. World-owned layers already run beneath the world transition's painted blocker.
 
+Layer post-process targets retain alpha so transparent pixels preserve the world and lower layers when composited. Play pass diagnostics count ready, enabled graph tasks as well as the native fallback passes.
+
 The test-build-only scenePostProcessHostProof fixture exercises the registered Play view and actual layer hosts: an HTTP-held numeric texture keeps a replacement pending while the prior processed image and a separate live layer compose over world rendering. It also checks first-frame acknowledgement, resize and shared-Engine retirement on both backends.
