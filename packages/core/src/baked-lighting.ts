@@ -43,6 +43,8 @@ export type BakedLightingSource =
 
 export interface BakedReceiverBinding {
   identity: BakedReceiverIdentity;
+  /** V1 mesh atlases bind only static receivers; moving receivers need a separate probe representation. */
+  mobility: "static";
   hashes: Pick<BakeInputHashes, "geometry" | "uv" | "transforms" | "materials">;
   atlasGuid: string;
   /** UV2 maps into this normalized atlas rectangle; gutters are outside it. */

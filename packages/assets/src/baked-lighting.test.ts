@@ -61,6 +61,7 @@ it("rejects unsupported data, ambiguous receiver bindings and duplicate lighting
   };
   expect(() => parseBakedLightingManifest({ ...manifest, version: 2 })).toThrow();
   expect(() => parseBakedLightingManifest({ ...manifest, uniqueId: 42 })).toThrow();
+  expect(() => parseBakedLightingManifest({ ...manifest, receivers: [{ ...manifest.receivers[0], mobility: "dynamic" }] })).toThrow();
   bad((copy) => { copy.receivers.push(structuredClone(copy.receivers[0]!)); });
   bad((copy) => { copy.receivers[0]!.contributions[1]!.term = "directAndIndirect"; });
   bad((copy) => { copy.receivers[0]!.contributions.push({ sourceId: "sun", term: "directAndIndirect" }); });

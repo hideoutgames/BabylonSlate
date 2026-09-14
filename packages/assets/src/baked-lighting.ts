@@ -47,7 +47,7 @@ const manifestSchema = z.object({
     z.object({ id, kind: z.literal("environment"), assetGuid: id, inputHash: hash }).strict(),
   ])).max(10000),
   receivers: z.array(z.object({
-    identity: identitySchema, hashes: receiverHashesSchema, atlasGuid: id,
+    identity: identitySchema, mobility: z.literal("static"), hashes: receiverHashesSchema, atlasGuid: id,
     scale: z.tuple([z.number().positive().max(1), z.number().positive().max(1)]),
     offset: z.tuple([z.number().nonnegative().max(1), z.number().nonnegative().max(1)]),
     contributions: z.array(z.object({ sourceId: id,

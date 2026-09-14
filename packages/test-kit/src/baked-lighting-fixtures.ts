@@ -24,6 +24,7 @@ export async function createBakedLightingFixture(width = 1, height = 2) {
       { id: "sky", kind: "environment", assetGuid: "cube", inputHash: inputs.environment },
     ],
     receivers: [{
+      mobility: "static",
       identity: { actorId: "receiver", componentId: "mesh", primitive: { kind: "model", assetGuid: "model", nodeIndex: 2, meshIndex: 0, primitiveIndex: 1 } },
       hashes: { geometry: inputs.geometry, uv: inputs.uv, transforms: inputs.transforms, materials: inputs.materials },
       atlasGuid: "atlas", scale: [1, 1], offset: [0, 0],
