@@ -598,6 +598,8 @@ Explicit FrameGraph camera targets borrow their existing color and depth texture
 
 Camera-target culling binds the target while computing the native frustum, and the object task refreshes projection after binding its output. Managed shadows establish that projection before the cascaded-shadow before-bind hook reads it. This preserves perspective framing and cascade coverage when the texture and canvas have different aspect ratios. The managed-shadow texture fixture covers both backends before and after resize; caller-owned sampleable depth must be recreated alongside a resized target.
 
+The Forward graph also accepts an already-frozen scene active-mesh list. It uses that exact membership, including when created after freezing, and resumes official culling after unfreeze. Frozen lists that retain per-frame frustum clipping still use the explicit classic fallback. Surface parity fixtures keep active membership frozen across camera changes and target resize on both backends.
+
 
 The opt-in authored FrameGraph Post Process adapter compiles each owned effect with its material's native GLSL or WGSL language. Shader source cleanup uses the matching language store and retains identity checks during replacement/disposal. The backend fixture compares the legacy stack with the graph for numeric color, UV orientation, parameters, time, nested functions, texture changes, failed/disabled passes, resize and hot rebuild; it rejects GPU errors and external shader compiler requests. Logical Scene Depth/Normal injection and production stack migration remain separate integration work.
 >>>>>>> 46e7690a5c5efb872a1d6fb399050340714045ec

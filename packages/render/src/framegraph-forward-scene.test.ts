@@ -186,11 +186,38 @@ it("falls back before replacing unmanaged shadows or a shared-view target", asyn
   await new Promise<void>((resolve) =>
     scene.freezeActiveMeshes(false, resolve),
   );
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  scene.unfreezeActiveMeshes();
+  await new Promise<void>((resolve) =>
+    scene.freezeActiveMeshes(false, resolve, undefined, true, true),
+  );
   expect(await graph.prepare(camera)).toMatchObject({
     path: "classic",
     reason: expect.stringContaining("Frozen active-mesh lists"),
   });
   scene.unfreezeActiveMeshes();
+  graph.dispose();
+});
+
+it("uses the scene's frozen membership when the graph is created after freezing", async () => {
+  const { scene, camera } = host();
+  const visible = MeshBuilder.CreateBox("visible", {}, scene);
+  const hidden = MeshBuilder.CreateBox("outside frustum", {}, scene);
+  hidden.position.x = 1000;
+  await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
+  expect(scene.getActiveMeshes().data.slice(0, scene.getActiveMeshes().length)).toEqual([visible]);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const visibleDraw = vi.spyOn(visible, "render");
+  const hiddenDraw = vi.spyOn(hidden, "render");
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(visibleDraw).toHaveBeenCalled();
+  expect(hiddenDraw).not.toHaveBeenCalled();
+  scene.unfreezeActiveMeshes();
+  hidden.position.x = 0;
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(hiddenDraw).toHaveBeenCalled();
   graph.dispose();
 });
 

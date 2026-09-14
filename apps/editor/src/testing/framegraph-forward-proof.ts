@@ -229,6 +229,9 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         mesh.freezeWorldMatrix();
         mesh.material?.freeze();
       }
+      await new Promise<void>((resolve, reject) =>
+        scene.freezeActiveMeshes(false, resolve, reject),
+      );
       await capture("frozen");
       expectedCamera = secondCamera;
       await capture("camera-switched");
