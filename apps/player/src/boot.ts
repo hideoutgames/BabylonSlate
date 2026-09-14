@@ -1,4 +1,5 @@
 import { lightsDebugText } from "@babylonslate/render";
+import type { AbstractEngine } from "@babylonjs/core";
 import { snapshotFloatCount } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
@@ -33,7 +34,7 @@ import {
 } from "./engine-commands";
 import { mountPlayerSceneLoading } from "./scene-loading-overlay";
 import { mountPlayerPrintOverlay } from "./print-overlay";
-import { packedBootControls, packedContentFromGame } from "./hydrate";
+import { packedBootControls, packedContentFromGame, type PackedGameContent } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
 import {
   applyPlayerFpsSample,
@@ -89,9 +90,11 @@ export type PlayerBootHandle = {
   stop: () => { diagnostics: PlayerDiagnostic[] };
 };
 
-export function startPlayer(options: {
+export type PlayerBootOptions = {
   canvas: HTMLCanvasElement;
   game: LoadedGame;
+  sharedEngine?: AbstractEngine;
+  content?: PackedGameContent;
   onStats?: (stats: {
     ticks: number;
     fps: number;
@@ -104,7 +107,9 @@ export function startPlayer(options: {
   onConsoleEvent?: (
     command: { type: string } & Record<string, unknown>,
   ) => void;
-}): PlayerBootHandle {
+};
+
+export function startPlayer(options: PlayerBootOptions): PlayerBootHandle {
   const cleanups = new Set<() => void>();
   const own = (dispose: () => void) => {
     let released = false;
@@ -134,7 +139,7 @@ export function startPlayer(options: {
 }
 
 function initializePlayer(
-  options: Parameters<typeof startPlayer>[0],
+  options: PlayerBootOptions,
   own: (cleanup: () => void) => () => void,
   releaseAll: () => unknown[],
 ): PlayerBootHandle {
@@ -145,7 +150,7 @@ function initializePlayer(
   if (!scene) {
     throw new Error("Set Startup Scene in Project Settings.");
   }
-  const content = packedContentFromGame(game);
+  const content = options.content ?? packedContentFromGame(game);
   const diagnostics: PlayerDiagnostic[] = [];
   const fontCss = packedFontCssStacks(game.fontFamilies);
 
@@ -161,6 +166,7 @@ function initializePlayer(
 
   own(() => consoleHost.dispose());
   const handle: EngineHandle = createEngine(canvas, {
+    sharedEngine: options.sharedEngine,
     playMode: true,
     frameCap: manifest.playFrameCap,
     renderSettings: manifest.render,

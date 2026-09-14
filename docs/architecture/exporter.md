@@ -4,6 +4,8 @@ Spec: [engineplan.md](../engineplan.md) §15, §15.1, §15.2. Implementation: `@
 
 Overlay Play (shared Engine, `registerView`) stays the default. Packaged **itch zip / Export Game** always starts from `project.json` `startupSceneGuid` (asset guid). Overlay Play and Preview Build seed that guid when Debug **Play from Scene** is off, or when it is on and no scene tab is open; otherwise they seed the open scene for that session only. Do not boot or tree-shake from `BabprojectManifest.startupScene` or `assets/main.scene.babasset`.
 
+Preview Build and the standalone player resolve the saved GPU backend before starting runtime logic. One private constructor canvas owns the graphics context; the visible game canvas uses the shared-view path. Material compatibility includes packed Material Functions, and decoder URLs remain local to the player. A WebGPU fallback preserves the authored request and reports its effective backend and reason. Stop is received before pack/font/backend startup completes; a cancelled completion releases its engine without starting the player. Player shutdown releases runtime/views before the engine, including failure paths. This startup gate is separate from per-Scene and SceneLayer asset/shader/presentation readiness.
+
 ## Project identity
 
 - Project Settings > General edits `project.json` > `metadata.version` as a free-form string; new projects start at `1.0.0`. This is separate from the project file's schema version.
