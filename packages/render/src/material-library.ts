@@ -125,7 +125,8 @@ export class MaterialLibrary {
     return created;
   }
 
-  private planFor(doc: MaterialDocument, unlit?: boolean) {
+  /** Resolve the same function-aware plan as acquire, without taking GPU ownership. */
+  planFor(doc: MaterialDocument, unlit?: boolean) {
     return lowerMaterialDocument(documentForPlan(doc, unlit), {
       functions: this.options.functions?.() ?? {},
     });
