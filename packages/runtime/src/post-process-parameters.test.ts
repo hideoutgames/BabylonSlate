@@ -348,3 +348,73 @@ describe("Post Process owner reads and resets", () => {
     }
   });
 });
+
+it.each([false, true])(
+  "admits a valid replacement for an unavailable default only with parameter metadata (%s)",
+  async (metadata) => {
+    const { scene } = documents();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: scene,
+      playSceneGuid: "world",
+      ...(metadata
+        ? {
+            materialParameterCatalog: {
+              post: {
+                domain: "postProcess" as const,
+                planHash: "missing-default",
+                parameters: {
+                  Image: {
+                    kind: "texture" as const,
+                    textureAssetGuid: "unavailable",
+                  },
+                },
+              },
+            },
+          }
+        : {}),
+      materialTextureAssetGuids: ["new-image"],
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([
+        {
+          assetGuid: "hero",
+          classId: "Hero",
+          parentClassId: "Actor",
+          anchors: [],
+          entryPoints: [
+            { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+          ],
+          source: `export function onBeginPlay(ctx) {
+        const material = ctx.getPostProcessEntry(ctx.getSceneReference(), "first");
+        ctx.self.setVariable("before", ctx.getMaterialTextureParameter(material, "Image"));
+        ctx.setMaterialTextureParameter(material, "Image", "new-image");
+        ctx.self.setVariable("reset", ctx.resetMaterialTextureParameter(material, "Image"));
+        ctx.self.setVariable("after", ctx.getMaterialTextureParameter(material, "Image"));
+      }`,
+        },
+      ]);
+      runtime.realizePlayWorld();
+      const actor = runtime.getWorld().getActors()[0]!;
+      expect(actor.getVariable("before")).toEqual({
+        found: false,
+        value: null,
+      });
+      expect(actor.getVariable("reset")).toBe(false);
+      expect(actor.getVariable("after")).toEqual(
+        metadata
+          ? { found: true, value: "new-image" }
+          : { found: false, value: null },
+      );
+      expect(writes(commands)).toHaveLength(metadata ? 1 : 0);
+      expect(
+        commands.filter((command) => command.type === "diagnostic"),
+      ).toEqual([]);
+    } finally {
+      runtime.stop();
+    }
+  },
+);

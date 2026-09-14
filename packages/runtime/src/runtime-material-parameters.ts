@@ -119,12 +119,16 @@ export class RuntimeMaterialParameters {
         override?.kind === fallback.kind && this.valid(override)
           ? override
           : fallback;
-      if (this.valid(value)) defaults.set(name, copy(value));
+      // An unavailable default must not remove the declared parameter: a later
+      // valid texture assignment can recover it, while reset remains rejected.
+      defaults.set(name, copy(value));
     }
     const state = {
       defaults,
       values: new Map(
-        [...defaults].map(([name, value]) => [name, copy(value)]),
+        [...defaults]
+          .filter(([, value]) => this.valid(value))
+          .map(([name, value]) => [name, copy(value)]),
       ),
     };
     this.states.set(material, state);
