@@ -32,6 +32,8 @@ test.describe("Editor appearance theme", () => {
     await expect(page.locator("html")).not.toHaveClass(/dark/);
     await expect(page.getByTestId("component-gallery")).toBeVisible();
     await expect(page.getByTestId("gallery-panel-frame")).toBeVisible();
-    await expect(page.getByText("Primary")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Primary", exact: true }),
+    ).toBeVisible();
   });
 });
