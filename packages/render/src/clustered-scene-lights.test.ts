@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FreeCamera,
+  HemisphericLight,
+  TransformNode,
   MeshBuilder,
   NullEngine,
   PBRMaterial,
@@ -22,6 +24,7 @@ import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { syncSceneLighting } from "./scene-lighting";
+import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -168,14 +171,14 @@ describe("explicit clustered light ownership", () => {
     expect(siblingLight.isDisposed()).toBe(false);
   });
 
-  it("keeps unsupported physical PBR attenuation on bounded conventional admission", () => {
+  it("retains physical PBR range while selecting conservative camera bounds", () => {
     const { scene, mesh, lights } = fixture();
     mesh.material = new PBRMaterial("physical", scene);
     const owner = new ClusteredSceneLights(scene, lights);
-    expect(owner.status().clustered).toBe(0);
-    expect(owner.limits().join()).toContain("physical PBR");
-    expect(scene.lights).toHaveLength(48);
-    expect(lights.filter((light) => light.isEnabled()).length).toBeLessThan(48);
+    expect(owner.status().clustered).toBe(48);
+    expect(owner.limits().join()).toContain("unbounded attenuation");
+    expect(scene.lights).toHaveLength(1);
+    expect(lights.every((light) => light.isEnabled())).toBe(true);
     expect(
       lights.every(
         (light) => isAuthoredLightEnabled(light) && light.range === 12,
@@ -202,5 +205,61 @@ describe("explicit clustered light ownership", () => {
     expect(scene.objectRenderers).toEqual(renderers);
     expect(engine._renderTargetWrapperCache).toEqual(wrappers);
     owner.dispose();
+  });
+  it("does not borrow children when global lights exhaust the shader slots", () => {
+    const { scene, lights } = fixture();
+    for (let index = 0; index < 4; index++)
+      new HemisphericLight(`fill-${index}`, Vector3.Up(), scene);
+    const owner = new ClusteredSceneLights(scene, lights);
+    expect(owner.status().clustered).toBe(0);
+    expect(owner.limits().join()).toContain("No conventional shader slot");
+    expect(lights.every((light) => scene.lights.includes(light))).toBe(true);
+    owner.dispose();
+  });
+
+  it("refreshes parented world positions before packing a moved clustered child", () => {
+    const { scene, lights } = fixture();
+    const parent = new TransformNode("parent", scene);
+    lights[0]!.parent = parent;
+    const owner = new ClusteredSceneLights(scene, lights);
+    parent.position.x = 20;
+    owner.target(scene.activeCamera!);
+    expect(lights[0]!.getAbsolutePosition().x).toBeCloseTo(20);
+    owner.dispose();
+  });
+
+  it("orders one borrowed mask draw after readiness and leaves it live when the graph is disposed", async () => {
+    const { engine, scene, lights } = fixture();
+    vi.spyOn(engine, "buildTextureLayout").mockImplementation(
+      (enabled, backbuffer) =>
+        backbuffer
+          ? [0x0405]
+          : enabled.map((value, index) => (value ? 0x8ce0 + index : 0)),
+    );
+    vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
+    vi.spyOn(
+      engine,
+      "restoreSingleAttachmentForRenderTarget",
+    ).mockImplementation(() => {});
+    const owner = new ClusteredSceneLights(scene, lights);
+    const target = owner.target(scene.activeCamera!)!;
+    const texture = target.getInternalTexture();
+    const draw = vi.spyOn(target, "render");
+    const graph = new ForwardSceneFrameGraph(scene);
+    expect(await graph.prepare(scene.activeCamera!)).toEqual({
+      path: "frameGraph",
+    });
+    expect(draw).not.toHaveBeenCalled();
+    expect(graph.render(scene.activeCamera!)).toEqual({ path: "frameGraph" });
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(graph.render(scene.activeCamera!)).toEqual({ path: "frameGraph" });
+    expect(draw).toHaveBeenCalledTimes(2);
+    graph.dispose();
+    expect(owner.target(scene.activeCamera!)).toBe(target);
+    expect(target.getInternalTexture()).toBe(texture);
+    expect(owner.status().clustered).toBe(48);
+    owner.dispose();
+    expect(scene.textures).not.toContain(target);
   });
 });

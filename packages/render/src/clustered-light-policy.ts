@@ -1,6 +1,16 @@
-import type { Scene } from "@babylonjs/core";
+import type {
+  Camera,
+  Light,
+  RenderTargetTexture,
+  Scene,
+} from "@babylonjs/core";
 
-type ClusteredPolicy = { sync(): void; limits(): string[] };
+type ClusteredPolicy = {
+  sync(): void;
+  limits(): string[];
+  target(camera: Camera): RenderTargetTexture | undefined;
+  ownsContainer(light: Light): boolean;
+};
 const policies = new WeakMap<Scene, ClusteredPolicy>();
 
 /** One explicit experimental owner per scene; production path selection is unchanged. */
@@ -22,4 +32,16 @@ export function syncClusteredLightPolicy(scene: Scene): void {
 
 export function clusteredLightingLimits(scene: Scene): string[] {
   return policies.get(scene)?.limits() ?? [];
+}
+
+/** Borrowed target; ownership remains with the explicit scene policy. */
+export function clusteredLightTarget(
+  scene: Scene,
+  camera: Camera,
+): RenderTargetTexture | undefined {
+  return policies.get(scene)?.target(camera);
+}
+
+export function isManagedClusteredLight(scene: Scene, light: Light): boolean {
+  return policies.get(scene)?.ownsContainer(light) ?? false;
 }

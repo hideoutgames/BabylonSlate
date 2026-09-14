@@ -1,5 +1,7 @@
 import {
   Light,
+  DirectionalLight,
+  HemisphericLight,
   NodeMaterial,
   PBRMaterial,
   PointLight,
@@ -9,6 +11,7 @@ import {
   type Node,
   type Observer,
   type Scene,
+  type RenderTargetTexture,
 } from "@babylonjs/core";
 import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
 import {
@@ -23,6 +26,9 @@ import {
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { beginClusteredAllocation } from "./clustered-allocation";
+import { ClusteredCameraBounds } from "./clustered-camera-bounds";
+import { sceneRenderingSettings } from "./render-settings";
+import { forwardLightBudget } from "./forward-light-budget";
 
 export type ClusteredSceneLightStatus = {
   clustered: number;
@@ -44,6 +50,7 @@ export class ClusteredSceneLights {
   private syncing = false;
   private allocationFailure: string | undefined;
   private allocatedBatches = 0;
+  private cameraBounds: ClusteredCameraBounds | undefined;
   private statusValue: ClusteredSceneLightStatus = {
     clustered: 0,
     conventional: 0,
@@ -81,6 +88,25 @@ export class ClusteredSceneLights {
 
   limits(): string[] {
     return [...this.statusValue.reasons];
+  }
+
+  target(camera: Camera): RenderTargetTexture | undefined {
+    if (
+      this.disposed ||
+      !this.container?.isEnabled() ||
+      camera.getScene() !== this.scene ||
+      camera.isDisposed()
+    )
+      return undefined;
+    for (const light of this.container.lights) {
+      light.parent?.computeWorldMatrix(true);
+      light.computeTransformedInformation();
+    }
+    return this.container._updateBatches(camera);
+  }
+
+  ownsContainer(light: Light): boolean {
+    return light === this.container;
   }
 
   /** A frame boundary transaction: remove the previous contribution before adding its replacement. */
@@ -142,7 +168,9 @@ export class ClusteredSceneLights {
           }
         }
         const container = this.container;
-        if (!container) throw new Error("Clustered allocation did not return an owner.");
+        if (!container)
+          throw new Error("Clustered allocation did not return an owner.");
+        this.cameraBounds ??= new ClusteredCameraBounds(container);
         container.doNotSerialize = true;
         container.renderPriority = Number.MAX_SAFE_INTEGER;
         container.shadowEnabled = false;
@@ -176,7 +204,11 @@ export class ClusteredSceneLights {
           } catch (error) {
             fail(error);
           }
-        } else container._updateBatches(this.scene.activeCamera);
+        }
+        this.cameraBounds.sync(
+          container._updateBatches(this.scene.activeCamera),
+          this.usesUnboundedPhysicalLighting(),
+        );
       }
       const clustered = this.container?.lights.length ?? 0;
       const batches = clustered
@@ -193,6 +225,14 @@ export class ClusteredSceneLights {
               ]
             : [],
       };
+      if (clustered && this.usesUnboundedPhysicalLighting())
+        this.statusValue = {
+          ...this.statusValue,
+          reasons: [
+            ...this.statusValue.reasons,
+            "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices.",
+          ],
+        };
     } catch (error) {
       this.allocationFailure = `Clustered allocation failed: ${error instanceof Error ? error.message : String(error)}`;
       this.releaseContainer();
@@ -251,6 +291,8 @@ export class ClusteredSceneLights {
     for (const light of this.container.lights.slice()) this.returnLight(light);
     // The container owns its proxy material/textures, but its child lights are
     // borrowed and must be removed before Babylon's recursively owning dispose.
+    this.cameraBounds?.dispose();
+    this.cameraBounds = undefined;
     this.container.dispose(false, true);
     this.container = undefined;
     this.allocatedBatches = 0;
@@ -266,7 +308,7 @@ export class ClusteredSceneLights {
       light.falloffType === Light.FALLOFF_DEFAULT &&
       Number.isFinite(light.range) &&
       light.range > 0 &&
-      light.range < Math.sqrt(Number.MAX_VALUE) &&
+      Number.isFinite(Math.fround(light.range)) &&
       !light.excludedMeshes.length &&
       !light.includedOnlyMeshes.length &&
       !light.includeOnlyWithLayerMask &&
@@ -284,6 +326,18 @@ export class ClusteredSceneLights {
   ): string | undefined {
     if (!caps.supported) return caps.reason;
     if (this.allocationFailure) return this.allocationFailure;
+    // The cluster itself requires one ordinary light UBO. Global sun/fill keep
+    // their conventional priority; do not borrow children if no slot remains.
+    const globals = this.scene.lights.filter(
+      (light) =>
+        (light instanceof DirectionalLight ||
+          light instanceof HemisphericLight) &&
+        isAuthoredLightEnabled(light) &&
+        light.intensity > 0 &&
+        (!light.parent || light.parent.isEnabled()),
+    ).length;
+    if (globals >= forwardLightBudget(this.scene.getEngine()).slots)
+      return "No conventional shader slot remains for the clustered light container.";
     if (
       !camera ||
       camera.getScene() !== this.scene ||
@@ -293,23 +347,22 @@ export class ClusteredSceneLights {
       camera.maxZ <= camera.minZ
     )
       return "Clustered prototype requires a live camera with a finite positive depth interval.";
-    // A physical PBR light has no authored finite cutoff. Until its conservative
-    // camera bounds adapter is installed, keep its exact conventional response.
-    if (
-      this.scene.materials.some(
-        (material) =>
-          (material instanceof PBRMaterial &&
-            material.usePhysicalLightFalloff) ||
-          (material instanceof NodeMaterial &&
-            material.attachedBlocks.some(
-              (block) =>
-                block.getClassName() === "PBRMetallicRoughnessBlock" &&
-                "lightFalloff" in block &&
-                block.lightFalloff === 0,
-            )),
-      )
-    )
-      return "Unbounded physical PBR attenuation requires conservative clustered camera bounds; using conventional lighting.";
+
     return undefined;
+  }
+
+  private usesUnboundedPhysicalLighting(): boolean {
+    if (sceneRenderingSettings(this.scene).mode === "cel") return false;
+    return this.scene.materials.some(
+      (material) =>
+        (material instanceof PBRMaterial && material.usePhysicalLightFalloff) ||
+        (material instanceof NodeMaterial &&
+          material.attachedBlocks.some(
+            (block) =>
+              block.getClassName() === "PBRMetallicRoughnessBlock" &&
+              "lightFalloff" in block &&
+              block.lightFalloff === 0,
+          )),
+    );
   }
 }

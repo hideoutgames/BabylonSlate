@@ -9,6 +9,8 @@ import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Tex
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
+import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
+import { isManagedClusteredLight } from "./clustered-light-policy";
 import {
   ManagedShadowObjectRendererTask,
   ManagedShadowsTask,
@@ -28,6 +30,7 @@ export class ForwardSceneFrameGraph {
   private graph: FrameGraph | undefined;
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
+  private clustered: FrameGraphClusteredLightsTask | undefined;
   private cull: FrameGraphCullObjectsTask | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
@@ -78,8 +81,9 @@ export class ForwardSceneFrameGraph {
     const reason =
       this.unsupported(camera) ??
       this.failure ??
-      (this.shadows?.needsPreparation()
-        ? "Shadow allocation changes require FrameGraph preparation."
+      (this.shadows?.needsPreparation() ||
+      this.clustered?.needsPreparation(camera)
+        ? "Lighting allocation changes require FrameGraph preparation."
         : undefined) ??
       (this.pending ||
       !this.graph ||
@@ -157,8 +161,14 @@ export class ForwardSceneFrameGraph {
     if (unavailable) return unavailable;
     if (scene.getEngine().isWebGPU)
       return "Forward FrameGraph proof requires WebGL.";
-    if (scene.lights.some((light) => light.getClassName() === "ClusteredLightContainer"))
-      return "Clustered mask ordering requires its explicit FrameGraph adapter.";
+    if (
+      scene.lights.some(
+        (light) =>
+          light.getClassName() === "ClusteredLightContainer" &&
+          !isManagedClusteredLight(scene, light),
+      )
+    )
+      return "Unmanaged clustered light masks require classic rendering.";
     if (scene.frameGraph || scene.customRenderFunction)
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
@@ -182,10 +192,9 @@ export class ForwardSceneFrameGraph {
 
   private syncShadowAdmission(camera: Camera): void {
     const controller = findSceneShadowController(this.scene);
-    if (!controller) return;
     withSceneReadinessState(this.scene, () => {
       this.scene.activeCamera = camera;
-      controller.sync();
+      controller?.sync();
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
       // invalidate the variants we just declared ready for the first frame.
@@ -197,7 +206,11 @@ export class ForwardSceneFrameGraph {
     const scene = this.scene;
     const engine = scene.getEngine();
     try {
-      if (this.shadows?.needsPreparation()) this.releaseGraph();
+      if (
+        this.shadows?.needsPreparation() ||
+        this.clustered?.needsPreparation(camera)
+      )
+        this.releaseGraph();
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         // Explicit owner: Scene.dispose must not race an asynchronous build.
@@ -222,7 +235,13 @@ export class ForwardSceneFrameGraph {
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects);
+        this.clustered = new FrameGraphClusteredLightsTask(
+          this.graph,
+          scene,
+          this.objects,
+        );
         this.graph.addTask(this.shadows);
+        this.graph.addTask(this.clustered);
         this.graph.addTask(this.clear);
         this.graph.addTask(this.cull);
         this.graph.addTask(this.objects);
@@ -309,11 +328,13 @@ export class ForwardSceneFrameGraph {
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.objects?.dispose();
     this.shadows?.dispose();
+    this.clustered?.dispose();
     this.clear?.dispose();
     this.cull?.dispose();
     this.graph?.dispose();
     this.objects = undefined;
     this.shadows = undefined;
+    this.clustered = undefined;
     this.clear = undefined;
     this.cull = undefined;
     this.graph = undefined;

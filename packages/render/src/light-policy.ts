@@ -7,6 +7,8 @@ import {
   type Scene,
 } from "@babylonjs/core";
 
+import { isManagedClusteredLight } from "./clustered-light-policy";
+
 const authoredEnabled = new WeakMap<
   Light,
   { enabled: boolean; effective: boolean }
@@ -57,7 +59,11 @@ export function isDirectionalLightExcluded(light: Light): boolean {
 }
 
 export function isForwardLightExcluded(light: Light): boolean {
-  return !clusteredMembers.has(light) && forwardExcluded.has(light) && isAuthoredLightEnabled(light);
+  return (
+    !clusteredMembers.has(light) &&
+    forwardExcluded.has(light) &&
+    isAuthoredLightEnabled(light)
+  );
 }
 
 /** Stable scene order selects one enabled sun, regardless of shadow settings. */
@@ -128,6 +134,8 @@ export function syncForwardLightPolicy(
     candidates.sort(
       (a, b) =>
         Number(global(b)) - Number(global(a)) ||
+        Number(isManagedClusteredLight(scene, b)) -
+          Number(isManagedClusteredLight(scene, a)) ||
         (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
           (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
         distance(a) - distance(b) ||
