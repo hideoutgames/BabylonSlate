@@ -6,6 +6,8 @@ import {
 } from "./baked-geometry";
 import type { AssetRegistry } from "./registry";
 
+export class StaleBakedGeometryError extends Error {}
+
 /** A generated asset cannot be substituted for another Scene, receiver, or source generation. */
 export async function loadBakedGeometryBindings(
   registry: AssetRegistry,
@@ -35,7 +37,7 @@ export async function loadBakedGeometryBindings(
       bakedReceiverKey(geometry.manifest.receiver) !==
         bakedReceiverKey(receiver.identity)
     )
-      throw new Error(
+      throw new StaleBakedGeometryError(
         "Generated receiver geometry identity or source is stale.",
       );
     bytes +=

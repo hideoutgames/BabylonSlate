@@ -12,7 +12,7 @@ import {
 } from "./baked-lighting";
 import { newAssetGuid } from "./guid";
 import type { AssetRegistry } from "./registry";
-import { loadBakedGeometryBindings } from "./baked-geometry-store";
+import { loadBakedGeometryBindings, StaleBakedGeometryError } from "./baked-geometry-store";
 
 /** The document owner increments generation on replacement, cancellation or a new job. */
 export interface BakePublicationOwner {
@@ -148,7 +148,9 @@ export async function loadBakedLightingReference(options: {
     try {
       await loadBakedGeometryBindings(options.registry, retained.manifest);
     } catch (error) {
-      return { referenceGuid, retained, validity: { status: "missing", reason: error instanceof Error ? error.message : String(error) } };
+      return { referenceGuid, retained, validity: error instanceof StaleBakedGeometryError
+        ? { status: "stale", reasons: [error.message] }
+        : { status: "missing", reason: error instanceof Error ? error.message : String(error) } };
     }
     return {
       referenceGuid,

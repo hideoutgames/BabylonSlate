@@ -184,6 +184,19 @@ it("persists per-receiver topology through reopen and retains the last bake when
   await expect(
     loadBakedGeometryBindings(reopened, lighting.manifest),
   ).rejects.toThrow(/identity or source is stale/);
+  const replaced = await bakedGeometryImportResult({
+    guid: "geometry",
+    name: "Other Receiver",
+    manifest: { ...manifest, receiver: receiver.identity },
+    topology: bakeGeometryFixture().topology,
+  });
+  await storage.writeBinary(
+    reopened.getByGuid("geometry")!.path,
+    await encodeBakedGeometryAsset(replaced),
+  );
+  const stale = await loadBakedLightingReference(options);
+  expect(stale.validity.status).toBe("stale");
+  expect(stale.retained?.atlases.size).toBe(1);
   await storage.remove(reopened.getByGuid("geometry")!.path);
   const missing = await loadBakedLightingReference(options);
   expect(missing.validity.status).toBe("missing");

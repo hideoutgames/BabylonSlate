@@ -100,10 +100,12 @@ export async function unwrapBakeGeometry(
   )
     throw new Error("UV source positions are invalid.");
   active = true;
-  let worker: Worker | null = null;
-  let workerUrl: string | null = null;
-  let remote: Remote<XAtlasConstructor> | null = null;
-  let api: Remote<XAtlasApi> | null = null;
+  const resources: {
+    worker?: Worker;
+    workerUrl?: string;
+    remote?: Remote<XAtlasConstructor>;
+    api?: Remote<XAtlasApi>;
+  } = {};
   let settled = false;
   let fail!: (error: Error) => void;
   const failed = new Promise<never>((_, reject) => {
@@ -134,7 +136,7 @@ export async function unwrapBakeGeometry(
         progress("loading", 0);
         const sourceHash = await fingerprintBakeGeometry(owned);
         ensureCurrent();
-        workerUrl = URL.createObjectURL(
+        resources.workerUrl = URL.createObjectURL(
           new Blob(
             [
               `/*\n${xatlasLicense}\n${comlinkLicense}\n*/\n`,
@@ -143,19 +145,19 @@ export async function unwrapBakeGeometry(
             { type: "text/javascript" },
           ),
         );
-        worker = new Worker(workerUrl, {
+        const worker = (resources.worker = new Worker(resources.workerUrl, {
           name: "Baked Lighting UV Generation",
-        });
+        }));
         worker.onerror = (event) =>
           fail(new Error(`UV worker failed: ${event.message}`));
         worker.onmessageerror = () =>
           fail(new Error("UV worker returned an unreadable response."));
-        remote = wrap<XAtlasConstructor>(worker);
+        const remote = (resources.remote = wrap<XAtlasConstructor>(worker));
         let ready!: () => void;
         const initialized = new Promise<void>((resolve) => {
           ready = resolve;
         });
-        api = await new remote(
+        const api = (resources.api = await new remote(
           proxy(() => ready()),
           proxy(() => xatlasWasmUrl),
           proxy((_phase: number, value: number) => {
@@ -165,7 +167,7 @@ export async function unwrapBakeGeometry(
               fail(error instanceof Error ? error : new Error(String(error)));
             }
           }),
-        );
+        ));
         ensureCurrent();
         await initialized;
         ensureCurrent();
@@ -231,14 +233,14 @@ export async function unwrapBakeGeometry(
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);
     // Termination also releases synchronous native work and its entire WASM heap on failure/abort.
-    api?.[releaseProxy]();
-    remote?.[releaseProxy]();
-    if (worker) {
-      worker.onerror = null;
-      worker.onmessageerror = null;
-      worker.terminate();
+    resources.api?.[releaseProxy]();
+    resources.remote?.[releaseProxy]();
+    if (resources.worker) {
+      resources.worker.onerror = null;
+      resources.worker.onmessageerror = null;
+      resources.worker.terminate();
     }
-    if (workerUrl) URL.revokeObjectURL(workerUrl);
+    if (resources.workerUrl) URL.revokeObjectURL(resources.workerUrl);
     active = false;
   }
 }
