@@ -28,7 +28,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function fixture() {
+function fixture(suppliedIrradiance = true) {
   const engine = new NullEngine();
   const cache = new ResourceCache();
   // NullEngine has no cube upload IO. Keep actual InternalTexture cache,
@@ -38,6 +38,8 @@ function fixture() {
     .mockImplementation((url) => {
       const internal = engine.createTexture(url, false, false, null);
       internal.isCube = true;
+      if (suppliedIrradiance)
+        internal._sphericalPolynomial = new SphericalPolynomial();
       return internal;
     });
   const a = new Scene(engine),
@@ -215,4 +217,119 @@ it("applies serialized Scene overrides and live project updates through the exis
   });
   expect(a.iblIntensity).toBe(4);
   expect(a.environmentTexture).toBe(view);
+});
+
+it("shares bounded irradiance readback, survives one view closing, and retains a constant linear environment", async () => {
+  const { engine, cache, a, b, bytes, assets } = fixture(false);
+  const source = cache.getTexture("environment", engine, bytes, {
+    isCube: true,
+  }) as CubeTexture;
+  const internal = source.getInternalTexture()!;
+  internal.width = internal.height = 64;
+  const finish: Array<(pixels: Float32Array) => void> = [];
+  const read = vi
+    .spyOn(source, "readPixels")
+    .mockImplementation(
+      () => new Promise<Float32Array>((resolve) => finish.push(resolve)),
+    );
+  applyEnvironmentLighting(a, "environment", assets);
+  applyEnvironmentLighting(b, "environment", assets);
+  cache.release(source);
+  expect(isEnvironmentLightingReady(a)).toBe(false);
+  expect(isEnvironmentLightingReady(b)).toBe(false);
+  const av = a.environmentTexture!;
+  expect(av.sphericalPolynomial).toBeNull();
+  await Promise.resolve();
+  expect(read).toHaveBeenCalledTimes(6);
+  for (let face = 0; face < 6; face++)
+    expect(read).toHaveBeenCalledWith(face, 1, undefined, false);
+  a.dispose();
+  expect(av.sphericalPolynomial).toBeNull();
+  const pixels = new Float32Array(32 * 32 * 4);
+  for (let i = 0; i < pixels.length; i += 4) pixels.set([0, 2, 0, 1], i);
+  for (const resolve of finish) resolve(pixels);
+  await vi.waitFor(() => expect(isEnvironmentLightingReady(b)).toBe(true));
+  const polynomial = b.environmentTexture!.sphericalPolynomial!;
+  expect(polynomial.yy.y).toBeCloseTo(2, 2);
+  expect(polynomial.yy.x).toBe(0);
+  expect(polynomial.yy.z).toBe(0);
+  expect(internal._sphericalPolynomial).toBeNull(); // No shared source mutation.
+  b.dispose();
+  cache.flushUnreferenced();
+  expect(source.getInternalTexture()).toBeNull();
+});
+
+it("keeps all pending face reads alive after rejection and ignores obsolete work after a scene swaps environments", async () => {
+  const { engine, cache, upload, a, bytes, assets } = fixture(false);
+  const source = cache.getTexture("environment", engine, bytes, {
+    isCube: true,
+  }) as CubeTexture;
+  source.getInternalTexture()!.width = source.getInternalTexture()!.height = 2;
+  const finish: Array<(pixels: Float32Array) => void> = [];
+  vi.spyOn(source, "readPixels").mockImplementation((face) =>
+    face === 0
+      ? Promise.reject(new Error("readback rejected"))
+      : new Promise<Float32Array>((resolve) => finish.push(resolve)),
+  );
+  applyEnvironmentLighting(a, "environment", assets);
+  cache.release(source);
+  expect(isEnvironmentLightingReady(a)).toBe(false);
+  await Promise.resolve();
+  upload.mockImplementationOnce((url) => {
+    const texture = engine.createTexture(url, false, false, null);
+    texture.isCube = true;
+    texture._sphericalPolynomial = new SphericalPolynomial();
+    return texture;
+  });
+  applyEnvironmentLighting(a, "replacement", {
+    ...assets,
+    textureBytes: new Map([["replacement", bytes]]),
+  });
+  cache.flushUnreferenced();
+  expect(source.getInternalTexture()).not.toBeNull();
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  for (const resolve of finish) resolve(new Float32Array(16));
+  await vi.waitFor(() => {
+    cache.flushUnreferenced();
+    expect(source.getInternalTexture()).toBeNull();
+  });
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+});
+
+it("decodes RGBD fallback radiance and exposes readback failures to the owning scene", async () => {
+  const { engine, cache, a, b, bytes, assets } = fixture(false);
+  const source = cache.getTexture("environment", engine, bytes, {
+    isCube: true,
+  }) as CubeTexture;
+  source.getInternalTexture()!.width = source.getInternalTexture()!.height = 2;
+  source.isRGBD = true;
+  const pixels = new Uint8Array(16);
+  for (let i = 0; i < pixels.length; i += 4) pixels.set([0, 128, 0, 64], i);
+  vi.spyOn(source, "readPixels").mockResolvedValue(pixels);
+  applyEnvironmentLighting(a, "environment", assets);
+  expect(isEnvironmentLightingReady(a)).toBe(false);
+  await vi.waitFor(() => expect(isEnvironmentLightingReady(a)).toBe(true));
+  expect(a.environmentTexture!.sphericalPolynomial!.yy.y).toBeCloseTo(
+    (128 / 255) ** 2.2 / (64 / 255),
+    2,
+  );
+  const broken = cache.getTexture("broken", engine, bytes, {
+    isCube: true,
+  }) as CubeTexture;
+  vi.spyOn(broken, "readPixels").mockRejectedValue(
+    new Error("GPU read failed"),
+  );
+  applyEnvironmentLighting(b, "broken", {
+    ...assets,
+    textureBytes: new Map([["broken", bytes]]),
+  });
+  expect(isEnvironmentLightingReady(b)).toBe(false);
+  await vi.waitFor(() =>
+    expect(() => isEnvironmentLightingReady(b)).toThrow(
+      "Environment irradiance preparation failed",
+    ),
+  );
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  cache.release(source);
+  cache.release(broken);
 });

@@ -3,6 +3,7 @@ import type { MeshAssetContext } from "./mesh-assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { sceneRenderingSettings } from "./render-settings";
 import type { ResourceCache } from "./resource-cache";
+import { ownEnvironmentIrradiance } from "./environment-irradiance";
 
 const controllers = new WeakMap<Scene, EnvironmentLighting>();
 
@@ -57,6 +58,8 @@ class EnvironmentLighting {
   private source: CubeTexture | null = null;
   private sourceCache: ResourceCache | undefined;
   private view: CubeTexture | null = null;
+  private irradiance: ReturnType<typeof ownEnvironmentIrradiance> | null = null;
+  private irradianceChanged = false;
   private requestChanged = false;
   private settingsKey = "";
   private disposed = false;
@@ -141,6 +144,15 @@ class EnvironmentLighting {
         this.source = source;
         this.sourceCache = this.cache;
         this.view = view;
+        this.irradiance = ownEnvironmentIrradiance(
+          view,
+          source,
+          this.cache,
+          () => {
+            if (!this.disposed && this.view === view)
+              this.irradianceChanged = true;
+          },
+        );
         this.scene.environmentTexture = view;
         changed = true;
       }
@@ -157,6 +169,10 @@ class EnvironmentLighting {
   }
 
   isReady(): boolean {
+    if (this.irradianceChanged) {
+      this.irradianceChanged = false;
+      this.invalidateMaterials();
+    }
     if (this.source?.loadingError) {
       throw new Error(
         this.source.errorObject?.message ??
@@ -164,10 +180,18 @@ class EnvironmentLighting {
         { cause: this.source.errorObject?.exception },
       );
     }
-    return !this.view || this.view.isReady();
+    return (
+      !this.view ||
+      (this.view.isReady() &&
+        (!sceneRenderingSettings(this.scene).environmentLighting.enabled ||
+          this.irradiance!.isReady()))
+    );
   }
 
   private clear(): void {
+    this.irradiance?.dispose();
+    this.irradiance = null;
+    this.irradianceChanged = false;
     if (this.scene.environmentTexture === this.view)
       this.scene.environmentTexture = null;
     this.view?.dispose();
