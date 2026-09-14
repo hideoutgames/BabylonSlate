@@ -65,12 +65,13 @@ function compatible(material: Material): boolean {
       (material as CelMaterial).hasOriginalShadowHooks() &&
       compatible((material as CelMaterial).source)
     );
+  if (constructor !== PBRMaterial && constructor !== StandardMaterial)
+    return false;
   if (
-    constructor !== PBRMaterial &&
-    constructor !== StandardMaterial
+    Boolean(material.customShaderNameResolve) ||
+    material.onBindObservable.hasObservers()
   )
     return false;
-  if (material.customShaderNameResolve || material.onBindObservable.hasObservers()) return false;
   return !material.pluginManager?._plugins.some(
     (plugin) => !nativePlugins.has(plugin.constructor),
   );

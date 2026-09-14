@@ -1,3 +1,4 @@
+import { clusteredLocalContributionCount } from "./clustered-light-policy";
 import { sceneRenderPathStatus } from "./scene-render-path";
 import type { ResolvedRenderingPipeline } from "@babylonslate/core";
 import {
@@ -28,6 +29,7 @@ export type RenderDiagnostics = {
   >;
   qualityLimits: string[];
   pipeline: ResolvedRenderingPipeline;
+  clusteredLights: number;
 };
 
 export function createRenderDiagnostics(
@@ -58,6 +60,7 @@ export function createRenderDiagnostics(
     return {
       cpuMs: cpuMs(),
       pipeline: sceneRenderPathStatus(scene),
+      clusteredLights: clusteredLocalContributionCount(scene),
       readbackMs: readbackMs(),
       shadowDrawCalls: sceneShadowController(scene).shadowDrawCalls(),
       shadowTriangles: sceneShadowController(scene).shadowTriangles(),

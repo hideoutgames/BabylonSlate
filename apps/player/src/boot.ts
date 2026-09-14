@@ -81,6 +81,7 @@ export type PlayerDiagnostic = {
 
 export type PlayerBootHandle = {
   ticks: () => number;
+  rendering: () => ReturnType<EngineHandle["renderDiagnostics"]> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
   executeConsoleCommand: (
@@ -690,6 +691,7 @@ function initializePlayer(
   function playerHandle(): PlayerBootHandle {
     return {
       ticks: () => ticks,
+      rendering: () => halted ? null : handle.renderDiagnostics(),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
       executeConsoleCommand: (line) => consoleHost.execute(line),
