@@ -104,6 +104,7 @@ it("keeps the authored cutout draw order when a FrameGraph owns the rendering ma
     mesh.renderingGroupId = 1;
     mesh.alphaIndex = index;
     mesh.onBeforeBindObservable.add(() => order.push(name));
+    await material.forceCompilationAsync(mesh);
   }
   scene.render();
   expect(order).toEqual(["back", "front"]);
