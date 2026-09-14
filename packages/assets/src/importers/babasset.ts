@@ -1,5 +1,6 @@
 import { decodeBabasset } from "../babasset";
 import { BAKED_LIGHTING_ASSET_TYPE, validateBakedLightingChunks } from "../baked-lighting";
+import { BAKED_GEOMETRY_ASSET_TYPE, validateBakedGeometryChunks, encodeBakeTopology } from "../baked-geometry";
 import { stableStringify } from "../bytes";
 import { remapImportResultGuids } from "./guid-remap";
 import type { ImportOptions, ImportResult } from "./types";
@@ -19,12 +20,13 @@ export async function importBabasset(
   await collect(bytes, results);
   const remapped = remapImportResultGuids(results, options.existingGuids);
   for (const [index, result] of remapped.entries()) {
-    if (result.type !== BAKED_LIGHTING_ASSET_TYPE) continue;
+    if (result.type !== BAKED_LIGHTING_ASSET_TYPE && result.type !== BAKED_GEOMETRY_ASSET_TYPE) continue;
     // V1 source identities/hashes cannot be silently rewritten by generic import.
     const original = results[index]!;
     if (original.dependencies.some((guid, dependencyIndex) => guid !== result.dependencies[dependencyIndex]))
       throw new Error("Baked lighting source GUID remapping requires a new bake; import sources without collisions.");
-    await validateBakedLightingChunks(result, result.chunks);
+    if (result.type === BAKED_LIGHTING_ASSET_TYPE) await validateBakedLightingChunks(result, result.chunks);
+    else await validateBakedGeometryChunks(result, result.chunks);
   }
   return remapped;
 }
@@ -46,6 +48,11 @@ async function collect(bytes: Uint8Array, out: ImportResult[]): Promise<void> {
     chunks.find((chunk) => chunk.id === "document")!.data = new TextEncoder().encode(stableStringify(validated.manifest));
     for (const atlas of validated.manifest.atlases)
       chunks.find((chunk) => chunk.id === atlas.chunkId)!.data = validated.atlases.get(atlas.guid)!;
+  }
+  if (decoded.header.type === BAKED_GEOMETRY_ASSET_TYPE) {
+    const validated = await validateBakedGeometryChunks(decoded.header, chunks);
+    chunks.find((chunk) => chunk.id === "document")!.data = new TextEncoder().encode(stableStringify(validated.manifest));
+    chunks.find((chunk) => chunk.id === "topology")!.data = encodeBakeTopology(validated.topology, validated.manifest.sourceVertexCount);
   }
 
   out.push({

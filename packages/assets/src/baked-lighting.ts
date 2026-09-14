@@ -124,6 +124,7 @@ const manifestSchema = z
             mobility: z.literal("static"),
             hashes: receiverHashesSchema,
             atlasGuid: id,
+            generatedGeometry: z.object({ assetGuid: id, contentHash: hash }).strict().optional(),
             scale: z.tuple([
               z.number().positive().max(1),
               z.number().positive().max(1),
@@ -219,7 +220,11 @@ export function parseBakedLightingManifest(
       "Baked lighting exceeds the 64 MiB authoring payload limit.",
     );
   const used = new Set<string>();
+  if (manifest.receivers.filter((receiver) => receiver.generatedGeometry).length > 64)
+    throw new Error("Too many generated receiver geometries.");
   for (const receiver of manifest.receivers) {
+    if (receiver.generatedGeometry && !manifest.dependencies.includes(receiver.generatedGeometry.assetGuid))
+      throw new Error("Generated receiver geometry is missing from asset dependencies.");
     const atlas = atlases.get(receiver.atlasGuid);
     if (!atlas) throw new Error("Baked receiver references a missing atlas.");
     used.add(atlas.guid);

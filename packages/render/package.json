@@ -10,7 +10,8 @@
     "./render-scheduler": "./src/render-scheduler.ts",
     "./framegraph-post-process": "./src/framegraph-post-process.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
-    "./audio-playback-backend": "./src/audio-playback-backend.ts"
+    "./audio-playback-backend": "./src/audio-playback-backend.ts",
+    "./bake-uv-atlas": "./src/bake-uv-atlas.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -28,11 +29,13 @@
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
     "assimpjs": "0.0.10",
+    "comlink": "4.4.2",
     "earcut": "^3.2.3",
     "three": "0.181.1",
     "three-gpu-pathtracer": "0.0.24",
     "three-mesh-bvh": "0.9.5",
-    "xatlas-web": "0.1.0"
+    "xatlas-web": "0.1.0",
+    "xatlasjs": "0.2.0"
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",

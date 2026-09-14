@@ -9,6 +9,10 @@ import {
   bakedLightingImportResult,
   encodeBakedLightingAsset,
   readBakedLightingAssetChunks,
+  BAKED_GEOMETRY_ASSET_TYPE,
+  readBakedGeometryAssetChunks,
+  bakedGeometryImportResult,
+  encodeBakedGeometryAsset,
   collectPackedAudioClipBlobs,
   encodePackedAudioAsset,
   encodePackedModelAsset,
@@ -95,6 +99,15 @@ async function bytesForAsset(
     });
     return encodeBakedLightingAsset(await bakedLightingImportResult({ guid: decoded.guid,
       name: asset.header.name, manifest: decoded.manifest, atlases: decoded.atlases }));
+  }
+  if (asset.header.type === BAKED_GEOMETRY_ASSET_TYPE) {
+    const decoded = await readBakedGeometryAssetChunks(asset.header, async (entry) => {
+      const data = await readAssetChunk(asset.path, entry.id);
+      if (!data) throw new Error(`Missing baked geometry chunk ${entry.id}.`);
+      return data;
+    });
+    return encodeBakedGeometryAsset(await bakedGeometryImportResult({ guid: decoded.guid,
+      name: asset.header.name, manifest: decoded.manifest, topology: decoded.topology }));
   }
   if (asset.header.type === "Audio") {
     const payload = normalizeAudioPayload(document ?? asset.header.payload);

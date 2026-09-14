@@ -12,6 +12,7 @@ import {
 } from "./baked-lighting";
 import { newAssetGuid } from "./guid";
 import type { AssetRegistry } from "./registry";
+import { loadBakedGeometryBindings } from "./baked-geometry-store";
 
 /** The document owner increments generation on replacement, cancellation or a new job. */
 export interface BakePublicationOwner {
@@ -75,6 +76,9 @@ export async function publishBakedLighting(options: {
         `Baked lighting input asset ${dependency} is unavailable.`,
       );
   }
+  await loadBakedGeometryBindings(options.registry, manifest);
+  const afterGeometry = refusal();
+  if (afterGeometry) return { status: "refused", reason: afterGeometry, candidateGuid: null };
   await options.registry.createAsset(
     options.rootId,
     `BakedLighting/${guid}.babasset`,
@@ -140,6 +144,11 @@ export async function loadBakedLightingReference(options: {
             reason: `Baked lighting input asset ${dependency} is unavailable.`,
           },
         };
+    }
+    try {
+      await loadBakedGeometryBindings(options.registry, retained.manifest);
+    } catch (error) {
+      return { referenceGuid, retained, validity: { status: "missing", reason: error instanceof Error ? error.message : String(error) } };
     }
     return {
       referenceGuid,

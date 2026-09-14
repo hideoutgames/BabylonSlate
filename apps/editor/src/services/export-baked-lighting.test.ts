@@ -10,8 +10,11 @@ import {
   decodeBakedLightingAsset,
   encodeBakedLightingAsset,
   type IndexedAsset,
+  bakedGeometryImportResult, encodeBakedGeometryAsset, decodeBakedGeometryAsset,
+  encodeBakeTopology, fingerprintBakeGeometry, sha256Hex,
 } from "@babylonslate/assets";
 import { createBakedLightingFixture } from "@babylonslate/test-kit/baked-lighting-fixtures";
+import { bakeGeometryFixture } from "@babylonslate/test-kit/baked-geometry-fixtures";
 import { decodeBabpack } from "@babylonslate/exporter";
 import {
   assetHeaderDependencies,
@@ -22,6 +25,17 @@ import { assetsFromIndexed, collectAndExportGame } from "./export-game";
 
 async function fixture() {
   const { manifest, bytes, atlases } = await createBakedLightingFixture();
+  const geometry = bakeGeometryFixture();
+  const sourceHash = await fingerprintBakeGeometry(geometry.source);
+  const contentHash = await sha256Hex(encodeBakeTopology(geometry.topology, geometry.source.vertexCount));
+  const generated = await bakedGeometryImportResult({ guid: "geometry", name: "Generated UV", topology: geometry.topology,
+    manifest: { version: 1, sceneGuid: "scene", receiver: manifest.receivers[0]!.identity,
+      sourceHash, sourceVertexCount: 4, indexCount: 6, vertexCount: 6, contentHash,
+      provider: { id: "fixture", version: "1", adapterVersion: "1" },
+      layout: { width: 32, height: 32, paddingTexels: 2, uvSet: 1, coordinates: "normalized-bottom-first", mipLevels: 1 } } });
+  manifest.receivers[0]!.hashes.geometry = sourceHash;
+  manifest.receivers[0]!.generatedGeometry = { assetGuid: "geometry", contentHash };
+  manifest.dependencies.push("geometry");
   const second = structuredClone(manifest.atlases[0]!);
   second.guid = "second-atlas";
   second.chunkId = "atlas:second";
@@ -34,6 +48,7 @@ async function fixture() {
       primitive: { kind: "mesh" },
     },
     atlasGuid: second.guid,
+    generatedGeometry: undefined,
   });
   atlases.set(second.guid, bytes.slice());
   const result = await bakedLightingImportResult({
@@ -43,6 +58,7 @@ async function fixture() {
     atlases,
   });
   const decoded = await decodeBabasset(await encodeBakedLightingAsset(result));
+  const generatedDecoded = await decodeBabasset(await encodeBakedGeometryAsset(generated));
   const bake: IndexedAsset = {
     rootId: "project",
     path: "assets/Bake.babasset",
@@ -77,9 +93,10 @@ async function fixture() {
       chunks: [{ ...bake.header.chunks[1]!, id: "source", kind: "source" }],
     },
   }));
-  const assets = [sceneAsset, bake, ...sources];
+  const geometryAsset: IndexedAsset = { rootId: "project", path: "assets/Generated.babasset", header: generatedDecoded.header };
+  const assets = [sceneAsset, bake, geometryAsset, ...sources];
   const readAssetChunk = async (path: string, id: string) =>
-    path === bake.path
+    path === geometryAsset.path ? (generatedDecoded.chunks.get(id) ?? null) : path === bake.path
       ? (decoded.chunks.get(id) ?? null)
       : id === "source"
         ? new Uint8Array([1, 2, 3])
@@ -121,13 +138,18 @@ it("retains Scene references, all atlas chunks and source dependencies through p
   if (result.ok === false) throw new Error(JSON.stringify(result.error));
   expect(
     result.value.manifest.assets.map((asset) => asset.guid).sort(),
-  ).toEqual(["bake", "cube", "model", "scene"]);
+  ).toEqual(["bake", "cube", "geometry", "model", "scene"]);
   const entry = result.value.manifest.assets.find(
     (asset) => asset.guid === bake.header.guid,
   )!;
   const pack = decodeBabpack(result.value.files.get(entry.pack)!);
   const restored = await decodeBakedLightingAsset(pack.read("bake"));
-  expect(restored.manifest.dependencies).toEqual(["model", "cube"]);
+  expect(restored.manifest.dependencies).toEqual(["model", "cube", "geometry"]);
+  const geometryEntry = result.value.manifest.assets.find((asset) => asset.guid === "geometry")!;
+  const geometryPack = decodeBabpack(result.value.files.get(geometryEntry.pack)!);
+  const restoredGeometry = await decodeBakedGeometryAsset(geometryPack.read("geometry"));
+  expect([...restoredGeometry.topology.originalVertices]).toEqual([0, 2, 1, 0, 3, 2]);
+  expect(restored.manifest.receivers[0]!.generatedGeometry?.contentHash).toBe(restoredGeometry.manifest.contentHash);
   expect([...restored.atlases.keys()]).toEqual(["atlas", "second-atlas"]);
   for (const atlas of restored.atlases.values()) expect(atlas).toEqual(bytes);
   const sceneEntry = result.value.manifest.assets.find(

@@ -47,6 +47,8 @@ export interface BakedReceiverBinding {
   mobility: "static";
   hashes: Pick<BakeInputHashes, "geometry" | "uv" | "transforms" | "materials">;
   atlasGuid: string;
+  /** Absent for authored UV2. Generated topology is a separately bounded immutable asset. */
+  generatedGeometry?: { assetGuid: string; contentHash: string };
   /** UV2 maps into this normalized atlas rectangle; gutters are outside it. */
   scale: [number, number];
   offset: [number, number];

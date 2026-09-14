@@ -620,6 +620,9 @@ importers:
       assimpjs:
         specifier: 0.0.10
         version: 0.0.10
+      comlink:
+        specifier: 4.4.2
+        version: 4.4.2
       earcut:
         specifier: ^3.2.3
         version: 3.2.3
@@ -635,6 +638,9 @@ importers:
       xatlas-web:
         specifier: 0.1.0
         version: 0.1.0
+      xatlasjs:
+        specifier: 0.2.0
+        version: 0.2.0
     devDependencies:
       '@babylonslate/test-kit':
         specifier: workspace:*
@@ -2996,6 +3002,9 @@ packages:
   combined-stream@1.0.8:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
+
+  comlink@4.4.2:
+    resolution: {integrity: sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g==}
 
   comma-separated-tokens@2.0.3:
     resolution: {integrity: sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg==}
@@ -5771,6 +5780,9 @@ packages:
   xatlas-web@0.1.0:
     resolution: {integrity: sha512-PprVfuXbaIskxLTLBUQRaWfgSy9xUQqAMIRooOw0P6NYqwgh6T0voeer6+Z5M7AFt5SGXUybuww/uDGs1yw8vQ==}
 
+  xatlasjs@0.2.0:
+    resolution: {integrity: sha512-3YxdpuDY4X2Kjn/Zm2c5648x/hYAP/X5YIx7nc1ify65kroSX+CFyzkhbBkIq9RDpjhA2prPRyhJZzYPUE1WgQ==}
+
   xcode@3.0.1:
     resolution: {integrity: sha512-kCz5k7J7XbJtjABOvkc5lJmkiDh8VhjVCGNiqdKCscmVpdVUpEAyXv1xmCLkQJ5dsHqx3IPO4XW+NTDhU/fatA==}
     engines: {node: '>=10.0.0'}
@@ -8162,6 +8174,8 @@ snapshots:
   combined-stream@1.0.8:
     dependencies:
       delayed-stream: 1.0.0
+
+  comlink@4.4.2: {}
 
   comma-separated-tokens@2.0.3: {}
 
@@ -10990,6 +11004,10 @@ snapshots:
       powershell-utils: 0.1.0
 
   xatlas-web@0.1.0: {}
+
+  xatlasjs@0.2.0:
+    optionalDependencies:
+      comlink: 4.4.2
 
   xcode@3.0.1:
     dependencies:
