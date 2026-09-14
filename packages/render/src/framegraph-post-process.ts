@@ -75,6 +75,12 @@ class GraphBoundPostProcess extends PostProcess {
   override dispose(camera?: Camera): void {
     if (this.disposed) return;
     this.disposed = true;
+    // These passes are camera-less. Engine.dispose drains this public list by
+    // repeatedly disposing its first entry, so logical retirement must remove
+    // the entry even while its Effect still waits for native compilation.
+    const registered = this.getEngine().postProcesses;
+    const index = registered.indexOf(this);
+    if (index !== -1) registered.splice(index, 1);
     // Babylon returns early from camera-less disposal before clearing these.
     this.onApplyObservable.clear();
     this.onBeforeRenderObservable.clear();
@@ -133,8 +139,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   private readonly authoredParameters: Record<string, MaterialParameterValue>;
   private readonly requiredBuffers = new Set<LogicalSceneBuffer>();
   private readonly passes = new Set<GraphBoundPostProcess>();
-  private readonly cleanups: Promise<void>[] = [];
-  private readonly preparations: Promise<void>[] = [];
+  private readonly pendingWork = new Set<Promise<void>>();
+  private readonly cleanupErrors: unknown[] = [];
   private resolveDisposal!: () => void;
   private rejectDisposal!: (error: unknown) => void;
   private readonly disposal = new Promise<void>((resolve, reject) => {
@@ -184,7 +190,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     this.pending = this.disabled
       ? Promise.resolve()
       : this.prepare(document, generation);
-    this.preparations.push(this.pending);
+    this.trackCleanup(this.pending);
     return this.pending;
   }
 
@@ -444,8 +450,16 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       void released.catch(() => {});
       const cleanup = Promise.all(passes.map((pass) => pass.whenDisposed())).then(() => released);
       void cleanup.catch(() => {});
-      this.cleanups.push(cleanup);
+      this.trackCleanup(cleanup);
     }
+  }
+
+  private trackCleanup(work: Promise<void>): void {
+    this.pendingWork.add(work);
+    void work.then(
+      () => { this.pendingWork.delete(work); },
+      (error) => { this.pendingWork.delete(work); this.cleanupErrors.push(error); },
+    );
   }
 
   /** CPU/native ownership only; a managed GPU lease drains separately afterward. */
@@ -454,14 +468,11 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   override dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    const errors: unknown[] = [];
-    try { this.releaseMaterial(); } catch (error) { errors.push(error); }
+    try { this.releaseMaterial(); } catch (error) { this.cleanupErrors.push(error); }
     this.generation++;
-    try { super.dispose(); } catch (error) { errors.push(error); }
-    void Promise.allSettled([...this.preparations, ...this.cleanups]).then((results) => {
-      errors.push(...results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
-        .map((result) => result.reason));
-      if (errors.length) this.rejectDisposal(new AggregateError(errors, "Authored post-process cleanup failed"));
+    try { super.dispose(); } catch (error) { this.cleanupErrors.push(error); }
+    void Promise.allSettled(this.pendingWork).then(() => {
+      if (this.cleanupErrors.length) this.rejectDisposal(new AggregateError(this.cleanupErrors, "Authored post-process cleanup failed"));
       else this.resolveDisposal();
     });
   }
