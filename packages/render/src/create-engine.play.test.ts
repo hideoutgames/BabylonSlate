@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, InputBlock, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Constants, InputBlock, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -200,6 +200,27 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     return { handle, canvas };
+  }
+
+  function postProcessGraphEngine(): NullEngine {
+    const engine = sharedEngine();
+    Object.assign(engine.getCaps(), {
+      maxTextureSize: 4096, maxDrawBuffers: 4, drawBuffersExtension: true,
+      depthTextureExtension: true, textureFloatRender: true, textureHalfFloatRender: true,
+    });
+    // Same absent native allocation boundary as scene-post-process-graph.test:
+    // real wrappers/textures and the production graph retain all ownership.
+    vi.spyOn(engine, "_createInternalTexture").mockImplementation((size, options) => {
+      const creation = typeof options === "object" ? options : {};
+      const wrapper = engine.createRenderTargetTexture(size, { ...creation, generateDepthBuffer: false });
+      const texture = wrapper.texture!;
+      texture.format = creation.format ?? Constants.TEXTUREFORMAT_RGBA;
+      wrapper.dispose(true);
+      return texture;
+    });
+    vi.spyOn(engine, "createMultipleRenderTarget").mockImplementation((size) =>
+      engine._createHardwareRenderTargetWrapper(true, false, size));
+    return engine;
   }
 
   function editorHandle(engine: NullEngine) {
@@ -1280,7 +1301,7 @@ describe("Play createEngine view", () => {
   });
 
   it("routes current-owner entry writes into independent instances and replays disabled passes after rebuild", async () => {
-    const engine = sharedEngine();
+    const engine = postProcessGraphEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const document = createDefaultMaterialDocument("Gain", "postProcess");
     document.nodes.push(
@@ -1352,7 +1373,7 @@ describe("Play createEngine view", () => {
   it("attaches an authored post-process stack when the local gate is on", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
+      sharedEngine: postProcessGraphEngine(),
       playMode: true,
       postProcessingEnabled: true,
       postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
@@ -1368,7 +1389,7 @@ describe("Play createEngine view", () => {
   it("keeps world post-process on the world camera when a SceneLayer is created", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
+      sharedEngine: postProcessGraphEngine(),
       playMode: true,
       postProcessingEnabled: true,
       postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
@@ -2040,7 +2061,7 @@ describe("Play createEngine view", () => {
     expect(handle.assignedMaterialGuids()).toEqual(["mat-rock"]);
   });
 
-  it("moves the post-process stack onto the authored Default Camera", async () => {
+  it("moves the native fallback post-process stack onto the authored Default Camera", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -2053,6 +2074,7 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
+    await new Promise<void>((resolve) => handle.scene.freezeActiveMeshes(false, resolve));
     await handle.prewarmSceneMaterials();
     const fallback = handle.scene.getCameraByName("camera");
     expect(livePassCount(fallback)).toBeGreaterThan(0);
@@ -2089,7 +2111,7 @@ describe("Play createEngine view", () => {
     expect(livePassCount(fallback)).toBe(0);
   });
 
-  it("reattaches the post-process stack to the fallback camera after Default Camera despawn", async () => {
+  it("reattaches the native post-process stack to the fallback camera after Default Camera despawn", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -2102,6 +2124,7 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
+    await new Promise<void>((resolve) => handle.scene.freezeActiveMeshes(false, resolve));
     const callback = runRenderLoop.mock.calls[0]?.[0];
     handle.applyCommand({
       type: "assignMesh",
