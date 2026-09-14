@@ -6,6 +6,7 @@ import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
+import { normalizeMaterialParameterOverrides } from "@babylonslate/core";
 import type {
   MaterialBuildPlan,
   MaterialDiagnostic,
@@ -73,6 +74,7 @@ interface AuthoredPostProcessOptions {
   materialGuid: string;
   document: MaterialDocument | null;
   enabled?: boolean;
+  parameters?: Record<string, MaterialParameterValue>;
   sourceTexture: FrameGraphTextureHandle;
   /** Unscaled scene color determines pass resolution, independent of order. */
   sceneColorTexture: FrameGraphTextureHandle;
@@ -108,6 +110,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     super.disabled = options.enabled === false;
     this.outputTexture =
       options.frameGraph.textureManager.createDanglingHandle();
+    for (const [name, value] of Object.entries(normalizeMaterialParameterOverrides(options.parameters)))
+      this.parameters.set(name, value);
     this.pending = this.replaceDocument(options.document);
   }
 
@@ -297,8 +301,11 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
         this.fail(diagnostics[0]!.message, diagnostics[0]);
         return;
       }
-      for (const [name, value] of this.parameters)
-        this.setParameter(name, value);
+      for (const [name, value] of this.parameters) {
+        if (!this.setParameter(name, value))
+          this.options.onDiagnostic?.({ materialGuid: this.options.materialGuid, code: "material.parameter",
+            message: `Post-process parameter "${name}" is unavailable or has an incompatible value` });
+      }
       this.createPostProcess(compiled.material);
       this.buildObserver = compiled.material.onBuildObservable.add(() => {
         if (!this.disposed && this.generation === generation)
@@ -401,6 +408,7 @@ export function addAuthoredPostProcessTasks(options: {
         materialGuid: entry.materialGuid,
         document: options.documentFor(entry.materialGuid),
         enabled: entry.enabled,
+        parameters: entry.parameters,
         sourceTexture,
         sceneColorTexture: options.sourceTexture,
         resolutionScale: entry.scalable ? options.resolutionScale : 1,

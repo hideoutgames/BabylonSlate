@@ -607,6 +607,19 @@ export function materialAssetGuidsFromScene(
   return guids;
 }
 
+/** Include saved overrides even while their pass is disabled, so later activation needs no missing texture. */
+export function postProcessTextureGuidsFromScenes(
+  scenes: readonly (SerializedScene | null | undefined)[],
+): string[] {
+  const guids = new Set<string>();
+  for (const scene of scenes)
+    for (const entry of scene?.settings.postProcessStack ?? [])
+      for (const parameter of Object.values(entry.parameters ?? {}))
+        if (parameter.kind === "texture" && parameter.textureAssetGuid?.trim())
+          guids.add(parameter.textureAssetGuid.trim());
+  return [...guids];
+}
+
 /** Post-process Material guids authored on the scene, in order. */
 export function postProcessMaterialGuidsFromScene(
   scene: SerializedScene | null | undefined,

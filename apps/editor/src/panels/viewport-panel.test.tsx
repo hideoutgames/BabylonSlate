@@ -85,7 +85,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
         tilesets: [],
         tilemaps: [],
       })),
-      collectPlayTextureBytes: vi.fn(async () => new Map()),
+      collectPlayTextureBytes: vi.fn<(sprites?: unknown, tilesets?: unknown, guids?: readonly string[]) => Promise<Map<string, Uint8Array>>>(async () => new Map()),
       collectPlayTexturePixelSizes: vi.fn(() => new Map()),
       collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
       collectPlayFontMsdfPair: vi.fn(async () => new Map()),
@@ -361,9 +361,17 @@ describe("ViewportPanel engine", () => {
   });
 
   it("mounts blocking UI before scene creation and keeps it until the first frame", async () => {
+    const scene = createDefaultScene();
+    scene.settings.postProcessStack = [{
+      id: "masked-pass", materialGuid: "mask-material", enabled: false,
+      parameters: { Mask: { kind: "texture", textureAssetGuid: "entry-mask" } },
+    }];
+    const maskBytes = new Uint8Array([1, 2, 3, 4]);
+    documents.collectPlayTextureBytes.mockImplementationOnce(async (_sprites, _tilesets, guids) =>
+      new Map(guids?.includes("entry-mask") ? [["entry-mask", maskBytes]] : []));
     documents.openDocuments = [{
       id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
-      content: createDefaultScene(),
+      content: scene,
     }];
     createEngineMock.mockImplementationOnce(() => {
       expect(screen.getByRole("dialog").textContent).toContain("Loading Scene");
@@ -375,6 +383,9 @@ describe("ViewportPanel engine", () => {
     expect(createEngineMock).not.toHaveBeenCalled();
     expect(handle.loadScene).not.toHaveBeenCalled();
     await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledOnce());
+    expect(handle.loadSceneAsync).toHaveBeenCalledWith(scene, expect.objectContaining({
+      assets: expect.objectContaining({ textureBytes: new Map([["entry-mask", maskBytes]]) }),
+    }));
     expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
     expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
     await act(async () => present());
