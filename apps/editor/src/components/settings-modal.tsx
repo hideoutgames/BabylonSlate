@@ -1,3 +1,4 @@
+import { scenePipelineKey, useScenePipelineStatus } from "../lib/scene-pipeline-status";
 import { RenderQualityFields } from "./render-quality-fields";
 import { RenderPipelineFields } from "./render-pipeline-fields";
 import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
@@ -274,6 +275,7 @@ export function SettingsModal({
   const {
     projectDocument: liveProjectDocument,
     projectGuid,
+    activeDocumentId,
     exportProject,
     exportGameArtifact,
     zipExportedGame,
@@ -284,6 +286,7 @@ export function SettingsModal({
     sourceControl,
     prefillSourceControlFromGit,
   } = useDocuments();
+  const activePipeline = useScenePipelineStatus(scenePipelineKey(projectGuid, activeDocumentId));
   const [draft, setDraft] = useState<RenderingDraft | null>(null);
   const draftOwner = useRef<{ guid: string | null; base: RenderingDraft } | null>(null);
   const latest = useRef({ project: liveProjectDocument, projectGuid, draft, applyProjectSettings });
@@ -1037,7 +1040,7 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Rendering</FieldLegend>
-            <RenderPipelineFields hideTitle scope="project" project={projectDocument.settings.render}
+            <RenderPipelineFields hideTitle scope="project" activePipeline={activePipeline} project={projectDocument.settings.render}
               onChange={(pipeline) => updateProjectSettings({ render: { ...projectDocument.settings.render, ...pipeline } })} />
             <Field className="settings-field">
               <FieldLabel htmlFor="setting-render-mode">Render Mode</FieldLabel>

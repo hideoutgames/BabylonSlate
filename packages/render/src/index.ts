@@ -94,3 +94,5 @@ export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdent
 export { createAppWebGpuEngine } from "./webgpu-engine";
 export { createBackendEngineSession, type BackendEngineSession, type BackendEngineSessionOptions } from "./backend-engine-session";
 export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";
+
+export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";

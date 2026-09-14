@@ -1,3 +1,4 @@
+import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
 import type { AbstractEngine } from "@babylonjs/core";
 import { EngineStore } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -84,6 +85,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     openDocuments,
     applySceneChange,
     projectDocument,
+    projectGuid,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
@@ -377,8 +379,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         controller.signal.throwIfAborted();
         setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
 
+        const pipeline = registerScenePipelineStatus(scenePipelineKey(projectGuid, documentId));
+        disposers.push(() => pipeline.dispose());
         const handle = createEngine(canvas, {
           editor: true,
+          onRenderPathChanged: pipeline.publish,
           renderSettings: sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current),
           editorViewportId: dropViewportId,
           sharedEngine,

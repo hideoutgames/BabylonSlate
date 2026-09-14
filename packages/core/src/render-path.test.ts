@@ -121,7 +121,10 @@ describe("rendering pipeline contract", () => {
   });
 
   it("resolves Auto deterministically without treating Auto itself as unavailable", () => {
-    const result = resolveRenderingPipeline({ renderPath: "auto", gpuBackend: "auto" });
+    const result = resolveRenderingPipeline({
+      renderPath: "auto",
+      gpuBackend: "auto",
+    });
     expect(result).toEqual({
       requested: { renderPath: "auto", gpuBackend: "auto" },
       effective: { renderPath: "forward", gpuBackend: "webgl2" },
@@ -130,36 +133,112 @@ describe("rendering pipeline contract", () => {
   });
 
   it("reports unavailable renderer requests without activating them", () => {
-      const requested = { renderPath: "clusteredForward", gpuBackend: "webgpu" } as const;
-      const saved = { ...requested };
-      const result = resolveRenderingPipeline(requested);
-      expect(result.requested).toEqual(saved);
-      expect(requested).toEqual(saved);
-      expect(result.effective).toEqual({
+    const requested = {
+      renderPath: "clusteredForward",
+      gpuBackend: "webgpu",
+    } as const;
+    const saved = { ...requested };
+    const result = resolveRenderingPipeline(requested);
+    expect(result.requested).toEqual(saved);
+    expect(requested).toEqual(saved);
+    expect(result.effective).toEqual({
+      renderPath: "forward",
+      gpuBackend: "webgl2",
+    });
+    expect(result.limits).toEqual([
+      expect.stringContaining("Clustered Forward"),
+      expect.stringContaining("WebGPU"),
+    ]);
+    expect(
+      resolveRenderingPipeline({
         renderPath: "forward",
         gpuBackend: "webgl2",
-      });
-      expect(result.limits).toEqual([
-        expect.stringContaining("Clustered Forward"),
-        expect.stringContaining("WebGPU"),
-      ]);
-      expect(
-        resolveRenderingPipeline({
-          renderPath: "forward",
-          gpuBackend: "webgl2",
-        }).limits,
-      ).toEqual([]);
+      }).limits,
+    ).toEqual([]);
   });
 
   it("reports the initialized backend and its fallback reason without rewriting preferences", () => {
     const requested = { gpuBackend: "webgpu" as const };
-    const active = resolveRenderingPipeline(requested, undefined, undefined, undefined, { gpuBackend: "webgpu" });
+    const active = resolveRenderingPipeline(
+      requested,
+      undefined,
+      undefined,
+      undefined,
+      { gpuBackend: "webgpu" },
+    );
     expect(active.effective.gpuBackend).toBe("webgpu");
     expect(active.limits).toEqual([]);
-    const fallback = resolveRenderingPipeline(requested, undefined, undefined, undefined,
-      { gpuBackend: "webgl2", reason: "Material uses Custom GLSL." });
+    const fallback = resolveRenderingPipeline(
+      requested,
+      undefined,
+      undefined,
+      undefined,
+      { gpuBackend: "webgl2", reason: "Material uses Custom GLSL." },
+    );
     expect(fallback.requested.gpuBackend).toBe("webgpu");
     expect(fallback.effective.gpuBackend).toBe("webgl2");
     expect(fallback.limits).toEqual(["Material uses Custom GLSL."]);
+  });
+  it("selects supported clustered execution for explicit requests and worthwhile Auto scenes", () => {
+    const available = { supported: true, autoEligible: true } as const;
+    for (const renderPath of ["clusteredForward", "auto"] as const) {
+      const result = resolveRenderingPipeline(
+        { renderPath },
+        undefined,
+        undefined,
+        undefined,
+        { gpuBackend: "webgl2" },
+        available,
+      );
+      expect(result.requested.renderPath).toBe(renderPath);
+      expect(result.effective.renderPath).toBe("clusteredForward");
+      expect(result.limits).toEqual([]);
+    }
+    expect(
+      resolveRenderingPipeline(
+        { renderPath: "auto" },
+        undefined,
+        undefined,
+        undefined,
+        { gpuBackend: "webgl2" },
+        { supported: true, autoEligible: false },
+      ).effective.renderPath,
+    ).toBe("forward");
+    expect(
+      resolveRenderingPipeline(
+        { renderPath: "clusteredForward" },
+        undefined,
+        undefined,
+        undefined,
+        { gpuBackend: "webgl2" },
+        { supported: true, autoEligible: false },
+      ).effective.renderPath,
+    ).toBe("clusteredForward");
+  });
+
+  it("keeps the request and concrete fallback reason when a scene cannot cluster", () => {
+    for (const renderPath of ["auto", "clusteredForward"] as const) {
+      const result = resolveRenderingPipeline(
+        { renderPath },
+        undefined,
+        undefined,
+        undefined,
+        { gpuBackend: "webgl2" },
+        { supported: false, reason: "CEL light order is interleaved." },
+      );
+      expect(result.requested.renderPath).toBe(renderPath);
+      expect(result.effective.renderPath).toBe("forward");
+      expect(result.limits).toEqual(["CEL light order is interleaved."]);
+    }
+    expect(
+      resolveRenderingPipeline(
+        { renderPath: "clusteredForward" },
+        undefined,
+        undefined,
+        undefined,
+        { gpuBackend: "webgpu" },
+        { supported: true, autoEligible: true },
+      ).effective.renderPath,
+    ).toBe("forward");
   });
 });

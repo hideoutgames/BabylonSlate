@@ -1,3 +1,5 @@
+import { sceneRenderPathStatus } from "./scene-render-path";
+import type { ResolvedRenderingPipeline } from "@babylonslate/core";
 import {
   EngineInstrumentation,
   type AbstractEngine,
@@ -25,6 +27,7 @@ export type RenderDiagnostics = {
     ReturnType<typeof sceneShadowController>["diagnostics"]
   >;
   qualityLimits: string[];
+  pipeline: ResolvedRenderingPipeline;
 };
 
 export function createRenderDiagnostics(
@@ -54,6 +57,7 @@ export function createRenderDiagnostics(
     const state = sceneRenderingSettings(scene);
     return {
       cpuMs: cpuMs(),
+      pipeline: sceneRenderPathStatus(scene),
       readbackMs: readbackMs(),
       shadowDrawCalls: sceneShadowController(scene).shadowDrawCalls(),
       shadowTriangles: sceneShadowController(scene).shadowTriangles(),
@@ -72,6 +76,7 @@ export function createRenderDiagnostics(
         ? sceneShadowController(scene).diagnostics()
         : [],
       qualityLimits: [
+        ...sceneRenderPathStatus(scene).limits,
         ...sceneLightingLimits(scene),
         ...effectiveShadowSettings(
           state.shadows,

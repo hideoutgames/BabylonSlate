@@ -4,7 +4,7 @@ import {
   type Material,
   type Scene,
 } from "@babylonjs/core";
-import type { CelShadingOverrides, ShadowOverrides } from "@babylonslate/core";
+import type { CelShadingOverrides, ShadowOverrides, RenderPathOverrides } from "@babylonslate/core";
 import { CelMaterial, canUseCelMaterial } from "./cel-material";
 import {
   sceneRenderingSettings,
@@ -23,7 +23,9 @@ export function setSceneRenderSettings(
   project?: RenderShadingSettings,
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
+  pathOverrides?: RenderPathOverrides,
 ): void {
+  if (pathOverrides !== undefined) sceneRenderingSettings(scene).pathOverrides = pathOverrides;
   updateSceneRenderingSettings(scene, project, overrides, shadowOverrides);
   syncEnvironmentLighting(scene);
   let sync = controllers.get(scene);
@@ -113,4 +115,5 @@ export function setSceneRenderSettings(
     });
   }
   sync();
+  syncSceneLighting(scene);
 }

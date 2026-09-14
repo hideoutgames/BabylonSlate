@@ -50,9 +50,17 @@ export function normalizeRenderPathOverrides(
 
 export interface ResolvedRenderingPipeline {
   requested: RenderingPipelineSettings;
-  effective: { renderPath: "forward"; gpuBackend: "webgl2" | "webgpu" };
+  effective: {
+    renderPath: "forward" | "clusteredForward";
+    gpuBackend: "webgl2" | "webgpu";
+  };
   limits: string[];
 }
+
+/** Scene-owned capability and compatibility evidence, with no renderer objects. */
+export type ClusteredRenderingAvailability =
+  | { supported: true; autoEligible: boolean }
+  | { supported: false; reason: string };
 
 /**
  * Resolve the currently implemented renderer policy at load/reconfiguration.
@@ -65,6 +73,7 @@ export function resolveRenderingPipeline(
   local?: RenderPathOverrides,
   session?: RenderPathOverrides,
   backend?: { gpuBackend: "webgl2" | "webgpu"; reason?: string },
+  clustered?: ClusteredRenderingAvailability,
 ): ResolvedRenderingPipeline {
   const requested = {
     ...normalizeRenderingPipeline(project),
@@ -73,8 +82,22 @@ export function resolveRenderingPipeline(
     ...normalizeRenderPathOverrides(session),
   };
   const limits: string[] = [];
-  if (requested.renderPath === "clusteredForward") {
-    limits.push("Clustered Forward is unavailable; using Forward.");
+  let renderPath: "forward" | "clusteredForward" = "forward";
+  if (requested.renderPath !== "forward") {
+    if (backend?.gpuBackend === "webgpu") {
+      limits.push(
+        "Clustered Forward requires WebGL2; using Forward on WebGPU.",
+      );
+    } else if (clustered?.supported) {
+      if (requested.renderPath === "clusteredForward" || clustered.autoEligible)
+        renderPath = "clusteredForward";
+    } else if (clustered) {
+      limits.push(clustered.reason);
+    } else if (requested.renderPath === "clusteredForward") {
+      limits.push(
+        "Clustered Forward awaits scene capability checks; using Forward.",
+      );
+    }
   }
   if (backend?.reason) limits.push(backend.reason);
   else if (!backend && requested.gpuBackend === "webgpu") {
@@ -82,7 +105,7 @@ export function resolveRenderingPipeline(
   }
   return {
     requested,
-    effective: { renderPath: "forward", gpuBackend: backend?.gpuBackend ?? "webgl2" },
+    effective: { renderPath, gpuBackend: backend?.gpuBackend ?? "webgl2" },
     limits,
   };
 }

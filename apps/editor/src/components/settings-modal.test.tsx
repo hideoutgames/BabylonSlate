@@ -1,3 +1,5 @@
+import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
+import { resolveRenderingPipeline } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
@@ -82,6 +84,7 @@ vi.mock("../context/document-context", async () => {
       return {
       projectDocument,
       projectGuid: "test-project",
+      activeDocumentId: "active-scene",
       exportProject,
       exportGameArtifact,
       zipExportedGame: vi.fn(),
@@ -425,6 +428,22 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-width")).toBeTruthy();
     expect(screen.getByTestId("setting-render-height")).toBeTruthy();
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
+  });
+
+  it("shows the active scene's actual clustered selection and concrete fallback", () => {
+    const owner = registerScenePipelineStatus(scenePipelineKey("test-project", "active-scene"));
+    try {
+      owner.publish(resolveRenderingPipeline({ renderPath: "auto" }, undefined, undefined, undefined,
+        { gpuBackend: "webgl2" }, { supported: true, autoEligible: true }));
+      render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+      fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Clustered Forward ? WebGL2");
+      act(() => owner.publish(resolveRenderingPipeline({ renderPath: "auto" }, undefined, undefined, undefined,
+        { gpuBackend: "webgl2" }, { supported: false, reason: "The active material requires Forward." })));
+      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Forward ? WebGL2");
+      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("active material requires Forward");
+      expect(updateProjectSettings).not.toHaveBeenCalled();
+    } finally { act(() => owner.dispose()); }
   });
 
   it("stages independent pipeline preferences until Done and displays their effective fallback", async () => {

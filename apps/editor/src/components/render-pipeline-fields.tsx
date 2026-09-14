@@ -1,7 +1,7 @@
 import {
   GPU_BACKENDS, RENDER_PATHS, isGpuBackend, isRenderPath,
   normalizeRenderingPipeline, resolveRenderingPipeline,
-  type GpuBackend, type RenderPath, type RenderPathOverrides, type RenderingPipelineSettings,
+  type GpuBackend, type RenderPath, type RenderPathOverrides, type RenderingPipelineSettings, type ResolvedRenderingPipeline,
 } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
@@ -14,6 +14,7 @@ const backendLabels: Record<GpuBackend, string> = { auto: "Auto", webgl2: "WebGL
 type Props = {
   project?: Partial<RenderingPipelineSettings>;
   hideTitle?: boolean;
+  activePipeline?: ResolvedRenderingPipeline;
 } & (
   | { scope: "project"; onChange: (value: RenderingPipelineSettings) => void }
   | { scope: "scene"; overrides: RenderPathOverrides; onChange: (value: RenderPathOverrides) => void }
@@ -29,6 +30,9 @@ export function RenderPipelineFields(props: Props) {
     : status?.fallbackReason;
   const resolved = resolveRenderingPipeline(project, scene ? props.overrides : undefined, undefined, undefined,
     status?.effectiveBackend ? { gpuBackend: status.effectiveBackend, reason } : undefined);
+  const active = props.activePipeline;
+  const effective = active?.effective ?? resolved.effective;
+  const limits = active ? [...active.limits, ...(reason ? [reason] : [])] : resolved.limits;
   const overridden = scene && props.overrides.renderPath !== undefined;
   const pathId = `${props.scope}-render-path`;
   return (
@@ -82,10 +86,12 @@ export function RenderPipelineFields(props: Props) {
           </Field>
         ) : null}
         <Field>
-          <FieldLabel>Effective Selection</FieldLabel>
+          <FieldLabel>{scene ? "Effective Selection" : "Active Scene Selection"}</FieldLabel>
           <FieldDescription role="status" data-testid={`${props.scope}-render-pipeline-status`}>
             {pathLabels[resolved.effective.renderPath]} · {backendLabels[resolved.effective.gpuBackend]}
-            {resolved.limits.length ? `. ${resolved.limits.join(" ")} Your preferences are retained.` : ""}
+            {limits.length ? `. ${limits.join(" ")} Your preferences are retained.` : ""}
+            {active && scene && active.requested.renderPath !== resolved.requested.renderPath ? " Render path changes apply after scene loading completes." : ""}
+            {!scene ? " Selection is resolved for the active scene; scene overrides can choose another path." : ""}
           </FieldDescription>
         </Field>
       </FieldGroup>

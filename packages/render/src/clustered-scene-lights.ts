@@ -40,6 +40,8 @@ export type ClusteredSceneLightStatus = {
   conventional: number;
   estimatedBytes: number;
   reasons: readonly string[];
+  /** A compatibility/allocation fallback, distinct from informational budget limits. */
+  fallbackReason?: string;
 };
 
 /**
@@ -127,6 +129,10 @@ export class ClusteredSceneLights {
     return this.container._updateBatches(camera);
   }
 
+  borrowsLight(light: Light): boolean {
+    return this.container?.lights.includes(light) ?? false;
+  }
+
   ownsContainer(light: Light): boolean {
     return light === this.container;
   }
@@ -174,6 +180,7 @@ export class ClusteredSceneLights {
           conventional: this.registry.length,
           estimatedBytes: 0,
           reasons: [reason],
+          fallbackReason: reason,
         };
         return;
       }
@@ -232,6 +239,7 @@ export class ClusteredSceneLights {
           conventional: this.registry.length,
           estimatedBytes: 0,
           reasons: [this.celOrderFailure],
+          fallbackReason: this.celOrderFailure,
         };
         return;
       }
@@ -357,6 +365,7 @@ export class ClusteredSceneLights {
         conventional: this.registry.length,
         estimatedBytes: 0,
         reasons: [this.allocationFailure],
+        fallbackReason: this.allocationFailure,
       };
     } finally {
       this.syncing = false;
@@ -494,7 +503,7 @@ export class ClusteredSceneLights {
       order.filter(
         (light) =>
           this.registryMembership.has(light) &&
-          this.structurallyEligible(light) &&
+          isClusterableLocalLight(light) &&
           !controller?.requestsShadow(light) &&
           !light.getShadowGenerators()?.size,
       ),
@@ -534,25 +543,8 @@ export class ClusteredSceneLights {
       isAuthoredLightEnabled(light) &&
       light.intensity > 0 &&
       (!light.parent || light.parent.isEnabled()) &&
-      this.structurallyEligible(light) &&
+      isClusterableLocalLight(light) &&
       !light.getShadowGenerators()?.size
-    );
-  }
-
-  private structurallyEligible(light: Light): boolean {
-    return (
-      (light instanceof PointLight || light instanceof SpotLight) &&
-      light.falloffType === Light.FALLOFF_DEFAULT &&
-      Number.isFinite(light.range) &&
-      light.range > 0 &&
-      Number.isFinite(Math.fround(light.range)) &&
-      !light.excludedMeshes.length &&
-      !light.includedOnlyMeshes.length &&
-      !light.includeOnlyWithLayerMask &&
-      !light.excludeWithLayerMask &&
-      light.lightmapMode === Light.LIGHTMAP_DEFAULT &&
-      (!(light instanceof SpotLight) ||
-        (!light.projectionTexture && !light.iesProfileTexture))
     );
   }
 
@@ -602,4 +594,21 @@ export class ClusteredSceneLights {
           )),
     );
   }
+}
+
+export function isClusterableLocalLight(light: Light): boolean {
+  return (
+    (light instanceof PointLight || light instanceof SpotLight) &&
+    light.falloffType === Light.FALLOFF_DEFAULT &&
+    Number.isFinite(light.range) &&
+    light.range > 0 &&
+    Number.isFinite(Math.fround(light.range)) &&
+    !light.excludedMeshes.length &&
+    !light.includedOnlyMeshes.length &&
+    !light.includeOnlyWithLayerMask &&
+    !light.excludeWithLayerMask &&
+    light.lightmapMode === Light.LIGHTMAP_DEFAULT &&
+    (!(light instanceof SpotLight) ||
+      (!light.projectionTexture && !light.iesProfileTexture))
+  );
 }
