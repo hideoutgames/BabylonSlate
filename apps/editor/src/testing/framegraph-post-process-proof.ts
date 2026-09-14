@@ -228,6 +228,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
       order,
       enabled: !disabled.includes(order),
       scalable: resolutionScale < 1,
+      ...(sharedMaterial ? { parameters: { Gain: { kind: "float" as const, value: order === 0 ? 0.2 : 0.8 } } } : {}),
     }));
     const documentFor = (guid: string) =>
       documents[Number(guid.slice(6))] ?? null;
@@ -411,6 +412,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     await rebuild([gain], [], 0.5);
     await capture("half-resolution");
     await rebuild([gain, gain], [], 1, true);
+    await capture("duplicate-entry-authored");
     for (const [index, value] of [0.25, 0.75].entries()) {
       const parameter = { kind: "float" as const, value };
       if (!stack!.tasks[index]!.setParameter("Gain", parameter) ||

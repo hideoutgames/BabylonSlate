@@ -22,6 +22,7 @@ export * from "./print-hud";
 export * from "./map-default";
 export * from "./class-variable-references";
 export * from "./material-parameter-assets";
+export * from "./material-parameter-value";
 export * from "./play-preview-aspect";
 export * from "./nine-slice";
 export * from "./input-assets";

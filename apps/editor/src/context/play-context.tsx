@@ -101,6 +101,7 @@ import {
   playPrefabDependencyScene,
   skyboxFaceGuidsFromScene,
   environmentTextureGuidsFromScenes,
+  postProcessTextureGuidsFromScenes,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import {
@@ -1052,6 +1053,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...skyboxTextureGuids,
               ...environmentTextureGuids,
               ...overlayTextureGuidsFromScenes(resourceScenes),
+              ...postProcessTextureGuidsFromScenes(resourceScenes),
             ],
             spriteAnimations,
             true,
@@ -1065,6 +1067,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...skyboxTextureGuids,
               ...environmentTextureGuids,
               ...overlayTextureGuidsFromScenes(resourceScenes),
+              ...postProcessTextureGuidsFromScenes(resourceScenes),
             ],
             spriteAnimations,
           );
@@ -1085,6 +1088,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
                 ...skyboxTextureGuids,
                 ...environmentTextureGuids,
                 ...overlayTextureGuidsFromScenes(resourceScenes),
+                ...postProcessTextureGuidsFromScenes(resourceScenes),
               ],
               spriteAnimations,
               true,
@@ -1096,6 +1100,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
                 ...skyboxTextureGuids,
                 ...environmentTextureGuids,
                 ...overlayTextureGuidsFromScenes(resourceScenes),
+                ...postProcessTextureGuidsFromScenes(resourceScenes),
               ],
               spriteAnimations,
             );

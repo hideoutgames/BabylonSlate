@@ -313,8 +313,8 @@ describe("post-process stack", () => {
     const shared = library.acquire(preview.scene, "gain", document);
     if (!shared.ok) throw new Error("Invalid gain fixture");
     const attached = attachPostProcessStack({ scene: preview.scene, camera: preview.camera, library,
-      stack: [{ id: "later", materialGuid: "gain", enabled: true, order: 1 },
-        { id: "earlier", materialGuid: "gain", enabled: true, order: 0 }],
+      stack: [{ id: "later", materialGuid: "gain", enabled: true, order: 1, parameters: { Gain: { kind: "float", value: 0.8 } } },
+        { id: "earlier", materialGuid: "gain", enabled: true, order: 0, parameters: { Gain: { kind: "float", value: 0.2 } } }],
       documentFor: () => document, deviceBuffers: { sceneDepth: false, sceneNormal: false } });
     disposers.push(attached.dispose);
     const instances = preview.scene.materials.filter((material): material is NodeMaterial =>
@@ -322,6 +322,7 @@ describe("post-process stack", () => {
     expect(instances).toHaveLength(2);
     const first = instances[0]!.getBlockByName("gain") as InputBlock;
     const second = instances[1]!.getBlockByName("gain") as InputBlock;
+    expect([first.value, second.value]).toEqual([0.2, 0.8]);
     expect(attached.setParameter("earlier", "Gain", { kind: "float", value: 0.25 })).toBe(true);
     expect(attached.setParameter("later", "Gain", { kind: "float", value: 0.75 })).toBe(true);
     expect([first.value, second.value]).toEqual([0.25, 0.75]);

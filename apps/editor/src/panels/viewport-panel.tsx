@@ -56,6 +56,7 @@ import {
   overlayTextureGuidsFromScene,
   skyboxFaceGuidsFromScene,
   environmentTextureGuidsFromScenes,
+  postProcessTextureGuidsFromScenes,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
@@ -616,6 +617,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         controller.signal.throwIfAborted();
         const extraTextureGuids = [
           ...environmentTextureGuidsFromScenes([scene]),
+          ...postProcessTextureGuidsFromScenes([scene]),
           ...materials.textureGuids,
           ...skyboxFaceGuidsFromScene(scene),
           ...overlayTextureGuidsFromScene(scene),

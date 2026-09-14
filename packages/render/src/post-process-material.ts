@@ -17,6 +17,7 @@ export interface PostProcessStackEntry {
   enabled: boolean;
   order: number;
   scalable?: boolean;
+  parameters?: Record<string, MaterialParameterValue>;
 }
 
 /** Scene documents omit `order`; normalize fills it from array index. */
@@ -26,6 +27,7 @@ export type PostProcessStackInput = {
   enabled?: boolean;
   order?: number;
   scalable?: boolean;
+  parameters?: Record<string, MaterialParameterValue>;
 };
 
 export function normalizePostProcessStack(
@@ -41,6 +43,7 @@ export function normalizePostProcessStack(
       return [
         {
           id: record.id,
+          parameters: record.parameters,
           materialGuid,
           ...(record.scalable === true ? { scalable: true } : {}),
           enabled: record.enabled !== false,
@@ -52,7 +55,7 @@ export function normalizePostProcessStack(
       ];
     });
   const identities = normalizeScenePostProcessStack(entries);
-  return entries.map((entry, index) => ({ ...entry, id: identities[index]!.id }))
+  return entries.map((entry, index) => ({ ...entry, parameters: identities[index]!.parameters, id: identities[index]!.id }))
     .sort((a, b) => a.order - b.order);
 }
 
@@ -169,6 +172,11 @@ export function attachPostProcessStack(
       continue;
     }
     const needsDepth = compiled.plan.bufferRequirements.sceneDepth;
+    for (const [name, value] of Object.entries(entry.parameters ?? {})) {
+      if (!options.library.setParameter(options.scene, entry.materialGuid, name, value, instance))
+        report(options, { materialGuid: entry.materialGuid, code: "material.parameter",
+          message: `Post-process parameter "${name}" is unavailable or has an incompatible value` });
+    }
     const needsNormal = compiled.plan.bufferRequirements.sceneNormal;
     if (needsDepth) {
       try {

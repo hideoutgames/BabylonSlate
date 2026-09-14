@@ -1,13 +1,10 @@
-import type { QualityOverrides, RenderProjectSettings, ScenePostProcessEntry } from "@babylonslate/core";
+import type { QualityOverrides, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Serializable runtime override of one named Material Graph parameter. */
-export type MaterialParameterValue =
-  | { kind: "float"; value: number }
-  | { kind: "color"; value: [number, number, number, number] }
-  | { kind: "texture"; textureAssetGuid: string | null };
+export type { MaterialParameterValue } from "@babylonslate/core";
 
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
