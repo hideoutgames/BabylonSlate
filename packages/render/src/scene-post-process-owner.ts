@@ -1,3 +1,4 @@
+import { materialParameterDefaults } from "@babylonslate/shader-graph";
 import type { Camera } from "@babylonjs/core";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import {
@@ -16,6 +17,7 @@ export class ScenePostProcessOwner {
   private nativeCamera: Camera | undefined;
   private graphParameters: ScenePostProcessParameters | undefined;
   private disposed = false;
+  private cleanupFailure: unknown;
   private readonly replay = new Map<string, Map<string, MaterialParameterValue>>();
 
   constructor(options: AttachPostProcessStackOptions) {
@@ -68,21 +70,34 @@ export class ScenePostProcessOwner {
     const target = this.native ?? this.graphParameters;
     const value = target?.getParameter(entryId, name)
       ?? this.replay.get(entryId)?.get(name)
-      ?? this.options.stack.find((entry) => entry.id === entryId)?.parameters?.[name];
+      ?? this.resetValue(entryId, name);
     return value ? structuredClone(value) : null;
   }
 
   resetParameter(entryId: string, name: string): boolean {
     if (this.disposed) return false;
-    const target = this.native ?? this.graphParameters;
-    if (!target?.resetParameter(entryId, name)) return false;
-    this.replay.get(entryId)?.delete(name);
-    return true;
+    const value = this.resetValue(entryId, name);
+    return !!value && this.setParameter(entryId, name, value);
+  }
+
+  private resetValue(entryId: string, name: string): MaterialParameterValue | null {
+    const entry = this.options.stack.find((candidate) => candidate.id === entryId);
+    const document = entry && this.options.documentFor(entry.materialGuid);
+    if (!entry || !document) return null;
+    const lowered = this.options.library.planFor(document);
+    if (lowered.ok === false) return null;
+    const compiled = materialParameterDefaults(lowered.plan)[name];
+    if (!compiled) return null;
+    const authored = entry.parameters?.[name];
+    for (const value of [authored, compiled])
+      if (value && this.options.library.acceptsParameter(document, name, value)) return structuredClone(value);
+    return null;
   }
 
   clearGraph(): void { this.graphParameters = undefined; }
 
   dispose(): void {
+    if (this.cleanupFailure) throw this.cleanupFailure;
     if (this.disposed) return;
     this.disposed = true;
     this.detachNative();
@@ -95,7 +110,9 @@ export class ScenePostProcessOwner {
   }
 
   private detachNative(): void {
-    this.native?.dispose();
+    if (this.cleanupFailure) throw this.cleanupFailure;
+    try { this.native?.dispose(); }
+    catch (error) { this.cleanupFailure = error; throw error; }
     this.native = undefined;
     this.nativeCamera = undefined;
   }

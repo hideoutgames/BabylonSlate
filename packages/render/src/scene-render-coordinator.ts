@@ -31,6 +31,8 @@ export class SceneRenderCoordinator {
     return this.graph.attachPostProcess(options, () => this.invalidate());
   }
 
+  postProcessPassCount(): number { return this.graph.postProcessPassCount(); }
+
   async retire(): Promise<void> {
     this.dispose();
     await this.graph.retire();
@@ -39,6 +41,7 @@ export class SceneRenderCoordinator {
   invalidate(): void {
     this.generation += 1;
     this.failure = undefined;
+    this.graph.invalidate();
   }
 
   /** No drawing: a resize or camera change restarts preparation within one deadline. */

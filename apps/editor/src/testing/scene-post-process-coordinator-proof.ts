@@ -67,6 +67,9 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
     const pixel = Array.from(new Uint8Array(bytes.buffer, bytes.byteOffset, 4));
     if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
       [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
+    const expectedCount = name === "empty" ? 0 : name === "depth" ? 1 : 2;
+    if (renderer.postProcessPassCount() !== expectedCount)
+      throw new Error(`${name}: incorrect active post-process count ${renderer.postProcessPassCount()}`);
     captures.push({ name, path: result.path, pixel,
       reservedBytes: managedLightingReservations(engine).reservedBytes });
   };
@@ -76,6 +79,7 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
       { id: "first", materialGuid: "gain", enabled: true, order: 0, parameters: { Gain: { kind: "float", value: 0.25 } } },
       { id: "second", materialGuid: "gain", enabled: true, order: 1, parameters: { Gain: { kind: "float", value: 0.75 } } },
     ]);
+    if (renderer.postProcessPassCount() !== 0) throw new Error("Unacquired effects reported active");
     const pending = draw();
     if (pending.rendered || pending.readyForPresentation) throw new Error("Pending graph drew an unprocessed scene");
     await capture("duplicates");
@@ -88,6 +92,7 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
     scene.unfreezeActiveMeshes();
     await capture("graph-return");
     configure([]);
+    if (scene.objectRenderers.length) throw new Error("Disabled stack retained old graph tasks until another frame");
     await capture("empty");
     const plane = MeshBuilder.CreatePlane("Depth receiver", { size: 4 }, scene);
     plane.material = new PBRMaterial("Native surface", scene);

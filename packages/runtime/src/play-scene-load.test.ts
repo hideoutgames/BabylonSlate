@@ -628,11 +628,13 @@ describe("p7-play-scene-load", () => {
     await runtime.realizePlayWorld();
 
     const possess = commands.filter((c) => c.type === "possessCamera");
-    expect(possess).toHaveLength(1);
+    // The authored camera prepares the first frame before Begin Play can run.
+    // Once the owner is ready, the script's explicit choice takes precedence.
+    expect(possess).toHaveLength(2);
     const heroSlot = commands.find(
       (c) => c.type === "spawn" && (c as { actorGuid: string }).actorGuid === "hero",
     ) as { slotId: number } | undefined;
-    expect((possess[0] as { slotId: number }).slotId).toBe(heroSlot?.slotId);
+    expect((possess.at(-1) as { slotId: number }).slotId).toBe(heroSlot?.slotId);
     runtime.stop();
   });
 

@@ -232,9 +232,16 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
   const prefab = page.getByTestId("prefab-preview-canvas");
   await expect(prefab).toBeVisible();
   await setShading(page, "unlit", "prefab-");
-  await expect
-    .poll(() => greenPixels(prefab), { timeout: 20_000 })
-    .toBeGreaterThan(500);
+  try {
+    await expect
+      .poll(() => greenPixels(prefab), { timeout: 20_000 })
+      .toBeGreaterThan(500);
+  } finally {
+    const diagnostics = await page.evaluate(() => (globalThis as unknown as {
+      __babylonslatePrefabViewportTest?: { diagnostics: () => unknown };
+    }).__babylonslatePrefabViewportTest?.diagnostics());
+    await testInfo.attach("prefab-render-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
+  }
   await prefab.screenshot({ path: testInfo.outputPath("prefab-unlit.png") });
   await setShading(page, "pbr", "prefab-");
   await expect.poll(() => greenPixels(prefab)).toBeGreaterThan(500);
