@@ -99,6 +99,7 @@ describe("explicit clustered light ownership", () => {
       (light) => light instanceof ClusteredLightContainer,
     ) as ClusteredLightContainer;
     expect(owner.status().clustered).toBe(48);
+    const allocatedBytes = owner.status().estimatedBytes;
     expect(scene.lights).toEqual([container]);
     expect(mesh.lightSources).toEqual([container]);
     expect(lights[0]!.range).toBe(12);
@@ -108,6 +109,7 @@ describe("explicit clustered light ownership", () => {
     lights[1]!.intensity = 0;
     syncSceneLighting(scene);
     expect(owner.status().clustered).toBe(46);
+    expect(owner.status().estimatedBytes).toBe(allocatedBytes);
     expect(container.lights).not.toContain(lights[0]);
     expect(container.lights).not.toContain(lights[1]);
     expect(lights[0]!.isEnabled()).toBe(false);
@@ -329,22 +331,23 @@ describe("explicit clustered light ownership", () => {
     expect(owner.limits().join()).toContain("perspective camera");
     owner.dispose();
   });
-  it("releases departed registry observers and rolls back a failing smaller batch allocation", async () => {
+
+  it("releases departed registry observers and rolls back a failing larger batch allocation", async () => {
     const { engine, scene, lights } = fixture();
-    const observerCount = lights[47]!.onDisposeObservable.observers.length;
+    const observerCount = lights[1]!.onDisposeObservable.observers.length;
     const wrappers = engine._renderTargetWrapperCache.slice();
-    const owner = new ClusteredSceneLights(scene, lights);
+    const owner = new ClusteredSceneLights(scene, lights.slice(0, 2));
+    owner.setLights(lights.slice(0, 1));
+    // Observable.remove marks synchronously and removes its entry next task.
+    await vi.waitFor(() => expect(lights[1]!.onDisposeObservable.observers).toHaveLength(observerCount));
     const createTarget = engine.createRenderTargetTexture.bind(engine);
     vi.spyOn(engine, "createRenderTargetTexture").mockImplementationOnce((...args) => {
       createTarget(...args);
-      throw new Error("Smaller mask allocation rejected");
+      throw new Error("Larger mask allocation rejected");
     });
-    owner.setLights(lights.slice(0, 2));
-    // Observable.remove marks synchronously and removes its public entry on
-    // the next task; wait for that native removal before checking retention.
-    await vi.waitFor(() => expect(lights[47]!.onDisposeObservable.observers).toHaveLength(observerCount));
+    owner.setLights(lights);
     expect(owner.status().clustered).toBe(0);
-    expect(owner.limits().join()).toContain("Smaller mask allocation rejected");
+    expect(owner.limits().join()).toContain("Larger mask allocation rejected");
     expect(engine._renderTargetWrapperCache).toEqual(wrappers);
     expect(scene.textures.some((texture) => texture.name === "TileMaskTexture")).toBe(false);
     expect(lights.every((light) => !light.isDisposed() && scene.lights.includes(light))).toBe(true);

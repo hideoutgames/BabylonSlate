@@ -216,7 +216,7 @@ export class ClusteredSceneLights {
           }
         }
         const batches = Math.ceil(selected.size / capability.batchSize);
-        if (batches !== this.allocatedBatches) {
+        if (batches > this.allocatedBatches) {
           const fail = beginClusteredAllocation(this.scene);
           try {
             container._updateBatches(this.scene.activeCamera);
@@ -231,9 +231,8 @@ export class ClusteredSceneLights {
         );
       }
       const clustered = this.container?.lights.length ?? 0;
-      const batches = clustered
-        ? Math.ceil(clustered / capability.batchSize)
-        : 0;
+      // Babylon retains its high-water allocation when membership shrinks.
+      const batches = this.container ? this.allocatedBatches : 0;
       this.statusValue = {
         clustered,
         conventional: this.registry.length - clustered,
