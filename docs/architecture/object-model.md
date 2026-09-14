@@ -40,6 +40,8 @@ Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable ar
 
 `WorldOptions.canTickScene` can suspend actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance continues ticking. It is rechecked after Game Instance and between actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` exposes the same unspawned single-actor construction used by the synchronous scene helpers.
 
+`WorldOptions.canTickActor` adds an independent owner gate for world actors and each SceneLayer. The World rechecks it between actor and component callbacks, so a newly blocked owner cannot continue the same tick while another ready layer remains active. It does not defer structural spawning or replace the driver's separate physics and authored creation-callback readiness policy.
+
 ## Destroy / spawn during tick
 
 Mid-tick `destroy` and `spawn` enqueue work. Deferred queues flush after the current phase (or end of tick) so destroying one actor never skips a sibling in the same phase.
