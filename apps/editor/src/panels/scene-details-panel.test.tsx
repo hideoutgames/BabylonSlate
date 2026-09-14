@@ -707,7 +707,7 @@ describe("SceneDetailsPanel authoring", () => {
       { id: "first-tint", materialGuid: "pp-blur", enabled: true },
       { id: "disabled-tint", materialGuid: "pp-blur", enabled: false },
     ];
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const inputs = () => screen.getAllByRole("textbox", { name: "Entry ID" }) as HTMLInputElement[];
     expect(inputs().map((input) => input.value)).toEqual(["first-tint", "disabled-tint"]);
     const first = inputs()[0]!;
@@ -719,6 +719,8 @@ describe("SceneDetailsPanel authoring", () => {
     fireEvent.blur(first);
     expect(harness.applySceneChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("scene-post-process-stack-1-move-up"));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(inputs().map((input) => input.value)).toEqual(["disabled-tint", "first-tint"]);
   });
 
