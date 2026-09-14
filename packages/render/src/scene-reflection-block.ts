@@ -1,8 +1,8 @@
 import {
   NodeMaterialBlockConnectionPointTypes,
   ReflectionBlock,
-  type NodeMaterialBuildState,
 } from "@babylonjs/core";
+import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 
 /** Keep optional scene IBL bindable when a graph builds before asset collection. */
