@@ -40,6 +40,24 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     };
   }
 
+  private readonly textureDependencies = new Map<
+    string,
+    readonly FrameGraphTextureHandle[]
+  >();
+
+  setOwnedTextureDependencies(
+    owner: "shadows" | "clustered",
+    handles: readonly FrameGraphTextureHandle[],
+  ): void {
+    const previous = this.textureDependencies.get(owner);
+    if (
+      previous?.length === handles.length &&
+      handles.every((handle, index) => handle === previous[index])
+    )
+      return;
+    this.textureDependencies.set(owner, [...handles]);
+    this.dependencies = new Set([...this.textureDependencies.values()].flat());
+  }
   private boundCamera: Camera | undefined;
   private boundShadows: Array<{
     generator: ShadowGenerator;
@@ -197,7 +215,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
         );
       });
       this.changedDuringFrame ||= this.recorded;
-      this.objects.dependencies = new Set(
+      this.objects.setOwnedTextureDependencies(
+        "shadows",
         this.borrowed.map((entry) => entry.handle),
       );
     }
