@@ -123,6 +123,25 @@ function installRegistry(assets: IndexedAsset[], folders: string[] = []) {
   };
 }
 
+/** jsdom has no PointerEvent; preserve the fields used by row gestures. */
+function tapTreeRow(row: Element, pointerType: "mouse" | "touch" = "mouse") {
+  for (const type of ["pointerdown", "pointerup"]) {
+    const event = new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 8,
+      clientY: 8,
+    });
+    Object.defineProperties(event, {
+      pointerId: { value: 1 },
+      pointerType: { value: pointerType },
+      isPrimary: { value: true },
+    });
+    fireEvent(row, event);
+  }
+}
+
 const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   "clientWidth",
@@ -372,8 +391,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(nested.querySelector("svg.lucide-folder")).not.toBeNull();
     expect(nested.querySelector("svg.lucide-star")).toBeNull();
 
-    fireEvent.pointerDown(base, { pointerId: 1, pointerType: "mouse", button: 0 });
-    fireEvent.pointerUp(base, { pointerId: 1, pointerType: "mouse", button: 0 });
+    tapTreeRow(base);
     const tile = screen.getByTestId("content-folder-plugins/tools/assets/Nested");
     expect(tile.querySelector("svg.lucide-folder")).not.toBeNull();
     expect(tile.querySelector("svg.lucide-star")).toBeNull();
@@ -412,8 +430,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-1.babasset"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy to Folder…" }));
     const destination = within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Characters");
-    fireEvent.pointerDown(destination, { clientX: 8, clientY: 8 });
-    fireEvent.pointerUp(destination, { clientX: 8, clientY: 8 });
+    tapTreeRow(destination);
     fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
     expect(await screen.findByText(/Storage busy/)).toBeTruthy();
     fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
@@ -432,8 +449,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Move…" }));
     const destination = within(screen.getByTestId("content-browser-move-dialog")).getByTestId("tree-row-assets/Characters");
-    fireEvent.pointerDown(destination, { clientX: 8, clientY: 8 });
-    fireEvent.pointerUp(destination, { clientX: 8, clientY: 8 });
+    tapTreeRow(destination);
     fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
     expect(await screen.findByText("Destination is locked")).toBeTruthy();
     expect(screen.getByTestId("content-browser-move-destination").textContent).toContain("assets/Characters");
@@ -776,16 +792,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.click(screen.getByRole("button", { name: "Browse Folders" }));
     expect(screen.getByRole("dialog", { name: "Folders" })).toBeTruthy();
     const folder = screen.getByTestId("tree-row-assets/Textures");
-    fireEvent.pointerDown(folder, {
-      pointerId: 1,
-      pointerType: "touch",
-      button: 0,
-    });
-    fireEvent.pointerUp(folder, {
-      pointerId: 1,
-      pointerType: "touch",
-      button: 0,
-    });
+    tapTreeRow(folder, "touch");
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Folders" })).toBeNull();

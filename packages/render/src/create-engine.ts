@@ -528,11 +528,12 @@ export interface EditorTools {
   setSelectedActors: (actorIds: string[]) => void;
   /** Pure collision query; the caller commits the resulting authored transforms. */
   dropSelectedActors: (actorIds: readonly string[], maxDistance?: number) => EditorDropTransform[];
-  /** Frustum / light debug + 1 Hz camera preview for the current selection. */
+  /** Frustum / light / audio debug + 1 Hz camera preview for the current selection. */
   syncSelectionDebug: (options: {
     sceneData: SerializedScene | null;
     selectedActorIds: readonly string[];
     selectedComponentIds?: readonly string[];
+    audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
   }) => void;
   setPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
   frameActor: (actorId: string) => void;

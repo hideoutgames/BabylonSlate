@@ -143,7 +143,7 @@ export function DebugInspectDialog({
         initialFocus={bodyRef}
         className="flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
       >
-        <DialogHeader className="shrink-0 border-b px-4 py-3 pr-14">
+        <DialogHeader className="shrink-0 flex-row items-center justify-between gap-2 border-b px-3 py-3 pr-14">
           <DialogTitle>Inspector</DialogTitle>
           <p
             className="text-sm text-muted-foreground"
@@ -153,9 +153,9 @@ export function DebugInspectDialog({
             <SelectableText>Tick {snapshot.tickIndex}</SelectableText>
           </p>
         </DialogHeader>
-        <div ref={bodyRef} tabIndex={-1} className="flex min-h-0 flex-1 outline-none">
-          <div className="flex w-[min(40%,20rem)] shrink-0 flex-col border-r">
-            <div className="shrink-0 border-b px-4 py-3">
+        <div ref={bodyRef} tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none sm:flex-row">
+          <div className="flex h-40 min-h-0 min-w-0 shrink-0 flex-col border-b sm:h-auto sm:w-[min(32%,18rem)] sm:border-r sm:border-b-0">
+            <div className="shrink-0 border-b p-2">
               <SearchInput
                 value={search}
                 onChange={setSearch}
@@ -186,9 +186,9 @@ export function DebugInspectDialog({
               />
             </div>
           </div>
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0 min-w-0 flex-1">
             {selected ? (
-              <div className="flex flex-col gap-4 p-4" data-testid="debug-inspect-details">
+              <div className="flex min-w-0 flex-col gap-3 p-2" data-testid="debug-inspect-details">
                 {onExecute && selected.kind === "actor" ? (
                   <div className="flex flex-wrap gap-2">
                     {selectedHasCamera ? (
@@ -204,16 +204,22 @@ export function DebugInspectDialog({
                   </div>
                 ) : null}
                 <PropertyGrid
+                  title="Identity"
+                  readOnly
                   orientation="horizontal"
                   rows={playInspectIdentityRows(selected)}
                 />
                 {selected.transform ? (
                   <PropertyGrid
+                    title="Transform"
+                    readOnly
                     orientation="horizontal"
                     rows={playInspectTransformRows(selected.transform)}
                   />
                 ) : null}
                 <PropertyGrid
+                  title="Variables"
+                  readOnly
                   orientation="horizontal"
                   rows={playInspectVariableRows(
                     selected.variables,
