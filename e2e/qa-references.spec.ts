@@ -14,7 +14,7 @@ import {
   selectContentBrowserAssetsFolder,
 } from "./open-test-project";
 
-test("H9: a long References list keeps Close inside the viewport", async ({ page }) => {
+test("H9: a large References graph focuses its asset and keeps Close inside the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await openTestProject(page);
   await openContentBrowser(page);
@@ -30,7 +30,7 @@ test("H9: a long References list keeps Close inside the viewport", async ({ page
       name: `Referrer ${index} ${"Long Asset Name ".repeat(8)}`,
       version: 1,
       payload: { ...createDefaultScene(), actors: [createActor(`actor-${index}`, "Placed Class", { classId: "Mannequin" })] },
-    }, { dependencies: [guid!] })),
+    }, { dependencies: index === 0 ? [guid!, "qa-referrer-0", "qa-missing"] : [guid!] })),
   })));
   await page.evaluate(async (assets) => {
     const root = await navigator.storage.getDirectory();
@@ -50,7 +50,29 @@ test("H9: a long References list keeps Close inside the viewport", async ({ page
   await target.click({ button: "right" });
   await page.getByTestId("context-menu-item-show-references").click();
   const dialog = page.getByTestId("content-browser-refs-dialog");
-  await expect(dialog).toContainText("Referrer 23");
+  const rootNode = dialog.getByTestId(`asset-reference-node-${guid}`);
+  await expect(rootNode).toHaveAttribute("data-selected", "true");
+  await expect(dialog).toContainText("References");
+  await expect(dialog.getByTestId("graph-add-node")).toHaveCount(0);
+  await expect(async () => {
+    const node = await rootNode.boundingBox();
+    const canvas = await dialog.getByTestId("asset-reference-canvas").boundingBox();
+    expect(node).not.toBeNull();
+    expect(canvas).not.toBeNull();
+    expect(Math.abs(node!.x + node!.width / 2 - canvas!.x - canvas!.width / 2)).toBeLessThan(12);
+    expect(Math.abs(node!.y + node!.height / 2 - canvas!.y - canvas!.height / 2)).toBeLessThan(12);
+  }).toPass();
+  const beforeDrag = await rootNode.boundingBox();
+  const nodePosition = await rootNode.locator("..").getAttribute("style");
+  await rootNode.hover();
+  await page.mouse.down();
+  await page.mouse.move(beforeDrag!.x + 160, beforeDrag!.y + 80, { steps: 8 });
+  await page.mouse.up();
+  await expect(rootNode.locator("..")).toHaveAttribute("style", nodePosition!);
+  await dialog.getByRole("button", { name: "Focus Asset", exact: true }).click();
+  await page.keyboard.press("Delete");
+  await expect(rootNode).toBeVisible();
+  await test.info().attach("reference-graph-desktop", { body: await dialog.screenshot(), contentType: "image/png" });
   const close = dialog.getByRole("button", { name: "Close", exact: true });
   for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
@@ -82,6 +104,24 @@ test("H9: a long References list keeps Close inside the viewport", async ({ page
     await test.info().attach(`delete-references-${viewport.width}`, { body: await deletion.screenshot(), contentType: "image/png" });
   }
   await page.getByTestId("content-browser-delete-cancel").click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByTestId("content-browser-search").fill("Referrer 0");
+  const referrerTile = page.locator('[data-asset-path="assets/referrer-0.scene.babasset"]');
+  await referrerTile.click();
+  await referrerTile.click({ button: "right" });
+  await page.getByTestId("context-menu-item-show-references").click();
+  const selfNode = dialog.getByTestId("asset-reference-node-qa-referrer-0");
+  await expect(selfNode).toHaveAttribute("data-selected", "true");
+  await expect(dialog.getByTestId("asset-reference-node-qa-missing")).toContainText("Missing Asset");
+  const loop = dialog.locator(".react-flow__edge-asset-reference-self .react-flow__edge-path");
+  await expect(async () => {
+    const nodeBounds = await selfNode.boundingBox();
+    const loopBounds = await loop.boundingBox();
+    expect(loopBounds!.y).toBeLessThan(nodeBounds!.y);
+    expect(loopBounds!.width).toBeGreaterThan(nodeBounds!.width);
+  }).toPass();
+  await test.info().attach("reference-self-loop", { body: await dialog.screenshot(), contentType: "image/png" });
+  await close.click();
 });
 
 test("H17: referenced Class deletion confirms twice and clears open scene usages", async ({

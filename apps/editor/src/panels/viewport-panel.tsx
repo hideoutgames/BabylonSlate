@@ -40,6 +40,7 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
+import { useEditorAudioDebug } from "../lib/use-editor-audio-debug";
 import {
   applyLiveGizmoToActor,
   takeGizmoDragScene,
@@ -62,6 +63,7 @@ import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
   sceneViewportRenderSettingsKey,
+  sceneViewportRenderSettings,
   waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
@@ -228,12 +230,21 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  const audioLibrary = useEditorAudioDebug(Boolean(scene?.actors.some((actor) =>
+    selectedActorIds.includes(actor.id) &&
+    actor.components.some((component) => component.classId === "AudioComponent"),
+  )));
   const requestedRenderSettingsKey = sceneViewportRenderSettingsKey(
     projectDocument?.settings.render,
     scene?.settings.celShading,
     scene?.settings.shadowOverrides,
     scene?.settings,
+    scene?.settings.environmentLighting,
+    scene?.settings.environmentTextureGuid,
   );
+  const environmentSettingsKey = JSON.stringify(projectDocument?.settings.render.environmentLighting ?? {});
+  const environmentSettingsRef = useRef(projectDocument?.settings.render.environmentLighting);
+  environmentSettingsRef.current = projectDocument?.settings.render.environmentLighting;
   const [renderSettingsKey, setRenderSettingsKey] = useState(requestedRenderSettingsKey);
   // Shading changes replace compiled material ownership. Other rendering settings
   // are reconciled by the existing scene quality, lighting and material controllers.
@@ -242,6 +253,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const timer = window.setTimeout(() => setRenderSettingsKey(requestedRenderSettingsKey), 150);
     return () => window.clearTimeout(timer);
   }, [requestedRenderSettingsKey]);
+
+  useEffect(() => {
+    if (requestedRenderSettingsKey !== renderSettingsKey || appliedRenderSettingsRef.current !== renderSettingsKey) return;
+    engineRef.current?.setRenderSettings(sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current));
+  }, [environmentSettingsKey, requestedRenderSettingsKey, renderSettingsKey, engineEpoch]);
 
   useEffect(() => {
     sceneRef.current = scene;
@@ -368,7 +384,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
         const handle = createEngine(canvas, {
           editor: true,
-          renderSettings: JSON.parse(renderSettingsKey),
+          renderSettings: sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current),
           editorViewportId: dropViewportId,
           sharedEngine,
           viewportMode,
@@ -580,7 +596,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       const realize = async () => {
         if (!isCurrent()) return;
         if (appliedRenderSettingsRef.current !== renderSettingsKey) {
-          handle.setRenderSettings(JSON.parse(renderSettingsKey));
+          handle.setRenderSettings(sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current));
           appliedRenderSettingsRef.current = renderSettingsKey;
         }
         // Saved Material refreshes must not realize or re-dirty scene structure.
@@ -779,8 +795,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.syncSelectionDebug({
       sceneData: scene,
       selectedActorIds,
+      audioLibrary,
     });
-  }, [scene, selectedActorIds, engineEpoch]);
+  }, [scene, selectedActorIds, engineEpoch, audioLibrary]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
@@ -872,6 +889,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         postProcessPassCount: () => number | null;
         renderingBaseline: () => Record<string, unknown> | null;
         environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
+        environmentLightingProof: () => Promise<Record<string, unknown>>;
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
       };
     };
@@ -882,7 +900,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     });
     const measurements = new Set<() => void>();
 
-    host.__babylonslateViewportTest = {
+      host.__babylonslateViewportTest = {
+      environmentLightingProof: async () => {
+        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Environment proof requires a test build.");
+        return (await import("../lib/environment-lighting-proof")).runEnvironmentLightingProof();
+      },
       environmentTextureSamples: async () => {
         const handle = engineRef.current;
         const texture = handle?.scene.environmentTexture;

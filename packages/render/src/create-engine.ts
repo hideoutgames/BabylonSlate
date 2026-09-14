@@ -1,5 +1,6 @@
 import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
+import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
 import {
   Engine,
@@ -527,11 +528,12 @@ export interface EditorTools {
   setSelectedActors: (actorIds: string[]) => void;
   /** Pure collision query; the caller commits the resulting authored transforms. */
   dropSelectedActors: (actorIds: readonly string[], maxDistance?: number) => EditorDropTransform[];
-  /** Frustum / light debug + 1 Hz camera preview for the current selection. */
+  /** Frustum / light / audio debug + 1 Hz camera preview for the current selection. */
   syncSelectionDebug: (options: {
     sceneData: SerializedScene | null;
     selectedActorIds: readonly string[];
     selectedComponentIds?: readonly string[];
+    audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
   }) => void;
   setPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
   frameActor: (actorId: string) => void;
@@ -2359,6 +2361,7 @@ function materialTextureGuidMap(
 }
 
 function sceneNodeMaterialsSampleReady(scene: Scene): boolean {
+  if (!isEnvironmentLightingReady(scene)) return false;
   for (const material of scene.materials) {
     if (material instanceof NodeMaterial && !nodeMaterialTexturesSampleReady(material)) return false;
     if (material.getActiveTextures().some((texture) => !texture.isReady())) return false;

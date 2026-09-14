@@ -188,15 +188,24 @@ describe("GraphEditor proximity dragging", () => {
     expect(graph.emitted.at(-1)?.edges ?? document.edges).toHaveLength(1);
   });
 
-  it("breaks a shaken node's links only on release", () => {
+  it("breaks links at the shake threshold and keeps them broken while dragging", () => {
     const document = graphWithFreePins();
     document.edges = [{ id: "link", source: "source", sourceHandle: "value", target: "target", targetHandle: "input" }];
     const graph = renderDragGraph(document);
     graph.start();
-    for (const x of [30, -30, 30, -30]) graph.move({ x, y: 0 });
+    for (const x of [30, -30, 30]) graph.move({ x, y: 0 });
     expect(graph.emitted).toEqual([]);
-    graph.stop();
+    graph.move({ x: -30, y: 0 });
+    expect(graph.emitted).toHaveLength(1);
+    expect(graph.emitted[0]?.edges).toEqual([]);
+
+    // Keep holding the node and move its now-free pins into assistance range.
+    graph.move();
+    expect(graph.previews()).toHaveLength(0);
+    graph.stop({ x: 140, y: 10 });
     expect(graph.emitted.at(-1)?.edges).toEqual([]);
+    expect(graph.emitted.at(-1)?.nodes.find((node) => node.id === "source")?.position)
+      .toEqual({ x: 140, y: 10 });
   });
 
   it("keeps discovering nearby pins after the host refreshes a drag that started out of range", () => {

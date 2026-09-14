@@ -137,7 +137,10 @@ vi.mock("../context/document-context", () => ({
       getByGuid: (guid: string) =>
         guid === "mesh-1"
           ? {
-              header: { guid: "mesh-1", name: "Rock", type: "Mesh" },
+              header: {
+                guid: "mesh-1", name: "Rock", type: "Mesh",
+                payload: { materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }] },
+              },
               path: "assets/Rock.mesh.babasset",
             }
           : undefined,
@@ -344,14 +347,49 @@ describe("shared actor Details", () => {
 });
 
 describe("SceneDetailsPanel authoring", () => {
+  it("shows inherited model materials and lets None persist and reset through the Material picker", async () => {
+    harness.selectedActorIds = ["actor-1"];
+    const mesh = createMeshComponent("mesh", "box");
+    mesh.properties.assetGuid = "mesh-1";
+    scene().actors[0]!.components = [mesh];
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const materialButton = () => screen.getByTestId("property-actor-1-mesh-materialGuid");
+    expect(materialButton().textContent).toContain("Rock");
+    fireEvent.click(materialButton());
+    fireEvent.click(await screen.findByTestId("search-item-__none__"));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(materialButton().textContent).toContain("None");
+    expect(scene().actors[0]!.components[0]!.properties).toMatchObject({
+      materialGuid: null, materialSource: "override",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset Material" }));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(materialButton().textContent).toContain("Rock");
+    expect(scene().actors[0]!.components[0]!.properties).toMatchObject({
+      materialGuid: null,
+    });
+    expect(scene().actors[0]!.components[0]!.properties).not.toHaveProperty("materialSource");
+  });
+
   it("starts rendering override categories closed and restores manual collapse state after search", () => {
     harness.render.mode = "cel";
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const shadows = () => screen.getByRole("button", { name: "Shadows" });
     const cel = () => screen.getByRole("button", { name: "CEL Shading" });
+    const environment = () => screen.getByRole("button", { name: "Environment Lighting" });
     const search = (value: string) => fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value } });
     expect(shadows().getAttribute("aria-expanded")).toBe("false");
     expect(cel().getAttribute("aria-expanded")).toBe("false");
+    expect(environment().getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
+    search("environment rotation");
+    expect(environment().getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Environment Rotation")).toBeTruthy();
+    expect(screen.getByTestId("property-scene-environment-texture")).toBeTruthy();
+    search("");
+    expect(environment().getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByLabelText("Shadow Distance")).toBeNull();
     search("normal bias");
     expect(shadows().getAttribute("aria-expanded")).toBe("true");

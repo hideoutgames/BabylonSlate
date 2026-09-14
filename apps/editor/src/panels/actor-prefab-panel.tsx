@@ -10,6 +10,7 @@ import {
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
+import { Button } from "@babylonslate/ui/components/button";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useGraphEditing } from "../context/graph-editing-context";
@@ -147,13 +148,16 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
       data-testid="actor-prefab-panel"
       toolbar={
         <>
-          <IconActionButton
-            label="Add component"
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-coarse:min-h-11"
             onClick={() => setAddOpen(true)}
             data-testid="prefab-add-component"
           >
-            <PlusIcon />
-          </IconActionButton>
+            <PlusIcon data-icon="inline-start" />
+            Add Component
+          </Button>
           <IconActionButton
             label="Remove component"
             disabled={!canRemove}

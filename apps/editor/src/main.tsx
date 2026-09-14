@@ -13,6 +13,51 @@ initializeCapacitorAudioLifecycle();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("environmentWebgpuProof")
+) {
+  void import("./lib/environment-lighting-proof").then(
+    ({ runEnvironmentIrradianceWebGpuProof }) => {
+      Object.assign(window, {
+        __babylonslateEnvironmentWebGpuProof:
+          runEnvironmentIrradianceWebGpuProof,
+      });
+    },
+  );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("framegraphShadowProof")
+) {
+  void import("./testing/framegraph-shadow-proof").then(
+    ({ runFrameGraphShadowProof }) => {
+      Object.assign(window, {
+        __babylonslateFrameGraphShadowProof: runFrameGraphShadowProof,
+      });
+    },
+  );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("framegraphForwardProof")
+) {
+  void import("./testing/framegraph-forward-proof").then(
+    ({ runFrameGraphForwardProof }) => {
+      Object.assign(window, {
+        __babylonslateFrameGraphForwardProof: runFrameGraphForwardProof,
+      });
+    },
+  );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("framegraphProof")
+) {
+  void import("./testing/framegraph-post-process-proof").then(
+    ({ runFrameGraphPostProcessProof }) => {
+      Object.assign(window, {
+        __babylonslateFrameGraphProof: runFrameGraphPostProcessProof,
+      });
+    },
+  );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("webgpuProof")
 ) {
   void import("./testing/webgpu-proof").then(({ runWebGpuProof }) => {
