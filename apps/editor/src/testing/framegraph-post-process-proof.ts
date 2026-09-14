@@ -420,6 +420,18 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
         throw new Error("Duplicate pass parameter was not independently bound");
     }
     await capture("duplicate-entry-parameters");
+    if (!stack!.tasks[0]!.resetParameter("Gain") || !legacy!.resetParameter("entry-0", "Gain"))
+      throw new Error("First entry reset failed");
+    await capture("duplicate-entry-reset-first");
+    if (!stack!.tasks[1]!.resetParameter("Gain") || !legacy!.resetParameter("entry-1", "Gain"))
+      throw new Error("Second entry reset failed");
+    await capture("duplicate-entry-reset-both");
+    await rebuild([gain]);
+    if (!stack!.tasks[0]!.setParameter("Gain", { kind: "float", value: 0.1 }) ||
+      !legacy!.setParameter("entry-0", "Gain", { kind: "float", value: 0.1 }) ||
+      !stack!.tasks[0]!.resetParameter("Gain") || !legacy!.resetParameter("entry-0", "Gain"))
+      throw new Error("Compiled default reset failed");
+    await capture("compiled-default-reset");
     stack!.dispose();
     legacy!.dispose();
     graph!.dispose();
