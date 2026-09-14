@@ -3,6 +3,7 @@ import {
   createActor,
   createDefaultScene,
   createDefaultSceneLayer,
+  createMeshComponent,
   type MaterialParameterCatalog,
 } from "@babylonslate/core";
 import {
@@ -40,6 +41,7 @@ function documents() {
       enabled: true,
       parameters: {
         Gain: { kind: "float", value: 0.25 },
+        Tint: { kind: "color", value: [0.3, 0.4, 0.5, 0.6] },
         Image: { kind: "texture", textureAssetGuid: "saved-image" },
       },
     },
@@ -221,6 +223,8 @@ describe("Post Process owner reads and resets", () => {
           ctx.self.setVariable("default", ctx.getMaterialTextureParameter(second, "Image"));
           ctx.self.setVariable("wrongType", ctx.getMaterialFloatParameter(first, "Tint"));
           ctx.self.setVariable("wrongReset", ctx.resetMaterialFloatParameter(first, "Tint"));
+          ctx.self.setVariable("colorReset", ctx.resetMaterialColorParameter(first, "Tint"));
+          ctx.self.setVariable("savedColor", ctx.getMaterialColorParameter(first, "Tint"));
         }`,
         },
       ]);
@@ -255,7 +259,12 @@ describe("Post Process owner reads and resets", () => {
         value: 0,
       });
       expect(actor.getVariable("wrongReset")).toBe(false);
-      expect(writes(commands)).toHaveLength(5);
+      expect(actor.getVariable("colorReset")).toBe(true);
+      expect(actor.getVariable("savedColor")).toEqual({
+        found: true,
+        value: { x: 0.3, y: 0.4, z: 0.5, w: 0.6 },
+      });
+      expect(writes(commands)).toHaveLength(6);
       expect(
         commands.filter((command) => command.type === "diagnostic"),
       ).toEqual([]);
@@ -418,3 +427,66 @@ it.each([false, true])(
     }
   },
 );
+
+it("retains the mesh MaterialObject API for catalog-backed typed reads and compiled-default reset", async () => {
+  const scene = createDefaultScene();
+  const mesh = createMeshComponent("mesh", "box");
+  mesh.properties.materialGuid = "surface";
+  scene.actors = [
+    createActor("hero", "Hero", { classId: "Hero", components: [mesh] }),
+  ];
+  const commands: CommandMessage[] = [];
+  const runtime = createInProcessRuntime({
+    seed: 1,
+    preferSoftwarePhysics: true,
+    playScene: scene,
+    materialParameterCatalog: {
+      surface: {
+        domain: "surface",
+        planHash: "surface-plan",
+        parameters: { Gain: { kind: "float", value: 0.5 } },
+      },
+    },
+    onCommand: (command) => commands.push(command),
+  });
+  try {
+    await runtime.loadScripts([
+      {
+        assetGuid: "hero",
+        classId: "Hero",
+        parentClassId: "Actor",
+        anchors: [],
+        entryPoints: [
+          { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+        ],
+        source: `export function onBeginPlay(ctx) {
+        const component = ctx.getComponentById(ctx.self, "mesh");
+        const material = ctx.getVariableFrom(component, "materialObject");
+        ctx.setMaterialFloatParameter(material, "Gain", 0.2);
+        ctx.self.setVariable("read", ctx.getMaterialFloatParameter(material, "Gain"));
+        ctx.self.setVariable("reset", ctx.resetMaterialFloatParameter(material, "Gain"));
+        ctx.self.setVariable("default", ctx.getMaterialFloatParameter(material, "Gain"));
+      }`,
+      },
+    ]);
+    runtime.realizePlayWorld();
+    const actor = runtime.getWorld().getActors()[0]!;
+    expect(actor.getVariable("read")).toEqual({ found: true, value: 0.2 });
+    expect(actor.getVariable("reset")).toBe(true);
+    expect(actor.getVariable("default")).toEqual({ found: true, value: 0.5 });
+    expect(
+      commands
+        .filter((command) => command.type === "setMaterialParameter")
+        .map((command) => [command.componentId, command.parameter]),
+    ).toEqual([
+      ["mesh", { kind: "float", value: 0.2 }],
+      ["mesh", { kind: "float", value: 0.5 }],
+    ]);
+    expect(commands.filter((command) => command.type === "diagnostic")).toEqual(
+      [],
+    );
+    expect(mesh.properties.materialGuid).toBe("surface");
+  } finally {
+    runtime.stop();
+  }
+});
