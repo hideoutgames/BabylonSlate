@@ -85,7 +85,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
         tilesets: [],
         tilemaps: [],
       })),
-      collectPlayTextureBytes: vi.fn(async () => new Map()),
+      collectPlayTextureBytes: vi.fn(async (_sprites?: unknown, _tilesets?: unknown, _guids?: readonly string[]) => new Map<string, Uint8Array>()),
       collectPlayTexturePixelSizes: vi.fn(() => new Map()),
       collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
       collectPlayFontMsdfPair: vi.fn(async () => new Map()),
@@ -368,7 +368,7 @@ describe("ViewportPanel engine", () => {
     }];
     const maskBytes = new Uint8Array([1, 2, 3, 4]);
     documents.collectPlayTextureBytes.mockImplementationOnce(async (_sprites, _tilesets, guids) =>
-      new Map(guids.includes("entry-mask") ? [["entry-mask", maskBytes]] : []));
+      new Map(guids?.includes("entry-mask") ? [["entry-mask", maskBytes]] : []));
     documents.openDocuments = [{
       id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
       content: scene,
@@ -383,8 +383,8 @@ describe("ViewportPanel engine", () => {
     expect(createEngineMock).not.toHaveBeenCalled();
     expect(handle.loadScene).not.toHaveBeenCalled();
     await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledOnce());
-    expect(handle.setMeshAssets).toHaveBeenCalledWith(expect.objectContaining({
-      textureBytes: new Map([["entry-mask", maskBytes]]),
+    expect(handle.loadSceneAsync).toHaveBeenCalledWith(scene, expect.objectContaining({
+      assets: expect.objectContaining({ textureBytes: new Map([["entry-mask", maskBytes]]) }),
     }));
     expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
     expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
