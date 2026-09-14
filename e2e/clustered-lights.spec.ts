@@ -65,6 +65,10 @@ test("clustered point and spot contributions preserve native and graph PBR and C
     expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
     expect(capture.result, capture.name).toEqual({ path: "frameGraph" });
     expect(capture.readinessDraws, capture.name).toBe(0);
+    expect(
+      Math.abs(capture.positionProbePixel[1]! - 128),
+      capture.name,
+    ).toBeLessThanOrEqual(1);
     const center =
       (Math.floor(capture.height / 2) * capture.width +
         Math.floor(capture.width / 2)) *

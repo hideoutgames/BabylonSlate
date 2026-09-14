@@ -280,9 +280,10 @@ export async function runClusteredLightProof() {
       }
       graph.dispose();
       if (mixing === "strongest") {
-        // A center ray hits a surface equidistant from red/green point lights.
-        // Camera depth reverses their native cluster sort; authored first-light
-        // tie behavior must stay red for both native and compiled CEL surfaces.
+        // Nearly coincident lights keep their contribution difference inside
+        // CEL's existing tie tolerance across the receiver. A CPU center ray is
+        // insufficient: raster interpolation need not hit the equality plane.
+        // Camera depth still reverses their native packing order.
         for (let index = 0; index < lights.length; index++)
           setLight(index, false, 1);
         for (const mesh of scene.meshes) mesh.setEnabled(false);
@@ -291,7 +292,7 @@ export async function runClusteredLightProof() {
           { width: 8, height: 8 },
           scene,
         );
-        const tieLights = [-2, 2].map((x, index) => {
+        const tieLights = [-0.00001, 0.00001].map((x, index) => {
           const light = new PointLight(
             `tie-${index}`,
             new Vector3(x, 3, 0),
@@ -312,7 +313,7 @@ export async function runClusteredLightProof() {
           scene,
           {
             vertexSource: `precision highp float;attribute vec3 position;uniform mat4 world;uniform mat4 viewProjection;varying vec3 probeWorld;void main(){vec4 p=world*vec4(position,1.0);probeWorld=p.xyz;gl_Position=viewProjection*p;}`,
-            fragmentSource: `precision highp float;varying vec3 probeWorld;float strength(vec3 p){vec3 d=p-probeWorld;return normalize(d).y*0.96*max(0.0,1.0-length(d)/12.0);}void main(){float delta=strength(vec3(-2.0,3.0,0.0))-strength(vec3(2.0,3.0,0.0));gl_FragColor=vec4(probeWorld.x*1000.0+0.5,delta*10000.0+0.5,probeWorld.z*1000.0+0.5,1.0);}`,
+            fragmentSource: `precision highp float;varying vec3 probeWorld;float strength(vec3 p){vec3 d=p-probeWorld;return normalize(d).y*0.96*max(0.0,1.0-length(d)/12.0);}void main(){float delta=strength(vec3(-0.00001,3.0,0.0))-strength(vec3(0.00001,3.0,0.0));gl_FragColor=vec4(probeWorld.x*1000.0+0.5,delta*10000.0+0.5,probeWorld.z*1000.0+0.5,1.0);}`,
           },
           { attributes: ["position"], uniforms: ["world", "viewProjection"] },
         );
