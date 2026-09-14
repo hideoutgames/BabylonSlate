@@ -80,7 +80,8 @@ export async function runWebGpuProof() {
           scene,
           name: "Graph",
         });
-        if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+        if (compiled.ok === false)
+          throw new Error(JSON.stringify(compiled.diagnostics));
         const diagnostics = await compiled.ready;
         if (diagnostics.some((entry) => entry.severity === "error"))
           throw new Error(JSON.stringify(diagnostics));
@@ -98,7 +99,10 @@ export async function runWebGpuProof() {
         captures.push({
           backend,
           mode,
-          info: engine.getGlInfo(),
+          info:
+            engine instanceof WebGPUEngine
+              ? engine.getInfo()
+              : engine.getGlInfo(),
           shaderLanguage: compiled.material.shaderLanguage,
           pixels: [
             ...new Uint8Array(
