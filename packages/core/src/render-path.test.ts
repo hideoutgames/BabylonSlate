@@ -150,4 +150,16 @@ describe("rendering pipeline contract", () => {
         }).limits,
       ).toEqual([]);
   });
+
+  it("reports the initialized backend and its fallback reason without rewriting preferences", () => {
+    const requested = { gpuBackend: "webgpu" as const };
+    const active = resolveRenderingPipeline(requested, undefined, undefined, undefined, { gpuBackend: "webgpu" });
+    expect(active.effective.gpuBackend).toBe("webgpu");
+    expect(active.limits).toEqual([]);
+    const fallback = resolveRenderingPipeline(requested, undefined, undefined, undefined,
+      { gpuBackend: "webgl2", reason: "Material uses Custom GLSL." });
+    expect(fallback.requested.gpuBackend).toBe("webgpu");
+    expect(fallback.effective.gpuBackend).toBe("webgl2");
+    expect(fallback.limits).toEqual(["Material uses Custom GLSL."]);
+  });
 });
