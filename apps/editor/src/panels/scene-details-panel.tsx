@@ -23,6 +23,7 @@ import {
   humanizePropertyLabel,
   resolveTypeVisual,
   selectedPickerIdentity,
+  walkAncestry,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -78,7 +79,6 @@ import {
   applyPrefabPropertyDefaults,
   componentPropertyRows,
   gameInstanceClassEntries,
-  subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import {
@@ -171,6 +171,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const [sceneLayerPick, setSceneLayerPick] = useState<"add" | number | null>(
     null,
   );
+  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
@@ -1020,10 +1021,6 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
-            logicClasses: subclassClassEntries(
-              "ComponentLogic",
-              assetRegistry?.list() ?? [],
-            ),
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
           },
@@ -1168,7 +1165,13 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     className={expanded ? undefined : "-rotate-90"}
                   />
                   <TypeVisualIcon
-                    visual={resolveTypeVisual({ classId: component.classId })}
+                    visual={resolveTypeVisual({
+                      classId: component.classId,
+                      ancestry: walkAncestry(
+                        component.classId,
+                        parentOf,
+                      ),
+                    })}
                     data-testid={`component-type-icon-${component.id}`}
                   />
                   <span className="truncate">{title}</span>

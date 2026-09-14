@@ -10,6 +10,8 @@ export type DebugInspectNode = {
   kind: DebugInspectKind;
   label: string;
   classId: string;
+  /** Most-specific class first, resolved by the runtime ClassRegistry. */
+  ancestry?: string[];
   parentId: string | null;
   transform?: ReturnType<typeof serializeTransform>;
   variables: Record<string, unknown>;
@@ -102,6 +104,7 @@ function visitActor(
     kind: "actor",
     label: inspectLabel(actor.variables, actor.classId),
     classId: actor.classId,
+    ancestry: world.classRegistry.ancestry(actor.classId),
     parentId: actorParentId(actor),
     transform: serializeTransform(actor.transform),
     variables,
@@ -114,6 +117,7 @@ function visitActor(
       kind: "component",
       label: inspectLabel(component.variables, component.classId),
       classId: component.classId,
+      ancestry: world.classRegistry.ancestry(component.classId),
       parentId: actor.guid,
       transform: serializeTransform(component.transform),
       variables: componentVariables,
@@ -140,6 +144,7 @@ export function createDebugInspectSnapshot(world: World): DebugInspectSnapshot {
       kind: "gameInstance",
       label: inspectLabel(gi.variables, gi.classId),
       classId: gi.classId,
+      ancestry: world.classRegistry.ancestry(gi.classId),
       parentId: null,
       variables,
       variableTypes: classVariableTypes(world, gi.classId, variables),

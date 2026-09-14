@@ -3,6 +3,13 @@ import { cleanup, render } from "@testing-library/react";
 import {
   ActivityIcon,
   CloudIcon,
+  FileBoxIcon,
+  FileBracesCornerIcon,
+  FileCogIcon,
+  FileIcon,
+  FileSlidersIcon,
+  FileSpreadsheetIcon,
+  FileTerminalIcon,
   FilmIcon,
   Layers2Icon,
   LightbulbIcon,
@@ -162,27 +169,23 @@ describe("resolveTypeVisual", () => {
     expect(objectVisual.icon).not.toBe(actorVisual.icon);
   });
 
-  it("reuses the Object icon for GameInstance, FunctionLibrary, ActorComponent, and BDebugCommand", () => {
-    const objectIcon = resolveTypeVisual({ classId: "BObject" }).icon;
-    expect(resolveTypeVisual({ classId: "GameInstance" }).icon).toBe(objectIcon);
-    expect(resolveTypeVisual({ classId: "FunctionLibrary" }).icon).toBe(
-      objectIcon,
-    );
-    expect(resolveTypeVisual({ classId: "ActorComponent" }).icon).toBe(
-      objectIcon,
-    );
-    expect(resolveTypeVisual({ classId: "BDebugCommand" }).icon).toBe(
-      objectIcon,
-    );
-    expect(resolveTypeVisual({ classId: "EditorUtilityObject" }).icon).toBe(
-      objectIcon,
-    );
-    expect(resolveTypeVisual({ classId: "EditorFunctionLibrary" }).icon).toBe(
-      objectIcon,
-    );
-    expect(engineParentOf("BDebugCommand")).toBe("BObject");
-    expect(engineParentOf("EditorUtilityObject")).toBe("BObject");
-    expect(engineParentOf("EditorFunctionLibrary")).toBe("FunctionLibrary");
+  it.each([
+    ["BObject", FileIcon],
+    ["Actor", FileBoxIcon],
+    ["GameInstance", FileSlidersIcon],
+    ["FunctionLibrary", FileSpreadsheetIcon],
+    ["ActorComponent", FileCogIcon],
+    ["BDebugCommand", FileTerminalIcon],
+    ["EditorUtilityObject", FileBracesCornerIcon],
+    ["EditorFunctionLibrary", FileSpreadsheetIcon],
+  ] as const)("uses the %s class glyph for its user-authored subclasses", (parentClass, icon) => {
+    const visual = resolveTypeVisual({
+      assetType: "Class",
+      classId: "CustomClass",
+      ancestry: ["CustomClass", parentClass, "BObject"],
+    });
+    expect(visual.icon).toBe(icon);
+    expect(visual.colorVar).toBe("var(--asset-animation)");
   });
 
   it("uses Class color and the parent icon for Class assets", () => {
@@ -194,13 +197,14 @@ describe("resolveTypeVisual", () => {
     expect(actorClass.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
   });
 
-  it("walks ancestry so user classes inherit the parent engine icon", () => {
+  it("keeps the Class color and nearest engine icon on attached custom components", () => {
     const mesh = resolveTypeVisual({ classId: "MeshComponent" });
     const userMesh = resolveTypeVisual({
-      assetType: "Class",
+      classId: "MyMesh",
       ancestry: ["MyMesh", "MeshComponent", "ActorComponent", "BObject"],
     });
     expect(userMesh.colorVar).toBe("var(--asset-animation)");
+    expect(mesh.colorVar).toBe("var(--asset-component)");
     expect(userMesh.icon).toBe(mesh.icon);
     expect(userMesh.icon).not.toBe(
       resolveTypeVisual({ classId: "ActorComponent" }).icon,

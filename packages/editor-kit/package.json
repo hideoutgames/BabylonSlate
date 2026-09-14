@@ -15,7 +15,7 @@
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/input": "workspace:*",
     "@babylonslate/ui": "workspace:*",
-    "lucide-react": "^0.487.0",
+    "lucide-react": "^0.552.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
