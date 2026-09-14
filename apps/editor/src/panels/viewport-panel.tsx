@@ -16,6 +16,7 @@ import {
   selectionGizmoRoots,
   syncEditorPlayState,
   type EngineHandle,
+  type EditorSceneLoadOptions,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
@@ -586,15 +587,22 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene", rendering });
     }
     void (async () => {
-      const realize = () => {
+      let collected: EditorSceneLoadOptions | null = null;
+      const realize = async () => {
         if (!isCurrent()) return;
         if (appliedRenderSettingsRef.current !== renderSettingsKey) {
           handle.setRenderSettings(sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current));
           appliedRenderSettingsRef.current = renderSettingsKey;
         }
         // Saved Material refreshes must not realize or re-dirty scene structure.
-        if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
-        handle.loadScene(scene);
+        if (blocking) {
+          if (!collected) throw new Error("Scene assets were not collected before realization.");
+          await handle.loadSceneAsync(scene, collected);
+          if (!isCurrent()) return;
+        } else {
+          if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
+          handle.loadScene(scene);
+        }
         appliedSceneRef.current = { scene, handle };
       };
       const applyCollectedAssets = async () => {
@@ -638,10 +646,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const fontFaceEntries = await collectPlayFontFaceEntries();
         const fontCss = collectPlayFontCssStacks();
         if (!isCurrent()) return;
-        handle.setMaterialDocuments(materials.documents, materials.functions);
         await handle.registerFonts(fontFaceEntries);
         if (!isCurrent()) return;
-        handle.setMeshAssets({
+        const assets = {
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
@@ -657,7 +664,21 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
           sortingLayers: projectDocument?.settings.twoD.sortingLayers,
-        });
+        };
+        if (blocking) {
+          collected = {
+            signal: controller.signal,
+            assets,
+            materialDocuments: materials.documents,
+            materialFunctions: materials.functions,
+            onProgress: (progress) => {
+              if (isCurrent()) setSceneLoad({ open: true, progress: 20 + 25 * progress, phase: "Realizing Scene", rendering });
+            },
+          };
+        } else {
+          handle.setMaterialDocuments(materials.documents, materials.functions);
+          handle.setMeshAssets(assets);
+        }
       };
       try {
         if (blocking) {
@@ -690,7 +711,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             },
           });
         } else {
-          realize();
+          await realize();
           await applyCollectedAssets();
           if (isCurrent()) {
             await handle.whenEditorModelsReady();

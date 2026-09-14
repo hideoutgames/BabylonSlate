@@ -69,7 +69,11 @@ type SceneGlbCache = {
 };
 
 const glbCaches = new WeakMap<Scene, SceneGlbCache>();
-const pendingModelLoads = new WeakMap<AbstractMesh, { key: string; promise: Promise<void> }>();
+const pendingModelLoads = new WeakMap<AbstractMesh, {
+  key: string;
+  promise: Promise<void>;
+  isCurrent: () => boolean;
+}>();
 
 function cacheFor(scene: Scene): SceneGlbCache {
   let cache = glbCaches.get(scene);
@@ -353,6 +357,7 @@ function disposePlaceholderInstance(placeholder: AbstractMesh): void {
   const meta = asPlaceholderMeta(placeholder);
   const instance = meta[MODEL_INSTANCE_KEY];
   meta[MODEL_INSTANCE_KEY] = undefined;
+  meta[MODEL_LOAD_KEY] = undefined;
   instance?.dispose();
 }
 
@@ -399,6 +404,7 @@ export function beginSlotModelAnimLoad(
   bytes: Uint8Array,
   placeholder: AbstractMesh,
   onAdopted?: (placeholder: AbstractMesh) => void,
+  ownsLoad?: () => boolean,
 ): Promise<void> {
   if (!isGltfModelBytes(bytes)) {
     return Promise.resolve();
@@ -412,16 +418,23 @@ export function beginSlotModelAnimLoad(
     return Promise.resolve();
   }
   const pending = pendingModelLoads.get(placeholder);
-  if (pending?.key === key) {
+  if (pending?.key === key && pending.isCurrent()) {
     const adopted = pending.promise.then(() => {
-      if (!placeholder.isDisposed()) onAdopted?.(placeholder);
+      if (!placeholder.isDisposed() && ownsLoad?.() !== false &&
+        meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) onAdopted?.(placeholder);
     });
     void adopted.catch(() => {});
     return adopted;
   }
-  const request = { key, promise: Promise.resolve() };
-  pendingModelLoads.set(placeholder, request);
   const epoch = bumpSlotAnimEpoch(binding, slotId);
+  const request = {
+    key,
+    promise: Promise.resolve(),
+    isCurrent: (): boolean => !scene.isDisposed && !placeholder.isDisposed() &&
+      binding.slotAnimEpoch?.get(slotId) === epoch &&
+      pendingModelLoads.get(placeholder) === request && ownsLoad?.() !== false,
+  };
+  pendingModelLoads.set(placeholder, request);
   const load = (async () => {
     try {
       const container = await getCachedGlbContainer(
@@ -431,18 +444,12 @@ export function beginSlotModelAnimLoad(
         binding.modelPayloads?.get(clipAssetGuid),
         packedSlimProof(binding),
       );
-      if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
-        return;
-      }
-      if (placeholder.isDisposed() || pendingModelLoads.get(placeholder) !== request) {
-        return;
-      }
+      if (!request.isCurrent()) return;
       const instance = instantiateUnderPlaceholder(
         placeholder,
         container,
         importScale,
       );
-      meta[MODEL_LOAD_KEY] = key;
       if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
       const clipGuids = binding.modelClipAnimationGuids?.get(clipAssetGuid);
       const retargets = binding.retargetAnimationLoads?.get(clipAssetGuid) ?? [];
@@ -467,7 +474,7 @@ export function beginSlotModelAnimLoad(
           binding.modelPayloads?.get(row.sourceModelGuid),
           packedSlimProof(binding),
         );
-        if (binding.slotAnimEpoch?.get(slotId) !== epoch || placeholder.isDisposed() || pendingModelLoads.get(placeholder) !== request) {
+        if (!request.isCurrent()) {
           for (const group of wrapped) group.dispose();
           return;
         }
@@ -485,15 +492,16 @@ export function beginSlotModelAnimLoad(
         }
       }
       binding.slotAnimationGroups.set(slotId, [...existing, ...wrapped]);
+      // An instantiated hierarchy is not ready until all retarget sources and
+      // groups are installed. A replacement must own that remaining work.
+      meta[MODEL_LOAD_KEY] = key;
       onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
     } catch (error) {
       // A superseded or disposed actor no longer owns this failure. Current
       // failures must reach the scene readiness waiter, even when command
       // delivery starts the load without awaiting it.
-      if (scene.isDisposed || placeholder.isDisposed() ||
-        binding.slotAnimEpoch?.get(slotId) !== epoch ||
-        pendingModelLoads.get(placeholder) !== request) return;
+      if (!request.isCurrent()) return;
       reportGlbLoadFailure(clipAssetGuid, error);
       throw error;
     }

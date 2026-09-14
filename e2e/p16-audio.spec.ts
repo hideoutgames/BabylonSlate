@@ -290,9 +290,9 @@ test.describe("P16 audio", () => {
     await saveAllIfEnabled(page);
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
+    await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 30_000 });
     await page.getByTestId("play-canvas").click({
       position: { x: 200, y: 200 },
-      force: true,
     });
     await expect
       .poll(
@@ -342,9 +342,9 @@ test.describe("P16 audio", () => {
     await saveAllIfEnabled(page);
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
+    await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 30_000 });
     await page.getByTestId("play-canvas").click({
       position: { x: 200, y: 200 },
-      force: true,
     });
     await expect
       .poll(
