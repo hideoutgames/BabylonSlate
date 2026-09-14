@@ -216,7 +216,7 @@ export class ClusteredSceneLights {
           }
         }
         const batches = Math.ceil(selected.size / capability.batchSize);
-        if (batches > this.allocatedBatches) {
+        if (batches !== this.allocatedBatches) {
           const fail = beginClusteredAllocation(this.scene);
           try {
             container._updateBatches(this.scene.activeCamera);
@@ -288,6 +288,12 @@ export class ClusteredSceneLights {
   }
 
   private watchLights(): void {
+    for (const [light, observer] of this.childDisposals) {
+      if (!this.registry.includes(light)) {
+        light.onDisposeObservable.remove(observer);
+        this.childDisposals.delete(light);
+      }
+    }
     for (const light of this.registry) {
       if (this.childDisposals.has(light) || light.isDisposed()) continue;
       this.childDisposals.set(

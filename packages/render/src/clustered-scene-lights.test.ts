@@ -329,4 +329,23 @@ describe("explicit clustered light ownership", () => {
     expect(owner.limits().join()).toContain("perspective camera");
     owner.dispose();
   });
+  it("releases departed registry observers and rolls back a failing smaller batch allocation", () => {
+    const { engine, scene, lights } = fixture();
+    const observerCount = lights[47]!.onDisposeObservable.observers.length;
+    const wrappers = engine._renderTargetWrapperCache.slice();
+    const owner = new ClusteredSceneLights(scene, lights);
+    const createTarget = engine.createRenderTargetTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementationOnce((...args) => {
+      createTarget(...args);
+      throw new Error("Smaller mask allocation rejected");
+    });
+    owner.setLights(lights.slice(0, 2));
+    expect(lights[47]!.onDisposeObservable.observers).toHaveLength(observerCount);
+    expect(owner.status().clustered).toBe(0);
+    expect(owner.limits().join()).toContain("Smaller mask allocation rejected");
+    expect(engine._renderTargetWrapperCache).toEqual(wrappers);
+    expect(scene.textures.some((texture) => texture.name === "TileMaskTexture")).toBe(false);
+    expect(lights.every((light) => !light.isDisposed() && scene.lights.includes(light))).toBe(true);
+    owner.dispose();
+  });
 });
