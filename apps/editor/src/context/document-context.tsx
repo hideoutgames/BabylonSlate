@@ -198,6 +198,7 @@ import {
   playSceneLibraryPaths,
 } from "../lib/plugin-ui";
 import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
+import { ProjectSaveState } from "../lib/project-save-state";
 import {
   classifyExternalChanges,
   snapshotIndexedMtimes,
@@ -322,6 +323,7 @@ interface DocumentContextValue {
   needsReconnect: boolean;
   recoveryAvailable: boolean;
   dirtyDocuments: OpenDocument[];
+  projectDirty: boolean;
   migrationPending: MigrationPending[];
   templates: ProjectTemplate[];
   homepageReady: boolean;
@@ -350,7 +352,7 @@ interface DocumentContextValue {
   saveProject: () => Promise<boolean>;
   saveAll: () => Promise<boolean>;
   approveMigrationsAndSave: () => Promise<void>;
-  closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[] }>;
+  closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[]; projectDirty: boolean }>;
   forceCloseProject: () => Promise<void>;
   refreshProjectList: () => Promise<void>;
   exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
@@ -752,6 +754,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     null,
   );
   const projectDocumentRef = useRef<ProjectDocument | null>(null);
+  const projectSaveState = useRef(new ProjectSaveState());
   projectDocumentRef.current = projectDocument;
   const [listedProjects, setListedProjects] = useState<ListedProject[]>([]);
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -1074,6 +1077,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const confirmExternalChangeReloadProject = useCallback(async () => {
     const { document } = await projectService.loadCurrentProject();
+    projectSaveState.current.reset(document);
     setProjectDocument(document);
     const paths = documentService
       .getOpenDocumentsOrdered()
@@ -1251,6 +1255,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           setSceneDocumentLoad(null);
         }
       }
+      projectSaveState.current.reset(document);
       setProjectDocument(document);
       setMigrationPending(pending);
       setLastCompiledSignature(null);
@@ -1423,7 +1428,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const saveProject = useCallback(async (): Promise<boolean> => {
     const progress = beginSaveAllProgress();
     const document = projectDocumentRef.current;
-    const dirtyBefore = documentService.getDirtyDocuments().length;
+    const dirtyBefore = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(document));
     if (!document) {
       recordSaveAllTrace({
         ok: false,
@@ -1450,6 +1455,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = null;
     }
+    const projectSave = projectSaveState.current.capture(document);
     try {
       progress.phase("audio-reverb");
       await flushAudioReverbForSave();
@@ -1536,6 +1542,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           ];
         }),
       );
+      projectSaveState.current.complete(projectSave);
       flushSync(() => {
         bump();
       });
@@ -1543,7 +1550,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ok: true,
         reason: "saved",
         dirtyBefore,
-        dirtyAfter: documentService.getDirtyDocuments().length,
+        dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
       });
       return true;
     } catch (error) {
@@ -1551,7 +1558,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ok: false,
         reason: "error",
         dirtyBefore,
-        dirtyAfter: documentService.getDirtyDocuments().length,
+        dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -1599,6 +1606,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const approveMigrationsAndSave = useCallback(async () => {
     if (!projectDocument) return;
+    const projectSave = projectSaveState.current.capture(projectDocument);
     projectService.approveMigrateOnSave();
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
@@ -1624,6 +1632,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService.markAllClean(dirtyDocs);
     setMigrationPending([]);
     await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
+    projectSaveState.current.complete(projectSave);
     bump();
   }, [
     bump,
@@ -1657,6 +1666,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setFocusedLayoutIds(new Set());
     editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
+    projectSaveState.current.reset(null);
     setProjectDocument(null);
     setRecoveryAvailable(false);
     setMigrationPending([]);
@@ -1682,11 +1692,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const closeProject = useCallback(async () => {
     const dirty = documentService.getDirtyDocuments();
-    if (dirty.length > 0) {
-      return { blocked: true, dirty };
+    const projectDirty = projectSaveState.current.isDirty(projectDocumentRef.current);
+    if (dirty.length > 0 || projectDirty) {
+      return { blocked: true, dirty, projectDirty };
     }
     await forceCloseProject();
-    return { blocked: false, dirty: [] };
+    return { blocked: false, dirty: [], projectDirty: false };
   }, [documentService, forceCloseProject]);
 
   const exportProject = useCallback(async (snapshot?: ProjectDocument) => {
@@ -1875,7 +1886,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (settings.changed) {
         await onProgress?.("Project Settings");
         const next = { ...current, settings: settings.value };
+        const projectSave = projectSaveState.current.capture(next);
         await projectService.saveProject(next, documentService.buildLayouts());
+        projectSaveState.current.complete(projectSave);
         setProjectDocument(next);
       }
     }
@@ -1931,8 +1944,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         };
         setProjectDocument(next);
         captureAllLayouts();
+        const projectSave = projectSaveState.current.capture(next);
         await projectService.saveProject(next, documentService.buildLayouts());
         await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
+        projectSaveState.current.complete(projectSave);
       }
       bump();
     },
@@ -3744,11 +3759,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       clearDocumentDirtyTrace,
       saveAllProgress,
       saveAllTrace,
-      dirtyDocuments: () =>
-        documentService.getDirtyDocuments().map((doc) => ({
+      dirtyDocuments: () => [
+        ...documentService.getDirtyDocuments().map((doc) => ({
           kind: doc.ref.kind,
           id: doc.id,
         })),
+        ...(projectSaveState.current.isDirty(projectDocumentRef.current) ? [{ kind: "project", id: "project" }] : []),
+      ],
     };
     return () => {
       delete host.__babylonslateTest;
@@ -4128,6 +4145,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       needsReconnect,
       recoveryAvailable,
       dirtyDocuments: documentService.getDirtyDocuments(),
+      projectDirty: projectSaveState.current.isDirty(projectDocument),
       migrationPending,
       templates,
       homepageReady,
