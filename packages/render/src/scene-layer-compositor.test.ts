@@ -252,7 +252,7 @@ describe("SceneLayerCompositor", () => {
     const held = new Promise<void>((resolve) => { release = resolve; });
     const retire = SceneRenderCoordinator.prototype.retire;
     // Preserve native cancellation/disposal, holding only completion of one owner.
-    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(function () {
+    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(function (this: SceneRenderCoordinator) {
       const retired = retire.call(this);
       return this === renderers[0] ? retired.then(() => held) : retired;
     });
@@ -285,7 +285,7 @@ describe("SceneLayerCompositor", () => {
     const target = layer.camera.outputRenderTarget!;
     const disposal = vi.spyOn(target, "dispose");
     const retire = SceneRenderCoordinator.prototype.retire;
-    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(async function () {
+    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(async function (this: SceneRenderCoordinator) {
       await retire.call(this);
       throw new Error("Native task cleanup failed.");
     });
