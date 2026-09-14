@@ -3468,6 +3468,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           components: SerializedGraph["components"],
         ) => Promise<boolean>;
         setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
+        activeSceneContent: () => SerializedScene | null;
         advanceIdleClock: (ms: number) => void;
         guidForPath: (path: string) => string | null;
         readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
@@ -3683,6 +3684,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const graph = structuredClone(openGraph.content as SerializedGraph);
         graph.components = structuredClone(components);
         return applyGraphChange(openGraph.id, graph);
+      },
+      activeSceneContent: () => {
+        const scene = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "scene",
+        )?.content;
+        return scene ? structuredClone(scene as SerializedScene) : null;
       },
       setActiveSceneContent: async (scene) => {
         const openScene = [...documentService.getState().openDocuments.values()].find(

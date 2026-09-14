@@ -18,7 +18,7 @@ async function setup() {
   await registry.mountRoot(projectContentRoot());
   const ref = {
     kind: "scene" as const,
-    path: "scene.babasset",
+    path: "assets/scene.babasset",
     label: "Scene",
   };
   const scene = createDefaultScene();

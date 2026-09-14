@@ -42,7 +42,6 @@ interface SceneBakeContextValue {
   status: "Unbuilt" | "Checking" | "Valid" | "Stale" | "Missing";
   detail: string | null;
 }
-// eslint-disable-next-line react-refresh/only-export-components -- optional workspace context
 const SceneBakeContext = createContext<SceneBakeContextValue | null>(null);
 
 export function SceneBakeProvider({ children }: { children: ReactNode }) {
@@ -201,7 +200,16 @@ export function SceneBakeProvider({ children }: { children: ReactNode }) {
         setMessage(
           "Bake Saved. Realtime lighting remains active until runtime bake application is available.",
         );
-      await refreshAssetRegistry();
+      // Publication already succeeded. A catalog refresh must not report that
+      // immutable result or the committed Scene reference as unsaved.
+      try {
+        await refreshAssetRegistry();
+      } catch {
+        if (mounted.current)
+          setMessage(
+            "Bake Saved. Reopen the project if generated assets are missing from the Content Browser.",
+          );
+      }
     } catch (caught) {
       if (mounted.current) {
         if (
