@@ -170,6 +170,15 @@ describe("Play createEngine view", () => {
 
   function sharedEngine(): NullEngine {
     const engine = new NullEngine();
+    // NullEngine stores raw bytes but never marks the upload complete. Model
+    // the real synchronous raw-texture upload boundary without bypassing the
+    // scene's texture readiness checks (individual tests can hold a texture).
+    const upload = engine.createRawTexture.bind(engine);
+    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+      const texture = upload(...args);
+      texture.isReady = true;
+      return texture;
+    });
     engines.push(engine);
     return engine;
   }
