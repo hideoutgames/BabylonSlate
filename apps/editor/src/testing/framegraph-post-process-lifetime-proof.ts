@@ -13,6 +13,21 @@ async function until(predicate: () => boolean, description: string) {
   }
 }
 
+function gainDocument(gain: number) {
+  const document = createDefaultMaterialDocument("Lifetime", "postProcess");
+  document.nodes.push(
+    { id: "gain", type: "const.float", properties: { value: [gain] }, position: { x: 0, y: 0 } },
+    { id: "multiply", type: "math.multiply", properties: {}, position: { x: 0, y: 0 } },
+  );
+  document.edges = document.edges.filter((edge) => edge.id !== "e-scene-output");
+  document.edges.push(
+    { id: "source-mul", sourceNodeId: "sceneColor", sourcePinId: "color", targetNodeId: "multiply", targetPinId: "a" },
+    { id: "gain-mul", sourceNodeId: "gain", sourcePinId: "out", targetNodeId: "multiply", targetPinId: "b" },
+    { id: "mul-output", sourceNodeId: "multiply", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+  );
+  return document;
+}
+
 export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
   canvas.width = 64;
@@ -21,26 +36,25 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { disableWebGL2Support: false });
   let phase = "setup";
-  const effects = new Set<Effect>();
-  const createEffect = engine.createEffect;
-  engine.createEffect = function (...args) {
-    const effect = createEffect.apply(this, args);
-    effects.add(effect);
-    return effect;
-  };
   const invalidPrograms: unknown[] = [];
   if (backend === "webgl2") {
-    const gl = (engine as unknown as { _gl: WebGL2RenderingContext })._gl;
+    const native = engine as Engine;
+    let activePipeline: unknown;
+    const ready = native._isRenderingStateCompiled;
+    native._isRenderingStateCompiled = function (pipeline) {
+      activePipeline = pipeline;
+      try { return ready.call(this, pipeline); } finally { activePipeline = undefined; }
+    };
+    const gl = (native as unknown as { _gl: WebGL2RenderingContext })._gl;
     const query = gl.getProgramParameter;
     gl.getProgramParameter = function (program, parameter) {
       const result = query.call(this, program, parameter);
       if (result === null) invalidPrograms.push({
         phase, parameter, stack: new Error().stack,
-        effects: [...effects].filter((effect) =>
-          (effect.getPipelineContext() as unknown as { program?: WebGLProgram })?.program === program).map((effect) => ({
-            key: effect.key, disposed: effect.isDisposed,
-            pipelineDisposed: (effect.getPipelineContext() as unknown as { _isDisposed?: boolean })?._isDisposed,
-          })),
+        pipeline: activePipeline && {
+          name: (activePipeline as { _name?: string })._name,
+          disposed: (activePipeline as { _isDisposed?: boolean })._isDisposed,
+        },
       });
       return result;
     };
@@ -59,13 +73,13 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       pixels.set([160, 80, 40, 255], offset);
     const source = RawTexture.CreateRGBATexture(pixels, 64, 4, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
     source.gammaSpace = false;
-    const makeOwner = () => {
+    const makeOwner = (gain?: number) => {
       const graph = new FrameGraph(scene);
       const sourceTexture = graph.textureManager.importTexture("Numeric Source", source.getInternalTexture()!);
       const stack = addAuthoredPostProcessTasks({
         frameGraph: graph, library, sourceTexture,
         stack: [{ materialGuid: `owner-${owners.length}`, enabled: true, order: 0 }],
-        documentFor: () => createDefaultMaterialDocument("Lifetime", "postProcess"),
+        documentFor: () => gain === undefined ? createDefaultMaterialDocument("Lifetime", "postProcess") : gainDocument(gain),
         onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.message),
       });
       const owner = { graph, stack };
@@ -89,7 +103,9 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     for (const action of ["replace", "dispose"] as const) {
       phase = `${action}-build`;
       const previousPasses = new Set(engine.postProcesses);
-      const owner = makeOwner();
+      // Distinct constant shader bodies prevent the ready sibling from warming
+      // either retired variant or its replacement through the driver's cache.
+      const owner = makeOwner(action === "replace" ? 0.75 : 0.375);
       await owner.graph.buildAsync(false);
       const pass = engine.postProcesses.find((candidate) => !previousPasses.has(candidate))!;
       const effect = pass.getEffect();
@@ -108,7 +124,7 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       });
       phase = `${action}-retire`;
       if (action === "replace") {
-        await owner.stack.tasks[0]!.replaceDocument(createDefaultMaterialDocument("Replacement", "postProcess"));
+        await owner.stack.tasks[0]!.replaceDocument(gainDocument(0.25));
         await capture("replacement", owner);
       } else {
         owner.stack.dispose();
