@@ -26,6 +26,7 @@ The test-only authoring entry also exposes a separate unmodified camera-transpor
 - A job snapshots caller data, owns a private WebGL2 context and releases it after success, failure or cancellation. Explicit reachable resource disposal plus final private-context release covers upstream low-resolution/array-target ownership gaps. Float render targets are required; shader drift, context loss, unresolved receivers and invalid readback fail visibly. Progress and disposal callbacks expose the job boundary without mutating project state.
 - GPU fences bound work to one tile in flight; pixel-pack-buffer readback and shader completion use cancellable polling. Precompilation targets the same linear variant as sampling. The adapter removes upstream uncancellable compilation timers before taking ownership, so cancellation can dispose programs without later timer callbacks touching them.
 - This provider proof still requires numerical local-browser verification and real iPad/Safari qualification. It does not complete integrated baking, UV packing, atomic ProjectStorage manifests, runtime irradiance consumption or the plan's M7 exit criteria.
+- The local native transport control records the GL renderer and checks clear/raster fences before an unmodified upstream path-tracer draw. The Windows SwiftShader Vulkan run completed both controls but stalled on the native 4×4 path-tracer draw. `BL_BAKE_ANGLE=d3d11-warp` or `d3d11` scopes driver comparisons to the bake browser fixture; this is diagnostic evidence, not device qualification.
 
 ## Project PBR / CEL rendering
 

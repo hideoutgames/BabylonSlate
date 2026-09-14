@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { BakePrototypeInput, BakePrototypeMesh } from "../packages/render/src/bake-prototype-input";
 
+// Driver isolation applies only to this proof, never the shared browser config.
+if (process.env.BL_BAKE_ANGLE) test.use({ launchOptions: { args: [`--use-angle=${process.env.BL_BAKE_ANGLE}`] } });
+
 type MeshInput = Omit<BakePrototypeMesh, "positions" | "uv2"> & { positions: number[]; uv2?: number[] };
 type Input = Omit<BakePrototypeInput, "meshes"> & { meshes: MeshInput[] };
 const journals = new WeakMap<Page, unknown[]>();
