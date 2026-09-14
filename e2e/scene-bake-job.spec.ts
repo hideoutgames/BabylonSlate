@@ -8,6 +8,7 @@ import {
   type SerializedScene,
 } from "../packages/core/src/index";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/index";
+import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import {
   decodeAssetDocument,
@@ -100,7 +101,7 @@ async function fixtureFiles() {
     await encodeAssetDocument({
       guid: mesh.properties.materialGuid as string,
       type: "Material",
-      version: 1,
+      version: createDefaultMigrationRegistry().currentVersion("Material"),
       name: "Diffuse",
       payload: material as unknown as Record<string, unknown>,
     }),
