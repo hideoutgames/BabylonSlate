@@ -151,7 +151,6 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           <Button
             variant="outline"
             size="sm"
-            className="pointer-coarse:min-h-11"
             onClick={() => setAddOpen(true)}
             data-testid="prefab-add-component"
           >
