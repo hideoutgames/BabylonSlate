@@ -356,7 +356,7 @@ it("disposal during deferred graph compilation cannot attach a late pass", async
   ).toHaveLength(0);
 });
 
-it.each(["replace", "dispose", "deadline", "engine-dispose", "shared"] as const)(
+it.each(["replace", "update", "dispose", "deadline", "compile-error", "engine-dispose", "shared"] as const)(
   "%s while GPU compilation is pending retains native ownership until its release boundary",
   async (action) => {
     vi.useFakeTimers();
@@ -389,6 +389,7 @@ it.each(["replace", "dispose", "deadline", "engine-dispose", "shared"] as const)
       vi.spyOn(engine, "_isRenderingStateCompiled").mockImplementation((pipeline) => {
         if (deletedPipelines.has(pipeline)) deletedProgramQueries++;
         if (compiled) {
+          if (action === "compile-error") throw new Error("Native driver compilation failed");
           const native = pipeline as WebGLPipelineContext;
           native.onCompiled?.();
           native.onCompiled = undefined;
@@ -420,6 +421,11 @@ it.each(["replace", "dispose", "deadline", "engine-dispose", "shared"] as const)
       }
 
       if (action === "replace") await task.replaceDocument(gainDocument());
+      else if (action === "update") {
+        const name = retiring.name as { vertex: string; fragment: string };
+        retiringPass.updateEffect(`${retiring.defines}\n#define OWNED_REPLACEMENT`, retiring.getUniformNames(),
+          retiring.getSamplers(), undefined, undefined, undefined, name.vertex, name.fragment);
+      }
       else task.dispose();
       expect(retiring.isDisposed).toBe(false);
       expect(retiring._refCount).toBe(1);
@@ -432,11 +438,16 @@ it.each(["replace", "dispose", "deadline", "engine-dispose", "shared"] as const)
       expect(sibling.getEffect().isDisposed).toBe(false);
       expect(diagnostics).toEqual([]);
       if (action === "deadline") {
+        let released = false;
+        void task.whenReleased().then(() => { released = true; });
         const result = task.whenDisposed().catch((error: AggregateError) => error);
         await vi.advanceTimersByTimeAsync(15_000);
-        expect(await result).toMatchObject({ errors: [expect.objectContaining({ message: expect.stringContaining("uncertain") })] });
+        expect(await result).toMatchObject({ errors: [expect.objectContaining({
+          errors: [expect.objectContaining({ message: expect.stringContaining("uncertain") })],
+        })] });
         expect(retiring.isDisposed).toBe(false);
         expect(deletedPipelines.has(pendingPipeline)).toBe(false);
+        expect(released).toBe(false);
       }
       if (action === "engine-dispose") {
         engine.dispose();
@@ -452,6 +463,8 @@ it.each(["replace", "dispose", "deadline", "engine-dispose", "shared"] as const)
         } else if (action === "dispose") await task.whenDisposed();
       }
       expect(retiring.isDisposed).toBe(true);
+      if (action === "compile-error") expect(errors).toHaveBeenCalledOnce();
+      if (action === "deadline") await task.whenReleased();
       await vi.advanceTimersByTimeAsync(32);
       expect(deletedProgramQueries).toBe(0);
       expect(vi.getTimerCount()).toBe(0);

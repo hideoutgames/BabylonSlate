@@ -39,7 +39,7 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
   const library = new MaterialLibrary();
   const owners: Array<{ graph: FrameGraph; stack: ReturnType<typeof addAuthoredPostProcessTasks> }> = [];
   const diagnostics: string[] = [];
-  const retired: Array<{ effect: Effect; pending: boolean; lateProbes: number; compiledAfterRetirement: boolean; completedWhileRetained: boolean; referencesBefore: number }> = [];
+  const retired: Array<{ effect: Effect; pending: boolean; nativeProgramPending: boolean; lateProbes: number; compiledAfterRetirement: boolean; completedWhileRetained: boolean; referencesBefore: number }> = [];
   const captures: Array<{ action: string; pixel: number[] }> = [];
   const lifetime = { retainedPasses: -1, retainedMaterials: -1, retainedScenes: -1 };
   const run = async () => {
@@ -84,7 +84,9 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       const pass = engine.postProcesses.find((candidate) => !previousPasses.has(candidate))!;
       const effect = pass.getEffect();
       const record = { effect, pending: !effect.isReady(), lateProbes: 0, compiledAfterRetirement: false,
-        completedWhileRetained: false, referencesBefore: effect._refCount };
+        completedWhileRetained: false, referencesBefore: effect._refCount,
+        nativeProgramPending: backend === "webgl2" && Boolean(effect.getPipelineContext()?.isAsync &&
+          (effect.getPipelineContext() as { program?: unknown })?.program) && !effect.isReady() };
       retired.push(record);
       // Observe the real per-Effect native retry without replacing its result,
       // timer or GPU query. It must run its disposal exit after owner retirement.
@@ -114,8 +116,8 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     return {
       backend, captures, diagnostics, lifetime,
       engines: EngineStore.Instances.map((candidate, index) => ({ index, proof: candidate === engine })),
-      retired: retired.map(({ pending, lateProbes, compiledAfterRetirement, completedWhileRetained, referencesBefore }) =>
-        ({ pending, lateProbes, compiledAfterRetirement, completedWhileRetained, referencesBefore })),
+      retired: retired.map(({ pending, nativeProgramPending, lateProbes, compiledAfterRetirement, completedWhileRetained, referencesBefore }) =>
+        ({ pending, nativeProgramPending, lateProbes, compiledAfterRetirement, completedWhileRetained, referencesBefore })),
       siblingReady: siblingEffect.isReady(),
     };
   };

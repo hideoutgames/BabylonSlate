@@ -42,9 +42,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         expect(retired.compiledAfterRetirement).toBe(false);
         // Native WGSL pipeline creation is synchronous once its sources exist.
         // The WebGL case must hit real pending parallel compilation and its retry.
-        if (backend === "webgl2") expect(retired.pending).toBe(true);
+        if (backend === "webgl2") expect(retired.nativeProgramPending).toBe(true);
         expect(retired.referencesBefore).toBe(1);
-        if (retired.pending) expect(retired.completedWhileRetained).toBe(true);
+        if (retired.nativeProgramPending) expect(retired.completedWhileRetained).toBe(true);
       }
     } finally {
       await testInfo.attach("gpu-errors", { body: JSON.stringify(errors), contentType: "application/json" });
