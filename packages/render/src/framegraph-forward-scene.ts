@@ -374,7 +374,7 @@ export class ForwardSceneFrameGraph {
             onDiagnostic: postProcessOwner.options.onDiagnostic,
           });
           this.postProcessGraph = result.owner ?? undefined;
-          if (!result.ok) throw new Error(result.reason);
+          if (result.ok === false) throw new Error(result.reason);
           if (this.postProcessGraph) postProcessOwner.useGraph(this.postProcessGraph);
         }
         this.clear = new FrameGraphClearTextureTask(
