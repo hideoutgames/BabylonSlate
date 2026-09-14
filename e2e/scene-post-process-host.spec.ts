@@ -27,7 +27,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     let release!: () => void;
     let requested = false;
     const held = new Promise<void>((resolve) => { release = resolve; });
-    await page.route("**/__host-numeric-mask.png", async (route) => {
+    // The application's isolation Service Worker owns the outgoing fetch.
+    // Context routing sees that request while page routing does not.
+    await page.context().route("**/__host-numeric-mask.png", async (route) => {
       requested = true;
       await held;
       await route.fulfill({ contentType: "image/png", body: Buffer.from(mask) });

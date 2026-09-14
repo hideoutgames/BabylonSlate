@@ -15,7 +15,10 @@ function multiplyDocument(kind: "gain" | "mask") {
   connect("multiply", "out", "output", "color");
   if (kind === "gain") {
     doc.nodes.push({ id: "gain", type: "param.float", properties: { name: "Gain", value: [0.5] }, position: { x: 0, y: 0 } });
-    connect("gain", "out", "multiply", "b");
+    doc.nodes.push({ id: "gainRgb", type: "vector.combine", properties: { w: 1 }, position: { x: 0, y: 0 } });
+    for (const channel of ["x", "y", "z"]) connect("gain", "out", "gainRgb", channel);
+    // Preserve coverage: the visible canvas returns unpremultiplied pixels.
+    connect("gainRgb", "xyzw", "multiply", "b");
   } else {
     doc.nodes.push({ id: "mask", type: "texture.sample", properties: { textureGuid: "mask" }, position: { x: 0, y: 0 } });
     connect("screenUv", "uv", "mask", "uv");
