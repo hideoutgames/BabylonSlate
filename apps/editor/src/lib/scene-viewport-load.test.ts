@@ -7,6 +7,13 @@ import {
   sceneViewportRenderSettings,
 } from "./scene-viewport-load";
 
+it("keeps the viewport when only a pipeline preference changes without changing its effective renderer", () => {
+  const original = sceneViewportRenderSettingsKey({});
+  expect(sceneViewportRenderSettingsKey({ renderPath: "auto", gpuBackend: "auto" })).toBe(original);
+  expect(sceneViewportRenderSettingsKey({ renderPath: "clusteredForward", gpuBackend: "webgpu" })).toBe(original);
+  expect(sceneViewportRenderSettingsKey({}, undefined, undefined, { renderPath: "clusteredForward" })).toBe(original);
+});
+
 it("reloads effective CEL changes while ignoring inactive and inherited-equivalent edits", () => {
   const project = { mode: "cel" as const, cel: normalizeCelShadingSettings({}) };
   const initial = sceneViewportRenderSettingsKey(project);
@@ -20,11 +27,11 @@ it("reloads effective CEL changes while ignoring inactive and inherited-equivale
 it("keeps environment scalar edits live while loading newly admitted resources before presentation", () => {
   const environmentLighting = normalizeEnvironmentLightingSettings({ intensity: 3, rotationYDegrees: 90 });
   const project = { environmentLighting };
-  const initial = sceneViewportRenderSettingsKey(project, {}, {}, {}, "cube-a");
+  const initial = sceneViewportRenderSettingsKey(project, {}, {}, {}, {}, "cube-a");
   const latest = { ...environmentLighting, intensity: 4, rotationYDegrees: -90, celStrength: 0.5 };
-  expect(sceneViewportRenderSettingsKey({ environmentLighting: latest }, {}, {}, { intensity: 2 }, "cube-a")).toBe(initial);
-  expect(sceneViewportRenderSettingsKey(project, {}, {}, { enabled: false }, "cube-a")).not.toBe(initial);
-  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, "cube-b")).not.toBe(initial);
+  expect(sceneViewportRenderSettingsKey({ environmentLighting: latest }, {}, {}, { renderPath: "auto" }, { intensity: 2 }, "cube-a")).toBe(initial);
+  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, { enabled: false }, "cube-a")).not.toBe(initial);
+  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, {}, "cube-b")).not.toBe(initial);
   const settings = sceneViewportRenderSettings(initial, latest);
   expect(settings.environmentLighting).toEqual(latest);
   expect(settings).not.toHaveProperty("environmentSource");
@@ -90,13 +97,36 @@ describe("runSceneViewportBlockingLoad", () => {
     await task;
     expect(progress).toEqual([
       { value: 0, phase: "Preparing Scene" },
-      { value: 10, phase: "Realizing Scene" },
-      { value: 20, phase: "Collecting Assets" },
+      { value: 10, phase: "Collecting Assets" },
+      { value: 20, phase: "Realizing Scene" },
       { value: 45, phase: "Loading Models" },
       { value: 70, phase: "Warming Shaders" },
       { value: 90, phase: "Presenting First Frame" },
       { value: 100, phase: "Presenting First Frame" },
     ]);
+  });
+
+  it("waits for chunked realization after collection before inspecting model readiness", async () => {
+    let finish!: () => void;
+    const order: string[] = [];
+    const whenModelsReady = vi.fn(async () => {});
+    const task = runSceneViewportBlockingLoad({
+      signal: new AbortController().signal,
+      collect: async () => { order.push("collect"); },
+      realize: () => { order.push("realize"); return new Promise<void>((resolve) => { finish = resolve; }); },
+      whenModelsReady,
+      warmShaders: async () => {},
+      presentFirstFrame: async () => {},
+      onProgress: () => {},
+    });
+    paint();
+    await vi.waitFor(() => expect(order).toEqual(["collect", "realize"]));
+    expect(whenModelsReady).not.toHaveBeenCalled();
+    finish();
+    await vi.waitFor(() => expect(frames).toHaveLength(1));
+    paint();
+    await task;
+    expect(whenModelsReady).toHaveBeenCalledOnce();
   });
 
   it.each(["realize", "collect", "whenModelsReady", "warmShaders", "presentFirstFrame"] as const)(

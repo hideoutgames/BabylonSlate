@@ -6,6 +6,8 @@ import {
   ShaderStore,
   StandardMaterial,
   type Material,
+  type AbstractMesh,
+  type Observer,
   type Scene,
 } from "@babylonjs/core";
 import { defaultVertexShader } from "@babylonjs/core/Shaders/default.vertex";
@@ -65,6 +67,8 @@ export class CelMaterial extends StandardMaterial {
   readonly source: PBRMaterial | StandardMaterial;
   private sourceFillMode = -1;
   private sourceLighting: boolean | undefined;
+  private readonly shadowShaderResolver: Material["customShaderNameResolve"];
+  private readonly shadowBindObserver: Observer<AbstractMesh>;
   constructor(source: PBRMaterial | StandardMaterial, scene: Scene) {
     super(`${source.name}:CEL`, scene);
     this.source = source;
@@ -73,11 +77,11 @@ export class CelMaterial extends StandardMaterial {
     this.specularColor = Color3.White();
     this.useSpecularOverAlpha = false;
     this.useEmissiveAsIllumination = true;
-    this.customShaderNameResolve = (_shader, uniforms) => {
+    this.customShaderNameResolve = this.shadowShaderResolver = (_shader, uniforms) => {
       uniforms.push(...NATIVE_CEL_UNIFORMS);
       return "slateCel";
     };
-    this.onBindObservable.add(() => {
+    this.shadowBindObserver = this.onBindObservable.add(() => {
       const effect = this.getEffect();
       if (effect) {
         bindCelSettings(effect, scene, this.disableLighting, source instanceof PBRMaterial ? source.environmentIntensity : 1);
@@ -101,6 +105,13 @@ export class CelMaterial extends StandardMaterial {
 
   override getClassName(): string {
     return "CelMaterial";
+  }
+
+  /** Shadow caching may rely only on the adapter's own vertex/bind hooks. */
+  hasOriginalShadowHooks(): boolean {
+    return this.customShaderNameResolve === this.shadowShaderResolver &&
+      this.onBindObservable.observers.length === 1 &&
+      this.onBindObservable.observers[0] === this.shadowBindObserver;
   }
 
   syncSource(): void {

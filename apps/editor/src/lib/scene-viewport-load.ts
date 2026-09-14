@@ -8,6 +8,8 @@ import {
   normalizeEnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
   type EnvironmentLightingSettings,
+  resolveRenderingPipeline,
+  type RenderPathOverrides,
 } from "@babylonslate/core";
 
 /** Only effective rendering changes rebuild GPU scene resources. */
@@ -15,11 +17,13 @@ export function sceneViewportRenderSettingsKey(
   project: Partial<RenderProjectSettings> = {},
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
+  pipelineOverrides?: RenderPathOverrides,
   environmentOverrides?: EnvironmentLightingOverrides,
   environmentSource: string | null = null,
 ): string {
   return JSON.stringify({
     ...project,
+    ...resolveRenderingPipeline(project, pipelineOverrides).effective,
     mode: project.mode ?? "pbr",
     environmentLighting: {
       enabled: resolveEnvironmentLightingSettings(
@@ -55,8 +59,8 @@ export function sceneViewportRenderSettings(
 export const SCENE_LOAD_PHASES = [
   "Preparing Scene",
   "Loading Document",
-  "Realizing Scene",
   "Collecting Assets",
+  "Realizing Scene",
   "Loading Models",
   "Warming Shaders",
   "Presenting First Frame",
@@ -72,28 +76,12 @@ export function isSceneViewportRemountLoad(
   return engineGeneration !== completedGeneration;
 }
 
-/** Yield across a paint before starting synchronous GPU work. Abort cancels the wait. */
-export function waitForSceneLoadingPaint(signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    signal.throwIfAborted();
-    let frame = 0;
-    const cancel = () => {
-      cancelAnimationFrame(frame);
-      reject(signal.reason);
-    };
-    signal.addEventListener("abort", cancel, { once: true });
-    frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => {
-        signal.removeEventListener("abort", cancel);
-        resolve();
-      });
-    });
-  });
-}
+export { waitForSceneLoadingPaint } from "@babylonslate/render";
+import { waitForSceneLoadingPaint } from "@babylonslate/render";
 
 export async function runSceneViewportBlockingLoad(options: {
   signal: AbortSignal;
-  realize: () => void;
+  realize: () => void | Promise<void>;
   collect: () => Promise<void>;
   whenModelsReady: () => Promise<void>;
   warmShaders: () => Promise<void>;
@@ -104,11 +92,11 @@ export async function runSceneViewportBlockingLoad(options: {
   options.onProgress(0, "Preparing Scene");
   await waitForSceneLoadingPaint(options.signal);
   options.signal.throwIfAborted();
-  options.onProgress(10, "Realizing Scene");
-  options.realize();
-  options.signal.throwIfAborted();
-  options.onProgress(20, "Collecting Assets");
+  options.onProgress(10, "Collecting Assets");
   await options.collect();
+  options.signal.throwIfAborted();
+  options.onProgress(20, "Realizing Scene");
+  await options.realize();
   options.signal.throwIfAborted();
   options.onProgress(45, "Loading Models");
   await options.whenModelsReady();

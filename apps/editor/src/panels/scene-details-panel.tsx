@@ -4,6 +4,7 @@ import { isEnvironmentTexturePayload } from "@babylonslate/assets";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
+import { RenderPipelineFields } from "../components/render-pipeline-fields";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -618,6 +619,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     const showPostProcess = matches("Post Processing Material Enabled Scalable Resolution");
     const showShadows = !overlay && matches(SHADOW_SETTINGS_SEARCH_TEXT);
     const showEnvironment = !overlay && matches(ENVIRONMENT_LIGHTING_SEARCH_TEXT);
+    const showPipeline = !overlay && matches("Rendering Render Path GPU Backend Auto Forward Clustered Forward WebGL2 WebGPU Effective Selection");
     const showCel = celEnabled && matches("Post Processing CEL Shading Shadow Bands Threshold Strength Softness Specular Light Color Influence Mixing Strongest Additive Blend");
     const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
     return (
@@ -684,6 +686,18 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 </div>
               )}
             />
+          </div>
+        ) : null}
+        {showPipeline ? (
+          <div className="px-2 pb-3">
+            <DisclosureSection title="Rendering" open={overrideOpen("rendering")} onOpenChange={(open) => setOverrideOpen("rendering", open)}>
+              <RenderPipelineFields hideTitle scope="scene" project={projectDocument?.settings.render}
+                overrides={scene.settings} onChange={(pipeline) => {
+                  const settings = { ...scene.settings };
+                  delete settings.renderPath;
+                  mutate({ ...scene, settings: { ...settings, ...pipeline } });
+                }} />
+            </DisclosureSection>
           </div>
         ) : null}
         {showEnvironment ? (
@@ -785,7 +799,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             />
           </div>
         ) : null}
-        {!visibleSettingsRows.length && !showPostProcess && !showShadows && !showEnvironment && !showCel && !showSceneLayers
+        {!visibleSettingsRows.length && !showPostProcess && !showPipeline && !showShadows && !showEnvironment && !showCel && !showSceneLayers
           ? noMatchingProperties
           : null}
         <AssetPicker

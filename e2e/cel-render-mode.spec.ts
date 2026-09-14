@@ -29,7 +29,9 @@ test("Mannequin illumination stays stable when directional shadows are enabled",
   const mesh = createMeshComponent("mannequin-mesh", "box");
   mesh.properties.assetGuid = modelGuid;
   const sun = createActor("sun", "Sun", {
-    transform: { position: [0, 5, -3], rotation: [0.35355339, 0.35355339, -0.14644661, 0.85355339], scale: [1, 1, 1] },
+    // Frontal rays cannot let the head/arms shadow the visible torso. Oblique
+    // lighting below deliberately exercises that separate shadow behavior.
+    transform: { position: [0, 5, -3], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
     components: [{ id: "sun-light", classId: "LightComponent", properties: {
       lightKind: "directional", color: [1, 1, 1], intensity: 1.5, castShadows: false,
     } }],
@@ -56,19 +58,34 @@ test("Mannequin illumination stays stable when directional shadows are enabled",
   sun.components[0]!.properties.castShadows = true;
   await setPreviewScene(page, scene);
   await canvas.screenshot({ path: testInfo.outputPath("mannequin-shadows-on.png") });
-  await expect.poll(async () => {
-    const shadowed = await framePixels(canvas);
+  const changedYellowFraction = (before: Buffer, after: Buffer) => {
+    expect(after.length).toBe(before.length);
     let changed = 0, count = 0;
-    for (let i = 0; i < unshadowed.length; i += 4) {
-      if (unshadowed[i]! <= 200 || unshadowed[i + 1]! <= 120 || unshadowed[i + 2]! >= 100) continue;
+    for (let i = 0; i < before.length; i += 4) {
+      if (before[i]! <= 200 || before[i + 1]! <= 120 || before[i + 2]! >= 100) continue;
       count++;
-      if (Math.abs(shadowed[i + 1]! - unshadowed[i + 1]!) > 20) changed++;
+      if (Math.abs(after[i + 1]! - before[i + 1]!) > 20) changed++;
     }
+    expect(count).toBeGreaterThan(500);
     return changed / Math.max(1, count);
-  }).toBeLessThan(0.01);
+  };
+  await expect.poll(async () => changedYellowFraction(unshadowed, await framePixels(canvas))).toBeLessThan(0.01);
+
+  sun.transform.rotation = [0.35355339, 0.35355339, -0.14644661, 0.85355339];
+  sun.components[0]!.properties.castShadows = false;
+  await setPreviewScene(page, scene);
+  await expect.poll(yellow).toBeGreaterThan(500);
+  const obliqueUnshadowed = await framePixels(canvas);
+  await canvas.screenshot({ path: testInfo.outputPath("mannequin-oblique-shadows-off.png") });
+  sun.components[0]!.properties.castShadows = true;
+  await setPreviewScene(page, scene);
+  // The head and torso really occlude part of the yellow surface at this angle.
+  // Missing all shadows must fail, as must a stale shadow after live removal.
+  await expect.poll(async () => changedYellowFraction(obliqueUnshadowed, await framePixels(canvas))).toBeGreaterThan(0.01);
+  await canvas.screenshot({ path: testInfo.outputPath("mannequin-oblique-shadows-on.png") });
   await page.getByRole("treeitem", { name: "Sun", exact: true }).click();
   await page.getByRole("checkbox", { name: "Cast Shadows", exact: true }).uncheck();
-  await expect.poll(yellow).toBeGreaterThan(500);
+  await expect.poll(async () => changedYellowFraction(obliqueUnshadowed, await framePixels(canvas))).toBeLessThan(0.01);
   await canvas.screenshot({ path: testInfo.outputPath("mannequin-shadows-disabled-live.png") });
 });
 

@@ -1,10 +1,17 @@
 # Render sync and resource cache (P4)
 
+The isolated WebGPU proof initializes Babylon's asynchronous backend and checks native and authored PBR/CEL surfaces with texture upload and readback. Authored NodeMaterials select the owning Engine's native shader language, avoiding an implicit GLSL translation dependency. This proof does not switch the project's default Engine or qualify WebGPU on iPad; project-wide restart, compatibility policy and recovery remain separate integration work.
+
+The explicit local WebGPU browser case requests Chromium's SwiftShader WebGPU adapter and a software WebGL adapter (D3D11 WARP on Windows, SwiftShader elsewhere). Windows requires ANGLE to expose a D3D11 device to the WebGPU decoder. Linux also enables Vulkan with SwiftShader and disables the native Vulkan surface, following [Chromium's software GPU pixel-test configuration](https://chromium.googlesource.com/chromium/src/+/e2609416409c94955edd34d4e0f36095c9431322/content/test/gpu/gpu_tests/pixel_test_pages.py). The fixture rejects context loss and external shader-compiler downloads and records the actual adapter; this is software functional evidence only.
+The pixel oracle accounts for the APIs' readback origins and the explicitly selected swap-chain channel order. It compares every PBR/CEL output channel within two byte values and checks that the numeric texture's distinct rows survive upload, so matching solid fallback colors cannot pass.
+
 The public rendering contract separates project `settings.render.renderPath` (`auto`, `forward`, `clusteredForward`), `settings.render.gpuBackend` (`auto`, `webgl2`, `webgpu`), and existing PBR/CEL `mode`. Project normalization migrates absent or invalid axes to Forward/WebGL2; new projects keep these defaults until Auto is qualified. This additive migration preserves existing shading, environment, and feature settings without changing asset schema versions.
 
 Optional `scene.settings.renderPath` inherits from the project. `resolveRenderingPipeline` applies project → scene → local preview → session path precedence; deleting an override resumes live inheritance. Backend selection remains project-wide because all live views share one Engine. Save/reopen and project ZIP export retain authored requests, including unsupported requests.
 
-This contract slice exposes no new renderer. Its pure resolver reports effective Forward/WebGL2 with explicit limits for Auto/ClusteredForward or Auto/WebGPU requests; it preserves the authored values. It describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation, controls and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
+Project Settings → Rendering exposes independent Render Path and GPU Backend preferences alongside PBR/CEL. Scene Defaults → Rendering starts closed and supports a per-field path override; Reset To Project removes that key without changing other Scene settings. Property search temporarily expands the matching category. SceneLayer documents cannot author project Engine or normal Scene paths.
+
+The effective-selection feedback currently resolves Auto to Forward/WebGL2. Explicit Clustered Forward or WebGPU requests show their unavailable fallback while preserving the preference through Save/reopen and export. Settings commit on Done/close; changing a preference without changing its effective renderer does not rebuild the viewport. This policy describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
 
 Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
 The blocking viewport paints its Presenting First Frame phase before permitting that frame, including when cached resources finish readiness within one microtask batch.
@@ -14,7 +21,12 @@ Readiness probes enter and restore their scene's floating-origin context, so a n
 
 Model readiness retains real GLB loader and instantiation failures, including loads started during fire-and-forget Play command delivery. A failed assigned model cannot advance scene loading to warming or presentation. Replacing/despawning the assignment clears its retained failure; late failures from superseded or disposed actors do not fail the current load.
 
+Particle material effects wait for their compiled NodeMaterial source before native effect creation. Pending or failed builds participate in their owning scene's readiness, preventing an empty generated shader from falling back to a network URL or exposing an incomplete first frame. Rebinding or disposing the particle system cancels its pending binding; a late build cannot attach effects to an obsolete system.
+The narrow Babylon 9.20 particle binder adapter preserves current particle defines when native effects change and removes obsolete bind observers per system/blend. This prevents a cached effect from appending callbacks indefinitely during its first draw. Superseded native draw wrappers release their effect references after the current frame. The adapter is installed before temporary compiler probes as well as live bindings. System/material disposal releases the remaining owned custom wrappers, which native particle disposal omits, and removes owned observers without clearing sibling bindings or patching a shared Engine/prototype.
+
 ## Project PBR / CEL rendering
+
+The Mannequin browser regression keeps its 1% illumination-change limit on unoccluded surfaces under frontal light. A separate oblique-light phase requires visible self-shadows from the head/torso and requires live Cast Shadows removal to restore the matching unshadowed frame within the same limit. Expected geometric occlusion therefore cannot masquerade as an illumination regression or conceal a missing shadow.
 
 The Basic 3D template recalculates the bundled Mannequin's normals from its existing faces before import, separating shared triangle corners. The supplied unlit model has smoothed corner normals on flat cuboid faces; under lit materials these produced diagonal CEL bands even with cast shadows disabled. Shape, UVs, hierarchy, animation, and triangle count remain unchanged. General imports preserve their authored normals; existing project copies are not rewritten. Preparation runs only when creating the template, with no per-frame preparation or extra draws.
 
@@ -63,6 +75,12 @@ Texture-budget policy follows each handle's cache lease. The largest requested l
 Viewport touch cancellation clears active selection gestures without committing a tap or marquee. Moving from one finger to a pinch or pan also cancels a pending marquee, so OS interruptions and multi-touch cannot select actors accidentally.
 
 One `Engine` for the **open project**, created by `PlayProvider` on a hidden constructor canvas (`createAppEngine` / `createProjectEngineSession`). Re-apply `display:none` after Engine construction so Babylon's canvas style writes cannot leave that constructor surface in the Playwright `:visible` set. Editor viewport and Play each own a `Scene`. They bind visible canvases with `registerView(canvas, undefined, true)` / `unRegisterView` only when the view canvas can take a 2D blit context — never a second `Engine` (WebGL context caps). Closing a Scene tab disposes that `Scene` and releases ResourceCache retains; it does **not** `engine.dispose()`. Closing the project (or unmounting `PlayProvider`) releases the cache and disposes the Engine. Overlay Play and Prefab / Material previews call `ensureSharedEngine` (the project Engine), not a second context. Preview Build’s iframe creates its own Engine and is unaffected. Do **not** move Scene to RTT. Shader warm (`prewarmSceneMaterials`) has a failure deadline (`SCENE_SHADER_WARM_TIMEOUT_MS`): a stuck compile rejects readiness. Generation/disposal checks prevent late work from freezing a replacement scene. `presentFirstFrame` permits one visible loading frame under the blocking modal and resolves after the Engine frame ends; normal pause/obstruction gates stay in place. Registered views render only into their own active view. Editor GLB `whenEditorModelsReady` waits until pending instantiations finish (Play uses the same hook on snapshot `slotAnimLoads`). Material Preview also uses that Engine (a third `Scene`) but **must not** `registerView` or default-framebuffer `scene.render()` while Scene or Play owns the framebuffer — present with `camera.outputRenderTarget` + 2D blit, freeze when the Material tab is hidden or Play is up. **Prefab Preview is on the same Engine** (`p18-shared-prefab-engine`) via RTT + 2D blit (`present: "rtt"`) that does not steal the Scene/Play framebuffer. Prefab mesh-asset loads key on `prefabPreviewLoadKey` (authored component payload) and the shared Engine, not `components` array identity from `openDocuments` bumps (compiler / Save All) — those cancelled in-flight `setMaterialDocuments` and left MeshComponent materials unbound. Scene viewport already keys on the scene payload for the same reason. Both viewports also watch saved Material and Material Function document hashes from registry headers. Saving either refreshes compiled materials and their texture dependencies without reloading scene structure. Initial loads, saved-material refreshes, and texture LOD changes share one cancellable collection so an older load cannot overwrite a newer save. Every RTT→2D blit (`rtt-canvas-present`, Material / Model / Animation / Skeleton preview, model thumbnails, camera PIP) runs `flipReadPixelsRgba` so WebGL bottom-left `readPixels` is not upside-down on Canvas2D. Do not add more preview Engines.
+
+Editor blocking loads collect assets before realization and call `EngineHandle.loadSceneAsync`. Materials and mesh assets are installed together, avoiding the immediate setters' replay of the previous document. Actor planning, creation, retirement, parenting, illumination, collision helpers and matrix preparation share the synchronous reconciliation logic, yielding after 32 operations or about 8 ms. One actor operation and final shadow/post-process setup remain indivisible. Immediate gizmo consumers retain `loadScene`.
+
+An instantiated GLB hierarchy becomes reusable as ready only after its retarget source loads and animation groups finish. Replacing a partially instantiated model takes ownership of that remaining work before model readiness can resolve.
+
+Chunk cancellation stops further mutations and successful completion callbacks; a newer apply reconciles any partial owned state, while viewport failures dispose the handle before Retry. Retained actor children are detached before a removed/replaced parent's recursive disposal. Delayed GLB adoption checks the load's generation, cancellation and current root ownership before instantiation or success callbacks; a replacement can reuse the cached container through its own request. Adoption restores an already-frozen actor matrix but defers the active-mesh freeze and success callback during realization. Model readiness waits for the actor submission phase and only that realization's model submissions, so an early empty load set cannot report ready before later actors are created and an obsolete unresolved load cannot hold a replacement open. Runtime producer and Game Instance ticking semantics are unchanged.
 
 `registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. Overlay Play `resize` / `setSize` size that framebuffer from the **overlay** CSS box (or locked custom WxH) with `engine.setSize` and match the overlay 2D bitmap — never `engine.resize()`, which would follow the docked editor canvas and squash the blit. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). Play also sets `scene.autoClear = true` after `ScenePerformancePriority.Intermediate` (that priority otherwise disables color-buffer clear, which trails when there is no skybox). Authored `settings.environmentColor` is the Play `clearColor` when the session has a scene payload. SceneLayer **editor** tabs use opaque black clear (`overlayEditor` on the converted scene); world 2D scenes stay chrome gray even if environment is authored black. Play overlay compositor scenes stay transparent over the world. Overlay SceneLayer instances are extra unlit ortho `Scene`s on the same Engine, drawn after the world (and world PP) so world post-process never hits overlays — they are not parented to the 3D camera. Layers with their own PP render to an RTT then alpha-composite. Detail: [scene-layers.md](scene-layers.md). `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine. Open Scene tabs stay `registerView` clients while Play is up; Babylon `_renderViews` would `setSize` from each enabled canvas every frame and the overlay would flicker. Overlay Play therefore sets those other views `enabled = false` (and `syncEditorPlayState` does the same on the editor handle) until Play `dispose` re-enables them. Disabled Scene views do not call `engine.setSize`.
 
@@ -359,10 +377,13 @@ diagnostic; authored cascade settings and global engine state remain unchanged.
 Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
 and report completed RTT readback-plus-copy duration separately.
 
-Local shadow allocation follows authored priority, then intensity and camera
-distance, with a 15% retention bonus to avoid oscillation. A substantially more
-relevant light can replace an existing allocation without disabling it first.
-The current active camera supplies relevance, including possession changes.
+Local shadow allocation follows authored priority, then nearest relevant camera
+distance; brightness does not displace a nearer light. Maps have a 250 ms minimum
+residency and a 15% squared-distance retention bonus to reduce camera-boundary
+oscillation. Higher authored priority, camera possession changes and loss of
+eligibility take effect immediately. Byte/face/sampler/quality limits still apply
+during residency. The current active camera supplies relevance, and ranking
+refreshes parent transforms and uses local positions after light detachment.
 Compatible generators/maps survive camera, distance, bias, fade and filter edits.
 Lighting synchronization tracks shadow-generator membership and per-light/global
 shadow enablement as shader changes. Frozen surface graphs keep their freeze policy
@@ -380,8 +401,35 @@ are kept separate from errors raised by the allocation. These checks run
 only when constructing a map, so unchanged frames do not poll driver errors.
 Exhausted requests remain suppressed until settings change, scene reload or context
 restoration. Cleanup failures stop retries and propagate a recovery error.
-Dirty-map scheduling, mobility-aware refresh and a distinct free-camera inspection
-override are not implemented in this safety slice.
+Local maps with known opaque, undeformed casters render once and refresh on change.
+A scene-wide caster revision covers actual world-matrix changes (including externally
+supplied frozen attachment matrices), geometry edits, visibility, participation and
+material depth/culling changes. Unchanged forced matrix computations do not invalidate
+maps. Local light pose/projection, depth range, camera identity and floating render-origin
+changes also invalidate. Maps keep their allocation; no per-frame signature arrays or
+per-light whole-scene scans are added. Diagnostics expose `on-change` or `continuous`.
+The policy scans before allocation/projection and again before per-camera targets,
+after active-mesh evaluation. It uses Babylon render-once counters and explicit resets;
+readiness probes do not count as a completed render. Unready caster shaders retain
+Babylon's automatic retry. Geometry observers preserve and restore existing callbacks.
+Empty model and tilemap roots may have no submesh list yet; they remain valid during
+loading, and later geometry/submesh creation or removal invalidates cached maps.
+
+Only known native opaque materials and compiler-certified opaque surface graphs with
+identity world-position offset can cache local maps. Classification uses the fully
+lowered graph, rejects custom GLSL and is invalidated by out-of-band shader changes.
+Alpha, skeletons, morphs, deformation, instances, updatable vertex or index buffers, camera-dependent
+geometry and unknown shader/hooks keep refreshing conservatively. Any uncertain visible
+caster currently keeps every local map live; any dirty caster invalidates all local maps.
+Index mutability uses a narrow Babylon 9.20 adapter read because dynamic index edits
+can bypass geometry notifications; an unknown mutability state also keeps maps live.
+The camera-dependent sun always refreshes. This policy adds no authored mobility defaults,
+staggered refresh, baking or distinct free-camera inspection override. Spatially selective
+invalidation and device performance qualification remain separate work.
+The targeted `e2e/shadow-refresh.spec.ts` browser regression observes real cube-map
+draws and compares cached receiver pixels with a freshly rendered map at the same
+pose after caster/light edits, resize and reload. It verifies correctness and idle
+map reuse, without collecting timing samples or qualifying device performance.
 Light diagnostics distinguish disabled, non-illuminating, intentionally unshadowed,
 globally disabled shadows, distance limits, budget limits and allocation failure.
 They report the actual filter, including Babylon's point-light Poisson fallback.
@@ -508,5 +556,7 @@ Editor grid and camera/SceneLayer bounds shaders evaluate their patterns in plan
 ### Runtime scene readiness
 
 Play and the exported player share `createSceneLoadReadiness`. `activeScene` establishes a monotonic load ID; `sceneRealized` closes the runtime assignment batch after actors and owned SceneLayers are emitted. Only then does the host await models, sample-ready textures, shader warming, and first-frame presentation before acknowledging `sceneModelsReady` with that ID. First-mesh and active-scene callbacks cannot acknowledge an incomplete worker batch.
+
+Play and player begin blocking **Loading Scene** on `sceneLoading`, before outgoing teardown or incoming realization. Both hosts acknowledge the token after a browser paint; the editor reuses `SceneLoadingDialog`, while the player uses a native modal with phase/progress and Stop. A refcounted scheduler obstruction lease holds normal draws independently of unrelated modal state; the existing narrow first-frame permit still works. The host paints **Presenting First Frame** before requesting that frame, then releases its own blocker and UI only when presentation completes. Replacement/Stop abort pending paint waits, and current runtime failures use the existing diagnostic/Stop path. Stop remains available during loading and never waits for readiness.
 
 A new load of the same scene still receives a fresh ID and resets its resources; the initial already-loaded boot scene is reused. Superseded loads and disposed sessions cannot acknowledge readiness or report obsolete failures. Failed Play loading uses the session diagnostic/Stop flow; player loading reports an error and halts playback. Game Instance ticks continue while readiness is pending, and Stop does not wait for unresolved resource work.

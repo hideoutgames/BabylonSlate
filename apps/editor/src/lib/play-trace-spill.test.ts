@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import type { TracePayload } from "@babylonslate/debugger";
 import { readTraceDocument } from "@babylonslate/assets";
@@ -78,4 +78,35 @@ describe("play trace spill", () => {
     expect(calls).toEqual(["snapshot stop", "stop"]);
     expect(result.lastTrace?.seed).toBe(11);
   });
+
+  it("stops after two seconds if the Worker never replies, and consumes a late rejection", async () => {
+    vi.useFakeTimers();
+    try {
+      let reject!: (error: Error) => void;
+      const reply = new Promise<void>((_resolve, fail) => { reject = fail; });
+      const stop = vi.fn(() => baseResult(null));
+      const result = finishPlaySessionWithTrace({ executeConsoleCommand: () => reply, stop });
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(stop).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await result).lastTrace).toBeNull();
+      expect(stop).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+      reject(new Error("Worker terminated"));
+      await Promise.resolve();
+      expect(stop).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("clears the deadline when trace finalization succeeds promptly", async () => {
+    vi.useFakeTimers();
+    try {
+      const stop = vi.fn(() => baseResult(payload));
+      expect((await finishPlaySessionWithTrace({ executeConsoleCommand: async () => {}, stop })).lastTrace).toBe(payload);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(stop).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
+
 });

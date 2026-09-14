@@ -4,7 +4,7 @@ import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverride
 import { normalizeRenderPathOverrides, type RenderPath } from "./render-path";
 
 /**
- * Scene document schema (v3): actors, components and scene settings.
+ * Scene document schema (v4): actors, components and scene settings.
  *
  * The 2D convention is fixed here and assumed by every consumer: 2D lives on
  * the XY plane with +Y up and +X right, and the editor camera sits at negative
@@ -19,7 +19,8 @@ import { normalizeRenderPathOverrides, type RenderPath } from "./render-path";
  * color/start/end,
  * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
  * keys normalize to defaults; a Default Camera pick requires both actor and
- * component ids).
+ * component ids). v4 distinguishes automatic shadow capacity from a saved
+ * manual local-light limit.
  */
 
 export type ViewportMode = "3d" | "2d";

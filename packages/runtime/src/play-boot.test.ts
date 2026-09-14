@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import type { CommandMessage } from "@babylonslate/bridge";
+import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createInProcessRuntime } from "./driver";
+import { createPlayPauseGate } from "./play-pause-gate";
+import { describe, expect, it, vi } from "vitest";
 import { createPlayBootCoordinator, type PlayBootRuntime } from "./play-boot";
 
 function deferred<T>() {
@@ -151,4 +155,100 @@ describe("createPlayBootCoordinator", () => {
     await boot.play(runtime);
     expect(runtime.spawned).toEqual([]);
   });
+  it("starts Game Instance during cooperative realization and physics loading without undoing Pause On Play", async () => {
+    const chunk = deferred<void>();
+    const physics = deferred<void>();
+    const started = deferred<void>();
+    let yielded = false;
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      cooperativeSceneLoading: { yieldControl: () => { yielded = true; return chunk.promise; } },
+      onCommand: (command) => commands.push(command),
+      playScene: { ...createDefaultScene(), actors: Array.from({ length: 65 }, (_, index) => createActor(`a${index}`, "Actor")) },
+    });
+    vi.spyOn(runtime, "loadPhysics").mockReturnValue(physics.promise);
+    const boot = createPlayBootCoordinator();
+    const gate = createPlayPauseGate(runtime);
+    const playing = gate.beginPlay((onStarted) => boot.play(runtime, () => { onStarted(); started.resolve(); }));
+    gate.setPaused(true);
+    try {
+      await started.promise;
+      await vi.waitFor(() => expect(yielded).toBe(true));
+      runtime.tick();
+      expect(runtime.getWorld().clock.tickIndex).toBe(0);
+      gate.setPaused(false);
+      runtime.tick();
+      expect(runtime.getWorld().gameInstance!.getVariable("ticks")).toBe(1);
+      expect(runtime.getWorld().getActors()).toHaveLength(0);
+      chunk.resolve();
+      await vi.waitFor(() => expect(runtime.getWorld().getActors()).toHaveLength(65));
+      const actorTick = vi.spyOn(runtime.getWorld().getActors()[0]!, "callOnTick");
+      runtime.tick();
+      expect(runtime.getWorld().gameInstance!.getVariable("ticks")).toBe(2);
+      expect(actorTick).not.toHaveBeenCalled();
+      expect(commands.some((command) => command.type === "sceneRealized")).toBe(false);
+      gate.setPaused(true);
+      physics.resolve();
+      await playing;
+      expect(commands.filter((command) => command.type === "sceneRealized")).toHaveLength(1);
+      runtime.tick();
+      expect(runtime.getWorld().clock.tickIndex).toBe(2);
+      gate.setPaused(false);
+      runtime.tick();
+      expect(actorTick).toHaveBeenCalledOnce();
+    } finally { boot.reset(); gate.reset(); chunk.resolve(); physics.resolve(); runtime.stop(); }
+  });
+
+  it.each(["scripts", "physics"] as const)("reset rejects pending %s boot and prevents a late start", async (phase) => {
+    const pending = deferred<void>();
+    const enteredPhysics = deferred<void>();
+    const runtime = fakeRuntime({
+      loadScripts: () => phase === "scripts" ? pending.promise : Promise.resolve(),
+      loadPhysics: () => { enteredPhysics.resolve(); return pending.promise; },
+    });
+    const boot = createPlayBootCoordinator();
+    boot.queueScripts(runtime, [], [{ classId: "Extra" }]);
+    const started = vi.fn();
+    const playing = boot.play(runtime, started);
+    const rejected = expect(playing).rejects.toMatchObject({ name: "AbortError" });
+    if (phase === "physics") await enteredPhysics.promise;
+    boot.reset();
+    await rejected;
+    pending.resolve();
+    await Promise.resolve();
+    expect(runtime.started).toBe(false);
+    expect(started).not.toHaveBeenCalled();
+    if (phase === "scripts") expect(runtime.spawned).toEqual([]);
+  });
+
+  it("announces only the replacement when Game Instance changes scenes during native boot", async () => {
+    const physics = deferred<void>();
+    const enteredPhysics = deferred<void>();
+    const commands: CommandMessage[] = [];
+    const scene = { ...createDefaultScene(), actors: [createActor("a", "Actor")] };
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, cooperativeSceneLoading: true,
+      preferSoftwarePhysics: true, playScene: scene, playSceneGuid: "first", sceneLibrary: { next: scene },
+      onCommand: (command) => commands.push(command),
+    });
+    vi.spyOn(runtime, "loadPhysics").mockImplementation(() => { enteredPhysics.resolve(); return physics.promise; });
+    const boot = createPlayBootCoordinator();
+    const playing = boot.play(runtime);
+    try {
+      await enteredPhysics.promise;
+      let changed = false;
+      const world = runtime.getWorld();
+      world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onTick: () => {
+        if (!changed) { changed = true; runtime.executeConsoleCommand("changescene next"); }
+      } } }));
+      runtime.tick();
+      await runtime.realizePlayWorld();
+      expect(commands.some((command) => command.type === "sceneRealized")).toBe(false);
+      physics.resolve();
+      await playing;
+      expect(commands.filter((command) => command.type === "sceneRealized")).toEqual([
+        { type: "sceneRealized", sceneAssetGuid: "next", sceneLoadId: 2 },
+      ]);
+    } finally { boot.reset(); physics.resolve(); runtime.stop(); }
+  });
+
 });

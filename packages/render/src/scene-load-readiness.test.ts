@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSceneLoadReadiness } from "./scene-load-readiness";
+import { createSceneLoadReadiness, type SceneLoadProgress } from "./scene-load-readiness";
+import { RenderScheduler } from "./render-scheduler";
 
 function deferred() {
   let resolve!: () => void;
@@ -95,5 +96,106 @@ describe("runtime scene readiness", () => {
     expect(handle.presentFirstFrame).not.toHaveBeenCalled();
     expect(onReady).not.toHaveBeenCalled();
     expect(onFailed).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("blocking runtime loading host", () => {
+  it("acquires before paint, activates after teardown, and holds normal drawing through the permitted first frame", async () => {
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    const paint = deferred();
+    const frame = deferred();
+    const painted = vi.fn();
+    const progress = vi.fn();
+    const activate = vi.fn();
+    const onReady = vi.fn();
+    const readiness = createSceneLoadReadiness({
+      handle: { whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {}, prewarmSceneMaterials: async () => {}, presentFirstFrame: () => frame.promise },
+      loading: { acquire: () => scheduler.acquireObstruction(), progress, paint: vi.fn().mockReturnValueOnce(paint.promise).mockResolvedValue(undefined), painted },
+      activate, onReady, onFailed: vi.fn(),
+    });
+    const identity = { sceneAssetGuid: "scene", sceneLoadId: 1 };
+    readiness.receive({ type: "sceneLoading", ...identity });
+    expect(progress).toHaveBeenCalledWith({ ...identity, phase: "Preparing Scene", progress: 0 });
+    expect(scheduler.shouldRender()).toBe(false);
+    expect(activate).not.toHaveBeenCalled();
+    expect(painted).not.toHaveBeenCalled();
+    paint.resolve();
+    await vi.waitFor(() => expect(painted).toHaveBeenCalledOnce());
+    readiness.receive({ type: "activeScene", ...identity });
+    readiness.receive({ type: "activeScene", ...identity });
+    readiness.receive({ type: "sceneRealized", ...identity });
+    await vi.waitFor(() => expect(progress).toHaveBeenCalledWith({ ...identity, phase: "Presenting First Frame", progress: 90 }));
+    expect(activate).toHaveBeenCalledOnce();
+    expect(scheduler.shouldRender()).toBe(false);
+    expect(scheduler.canPresentLoadingFrame()).toBe(true);
+    const siblingBlocker = scheduler.acquireObstruction();
+    frame.resolve();
+    await vi.waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+    expect(progress).toHaveBeenLastCalledWith(null);
+    expect(scheduler.shouldRender()).toBe(false);
+    readiness.dispose();
+    siblingBlocker();
+    expect(scheduler.shouldRender()).toBe(true);
+    scheduler.setObstructed(true);
+    const next = scheduler.acquireObstruction();
+    next();
+    next();
+    expect(scheduler.shouldRender()).toBe(false);
+  });
+
+  it("cancels an obsolete paint without acknowledging it or clearing its replacement's UI", async () => {
+    const paints = [deferred(), deferred()];
+    const signals: AbortSignal[] = [];
+    const states: Array<SceneLoadProgress | null> = [];
+    const painted = vi.fn();
+    const failed = vi.fn();
+    const release = vi.fn();
+    const readiness = createSceneLoadReadiness({
+      handle: { whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {}, prewarmSceneMaterials: async () => {}, presentFirstFrame: async () => {} },
+      loading: { acquire: () => release, progress: (state) => states.push(state), paint: (signal) => { signals.push(signal); return paints[signals.length - 1]!.promise; }, painted },
+      activate: vi.fn(), onReady: vi.fn(), onFailed: failed,
+    });
+    readiness.receive({ type: "sceneLoading", sceneAssetGuid: "same", sceneLoadId: 1 });
+    readiness.receive({ type: "sceneLoading", sceneAssetGuid: "same", sceneLoadId: 2 });
+    expect(signals[0]!.aborted).toBe(true);
+    paints[0]!.resolve();
+    await Promise.resolve();
+    expect(painted).not.toHaveBeenCalled();
+    expect(states).not.toContain(null);
+    paints[1]!.resolve();
+    await vi.waitFor(() => expect(painted).toHaveBeenCalledWith(expect.objectContaining({ sceneLoadId: 2 })));
+    readiness.dispose();
+    expect(release).toHaveBeenCalledTimes(2);
+    expect(states.at(-1)).toBeNull();
+    expect(failed).not.toHaveBeenCalled();
+  });
+
+  it("routes the current runtime deadline failure to Stop while retaining the blocker and suppressing late paint", async () => {
+    const paint = deferred();
+    const release = vi.fn();
+    const painted = vi.fn();
+    const failed = vi.fn();
+    const activate = vi.fn();
+    const readiness = createSceneLoadReadiness({
+      handle: { whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {}, prewarmSceneMaterials: async () => {}, presentFirstFrame: async () => {} },
+      loading: { acquire: () => release, progress: vi.fn(), paint: () => paint.promise, painted },
+      activate, onReady: vi.fn(), onFailed: failed,
+    });
+    const identity = { sceneAssetGuid: "same", sceneLoadId: 2 };
+    readiness.receive({ type: "sceneLoading", ...identity });
+    readiness.receive({ type: "sceneLoadFailed", sceneAssetGuid: "same", sceneLoadId: 1, message: "Obsolete" });
+    expect(failed).not.toHaveBeenCalled();
+    readiness.receive({ type: "sceneLoadFailed", ...identity, message: "Loading deadline" });
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining(identity), expect.objectContaining({ message: "Loading deadline" }));
+    expect(release).not.toHaveBeenCalled();
+    paint.resolve();
+    await Promise.resolve();
+    readiness.receive({ type: "activeScene", ...identity });
+    expect(painted).not.toHaveBeenCalled();
+    expect(activate).not.toHaveBeenCalled();
+    readiness.dispose();
+    expect(release).toHaveBeenCalledOnce();
   });
 });
