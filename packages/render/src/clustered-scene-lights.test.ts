@@ -270,7 +270,13 @@ describe("explicit clustered light ownership", () => {
       shadowBytes + 18224,
     );
     engine.onContextRestoredObservable.notifyObservers(engine);
-    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    // Native shadow maps rebuild in place; their reservation must survive while
+    // the cluster owner releases its old mask and later constructs a new one.
+    expect(managedLightingReservations(engine)).toMatchObject({
+      reservedBytes: shadowBytes,
+      clusterBytes: 0,
+      pendingBytes: 0,
+    });
     shadows.sync();
     owner.sync();
     expect(owner.status().clustered).toBe(23);
