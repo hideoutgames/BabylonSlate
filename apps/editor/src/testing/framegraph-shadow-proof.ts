@@ -200,6 +200,7 @@ export async function runFrameGraphShadowProof() {
       const texture = currentMap?.getInternalTexture();
       const graphFrame = await render("graph");
       const beforeClassic = await render("graph");
+      const beforeClassicForced = await render("graph", true);
       const classic = await render("classic", true);
       const settled = await render("graph");
       const forceGraph = await render("graph", true);
@@ -210,6 +211,7 @@ export async function runFrameGraphShadowProof() {
         readinessFaces,
         graph: graphFrame,
         beforeClassic,
+        beforeClassicForced,
         classic,
         settled,
         forceGraph,
