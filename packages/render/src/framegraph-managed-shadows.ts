@@ -12,6 +12,7 @@ import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/R
 import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/shadowGeneratorTask";
 import { findSceneShadowController } from "./shadow-controller";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+import { configureCutoutSorting } from "./sorting";
 
 type BorrowedMap = {
   generator: ShadowGenerator;
@@ -22,6 +23,23 @@ type BorrowedMap = {
 
 /** Official object renderer with the pinned, protected shadow-binding hook exposed. */
 export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTask {
+  constructor(...args: ConstructorParameters<typeof FrameGraphObjectRendererTask>) {
+    super(...args);
+    configureCutoutSorting(this._renderer);
+    const renderer = this._renderer;
+    const render = renderer.render;
+    const scene = this._frameGraph.scene;
+    renderer.render = (...renderArgs) => {
+      const intermediate = scene._intermediateRendering;
+      // Babylon 9.20 marks every graph ObjectRenderer as intermediate, even
+      // its main scene pass. Mesh.ignoreCameraMaxZ must retain native main-pass
+      // behavior; geometry and shadow passes keep their intermediate context.
+      if (this.isMainObjectRenderer) scene._intermediateRendering = false;
+      try { return render.apply(renderer, renderArgs); }
+      finally { scene._intermediateRendering = intermediate; }
+    };
+  }
+
   private boundCamera: Camera | undefined;
   private boundShadows: Array<{
     generator: ShadowGenerator;
