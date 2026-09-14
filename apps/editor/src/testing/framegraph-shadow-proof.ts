@@ -154,11 +154,13 @@ export async function runFrameGraphShadowProof() {
       const gl = Reflect.get(engine, "_gl") as WebGL2RenderingContext;
       const shadowObserver = captureShadowState
         ? shadow?.onAfterShadowMapRenderMeshObservable.add((mesh) => {
+            const meshData = mesh.getMeshUniformBuffer().getData();
+            const sceneData = scene.getSceneUniformBuffer().getData();
             shadowDrawState.push({
               mesh: mesh.name,
               world: Array.from(mesh.getWorldMatrix().m),
-              sceneUbo: Array.from(scene.getSceneUniformBuffer().getData()),
-              meshUbo: Array.from(mesh.getMeshUniformBuffer().getData()),
+              sceneUbo: sceneData ? Array.from(sceneData) : null,
+              meshUbo: meshData ? Array.from(meshData) : null,
               depthFunction: gl.getParameter(gl.DEPTH_FUNC),
               depthWrite: gl.getParameter(gl.DEPTH_WRITEMASK),
               depthRange: Array.from(gl.getParameter(gl.DEPTH_RANGE)),
