@@ -35,6 +35,11 @@ async function expectPixel(canvas: Locator, expected: number[], label: string, i
       for (let channel = 0; channel < 4; channel++) expect(Math.abs(actual[channel]! - expected[channel]!), `${label} RGBA ${actual}`).toBeLessThanOrEqual(2);
     }).toPass({ timeout: 30_000 });
   } finally {
+    const state = await canvas.evaluate(() => {
+      const host = window as typeof window & { __babylonslateViewportTest?: { postProcessPassCount(): number | null; renderingBaseline(): unknown } };
+      return { passes: host.__babylonslateViewportTest?.postProcessPassCount(), baseline: host.__babylonslateViewportTest?.renderingBaseline(), busy: document.querySelector('[data-testid="viewport-panel"]')?.getAttribute("aria-busy"), loading: document.querySelector('[data-testid="scene-loading-dialog"]')?.textContent };
+    });
+    await info.attach(`${label}-state`, { body: JSON.stringify(state), contentType: "application/json" });
     await info.attach(`${label}-pixel`, { body: JSON.stringify({ expected, actual: await pixel(canvas) }), contentType: "application/json" });
     await info.attach(`${label}-canvas`, { body: await canvas.screenshot(), contentType: "image/png" });
   }
@@ -50,6 +55,7 @@ test("saved duplicate Post Process texture overrides survive editor reload, Play
   const expected = [48, 24, 96, 255];
   await expectPixel(page.getByTestId("viewport-canvas"), expected, "editor-initial", info);
   await page.getByTestId("scene-post-process-3-enabled").click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __babylonslateViewportTest?: { postProcessPassCount(): number | null } }).__babylonslateViewportTest?.postProcessPassCount())).toBe(4);
   await expectPixel(page.getByTestId("viewport-canvas"), [24, 12, 24, 255], "editor-enabled-reference", info);
   await page.getByTestId("scene-post-process-3-enabled").click();
   await expectPixel(page.getByTestId("viewport-canvas"), expected, "editor-disabled-again", info);
