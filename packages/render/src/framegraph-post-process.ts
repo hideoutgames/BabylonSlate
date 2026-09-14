@@ -138,7 +138,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   private readonly parameters = new Map<string, MaterialParameterValue>();
   private readonly authoredParameters: Record<string, MaterialParameterValue>;
   private readonly requiredBuffers = new Set<LogicalSceneBuffer>();
-  private readonly passes = new Set<GraphBoundPostProcess>();
+  private readonly ownedPasses = new Set<GraphBoundPostProcess>();
   private readonly pendingWork = new Set<Promise<void>>();
   private readonly cleanupErrors: unknown[] = [];
   private resolveDisposal!: () => void;
@@ -403,7 +403,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       shaderLanguage: material.shaderLanguage,
     });
     this.postProcess.externalTextureSamplerBinding = true;
-    this.passes.add(this.postProcess);
+    this.ownedPasses.add(this.postProcess);
     material.createEffectForPostProcess(this.postProcess);
   }
 
@@ -426,8 +426,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     this.postProcess?.dispose();
     this.postProcess = null;
     this.material = null;
-    const passes = [...this.passes];
-    this.passes.clear();
+    const passes = [...this.ownedPasses];
+    this.ownedPasses.clear();
     if (this.acquired) {
       this.acquired = false;
       // A replacement uses a distinct library key: a late old release must not
