@@ -138,18 +138,45 @@ export async function runFrameGraphShadowProof() {
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
     const map = () => light.getShadowGenerator()?.getShadowMap() ?? null;
     const render = async (path: "graph" | "classic", force = false) => {
+      // Graph readiness warms its own ObjectRenderer render-pass variants. The
+      // independent classic oracle must also be ready on the camera's pass.
+      const classicReadyBefore =
+        path === "classic" ? scene.isReady(true) : null;
+      if (path === "classic") await scene.whenReadyAsync(true);
       if (force) map()?.resetRefreshCounter();
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
+      const target = map();
+      let shadowDraws = 0;
+      let shadowBefore = 0;
+      const before = target?.onBeforeBindObservable.add(() => {
+        shadowBefore = readEngineDrawCalls(engine);
+      });
+      const after = target?.onAfterUnbindObservable.add(() => {
+        shadowDraws += readEngineDrawCalls(engine) - shadowBefore;
+      });
       const result =
         path === "graph"
           ? graph.render(camera, false)
           : (scene.render(false), { path: "classic" });
       const draws = readEngineDrawCalls(engine);
+      if (before) target?.onBeforeBindObservable.remove(before);
+      if (after) target?.onAfterUnbindObservable.remove(after);
       const faces = boundTargets.filter(
         (target) => target === map()?.renderTarget,
       ).length;
-      return { pixels: await read(), draws, faces, result };
+      const active = scene.getActiveMeshes();
+      return {
+        pixels: await read(),
+        draws,
+        faces,
+        shadowDraws,
+        classicReadyBefore,
+        activeMeshes: active.data
+          .slice(0, active.length)
+          .map((mesh) => mesh.name),
+        result,
+      };
     };
     const capture = async (pose: string) => {
       boundTargets.length = 0;
