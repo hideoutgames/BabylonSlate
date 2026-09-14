@@ -7,6 +7,7 @@ import {
   createDocumentRef,
 } from "@babylonslate/core";
 import type { OpenDocument } from "../services/document-service";
+import type { IndexedAsset } from "@babylonslate/assets";
 import { DocumentSwitcher } from "./document-switcher";
 
 afterEach(cleanup);
@@ -36,6 +37,34 @@ const documents: OpenDocument[] = [
 ];
 
 describe("DocumentSwitcher", () => {
+  it("shows the inherited engine-class icon for a project Class", () => {
+    const assets: IndexedAsset[] = [
+      { name: "Hero", parentClass: "BaseHero" },
+      { name: "BaseHero", parentClass: "Actor" },
+    ].map(({ name, parentClass }) => ({
+      rootId: "project",
+      path: `assets/${name}.class.babasset`,
+      header: {
+        guid: name,
+        type: "Class",
+        name,
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass,
+        payload: {},
+        chunks: [],
+      },
+    }));
+    const screen = render(
+      <DocumentSwitcher documents={documents} assets={assets} activeDocumentId="graph" onSelect={() => {}} onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
+    const hero = screen.getByRole("menuitemradio", { name: /Hero/i });
+    expect(hero.querySelector("[data-type-icon]")?.getAttribute("data-type-icon")).toBe("Actor");
+  });
+
   it("lets a touch user switch directly to any document and identifies unsaved work", async () => {
     function Workspace() {
       const [active, setActive] = useState(CONTENT_BROWSER_ID);

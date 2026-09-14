@@ -33,7 +33,6 @@ export function GraphViewportControls({ fitViewOptions }: { fitViewOptions: FitV
                 type="button"
                 variant="outline"
                 size="icon-sm"
-                className="graph-viewport-control"
                 aria-label={label}
                 disabled={disabled}
                 onClick={() => { void run(); }}

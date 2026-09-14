@@ -27,13 +27,6 @@
   max-width: var(--graph-pin-default-max-width, 12rem);
 }
 
-@media (pointer: coarse) {
-  .graph-viewport-control {
-    min-width: var(--touch-target, 44px);
-    min-height: var(--touch-target, 44px);
-  }
-}
-
 .graph-editor-canvas .react-flow__handle {
   pointer-events: all;
 }

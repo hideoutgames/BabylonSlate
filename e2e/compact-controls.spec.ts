@@ -1,7 +1,36 @@
 import { expect, test } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene } from "./open-test-project";
+import { openAssetFromBrowser, openMainScene } from "./open-test-project";
+
+test("Add Component actions match the viewport island and Class tabs use their asset icon", { tag: IPAD_TEST_TAG }, async ({ page }, testInfo) => {
+  await openMinimalTestProject(page);
+  const tileIcon = page.locator('[data-asset-path="assets/main.class.babasset"] [data-type-icon]');
+  await expect(tileIcon).toHaveAttribute("data-type-icon", "Actor");
+  await openMainScene(page);
+  await page.getByTestId("tree-row-actor:actor-1").click();
+  const reference = (await page.getByTestId("gizmo-tool-translate").boundingBox())!;
+  const detailsAdd = page.getByTestId("details-add-component");
+  await expect(detailsAdd).toBeVisible();
+  expect((await detailsAdd.boundingBox())!.height).toBe(reference.height);
+  await detailsAdd.click();
+  const detailsCatalog = page.getByTestId("add-component-catalog");
+  await expect(detailsCatalog).toBeVisible();
+  await detailsCatalog.getByRole("button", { name: "Close", exact: true }).click();
+
+  await openAssetFromBrowser(page, "assets/main.class.babasset");
+  const prefabAdd = page.getByTestId("prefab-add-component");
+  await expect(prefabAdd).toBeVisible();
+  expect((await prefabAdd.boundingBox())!.height).toBe(reference.height);
+  const tab = page.locator('[data-testid="document-tab"][data-document-kind="graph"]');
+  await expect(tab.locator("[data-type-icon]")).toHaveAttribute("data-type-icon", "Actor");
+  await page.getByTestId("document-switcher").click();
+  await expect(page.getByTestId("open-documents-menu").locator('[data-document-id] [data-type-icon="Actor"]')).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: testInfo.outputPath("compact-class-controls.png") });
+  await prefabAdd.click();
+  await expect(page.getByTestId("prefab-add-component-catalog")).toBeVisible();
+});
 
 test(
   "viewport island and Transform inputs stay compact and commit arithmetic",
