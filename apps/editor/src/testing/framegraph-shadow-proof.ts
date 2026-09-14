@@ -141,6 +141,14 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
       casters.push(caster);
     }
     setSceneRenderSettings(scene);
+    // Native PBR construction queues an RGBD BRDF decode even when CEL will
+    // not sample the LUT. Finish fixture asset upload before measuring graph
+    // preparation; this decode legitimately draws to its own texture target.
+    const textureDeadline = performance.now() + 10_000;
+    while (scene.environmentBRDFTexture && !scene.environmentBRDFTexture.isReady()) {
+      if (performance.now() >= textureDeadline) throw new Error("BRDF upload timed out");
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
     const graph = new ForwardSceneFrameGraph(scene);
     const prepared = await graph.prepare(camera);
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
