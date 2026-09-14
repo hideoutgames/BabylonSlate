@@ -455,6 +455,11 @@ export async function runSceneBakeJob(options: {
       manifest,
       estimatedManagedBytes: estimate.peakManagedBytes,
     };
+  } catch (error) {
+    // Providers may report generic AbortError; retain the authoring deadline's
+    // actionable reason once cleanup has completed.
+    if (abort.signal.aborted) throw abort.signal.reason;
+    throw error;
   } finally {
     clearTimeout(deadline);
     options.signal?.removeEventListener("abort", cancel);
