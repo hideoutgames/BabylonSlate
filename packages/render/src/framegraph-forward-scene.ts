@@ -155,8 +155,6 @@ export class ForwardSceneFrameGraph {
     const scene = this.scene;
     const unavailable = this.unavailable(camera);
     if (unavailable) return unavailable;
-    if (scene.getEngine().isWebGPU)
-      return "Forward FrameGraph proof requires WebGL.";
     if (scene.frameGraph || scene.customRenderFunction)
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)

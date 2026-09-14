@@ -20,6 +20,7 @@ import {
   applyAuthoredLightProperties,
   beginEngineDrawCallFrame,
   compileMaterialPlan,
+  createAppWebGpuEngine,
   readEngineDrawCalls,
   setSceneRenderSettings,
 } from "@babylonslate/render";
@@ -29,12 +30,12 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-export async function runFrameGraphShadowProof() {
+export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "webgl2") {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 72;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, {
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
     preserveDrawingBuffer: true,
     stencil: true,
     disableWebGL2Support: false,
@@ -155,10 +156,15 @@ export async function runFrameGraphShadowProof() {
       const after = target?.onAfterUnbindObservable.add(() => {
         shadowDraws += readEngineDrawCalls(engine) - shadowBefore;
       });
-      const result =
-        path === "graph"
+      engine.beginFrame();
+      let result;
+      try {
+        result = path === "graph"
           ? graph.render(camera, false)
           : (scene.render(false), { path: "classic" });
+      } finally {
+        engine.endFrame();
+      }
       const draws = readEngineDrawCalls(engine);
       if (before) target?.onBeforeBindObservable.remove(before);
       if (after) target?.onAfterUnbindObservable.remove(after);
@@ -288,7 +294,7 @@ export async function runFrameGraphShadowProof() {
           remainingScenes: engine.scenes.length,
         });
       }
-    return { webGLVersion: engine.webGLVersion, captures, lifecycle };
+    return { backend, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null, captures, lifecycle };
   } finally {
     engine.dispose();
     canvas.remove();

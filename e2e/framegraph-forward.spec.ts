@@ -1,11 +1,23 @@
 import { expect, test } from "@playwright/test";
+import type { runFrameGraphForwardProof } from "../apps/editor/src/testing/framegraph-forward-proof";
 
-test("opt-in Forward FrameGraph preserves surface pixels and scene ownership", async ({
+test.use({ launchOptions: { args: ["--enable-unsafe-webgpu", process.platform === "win32" ? "--use-angle=d3d11-warp" : "--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader"] } });
+
+for (const backend of ["webgl2", "webgpu"] as const) {
+test(`opt-in Forward FrameGraph preserves surface pixels and scene ownership on ${backend}`, async ({
   page,
 }, testInfo) => {
   test.setTimeout(90_000);
   const errors: string[] = [];
+  const externalRequests: string[] = [];
+  await page.route(/https:\/\/cdn\.babylonjs\.com\/.*(?:glslang|twgsl)/, async (route) => {
+    externalRequests.push(route.request().url());
+    await route.abort();
+  });
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (/WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:/i.test(message.text())) errors.push(message.text());
+  });
   await page.goto("/?test=1&framegraphForwardProof=1");
   await page.waitForFunction(
     () =>
@@ -13,43 +25,21 @@ test("opt-in Forward FrameGraph preserves surface pixels and scene ownership", a
         window as unknown as { __babylonslateFrameGraphForwardProof?: unknown }
       ).__babylonslateFrameGraphForwardProof === "function",
   );
-  const result = await page.evaluate(() =>
+  const result = await page.evaluate((backend) =>
     (
       window as unknown as {
-        __babylonslateFrameGraphForwardProof: () => Promise<{
-          webGLVersion: number;
-          captures: Array<{
-            name: string;
-            classic: number[];
-            graph: number[];
-            classicDraws: number;
-            graphDraws: number;
-            readinessDraws: number;
-            prepared: { path: string };
-            result: { path: string };
-            width: number;
-            height: number;
-            frames: number[];
-            frozen: boolean;
-          }>;
-          lifecycle: Array<{
-            mode: string;
-            cameraFailures: number;
-            retainedRenderers: number;
-            retainedGraphs: number;
-            siblingBefore: number[];
-            siblingAfter: number[];
-          }>;
-        }>;
+        __babylonslateFrameGraphForwardProof: typeof runFrameGraphForwardProof;
       }
-    ).__babylonslateFrameGraphForwardProof(),
+    ).__babylonslateFrameGraphForwardProof(backend), backend,
   );
   await testInfo.attach("framegraph-forward-proof", {
     body: JSON.stringify(result),
     contentType: "application/json",
   });
   expect(errors).toEqual([]);
-  expect(result.webGLVersion).toBe(2);
+  expect(externalRequests).toEqual([]);
+  expect(result.backend).toBe(backend);
+  expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
   expect(result.captures).toHaveLength(12);
   for (const capture of result.captures) {
     expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
@@ -89,3 +79,4 @@ test("opt-in Forward FrameGraph preserves surface pixels and scene ownership", a
     expect(entry.siblingAfter, entry.mode).toEqual(entry.siblingBefore);
   }
 });
+}

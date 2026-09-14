@@ -17,6 +17,7 @@ import {
 import {
   beginEngineDrawCallFrame,
   compileMaterialPlan,
+  createAppWebGpuEngine,
   readEngineDrawCalls,
   setSceneRenderSettings,
 } from "@babylonslate/render";
@@ -26,16 +27,20 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-export async function runFrameGraphForwardProof() {
+export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "webgl2") {
   const canvas = document.createElement("canvas");
   canvas.width = 80;
   canvas.height = 64;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, {
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
     preserveDrawingBuffer: true,
     stencil: true,
     disableWebGL2Support: false,
   });
+  const draw = <T>(render: () => T): T => {
+    engine.beginFrame();
+    try { return render(); } finally { engine.endFrame(); }
+  };
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
     return Array.from(
@@ -156,7 +161,7 @@ export async function runFrameGraphForwardProof() {
         scene.activeCamera = expectedCamera;
         await scene.whenReadyAsync();
         beginEngineDrawCallFrame(engine);
-        scene.render(false);
+        draw(() => scene.render(false));
         const classicDraws = readEngineDrawCalls(engine);
         const classic = await read();
         beginEngineDrawCallFrame(engine);
@@ -166,7 +171,7 @@ export async function runFrameGraphForwardProof() {
         const readinessDraws = readEngineDrawCalls(engine);
         if (before !== previousBefore || after !== previousAfter)
           throw new Error("Graph readiness consumed a scene frame");
-        const result = coordinator.render(expectedCamera, false);
+        const result = draw(() => coordinator.render(expectedCamera, false));
         const graphDraws = readEngineDrawCalls(engine);
         const graph = await read();
         captures.push({
@@ -207,14 +212,14 @@ export async function runFrameGraphForwardProof() {
         new Vector3(0, 0, -4),
         sibling,
       );
-      sibling.render(false);
+      draw(() => sibling.render(false));
       const siblingBefore = await read();
       await capture("after-sibling");
       coordinator.dispose();
       const retainedRenderers = scene.objectRenderers.length;
       const retainedGraphs = scene.frameGraphs.length;
       scene.dispose();
-      sibling.render(false);
+      draw(() => sibling.render(false));
       lifecycle.push({
         mode,
         cameraFailures,
@@ -225,7 +230,7 @@ export async function runFrameGraphForwardProof() {
       });
       sibling.dispose();
     }
-    return { captures, lifecycle, webGLVersion: engine.webGLVersion };
+    return { captures, lifecycle, backend, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null };
   } finally {
     engine.dispose();
     canvas.remove();
