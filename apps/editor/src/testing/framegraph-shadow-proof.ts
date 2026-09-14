@@ -40,10 +40,15 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
+import {
+  limitManagedLightingBytes,
+  managedLightingReservations,
+} from "@babylonslate/render/managed-lighting-resources";
+
 export async function runFrameGraphShadowProof(
   backend: "webgl2" | "webgpu" = "webgl2",
   output: "backbuffer" | "texture" = "backbuffer",
-  options: { clustered?: boolean } = {},
+  options: { clustered?: boolean; constrainedResources?: boolean } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -207,10 +212,6 @@ export async function runFrameGraphShadowProof(
       casters.push(caster);
     }
     setSceneRenderSettings(scene);
-    const owner = options.clustered
-      ? new ClusteredSceneLights(scene, [light, ...extraLights])
-      : undefined;
-    const mask = () => owner?.target(camera);
     // Native PBR construction queues an RGBD BRDF decode even when CEL will
     // not sample the LUT. Finish fixture asset upload before measuring graph
     // preparation; this decode legitimately draws to its own texture target.
@@ -223,6 +224,10 @@ export async function runFrameGraphShadowProof(
         throw new Error("BRDF upload timed out");
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
+    const owner = options.clustered
+      ? new ClusteredSceneLights(scene, [light, ...extraLights])
+      : undefined;
+    const mask = () => owner?.target(camera);
     const graph = new ForwardSceneFrameGraph(scene);
     const prepared = await graph.prepare(camera);
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
@@ -355,6 +360,57 @@ export async function runFrameGraphShadowProof(
     };
   };
   try {
+    if (options.constrainedResources) {
+      const first = await fixture("pbr", "spot");
+      await first.capture("reserved");
+      const before = managedLightingReservations(engine);
+      limitManagedLightingBytes(engine, before.reservedBytes);
+      const firstMap = first.map();
+      const firstMask = first.mask();
+      const sibling = await fixture("pbr", "spot");
+      await sibling.capture("starved");
+      const starved = {
+        resources: managedLightingReservations(engine),
+        clusterCount: sibling.owner?.status().clustered,
+        reason: sibling.owner?.status().fallbackReason,
+        shadowMaps: sibling.light.getShadowGenerators()?.size ?? 0,
+        ownedMaps: sibling.scene.textures.filter(
+          (texture) => texture.isRenderTarget,
+        ).length,
+        firstMapRetained:
+          first.map() === firstMap && first.mask() === firstMask,
+      };
+      first.graph.dispose();
+      first.scene.dispose();
+      // Per-owner sync reuses released capacity; it does not revoke a sibling's
+      // live map or mutate the authored request in order to fit a new client.
+      sibling.owner?.sync();
+      await sibling.capture("released-capacity");
+      const recovered = {
+        resources: managedLightingReservations(engine),
+        clusterCount: sibling.owner?.status().clustered,
+        shadowMaps: sibling.light.getShadowGenerators()?.size ?? 0,
+        ownedMaps: sibling.scene.textures.filter(
+          (texture) => texture.isRenderTarget,
+        ).length,
+      };
+      sibling.graph.dispose();
+      sibling.scene.dispose();
+      return {
+        backend,
+        output,
+        info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(),
+        webGLVersion: engine instanceof Engine ? engine.webGLVersion : null,
+        captures,
+        lifecycle,
+        resourceProof: {
+          before,
+          starved,
+          recovered,
+          disposed: managedLightingReservations(engine),
+        },
+      };
+    }
     for (const mode of ["pbr", "cel"] as const)
       for (const kind of ["point", "spot", "sun"] as const) {
         engine.setSize(96, 72);
@@ -458,6 +514,7 @@ export async function runFrameGraphShadowProof(
       webGLVersion: engine instanceof Engine ? engine.webGLVersion : null,
       captures,
       lifecycle,
+      resourceProof: undefined,
     };
   } finally {
     engine.dispose();

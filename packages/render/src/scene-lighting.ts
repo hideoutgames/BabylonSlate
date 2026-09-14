@@ -1,3 +1,4 @@
+import { syncSceneRenderPath, publishSceneRenderPath } from "./scene-render-path";
 import "./texture-quality";
 import { syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
@@ -79,7 +80,9 @@ function installSceneLighting(scene: Scene): SceneLighting {
 
   const sync = (): void => {
     if (scene.isDisposed) return;
+    syncSceneRenderPath(scene);
     syncClusteredLightPolicy(scene);
+    publishSceneRenderPath(scene);
     budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.

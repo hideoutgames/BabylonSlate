@@ -1,3 +1,4 @@
+import { registerClusteredSurfaceMaterial } from "./clustered-material-policy";
 import {
   AddBlock,
   BonesBlock,
@@ -618,6 +619,7 @@ export function compileMaterialPlan(
       }
       buildState = "ready";
       if (cacheableShadowShape) registerCacheableShadowMaterial(material);
+      if (plan.domain === "surface" && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
       settleBuild([]);
     }
   });

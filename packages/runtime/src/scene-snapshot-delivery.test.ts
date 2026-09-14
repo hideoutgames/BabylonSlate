@@ -5,6 +5,19 @@ import { createInProcessRuntime } from "./driver";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 
 describe("Scene batch snapshot delivery", () => {
+  it("retains independent layer markers across a world change and drops only a removed layer", () => {
+    let available = false;
+    const sent: CommandMessage[] = [];
+    const delivery = createSceneSnapshotDelivery({ publishSnapshot: () => available, send: (command) => sent.push(command) });
+    delivery.receive({ type: "sceneLayerRealized", layerId: "retained", layerLoadId: 1 });
+    delivery.receive({ type: "sceneLayerRealized", layerId: "removed", layerLoadId: 2 });
+    delivery.receive({ type: "sceneRealized", sceneAssetGuid: "old", sceneLoadId: 1 });
+    delivery.receive({ type: "sceneLoading", sceneAssetGuid: "new", sceneLoadId: 2 });
+    delivery.receive({ type: "sceneLayerRemove", layerId: "removed" });
+    available = true;
+    delivery.flush();
+    expect(sent).toEqual([{ type: "sceneLayerRealized", layerId: "retained", layerLoadId: 1 }]);
+  });
   it("holds the batch until a resized transport accepts the complete authored pose", async () => {
     const events: Array<string | number> = [];
     let capacityAcknowledged = false;

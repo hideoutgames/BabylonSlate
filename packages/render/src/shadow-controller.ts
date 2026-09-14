@@ -44,6 +44,7 @@ import {
   ENGINE_SHADOW_BUDGET,
   SHADOW_MATERIAL_SAMPLER_RESERVE,
   otherShadowReservations,
+  availableSceneShadowBytes,
   reserveSceneShadows,
   shadowBytesPerTexel,
   type ShadowCost,
@@ -457,7 +458,11 @@ export class SceneShadowController {
     const other = otherShadowReservations(scene);
     const byteBudget = Math.max(
       0,
-      Math.min(profile.byteBudget, ENGINE_SHADOW_BUDGET.bytes - other.bytes),
+      Math.min(
+        profile.byteBudget,
+        ENGINE_SHADOW_BUDGET.bytes - other.bytes,
+        availableSceneShadowBytes(scene),
+      ),
     );
     const passBudget = Math.max(
       0,

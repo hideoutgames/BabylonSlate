@@ -133,6 +133,47 @@ describe("World tick", () => {
     expect(replacement.destroyed).toBe(false);
   });
 
+  it("keeps a ready SceneLayer ticking when Game Instance starts loading the world scene", () => {
+    const events: string[] = [];
+    let worldReady = true;
+    const world = new World({
+      seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      canTickActor: (actor) => actor.sceneLayerId === "global" || worldReady,
+    });
+    world.setGameInstance(new GameInstance({ classId: "GameInstance", hooks: { onTick: () => {
+      events.push("gi");
+      worldReady = false;
+    } } }));
+    for (const [name, layer] of [["world", null], ["overlay", "global"]] as const) {
+      const actor = world.createActor({ classId: "Actor", sceneLayerId: layer,
+        hooks: { onTick: () => { events.push(name); } } });
+      actor.attachComponent(world.createComponent({ classId: "ActorComponent",
+        hooks: { onTick: () => { events.push(`${name}-component`); } } }));
+      world.spawnActorNow(actor);
+    }
+    world.tick();
+    world.tick();
+    expect(events).toEqual(["gi", "overlay", "overlay-component", "gi", "overlay", "overlay-component"]);
+  });
+
+  it("rechecks an owner's readiness between component callbacks without blocking a ready sibling layer", () => {
+    const events: string[] = [];
+    const ready = new Set(["first", "second"]);
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      canTickActor: (actor) => ready.has(actor.sceneLayerId!) });
+    for (const layer of ["first", "second"]) {
+      const actor = world.createActor({ classId: "Actor", sceneLayerId: layer });
+      for (const index of [1, 2]) actor.attachComponent(world.createComponent({ classId: "ActorComponent",
+        hooks: { onTick: () => {
+          events.push(`${layer}-${index}`);
+          if (layer === "first") ready.delete(layer);
+        } } }));
+      world.spawnActorNow(actor);
+    }
+    world.tick();
+    expect(events).toEqual(["first-1", "second-1", "second-2"]);
+  });
+
   it("discards cancelled actor preparation without running queued lifecycle hooks", () => {
     const world = createTestWorld();
     const events: string[] = [];

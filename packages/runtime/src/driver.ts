@@ -23,6 +23,9 @@ import {
   Actor,
   ActorComponent,
   BObject,
+  GameInstance,
+  MaterialObject,
+  Scene,
   SceneLayer,
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
@@ -30,7 +33,6 @@ import {
   type DebugInspectSnapshot,
   type TickPhase,
   type SceneActorHooks,
-  type Scene,
 } from "@babylonslate/object-model";
 import {
   createDefaultSceneSettings,
@@ -265,6 +267,8 @@ export interface RuntimeDriver {
   /** Complete the matching deferred load after the host presents its ready frame. */
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void;
   notifySceneLoadingPainted(sceneAssetGuid: string, sceneLoadId: number): void;
+  notifySceneLayerReady(layerId: string, layerLoadId: number): void;
+  notifySceneLayerLoadingPainted(layerId: string, layerLoadId: number): void;
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
@@ -445,6 +449,11 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly deferSceneModelsReady: boolean;
   private readonly deferSceneLoadingPaint: boolean;
   private sceneLoadId = 0;
+  private layerLoadId = 0;
+  private readonly layerLoads = new Map<string, { layer: SceneLayer; loadId: number; realized: boolean; presented: boolean; ready: boolean }>();
+  private readonly independentLayerWork = new Map<string, { layer: SceneLayer; loadId: number; controller: AbortController; painted: () => void }>();
+  private readonly pendingOwnerActions = new Map<BObject, Array<() => void>>();
+  private readonly createdScriptObjects = new WeakSet<BObject>();
   private readonly cooperativeSceneLoading: CooperativeSceneLoadingOptions | null;
   private realization: SceneRealization | null = null;
   private sceneWorkBlocked = false;
@@ -457,6 +466,7 @@ class InProcessRuntime implements RuntimeDriver {
     name: string;
     guid: string;
     sceneLoadId: number;
+    presented: boolean;
   } | null = null;
   private gameInstanceBound = false;
   /** A script `Possess Camera` outranks the authored per-camera option. */
@@ -669,7 +679,7 @@ class InProcessRuntime implements RuntimeDriver {
         y: this.overlayGravity[1],
         z: this.overlayGravity[2],
       }),
-      { actorFilter: (actor) => actor.sceneLayerId != null },
+      { actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor) },
     );
     if (options.tilemaps || options.tilesets) {
       this.bindPhysicsContent(this.physicsSync);
@@ -696,25 +706,24 @@ class InProcessRuntime implements RuntimeDriver {
       classRegistry: registry,
       guidFactory: () => `rt-${++guidSeq}`,
       onPhase: (phase) => this.markPhase(phase),
-      canTickScene: () => this.canTickScene(),
+      canTickScene: () => !this.stopped,
+      canTickActor: (actor) => this.canTickActor(actor),
       componentHooksFor: (classId) => {
         if (!registry.isA(classId, "ActorComponent")) return undefined;
-        const sceneChangeId = this.sceneChangeId;
         return {
           onCreation: (self) => {
-            if (this.stopped || this.sceneChangeId !== sceneChangeId) return;
             this.scriptHost.bindInterfaceHandlers(self);
-            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
+            this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
           },
           onTick: (self, ctx) =>
             this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
           onDestroyed: (self) =>
-            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self)),
+            this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self)),
         };
       },
       onPhysics: (ctx) => {
-        this.physicsSync.step(ctx.dt, this.world);
-        this.overlayPhysicsSync.step(ctx.dt, this.world);
+        if (this.canTickScene()) this.physicsSync.step(ctx.dt, this.world);
+        if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
         this.dispatchCollisionEvents();
       },
     });
@@ -752,6 +761,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      canRunOwner: (owner) => this.canRunOwner(owner),
       inputBindings: this.resolver.bindings,
       getInputState: (input) => this.resolver.getInputState(input),
       interfaceRegistry: this.world.interfaceRegistry,
@@ -1152,7 +1162,7 @@ class InProcessRuntime implements RuntimeDriver {
       actorFilter: (actor) => actor.sceneLayerId == null,
     });
     const overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
-      actorFilter: (actor) => actor.sceneLayerId != null,
+      actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor),
     });
     try {
       this.bindPhysicsContent(physicsSync);
@@ -1204,10 +1214,70 @@ class InProcessRuntime implements RuntimeDriver {
     zOrder = 0,
     ownerSceneGuid: string | null = null,
   ): SceneLayer | null {
-    const steps = this.createSceneLayerSteps(assetGuid, zOrder, ownerSceneGuid);
-    let next = steps.next();
-    while (!next.done) next = steps.next();
-    return next.value;
+    if (this.stopped) return null;
+    if (!this.cooperativeSceneLoading) {
+      const steps = this.createSceneLayerSteps(assetGuid, zOrder, ownerSceneGuid);
+      let next = steps.next();
+      while (!next.done) next = steps.next();
+      return next.value;
+    }
+    const controller = new AbortController();
+    const created: SceneLayer[] = [];
+    let paint!: () => void;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const painted = this.deferSceneLoadingPaint ? new Promise<void>((resolve, reject) => {
+      paint = resolve;
+      timer = setTimeout(() => reject(new Error("SceneLayer Loading did not paint before the loading deadline.")), 30_000);
+    }) : Promise.resolve();
+    const fail = (error: unknown) => {
+      const layer = created[0];
+      const work = layer && this.independentLayerWork.get(layer.guid);
+      if (!layer || !work || work.controller !== controller || controller.signal.aborted || this.stopped) return;
+      this.emit({ type: "sceneLayerLoadFailed", layerId: layer.guid, layerLoadId: work.loadId,
+        message: error instanceof Error ? error.message : String(error) });
+      this.reportError(error);
+    };
+    const steps = this.createSceneLayerSteps(assetGuid, zOrder, ownerSceneGuid, undefined, {
+      signal: controller.signal,
+      created: (layer, loadId) => {
+        created.push(layer);
+        // The in-process host can acknowledge inside sceneLayerLoading emission.
+        this.independentLayerWork.set(layer.guid, { layer, loadId, controller, painted: () => paint?.() });
+      },
+      failed: fail,
+    });
+    try {
+      const first = steps.next();
+      const layer = created[0];
+      if (first.done === true || !layer) {
+        clearTimeout(timer);
+        return first.done === true ? first.value : null;
+      }
+      void (async () => {
+        try {
+          await waitForSceneWork(painted, controller.signal);
+          clearTimeout(timer);
+          const remaining = function* () { yield* steps; };
+          await runSceneRealizationWork(remaining(), controller.signal, this.cooperativeSceneLoading!);
+        } catch (error) { fail(error); }
+        finally {
+          clearTimeout(timer);
+          try { steps.return(null); }
+          finally { if (this.independentLayerWork.get(layer.guid)?.controller === controller) this.independentLayerWork.delete(layer.guid); }
+        }
+      })().catch((error: unknown) => { if (!this.stopped) this.reportError(error); });
+      return layer;
+    } catch (error) {
+      clearTimeout(timer);
+      steps.return(null);
+      throw error;
+    }
+  }
+
+  notifySceneLayerLoadingPainted(layerId: string, layerLoadId: number): void {
+    const work = this.independentLayerWork.get(layerId);
+    if (this.stopped || !work || work.loadId !== layerLoadId || work.controller.signal.aborted || this.world.findSceneLayer(layerId) !== work.layer) return;
+    work.painted();
   }
 
   private *createSceneLayerSteps(
@@ -1215,8 +1285,14 @@ class InProcessRuntime implements RuntimeDriver {
     zOrder = 0,
     ownerSceneGuid: string | null = null,
     work?: SceneRealization,
+    independent?: { signal: AbortSignal; created: (layer: SceneLayer, loadId: number) => void; failed: (error: unknown) => void },
   ): Generator<void, SceneLayer | null, unknown> {
-    const checkpoint = () => { if (work) this.checkRealization(work); };
+    let ownedLayer: SceneLayer | null = null;
+    const checkpoint = () => {
+      if (work) this.checkRealization(work);
+      independent?.signal.throwIfAborted();
+      if (ownedLayer && this.world.findSceneLayer(ownedLayer.guid) !== ownedLayer) throw sceneRealizationCancelled();
+    };
     checkpoint();
     const guid = String(assetGuid ?? "").trim();
     const raw = this.sceneLayerLibrary.get(guid);
@@ -1230,7 +1306,7 @@ class InProcessRuntime implements RuntimeDriver {
       });
       return null;
     }
-    const document = normalizeSceneLayer(raw);
+    const document = normalizeSceneLayer({ ...raw, actors: [], folders: [] });
     if (this.world.getSceneLayers().length === 0) {
       this.overlayPhysicsSync.getBackend().setGravity({
         x: document.settings.gravity[0],
@@ -1247,7 +1323,15 @@ class InProcessRuntime implements RuntimeDriver {
       })),
       layerBounds: document.settings.layerBounds,
     });
+    ownedLayer = layer;
     work?.layers.push(layer);
+    const layerLoad = { layer, loadId: ++this.layerLoadId, realized: false, presented: false, ready: false };
+    this.layerLoads.set(layer.guid, layerLoad);
+    const actors: Actor[] = [];
+    let completed = false;
+    try {
+    independent?.created(layer, layerLoad.loadId);
+    this.emit({ type: "sceneLayerLoading", layerId: layer.guid, assetGuid: guid, layerLoadId: layerLoad.loadId });
     checkpoint();
     this.emit({
       type: "sceneLayerCreate",
@@ -1259,12 +1343,17 @@ class InProcessRuntime implements RuntimeDriver {
       layerBounds: { ...layer.layerBounds },
     });
     checkpoint();
+    // Return the live loading identity before actor remapping or realization.
+    yield;
+    checkpoint();
+    const serializedActors = normalizeSceneLayer(raw).actors;
+    yield;
+    checkpoint();
     const remapped = yield* remapOverlaySerializedActors(
-      document.actors,
+      serializedActors,
       layer.guid,
       (id) => this.slotByGuid.has(id) || this.world.findActor(id) != null,
     );
-    const actors: Actor[] = [];
     for (const serialized of remapped) {
       checkpoint();
       const actor = createActorFromSerialized(this.world, serialized, this.sceneActorHooks, layer.guid);
@@ -1306,12 +1395,34 @@ class InProcessRuntime implements RuntimeDriver {
       checkpoint();
       yield;
     }
+    layerLoad.realized = true;
+    this.publishSnapshot();
+    this.emit({ type: "sceneLayerRealized", layerId: layer.guid, layerLoadId: layerLoad.loadId });
+    if (!this.deferSceneModelsReady) this.notifySceneLayerReady(layer.guid, layerLoad.loadId);
+    completed = true;
     return layer;
+    } catch (error) {
+      independent?.failed(error);
+      throw error;
+    } finally {
+      if (!completed) {
+        // Creation and spawn are separate passes. An aborted creation pass can
+        // own Actors which never entered the World or received a render slot.
+        for (const actor of actors) if (!actor.destroyed && !actor.world) this.removeOwnedActor(actor);
+        if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
+      }
+    }
   }
 
   removeSceneLayer(layerGuid: string): void {
     const layer = this.world.findSceneLayer(layerGuid);
     if (!layer) return;
+    this.layerLoads.delete(layerGuid);
+    const work = this.independentLayerWork.get(layerGuid);
+    if (work?.layer === layer) {
+      this.independentLayerWork.delete(layerGuid);
+      work.controller.abort(sceneRealizationCancelled());
+    }
     for (const actor of [...this.world.getActors()]) {
       if (actor.sceneLayerId !== layer.guid) continue;
       if (this.world.findSceneLayer(layer.guid) !== layer) return;
@@ -1389,6 +1500,7 @@ class InProcessRuntime implements RuntimeDriver {
   ): void {
     const actor = this.world.findActor(message.actorGuid);
     if (!actor || actor.destroyed || !actor.sceneLayerId) return;
+    if (!this.canTickActor(actor)) return;
     const requested =
       typeof message.componentId === "string" ? message.componentId.trim() : "";
     const resolved = resolveOverlayPointerButton(this.world, actor, requested);
@@ -1408,7 +1520,7 @@ class InProcessRuntime implements RuntimeDriver {
     const voiceId = String(message.voiceId ?? "").trim();
     if (!voiceId) return;
     for (const actor of this.world.getActors()) {
-      if (actor.destroyed) continue;
+      if (actor.destroyed || !this.canTickActor(actor)) continue;
       const component = actor.components.find(
         (entry) =>
           !entry.destroyed &&
@@ -1570,11 +1682,11 @@ class InProcessRuntime implements RuntimeDriver {
       implementedInterfaces: options.implementedInterfaces,
       transform: options.transform,
       hooks: {
-        onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+        onCreation: (self) => this.runOwnerCreation(self, () => hooks.onCreation?.(self)),
         onTick: (self, ctx) =>
           this.guardScript(() => hooks.onTick?.(self, ctx)),
         onDestroyed: (self) =>
-          this.guardScript(() => hooks.onDestroyed?.(self)),
+          this.runOwnerDestroyed(self, () => hooks.onDestroyed?.(self)),
       },
     });
     this.scriptHost.bindInterfaceHandlers(actor);
@@ -1593,14 +1705,76 @@ class InProcessRuntime implements RuntimeDriver {
     const hooks = this.scriptHost.hooksFor(classId);
     if (!hooks) return undefined;
     return {
-      onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+      onCreation: (self) => this.runOwnerCreation(self, () => hooks.onCreation?.(self)),
       onTick: (self, ctx) => this.guardScript(() => hooks.onTick?.(self, ctx)),
-      onDestroyed: (self) => this.guardScript(() => hooks.onDestroyed?.(self)),
+      onDestroyed: (self) => this.runOwnerDestroyed(self, () => hooks.onDestroyed?.(self)),
     };
   };
 
   private canTickScene(): boolean {
     return !this.sceneWorkBlocked && !this.bootLoading && !this.stopped;
+  }
+
+  private hasReadyLayers(): boolean {
+    return !this.stopped && [...this.layerLoads.values()].some((load) => load.ready && !load.layer.destroyed);
+  }
+
+  private canTickActor(actor: Actor): boolean {
+    if (this.stopped || actor.destroyed) return false;
+    if (!actor.sceneLayerId) return this.canTickScene();
+    return this.layerLoads.get(actor.sceneLayerId)?.ready === true;
+  }
+
+  private canRunOwner(owner: BObject): boolean {
+    if (this.stopped || owner.destroyed) return false;
+    if (owner === this.world.gameInstance) return true;
+    const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner
+      : owner instanceof MaterialObject ? owner.component.owner : null;
+    if (actor) return actor.world === this.world && this.canTickActor(actor);
+    if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.ready === true;
+    if (owner instanceof Scene) return owner === this.world.currentScene && this.canTickScene();
+    // Detached components and superseded GameInstances have no active owner.
+    return !(owner instanceof ActorComponent || owner instanceof MaterialObject || owner instanceof GameInstance);
+  }
+
+  private runOwnerAction(owner: BObject, action: () => void): void {
+    if (this.canRunOwner(owner)) { action(); return; }
+    if (this.stopped || owner.destroyed) return;
+    const actions = this.pendingOwnerActions.get(owner) ?? [];
+    actions.push(action);
+    this.pendingOwnerActions.set(owner, actions);
+  }
+
+  private runOwnerCreation(owner: BObject, create: () => void): void {
+    this.runOwnerAction(owner, () => {
+      this.createdScriptObjects.add(owner);
+      this.guardScript(create);
+    });
+  }
+
+  private runOwnerDestroyed(owner: BObject, destroy: () => void): void {
+    this.pendingOwnerActions.delete(owner);
+    if (this.createdScriptObjects.has(owner)) this.guardScript(destroy);
+  }
+
+  private flushOwnerActions(): void {
+    for (const [owner, actions] of this.pendingOwnerActions) {
+      if (owner.destroyed) { this.pendingOwnerActions.delete(owner); continue; }
+      while (actions.length && this.canRunOwner(owner)) actions.shift()!();
+      if (actions.length === 0) this.pendingOwnerActions.delete(owner);
+    }
+  }
+
+  notifySceneLayerReady(layerId: string, layerLoadId: number): void {
+    const load = this.layerLoads.get(layerId);
+    if (this.stopped || !load || load.loadId !== layerLoadId || !load.realized || load.ready ||
+      this.world.findSceneLayer(layerId) !== load.layer) return;
+    load.presented = true;
+    if (this.bootLoading) return;
+    load.ready = true;
+    this.overlayPhysicsSync.syncFromWorld(this.world);
+    this.flushOwnerActions();
+    this.tryCompleteSceneLoad();
   }
 
   beginPlayLoading(): boolean {
@@ -1614,6 +1788,9 @@ class InProcessRuntime implements RuntimeDriver {
   finishPlayLoading(): void {
     if (this.stopped) throw sceneRealizationCancelled();
     this.bootLoading = false;
+    for (const load of [...this.layerLoads.values()]) {
+      if (load.presented && !load.ready) this.notifySceneLayerReady(load.layer.guid, load.loadId);
+    }
     const prepared = this.preparedBootScene;
     this.preparedBootScene = null;
     if (!prepared || this.realization !== prepared.work) return;
@@ -1652,6 +1829,15 @@ class InProcessRuntime implements RuntimeDriver {
   private removeOwnedActor(actor: Actor): void {
     if (this.removingActors.has(actor)) return;
     this.removingActors.add(actor);
+    this.pendingOwnerActions.delete(actor);
+    for (const component of actor.components) {
+      this.pendingOwnerActions.delete(component);
+      this.animEvalByComponent.delete(component.guid);
+      this.pendingAnimJumpByComponent.delete(component.guid);
+      for (const key of this.animInitializedBySlot) {
+        if (key.startsWith(`${component.guid}:`)) this.animInitializedBySlot.delete(key);
+      }
+    }
     const slotId = this.slotByGuid.get(actor.guid);
     const ownsSlot = () => slotId !== undefined && this.slotOwners.get(slotId) === actor;
     try {
@@ -1794,11 +1980,8 @@ class InProcessRuntime implements RuntimeDriver {
     checkpoint();
     this.overlayPhysicsSync.syncFromWorld(this.world);
     checkpoint();
-    this.animEvalByComponent.clear();
-    this.animInitializedBySlot.clear();
-    this.pendingAnimJumpByComponent.clear();
-    this.btEvalBySlot.clear();
-    this.lastBtStateJson.clear();
+    // Actor removal releases only departing animation/BT state. Retained layers
+    // continue from their existing graph state while the world is replaced.
     this.clearNavAgents();
     work.departure = null;
   }
@@ -2496,13 +2679,13 @@ class InProcessRuntime implements RuntimeDriver {
     const liveKeys = new Set<string>();
     const liveEvalKeys = new Set<string>();
     for (const actor of this.world.getActors()) {
-      if (!this.canTickScene()) return;
-      if (actor.destroyed) continue;
+      if (this.stopped) return;
+      if (!this.canTickActor(actor)) continue;
       const slotId = this.slotByGuid.get(actor.guid);
       if (slotId === undefined) continue;
       if (this.btPlayAnimOwnedSlots.has(slotId)) continue;
       for (const component of actor.components) {
-        if (!this.canTickScene()) return;
+        if (!this.canTickActor(actor)) break;
         if (
           component.classId !== "AnimationGraphComponent" ||
           component.destroyed
@@ -2989,8 +3172,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private tickBehaviourTrees(): void {
     for (const actor of this.world.getActors()) {
-      if (!this.canTickScene()) return;
-      if (actor.destroyed) continue;
+      if (this.stopped) return;
+      if (!this.canTickActor(actor)) continue;
       const slotId = this.slotByGuid.get(actor.guid);
       if (slotId === undefined) continue;
       const component = actor.components.find(
@@ -3566,6 +3749,7 @@ class InProcessRuntime implements RuntimeDriver {
       const actorA = this.world.findActor(event.actorAId);
       const actorB = this.world.findActor(event.actorBId);
       if (!actorA || !actorB || actorA.destroyed || actorB.destroyed) continue;
+      if (!this.canTickActor(actorA) || !this.canTickActor(actorB)) continue;
       if (event.kind === "hit") {
         this.dispatchHit(
           actorA,
@@ -3648,10 +3832,16 @@ class InProcessRuntime implements RuntimeDriver {
     checkpoint();
     this.world.spawnActorNow(actor);
     checkpoint();
+    this.flushOwnerActions();
+    checkpoint();
     this.navFrameActors?.set(actor.guid, actor);
   }
 
   private emitAudioComponents(actor: Actor): void {
+    if (!this.canRunOwner(actor)) {
+      this.runOwnerAction(actor, () => this.emitAudioComponents(actor));
+      return;
+    }
     for (const component of actor.components) {
       if (component.destroyed || component.classId !== "AudioComponent") continue;
       const playOnStart = component.getVariable("playOnStart") !== false;
@@ -3700,7 +3890,7 @@ class InProcessRuntime implements RuntimeDriver {
         actorGuid: actor.guid,
         componentId: component.guid,
         particleSystemGuid: assetGuid,
-        play: component.getVariable("playOnStart") !== false,
+        play: this.canRunOwner(actor) && component.getVariable("playOnStart") !== false,
         sortingLayer:
           typeof sortingLayer === "string" && sortingLayer.trim() !== ""
             ? sortingLayer
@@ -3710,6 +3900,10 @@ class InProcessRuntime implements RuntimeDriver {
             ? Math.round(orderInLayer)
             : 0,
       });
+      if (component.getVariable("playOnStart") !== false && !this.canRunOwner(actor)) {
+        this.runOwnerAction(actor, () => this.emit({ type: "setParticlePlaying", actorGuid: actor.guid,
+          componentId: component.guid, playing: true }));
+      }
     }
   }
 
@@ -4013,7 +4207,7 @@ class InProcessRuntime implements RuntimeDriver {
           },
           onGameEnd: (self) => {
             this.guardScript(() =>
-              this.scriptHost.invokeEvent(classId, "onEnd", self),
+              this.scriptHost.invokeGameShutdownEvent(classId, "onEnd", self),
             );
           },
           onSceneStartLoading: (self, sceneName) => {
@@ -4047,11 +4241,13 @@ class InProcessRuntime implements RuntimeDriver {
             );
           },
           onSceneExit: (self, sceneName) => {
-            this.guardScript(() =>
-              this.scriptHost.invokeEvent(classId, "onSceneExit", self, {
-                sceneName,
-              }),
-            );
+            this.guardScript(() => {
+              if (this.stopped) {
+                this.scriptHost.invokeGameShutdownEvent(classId, "onSceneExit", self, { sceneName });
+              } else {
+                this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName });
+              }
+            });
           },
         },
       }),
@@ -4082,20 +4278,27 @@ class InProcessRuntime implements RuntimeDriver {
   ): void {
     // Install the latch first: an in-process host may acknowledge synchronously
     // from sceneRealized, after the full world and owned-layer assignment batch.
-    this.pendingSceneFinish = { name, guid, sceneLoadId };
+    this.pendingSceneFinish = { name, guid, sceneLoadId, presented: !this.deferSceneModelsReady };
     this.emit({ type: "sceneRealized", sceneAssetGuid: guid, sceneLoadId });
     if (
       !this.deferSceneModelsReady &&
       this.pendingSceneFinish?.sceneLoadId === sceneLoadId
     )
-      this.completeSceneLoad(name);
+      this.tryCompleteSceneLoad();
   }
 
-  private completeSceneLoad(name: string): void {
+  private tryCompleteSceneLoad(): void {
+    const pending = this.pendingSceneFinish;
+    if (this.stopped || !pending?.presented) return;
+    for (const load of this.layerLoads.values()) {
+      if (load.layer.ownerSceneGuid === pending.guid && !load.ready) return;
+    }
     this.sceneLoadingProgress = 1;
     this.sceneWorkBlocked = false;
     this.pendingSceneFinish = null;
-    this.world.finishSceneLoad(name);
+    this.flushOwnerActions();
+    // Authored creation may immediately replace this Scene or stop Play.
+    if (!this.stopped && this.sceneLoadId === pending.sceneLoadId) this.world.finishSceneLoad(pending.name);
   }
 
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void {
@@ -4103,7 +4306,8 @@ class InProcessRuntime implements RuntimeDriver {
     if (!pending) return;
     if (sceneAssetGuid !== pending.guid || sceneLoadId !== pending.sceneLoadId)
       return;
-    this.completeSceneLoad(pending.name);
+    pending.presented = true;
+    this.tryCompleteSceneLoad();
   }
 
   start(): void {
@@ -4119,6 +4323,13 @@ class InProcessRuntime implements RuntimeDriver {
     this.lifecycleId++;
     this.sceneChangeId++;
     this.running = false;
+    for (const work of [...this.independentLayerWork.values()]) {
+      work.controller.abort(sceneRealizationCancelled());
+      // Finish live ownership cleanup before Stop returns; a later rejected
+      // paint/yield continuation must not emit commands into a disposed host.
+      if (this.world.findSceneLayer(work.layer.guid) === work.layer) this.removeSceneLayer(work.layer.guid);
+    }
+    this.independentLayerWork.clear();
     this.cancelRealization();
     this.sceneLoadId++;
     this.pendingSceneFinish = null;
@@ -4132,6 +4343,8 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.world.end();
+    this.pendingOwnerActions.clear();
+    this.layerLoads.clear();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
     if (this.showPathfinding || this.showNavAgent) {
@@ -4216,8 +4429,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
     if (this.stopped) return;
     this.advanceDelays();
-    if (this.canTickScene()) this.tickAnimGraphs();
-    if (this.canTickScene()) {
+    if (this.canTickScene() || this.hasReadyLayers()) this.tickAnimGraphs();
+    if (this.canTickScene() || this.hasReadyLayers()) {
       this.tilemapAnimationTimeMs += simDt * 1000;
       if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
       this.navFrameActors = new Map(this.world.getActors().map((actor) => [actor.guid, actor]));
@@ -4234,7 +4447,7 @@ class InProcessRuntime implements RuntimeDriver {
     this._lastPhysicsMs = this.phasePhysicsMs;
 
     this.frameId += 1;
-    if (this.canTickScene()) {
+    if (this.canTickScene() || this.hasReadyLayers()) {
       this.publishSnapshot();
       this.emitDebugColliders();
       this.emitNavigationDebug();
@@ -4316,7 +4529,8 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   copySnapshot(out: Float32Array): boolean {
-    if (this.stopped || (this.sceneWorkBlocked && !this.realization?.finished)) return false;
+    if (this.stopped || (this.sceneWorkBlocked && !this.realization?.finished &&
+      ![...this.layerLoads.values()].some((load) => load.realized))) return false;
     if (out.length < this.snapshots.floatCount) return false;
     return this.snapshots.tryRead(out);
   }
@@ -4395,7 +4609,7 @@ class InProcessRuntime implements RuntimeDriver {
     const due: Array<() => void> = [];
     for (const waiter of this.delayWaiters) {
       if (waiter.owner?.destroyed) continue;
-      if (waiter.owner && waiter.owner !== this.world.gameInstance && !this.canTickScene()) {
+      if (waiter.owner && !this.canRunOwner(waiter.owner)) {
         remaining.push(waiter);
         continue;
       }

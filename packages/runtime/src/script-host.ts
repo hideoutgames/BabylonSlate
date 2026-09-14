@@ -67,6 +67,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  /** Whether an object may receive authored calls during its owner's load. */
+  canRunOwner?(owner: BObject): boolean;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   getProjectName?(): string;
@@ -548,6 +550,8 @@ export class ScriptHost {
     Record<string, unknown>
   >();
   private readonly services: ScriptHostServices;
+  private invokingOwner: BObject | null = null;
+  private finalizingOwner: BObject | null = null;
   private commandResult = { success: true, output: "" };
   private readonly rng: Rng = createSeededRng(1);
 
@@ -600,7 +604,7 @@ export class ScriptHost {
       },
       onDestroyed: (self) => {
         this.clearFlowState(self);
-        this.dispatchEvent(loaded, "onDestroyed", self, 0, 0);
+        this.dispatchFinalEvent(loaded, "onDestroyed", self);
       },
     };
   }
@@ -618,6 +622,39 @@ export class ScriptHost {
     return this.commandResult;
   }
 
+  /** The driver calls this only for the actual GameInstance shutdown lifecycle. */
+  invokeGameShutdownEvent(classId: string, event: "onEnd" | "onSceneExit", self: BObject, args: Record<string, unknown> = {}): void {
+    const loaded = this.byClassId.get(classId);
+    if (loaded) this.dispatchFinalEvent(loaded, event, self, args);
+  }
+
+  private dispatchFinalEvent(loaded: readonly LoadedScript[], event: string, self: BObject, args: Record<string, unknown> = {}): void {
+    const previous = this.finalizingOwner;
+    this.finalizingOwner = self;
+    try {
+      this.dispatchEvent(loaded, event, self, 0, 0, args);
+    } finally {
+      this.finalizingOwner = previous;
+    }
+  }
+
+  private canInvokeOwner(owner: BObject): boolean {
+    // Only synchronous calls from the finalizing object itself inherit its final
+    // lifecycle. Calling through another object must reapply normal admission.
+    if (owner === this.finalizingOwner && owner === this.invokingOwner) return true;
+    return !owner.destroyed && this.services.canRunOwner?.(owner) !== false;
+  }
+
+  private invokeOwned<T>(owner: BObject | null, invoke: () => T): T {
+    const previous = this.invokingOwner;
+    this.invokingOwner = owner;
+    try {
+      return invoke();
+    } finally {
+      this.invokingOwner = previous;
+    }
+  }
+
   /** Fire a compiled entry point (Begin Play, Tick, or a custom event name). */
   invokeEvent(
     classId: string,
@@ -628,6 +665,7 @@ export class ScriptHost {
   ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
+    if (self && !this.canInvokeOwner(self)) return;
     this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, undefined, componentId);
   }
 
@@ -678,7 +716,7 @@ export class ScriptHost {
       loaded[0]!.script.assetGuid,
     );
     try {
-      const result = (evaluate as (context: ScriptContext) => unknown)(ctx);
+      const result = this.invokeOwned(self, () => (evaluate as (context: ScriptContext) => unknown)(ctx));
       if (!result || typeof result !== "object") return undefined;
       const row = result as { enter?: unknown; exit?: unknown };
       return {
@@ -705,6 +743,7 @@ export class ScriptHost {
           const exportName = impl.exportName;
           const key = interfaceHandlerKey(iface, impl.method);
           object.interfaceHandlers.set(key, (args) => {
+            if (!this.canInvokeOwner(object)) return {};
             const fn = entry.exports[exportName];
             if (typeof fn !== "function") return {};
             const ctx = this.createContext(
@@ -717,7 +756,7 @@ export class ScriptHost {
               entry.script.assetGuid,
             );
             try {
-              const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
+              const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
               if (result instanceof Promise) {
                 void result.catch((error) => this.services.reportError(error));
                 return {};
@@ -768,7 +807,7 @@ export class ScriptHost {
           entry.script.assetGuid,
         );
         try {
-          const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
+          const result = this.invokeOwned(self, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
           if (result instanceof Promise) {
             if (self) this.markPending(self, key);
             void result
@@ -1057,9 +1096,14 @@ export class ScriptHost {
         const receiver = (target ?? self) as InterfaceDispatchTarget | null;
         const registry = services.interfaceRegistry;
         if (!registry || !receiver) return {};
+        const admitted = !(receiver instanceof BObject) || this.canInvokeOwner(receiver);
         return dispatchInterface(
           registry,
-          receiver,
+          admitted ? receiver : {
+            guid: receiver.guid,
+            classId: receiver.classId,
+            implementedInterfaces: receiver.implementedInterfaces,
+          },
           String(interfaceGuid),
           String(method),
           args ?? {},
@@ -1119,7 +1163,7 @@ export class ScriptHost {
       },
       invokeCustomEvent: (target, eventName, eventArgs) => {
         const receiver = (target ?? self) as BObject | null;
-        if (!receiver || typeof eventName !== "string" || !eventName) return;
+        if (!receiver || !this.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
         const loaded = this.byClassId.get(receiver.classId);
         if (loaded && loaded.length > 0) {
           this.dispatchEvent(
@@ -1142,6 +1186,7 @@ export class ScriptHost {
         }
       },
       invokeEvent: (classId, eventName, eventArgs) => {
+        if (self && !this.canInvokeOwner(self)) return;
         if (typeof classId !== "string" || !classId.trim()) return;
         if (typeof eventName !== "string" || !eventName) return;
         const loaded = this.byClassId.get(classId.trim());
@@ -1167,7 +1212,7 @@ export class ScriptHost {
           loaded = this.byClassId.get(target);
         } else {
           const object = (target ?? self) as BObject | null;
-          if (!object) return {};
+          if (!object || !this.canInvokeOwner(object)) return {};
           receiver = object;
           loaded = this.byClassId.get(object.classId);
         }
@@ -1186,7 +1231,7 @@ export class ScriptHost {
             entry.script.assetGuid,
           );
           try {
-            const value = (fn as (ctx: ScriptContext) => unknown)(nested);
+            const value = this.invokeOwned(receiver, () => (fn as (ctx: ScriptContext) => unknown)(nested));
             if (value instanceof Promise) {
               return value.then(
                 (resolved) =>

@@ -90,7 +90,9 @@ export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
 
 export { lightsDebugText } from "./render-diagnostics";
-export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdentity, type SceneLoadPhase, type SceneLoadProgress } from "./scene-load-readiness";
+export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdentity, type SceneLayerLoadIdentity, type SceneLoadPhase, type SceneLoadProgress } from "./scene-load-readiness";
 export { createAppWebGpuEngine } from "./webgpu-engine";
 export { createBackendEngineSession, type BackendEngineSession, type BackendEngineSessionOptions } from "./backend-engine-session";
 export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";
+
+export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";

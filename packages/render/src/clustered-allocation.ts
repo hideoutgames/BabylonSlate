@@ -4,6 +4,7 @@ import { Light, type AbstractMesh, type Scene } from "@babylonjs/core";
 /** Synchronous constructor/growth boundary; cleanup releases only new owned resources. */
 export function beginClusteredAllocation(
   scene: Scene,
+  afterCleanup?: () => void,
 ): (failure: unknown) => never {
   const engine = scene.getEngine();
   const lights = new Set(scene.lights);
@@ -26,7 +27,8 @@ export function beginClusteredAllocation(
       // Pinned constructor boundary: the proxy has left scene.meshes before its
       // first RTT allocation. The ordinary subclass dispose assumes both target
       // fields exist; a thrown constructor has not necessarily assigned them.
-      const proxy = (light as unknown as { _proxyMesh?: AbstractMesh })._proxyMesh;
+      const proxy = (light as unknown as { _proxyMesh?: AbstractMesh })
+        ._proxyMesh;
       if (proxy) attempt(() => proxy.dispose(false, true));
       attempt(() => Light.prototype.dispose.call(light));
     }
@@ -50,6 +52,7 @@ export function beginClusteredAllocation(
         attempt(() => texture.dispose());
     if (errors.length > 1)
       throw new AggregateError(errors, "Clustered allocation cleanup failed.");
+    afterCleanup?.();
     throw failure;
   };
 }

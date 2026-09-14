@@ -47,6 +47,7 @@ export interface SceneLayerView {
 export interface SceneLayerCompositorOptions {
   engine: AbstractEngine;
   postProcessingEnabled?: () => boolean;
+  isLayerReady?: (layerId: string) => boolean;
   attachLayerPostProcess?: (
     layer: SceneLayerView,
     stack: SceneLayerPostProcessEntry[],
@@ -67,6 +68,7 @@ type LayerRecord = SceneLayerView & {
  */
 export class SceneLayerCompositor {
   private readonly engine: AbstractEngine;
+  private readonly isLayerReady: (layerId: string) => boolean;
   private readonly postProcessingEnabled: () => boolean;
   private readonly attachLayerPostProcess?: SceneLayerCompositorOptions["attachLayerPostProcess"];
   private readonly byId = new Map<string, LayerRecord>();
@@ -75,6 +77,7 @@ export class SceneLayerCompositor {
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
+    this.isLayerReady = options.isLayerReady ?? (() => true);
     this.postProcessingEnabled = options.postProcessingEnabled ?? (() => true);
     this.attachLayerPostProcess = options.attachLayerPostProcess;
   }
@@ -208,24 +211,29 @@ export class SceneLayerCompositor {
     }
   }
 
-  render(): void {
+  render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => void) => void = (_id, render) => render()): void {
     for (const layer of this.sortedLayers()) {
+      if (!this.isLayerReady(layer.layerId) && !presentingLayers.has(layer.layerId)) continue;
       const record = layer as LayerRecord;
       this.bindHudCamera(record);
-      if (record.rtt) {
-        record.scene.autoClear = true;
-        record.scene.render();
-        this.blit(record);
-      } else {
-        record.scene.autoClear = false;
-        record.scene.autoClearDepthAndStencil = true;
-        record.scene.render();
-      }
+      draw(layer.layerId, () => {
+        if (record.rtt) {
+          record.scene.autoClear = true;
+          record.scene.render();
+          this.blit(record);
+        } else {
+          record.scene.autoClear = false;
+          record.scene.autoClearDepthAndStencil = true;
+          record.scene.render();
+        }
+      });
     }
   }
 
-  isReady(): boolean {
+  isReady(layerId?: string): boolean {
+    if (layerId && !this.byId.has(layerId)) return false;
     for (const record of this.byId.values()) {
+      if (layerId ? record.layerId !== layerId : !this.isLayerReady(record.layerId)) continue;
       if (!isSceneFrameReady(record.scene, record.rtt ? [record.rtt] : [])) return false;
       if (record.rtt && (!record.blitScene || !isSceneFrameReady(record.blitScene))) return false;
     }
@@ -262,6 +270,7 @@ export class SceneLayerCompositor {
     };
 
     for (const layer of [...this.sortedLayers()].reverse()) {
+      if (!this.isLayerReady(layer.layerId)) continue;
       this.bindHudCamera(layer as LayerRecord);
       const pick = layer.scene.pick(canvasX, canvasY, undefined, false);
       if (pick?.hit && pick.pickedMesh) {
@@ -452,6 +461,7 @@ export class SceneLayerCompositor {
     layer.scene.autoClear = true;
     layer.attachedPostProcess =
       this.attachLayerPostProcess?.(layer, enabledStack) ?? null;
+    this.prepareBlit(layer);
   }
 
   private releasePostProcess(layer: LayerRecord): void {
@@ -465,7 +475,7 @@ export class SceneLayerCompositor {
     layer.blitMaterial = null;
   }
 
-  private blit(layer: LayerRecord): void {
+  private prepareBlit(layer: LayerRecord): void {
     if (!layer.rtt) return;
     if (!layer.blitScene) {
       const blitScene = new Scene(this.engine);
@@ -506,7 +516,11 @@ export class SceneLayerCompositor {
       layer.blitMaterial.diffuseTexture = layer.rtt;
       layer.blitMaterial.emissiveTexture = layer.rtt;
     }
-    layer.blitScene.render();
+  }
+
+  private blit(layer: LayerRecord): void {
+    this.prepareBlit(layer);
+    layer.blitScene?.render();
   }
 }
 

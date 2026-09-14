@@ -7,11 +7,16 @@ import {
   sceneViewportRenderSettings,
 } from "./scene-viewport-load";
 
-it("keeps the viewport when only a pipeline preference changes without changing its effective renderer", () => {
+it("retains requested scene paths through the loading key and resets to project inheritance", () => {
   const original = sceneViewportRenderSettingsKey({});
-  expect(sceneViewportRenderSettingsKey({ renderPath: "auto", gpuBackend: "auto" })).toBe(original);
-  expect(sceneViewportRenderSettingsKey({ renderPath: "clusteredForward", gpuBackend: "webgpu" })).toBe(original);
-  expect(sceneViewportRenderSettingsKey({}, undefined, undefined, { renderPath: "clusteredForward" })).toBe(original);
+  for (const renderPath of ["auto", "clusteredForward"] as const) {
+    const key = sceneViewportRenderSettingsKey({ renderPath });
+    expect(key).not.toBe(original);
+    expect(sceneViewportRenderSettings(key).renderPath).toBe(renderPath);
+    const overridden = sceneViewportRenderSettingsKey({ renderPath }, undefined, undefined, { renderPath: "forward" });
+    expect(sceneViewportRenderSettings(overridden).renderPath).toBe("forward");
+    expect(sceneViewportRenderSettingsKey({ renderPath }, undefined, undefined, {})).toBe(key);
+  }
 });
 
 it("reloads effective CEL changes while ignoring inactive and inherited-equivalent edits", () => {

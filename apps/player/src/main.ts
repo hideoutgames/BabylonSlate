@@ -4,7 +4,7 @@ import {
   type HostMemoryStats,
 } from "@babylonslate/vfs";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
-import { startPlayer } from "./boot";
+import { startPlayerWithBackend } from "./player-backend";
 import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
 import { applyPlayerLayout } from "./layout";
 import { registerPackedFonts } from "./fonts";
@@ -29,6 +29,16 @@ import {
 } from "./preview-protocol";
 
 const previewHostOrigin = window.location.origin;
+const startupAbort = new AbortController();
+let stopCurrentPlayer: (() => void) | undefined;
+// Install before pack loading, fonts or asynchronous backend initialization.
+window.addEventListener("message", (event) => {
+  if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) return;
+  if (event.data?.type !== PREVIEW_STOP_MESSAGE) return;
+  startupAbort.abort();
+  try { stopCurrentPlayer?.(); }
+  finally { rootEl().dataset.booted = "false"; }
+});
 
 function rootEl(): HTMLElement {
   return document.getElementById("player-root") ?? document.body;
@@ -72,7 +82,9 @@ async function launchFromHttp(): Promise<void> {
 async function launchLoaded(
   game: Awaited<ReturnType<typeof loadGameFromFiles>>,
 ): Promise<void> {
+  startupAbort.signal.throwIfAborted();
   await registerPackedFonts(game.fontBytes, undefined, game.fontFamilies);
+  startupAbort.signal.throwIfAborted();
   const canvas = canvasEl();
   layoutFromManifest(game.manifest);
   const hud = mountPlayerHud(
@@ -101,11 +113,31 @@ async function launchLoaded(
   };
   refreshHostMemory();
   // Session-scoped HUD feed; cleared with the page, same as the render loop.
-  window.setInterval(refreshHostMemory, 1000);
+  const memoryInterval = window.setInterval(refreshHostMemory, 1000);
+  let stopped = false;
+  let layoutObserver: ResizeObserver | null = null;
+  const cleanupPage = () => {
+    if (stopped) return;
+    stopped = true;
+    stopCurrentPlayer = undefined;
+    rootEl().dataset.booted = "false";
+    const errors: unknown[] = [];
+    for (const release of [
+      () => window.removeEventListener("message", onSessionMessage),
+      () => window.clearInterval(memoryInterval),
+      () => layoutObserver?.disconnect(),
+      stopAudioOverlays,
+    ]) {
+      try { release(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(errors, "Player page cleanup failed.");
+  };
 
-  const session = startPlayer({
+  const session = await startPlayerWithBackend({
+    signal: startupAbort.signal,
     canvas,
     game,
+    onStopped: cleanupPage,
     onConsoleEvent: (command) => {
       hud.applyCommand(command);
       if (window.parent === window || !previewMode()) return;
@@ -126,6 +158,7 @@ async function launchLoaded(
       }
     },
     onStats: (stats) => {
+      if (stopped) return;
       currentLightsDebugText = stats.lightsDebugText ?? null;
       hud.setStats({ ...stats, ...hostMemory });
       setRootState({
@@ -152,8 +185,20 @@ async function launchLoaded(
         previewHostOrigin,
       );
     },
+  }).catch((error: unknown) => {
+    try { cleanupPage(); } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Player page startup cleanup failed.", { cause: error });
+    }
+    throw error;
   });
-  const layoutObserver =
+  if (stopped || startupAbort.signal.aborted) {
+    try { session.stop(); } finally { cleanupPage(); }
+    return;
+  }
+  rootEl().dataset.requestedBackend = session.backend.requestedBackend;
+  rootEl().dataset.effectiveBackend = session.backend.effectiveBackend;
+  rootEl().dataset.backendFallback = session.backend.fallbackReason ?? "";
+  layoutObserver =
     typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => layoutFromManifest(game.manifest));
@@ -164,10 +209,12 @@ async function launchLoaded(
         __babylonslatePlayerTest?: {
           visuals: () => ReturnType<typeof session.visuals>;
           meshMaterialNames: () => string[];
+          rendering: typeof session.rendering;
         };
       }
     ).__babylonslatePlayerTest = {
       visuals: () => session.visuals(),
+      rendering: () => session.rendering(),
       meshMaterialNames: () => session.meshMaterialNames(),
     };
   }
@@ -195,8 +242,19 @@ async function launchLoaded(
     );
   }
   let inspecting = false;
-  let stopped = false;
-  window.addEventListener("message", (event) => {
+  const stop = () => {
+    if (stopped) return;
+    let result: ReturnType<typeof session.stop>;
+    try { result = session.stop(); } finally { cleanupPage(); }
+    if (window.parent !== window && result.diagnostics.length > 0) {
+      window.parent.postMessage(
+        { type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics: result.diagnostics },
+        previewHostOrigin,
+      );
+    }
+  };
+  stopCurrentPlayer = stop;
+  function onSessionMessage(event: MessageEvent) {
     if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin))
       return;
     if (stopped) return;
@@ -238,26 +296,8 @@ async function launchLoaded(
       });
       return;
     }
-    if (
-      event.data &&
-      typeof event.data === "object" &&
-      (event.data as { type?: string }).type === PREVIEW_STOP_MESSAGE
-    ) {
-      stopped = true;
-      const result = session.stop();
-      layoutObserver?.disconnect();
-      stopAudioOverlays();
-      if (window.parent !== window && result.diagnostics.length > 0) {
-        window.parent.postMessage(
-          {
-            type: PREVIEW_DIAGNOSTICS_MESSAGE,
-            diagnostics: result.diagnostics,
-          },
-          previewHostOrigin,
-        );
-      }
-    }
-  });
+  }
+  window.addEventListener("message", onSessionMessage);
 }
 
 function previewMode(): boolean {
@@ -266,6 +306,7 @@ function previewMode(): boolean {
 }
 
 function bootFailure(error: unknown): void {
+  if (startupAbort.signal.aborted) return;
   const message = error instanceof Error ? error.message : String(error);
   rootEl().dataset.error = message;
   if (window.parent !== window) {
