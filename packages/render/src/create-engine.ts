@@ -1002,11 +1002,10 @@ function initializeEngine(
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
     },
-    onMaterialReady: () => {
+    onMaterialReady: (materialScene) => {
       // Babylon completes deferred post-process effects on the attached pass.
       // Rebuilding here releases the ready material and starts compilation again.
-      const serialized = editorSync?.serializedScene();
-      if (editorSync && serialized) editorSync.apply(serialized);
+      if (materialScene === scene) editorSync?.refreshMaterials();
       scheduler.invalidate("asset");
     },
   });
