@@ -349,9 +349,18 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const shadows = () => screen.getByRole("button", { name: "Shadows" });
     const cel = () => screen.getByRole("button", { name: "CEL Shading" });
+    const environment = () => screen.getByRole("button", { name: "Environment Lighting" });
     const search = (value: string) => fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value } });
     expect(shadows().getAttribute("aria-expanded")).toBe("false");
     expect(cel().getAttribute("aria-expanded")).toBe("false");
+    expect(environment().getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
+    search("environment rotation");
+    expect(environment().getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Environment Rotation")).toBeTruthy();
+    expect(screen.getByTestId("property-scene-environment-texture")).toBeTruthy();
+    search("");
+    expect(environment().getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByLabelText("Shadow Distance")).toBeNull();
     search("normal bias");
     expect(shadows().getAttribute("aria-expanded")).toBe("true");

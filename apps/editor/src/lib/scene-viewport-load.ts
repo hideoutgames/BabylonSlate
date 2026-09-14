@@ -1,4 +1,16 @@
-import { resolveShadowSettings, type ShadowOverrides, resolveCelShadingSettings, type CelShadingOverrides, type RenderProjectSettings, resolveRenderingPipeline, type RenderPathOverrides } from "@babylonslate/core";
+import {
+  resolveRenderingPipeline,
+  type RenderPathOverrides,
+  resolveShadowSettings,
+  type ShadowOverrides,
+  resolveCelShadingSettings,
+  type CelShadingOverrides,
+  type RenderProjectSettings,
+  resolveEnvironmentLightingSettings,
+  normalizeEnvironmentLightingSettings,
+  type EnvironmentLightingOverrides,
+  type EnvironmentLightingSettings,
+} from "@babylonslate/core";
 
 /** Only effective rendering changes rebuild GPU scene resources. */
 export function sceneViewportRenderSettingsKey(
@@ -6,16 +18,42 @@ export function sceneViewportRenderSettingsKey(
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
   pipelineOverrides?: RenderPathOverrides,
+  environmentOverrides?: EnvironmentLightingOverrides,
+  environmentSource: string | null = null,
 ): string {
   return JSON.stringify({
     ...project,
     ...resolveRenderingPipeline(project, pipelineOverrides).effective,
     mode: project.mode ?? "pbr",
+    environmentLighting: {
+      enabled: resolveEnvironmentLightingSettings(
+        project.environmentLighting,
+        environmentOverrides,
+      ).enabled,
+    },
+    environmentSource,
     shadows: resolveShadowSettings(project.shadows, shadowOverrides),
-    cel: project.mode === "cel"
-      ? resolveCelShadingSettings(project.cel, overrides)
-      : undefined,
+    cel:
+      project.mode === "cel"
+        ? resolveCelShadingSettings(project.cel, overrides)
+        : undefined,
   });
+}
+
+/** Resource identity stays in the key; live environment scalars use latest defaults. */
+export function sceneViewportRenderSettings(
+  key: string,
+  environmentLighting?: EnvironmentLightingSettings,
+): Partial<RenderProjectSettings> {
+  const settings = JSON.parse(key) as Partial<RenderProjectSettings> & {
+    environmentSource?: string | null;
+  };
+  delete settings.environmentSource;
+  return {
+    ...settings,
+    environmentLighting:
+      normalizeEnvironmentLightingSettings(environmentLighting),
+  };
 }
 
 export const SCENE_LOAD_PHASES = [

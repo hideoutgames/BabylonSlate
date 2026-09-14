@@ -1,4 +1,5 @@
 import { QualityTextureBlock } from "./texture-quality";
+import { EnvironmentSampleBlock } from "./environment-sample-block";
 import {
   AddBlock,
   AnimatedInputBlockTypes,
@@ -622,6 +623,10 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "input.sceneColor": ({ name }) => {
     const block = new CurrentScreenBlock(name);
     return single(block, { uv: block.uv }, { color: block.rgba });
+  },
+  "input.environmentSample": ({ name }) => {
+    const block = new EnvironmentSampleBlock(name);
+    return single(block, { direction: block.direction, roughness: block.roughness }, { color: block.color });
   },
   "texture.transformUv": ({ name }) => {
     const scale = new MultiplyBlock(name);

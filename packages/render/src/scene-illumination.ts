@@ -25,6 +25,8 @@ import {
 } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
+import { applyEnvironmentLighting } from "./environment-lighting";
+import { updateSceneRenderingSettings } from "./render-settings";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
@@ -427,18 +429,8 @@ export function applySceneEnvironment(
     scene.fogMode = Scene.FOGMODE_NONE;
     scene.fogEnabled = false;
   }
-  const guid = settings.environmentTextureGuid;
-  const bytes = guid ? options.assets?.textureBytes?.get(guid) : undefined;
-  if (guid && bytes && options.assets?.resourceCache) {
-    scene.environmentTexture = options.assets.resourceCache.getTexture(
-      guid,
-      scene.getEngine(),
-      bytes,
-      { isCube: true },
-    );
-  } else {
-    scene.environmentTexture = null;
-  }
+  updateSceneRenderingSettings(scene, undefined, undefined, undefined, settings.environmentLighting ?? {});
+  applyEnvironmentLighting(scene, settings.environmentTextureGuid, options.assets);
 }
 
 function resolveDefaultCameraActorId(sceneData: SerializedScene): string | null {
