@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import { shouldPackKtx2ForPreviewBuild } from "@babylonslate/render";
 import {
   DEFAULT_INFINITE_LOOP_DETECTION,
@@ -160,8 +160,8 @@ interface PlayContextValue {
   resumePlayAfterMigration: () => Promise<void>;
   cancelPlayMigration: () => void;
   stopPlay: () => void;
-  registerSharedEngine: (engine: Engine | null) => void;
-  ensureSharedEngine: () => Engine | null;
+  registerSharedEngine: (engine: AbstractEngine | null) => void;
+  ensureSharedEngine: () => AbstractEngine | null;
   sharedEngineGeneration: number;
   registerScheduler: (scheduler: EditorLoopHandle) => () => void;
   focusedNodeId: string | null;
@@ -179,8 +179,8 @@ const OverlayPlayingContext = createContext(false);
 
 export function PlayProvider({ children }: { children: ReactNode }) {
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
-  const engineRef = useRef<Engine | null>(null);
-  const ownedEngineRef = useRef<Engine | null>(null);
+  const engineRef = useRef<AbstractEngine | null>(null);
+  const ownedEngineRef = useRef<AbstractEngine | null>(null);
   const projectEngineRef = useRef(createProjectEngineController());
   const schedulerRegistryRef = useRef(new EditorSchedulerRegistry());
   const preparingRef = useRef(false);
@@ -508,7 +508,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     });
   }, [appendLog]);
 
-  const registerSharedEngine = useCallback((engine: Engine | null) => {
+  const registerSharedEngine = useCallback((engine: AbstractEngine | null) => {
     const previous = engineRef.current;
     const next = nextRegisteredSharedEngine({
       incoming: engine,
@@ -573,7 +573,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const ensureEngine = useCallback((): Engine | null => {
+  const ensureEngine = useCallback((): AbstractEngine | null => {
     if (isUsableEngine(ownedEngineRef.current)) {
       engineRef.current = ownedEngineRef.current;
       return ownedEngineRef.current;

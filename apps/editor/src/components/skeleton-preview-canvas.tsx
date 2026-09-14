@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import type { SkeletonKind } from "@babylonslate/assets";
 import {
   attachMaterialPreviewGestures,
@@ -27,7 +27,7 @@ export function SkeletonPreviewCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
   const { projectDocument } = useDocuments();
-  const [engine, setEngine] = useState<Engine | null>(null);
+  const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
   const [bonesAttached, setBonesAttached] = useState(false);
   const hostRef = useRef<MaterialPreviewScene | null>(null);

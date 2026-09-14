@@ -7,7 +7,7 @@ import {
   Scene,
   Vector3,
   type AssetContainer,
-  type Engine,
+  type AbstractEngine,
   type Material,
   type Mesh,
   type NodeMaterial,
@@ -113,7 +113,7 @@ export interface MaterialPreviewScene {
  * presented via RTT rather than a second WebGL context or `registerView`.
  */
 export function createMaterialPreviewScene(
-  engine: Engine,
+  engine: AbstractEngine,
   options: {
     mesh?: MaterialPreviewMesh;
     customMeshBytes?: Uint8Array | null;

@@ -1,4 +1,4 @@
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
@@ -127,7 +127,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     ensureSharedEngine,
     sharedEngineGeneration,
   } = usePlay();
-  const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
+  const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
   const [reloadVersion, setReloadVersion] = useState(0);
   const navBake = useOptionalNavBake();

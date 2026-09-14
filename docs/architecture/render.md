@@ -1,5 +1,7 @@
 # Render sync and resource cache (P4)
 
+Shared Scene/Play views and asset previews accept Babylon's AbstractEngine contract, which both WebGL2 and WebGPU implement. Engine construction remains a separate project-lifetime responsibility; a Scene never changes its owning backend in place.
+
 The isolated WebGPU proof initializes Babylon's asynchronous backend and checks native and authored PBR/CEL surfaces with texture upload and readback. Authored NodeMaterials select the owning Engine's native shader language, avoiding an implicit GLSL translation dependency. This proof does not switch the project's default Engine or qualify WebGPU on iPad; project-wide restart, compatibility policy and recovery remain separate integration work.
 
 The explicit local WebGPU browser case requests Chromium's SwiftShader WebGPU adapter and a software WebGL adapter (D3D11 WARP on Windows, SwiftShader elsewhere). Windows requires ANGLE to expose a D3D11 device to the WebGPU decoder. The fixture rejects external shader-compiler downloads and records the actual adapter; this is software functional evidence only.
