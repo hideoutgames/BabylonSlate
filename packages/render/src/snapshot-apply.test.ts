@@ -380,7 +380,7 @@ describe("createPlayMesh", () => {
     expect(model.material).not.toBe(override);
   });
 
-  it("lets MeshComponent.materialGuid win over Model slots", async () => {
+  it.each(["mesh-mat", null])("keeps scene Material %s over model slots after loading in Play and Preview", async (materialGuid) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -405,15 +405,17 @@ describe("createPlayMesh", () => {
       if (guid === "mesh-mat") return meshMat;
       return null;
     };
-    binding.materialAssetGuids.set(2, "mesh-mat");
+    applyAssignMaterial(scene, binding, { type: "assignMaterial", slotId: 2, componentId: "mesh-component", materialAssetGuid: materialGuid });
+    binding.primaryComponentIds.set(2, "mesh-component");
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     applyMaterialToActorMeshes(binding, 2, model);
     await binding.slotAnimLoads?.get(2);
     applyMaterialToActorMeshes(binding, 2, model);
-    expect(model.material).toBe(meshMat);
+    expect(model.material).toBe(materialGuid ? meshMat : null);
     for (const child of model.getChildMeshes()) {
-      expect(child.material).toBe(meshMat);
+      expect(child.material).toBe(materialGuid ? meshMat : null);
     }
+    expect(binding.modelPayloads.get("model-1")?.materialSlots).toEqual([{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }]);
   });
 
   it("registers paused AnimationGroups from an animated GLB onto the slot", async () => {

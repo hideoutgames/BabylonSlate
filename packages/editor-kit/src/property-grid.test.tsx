@@ -568,6 +568,40 @@ describe("PropertyGrid", () => {
     expect(screen.queryByTestId("property-speed-reset")).toBeNull();
   });
 
+  it("keeps read-only live values current while blocking edits, picks, and resets", () => {
+    const onChange = vi.fn();
+    const onCommit = vi.fn();
+    const onPick = vi.fn();
+    const rows: PropertyRow[] = [
+      { kind: "text", id: "name", label: "Name", value: "Hero", defaultValue: "Actor", onChange, onCommit },
+      { kind: "number", id: "health", label: "Health", value: 10, defaultValue: 100, onChange, onCommit },
+      { kind: "vector3", id: "position", label: "Position", value: [1, 2, 3], onChange, onCommit },
+      { kind: "boolean", id: "alive", label: "Alive", value: true, onChange },
+      { kind: "enum", id: "mode", label: "Mode", value: "idle", options: [{ value: "idle", label: "Idle" }], onChange },
+      { kind: "asset", id: "target", label: "Target", value: "actor-1", onChange, onPick },
+    ];
+    const { rerender } = render(<PropertyGrid rows={rows} readOnly />);
+    for (const id of ["name", "health", "position-x", "position-y", "position-z", "target", "mode"]) {
+      expect((screen.getByTestId(`property-${id}`) as HTMLInputElement | HTMLButtonElement).disabled).toBe(true);
+    }
+    const checkbox = screen.getByRole("checkbox");
+    expect(checkbox.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByTestId("property-target"));
+    // Even a programmatic change/blur must not escape the read-only contract.
+    fireEvent.change(screen.getByTestId("property-name"), { target: { value: "Changed" } });
+    fireEvent.blur(screen.getByTestId("property-name"));
+    expect(screen.queryByRole("button", { name: /^Reset / })).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onPick).not.toHaveBeenCalled();
+
+    rerender(<PropertyGrid rows={rows.map((row) => row.id === "health" ? { ...row, value: 11 } as PropertyRow : row)} readOnly />);
+    expect((screen.getByTestId("property-health") as HTMLInputElement).value).toBe("11");
+    expect(checkbox.getAttribute("aria-checked")).toBe("true");
+    expect(rows.every((row) => row.disabled === undefined)).toBe(true);
+  });
+
   it("keeps vector axes on one nowrap row", () => {
     render(
       <PropertyGrid

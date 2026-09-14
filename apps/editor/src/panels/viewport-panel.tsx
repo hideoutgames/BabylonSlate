@@ -40,6 +40,7 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
+import { useEditorAudioDebug } from "../lib/use-editor-audio-debug";
 import {
   applyLiveGizmoToActor,
   takeGizmoDragScene,
@@ -229,6 +230,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  const audioLibrary = useEditorAudioDebug(Boolean(scene?.actors.some((actor) =>
+    selectedActorIds.includes(actor.id) &&
+    actor.components.some((component) => component.classId === "AudioComponent"),
+  )));
   const requestedRenderSettingsKey = sceneViewportRenderSettingsKey(
     projectDocument?.settings.render,
     scene?.settings.celShading,
@@ -790,8 +795,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.syncSelectionDebug({
       sceneData: scene,
       selectedActorIds,
+      audioLibrary,
     });
-  }, [scene, selectedActorIds, engineEpoch]);
+  }, [scene, selectedActorIds, engineEpoch, audioLibrary]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);

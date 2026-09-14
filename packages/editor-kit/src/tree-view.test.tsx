@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import {
   TREE_DROP_EDGE_PX,
   TREE_ROW_HEIGHT,
@@ -31,6 +37,29 @@ const nodes: TreeViewNode[] = [
   },
 ];
 
+function dispatchTouchMove(
+  target: Element,
+  clientX: number,
+  clientY: number,
+  touches = 1,
+): TouchEvent {
+  const event = new TouchEvent("touchmove", {
+    bubbles: true,
+    cancelable: true,
+    touches: Array.from(
+      { length: touches },
+      (_, identifier) =>
+        ({
+          identifier,
+          clientX,
+          clientY,
+        }) as Touch,
+    ),
+  });
+  act(() => target.dispatchEvent(event));
+  return event;
+}
+
 describe("tree guide endpoints", () => {
   it("ends the last sibling at its branch and omits finished ancestor guides below it", () => {
     const depths = [0, 1, 2, 2, 1, 2, 3, 0];
@@ -47,19 +76,27 @@ describe("tree guide endpoints", () => {
   });
 
   it("ends a collapsed sibling group without carrying its guides into the next root", () => {
-    expect(treeGuideSegments([{ depth: 0 }, { depth: 1 }, { depth: 0 }, { depth: 1 }])).toEqual([
-      [], ["end"], [], ["end"],
-    ]);
+    expect(
+      treeGuideSegments([
+        { depth: 0 },
+        { depth: 1 },
+        { depth: 0 },
+        { depth: 1 },
+      ]),
+    ).toEqual([[], ["end"], [], ["end"]]);
   });
 });
 
 describe("TreeView", () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it("keeps the last keyboard destination mounted and visible in a windowed tree", () => {
-    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(56);
+    const height = vi
+      .spyOn(HTMLElement.prototype, "clientHeight", "get")
+      .mockReturnValue(56);
     try {
       const longTree = Array.from({ length: 100 }, (_, index) => ({
         id: `item-${index}`,
@@ -69,13 +106,20 @@ describe("TreeView", () => {
         expanded: index === 0,
       }));
       const onSelect = vi.fn();
-      render(<TreeView nodes={longTree} onSelect={onSelect} aria-label="Long Tree" />);
+      render(
+        <TreeView
+          nodes={longTree}
+          onSelect={onSelect}
+          aria-label="Long Tree"
+        />,
+      );
       const tree = screen.getByRole("tree", { name: "Long Tree" });
       tree.focus();
       fireEvent.keyDown(tree, { key: "End" });
       expect(onSelect).toHaveBeenLastCalledWith("item-99");
-      expect(document.getElementById(tree.getAttribute("aria-activedescendant")!))
-        .toBe(screen.getByRole("treeitem", { name: "Item 99" }));
+      expect(
+        document.getElementById(tree.getAttribute("aria-activedescendant")!),
+      ).toBe(screen.getByRole("treeitem", { name: "Item 99" }));
       expect(tree.scrollTop).toBe(100 * TREE_ROW_HEIGHT - 56);
       expect(screen.getAllByRole("treeitem").length).toBeLessThan(15);
     } finally {
@@ -85,7 +129,14 @@ describe("TreeView", () => {
 
   it("keeps keyboard navigation available after clicking a disclosure", () => {
     const onSelect = vi.fn();
-    render(<TreeView nodes={nodes} onSelect={onSelect} onToggleExpanded={() => {}} data-testid="tree" />);
+    render(
+      <TreeView
+        nodes={nodes}
+        onSelect={onSelect}
+        onToggleExpanded={() => {}}
+        data-testid="tree"
+      />,
+    );
     const disclosure = screen.getByRole("button", { name: "Collapse Root" });
     disclosure.focus();
     fireEvent.click(disclosure);
@@ -96,7 +147,18 @@ describe("TreeView", () => {
 
   it("selects through a value preview while keeping trailing actions separate", () => {
     const onSelect = vi.fn();
-    render(<TreeView nodes={[{ ...nodes[1]!, preview: <span data-testid="preview">75</span>, trailing: <button type="button">Action</button> }]} onSelect={onSelect} />);
+    render(
+      <TreeView
+        nodes={[
+          {
+            ...nodes[1]!,
+            preview: <span data-testid="preview">75</span>,
+            trailing: <button type="button">Action</button>,
+          },
+        ]}
+        onSelect={onSelect}
+      />,
+    );
     expect(screen.getByRole("treeitem", { name: "Child 75" })).toBeTruthy();
     const preview = screen.getByTestId("preview");
     dispatchPointerEvent(preview, "pointerdown");
@@ -112,13 +174,22 @@ describe("TreeView", () => {
   it("navigates, selects and collapses from one keyboard focus target", () => {
     const onSelect = vi.fn();
     const onToggleExpanded = vi.fn();
-    render(<TreeView nodes={nodes} onSelect={onSelect} onToggleExpanded={onToggleExpanded} data-testid="keyboard-tree" />);
+    render(
+      <TreeView
+        nodes={nodes}
+        onSelect={onSelect}
+        onToggleExpanded={onToggleExpanded}
+        data-testid="keyboard-tree"
+      />,
+    );
     const tree = screen.getByTestId("keyboard-tree");
     tree.focus();
     fireEvent.keyDown(tree, { key: "ArrowDown" });
     expect(onSelect).toHaveBeenLastCalledWith("child");
     expect(tree.getAttribute("role")).toBe("tree");
-    const active = document.getElementById(tree.getAttribute("aria-activedescendant") ?? "");
+    const active = document.getElementById(
+      tree.getAttribute("aria-activedescendant") ?? "",
+    );
     expect(active?.textContent).toContain("Child");
     expect(active?.getAttribute("aria-level")).toBe("2");
     fireEvent.keyDown(tree, { key: "ArrowLeft" });
@@ -382,45 +453,210 @@ describe("TreeView", () => {
     vi.useRealTimers();
   });
 
-  it("reparents immediately when reparentArm is immediate", () => {
+  it.each(["hold", "immediate"] as const)(
+    "reparents with mouse click-drag when reparentArm is %s",
+    (reparentArm) => {
+      const onReparent = vi.fn();
+      render(
+        <TreeView
+          nodes={nodes}
+          onReparent={onReparent}
+          reparentArm={reparentArm}
+          data-testid="tree"
+        />,
+      );
+
+      const tree = screen.getByTestId("tree");
+      tree.getBoundingClientRect = () =>
+        ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
+
+      const row = screen.getByTestId("tree-row-child");
+      dispatchPointerEvent(row, "pointerdown", {
+        pointerType: "mouse",
+        clientX: 10,
+        clientY: 40,
+      });
+      dispatchPointerEvent(row, "pointermove", {
+        pointerType: "mouse",
+        clientX: 60,
+        clientY: 70,
+      });
+      dispatchPointerEvent(row, "pointerup", {
+        pointerType: "mouse",
+        clientX: 60,
+        clientY: 70,
+      });
+
+      expect(onReparent).toHaveBeenCalledWith("child", "other", "into");
+    },
+  );
+
+  it.each(["hold", "immediate"] as const)(
+    "keeps early touch movement scrollable when reparentArm is %s",
+    (reparentArm) => {
+      vi.useFakeTimers();
+      const onReparent = vi.fn();
+      const onContextMenu = vi.fn();
+      render(
+        <TreeView
+          nodes={nodes}
+          onReparent={onReparent}
+          onContextMenu={onContextMenu}
+          reparentArm={reparentArm}
+          data-testid="tree"
+        />,
+      );
+
+      const tree = screen.getByTestId("tree");
+      tree.getBoundingClientRect = () =>
+        ({ top: 0, left: 0, right: 200, bottom: 96 }) as DOMRect;
+
+      const row = screen.getByTestId("tree-row-child");
+      dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+      dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 80 });
+      expect(dispatchTouchMove(row, 10, 80).defaultPrevented).toBe(false);
+      act(() => vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS));
+      dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 70 });
+      expect(dispatchTouchMove(row, 10, 70).defaultPrevented).toBe(false);
+      dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 80 });
+
+      expect(onReparent).not.toHaveBeenCalled();
+      expect(onContextMenu).not.toHaveBeenCalled();
+    },
+  );
+
+  it("holds then drags touch rows without native scrolling or swipe-selection", () => {
+    vi.useFakeTimers();
     const onReparent = vi.fn();
+    const onSelect = vi.fn();
+    const onContextMenu = vi.fn();
     render(
       <TreeView
         nodes={nodes}
         onReparent={onReparent}
+        onSelect={onSelect}
+        onContextMenu={onContextMenu}
         reparentArm="immediate"
         data-testid="tree"
       />,
     );
-
     const tree = screen.getByTestId("tree");
     tree.getBoundingClientRect = () =>
       ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
-
     const row = screen.getByTestId("tree-row-child");
     dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
-    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 70 });
-    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 70 });
-
+    act(() => vi.advanceTimersByTime(DRAG_ARM_MS));
+    // The first tiny move must block panning before the drag crosses 8px.
+    expect(dispatchTouchMove(row, 10, 42).defaultPrevented).toBe(true);
+    dispatchPointerEvent(row, "pointermove", { clientX: 70, clientY: 70 });
+    expect(dispatchTouchMove(row, 70, 70).defaultPrevented).toBe(true);
+    act(() => vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS));
+    dispatchPointerEvent(tree, "pointerup", { clientX: 70, clientY: 70 });
     expect(onReparent).toHaveBeenCalledWith("child", "other", "into");
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onContextMenu).not.toHaveBeenCalled();
+    expect(dispatchTouchMove(row, 70, 75).defaultPrevented).toBe(false);
   });
 
-  it("does not reparent when the pointer moves before the hold arms", () => {
+  it("leaves scrollbar gestures outside rows free of drag and context menu handling", () => {
+    vi.useFakeTimers();
     const onReparent = vi.fn();
+    const onSelect = vi.fn();
+    const onContextMenu = vi.fn();
     render(
-      <TreeView nodes={nodes} onReparent={onReparent} data-testid="tree" />,
+      <TreeView
+        nodes={nodes}
+        onReparent={onReparent}
+        onSelect={onSelect}
+        onContextMenu={onContextMenu}
+        data-testid="tree"
+      />,
     );
+    const tree = screen.getByTestId("tree");
+    dispatchPointerEvent(tree, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 199,
+      clientY: 5,
+    });
+    dispatchPointerEvent(tree, "pointermove", {
+      pointerType: "mouse",
+      clientX: 199,
+      clientY: 70,
+    });
+    dispatchPointerEvent(tree, "pointerup", {
+      pointerType: "mouse",
+      clientX: 199,
+      clientY: 70,
+    });
+    dispatchPointerEvent(tree, "pointerdown", { clientX: 199, clientY: 5 });
+    act(() => vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS));
+    expect(dispatchTouchMove(tree, 199, 70).defaultPrevented).toBe(false);
+    dispatchPointerEvent(tree, "pointerup", { clientX: 199, clientY: 70 });
+    expect(onReparent).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onContextMenu).not.toHaveBeenCalled();
+  });
 
+  it.each(["scroll", "pointercancel", "blur", "unmount"] as const)(
+    "cancels pending holds on %s",
+    (reason) => {
+      vi.useFakeTimers();
+      const onReparent = vi.fn();
+      const onContextMenu = vi.fn();
+      const { unmount } = render(
+        <TreeView
+          nodes={nodes}
+          onReparent={onReparent}
+          onContextMenu={onContextMenu}
+          data-testid="tree"
+        />,
+      );
+      const tree = screen.getByTestId("tree");
+      const row = screen.getByTestId("tree-row-child");
+      dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+      if (reason === "scroll")
+        fireEvent.scroll(tree, { target: { scrollTop: 10 } });
+      else if (reason === "pointercancel")
+        dispatchPointerEvent(tree, "pointercancel");
+      else if (reason === "blur") fireEvent(window, new Event("blur"));
+      else unmount();
+      act(() => vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS));
+      expect(dispatchTouchMove(row, 10, 70).defaultPrevented).toBe(false);
+      dispatchPointerEvent(tree, "pointerup", { clientX: 10, clientY: 70 });
+      expect(onReparent).not.toHaveBeenCalled();
+      expect(onContextMenu).not.toHaveBeenCalled();
+    },
+  );
+
+  it("cancels an active touch drag when a second finger arrives", () => {
+    vi.useFakeTimers();
+    const onReparent = vi.fn();
+    const onExternalDragEnd = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onReparent={onReparent}
+        onExternalDragEnd={onExternalDragEnd}
+        data-testid="tree"
+      />,
+    );
     const tree = screen.getByTestId("tree");
     tree.getBoundingClientRect = () =>
-      ({ top: 0, left: 0, right: 200, bottom: 96 }) as DOMRect;
-
+      ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
     const row = screen.getByTestId("tree-row-child");
     dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
-    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 80 });
-    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 80 });
-
+    act(() => vi.advanceTimersByTime(DRAG_ARM_MS));
+    dispatchPointerEvent(tree, "pointermove", { clientX: 10, clientY: 70 });
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerId: 2,
+      isPrimary: false,
+      clientX: 40,
+      clientY: 40,
+    });
+    expect(dispatchTouchMove(row, 10, 70, 2).defaultPrevented).toBe(false);
+    dispatchPointerEvent(tree, "pointerup", { clientX: 10, clientY: 70 });
     expect(onReparent).not.toHaveBeenCalled();
+    expect(onExternalDragEnd).toHaveBeenCalledOnce();
   });
 
   it("does not capture the pointer on down when reparent uses hold so the list can scroll", () => {
@@ -825,9 +1061,17 @@ describe("TreeView", () => {
     tree.getBoundingClientRect = () =>
       ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
     const row = screen.getByTestId("tree-row-child");
-    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
     act(() => {
-      dispatchPointerEvent(tree, "pointermove", { clientX: 10, clientY: 58 });
+      dispatchPointerEvent(tree, "pointermove", {
+        pointerType: "mouse",
+        clientX: 10,
+        clientY: 58,
+      });
     });
 
     const other = screen.getByTestId("tree-row-other");
@@ -854,9 +1098,17 @@ describe("TreeView", () => {
     tree.getBoundingClientRect = () =>
       ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
     const row = screen.getByTestId("tree-row-child");
-    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
     act(() => {
-      dispatchPointerEvent(tree, "pointermove", { clientX: 10, clientY: 27 });
+      dispatchPointerEvent(tree, "pointermove", {
+        pointerType: "mouse",
+        clientX: 10,
+        clientY: 27,
+      });
     });
 
     const root = screen.getByTestId("tree-row-root");
@@ -883,9 +1135,21 @@ describe("TreeView", () => {
     tree.getBoundingClientRect = () =>
       ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
     const row = screen.getByTestId("tree-row-child");
-    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
-    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 58 });
-    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 58 });
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 58,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 58,
+    });
     expect(onReparent).toHaveBeenCalledWith("child", "other", "before");
   });
 
@@ -903,9 +1167,21 @@ describe("TreeView", () => {
     tree.getBoundingClientRect = () =>
       ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
     const row = screen.getByTestId("tree-row-child");
-    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
-    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 27 });
-    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 27 });
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 27,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 27,
+    });
     expect(onReparent).toHaveBeenCalledWith("child", "root", "after");
   });
 

@@ -29,6 +29,19 @@ function overrideSet(keys: readonly string[] | undefined): Set<string> {
   return new Set(keys ?? []);
 }
 
+const MESH_MATERIAL_KEYS = ["materialGuid", "materialSource"] as const;
+
+function expandMeshMaterialOverrides(keys: Set<string>, component: SerializedComponent): void {
+  if (component.classId !== "MeshComponent" || !MESH_MATERIAL_KEYS.some((key) => keys.has(key))) return;
+  for (const key of MESH_MATERIAL_KEYS) keys.add(key);
+}
+
+function meshMaterialSelection(component: SerializedComponent): [string | null, boolean] {
+  const raw = component.properties.materialGuid;
+  const guid = typeof raw === "string" && raw.trim() ? raw.trim() : null;
+  return [guid, !guid && component.properties.materialSource === "override"];
+}
+
 function withoutOverrideKeys(
   component: SerializedComponent,
 ): SerializedComponent {
@@ -64,6 +77,10 @@ function differingOverrideKeys(
     )
   ) {
     keys.add(PREFAB_TRANSFORM_OVERRIDE);
+  }
+  expandMeshMaterialOverrides(keys, instance);
+  if (instance.classId === "MeshComponent" && jsonEqual(meshMaterialSelection(instance), meshMaterialSelection(prefab))) {
+    for (const key of MESH_MATERIAL_KEYS) keys.delete(key);
   }
   return [...keys];
 }
@@ -161,6 +178,7 @@ export function syncActorComponentsFromPrefab(
       continue;
     }
     const keys = overrideSet(existing.overrideKeys);
+    expandMeshMaterialOverrides(keys, existing);
     const properties = { ...prefab.properties };
     for (const key of keys) {
       if (key === PREFAB_TRANSFORM_OVERRIDE || key === PREFAB_PARENT_OVERRIDE) {
@@ -298,7 +316,14 @@ function pruneMatchingPrefabOverrides(
 ): SerializedComponent {
   if (!prefab) return component;
   const keys = overrideSet(component.overrideKeys);
+  expandMeshMaterialOverrides(keys, component);
+  if (component.classId === "MeshComponent" && jsonEqual(meshMaterialSelection(component), meshMaterialSelection(prefab))) {
+    for (const key of MESH_MATERIAL_KEYS) keys.delete(key);
+  }
   for (const key of [...keys]) {
+    // Material GUID and source are one selection: an explicit None must keep
+    // owning the GUID even while both GUIDs happen to equal null.
+    if (component.classId === "MeshComponent" && MESH_MATERIAL_KEYS.some((materialKey) => key === materialKey)) continue;
     if (key === PREFAB_TRANSFORM_OVERRIDE) {
       if (
         jsonEqual(
@@ -368,6 +393,7 @@ export function stampUserComponentOverrides(
           if ((before.parentId ?? null) !== (component.parentId ?? null)) {
             keys.add(PREFAB_PARENT_OVERRIDE);
           }
+          expandMeshMaterialOverrides(keys, component);
           return pruneMatchingPrefabOverrides(
             {
               ...component,

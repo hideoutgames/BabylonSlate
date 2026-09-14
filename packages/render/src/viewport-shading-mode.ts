@@ -30,6 +30,7 @@ type ShadingRestore = {
 const SKIP_NAME_PREFIXES = [
   "debugFrustum:",
   "debugLight:",
+  "debugAudio:",
   "debugPreviewCam:",
   "debugCameraPreview:",
   "navmeshDebug",

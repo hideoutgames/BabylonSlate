@@ -575,6 +575,17 @@ export class EditorSceneSync {
       if (meshKindOf(component) === "pivot") continue;
       const visual = visualForMeshComponent(root, actor.id, component.id);
       if (!visual) continue;
+      if (
+        component.properties.materialSource === "override" &&
+        !authoredMaterialGuid(component.properties.materialGuid)
+      ) {
+        for (const target of meshAndDescendantMeshes(visual)) {
+          if (isColliderVisualTree(target) || isTilemapChunkMesh(target)) continue;
+          target.material = null;
+          applyMaterialBounds(target);
+        }
+        continue;
+      }
       this.bindMaterialOverride(
         visual,
         authoredMaterialGuid(component.properties.materialGuid),
