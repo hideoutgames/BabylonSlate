@@ -59,17 +59,18 @@ function compatible(material: Material): boolean {
         ) || !block.light,
     );
   }
-  if (material.constructor === CelMaterial)
+  const constructor = material.constructor;
+  if (constructor === CelMaterial)
     return (
       (material as CelMaterial).hasOriginalShadowHooks() &&
       compatible((material as CelMaterial).source)
     );
   if (
-    material.constructor !== PBRMaterial &&
-    material.constructor !== StandardMaterial
+    constructor !== PBRMaterial &&
+    constructor !== StandardMaterial
   )
     return false;
-  if (material.customShaderNameResolve) return false;
+  if (material.customShaderNameResolve || material.onBindObservable.hasObservers()) return false;
   return !material.pluginManager?._plugins.some(
     (plugin) => !nativePlugins.has(plugin.constructor),
   );
@@ -84,7 +85,7 @@ export function clusteredSceneMaterialReason(scene: Scene): string | undefined {
     if (!mesh.getTotalVertices()) continue;
     const material = mesh.material ?? scene.defaultMaterial;
     if (!compatible(material))
-      return `Material ?${material.name}? has no supported clustered lighting contract; using Forward.`;
+      return `Material "${material.name}" has no supported clustered lighting contract; using Forward.`;
   }
   return undefined;
 }

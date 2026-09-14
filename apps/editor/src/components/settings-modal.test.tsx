@@ -1,4 +1,4 @@
-import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
+import { readScenePipelineStatus, registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
 import { resolveRenderingPipeline } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -435,12 +435,13 @@ describe("SettingsModal project authoring", () => {
     try {
       owner.publish(resolveRenderingPipeline({ renderPath: "auto" }, undefined, undefined, undefined,
         { gpuBackend: "webgl2" }, { supported: true, autoEligible: true }));
+      expect(readScenePipelineStatus(scenePipelineKey("test-project", "active-scene"))?.effective.renderPath).toBe("clusteredForward");
       render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
       fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
-      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Clustered Forward ? WebGL2");
+      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Clustered Forward \u00b7 WebGL2");
       act(() => owner.publish(resolveRenderingPipeline({ renderPath: "auto" }, undefined, undefined, undefined,
         { gpuBackend: "webgl2" }, { supported: false, reason: "The active material requires Forward." })));
-      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Forward ? WebGL2");
+      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Forward \u00b7 WebGL2");
       expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("active material requires Forward");
       expect(updateProjectSettings).not.toHaveBeenCalled();
     } finally { act(() => owner.dispose()); }
