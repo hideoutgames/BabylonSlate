@@ -377,10 +377,16 @@ it.each(["replace", "dispose"] as const)(
         return preparePipeline(...args);
       });
       let deletedProgramQueries = 0;
+      const deletedPipelines = new Set<unknown>();
+      const deletePipeline = engine._deletePipelineContext.bind(engine);
+      vi.spyOn(engine, "_deletePipelineContext").mockImplementation((pipeline) => {
+        deletePipeline(pipeline);
+        deletedPipelines.add(pipeline);
+      });
       // Retain native Effect, pipeline, retry timer and disposal. NullEngine has
       // no GPU compiler; only its driver's pending-completion query is supplied.
       vi.spyOn(engine, "_isRenderingStateCompiled").mockImplementation((pipeline) => {
-        if ((pipeline as WebGLPipelineContext)._isDisposed) deletedProgramQueries++;
+        if (deletedPipelines.has(pipeline)) deletedProgramQueries++;
         return false;
       });
       await graph.buildAsync(false);

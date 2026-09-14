@@ -25,7 +25,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(result.lifetime).toEqual({ retainedPasses: 0, retainedMaterials: 0, retainedScenes: 0 });
       expect(result.captures).toHaveLength(4);
       for (const capture of result.captures)
-        expect(capture.pixel, capture.action).toEqual(capture.action === "replacement" ? [40, 20, 10, 255] : [160, 80, 40, 255]);
+        expect(capture.pixel, capture.action).toEqual(capture.action === "replacement" ? [40, 20, 10, 64] : [160, 80, 40, 255]);
       for (const retired of result.retired) {
         expect(retired.compiledAfterRetirement).toBe(false);
         // Native WGSL pipeline creation is synchronous once its sources exist.

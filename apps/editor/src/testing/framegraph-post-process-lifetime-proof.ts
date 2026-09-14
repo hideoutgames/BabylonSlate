@@ -46,11 +46,18 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       try { return ready.call(this, pipeline); } finally { activePipeline = undefined; }
     };
     const gl = (native as unknown as { _gl: WebGL2RenderingContext })._gl;
+    const deleted = new WeakMap<WebGLProgram, { phase: string; stack?: string }>();
+    const deleteProgram = gl.deleteProgram;
+    gl.deleteProgram = function (program) {
+      if (program) deleted.set(program, { phase, stack: new Error().stack });
+      return deleteProgram.call(this, program);
+    };
     const query = gl.getProgramParameter;
     gl.getProgramParameter = function (program, parameter) {
       const result = query.call(this, program, parameter);
-      if (result === null) invalidPrograms.push({
+      if (deleted.has(program)) invalidPrograms.push({
         phase, parameter, stack: new Error().stack,
+        deletion: deleted.get(program),
         pipeline: activePipeline && {
           name: (activePipeline as { _name?: string })._name,
           disposed: (activePipeline as { _isDisposed?: boolean })._isDisposed,
