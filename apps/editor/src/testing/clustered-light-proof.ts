@@ -321,6 +321,14 @@ export async function runClusteredLightProof() {
             if (ready.path !== "frameGraph") throw new Error(ready.reason);
             scene.render(false);
             const reference = await read();
+            const referenceOrder = surface.lightSources.map(
+              (light) => light.name,
+            );
+            const centerHit = scene
+              .pick(canvas.width / 2, canvas.height / 2)
+              ?.pickedPoint?.asArray();
+            scene.render(false);
+            const referenceSettled = await read();
             const owner = new ClusteredSceneLights(scene, tieLights);
             beginEngineDrawCallFrame(engine);
             const prepared = await tieGraph.prepare(camera);
@@ -329,6 +337,9 @@ export async function runClusteredLightProof() {
             ties.push({
               name: `${kind}-camera-${x}`,
               reference,
+              referenceSettled,
+              referenceOrder,
+              centerHit,
               clustered: await read(),
               prepared,
               result,
