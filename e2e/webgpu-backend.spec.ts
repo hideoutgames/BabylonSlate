@@ -21,6 +21,11 @@ test.use({
 test("project backend changes rebuild one Engine while preserving scene edits and Play", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
+  const externalShaderRequests: string[] = [];
+  await page.route(/https:\/\/cdn\.babylonjs\.com\/.*(?:glslang|twgsl)/, async (route) => {
+    externalShaderRequests.push(route.request().url());
+    await route.abort();
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (/WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:/i.test(message.text())) errors.push(message.text());
@@ -71,6 +76,7 @@ test("project backend changes rebuild one Engine while preserving scene edits an
   expect((await baseline())?.engineCount).toBe(1);
   await testInfo.attach("project-backend-transitions", { body: JSON.stringify(captures), contentType: "application/json" });
   expect(errors).toEqual([]);
+  expect(externalShaderRequests).toEqual([]);
 });
 
 test("WebGPU renders native and graph PBR and CEL using native shaders", async ({
@@ -115,6 +121,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   expect(result.cancelledEngineReleased).toBe(true);
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);
+  expect(result.helpers).toHaveLength(6);
   for (const capture of result.captures) {
     expect(capture.shaderLanguage).toBe(capture.backend === "webgpu" ? 1 : 0);
     expect(capture.maxTextureSize).toBeGreaterThanOrEqual(64);
@@ -137,7 +144,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   }
   // Native readback follows each API's origin and swap-chain channel order.
   // Compare the same displayed pixels without hiding texture orientation errors.
-  const rgbaTopLeft = (capture: (typeof result.captures)[number]) => {
+  const rgbaTopLeft = (capture: { pixels: number[]; pixelFormat: string; pixelOrigin: string }) => {
     const pixels: number[] = [];
     expect(["rgba8unorm", "bgra8unorm"]).toContain(capture.pixelFormat);
     const channels =
@@ -150,6 +157,22 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     }
     return pixels;
   };
+  for (const kind of ["grid", "bounds", "msdf"]) {
+    const reference = result.helpers.find((capture) => capture.backend === "webgl2" && capture.kind === kind)!;
+    const actual = result.helpers.find((capture) => capture.backend === "webgpu" && capture.kind === kind)!;
+    expect(reference.shaderLanguages.length).toBeGreaterThan(0);
+    expect(actual.shaderLanguages.every((language) => language === 1)).toBe(true);
+    const expected = rgbaTopLeft(reference);
+    const observed = rgbaTopLeft(actual);
+    let lit = 0;
+    let maxDifference = 0;
+    for (let i = 0; i < observed.length; i++) {
+      maxDifference = Math.max(maxDifference, Math.abs(observed[i] - expected[i]));
+      if (i % 4 === 1 && observed[i] > 20) lit++;
+    }
+    expect(lit, `${kind} visible helper`).toBeGreaterThan(40);
+    expect(maxDifference, `${kind} backend parity`).toBeLessThanOrEqual(2);
+  }
   for (const mode of ["pbr", "cel"]) {
     const reference = rgbaTopLeft(
       result.captures.find(

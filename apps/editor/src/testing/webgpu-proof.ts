@@ -2,6 +2,7 @@
 import {
   Color3,
   Color4,
+  Camera,
   EngineStore,
   FreeCamera,
   HemisphericLight,
@@ -9,6 +10,7 @@ import {
   PBRMaterial,
   RawTexture,
   Scene,
+  ShaderMaterial,
   Texture,
   Vector3,
   type AbstractEngine,
@@ -18,8 +20,11 @@ import {
   compileMaterialPlan,
   createAppEngine,
   createAppWebGpuEngine,
+  createEditorGrid,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
+  createText2DMesh,
+  ResourceCache,
   setSceneRenderSettings,
 } from "@babylonslate/render";
 import {
@@ -31,6 +36,7 @@ export async function runWebGpuProof() {
   const initialEngines = EngineStore.Instances.length;
   const captures = [];
   const previews = [];
+  const helpers = [];
   let cancelledEngineReleased = false;
   for (const backend of ["webgl2", "webgpu"] as const) {
     if (backend === "webgpu" && !(await WebGPUEngine.IsSupportedAsync))
@@ -70,6 +76,15 @@ export async function runWebGpuProof() {
         ? await createAppWebGpuEngine(canvas)
         : createAppEngine(canvas);
     try {
+      for (const kind of ["grid", "bounds", "msdf"] as const) {
+        helpers.push({
+          backend,
+          kind,
+          pixelFormat: swapChainFormat ?? "rgba8unorm",
+          pixelOrigin: backend === "webgpu" ? "top-left" : "bottom-left",
+          ...await captureHelper(engine, kind),
+        });
+      }
       for (const mode of ["pbr", "cel"] as const) {
         const scene = new Scene(engine);
         scene.clearColor = new Color4(0, 0, 0, 1);
@@ -158,9 +173,76 @@ export async function runWebGpuProof() {
   return {
     captures,
     previews,
+    helpers,
     cancelledEngineReleased,
     retainedEngines: EngineStore.Instances.length - initialEngines,
   };
+}
+
+async function captureHelper(engine: AbstractEngine, kind: "grid" | "bounds" | "msdf") {
+  const scene = new Scene(engine);
+  const cache = new ResourceCache();
+  scene.clearColor = new Color4(0, 0, 0, 1);
+  const camera = new FreeCamera("helper camera", new Vector3(0, 0, -4), scene);
+  camera.setTarget(Vector3.Zero());
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+  camera.orthoLeft = camera.orthoBottom = -2;
+  camera.orthoRight = camera.orthoTop = 2;
+  let disposeGrid: (() => void) | undefined;
+  try {
+    if (kind === "msdf") {
+      // Numeric distance values exercise the actual glyph shader without an art fixture.
+      const atlas = document.createElement("canvas");
+      atlas.width = atlas.height = 16;
+      const context = atlas.getContext("2d")!;
+      const data = context.createImageData(16, 16);
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const i = (y * 16 + x) * 4;
+        data.data[i] = data.data[i + 1] = data.data[i + 2] = x * 17;
+        data.data[i + 3] = 255;
+      }
+      context.putImageData(data, 0, 0);
+      const png = await new Promise<Blob>((resolve, reject) => atlas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Numeric atlas encoding failed"))));
+      const text = createText2DMesh(scene, "numeric MSDF", {
+        text: "A", renderer: "msdf", size: 16, fontAssetGuid: "numeric", color: [0.2, 0.8, 0.4],
+      }, {
+        pixelsPerUnit: 8,
+        resourceCache: cache,
+        fontMsdfPng: new Map([["numeric", new Uint8Array(await png.arrayBuffer())]]),
+        fontMsdfJson: new Map([["numeric", new TextEncoder().encode(JSON.stringify({
+          info: { size: 16 }, common: { scaleW: 16, scaleH: 16 },
+          chars: [{ id: 65, x: 0, y: 0, width: 16, height: 16, xoffset: 0, yoffset: 0, xadvance: 16 }],
+        }))]]),
+      });
+      const glyph = text.getChildMeshes()[0]!;
+      glyph.position.setAll(0);
+      if (!(glyph.material instanceof ShaderMaterial)) throw new Error("MSDF shader fell back");
+    } else {
+      const grid = createEditorGrid(scene, {
+        mode: "2d", camera: { target: Vector3.Zero(), radius: 4, orthoTop: 2, orthoRight: 2 },
+      });
+      disposeGrid = grid.dispose;
+      grid.setVisible(kind === "grid");
+      grid.setCameraBounds(kind === "bounds" ? { width: 2.75, height: 2.75 } : null);
+      grid.sync();
+    }
+    await scene.whenReadyAsync();
+    for (const mesh of scene.meshes) await mesh.material?.forceCompilationAsync(mesh);
+    for (let frame = 0; frame < 3; frame++) {
+      engine.beginFrame();
+      scene.render(false);
+      engine.endFrame();
+    }
+    const pixels = await engine.readPixels(0, 0, 64, 64);
+    return {
+      pixels: [...new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)],
+      shaderLanguages: scene.materials.filter((material) => material instanceof ShaderMaterial).map((material) => material.options.shaderLanguage),
+    };
+  } finally {
+    disposeGrid?.();
+    scene.dispose();
+    cache.dispose();
+  }
 }
 
 async function capturePreview(engine: AbstractEngine, mode: "pbr" | "cel") {
