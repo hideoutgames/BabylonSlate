@@ -1,4 +1,5 @@
 import { RenderQualityFields } from "./render-quality-fields";
+import { RenderPipelineFields } from "./render-pipeline-fields";
 import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 import { normalizeShadowSettings } from "@babylonslate/core";
@@ -1031,6 +1032,8 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Rendering</FieldLegend>
+            <RenderPipelineFields hideTitle scope="project" project={projectDocument.settings.render}
+              onChange={(pipeline) => updateProjectSettings({ render: { ...projectDocument.settings.render, ...pipeline } })} />
             <Field className="settings-field">
               <FieldLabel htmlFor="setting-render-mode">Render Mode</FieldLabel>
               <Select value={projectDocument.settings.render.mode ?? "pbr"}

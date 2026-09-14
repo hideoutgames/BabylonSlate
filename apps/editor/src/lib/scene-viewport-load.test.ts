@@ -6,6 +6,13 @@ import {
   sceneViewportRenderSettingsKey,
 } from "./scene-viewport-load";
 
+it("keeps the viewport when only a pipeline preference changes without changing its effective renderer", () => {
+  const original = sceneViewportRenderSettingsKey({});
+  expect(sceneViewportRenderSettingsKey({ renderPath: "auto", gpuBackend: "auto" })).toBe(original);
+  expect(sceneViewportRenderSettingsKey({ renderPath: "clusteredForward", gpuBackend: "webgpu" })).toBe(original);
+  expect(sceneViewportRenderSettingsKey({}, undefined, undefined, { renderPath: "clusteredForward" })).toBe(original);
+});
+
 it("reloads effective CEL changes while ignoring inactive and inherited-equivalent edits", () => {
   const project = { mode: "cel" as const, cel: normalizeCelShadingSettings({}) };
   const initial = sceneViewportRenderSettingsKey(project);

@@ -97,6 +97,10 @@ export class ShadowSpatialIndex {
     this.dirty.delete(mesh);
     this.rebuild = true;
   }
+  /** Geometry/material changes and externally supplied frozen matrices also refit. */
+  invalidate(mesh: AbstractMesh): void {
+    if (this.leaves.has(mesh)) this.dirty.add(mesh);
+  }
   dispose(): void {
     for (const mesh of this.observers.keys()) this.remove(mesh);
     this.root = undefined;
