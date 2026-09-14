@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./fbx-import": "./src/convert-fbx-to-glb.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
+    "./framegraph-post-process": "./src/framegraph-post-process.ts",
+    "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },
   "scripts": {
