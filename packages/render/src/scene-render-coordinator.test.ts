@@ -182,7 +182,9 @@ it("admits the native frozen queue as an explicit ready fallback", async () => {
 it("retires pending allocation before the host releases a borrowed target", async () => {
   const { scene, camera, renderer } = host();
   const target = new RenderTargetTexture("borrowed output", 32, scene);
-  target.createDepthStencilTexture();
+  // NullEngine has no depth-texture driver; this cancellation case never builds
+  // or draws attachments. Supply the supported-target boundary only.
+  vi.spyOn(target, "depthStencilTexture", "get").mockReturnValue(target.getInternalTexture());
   camera.outputRenderTarget = target;
   const { started, release } = holdGraphInitialization();
   const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
