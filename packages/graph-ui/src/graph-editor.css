@@ -7,10 +7,6 @@
   --xy-edge-stroke-width: var(--graph-edge-data);
   --xy-edge-stroke-selected: var(--primary);
   --xy-connectionline-stroke-width: var(--graph-edge-exec);
-  --xy-controls-button-background-color: var(--card);
-  --xy-controls-button-background-color-hover: var(--accent);
-  --xy-controls-button-color: var(--foreground);
-  --xy-controls-button-border-color: var(--border);
   --xy-node-border: var(--border);
   --xy-node-background-color: var(--graph-node);
 }
@@ -31,11 +27,11 @@
   max-width: var(--graph-pin-default-max-width, 12rem);
 }
 
-.graph-editor-canvas .react-flow__controls-button {
-  min-width: var(--touch-target, 44px);
-  min-height: var(--touch-target, 44px);
-  width: var(--touch-target, 44px);
-  height: var(--touch-target, 44px);
+@media (pointer: coarse) {
+  .graph-viewport-control {
+    min-width: var(--touch-target, 44px);
+    min-height: var(--touch-target, 44px);
+  }
 }
 
 .graph-editor-canvas .react-flow__handle {
