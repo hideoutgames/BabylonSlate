@@ -125,7 +125,9 @@ describe("explicit clustered light ownership", () => {
     await vi.waitFor(() => expect(proxy).toBeDefined());
     controller.sync();
     expect(scene.meshes).not.toContain(proxy);
-    const shadow = controller.generator(lights[0]!)!.getShadowMap()!;
+    const generator = controller.generator(lights[0]!);
+    expect(generator, JSON.stringify({ status: controller.status(lights[0]!), enabled: lights[0]!.isEnabled(), owner: owner.status(), limits: controller.limits() })).not.toBeNull();
+    const shadow = generator!.getShadowMap()!;
     expect(shadow.renderList).not.toContain(proxy);
     // The real thin-instance ShaderMaterial proxy must not force otherwise
     // static local maps into continuous refresh.
