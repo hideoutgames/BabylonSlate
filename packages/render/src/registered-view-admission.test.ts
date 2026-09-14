@@ -1,6 +1,6 @@
 import { NullEngine } from "@babylonjs/core";
 import { describe, expect, it, vi } from "vitest";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, setRegisteredViewEnabled } from "./registered-view-admission";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled } from "./registered-view-admission";
 
 class PixelCanvas {
   private bitmapWidth = 32;
@@ -16,6 +16,30 @@ class PixelCanvas {
 }
 
 describe("registered view frame admission", () => {
+  it("retains offscreen dispatch until its last client leaves without replacing another owner's hook", () => {
+    const engine = new NullEngine();
+    const canvas = new PixelCanvas();
+    vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(canvas as unknown as HTMLCanvasElement);
+    const view = engine.registerView(canvas as unknown as HTMLCanvasElement);
+    view.enabled = false;
+    const original = engine._renderViews;
+    const first = retainOffscreenFrameDispatch(engine);
+    const second = retainOffscreenFrameDispatch(engine);
+    try {
+      first();
+      first();
+      expect(engine._renderViews()).toBe(false);
+      second();
+      expect(engine._renderViews).toBe(original);
+      expect(engine._renderViews()).toBe(true);
+      const release = retainOffscreenFrameDispatch(engine);
+      const replacement = () => false;
+      engine._renderViews = replacement;
+      release();
+      expect(engine._renderViews).toBe(replacement);
+    } finally { first(); second(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+
   it("preserves the last presented canvas when native resize/copy would run on a skipped frame", () => {
     const engine = new NullEngine();
     const source = new PixelCanvas();

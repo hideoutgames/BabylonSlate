@@ -243,6 +243,29 @@ test("editor viewport applies hardware scaling and the post-processing gate", { 
       }
     }
   }
+  const entryIdAction = page.getByRole("button", { name: "Pass 1 Entry ID", exact: true });
+  if (coarse) {
+    await entryIdAction.tap();
+  } else {
+    await entryIdAction.focus();
+    await entryIdAction.press("Enter");
+  }
+  const entryIdDialog = page.getByRole("dialog", { name: "Pass 1 Entry ID", exact: true });
+  const entryIdField = entryIdDialog.getByRole("textbox", { name: "Entry ID", exact: true });
+  await expect(entryIdField).toHaveAttribute("readonly", "");
+  await expect(entryIdField).not.toHaveValue("");
+  await entryIdField.focus();
+  await expect.poll(() => entryIdField.evaluate((element) => {
+    const input = element as HTMLInputElement;
+    return input.value.slice(input.selectionStart!, input.selectionEnd!) === input.value;
+  })).toBe(true);
+  if (coarse) {
+    await entryIdDialog.getByRole("button", { name: "Close", exact: true }).tap();
+  } else {
+    await entryIdField.press("Escape");
+    await expect(entryIdAction).toBeFocused();
+  }
+  await expect(entryIdDialog).toHaveCount(0);
   await page.getByTestId("scene-layer-0-z-order").fill("5");
   await page.getByTestId("scene-layer-0-z-order").press("Enter");
   await expect(page.getByTestId("scene-layer-0-z-order")).toHaveValue("5");

@@ -47,10 +47,19 @@ import {
 import {
   ChevronDownIcon,
   ChevronUpIcon,
+  HashIcon,
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@babylonslate/ui/components/dialog";
 import {
   Empty,
   EmptyDescription,
@@ -102,6 +111,39 @@ import {
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { prefabTemplatesByClassId } from "../lib/prefab-instance-sync";
+
+function PostProcessEntryId({ id, index }: { id: string; index: number }) {
+  return (
+    <Dialog>
+      <DialogTrigger
+        render={
+          <IconActionButton
+            label={`Pass ${index + 1} Entry ID`}
+            className="shrink-0 pointer-coarse:size-11"
+          />
+        }
+      >
+        <HashIcon />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Pass {index + 1} Entry ID</DialogTitle>
+          <DialogDescription>
+            Copy this ID to target this pass with Get Post Process Entry.
+          </DialogDescription>
+        </DialogHeader>
+        <PropertyGrid density="compact" rows={[{
+          kind: "text",
+          id: `scene-post-process-${id}-entry-id`,
+          label: "Entry ID",
+          value: id,
+          readOnly: true,
+          onChange: () => {},
+        }]} />
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -659,22 +701,17 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 })
               }
               renderItemHeader={({ item, index }) => (
-                <>
-                  {stackAssetPicker(
-                    item.materialGuid,
-                    `scene-post-process-${index}-material`,
-                    `Pass ${index + 1} Material`,
-                    () => setPostProcessPick({ id: item.id }),
-                  )}
-                  <PropertyGrid density="compact" rows={[{
-                    kind: "text",
-                    id: `scene-post-process-${item.id}-entry-id`,
-                    label: "Entry ID",
-                    value: item.id,
-                    readOnly: true,
-                    onChange: () => {},
-                  }]} />
-                </>
+                <div className="flex items-center gap-1">
+                  <div className="min-w-0 flex-1">
+                    {stackAssetPicker(
+                      item.materialGuid,
+                      `scene-post-process-${index}-material`,
+                      `Pass ${index + 1} Material`,
+                      () => setPostProcessPick({ id: item.id }),
+                    )}
+                  </div>
+                  <PostProcessEntryId id={item.id} index={index} />
+                </div>
               )}
               renderItem={({ item, index, onChange }) => (
                 <div className="flex items-center justify-between gap-2 px-2 pointer-coarse:flex-wrap">

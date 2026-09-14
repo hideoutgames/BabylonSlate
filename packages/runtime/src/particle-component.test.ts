@@ -7,12 +7,14 @@ import {
 import { createInProcessRuntime } from "./driver";
 
 describe("ParticleComponent play-on-start", () => {
-  it("emits assignParticle with play when playOnStart is true", () => {
+  it("prepares particles before presentation and starts them only after owner readiness", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
       preferSoftwarePhysics: true,
+      deferSceneModelsReady: true,
+      playSceneGuid: "particle-scene",
       playScene: {
         name: "Particles",
         viewportMode: "3d",
@@ -47,10 +49,16 @@ describe("ParticleComponent play-on-start", () => {
         actorGuid: "fx",
         componentId: "particle-1",
         particleSystemGuid: "sys-1",
-        play: true,
+        play: false,
         sortingLayer: "Foreground",
         orderInLayer: 2,
       },
+    ]);
+    expect(commands.filter((command) => command.type === "setParticlePlaying")).toEqual([]);
+    const realized = commands.find((command) => command.type === "sceneRealized")!;
+    runtime.notifySceneModelsReady(realized.sceneAssetGuid, realized.sceneLoadId);
+    expect(commands.filter((command) => command.type === "setParticlePlaying")).toEqual([
+      { type: "setParticlePlaying", actorGuid: "fx", componentId: "particle-1", playing: true },
     ]);
     runtime.stop();
   });

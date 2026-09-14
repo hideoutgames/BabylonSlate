@@ -5,8 +5,10 @@ import {
   NullEngineOptions,
   PointLight,
   RenderTargetTexture,
+  RawTexture,
   Scene,
   ShadowGenerator,
+  StandardMaterial,
   Vector3,
   Viewport,
 } from "@babylonjs/core";
@@ -14,6 +16,7 @@ import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOr
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { configureCutoutSorting } from "./sorting";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -64,6 +67,52 @@ it("probes without rendering and preserves the chosen camera through one scene f
   expect(scene.activeCamera).toBe(camera);
   expect(scene.frameGraph).toBeNull();
   expect(scene.customRenderFunction).toBeUndefined();
+  graph.dispose();
+});
+
+it("preserves native infinite-far sky projection during the main object draw", async () => {
+  const { scene, camera } = host();
+  camera.maxZ = 100;
+  const sky = MeshBuilder.CreateBox("sky", { size: 1000 }, scene);
+  sky.ignoreCameraMaxZ = true;
+  sky.material = new StandardMaterial("sky", scene);
+  sky.material.backFaceCulling = false;
+  const projections: number[] = [];
+  sky.onBeforeBindObservable.add(() => projections.push(camera.maxZ));
+  const graph = new ForwardSceneFrameGraph(scene);
+  await graph.prepare(camera);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(projections).toEqual([0]);
+  expect(camera.maxZ).toBe(100);
+  expect(scene._intermediateRendering).toBe(false);
+  graph.dispose();
+});
+
+it("keeps the authored cutout draw order when a FrameGraph owns the rendering manager", async () => {
+  const { scene, camera } = host();
+  configureCutoutSorting(scene);
+  const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+  texture.hasAlpha = true;
+  texture.getInternalTexture()!.isReady = true;
+  const material = new StandardMaterial("cutout", scene);
+  material.diffuseTexture = texture;
+  material.transparencyMode = 1;
+  const order: string[] = [];
+  for (const [name, index] of [["front", 20], ["back", 10]] as const) {
+    const mesh = MeshBuilder.CreatePlane(name, {}, scene);
+    mesh.material = material;
+    mesh.renderingGroupId = 1;
+    mesh.alphaIndex = index;
+    mesh.onBeforeBindObservable.add(() => order.push(name));
+    await material.forceCompilationAsync(mesh);
+  }
+  scene.render();
+  expect(order).toEqual(["back", "front"]);
+  order.length = 0;
+  const graph = new ForwardSceneFrameGraph(scene);
+  await graph.prepare(camera);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(order).toEqual(["back", "front"]);
   graph.dispose();
 });
 
