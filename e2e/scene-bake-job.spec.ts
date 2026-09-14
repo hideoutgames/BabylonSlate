@@ -198,9 +198,11 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
   await dialog
     .getByRole("button", { name: "Bake Lighting", exact: true })
     .click();
-  await expect(dialog.getByText(/Bake Saved\./)).toBeVisible({
-    timeout: 120_000,
-  });
+  await expect(dialog.getByRole("button", { name: "Cancel Bake" })).toHaveCount(
+    0,
+    { timeout: 120_000 },
+  );
+  expect(await dialog.innerText()).toContain("Bake Saved.");
   const saved = await currentScene(page);
   const guid = saved.settings.bakedLightingAssetGuid!;
   expect(guid).toBeTruthy();
@@ -216,6 +218,8 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
   // The second job sees an actual authored edit while its provider is active.
   // It must retain the prior immutable result instead of publishing stale data.
   dialog = await openBake(page);
+  await dialog.getByLabel("Samples", { exact: true }).fill("4096");
+  await dialog.getByLabel("Samples", { exact: true }).press("Tab");
   await dialog
     .getByRole("button", { name: "Bake Lighting", exact: true })
     .click();
@@ -335,13 +339,18 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
       guid: id,
       bytes: await encodeBabasset({
         header: { ...decoded.header, mode: "bundled" },
-        chunks: decoded.chunks,
+        chunks: decoded.header.chunks.map((chunk) => ({
+          ...chunk,
+          data: decoded.chunks.get(chunk.id)!,
+        })),
       }),
     });
   }
   const pack = decodeBabpack(await encodeBabpack(blobs));
   const packedBake = await decodeBakedLightingAsset(pack.read(guid));
-  expect(packedBake.atlases.get(loaded.manifest.atlases[0]!.id)).toEqual(atlas);
+  expect(packedBake.atlases.get(loaded.manifest.atlases[0]!.guid)).toEqual(
+    atlas,
+  );
   const geometry = await decodeBakedGeometryAsset(pack.read(geometryGuid));
   expect(geometry.manifest.receiver).toEqual(
     loaded.manifest.receivers[0]!.identity,

@@ -229,7 +229,12 @@ export async function prepareSceneBake(options: {
   settings: SceneBakeSettings;
   signal?: AbortSignal;
 }): Promise<PreparedSceneBake> {
-  const owner = { ...options.owner };
+  // Callers may carry live editor methods beside this structural value type.
+  // Only stable serializable ownership belongs in the prepared/persisted data.
+  const owner: SceneBakeOwner = {
+    sceneGuid: options.owner.sceneGuid,
+    generation: options.owner.generation,
+  };
   const signal = options.signal;
   const current = options.current;
   const check = () => {

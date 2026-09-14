@@ -104,7 +104,9 @@ describe("authored Scene bake preparation", () => {
     expect(meshBakeParticipation({})).toBe("none");
     const { options, scene } = fixture();
     const count = scene.lights.filter((light) => light.isEnabled()).length;
-    const prepared = await prepareSceneBake(options);
+    const editorOwner = { ...options.owner, isCurrent: () => true, commit: () => true };
+    const prepared = await prepareSceneBake({ ...options, owner: editorOwner });
+    expect(structuredClone(prepared.owner)).toEqual(options.owner);
     expect(prepared.meshes[0].identity).toEqual({
       actorId: "receiver",
       componentId: "mesh",
