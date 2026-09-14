@@ -768,7 +768,10 @@ test.describe("Editor density and IA", () => {
     async ({ page }) => {
       await openTestProject(page);
       const grid = page.getByTestId("content-browser-asset-grid");
-      await grid.dblclick({ position: { x: 4, y: 4 } });
+      await expect(grid).toBeVisible();
+      const gridBox = (await grid.boundingBox())!;
+      // Use the empty top gutter, clear of the divider's invisible touch target.
+      await grid.dblclick({ position: { x: gridBox.width / 2, y: 4 } });
       await expect(
         page.getByTestId("content-browser-new-asset-dialog"),
       ).toBeVisible();
