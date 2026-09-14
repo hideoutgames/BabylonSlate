@@ -37,11 +37,6 @@ export class OwnedPostProcess extends PostProcess {
   });
   private readonly release = new Promise<void>((resolve) => { this.resolveReleased = resolve; });
 
-  constructor(...args: ConstructorParameters<typeof PostProcess>) {
-    super(...args);
-    void this.disposal.catch(() => {});
-  }
-
   get drawWrapper() { return this._effectWrapper.drawWrapper; }
   get isReleased(): boolean { return this.released; }
   whenDisposed(): Promise<void> { return this.disposal; }
@@ -86,6 +81,7 @@ export class OwnedPostProcess extends PostProcess {
   override dispose(camera?: Camera): void {
     if (this.disposed) return;
     this.disposed = true;
+    void this.disposal.catch(() => {});
     const attachedCamera = camera ?? this.getCamera();
     // Native Engine/Scene disposal drains their arrays with while(first.dispose).
     // A logically retired entry must leave those arrays before it starts waiting.
