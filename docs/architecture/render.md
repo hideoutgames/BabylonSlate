@@ -410,6 +410,12 @@ allocated mip counts when generation is disabled. Mutating a live allocation in
 place is unsupported: replacement leases retain the previous generation until its
 owned resources are disposed. The service performs no GPU allocation/query during
 accounting and does not yet connect these extra categories to production graphs.
+After confirmed object disposal, WebGPU callers use
+`releaseManagedRenderLeaseAfterDisposal` to hold the charge until the next natural
+end-frame destruction drain or confirmed Engine disposal. Registration waits one
+microtask so disposal from an end-frame observer cannot release in that same
+notification after the drain has already run. Paused engines retain the charge;
+the helper never forces a shared frame. Uncertain cleanup keeps the lease.
 
 These are conservative policy allowances, not measured VRAM or A16 performance.
 The ledger covers managed shadow attachments and cluster mask/data textures only;

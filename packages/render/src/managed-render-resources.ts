@@ -36,6 +36,9 @@ type Ledger = {
   resources: Map<object, ResourceEntry>;
 };
 const ledgers = new WeakMap<AbstractEngine, Ledger>();
+const disposedEngines = new WeakSet<AbstractEngine>();
+const leaseEngines = new WeakMap<ManagedRenderLease, AbstractEngine>();
+const deferredReleases = new WeakMap<ManagedRenderLease, Promise<void>>();
 
 function ledger(engine: AbstractEngine): Ledger {
   let value = ledgers.get(engine);
@@ -51,7 +54,10 @@ function ledger(engine: AbstractEngine): Ledger {
     ledgers.set(engine, value);
     // Restoration rebuilds owners independently. Keep reservations until each
     // owner disposes its old handles; clearing globally would over-admit siblings.
-    engine.onDisposeObservable.addOnce(() => ledgers.delete(engine));
+    engine.onDisposeObservable.addOnce(() => {
+      disposedEngines.add(engine);
+      ledgers.delete(engine);
+    });
   }
   return value;
 }
@@ -147,7 +153,7 @@ export function beginManagedRenderAllocation(
   let owned:
     | Map<object, { bytes: number; categories: Set<ManagedRenderCategory> }>
     | undefined;
-  return {
+  const lease: ManagedRenderLease = {
     commit(resources) {
       if (released || !pending)
         throw new Error("Managed rendering allocation is no longer pending.");
@@ -226,4 +232,57 @@ export function beginManagedRenderAllocation(
       }
     },
   };
+  leaseEngines.set(lease, engine);
+  return lease;
+}
+
+/** Call only after disposing all owned resources. Native WebGPU queues physical
+ * texture/buffer destruction until endFrame; hold the lease through that drain.
+ * A failed/uncertain disposal must keep its lease instead of calling this helper.
+ * Never forces a shared Engine frame. Repeated calls share one completion. */
+export function releaseManagedRenderLeaseAfterDisposal(
+  engine: AbstractEngine,
+  lease: ManagedRenderLease,
+): Promise<void> {
+  if (leaseEngines.get(lease) !== engine)
+    throw new Error("Managed render lease belongs to another Engine.");
+  const pending = deferredReleases.get(lease);
+  if (pending) return pending;
+  if (!engine.isWebGPU || disposedEngines.has(engine)) {
+    lease.release();
+    return Promise.resolve();
+  }
+  const completion = new Promise<void>((resolve, reject) => {
+    let finished = false;
+    let removeFrame: (() => void) | undefined;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      removeFrame?.();
+      engine.onDisposeObservable.remove(disposeObserver);
+      try {
+        lease.release();
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    };
+    const disposeObserver = engine.onDisposeObservable.addOnce(finish);
+    // Babylon 9.20 drains deferred resources BEFORE notifying end-frame. A
+    // disposal requested inside that notification must await the NEXT drain;
+    // registering synchronously could run our observer in the current iteration.
+    queueMicrotask(() => {
+      if (finished) return;
+      if (disposedEngines.has(engine)) {
+        finish();
+        return;
+      }
+      const observer = engine.onEndFrameObservable.addOnce(finish);
+      removeFrame = () => {
+        engine.onEndFrameObservable.remove(observer);
+      };
+    });
+  });
+  deferredReleases.set(lease, completion);
+  return completion;
 }
