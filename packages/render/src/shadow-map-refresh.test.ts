@@ -3,6 +3,7 @@ import {
   DirectionalLight,
   Material,
   Matrix,
+  Mesh,
   MeshBuilder,
   MorphTargetManager,
   NullEngine,
@@ -15,6 +16,7 @@ import {
   UniversalCamera,
   Vector3,
   VertexBuffer,
+  VertexData,
 } from "@babylonjs/core";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
@@ -98,6 +100,29 @@ async function fixture(floatingOrigin = false) {
 }
 
 describe("local shadow refresh", () => {
+  it("accepts empty mesh roots and refreshes when their submeshes are populated or removed", async () => {
+    const { scene, material, controller, map, render } = await fixture();
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+
+    const pending = new Mesh("pending model root", scene);
+    pending.material = material;
+    // This is Babylon's real initial state, not an incomplete mesh stub.
+    expect(pending.subMeshes).toBeUndefined();
+    controller.setParticipation(pending, { castShadows: true });
+    expect(render()).toBe(6);
+    expect(render()).toBe(6); // Unknown geometry remains conservative.
+
+    VertexData.CreateBox({}).applyToMesh(pending);
+    expect(render()).toBe(6);
+    expect(map.renderList).toContain(pending);
+    expect(render()).toBe(0);
+
+    pending.releaseSubMeshes();
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+  });
+
   it("renders the first cube after readiness probes, then reuses unchanged content and allocation", async () => {
     const { scene, mesh, light, controller, generator, map, faces, render } =
       await fixture();
