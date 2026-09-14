@@ -3431,7 +3431,10 @@ class InProcessRuntime implements RuntimeDriver {
       const value = component.getVariable("materialGuid");
       const guid = typeof value === "string" && value.trim() ? value : null;
       if (guid) this.componentsWithMaterialAssignment.add(component);
-      else if (!this.componentsWithMaterialAssignment.delete(component)) {
+      else if (
+        !this.componentsWithMaterialAssignment.delete(component) &&
+        component.getVariable("materialSource") !== "override"
+      ) {
         // Untouched model components retain their authored material slots.
         continue;
       }

@@ -23,8 +23,9 @@ import {
   applyAuthoredCameraLens,
   type AuthoredCameraProperties,
 } from "./scene-illumination";
-import { editorMeshName } from "./scene-loader";
+import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
+import type { AudioLibrary } from "./audio-service";
 
 export const CAMERA_PREVIEW_INTERVAL_MS = 1000;
 export const CAMERA_PREVIEW_WIDTH = 320;
@@ -37,6 +38,7 @@ type OverlaySync = {
   sceneData: SerializedScene | null;
   selectedActorIds: readonly string[];
   selectedComponentIds?: readonly string[];
+  audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
 };
 
 function actorPosition(actor: SerializedActor): Vector3 {
@@ -140,7 +142,7 @@ function ringPoints(center: Vector3, axis: Vector3, radius: number, segments = 3
 }
 
 /**
- * Editor-only frustum, light influence, and 1 Hz camera preview RTT.
+ * Editor-only frustum, light/audio influence, and 1 Hz camera preview RTT.
  * Does not replace the orbit camera or the hemispheric fill light.
  */
 export class EditorDebugOverlay {
@@ -158,6 +160,11 @@ export class EditorDebugOverlay {
   private previewCanvas: HTMLCanvasElement | null = null;
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private audioDebug: Array<{
+    root: TransformNode;
+    actor: SerializedActor;
+    component: SerializedComponent;
+  }> = [];
 
   constructor(scene: Scene, options?: { now?: () => number }) {
     this.scene = scene;
@@ -182,6 +189,19 @@ export class EditorDebugOverlay {
     const light = selected.find((entry) => entry.component.classId === "LightComponent");
     if (camera) this.buildCameraDebug(camera.actor, camera.component);
     if (light) this.buildLightDebug(light.actor, light.component);
+    for (const { actor, component } of selected) {
+      if (component.classId !== "AudioComponent") continue;
+      const guid = component.properties.audioAssetGuid ?? component.properties.assetGuid;
+      if (typeof guid !== "string") continue;
+      const attenuationGuid = options.audioLibrary?.audio.get(guid)?.soundAttenuationGuid;
+      const attenuation = attenuationGuid
+        ? options.audioLibrary?.attenuations.get(attenuationGuid)
+        : undefined;
+      if (attenuation) {
+        this.buildAudioDebug(actor, component, attenuation.innerRadius, attenuation.maxRadius);
+      }
+    }
+    this.followLivePose();
     this.updatePreviewCanvasVisibility();
     this.ensureTimer();
   }
@@ -191,6 +211,20 @@ export class EditorDebugOverlay {
    * the preview tracks a gizmo drag before the document commit.
    */
   followLivePose(): void {
+    for (const { root, actor, component } of this.audioDebug) {
+      const visual = this.scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
+      const origin = this.scene.getMeshByName(editorMeshName(actor.id));
+      if (visual) {
+        visual.computeWorldMatrix(true);
+        root.position.copyFrom(visual.getAbsolutePosition());
+      } else if (origin) {
+        origin.computeWorldMatrix(true);
+        const local = component.transform?.position ?? [0, 0, 0];
+        root.position.copyFrom(Vector3.TransformCoordinates(Vector3.FromArray(local), origin.getWorldMatrix()));
+      } else {
+        root.position.copyFrom(composeActorComponentTransform(actor, component).position);
+      }
+    }
     const root = this.frustumMesh;
     const camera = this.previewCamera;
     if (!root || !camera) return;
@@ -249,6 +283,8 @@ export class EditorDebugOverlay {
     this.lightDebugMesh?.dispose();
     this.lightDebugMesh = null;
     this.lightDebugKind = null;
+    for (const { root } of this.audioDebug) root.dispose();
+    this.audioDebug = [];
     this.previewTexture?.dispose();
     this.previewTexture = null;
     this.previewCamera?.dispose();
@@ -371,6 +407,32 @@ export class EditorDebugOverlay {
       dashedLines(`debugLight:${actor.id}:mer2`, ringPoints(origin, Vector3.Forward(), range), this.scene, root);
     }
     this.lightDebugMesh = root;
+  }
+
+  private buildAudioDebug(
+    actor: SerializedActor,
+    component: SerializedComponent,
+    innerRadius: number,
+    maxRadius: number,
+  ): void {
+    const name = `debugAudio:${actor.id}:${component.id}`;
+    const root = new TransformNode(name, this.scene);
+    for (const [label, radius, color] of [
+      ["inner", innerRadius, Color3.Green()],
+      ["max", maxRadius, Color3.Yellow()],
+    ] as const) {
+      if (radius <= 0) continue;
+      for (const [axis, normal] of [Vector3.Up(), Vector3.Right(), Vector3.Forward()].entries()) {
+        const mesh = dashedLines(
+          `${name}:${label}:${axis}`,
+          ringPoints(Vector3.Zero(), normal, radius),
+          this.scene,
+          root,
+        );
+        mesh.color = color;
+      }
+    }
+    this.audioDebug.push({ root, actor, component });
   }
 
   private updatePreviewCanvasVisibility(): void {

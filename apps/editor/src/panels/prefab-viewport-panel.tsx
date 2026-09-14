@@ -29,6 +29,7 @@ import { useSceneEditing } from "../context/scene-editing-context";
 import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
+import { useEditorAudioDebug } from "../lib/use-editor-audio-debug";
 import {
   previewSceneFor,
   PREFAB_ROOT_ID,
@@ -75,6 +76,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     commitComponentTransforms,
     applyPivotTransform,
   } = usePrefabEditing();
+  const audioLibrary = useEditorAudioDebug(components.some((component) =>
+    component.classId === "AudioComponent" && selectedIds.includes(component.id),
+  ));
   const {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
@@ -488,13 +492,14 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     handle.editor.syncSelectionDebug({
       sceneData: scene,
       selectedActorIds: selectedIds,
+      audioLibrary,
       selectedComponentIds: selectedIds.includes(PREFAB_ROOT_ID)
         ? components.map((component) => component.id)
         : selectedIds.length > 0
           ? selectedIds
           : undefined,
     });
-  }, [components, selectedId, selectedIds, prefabPhysicsWorld, engineEpoch]);
+  }, [components, selectedId, selectedIds, prefabPhysicsWorld, engineEpoch, audioLibrary]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

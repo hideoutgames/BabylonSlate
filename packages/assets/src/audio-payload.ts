@@ -207,8 +207,8 @@ export function createDefaultAudioMixerPayload(): AudioMixerPayload {
 
 export function createDefaultSoundAttenuationPayload(): SoundAttenuationPayload {
   return {
-    innerRadius: 1,
-    maxRadius: 50,
+    innerRadius: 10,
+    maxRadius: 250,
     distanceModel: "linear",
     rolloff: 1,
     spatialisation: "equalPower",

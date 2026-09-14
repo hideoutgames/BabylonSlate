@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { normalizeModelPayload } from "@babylonslate/assets";
+import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -826,7 +828,7 @@ function PrefabComponentDetails({
   onUpdate: (property: string, value: unknown) => void;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry, openDocuments } = useDocuments();
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   return (
     <div
@@ -860,6 +862,10 @@ function PrefabComponentDetails({
             collisionLayers,
             assetLabel,
             assetType,
+            modelMaterialSlots: (guid) => normalizeModelPayload(
+              openDocuments.find((doc) => doc.ref.kind === "model" && doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
+                ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
+            ).materialSlots,
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
@@ -908,7 +914,9 @@ function PrefabComponentDetails({
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={pickerAssets}
+        assets={assetPick?.property === "materialGuid" && component.classId === "MeshComponent" && component.properties.assetGuid
+          ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
+          : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
         title={assetPick?.title ?? "Pick Asset"}
         allowNone
@@ -1274,7 +1282,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   if (
     prefabSelectedId === PREFAB_ROOT_ID &&
     doc?.ref.kind === "graph" &&
-    graph
+    graph &&
+    classDocumentShowsPrefab(parentClass, parentOf, {
+      assetType: indexed?.header.type,
+    })
   ) {
     const defaults = graph.actorDefaults ?? {};
     const selfClassId = classIdFromClassAsset({

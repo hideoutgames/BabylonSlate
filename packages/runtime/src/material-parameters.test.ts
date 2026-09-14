@@ -16,12 +16,13 @@ import { createInProcessRuntime } from "./driver";
 async function execute(
   source: string,
   twoMeshes = true,
-  initial: { materialGuid?: string | null; meshKind?: "box" | "model" } = {},
+  initial: { materialGuid?: string | null; meshKind?: "box" | "model"; materialSource?: "override" } = {},
 ) {
   const commands: CommandMessage[] = [];
   const mesh = createMeshComponent("mesh-1", initial.meshKind ?? "box");
   mesh.properties.materialGuid =
     initial.materialGuid === undefined ? "mat-rock" : initial.materialGuid;
+  if (initial.materialSource) mesh.properties.materialSource = initial.materialSource;
   const sibling = createMeshComponent("mesh-2", "sphere");
   sibling.properties.materialGuid = "mat-rock";
   const runtime = createInProcessRuntime({
@@ -60,6 +61,15 @@ async function execute(
 }
 
 describe("runtime material parameters", () => {
+  it("emits an authored model None assignment when starting Play before any override was bound", async () => {
+    const commands = await execute("export function onBeginPlay() {}", false, {
+      meshKind: "model", materialGuid: null, materialSource: "override",
+    });
+    expect(commands.filter((command) => command.type === "assignMaterial")).toEqual([
+      expect.objectContaining({ componentId: "mesh-1", materialAssetGuid: null }),
+    ]);
+  });
+
   it("emits a clear between assignments so returning to the same material resets private parameters", async () => {
     const commands = await execute(
       `export function onBeginPlay(ctx) {
