@@ -169,6 +169,24 @@ function textureStorage(
   };
 }
 
+/** Reconcile a graph-owned InternalTexture before lazy wrappers exist. Explicit
+ * samples describe multisample storage owned alongside this texture; a WebGL
+ * wrapper's separate depth renderbuffer is accounted by the wrapper collector. */
+export function managedRenderTextureResource(
+  texture: InternalTexture,
+  category: ManagedRenderCategory,
+  options: { samples?: number; allocatedMipLevels?: number | "full" } = {},
+): ManagedRenderResource {
+  const samples = options.samples ?? Math.max(1, texture.samples);
+  return {
+    handle: texture,
+    category,
+    bytes: renderTargetAllocationBytes(
+      textureStorage(texture, samples, options.allocatedMipLevels),
+    ),
+  };
+}
+
 /** Actual wrapper metadata reconciles the declared reservation. Returned texture
  * identities are shared across graph imports; commit deduplicates aliases.
  * Pass allocatedMipLevels when WebGL createMipMaps is true but generateMipMaps
@@ -198,21 +216,18 @@ export function managedRenderTargetResources(
     const planes = (layout.layers ?? layout.depth ?? 1) * (layout.cube ? 6 : 1);
     if ((hardware._MSAARenderBuffers?.length ?? 0) > planes)
       throw new Error("Unqualified additional managed MSAA attachments.");
-    result.push({
-      handle: texture,
-      bytes: renderTargetAllocationBytes(layout),
-      category: options.colorCategory,
-    });
+    result.push(
+      managedRenderTextureResource(texture, options.colorCategory, {
+        samples,
+        allocatedMipLevels: options.allocatedMipLevels,
+      }),
+    );
   }
   if (depth) {
     const samples = depth.getEngine().isWebGPU
       ? Math.max(positive(target.samples), positive(depth.samples))
       : 1;
-    result.push({
-      handle: depth,
-      bytes: renderTargetAllocationBytes(textureStorage(depth, samples)),
-      category: "depth",
-    });
+    result.push(managedRenderTextureResource(depth, "depth", { samples }));
   }
   // Pinned WebGL 9.20: depth renderbuffers belong to the wrapper, separately
   // from its sampleable texture. Preserve their own identity when wrappers share

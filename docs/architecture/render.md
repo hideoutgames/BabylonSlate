@@ -402,8 +402,8 @@ leases through `beginManagedRenderAllocation`; existing lighting callers keep
 their lower limits and cluster accounting. Category totals partition physical
 handles; a texture aliased across categories is counted once in `sharedBytes`.
 Declared render-target recipes reserve dimensions, array/cube/volume mip storage,
-resolved textures and full lazy MSAA capacity before construction. Actual wrapper
-metadata reconciles InternalTexture identities and separate WebGL depth buffers.
+resolved textures and full lazy MSAA capacity before construction. Actual InternalTexture metadata can reconcile graph-owned handles before lazy
+wrappers exist; the wrapper collector also accounts separate WebGL depth buffers.
 RGB expansion and implementation-defined depth/stencil formats use conservative
 representation bounds; unknown layouts are rejected. WebGL callers must retain
 allocated mip counts when generation is disabled. Mutating a live allocation in

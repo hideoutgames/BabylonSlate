@@ -6,6 +6,7 @@ import {
 } from "@babylonjs/core";
 import {
   managedRenderTargetResources,
+  managedRenderTextureResource,
   renderTargetAllocationBytes,
 } from "./render-target-resource-cost";
 import {
@@ -186,6 +187,50 @@ describe("managed render-target storage", () => {
     target.dispose();
     borrowed.release();
     borrowed.release();
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
+  });
+
+  it("reconciles shared graph texture handles before any render-target wrapper is created", () => {
+    const engine = engineWithLimit(128);
+    const texture = engine.createRawTexture(
+      new Uint8Array(32),
+      4,
+      2,
+      Constants.TEXTUREFORMAT_RGBA,
+      false,
+      false,
+      Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+    );
+    const depth = engine.createRawTexture(
+      new Float32Array(8),
+      4,
+      2,
+      Constants.TEXTUREFORMAT_R,
+      false,
+      false,
+      Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+      null,
+      Constants.TEXTURETYPE_FLOAT,
+    );
+    depth.format = Constants.TEXTUREFORMAT_DEPTH32_FLOAT;
+    const first = beginManagedRenderAllocation(engine, 64)!;
+    first.commit([
+      managedRenderTextureResource(texture, "sceneColor", { samples: 1 }),
+      managedRenderTextureResource(depth, "depth", { samples: 1 }),
+    ]);
+    const alias = beginManagedRenderAllocation(engine, 32)!;
+    alias.commit([
+      managedRenderTextureResource(texture, "postprocess", { samples: 1 }),
+    ]);
+    expect(managedRenderReservations(engine)).toMatchObject({
+      resourceBytes: 64,
+      sharedBytes: 32,
+      categoryBytes: { depth: 32 },
+    });
+    texture.dispose();
+    depth.dispose();
+    first.release();
+    alias.release();
     expect(managedRenderReservations(engine).reservedBytes).toBe(0);
   });
 
