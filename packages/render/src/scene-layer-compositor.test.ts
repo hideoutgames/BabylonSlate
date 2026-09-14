@@ -299,6 +299,12 @@ describe("SceneLayerCompositor", () => {
 
   it("keeps only the last presented layer image while replacement graphs prepare without acknowledging it", async () => {
     const { engine } = world();
+    // NullEngine omits the raw upload-ready flag that the real backends set.
+    // Preserve actual texture ownership and the production readiness checks.
+    const upload = engine.createRawTexture.bind(engine);
+    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+      const texture = upload(...args); texture.isReady = true; return texture;
+    });
     const renderers: SceneRenderCoordinator[] = [];
     const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
       renderers.push(renderer); return { dispose() {} };
