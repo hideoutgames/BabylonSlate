@@ -246,6 +246,7 @@ it("binds, removes and swaps a late Scene environment on a frozen PBR graph with
   result.material.freeze();
   const build = vi.spyOn(result.material, "build");
   applyEnvironmentLighting(a, "environment", assets);
+  a.incrementRenderId(); // Babylon caches material readiness within one submitted frame.
   expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(
     true,
   );
@@ -263,6 +264,7 @@ it("binds, removes and swaps a late Scene environment on a frozen PBR graph with
   expect(upload).toHaveBeenCalledTimes(1);
 
   applyEnvironmentLighting(a, null, assets);
+  a.incrementRenderId();
   expect(a.environmentTexture).toBeNull();
   expect(firstView.getInternalTexture()).toBeNull();
   expect(isEnvironmentLightingReady(a)).toBe(true);
@@ -287,6 +289,7 @@ it("binds, removes and swaps a late Scene environment on a frozen PBR graph with
     textureBytes: new Map([["replacement", bytes]]),
   });
   const replacement = a.environmentTexture!;
+  a.incrementRenderId();
   expect(replacement).not.toBe(firstView);
   // Readiness must still inspect the real admitted cube, despite the emitter flag.
   const ready = vi
