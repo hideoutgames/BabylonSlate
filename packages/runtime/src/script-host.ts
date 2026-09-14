@@ -934,7 +934,7 @@ export class ScriptHost {
         }
       },
       getPostProcessEntry: (owner, entryId) => {
-        if (!(owner instanceof Scene || owner instanceof SceneLayer) || !this.ownerAvailable(owner) || typeof entryId !== "string" || !entryId.trim()) return null;
+        if (!(owner instanceof Scene || owner instanceof SceneLayer) || !this.canInvokeOwner(owner) || typeof entryId !== "string" || !entryId.trim()) return null;
         return services.getPostProcessEntry?.(owner, entryId.trim()) ?? null;
       },
       getMaterialFloatParameter: (material, name) => {
@@ -1546,7 +1546,7 @@ export class ScriptHost {
   }
 
   private materialAvailable(material: unknown): material is MaterialInstanceObject {
-    if (!(material instanceof MaterialObject || material instanceof PostProcessMaterialObject) || !this.ownerAvailable(material)) return false;
+    if (!(material instanceof MaterialObject || material instanceof PostProcessMaterialObject) || !this.canInvokeOwner(material)) return false;
     return material instanceof PostProcessMaterialObject ? material.isCurrent() : material.component.getVariable("materialObject") === material;
   }
 

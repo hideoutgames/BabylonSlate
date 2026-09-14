@@ -174,10 +174,7 @@ describe("Post Process owner reads and resets", () => {
     const { scene } = documents();
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1,
       preferSoftwarePhysics: true,
-      playScene: scene,
-      playSceneGuid: "world",
       ...runtimeOptionsFromLoadControl({
         type: "load",
         sceneAssetGuid: "world",
