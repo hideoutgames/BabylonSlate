@@ -51,6 +51,14 @@ function fixture() {
     batchSize: 23,
     maxTextureSize: 4096,
   });
+  // Native NullEngine raw uploads retain data but never mark it ready. Supply
+  // that absent GPU completion boundary so real material/graph probes can run.
+  const createRawTexture = engine.createRawTexture.bind(engine);
+  vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+    const texture = createRawTexture(...args);
+    texture.isReady = true;
+    return texture;
+  });
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 3, -5), scene);
   camera.minZ = 0.1;
