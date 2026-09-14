@@ -1233,7 +1233,10 @@ class InProcessRuntime implements RuntimeDriver {
     try {
       const first = steps.next();
       const layer = created[0];
-      if (first.done || !layer) { clearTimeout(timer); return first.value ?? null; }
+      if (first.done === true || !layer) {
+        clearTimeout(timer);
+        return first.done === true ? first.value : null;
+      }
       void (async () => {
         try {
           await waitForSceneWork(painted, controller.signal);
