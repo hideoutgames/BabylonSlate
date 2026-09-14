@@ -35,6 +35,11 @@ async function openEnvironment(page: Page) {
   if ((await toggle.getAttribute("aria-expanded")) !== "true")
     await toggle.click();
 }
+async function commitRendering(page: Page) {
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Project Settings" })).toBeHidden();
+  await waitForSceneViewportReady(page);
+}
 
 test("scalability updates budgets, persists Custom and preserves independent settings and an admitted Ultra sun", async ({
   page,
@@ -96,9 +101,8 @@ test("scalability updates budgets, persists Custom and preserves independent set
   await page.getByLabel("Environment Rotation", { exact: true }).fill("45");
   await page.getByLabel("Environment Rotation", { exact: true }).press("Tab");
   await expect(value(page, "Overall Quality")).toHaveText("Ultra");
-  await page.getByRole("button", { name: "Done", exact: true }).click();
-  await waitForSceneViewportReady(page);
-  const allocation = await page.evaluate(
+  await commitRendering(page);
+  const readAllocation = () => page.evaluate(
     () =>
       (
         globalThis as unknown as {
@@ -114,6 +118,10 @@ test("scalability updates budgets, persists Custom and preserves independent set
         }
       ).__babylonslateViewportTest.renderingBaseline().render,
   );
+  // Settings commit schedules the renderer update after React closes the dialog.
+  // The previous scene can already report ready until that update is applied.
+  await expect.poll(async () => (await readAllocation()).shadowPasses).toBe(4);
+  const allocation = await readAllocation();
   await testInfo.attach("ultra-shadow-admission", {
     body: JSON.stringify(allocation),
     contentType: "application/json",
@@ -130,8 +138,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
   await page.getByLabel("Texture Budget (MiB)", { exact: true }).fill("2000");
   await page.getByLabel("Texture Budget (MiB)", { exact: true }).press("Tab");
   await expect(value(page, "Textures Quality")).toHaveText("Custom");
-  await page.getByRole("button", { name: "Done", exact: true }).click();
-  await waitForSceneViewportReady(page);
+  await commitRendering(page);
   await saveAllIfEnabled(page, 30_000);
   await openTestProject(page);
   await openMainScene(page);

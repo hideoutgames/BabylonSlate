@@ -254,10 +254,11 @@ export function RenderQualityFields({
           </Select>
           <FieldDescription>
             Lighting category. {resolveLocalLightBudget(effective.lighting)}{" "}
-            local lights requested within the{" "}
-            {QUALITY_TARGET_LABELS[effective.lighting.profile ?? "medium"]}{" "}
-            tier; hardware shader/storage admission can limit this further. Sun
-            and fill lights use separate slots.
+            local lights requested. {effective.lighting.localLightMode === "auto"
+              ? `Auto follows the ${QUALITY_TARGET_LABELS[effective.lighting.profile ?? "medium"]} target. `
+              : "Manual overrides the Auto target. "}
+            Hardware shader/storage admission can reduce the effective count.
+            Sun and fill lights use separate slots.
           </FieldDescription>
         </Field>
         {effective.lighting.localLightMode === "manual" ? (

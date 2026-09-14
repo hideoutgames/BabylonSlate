@@ -119,7 +119,8 @@ it("separates local illumination cost from shadow budgeting", async () => {
     target: { value: "32" },
   });
   expect(selected("Lighting Quality")).toBe("Custom");
-  expect(screen.getByText(/4 local lights requested/)).toBeTruthy();
+  expect(screen.getByText(/32 local lights requested/)).toBeTruthy();
+  expect(screen.getByText(/Manual overrides the Auto target/)).toBeTruthy();
   expect(selected("Shadows Quality")).toBe("High");
   await select("Lighting Quality", "Medium");
   expect(screen.getByText(/16 local lights requested/)).toBeTruthy();

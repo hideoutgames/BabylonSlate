@@ -109,7 +109,7 @@ function selection(source?: QualitySelection): QualitySelection {
 export function resolveLocalLightBudget(settings: LightingQuality): number {
   const capacity = LOCAL_LIGHT_QUALITY_CAPACITY[settings.profile ?? "medium"];
   return settings.localLightMode === "manual"
-    ? Math.min(capacity, Math.max(0, Math.floor(settings.maxLocalLights)))
+    ? Math.max(0, Math.floor(settings.maxLocalLights))
     : capacity;
 }
 export function normalizeRenderingQuality(value: unknown): RenderingQuality {

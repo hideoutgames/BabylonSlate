@@ -219,18 +219,21 @@ describe("rendering quality sessions", () => {
     expect(qualityGroupLabel(requested, "lighting")).toBe("custom");
     expect(resolveLocalLightBudget(requested.lighting)).toBe(256);
   });
-  it("bounds local illumination independently from shadow requests and preserves requested values", () => {
+  it("honors Manual illumination requests above the Auto target until a preset is reapplied", () => {
     const session = new RenderingQualitySession();
     session.execute("lighting", "low");
     session.execute("lighting", "budget", "99");
     session.execute("shadows", "ultra");
-    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(4);
+    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(99);
     expect(session.effective().lighting).toMatchObject({
       maxLocalLights: 99,
       preset: "custom",
       profile: "low",
     });
     expect(session.effective().shadows.maxLocalLights).toBe(8);
+    session.execute("lighting", "budget", "auto");
+    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(4);
+    expect(session.effective().lighting.maxLocalLights).toBe(99);
     session.execute("lighting", "medium");
     expect(resolveLocalLightBudget(session.effective().lighting)).toBe(16);
     expect(session.effective().lighting.maxLocalLights).toBe(16);
