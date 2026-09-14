@@ -10,6 +10,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   PointLight,
+  RenderTargetTexture,
   Scene,
   SpotLight,
   Vector3,
@@ -31,7 +32,7 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "webgl2", output: "backbuffer" | "texture" = "backbuffer") {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 72;
@@ -53,8 +54,11 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
     boundTargets.push(target);
     bind(target, ...args);
   };
-  const read = async () => {
-    const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
+  const read = async (target: RenderTargetTexture | null) => {
+    const pixels = target
+      ? await target.readPixels()
+      : await engine.readPixels(0, 0, canvas.width, canvas.height);
+    if (!pixels) throw new Error("Missing rendered shadow pixels");
     return Array.from(
       new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
     );
@@ -70,6 +74,11 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
     camera.minZ = 0.1;
     camera.maxZ = 30;
     scene.activeCamera = camera;
+    const outputTarget = output === "texture"
+      ? new RenderTargetTexture("owned shadow output", { width: 80, height: 64 }, scene, false)
+      : null;
+    outputTarget?.createDepthStencilTexture();
+    camera.outputRenderTarget = outputTarget;
     new HemisphericLight("fill", Vector3.Up(), scene).intensity = 0.12;
     const origin = new Vector3(-2, 4, -2);
     const direction = origin.negate().normalize();
@@ -158,7 +167,7 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
       // independent classic oracle must also be ready on the camera's pass.
       const classicReadyBefore = path === "classic" ? withSceneReadinessState(scene, () => {
         scene.activeCamera = camera;
-        engine.currentRenderPassId = camera.renderPassId;
+        engine.currentRenderPassId = outputTarget?.renderPassId ?? camera.renderPassId;
         return isSceneFrameReady(scene);
       }) : null;
       if (path === "classic") await scene.whenReadyAsync(true);
@@ -191,7 +200,7 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
       ).length;
       const active = scene.getActiveMeshes();
       return {
-        pixels: await read(),
+        pixels: await read(outputTarget),
         draws,
         faces,
         shadowDraws,
@@ -227,11 +236,11 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         classic,
         settled,
         forceGraph,
-        width: canvas.width,
-        height: canvas.height,
+        width: outputTarget?.getSize().width ?? canvas.width,
+        height: outputTarget?.getSize().height ?? canvas.height,
         sameMap:
           currentMap === map() && texture === map()?.getInternalTexture(),
-        allocations: scene.textures.filter((texture) => texture.isRenderTarget)
+        allocations: scene.textures.filter((texture) => texture.isRenderTarget && texture !== outputTarget)
           .length,
         generatorEntries: light.getShadowGenerators()?.size ?? 0,
         cascades:
@@ -250,6 +259,7 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
       casters,
       map,
       setShadows,
+      outputTarget,
       capture,
       render,
     };
@@ -272,6 +282,7 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         host.camera.setTarget(new Vector3(0, 0.3, 0));
         await host.capture("camera-moved");
         engine.setSize(112, 80);
+        host.outputTarget?.resize({ width: 100, height: 76 });
         const shadowed = await host.capture("resized");
         const stableAllocation =
           host.map() === initialMap &&
@@ -287,6 +298,12 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         const siblingBefore = await sibling.render("classic", true);
         await host.capture("after-sibling");
         host.graph.dispose();
+        const outputReferences = host.outputTarget
+          ? [host.outputTarget.getInternalTexture()!._references, host.outputTarget.depthStencilTexture!._references]
+          : null;
+        const outputUsable = host.outputTarget
+          ? host.outputTarget.getInternalTexture()!.isReady && host.outputTarget.depthStencilTexture!.isReady
+          : true;
         const ownedAfterGraphDispose = host.map() !== null;
         const retainedGraphObjects = host.scene.objectRenderers.filter(
           (renderer) => renderer.name === "Forward objects",
@@ -309,6 +326,8 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
           initial,
           reload,
           ownedAfterGraphDispose,
+          outputReferences,
+          outputUsable,
           retainedGraphObjects,
           siblingPreserved,
           siblingBefore,
@@ -316,7 +335,7 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
           remainingScenes: engine.scenes.length,
         });
       }
-    return { backend, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null, captures, lifecycle };
+    return { backend, output, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null, captures, lifecycle };
   } finally {
     engine.dispose();
     canvas.remove();
