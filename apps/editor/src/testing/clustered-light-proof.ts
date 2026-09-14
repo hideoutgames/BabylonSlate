@@ -124,7 +124,15 @@ export async function runClusteredLightProof() {
       });
       const graph = new ForwardSceneFrameGraph(scene);
       const setLight = (index: number, enabled: boolean, intensity: number) =>
-        applyAuthoredLightProperties(lights[index]!, { enabled, intensity });
+        applyAuthoredLightProperties(lights[index]!, {
+          enabled,
+          intensity,
+          castShadows: false,
+          range: mode === "pbr" ? 1 : 12,
+          color: index % 2 ? [0.15, 0.7, 0.3] : [0.8, 0.2, 0.1],
+          outerAngle: 144,
+          innerAngle: 90,
+        });
       for (const count of [1, 2, 24, 48]) {
         const groups = Math.min(count, 2);
         const perChild =

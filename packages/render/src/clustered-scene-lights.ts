@@ -6,7 +6,7 @@ import {
   PBRMaterial,
   PointLight,
   SpotLight,
-  type Camera,
+  Camera,
   type AbstractEngine,
   type Node,
   type Observer,
@@ -29,6 +29,8 @@ import { beginClusteredAllocation } from "./clustered-allocation";
 import { ClusteredCameraBounds } from "./clustered-camera-bounds";
 import { sceneRenderingSettings } from "./render-settings";
 import { forwardLightBudget } from "./forward-light-budget";
+import { ManagedClusteredLightContainer } from "./clustered-light-container";
+import { bindClusteredMaterialVariants } from "./clustered-material-bindings";
 
 export type ClusteredSceneLightStatus = {
   clustered: number;
@@ -44,6 +46,7 @@ export type ClusteredSceneLightStatus = {
  */
 export class ClusteredSceneLights {
   private container: ClusteredLightContainer | undefined;
+  private readonly materialBindings = new Map<NodeMaterial, () => void>();
   private registry: readonly Light[];
   private readonly childDisposals = new Map<Light, Observer<Node>>();
   private disposed = false;
@@ -115,6 +118,22 @@ export class ClusteredSceneLights {
     if (this.disposed || this.scene.isDisposed || this.syncing) return;
     this.syncing = true;
     try {
+      for (const [material, restore] of this.materialBindings) {
+        if (!this.scene.materials.includes(material)) {
+          restore();
+          this.materialBindings.delete(material);
+        }
+      }
+      for (const material of this.scene.materials) {
+        if (
+          material instanceof NodeMaterial &&
+          !this.materialBindings.has(material)
+        )
+          this.materialBindings.set(
+            material,
+            bindClusteredMaterialVariants(material),
+          );
+      }
       const capability = clusteredLightCapabilities(this.scene.getEngine());
       const reason = this.unsupported(this.scene.activeCamera, capability);
       if (reason) {
@@ -158,7 +177,7 @@ export class ClusteredSceneLights {
         if (!this.container) {
           const fail = beginClusteredAllocation(this.scene);
           try {
-            this.container = new ClusteredLightContainer(
+            this.container = new ManagedClusteredLightContainer(
               "Slate clustered prototype",
               [],
               this.scene,
@@ -258,6 +277,8 @@ export class ClusteredSceneLights {
     for (const [light, observer] of this.childDisposals)
       light.onDisposeObservable.remove(observer);
     this.childDisposals.clear();
+    for (const restore of this.materialBindings.values()) restore();
+    this.materialBindings.clear();
   }
 
   private validateRegistry(lights: readonly Light[]): readonly Light[] {
@@ -343,11 +364,12 @@ export class ClusteredSceneLights {
       !camera ||
       camera.getScene() !== this.scene ||
       camera.isDisposed() ||
+      camera.mode !== Camera.PERSPECTIVE_CAMERA ||
       camera.minZ <= 0 ||
       !Number.isFinite(camera.maxZ) ||
       camera.maxZ <= camera.minZ
     )
-      return "Clustered prototype requires a live camera with a finite positive depth interval.";
+      return "Clustered prototype requires a live perspective camera with a finite positive depth interval.";
 
     return undefined;
   }

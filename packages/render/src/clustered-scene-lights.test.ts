@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  Camera,
   FreeCamera,
   HemisphericLight,
   TransformNode,
@@ -25,6 +26,12 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { syncSceneLighting } from "./scene-lighting";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import {
+  createDefaultMaterialDocument,
+  lowerMaterialDocument,
+} from "@babylonslate/shader-graph";
+import { compileMaterialPlan } from "./material-compiler";
+import { isSceneFrameReady } from "./scene-perf";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -269,5 +276,47 @@ describe("explicit clustered light ownership", () => {
     expect(owner.status().clustered).toBe(48);
     owner.dispose();
     expect(scene.textures).not.toContain(target);
+  });
+  it("registers cluster defines and samplers when an already compiled point-light slot changes type", async () => {
+    const { engine, scene, mesh, lights } = fixture();
+    for (const light of lights.slice(1)) setAuthoredLightEnabled(light, false);
+    const lower = lowerMaterialDocument(
+      createDefaultMaterialDocument("surface"),
+    );
+    if (!lower.ok) throw new Error("Fixture did not lower");
+    const compiled = compileMaterialPlan(lower.plan, {
+      scene,
+      name: "surface",
+    });
+    if (!compiled.ok) throw new Error("Fixture did not compile");
+    await compiled.ready;
+    mesh.material = compiled.material;
+    engine.currentRenderPassId = scene.activeCamera!.renderPassId;
+    syncSceneLighting(scene);
+    await vi.waitFor(() => expect(isSceneFrameReady(scene)).toBe(true));
+    const previous = mesh.subMeshes[0]!.effect!;
+    expect(previous.getSamplers()).not.toContain("tileMaskTexture0");
+    const owner = new ClusteredSceneLights(scene, lights);
+    await vi.waitFor(() => expect(isSceneFrameReady(scene)).toBe(true));
+    const clustered = mesh.subMeshes[0]!.effect!;
+    expect(clustered).not.toBe(previous);
+    expect(clustered.defines).toMatch(/#define CLUSTLIGHT_SLICES [1-9]/);
+    expect(clustered.defines).toContain("#define CLUSTLIGHT_BATCH 23");
+    expect(clustered.getSamplers()).toEqual(
+      expect.arrayContaining(["lightDataTexture0", "tileMaskTexture0"]),
+    );
+    owner.dispose();
+    syncSceneLighting(scene);
+    await vi.waitFor(() => expect(isSceneFrameReady(scene)).toBe(true));
+    expect(mesh.lightSources).toEqual([lights[0]]);
+  });
+
+  it("returns conventional lighting for orthographic cameras pending a compatible mask projection", () => {
+    const { scene, lights } = fixture();
+    scene.activeCamera!.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    const owner = new ClusteredSceneLights(scene, lights);
+    expect(owner.status().clustered).toBe(0);
+    expect(owner.limits().join()).toContain("perspective camera");
+    owner.dispose();
   });
 });
