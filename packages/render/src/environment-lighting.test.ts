@@ -18,7 +18,10 @@ import { applySceneEnvironment } from "./scene-illumination";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { isSceneFrameReady } from "./scene-perf";
 import { compileMaterialPlan } from "./material-compiler";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import {
+  createDefaultMaterialDocument,
+  lowerMaterialDocument,
+} from "@babylonslate/shader-graph";
 import {
   applyEnvironmentLighting,
   isEnvironmentLightingReady,
@@ -223,26 +226,93 @@ it("applies serialized Scene overrides and live project updates through the exis
   expect(a.environmentTexture).toBe(view);
 });
 
-it("binds a late Scene environment to an already-built frozen PBR graph without rebuilding or allocating a placeholder cube", async () => {
-  const { a, assets, upload } = fixture();
+it("binds, removes and swaps a late Scene environment on a frozen PBR graph without rebuilding or allocating placeholder cubes", async () => {
+  const { a, assets, upload, bytes, cache } = fixture();
   a.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
   const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
   if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
-  const result = compileMaterialPlan(lowered.plan, { scene: a, name: "late-environment" });
+  const result = compileMaterialPlan(lowered.plan, {
+    scene: a,
+    name: "late-environment",
+  });
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   expect(await result.ready).toEqual([]);
   expect(upload).not.toHaveBeenCalled();
   const mesh = MeshBuilder.CreateBox("surface", {}, a);
   mesh.material = result.material;
-  expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
+  expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(
+    true,
+  );
   result.material.freeze();
   const build = vi.spyOn(result.material, "build");
   applyEnvironmentLighting(a, "environment", assets);
-  expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
+  expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(
+    true,
+  );
   const effect = mesh.subMeshes[0]!.effect!;
   const bound = vi.spyOn(effect, "setTexture");
-  result.material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, mesh.subMeshes[0]!);
-  expect(bound.mock.calls.some(([, texture]) => texture === a.environmentTexture)).toBe(true);
+  result.material.bindForSubMesh(
+    mesh.computeWorldMatrix(),
+    mesh,
+    mesh.subMeshes[0]!,
+  );
+  expect(
+    bound.mock.calls.some(([, texture]) => texture === a.environmentTexture),
+  ).toBe(true);
+  const firstView = a.environmentTexture!;
+  expect(upload).toHaveBeenCalledTimes(1);
+
+  applyEnvironmentLighting(a, null, assets);
+  expect(a.environmentTexture).toBeNull();
+  expect(firstView.getInternalTexture()).toBeNull();
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(
+    true,
+  );
+  const absentBindings = vi.spyOn(mesh.subMeshes[0]!.effect!, "setTexture");
+  result.material.bindForSubMesh(
+    mesh.computeWorldMatrix(),
+    mesh,
+    mesh.subMeshes[0]!,
+  );
+  expect(absentBindings.mock.calls.some(([, texture]) => texture?.isCube)).toBe(
+    false,
+  );
+  expect(upload).toHaveBeenCalledTimes(1);
+  cache.flushUnreferenced();
+
+  applyEnvironmentLighting(a, "replacement", {
+    ...assets,
+    textureBytes: new Map([["replacement", bytes]]),
+  });
+  const replacement = a.environmentTexture!;
+  expect(replacement).not.toBe(firstView);
+  // Readiness must still inspect the real admitted cube, despite the emitter flag.
+  const ready = vi
+    .spyOn(replacement, "isReadyOrNotBlocking")
+    .mockReturnValue(false);
+  expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(
+    false,
+  );
+  ready.mockRestore();
+  expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(
+    true,
+  );
+  const replacementBindings = vi.spyOn(
+    mesh.subMeshes[0]!.effect!,
+    "setTexture",
+  );
+  result.material.bindForSubMesh(
+    mesh.computeWorldMatrix(),
+    mesh,
+    mesh.subMeshes[0]!,
+  );
+  expect(
+    replacementBindings.mock.calls.some(
+      ([, texture]) => texture === replacement,
+    ),
+  ).toBe(true);
+  expect(upload).toHaveBeenCalledTimes(2);
   expect(build).not.toHaveBeenCalled();
   expect(result.material.isFrozen).toBe(true);
   result.dispose();

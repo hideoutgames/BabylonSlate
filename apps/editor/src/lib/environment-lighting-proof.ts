@@ -33,6 +33,47 @@ import {
 } from "../../../../packages/render/src/environment-lighting";
 import { isSceneFrameReady } from "../../../../packages/render/src/scene-perf";
 
+async function greenEnvWithoutIrradiance(): Promise<Uint8Array> {
+  const faces: Uint8Array[] = [];
+  for (const size of [2, 1]) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "rgb(0,255,0)";
+    context.fillRect(0, 0, size, size);
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((value) =>
+        value
+          ? resolve(value)
+          : reject(new Error("Numeric ENV PNG encoding failed.")),
+      ),
+    );
+    const png = new Uint8Array(await blob.arrayBuffer());
+    faces.push(...Array<Uint8Array>(6).fill(png));
+  }
+  let position = 0;
+  const mipmaps = faces.map((face) => {
+    const entry = { position, length: face.length };
+    position += face.length;
+    return entry;
+  });
+  const header = new TextEncoder().encode(
+    JSON.stringify({
+      version: 2,
+      width: 2,
+      imageType: "image/png",
+      specular: { mipmaps },
+    }),
+  );
+  const bytes = new Uint8Array(9 + header.length + position);
+  bytes.set([0x86, 0x16, 0x87, 0x96, 0xf6, 0xd6, 0x96, 0x36]);
+  bytes.set(header, 8);
+  faces.forEach((face, index) =>
+    bytes.set(face, 9 + header.length + mipmaps[index]!.position),
+  );
+  return bytes;
+}
+
 /** Test-build-only numerical raster proof. No production engine selection or UI. */
 export async function runEnvironmentLightingProof() {
   const canvas = document.createElement("canvas");
@@ -87,7 +128,8 @@ export async function runEnvironmentLightingProof() {
       scene,
       name: `proof${compiled.length}`,
     });
-    if (result.ok === false) throw new Error(JSON.stringify(result.diagnostics));
+    if (result.ok === false)
+      throw new Error(JSON.stringify(result.diagnostics));
     compiled.push(result);
     const errors = await result.ready;
     if (errors.length) throw new Error(JSON.stringify(errors));
@@ -171,6 +213,41 @@ export async function runEnvironmentLightingProof() {
         entry.mesh.material!.freeze();
       }
     }
+    const fallback = await greenEnvWithoutIrradiance();
+    const oriented = buildFloatDdsCubeFixture({ color: [0, 1, 0, 1] });
+    const orientedData = new DataView(oriented.buffer);
+    // Both X faces are red at every mip; both Z faces remain green.
+    for (const face of [0, 1])
+      for (let texel = 0; texel < 5; texel++)
+        for (let channel = 0; channel < 4; channel++)
+          orientedData.setFloat32(
+            128 + face * 80 + texel * 16 + channel * 4,
+            [1, 0, 0, 1][channel]!,
+            true,
+          );
+    for (const [name, entry] of [
+      ["native", a],
+      ["graph", b],
+    ] as const) {
+      applyEnvironmentLighting(
+        entry.scene,
+        "fallback",
+        assets("fallback", fallback),
+      );
+      setSceneRenderSettings(entry.scene, settings("pbr", 0.25));
+      await capture(`${name}-env-fallback`, entry.scene, entry.mesh);
+      applyEnvironmentLighting(
+        entry.scene,
+        "oriented",
+        assets("oriented", oriented),
+      );
+      for (const rotation of [0, 90]) {
+        setSceneRenderSettings(entry.scene, settings("pbr", 0.5, rotation));
+        await capture(`${name}-oriented-${rotation}`, entry.scene, entry.mesh);
+      }
+    }
+    applyEnvironmentLighting(b.scene, "green", assets("green", green));
+    setSceneRenderSettings(b.scene, settings("cel", 1, 0, 1));
     await capture("sibling-before-dispose", b.scene, b.mesh);
     a.scene.dispose();
     await capture("sibling-after-dispose", b.scene, b.mesh);
@@ -248,7 +325,13 @@ export async function runEnvironmentLightingProof() {
     rawMaterial.dispose();
     await capture("raw-rough-blue", raw.scene, raw.mesh);
     const dim = buildFloatDdsCubeFixture({ color: [0, 0.1, 0, 1] });
+    rough.material.freeze();
     applyEnvironmentLighting(raw.scene, "dim", assets("dim", dim));
+    await capture("raw-frozen-swap", raw.scene, raw.mesh);
+    applyEnvironmentLighting(raw.scene, null);
+    await capture("raw-removed", raw.scene, raw.mesh);
+    applyEnvironmentLighting(raw.scene, "dim", assets("dim", dim));
+    await capture("raw-restored", raw.scene, raw.mesh);
     const override = surface();
     override.nodes[0]!.properties = { value: [0, 0, 0] };
     override.nodes.find((node) => node.type === "output.surface")!.properties =

@@ -60,12 +60,28 @@ test("renders scene-isolated PBR and CEL environment response and raw graph samp
     for (const strength of [0.3, 0.7])
       close(`${material}-cel-${strength}`, [0, 128, 0]);
     close(`${material}-cel-1`, [0, 255, 0]);
+    close(`${material}-env-fallback`, pixel(`${material}-pbr-0.25`));
+    expect(
+      Math.max(
+        ...pixel(`${material}-oriented-0`).map((value, index) =>
+          Math.abs(value - pixel(`${material}-oriented-90`)[index]!),
+        ),
+      ),
+      `${material} orientation changes actual irradiance`,
+    ).toBeGreaterThan(20);
   }
+  for (const intensity of [0.25, 0.5])
+    close(`graph-pbr-${intensity}`, pixel(`native-pbr-${intensity}`));
+  for (const rotation of [0, 90])
+    close(`graph-oriented-${rotation}`, pixel(`native-oriented-${rotation}`));
   close("sibling-after-dispose", pixel("sibling-before-dispose"), 0);
   close("raw-disabled-green", [0, 255, 0]);
   close("raw-rotated-red", [255, 0, 0]);
   close("raw-zero-intensity-green", [0, 255, 0]);
   close("raw-rough-blue", [0, 0, 255]);
+  close("raw-frozen-swap", [0, 89, 0]);
+  close("raw-removed", [0, 0, 0]);
+  close("raw-restored", pixel("raw-frozen-swap"), 0);
   expect(pixel("replacement-0")[1]).toBeGreaterThan(20);
   close("replacement-4", pixel("replacement-0"), 0);
   close("raw-post-process", [0, 26, 0]);
