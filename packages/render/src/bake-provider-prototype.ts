@@ -233,6 +233,8 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     owned.push(compileGeometry);
     compileGeometry.setAttribute("position", new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
     compileGeometry.setAttribute("uv", new BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2));
+    progress("compiling");
+    await checkpoint(true);
     const previousTarget = renderer.getRenderTarget();
     try {
       // Compile the same linear target variant that sampling actually uses.
@@ -241,7 +243,6 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     } finally {
       renderer.setRenderTarget(previousTarget);
     }
-    progress("compiling");
     context.flush();
     const parallelCompile = context.getExtension("KHR_parallel_shader_compile");
     for (const program of renderer.info.programs ?? []) {

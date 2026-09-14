@@ -117,6 +117,8 @@ async function setup() {
       provider: { id: "xatlasjs", version: "0.2.0", adapterVersion: "1" },
     })),
     bake: vi.fn<SceneBakeJobAdapter["bake"]>(async (input, options) => {
+      for (const phase of ["building", "compiling", "sampling", "readback"] as const)
+        options?.onProgress?.({ phase, samples: 0, totalSamples: input.samples });
       const irradiance = new Float32Array(input.size ** 2 * 4);
       const index = (16 * input.size + 16) * 4;
       irradiance.set(
@@ -184,6 +186,9 @@ it("publishes complete mixed-source physical irradiance, padded UV bindings and 
     },
   });
   expect(fixture.reference()).toBe(result.guid);
+  expect(stages.indexOf("building")).toBeLessThan(stages.indexOf("compiling"));
+  expect(stages.indexOf("compiling")).toBeLessThan(stages.indexOf("baking"));
+  expect(stages.indexOf("baking")).toBeLessThan(stages.indexOf("readback"));
   expect(fixture.commit).toHaveBeenCalledOnce();
   const reopened = new AssetRegistry(fixture.storage);
   await reopened.mountRoot(projectContentRoot());
@@ -213,7 +218,7 @@ it("publishes complete mixed-source physical irradiance, padded UV bindings and 
   expect(values.getFloat32(center - 16, true)).toBe(1.5);
   expect(values.getFloat32(center - 4, true)).toBe(0); // Padding has radiance but is not receiver coverage.
   expect(new Set(stages)).toEqual(
-    new Set(["preparing", "unwrapping", "baking", "assembling", "writing"]),
+    new Set(["preparing", "unwrapping", "building", "compiling", "baking", "readback", "assembling", "writing"]),
   );
 });
 

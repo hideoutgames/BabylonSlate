@@ -69,7 +69,6 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
-    this.register({ id: "ComponentLogic", parentClassId: "BObject", kind: "object", variables: [], implementedInterfaces: [] });
     this.register({
       id: "Actor",
       parentClassId: "BObject",

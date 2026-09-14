@@ -1,6 +1,8 @@
 import type { Camera, NodeMaterial, PostProcess, Scene } from "@babylonjs/core";
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
+import { normalizeScenePostProcessStack } from "@babylonslate/core";
+import type { MaterialParameterValue } from "@babylonslate/bridge";
 import type {
   MaterialBuildPlan,
   MaterialDiagnostic,
@@ -10,25 +12,29 @@ import { materialUnavailable, type MaterialLibrary } from "./material-library";
 
 /** One authored entry of a scene's ordered post-process chain. */
 export interface PostProcessStackEntry {
+  id?: string;
   materialGuid: string;
   enabled: boolean;
   order: number;
   scalable?: boolean;
+  parameters?: Record<string, MaterialParameterValue>;
 }
 
 /** Scene documents omit `order`; normalize fills it from array index. */
 export type PostProcessStackInput = {
+  id?: string;
   materialGuid: string;
   enabled?: boolean;
   order?: number;
   scalable?: boolean;
+  parameters?: Record<string, MaterialParameterValue>;
 };
 
 export function normalizePostProcessStack(
   value: unknown,
 ): PostProcessStackEntry[] {
   if (!Array.isArray(value)) return [];
-  return value
+  const entries = value
     .flatMap((entry, index) => {
       if (!entry || typeof entry !== "object") return [];
       const record = entry as Record<string, unknown>;
@@ -36,6 +42,8 @@ export function normalizePostProcessStack(
       if (typeof materialGuid !== "string" || materialGuid === "") return [];
       return [
         {
+          id: record.id,
+          parameters: record.parameters,
           materialGuid,
           ...(record.scalable === true ? { scalable: true } : {}),
           enabled: record.enabled !== false,
@@ -45,14 +53,20 @@ export function normalizePostProcessStack(
               : index,
         },
       ];
-    })
+    });
+  const identities = normalizeScenePostProcessStack(entries);
+  return entries.map((entry, index) => ({ ...entry, parameters: identities[index]!.parameters, id: identities[index]!.id }))
     .sort((a, b) => a.order - b.order);
 }
 
 export interface AttachedPostProcessStack {
   passes: PostProcess[];
+  /** Updates only this live entry's instance, without recompiling its asset. */
+  setParameter: (entryId: string, name: string, value: MaterialParameterValue) => boolean;
   dispose: () => void;
 }
+
+let nextStackInstance = 0;
 
 export interface PostProcessDeviceBuffers {
   sceneDepth: boolean;
@@ -106,7 +120,8 @@ export function attachPostProcessStack(
   options: AttachPostProcessStackOptions,
 ): AttachedPostProcessStack {
   const passes: PostProcess[] = [];
-  const acquired: string[] = [];
+  const acquired = new Map<string, { materialGuid: string; instanceKey: string }>();
+  const stackInstance = nextStackInstance++;
   let depthHeld = false;
   let prePassHeld = false;
   const deviceBuffers =
@@ -115,7 +130,7 @@ export function attachPostProcessStack(
   const hadDepth = Boolean(depthRendererFor(options.scene, options.camera));
   const hadPrePass = Boolean(options.scene.prePassRenderer);
 
-  for (const entry of [...options.stack].sort((a, b) => a.order - b.order)) {
+  for (const entry of normalizePostProcessStack(options.stack)) {
     if (!entry.enabled) continue;
     const document = options.documentFor(entry.materialGuid);
     if (!document) {
@@ -132,11 +147,16 @@ export function attachPostProcessStack(
       });
       continue;
     }
+    const instance = {
+      materialGuid: entry.materialGuid,
+      instanceKey: `post-process:${stackInstance}:${entry.id}`,
+    };
     const compiled = options.library.acquire(
       options.scene,
       entry.materialGuid,
       document,
       {
+        instanceKey: instance.instanceKey,
         validatePlan: (plan) => bufferDiagnostic(plan, deviceBuffers),
       },
     );
@@ -152,6 +172,11 @@ export function attachPostProcessStack(
       continue;
     }
     const needsDepth = compiled.plan.bufferRequirements.sceneDepth;
+    for (const [name, value] of Object.entries(entry.parameters ?? {})) {
+      if (!options.library.setParameter(options.scene, entry.materialGuid, name, value, instance))
+        report(options, { materialGuid: entry.materialGuid, code: "material.parameter",
+          message: `Post-process parameter "${name}" is unavailable or has an incompatible value` });
+    }
     const needsNormal = compiled.plan.bufferRequirements.sceneNormal;
     if (needsDepth) {
       try {
@@ -170,7 +195,7 @@ export function attachPostProcessStack(
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
-        options.library.release(options.scene, entry.materialGuid);
+        options.library.release(options.scene, entry.materialGuid, instance);
         continue;
       }
     }
@@ -183,28 +208,40 @@ export function attachPostProcessStack(
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
-        options.library.release(options.scene, entry.materialGuid);
+        options.library.release(options.scene, entry.materialGuid, instance);
         continue;
       }
       if (!hadPrePass) prePassHeld = true;
     }
-    acquired.push(entry.materialGuid);
     const pass = createPostProcessPass(
       compiled.material,
       options.camera,
       entry.scalable ? (options.resolutionScale ?? 1) : 1,
     );
-    if (pass) passes.push(pass);
+    if (pass) {
+      passes.push(pass);
+      acquired.set(entry.id!, instance);
+    } else {
+      options.library.release(options.scene, entry.materialGuid, instance);
+    }
   }
 
   let disposed = false;
   return {
     passes,
+    setParameter: (entryId, name, value) => {
+      const instance = acquired.get(entryId);
+      return !disposed && !!instance && options.library.setParameter(
+        options.scene, instance.materialGuid, name, value, instance,
+      );
+    },
     dispose: () => {
       if (disposed) return;
       disposed = true;
       for (const pass of passes) pass.dispose(options.camera);
-      for (const guid of acquired) options.library.release(options.scene, guid);
+      for (const instance of acquired.values())
+        options.library.release(options.scene, instance.materialGuid, instance);
+      acquired.clear();
       if (depthHeld) options.scene.disableDepthRenderer(options.camera);
       if (prePassHeld) options.scene.disablePrePassRenderer();
       passes.length = 0;

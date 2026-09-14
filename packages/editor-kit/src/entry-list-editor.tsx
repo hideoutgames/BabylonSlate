@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { Key, ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import { FieldGroup } from "@babylonslate/ui/components/field";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -12,6 +12,8 @@ export type EntryListItemRenderArgs<T> = {
 
 export type EntryListEditorProps<T> = {
   items: readonly T[];
+  /** Preserve row-local state and focus when entries move. */
+  getItemKey?: (item: T, index: number) => Key;
   onChange: (items: T[]) => void;
   renderItem: (args: EntryListItemRenderArgs<T>) => ReactNode;
   /** Full-width identity above compact controls and row actions. */
@@ -40,6 +42,7 @@ function moveItem<T>(items: readonly T[], index: number, delta: number): T[] {
 /** Reorderable typed rows with a compact up / down / trash cluster. */
 export function EntryListEditor<T>({
   items,
+  getItemKey,
   onChange,
   onCreate,
   onAdd,
@@ -72,7 +75,7 @@ export function EntryListEditor<T>({
         };
         return (
           <FieldGroup
-            key={index}
+            key={getItemKey?.(item, index) ?? index}
             data-testid={`${rootId}-${index}-row`}
             className="rounded-md border border-border px-1 py-0.5 gap-1"
           >

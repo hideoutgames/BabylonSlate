@@ -30,6 +30,7 @@ import {
 export type AddComponentItem = {
   id: string;
   classId: string;
+  ancestry?: string[];
   label: string;
   description: string;
   category: string;
@@ -51,7 +52,6 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
-  engineComponent("LogicComponent", "Logic Component", "Run a ComponentLogic class during Play", "Logic"),
   engineComponent(
     "MeshComponent",
     "Mesh",
@@ -177,7 +177,6 @@ export function defaultPropertiesFor(
   viewportMode: ViewportMode = "3d",
 ): Record<string, unknown> {
   switch (classId) {
-    case "LogicComponent": return { logicClass: "ComponentLogic" };
     case "MeshComponent":
       return {
         meshKind: "box",
@@ -360,6 +359,7 @@ export function projectAddComponentItems(
     items.push({
       id: `class-${classId}`,
       classId,
+      ancestry,
       label: asset.header.name,
       description: "Actor Component",
       category: "Project",

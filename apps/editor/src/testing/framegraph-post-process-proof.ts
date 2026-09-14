@@ -1,4 +1,4 @@
-/** Test-build-only real WebGL proof. No editor renderer selection is changed. */
+/** Test-build-only real backend proof. No editor renderer selection is changed. */
 import {
   Engine,
   FreeCamera,
@@ -6,11 +6,12 @@ import {
   Scene,
   Texture,
   Vector3,
-  Effect,
+  ShaderLanguage,
+  ShaderStore,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
-import { MaterialLibrary, attachPostProcessStack } from "@babylonslate/render";
+import { MaterialLibrary, attachPostProcessStack, createAppWebGpuEngine } from "@babylonslate/render";
 import { addAuthoredPostProcessTasks } from "@babylonslate/render/framegraph-post-process";
 import {
   createDefaultMaterialDocument,
@@ -94,15 +95,21 @@ async function ready(predicate: () => boolean) {
   }
 }
 
-export async function runFrameGraphPostProcessProof() {
+export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu" = "webgl2") {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 16;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, {
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
     preserveDrawingBuffer: true,
     stencil: false,
     disableWebGL2Support: false,
   });
+  const shaderStore = ShaderStore.GetShadersStore(backend === "webgpu" ? ShaderLanguage.WGSL : ShaderLanguage.GLSL);
+  const pixelFormat = backend === "webgpu" ? (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() : "rgba8unorm";
+  const draw = (render: () => void) => {
+    engine.beginFrame();
+    try { render(); } finally { engine.endFrame(); }
+  };
   engine.setSize(16, 16);
   const scene = new Scene(engine);
   scene.useConstantAnimationDeltaTime = true;
@@ -190,12 +197,12 @@ export async function runFrameGraphPostProcessProof() {
       shaderSources: [...graphShaderKeys].filter(
         (key) =>
           key.startsWith("material:proof-1") &&
-          Effect.ShadersStore[key] !== undefined,
+          shaderStore[key] !== undefined,
       ).length,
     });
   const graphShaderKeys = new Set<string>();
   const rememberGraphShaders = (before: Set<string>) => {
-    for (const key of Object.keys(Effect.ShadersStore)) {
+    for (const key of Object.keys(shaderStore)) {
       if (!before.has(key) && key.startsWith("material:proof-"))
         graphShaderKeys.add(key);
     }
@@ -204,6 +211,7 @@ export async function runFrameGraphPostProcessProof() {
     documents: Array<MaterialDocument | null>,
     disabled: number[] = [],
     resolutionScale = 1,
+    sharedMaterial = false,
   ) => {
     legacy?.dispose();
     legacy = undefined;
@@ -215,14 +223,16 @@ export async function runFrameGraphPostProcessProof() {
       source.getInternalTexture()!,
     );
     const entries = documents.map((_, order) => ({
-      materialGuid: `proof-${order}`,
+      id: `entry-${order}`,
+      materialGuid: `proof-${sharedMaterial ? 0 : order}`,
       order,
       enabled: !disabled.includes(order),
       scalable: resolutionScale < 1,
+      ...(sharedMaterial ? { parameters: { Gain: { kind: "float" as const, value: order === 0 ? 0.2 : 0.8 } } } : {}),
     }));
     const documentFor = (guid: string) =>
       documents[Number(guid.slice(6))] ?? null;
-    const beforeGraphShaders = new Set(Object.keys(Effect.ShadersStore));
+    const beforeGraphShaders = new Set(Object.keys(shaderStore));
     stack = addAuthoredPostProcessTasks({
       frameGraph: graph,
       sourceTexture: sourceHandle,
@@ -266,15 +276,26 @@ export async function runFrameGraphPostProcessProof() {
   };
   const readPixels = async () => {
     const view = await engine.readPixels(0, 0, canvas.width, canvas.height);
-    return Array.from(
-      new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
-    );
+    const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    const rgba = Array.from(bytes);
+    for (let y = 0; y < canvas.height; y++)
+      for (let x = 0; x < canvas.width; x++) {
+        const src = (y * canvas.width + x) * 4;
+        const dst = ((backend === "webgpu" ? canvas.height - 1 - y : y) * canvas.width + x) * 4;
+        rgba[dst] = bytes[src + (pixelFormat.startsWith("bgra") ? 2 : 0)]!;
+        rgba[dst + 1] = bytes[src + 1]!;
+        rgba[dst + 2] = bytes[src + (pixelFormat.startsWith("bgra") ? 0 : 2)]!;
+        rgba[dst + 3] = bytes[src + 3]!;
+      }
+    return rgba;
   };
   const capture = async (name: string) => {
-    scene.render();
-    scene.postProcessManager.directRender(legacy!.passes, null, true);
+    draw(() => {
+      scene.render();
+      scene.postProcessManager.directRender(legacy!.passes, null, true);
+    });
     const legacyPixels = await readPixels();
-    graph!.execute();
+    draw(() => graph!.execute());
     const graphPixels = await readPixels();
     const passSize = graph!.textureManager.getTextureDescription(
       stack!.outputTexture,
@@ -295,7 +316,7 @@ export async function runFrameGraphPostProcessProof() {
     await capture("color");
     if (
       !stack!.tasks[0]!.setParameter("Gain", { kind: "float", value: 0.75 }) ||
-      !library.setParameter(scene, "proof-0", "Gain", {
+      !legacy!.setParameter("entry-0", "Gain", {
         kind: "float",
         value: 0.75,
       })
@@ -304,7 +325,7 @@ export async function runFrameGraphPostProcessProof() {
     await capture("parameter");
     const revised = structuredClone(gain);
     revised.name = "Hot Gain";
-    const beforeReplacement = new Set(Object.keys(Effect.ShadersStore));
+    const beforeReplacement = new Set(Object.keys(shaderStore));
     await stack!.tasks[0]!.replaceDocument(revised);
     await graph!.whenReadyAsync();
     rememberGraphShaders(beforeReplacement);
@@ -346,7 +367,7 @@ export async function runFrameGraphPostProcessProof() {
     if (!stack!.tasks[1]!.setParameter("Gain", { kind: "float", value: 0.75 }))
       throw new Error("Disabled gain override was not retained");
     const enableMiddle = async () => {
-      const before = new Set(Object.keys(Effect.ShadersStore));
+      const before = new Set(Object.keys(shaderStore));
       stack!.tasks[1]!.disabled = false;
       if (stack!.tasks[1]!.isReady())
         throw new Error(
@@ -357,7 +378,7 @@ export async function runFrameGraphPostProcessProof() {
       rememberGraphShaders(before);
       await updateLegacy([]);
       if (
-        !library.setParameter(scene, "proof-1", "Gain", {
+        !legacy!.setParameter("entry-1", "Gain", {
           kind: "float",
           value: 0.75,
         })
@@ -390,6 +411,15 @@ export async function runFrameGraphPostProcessProof() {
     await capture("resized");
     await rebuild([gain], [], 0.5);
     await capture("half-resolution");
+    await rebuild([gain, gain], [], 1, true);
+    await capture("duplicate-entry-authored");
+    for (const [index, value] of [0.25, 0.75].entries()) {
+      const parameter = { kind: "float" as const, value };
+      if (!stack!.tasks[index]!.setParameter("Gain", parameter) ||
+        !legacy!.setParameter(`entry-${index}`, "Gain", parameter))
+        throw new Error("Duplicate pass parameter was not independently bound");
+    }
+    await capture("duplicate-entry-parameters");
     stack!.dispose();
     legacy!.dispose();
     graph!.dispose();
@@ -405,10 +435,12 @@ export async function runFrameGraphPostProcessProof() {
       retainedMaterials,
       ownedShaderSources: graphShaderKeys.size,
       retainedShaderSources: [...graphShaderKeys].filter(
-        (key) => Effect.ShadersStore[key] !== undefined,
+        (key) => shaderStore[key] !== undefined,
       ).length,
-      webGLVersion: engine.webGLVersion,
-      glInfo: engine.getGlInfo(),
+      backend,
+      pixelFormat,
+      webGLVersion: engine instanceof Engine ? engine.webGLVersion : null,
+      info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(),
     };
   } finally {
     stack?.dispose();

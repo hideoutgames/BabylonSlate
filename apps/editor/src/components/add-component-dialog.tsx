@@ -113,5 +113,5 @@ function visualForAddComponentItem(item: AddComponentItem) {
   if (item.id.startsWith("asset-")) {
     return resolveTypeVisual({ assetType: item.description });
   }
-  return resolveTypeVisual({ classId: item.classId });
+  return resolveTypeVisual({ classId: item.classId, ancestry: item.ancestry });
 }

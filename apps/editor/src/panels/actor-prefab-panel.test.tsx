@@ -7,6 +7,7 @@ import {
   flattenPrefabComponents,
 } from "./actor-prefab-panel";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import type { ProjectAddComponentAsset } from "./add-component-catalog";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -23,6 +24,7 @@ const harness = vi.hoisted(() => ({
   components: [] as Array<{ id: string; classId: string; parentId?: string | null }>,
   selectedId: "prefab-root" as string | null,
   selectedIds: ["prefab-root"] as string[],
+  assets: [] as ProjectAddComponentAsset[],
 }));
 
 vi.mock("../context/prefab-editing-context", () => ({
@@ -46,7 +48,7 @@ vi.mock("../context/graph-editing-context", () => ({
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
-    assetRegistry: { list: () => [] },
+    assetRegistry: { list: () => harness.assets },
     openDocuments: [],
   }),
 }));
@@ -88,6 +90,7 @@ afterEach(() => {
   cleanup();
   frameActor.mockClear();
   setSelectedIds.mockClear();
+  harness.assets = [];
 });
 
 describe("flattenPrefabComponents", () => {
@@ -116,6 +119,21 @@ describe("flattenPrefabComponents", () => {
 });
 
 describe("ActorPrefabPanel", () => {
+  it("shows inherited ActorComponent class visuals on an attached custom component", () => {
+    harness.assets = [
+      { header: { guid: "health", name: "Health", type: "Class", parentClass: "ActorComponent" } },
+      { header: { guid: "regen", name: "RegenHealth", type: "Class", parentClass: "Health" } },
+    ];
+    harness.components = [{ id: "regen", classId: "RegenHealth" }];
+    harness.selectedId = PREFAB_ROOT_ID;
+    harness.selectedIds = [PREFAB_ROOT_ID];
+    render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);
+    const icon = screen.getByTestId("tree-row-regen").querySelector("svg[data-type-icon]");
+    expect(icon?.getAttribute("data-type-icon")).toBe("ActorComponent");
+    expect(icon?.classList.contains("lucide-file-cog")).toBe(true);
+    expect(icon?.getAttribute("stroke")).toBe("var(--asset-animation)");
+  });
+
   it("frames Prefab Root on double-tap", () => {
     harness.components = [createMeshComponent("mesh-1", "box")];
     harness.selectedId = PREFAB_ROOT_ID;

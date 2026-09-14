@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine } from "@babylonjs/core";
+import { InputBlock, NodeMaterial, NullEngine } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -194,10 +194,12 @@ function nestedSamplingDocument(buffer: "sceneDepth" | "sceneNormal") {
 describe("post-process stack", () => {
   it("sorts entries by their authored order", () => {
     const stack = normalizePostProcessStack([
-      { materialGuid: "b", order: 2 },
-      { materialGuid: "a", order: 1 },
+      { id: "second", materialGuid: "b", order: 2, scalable: true },
+      { id: "first", materialGuid: "a", order: 1 },
     ]);
     expect(stack.map((entry) => entry.materialGuid)).toEqual(["a", "b"]);
+    expect(stack.map((entry) => entry.id)).toEqual(["first", "second"]);
+    expect(stack[1]!.scalable).toBe(true);
   });
 
   it("defaults an entry to enabled", () => {
@@ -290,9 +292,49 @@ describe("post-process stack", () => {
       stack: [{ materialGuid: "pp", enabled: true, order: 0 }],
       documentFor: () => document,
     });
-    expect(library.materialFor(preview.scene, "pp")).not.toBeNull();
+    expect(preview.scene.materials.filter((material) => material.name === "material:pp")).toHaveLength(1);
     attached.dispose();
-    expect(library.materialFor(preview.scene, "pp")).toBeNull();
+    expect(preview.scene.materials.filter((material) => material.name === "material:pp")).toHaveLength(0);
+  });
+
+  it("isolates duplicate pass parameters by entry ID and releases only its own instances", () => {
+    const { preview, library } = host();
+    const document = createDefaultMaterialDocument("Gain", "postProcess");
+    document.nodes.push(
+      { id: "gain", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Gain", value: [0.5] } },
+      { id: "multiply", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+    );
+    document.edges = [
+      ...document.edges.filter((edge) => edge.id !== "e-scene-output"),
+      { id: "color", sourceNodeId: "sceneColor", sourcePinId: "color", targetNodeId: "multiply", targetPinId: "a" },
+      { id: "gain", sourceNodeId: "gain", sourcePinId: "out", targetNodeId: "multiply", targetPinId: "b" },
+      { id: "output", sourceNodeId: "multiply", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+    ];
+    const shared = library.acquire(preview.scene, "gain", document);
+    if (!shared.ok) throw new Error("Invalid gain fixture");
+    const attached = attachPostProcessStack({ scene: preview.scene, camera: preview.camera, library,
+      stack: [{ id: "later", materialGuid: "gain", enabled: true, order: 1, parameters: { Gain: { kind: "float", value: 0.8 } } },
+        { id: "earlier", materialGuid: "gain", enabled: true, order: 0, parameters: { Gain: { kind: "float", value: 0.2 } } }],
+      documentFor: () => document, deviceBuffers: { sceneDepth: false, sceneNormal: false } });
+    disposers.push(attached.dispose);
+    const instances = preview.scene.materials.filter((material): material is NodeMaterial =>
+      material instanceof NodeMaterial && material.name === "material:gain" && material !== shared.material);
+    expect(instances).toHaveLength(2);
+    const first = instances[0]!.getBlockByName("gain") as InputBlock;
+    const second = instances[1]!.getBlockByName("gain") as InputBlock;
+    expect([first.value, second.value]).toEqual([0.2, 0.8]);
+    expect(attached.setParameter("earlier", "Gain", { kind: "float", value: 0.25 })).toBe(true);
+    expect(attached.setParameter("later", "Gain", { kind: "float", value: 0.75 })).toBe(true);
+    expect([first.value, second.value]).toEqual([0.25, 0.75]);
+    expect((shared.material.getBlockByName("gain") as InputBlock).value).toBe(0.5);
+    expect(attached.setParameter("missing", "Gain", { kind: "float", value: 1 })).toBe(false);
+    expect(attached.setParameter("earlier", "Gain", { kind: "float", value: NaN })).toBe(false);
+    expect(first.value).toBe(0.25);
+    attached.dispose();
+    expect(attached.setParameter("later", "Gain", { kind: "float", value: 1 })).toBe(false);
+    expect(library.materialFor(preview.scene, "gain")).toBe(shared.material);
+    expect(preview.scene.materials).not.toContain(instances[0]);
+    expect(preview.scene.materials).not.toContain(instances[1]);
   });
 
   it("skips a pass that needs a buffer the device cannot provide", () => {

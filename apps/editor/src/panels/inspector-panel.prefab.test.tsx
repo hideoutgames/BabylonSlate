@@ -202,7 +202,7 @@ describe("Inspector prefab component details", () => {
     expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults?.generateOverlapEvents).toBe(false);
   });
 
-  it.each(["BObject", "GameInstance", "ComponentLogic"])(
+  it.each(["BObject", "GameInstance", "ActorComponent"])(
     "does not show Actor Defaults or Prefab Origin for %s classes",
     (parentClass) => {
       classState.parentClass = parentClass;
