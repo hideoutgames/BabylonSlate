@@ -3,6 +3,7 @@ import {
   InputBlock,
   RawTexture,
   Texture,
+  TextureBlock,
   type NodeMaterial,
 } from "@babylonjs/core";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
@@ -130,6 +131,8 @@ export function createMaterialParameterBindings(
       if (emptyTexture) {
         for (const realization of realized.values()) {
           for (const block of realization.blocks) {
+            // ImageSourceBlock owns the texture behind connected sample getters.
+            if (block instanceof TextureBlock && block.hasImageSource) continue;
             const textured = block as { texture?: Texture | null };
             if (textured.texture === emptyTexture) textured.texture = null;
           }
