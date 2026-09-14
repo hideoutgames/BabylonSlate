@@ -1,3 +1,4 @@
+import { normalizeRenderingPipeline } from "@babylonslate/core";
 import {
   createBackendEngineSession,
   webGpuMaterialCompatibilityReason,
@@ -16,9 +17,10 @@ export async function startPlayerWithBackend(
 ): Promise<PlayerBackendHandle> {
   options.signal?.throwIfAborted();
   const content = packedContentFromGame(options.game);
+  const requestedBackend = normalizeRenderingPipeline(options.game.manifest.render).gpuBackend;
   const owner = await createBackendEngineSession({
-    requestedBackend: options.game.manifest.render.backend,
-    webGpuCompatibilityReason: options.game.manifest.render.backend === "webgpu"
+    requestedBackend,
+    webGpuCompatibilityReason: requestedBackend === "webgpu"
       ? webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions)
       : undefined,
     signal: options.signal,

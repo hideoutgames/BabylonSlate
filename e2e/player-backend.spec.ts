@@ -13,7 +13,7 @@ async function playerFiles(baseURL: string, backend: "webgl2" | "webgpu") {
     bundleDebugger: false,
     startupSceneGuid: "backend-scene",
     customResolution: {
-      ...DEFAULT_RENDER_PROJECT_SETTINGS, backend,
+      ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: backend,
       customResolution: true, width: 320, height: 180, blackBars: true,
     },
     scripts: [],

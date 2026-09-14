@@ -24,7 +24,7 @@ async function game(custom = false) {
   const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
   const files = await exportGame({
     startupSceneGuid: "scene",
-    customResolution: { ...DEFAULT_RENDER_PROJECT_SETTINGS, backend: "webgpu" },
+    customResolution: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgpu" },
     scripts: [],
     assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encode(createDefaultScene()) },
@@ -90,6 +90,17 @@ describe("packed player backend lifetime", () => {
     expect(events).toEqual(["player", "engine"]);
   });
 
+  it("defaults a legacy pack without a backend preference to WebGL2", async () => {
+    const loaded = await game();
+    delete loaded.manifest.render.gpuBackend;
+    owner.requestedBackend = owner.effectiveBackend = "webgl2";
+    const handle = await startPlayerWithBackend({ game: loaded, canvas });
+    expect(createBackend.mock.calls[0]![0].requestedBackend).toBe("webgl2");
+    expect(handle.backend.effectiveBackend).toBe("webgl2");
+    expect(loaded.manifest.render.gpuBackend).toBeUndefined();
+    handle.stop();
+  });
+
   it("passes actual packed Custom GLSL incompatibility to fallback while preserving the saved request", async () => {
     const loaded = await game(true);
     owner.effectiveBackend = "webgl2";
@@ -97,7 +108,7 @@ describe("packed player backend lifetime", () => {
     const handle = await startPlayerWithBackend({ game: loaded, canvas });
     expect(createBackend.mock.calls[0]![0].webGpuCompatibilityReason).toContain('Material "Packed Surface" uses Custom GLSL');
     expect(handle.backend).toEqual({ requestedBackend: "webgpu", effectiveBackend: "webgl2", fallbackReason: "Custom GLSL requires WebGL2." });
-    expect(loaded.manifest.render.backend).toBe("webgpu");
+    expect(loaded.manifest.render.gpuBackend).toBe("webgpu");
     handle.stop();
   });
 
