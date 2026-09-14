@@ -7,18 +7,24 @@ for (const backend of ["webgl2", "webgpu"] as const) {
   test(`Post Process replacement and disposal preserve native Effect lifetime on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(60_000);
     const errors: string[] = [];
+    const locations: unknown[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
       if (["warning", "error"].includes(message.type()) &&
-        /shader|program|GL_INVALID|WebGPU|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text()))
+        /shader|program|GL_INVALID|WebGPU|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text())) {
         errors.push(message.text());
+        locations.push(message.location());
+      }
     });
     await page.goto("/?test=1&postProcessLifetimeProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __babylonslatePostProcessLifetimeProof?: unknown }).__babylonslatePostProcessLifetimeProof === "function");
     try {
       const result = await page.evaluate((backend) => (window as unknown as {
         __babylonslatePostProcessLifetimeProof: typeof runPostProcessLifetimeProof;
-      }).__babylonslatePostProcessLifetimeProof(backend), backend);
+      }).__babylonslatePostProcessLifetimeProof(backend).then(async (result) => {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        return result;
+      }), backend);
       await testInfo.attach("post-process-effect-lifetime", { body: JSON.stringify(result), contentType: "application/json" });
       expect(result.diagnostics).toEqual([]);
       expect(result.siblingReady).toBe(true);
@@ -35,6 +41,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       }
     } finally {
       await testInfo.attach("gpu-errors", { body: JSON.stringify(errors), contentType: "application/json" });
+      await testInfo.attach("gpu-error-locations", { body: JSON.stringify(locations), contentType: "application/json" });
     }
     expect(errors).toEqual([]);
   });

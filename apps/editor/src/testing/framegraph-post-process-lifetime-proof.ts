@@ -1,5 +1,5 @@
 /** Test-build-only native Effect lifetime regression; numeric pixels, no artwork. */
-import { Engine, RawTexture, Scene, Texture, type Effect } from "@babylonjs/core";
+import { Engine, EngineStore, RawTexture, Scene, Texture, type Effect } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { MaterialLibrary, createAppWebGpuEngine } from "@babylonslate/render";
 import { addAuthoredPostProcessTasks } from "@babylonslate/render/framegraph-post-process";
@@ -37,6 +37,7 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     : new Engine(canvas, false, { disableWebGL2Support: false });
   let phase = "setup";
   const invalidPrograms: unknown[] = [];
+  const programQueries: unknown[] = [];
   if (backend === "webgl2") {
     const native = engine as Engine;
     let activePipeline: unknown;
@@ -55,6 +56,10 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     const query = gl.getProgramParameter;
     gl.getProgramParameter = function (program, parameter) {
       const result = query.call(this, program, parameter);
+      if (programQueries.length < 64) programQueries.push({
+        phase, parameter, result, deleted: deleted.has(program),
+        pipeline: (activePipeline as { _name?: string } | undefined)?._name,
+      });
       if (deleted.has(program)) invalidPrograms.push({
         phase, parameter, stack: new Error().stack,
         deletion: deleted.get(program),
@@ -143,7 +148,8 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       await capture(`sibling-after-${action}`, sibling);
     }
     return {
-      backend, captures, diagnostics, lifetime, invalidPrograms,
+      backend, captures, diagnostics, lifetime, invalidPrograms, programQueries,
+      engines: EngineStore.Instances.map((candidate) => ({ id: candidate.uniqueId, proof: candidate === engine })),
       retired: retired.map(({ pending, lateProbes, compiledAfterRetirement }) => ({ pending, lateProbes, compiledAfterRetirement })),
       siblingReady: siblingEffect.isReady(),
     };
