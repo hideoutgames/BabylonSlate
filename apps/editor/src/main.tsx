@@ -72,6 +72,13 @@ if (
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bakedRuntimeProof")
+) {
+  void import("./testing/baked-runtime-proof").then(({ runBakedRuntimeProof }) => {
+    Object.assign(window, { __bakedRuntimeProof: runBakedRuntimeProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("sceneBakeProof")
 ) {
   void import("./testing/scene-bake-proof").then(({ runSceneBakeProof }) => {

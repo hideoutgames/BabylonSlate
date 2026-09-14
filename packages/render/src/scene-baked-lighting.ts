@@ -298,8 +298,8 @@ export class SceneBakedLighting {
       });
       check();
       if (!("lighting" in loaded)) {
-        this.releaseActive();
-        this.state = loaded.validity;
+        if (!this.current?.()) this.releaseActive();
+        if (!this.active.length) this.state = loaded.validity;
         return false;
       }
       if (loaded.lighting.manifest.receivers.length !== targets.length)

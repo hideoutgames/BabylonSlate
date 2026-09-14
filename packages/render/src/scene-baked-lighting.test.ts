@@ -202,6 +202,14 @@ it("keeps a still-valid previous binding when the replacement peak exceeds admis
     managedBytes: 244,
     quarantined: false,
   });
+  expect(
+    await owner.load({
+      ...f.optionsFor(f.mesh),
+      readAsset: async () => undefined,
+    }),
+  ).toBe(false);
+  expect(owner.bindingFor(f.mesh)?.assetGuid).toBe("bake");
+  expect(owner.isReady()).toBe(true);
   owner.dispose();
 });
 
