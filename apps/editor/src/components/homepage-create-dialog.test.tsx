@@ -176,6 +176,7 @@ describe("Project Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cyan" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose Template" }));
     fireEvent.click(screen.getByTestId("create-project-template:island"));
+    expect(screen.getByRole("heading", { name: "New Island" })).toBeTruthy();
 
     const preview = screen.getByTestId("project-identity-preview");
     expect(within(preview).getByText("Moon Garden")).toBeTruthy();

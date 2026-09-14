@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SerializedComponent } from "@babylonslate/core";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
+import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
 import {
   applyPrefabPropertyDefaults,
   componentPropertyRows,
@@ -67,6 +68,44 @@ function rowsFor(
 }
 
 describe("componentPropertyRows", () => {
+  it("shows the imported model material and persists None and model-default reset independently", () => {
+    let component: SerializedComponent = {
+      id: "mesh", classId: "MeshComponent",
+      properties: { meshKind: "box", assetGuid: "model", materialGuid: null },
+    };
+    const modelSlots = [{ index: 0, name: "Body", materialGuid: "body-map" }];
+    const materialRow = () => rowsFor(component, {
+      modelMaterialSlots: () => modelSlots,
+      assetLabel: (guid) => guid === "body-map" ? "Body Color Map" : undefined,
+    }).rows.find((row) => row.id.endsWith("-materialGuid"));
+    expect(materialRow()).toMatchObject({ displayLabel: "Body Color Map", value: MODEL_MATERIALS_PICKER_VALUE });
+
+    component = { ...component, properties: patchInspectorComponentProperty(component, "materialGuid", null) };
+    expect(materialRow()).toMatchObject({ value: null, placeholder: "None", defaultValue: MODEL_MATERIALS_PICKER_VALUE });
+    expect(component.properties).toMatchObject({ materialGuid: null, materialSource: "override" });
+
+    component = { ...component, properties: patchInspectorComponentProperty(component, "materialGuid", "scene-material") };
+    expect(materialRow()).toMatchObject({ value: "scene-material" });
+    component = { ...component, properties: patchInspectorComponentProperty(component, "materialGuid", MODEL_MATERIALS_PICKER_VALUE) };
+    expect(materialRow()).toMatchObject({ displayLabel: "Body Color Map", value: MODEL_MATERIALS_PICKER_VALUE });
+    expect(component.properties).toMatchObject({ materialGuid: null });
+    expect(component.properties).not.toHaveProperty("materialSource");
+    expect(modelSlots).toEqual([{ index: 0, name: "Body", materialGuid: "body-map" }]);
+  });
+
+  it("keeps multi-slot model defaults together and resets prefab instances to inherited materials", () => {
+    const prefab: SerializedComponent = { id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", materialGuid: null } };
+    const { rows } = rowsFor(prefab, {
+      modelMaterialSlots: () => [
+        { index: 0, name: "Body", materialGuid: "body" },
+        { index: 1, name: "Trim", materialGuid: "trim" },
+      ],
+    });
+    expect(applyPrefabPropertyDefaults(rows, prefab).find((row) => row.id.endsWith("-materialGuid"))).toMatchObject({
+      displayLabel: "Model Materials", value: MODEL_MATERIALS_PICKER_VALUE, defaultValue: MODEL_MATERIALS_PICKER_VALUE,
+    });
+  });
+
   it("exposes MeshComponent.assetGuid as an asset pick of Mesh/Model", () => {
     const { rows, onPickAsset } = rowsFor({
       id: "mesh",

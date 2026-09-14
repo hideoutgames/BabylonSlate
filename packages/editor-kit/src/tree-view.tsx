@@ -101,7 +101,7 @@ export interface TreeViewProps {
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
-  /** Immediate: pointer move past 8px starts a parent drag. Hold: 250ms arm (Content Browser). */
+  /** @deprecated Timing follows input: mouse drags immediately; touch/pen hold for 250ms. */
   reparentArm?: "immediate" | "hold";
   rowHeight?: number;
   emptyLabel?: string;
@@ -111,6 +111,7 @@ export interface TreeViewProps {
 
 interface DragState {
   pointerId: number;
+  pointerType: string;
   nodeId: string;
   startX: number;
   startY: number;
@@ -120,6 +121,13 @@ interface DragState {
   swipeAdd: boolean;
   dragArmTimer: ReturnType<typeof setTimeout> | null;
   longPressTimer: ReturnType<typeof setTimeout> | null;
+}
+
+function clearDragTimers(drag: DragState): void {
+  if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
+  if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
+  drag.longPressTimer = null;
+  drag.dragArmTimer = null;
 }
 
 interface ExtraPointer {
@@ -151,7 +159,6 @@ export function TreeView({
   onExternalDragEnd,
   onActivate,
   onContextMenu,
-  reparentArm = "hold",
   rowHeight = TREE_ROW_HEIGHT,
   emptyLabel = "Nothing here yet",
   "data-testid": testId,
@@ -160,6 +167,8 @@ export function TreeView({
   const treeId = useId();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const onExternalDragEndRef = useRef(onExternalDragEnd);
+  onExternalDragEndRef.current = onExternalDragEnd;
   const extraPointerRef = useRef<ExtraPointer | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -338,8 +347,9 @@ export function TreeView({
 
   const clearDrag = useCallback(() => {
     const drag = dragRef.current;
-    if (drag?.longPressTimer) clearTimeout(drag.longPressTimer);
-    if (drag?.dragArmTimer) clearTimeout(drag.dragArmTimer);
+    dragRef.current = null;
+    extraPointerRef.current = null;
+    if (drag) clearDragTimers(drag);
     if (drag && containerRef.current?.hasPointerCapture?.(drag.pointerId)) {
       try {
         containerRef.current.releasePointerCapture(drag.pointerId);
@@ -347,16 +357,84 @@ export function TreeView({
         /* jsdom and detached nodes */
       }
     }
-    const wasArmed = Boolean(drag?.armed);
-    dragRef.current = null;
-    extraPointerRef.current = null;
     setDropHint(undefined);
-    if (wasArmed) onExternalDragEnd?.();
-  }, [onExternalDragEnd]);
+    if (drag?.armed) onExternalDragEndRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const onTouchMove = (event: TouchEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerType !== "touch") return;
+      if (event.touches.length !== 1 || extraPointerRef.current) {
+        if (drag.armed) clearDrag();
+        else {
+          clearDragTimers(drag);
+          drag.canDrag = false;
+        }
+        return;
+      }
+      if (!drag.canDrag) {
+        const touch = event.touches[0]!;
+        if (
+          Math.hypot(touch.clientX - drag.startX, touch.clientY - drag.startY) >
+          CONTEXT_MENU_MOVE_TOLERANCE_PX
+        ) {
+          drag.moved = true;
+          clearDragTimers(drag);
+        }
+        return;
+      }
+      // Pointer capture cannot stop native iOS panning. Cancel the first
+      // touchmove after the hold, including movement below the drag threshold.
+      // Changing touch-action after touchstart would not affect this gesture.
+      if (event.cancelable) event.preventDefault();
+      else clearDrag();
+    };
+    const onOtherPointer = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId === event.pointerId) return;
+      if (drag.armed || !element.contains(event.target as Node)) clearDrag();
+      else {
+        clearDragTimers(drag);
+        drag.canDrag = false;
+      }
+    };
+    const onOutsideRelease = (event: PointerEvent) => {
+      if (
+        event.pointerId === dragRef.current?.pointerId &&
+        !element.contains(event.target as Node)
+      )
+        clearDrag();
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) clearDrag();
+    };
+    // Keep this listener installed before touchstart; a late listener can miss
+    // WebKit's decision to allow synchronous cancellation of native scrolling.
+    element.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("pointerdown", onOtherPointer, true);
+    document.addEventListener("pointerup", onOutsideRelease);
+    document.addEventListener("pointercancel", onOutsideRelease);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", clearDrag);
+    return () => {
+      element.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("pointerdown", onOtherPointer, true);
+      document.removeEventListener("pointerup", onOutsideRelease);
+      document.removeEventListener("pointercancel", onOutsideRelease);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", clearDrag);
+      clearDrag();
+    };
+  }, [clearDrag]);
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>, nodeId: string) => {
+      if (event.button !== 0) return;
       const existing = dragRef.current;
+      if (!existing && event.isPrimary === false) return;
       if (existing && existing.pointerId !== event.pointerId) {
         extraPointerRef.current = {
           pointerId: event.pointerId,
@@ -365,33 +443,29 @@ export function TreeView({
           startY: event.clientY,
           moved: false,
         };
-        if (existing.longPressTimer) clearTimeout(existing.longPressTimer);
-        existing.longPressTimer = null;
-        if (existing.dragArmTimer) clearTimeout(existing.dragArmTimer);
-        existing.dragArmTimer = null;
+        clearDragTimers(existing);
         existing.canDrag = false;
         return;
       }
-      const longPressTimer = onContextMenu
-        ? setTimeout(() => {
-            const drag = dragRef.current;
-            if (!drag || drag.armed || drag.moved || extraPointerRef.current) {
-              return;
-            }
-            if (containerRef.current?.hasPointerCapture?.(drag.pointerId)) {
-              try {
-                containerRef.current.releasePointerCapture(drag.pointerId);
-              } catch {
-                /* jsdom */
+      clearDrag();
+      const longPressTimer =
+        onContextMenu && event.pointerType !== "mouse"
+          ? setTimeout(() => {
+              const drag = dragRef.current;
+              if (
+                !drag ||
+                drag.armed ||
+                drag.moved ||
+                extraPointerRef.current
+              ) {
+                return;
               }
-            }
-            dragRef.current = null;
-            onContextMenu(nodeId, event.clientX, event.clientY);
-          }, CONTEXT_MENU_LONG_PRESS_MS)
-        : null;
+              clearDrag();
+              onContextMenu(nodeId, event.clientX, event.clientY);
+            }, CONTEXT_MENU_LONG_PRESS_MS)
+          : null;
       const canDragNow =
-        (Boolean(onReparent) && reparentArm === "immediate") ||
-        (Boolean(onExternalDrop) && event.pointerType === "mouse");
+        Boolean(onReparent || onExternalDrop) && event.pointerType === "mouse";
       const holdDrag = Boolean(onReparent || onExternalDrop) && !canDragNow;
       const dragArmTimer = holdDrag
         ? setTimeout(() => {
@@ -407,6 +481,7 @@ export function TreeView({
         : null;
       dragRef.current = {
         pointerId: event.pointerId,
+        pointerType: event.pointerType,
         nodeId,
         startX: event.clientX,
         startY: event.clientY,
@@ -425,7 +500,7 @@ export function TreeView({
         }
       }
     },
-    [onContextMenu, onExternalDrop, onReparent, reparentArm],
+    [clearDrag, onContextMenu, onExternalDrop, onReparent],
   );
 
   const onPointerMove = useCallback(
@@ -447,29 +522,27 @@ export function TreeView({
       if (moved <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
       drag.moved = true;
       const inside = pointerInsideTree(event.clientX, event.clientY);
-      if (inside && isTreeSwipeAdd(dx, dy) && !onExternalDrop) {
+      if (
+        drag.pointerType === "touch" &&
+        !drag.canDrag &&
+        !drag.armed &&
+        inside &&
+        isTreeSwipeAdd(dx, dy) &&
+        !onExternalDrop
+      ) {
         drag.swipeAdd = true;
         drag.canDrag = false;
         drag.armed = false;
-        if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
-        drag.longPressTimer = null;
-        if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
-        drag.dragArmTimer = null;
+        clearDragTimers(drag);
         setDropHint(undefined);
         return;
       }
       if (extraPointerRef.current) {
-        if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
-        drag.longPressTimer = null;
-        if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
-        drag.dragArmTimer = null;
+        clearDragTimers(drag);
         return;
       }
       if (!drag.canDrag) {
-        if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
-        drag.longPressTimer = null;
-        if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
-        drag.dragArmTimer = null;
+        clearDragTimers(drag);
         return;
       }
       if (!drag.armed) {
@@ -568,17 +641,25 @@ export function TreeView({
       role="tree"
       aria-label={accessibleName}
       aria-multiselectable={selectedIds ? true : undefined}
-      aria-activedescendant={
-        activeNode ? rowId(activeNode.id) : undefined
-      }
+      aria-activedescendant={activeNode ? rowId(activeNode.id) : undefined}
       tabIndex={0}
       className="group/tree text-foreground h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
       data-testid={testId}
       onKeyDown={onKeyDown}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      onScroll={(event) => {
+        setScrollTop(event.currentTarget.scrollTop);
+        if (dragRef.current) clearDrag();
+      }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={clearDrag}
+      onLostPointerCapture={(event) => {
+        if (
+          event.target === event.currentTarget &&
+          event.pointerId === dragRef.current?.pointerId
+        )
+          clearDrag();
+      }}
     >
       {nodes.length === 0 ? (
         <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
@@ -615,7 +696,9 @@ export function TreeView({
                   selected
                     ? "bg-accent text-accent-foreground"
                     : "hover:bg-accent/50",
-                  dropInto ? "bg-accent/50 outline outline-1 -outline-offset-1 outline-ring" : "",
+                  dropInto
+                    ? "bg-accent/50 outline outline-1 -outline-offset-1 outline-ring"
+                    : "",
                   index === activeIndex &&
                     "group-focus-visible/tree:outline group-focus-visible/tree:outline-1 group-focus-visible/tree:outline-inset group-focus-visible/tree:outline-ring",
                 )}
@@ -633,20 +716,23 @@ export function TreeView({
                 onContextMenu={(event) => {
                   if (!onContextMenu) return;
                   event.preventDefault();
+                  clearDrag();
                   onContextMenu(node.id, event.clientX, event.clientY);
                 }}
               >
-                {guides[index]!.map((segment, level) => segment ? (
-                  <span
-                    key={level}
-                    aria-hidden
-                    className="pointer-events-none absolute top-0 w-px bg-border/70"
-                    style={{
-                      left: level * 16 + (rowHeight >= 44 ? 30 : 18),
-                      height: segment === "end" ? "50%" : "100%",
-                    }}
-                  />
-                ) : null)}
+                {guides[index]!.map((segment, level) =>
+                  segment ? (
+                    <span
+                      key={level}
+                      aria-hidden
+                      className="pointer-events-none absolute top-0 w-px bg-border/70"
+                      style={{
+                        left: level * 16 + (rowHeight >= 44 ? 30 : 18),
+                        height: segment === "end" ? "50%" : "100%",
+                      }}
+                    />
+                  ) : null,
+                )}
                 {!node.hasChildren && node.depth > 0 ? (
                   <span
                     aria-hidden
@@ -701,7 +787,10 @@ export function TreeView({
                   </button>
                 ) : (
                   <span
-                    className={cn("shrink-0", rowHeight >= 44 ? "size-11" : "size-5")}
+                    className={cn(
+                      "shrink-0",
+                      rowHeight >= 44 ? "size-11" : "size-5",
+                    )}
                     aria-hidden
                   />
                 )}
@@ -721,7 +810,12 @@ export function TreeView({
                   {node.label}
                 </span>
                 {node.preview ? (
-                  <span id={`${rowId(node.id)}-preview`} className="min-w-0 shrink">{node.preview}</span>
+                  <span
+                    id={`${rowId(node.id)}-preview`}
+                    className="min-w-0 shrink"
+                  >
+                    {node.preview}
+                  </span>
                 ) : null}
                 {node.trailing ? (
                   <div

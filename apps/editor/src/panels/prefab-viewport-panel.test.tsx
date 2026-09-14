@@ -17,6 +17,7 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { PrefabViewportPanel } from "./prefab-viewport-panel";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import { playAudioLibraryFromAssets } from "../lib/play-audio";
 
 const {
   createEngineMock,
@@ -35,6 +36,7 @@ const {
   collectPlayFontCssStacks,
   collectPlayModelBytes,
   collectPlayModelPayloads,
+  collectPlayAudio,
   prefabDocs,
   commitComponentTransforms,
   viewportState,
@@ -112,6 +114,10 @@ const {
     })),
     collectPlayModelBytes: vi.fn(async () => new Map()),
     collectPlayModelPayloads: vi.fn(async () => new Map()),
+    collectPlayAudio: vi.fn<() => Promise<{
+      library: import("../lib/play-audio").PlayAudioLibrary;
+      loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;
+    }>>(),
     prefabState: {
       selectedIds: [] as string[],
       components: [
@@ -194,6 +200,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayFontCssStacks,
     collectPlayModelBytes,
     collectPlayModelPayloads,
+    collectPlayAudio,
     collectPlayMaterialLibrary,
     projectDocument: null,
     openDocuments: prefabDocs.openDocuments,
@@ -284,6 +291,7 @@ describe("PrefabViewportPanel engine", () => {
     handle.whenEditorModelsReady.mockReset().mockResolvedValue();
     commitComponentTransforms.mockClear();
     collectPlayMaterialLibrary.mockClear();
+    collectPlayAudio.mockReset();
     prefabState.components = [createMeshComponent("prefab-mesh", "box")];
     prefabState.selectedIds = [];
     handle.editor.syncSelectionDebug.mockClear();
@@ -293,6 +301,24 @@ describe("PrefabViewportPanel engine", () => {
     play.ensureSharedEngine.mockClear();
     play.sharedEngineGeneration = 1;
     play.ensureSharedEngine.mockReturnValue({ id: "shared-engine" });
+  });
+
+  it("resolves attenuation for selected prefab Audio Components", async () => {
+    prefabState.components = [{
+      id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" },
+    }];
+    prefabState.selectedIds = ["audio"];
+    const library = playAudioLibraryFromAssets({ mixerGuid: null, assets: [
+      { guid: "sound", type: "Audio", payload: { soundAttenuationGuid: "near" } },
+      { guid: "near", type: "SoundAttenuation", payload: { innerRadius: 3, maxRadius: 12 } },
+    ] });
+    const loadSourceBytes = vi.fn(async () => null);
+    collectPlayAudio.mockResolvedValue({ library, loadSourceBytes });
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => expect(handle.editor.syncSelectionDebug).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedActorIds: ["audio"], selectedComponentIds: ["audio"], audioLibrary: library }),
+    ));
+    expect(loadSourceBytes).not.toHaveBeenCalled();
   });
 
   it("drops every selected component through its viewport and commits the returned transforms once", async () => {

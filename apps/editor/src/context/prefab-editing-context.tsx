@@ -8,12 +8,12 @@ import {
 } from "react";
 import {
   identitySerializedTransform,
-  patchComponentProperties,
   type SerializedComponent,
   type SerializedGraph,
   type SerializedTransform,
 } from "@babylonslate/core";
 import type { TreeDropPlacement } from "@babylonslate/editor-kit";
+import { patchInspectorComponentProperty } from "../lib/mesh-material-properties";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { useOptionalSceneEditing } from "./scene-editing-context";
@@ -277,8 +277,8 @@ export function PrefabEditingProvider({
           component.id === componentId
             ? {
                 ...component,
-                properties: patchComponentProperties(
-                  component.properties,
+                properties: patchInspectorComponentProperty(
+                  component,
                   property,
                   value,
                 ),

@@ -103,6 +103,11 @@ import {
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@babylonslate/ui/components/resizable";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@babylonslate/ui/components/sheet";
@@ -332,7 +337,7 @@ const createGalleryTreeNodes = (): TreeViewNode[] => [
 ];
 
 function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
-  const [treeNodes] = useState(createGalleryTreeNodes);
+  const [treeNodes, setTreeNodes] = useState(createGalleryTreeNodes);
   const [selectedId, setSelectedId] = useState("player");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [hidden, setHidden] = useState<Set<string>>(new Set(["barrel"]));
@@ -396,6 +401,46 @@ function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
           rowHeight={touch ? 44 : undefined}
           selectedId={`${prefix}${selectedId}`}
           onSelect={(id) => setSelectedId(id.slice(prefix.length))}
+          reparentArm={touch ? "immediate" : "hold"}
+          onReparent={(dragId, targetId, placement = "into") => {
+            const sourceId = dragId.slice(prefix.length);
+            const destinationId = targetId?.slice(prefix.length) ?? null;
+            setTreeNodes((current) => {
+              const sourceIndex = current.findIndex((node) => node.id === sourceId);
+              if (sourceIndex < 0) return current;
+              const source = current[sourceIndex]!;
+              const subtreeEnd = (rows: TreeViewNode[], index: number) => {
+                let end = index + 1;
+                while (end < rows.length && rows[end]!.depth > rows[index]!.depth) end++;
+                return end;
+              };
+              const end = subtreeEnd(current, sourceIndex);
+              const moving = current.slice(sourceIndex, end);
+              if (moving.some((node) => node.id === destinationId)) return current;
+              const remaining = [...current.slice(0, sourceIndex), ...current.slice(end)];
+              const targetIndex = remaining.findIndex((node) => node.id === destinationId);
+              const target = remaining[targetIndex];
+              const depth = target ? target.depth + (placement === "into" ? 1 : 0) : 0;
+              const insertAt = target
+                ? placement === "before" ? targetIndex : subtreeEnd(remaining, targetIndex)
+                : remaining.length;
+              remaining.splice(insertAt, 0, ...moving.map((node) => ({
+                ...node,
+                depth: node.depth + depth - source.depth,
+              })));
+              return remaining.map((node, index) => ({
+                ...node,
+                hasChildren: (remaining[index + 1]?.depth ?? 0) > node.depth,
+              }));
+            });
+            if (destinationId && placement === "into") {
+              setCollapsed((current) => {
+                const next = new Set(current);
+                next.delete(destinationId);
+                return next;
+              });
+            }
+          }}
           onToggleExpanded={(id) =>
             setCollapsed((current) => {
               const next = new Set(current);
@@ -559,13 +604,13 @@ function GalleryComposites() {
         >
           <PropertyGrid
             orientation="horizontal"
+            readOnly
             rows={[
               {
                 kind: "text",
                 id: "gallery-inspect-name",
                 label: "Name",
                 value: "Hero",
-                disabled: true,
                 onChange: () => {},
               },
               {
@@ -573,7 +618,6 @@ function GalleryComposites() {
                 id: "gallery-inspect-health",
                 label: "Health",
                 value: 10,
-                disabled: true,
                 onChange: () => {},
               },
             ]}
@@ -925,6 +969,7 @@ function GalleryComposites() {
 
 function GalleryTouchControls() {
   const [tool, setTool] = useState("translate");
+  const [statsOpen, setStatsOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [category, setCategory] = useState("appearance");
   const [search, setSearch] = useState("");
@@ -955,9 +1000,12 @@ function GalleryTouchControls() {
             <ToggleGroupItem value="rotate">Rotate</ToggleGroupItem>
             <ToggleGroupItem value="scale">Scale</ToggleGroupItem>
           </ToggleGroup>
+          <Toggle size="touch" variant="secondary" pressed={statsOpen} onPressedChange={setStatsOpen}>
+            Stats
+          </Toggle>
         </div>
         <p className="text-sm text-muted-foreground">
-          Outline marks an action. Toggle fill (`aria-pressed`) marks the active tool.
+          Outline marks an action. Pressed tools retain a primary outline; secondary toggles stay filled in both states.
         </p>
       </section>
 
@@ -1093,6 +1141,32 @@ function GalleryDangerDialog() {
   );
 }
 
+function GalleryResizable() {
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="text-lg font-medium">Resizable Panels</h2>
+      <p className="text-sm text-muted-foreground">
+        Drag the divider or focus it and use the arrow keys to adjust both panels.
+      </p>
+      <div className="h-40 overflow-hidden rounded-lg border border-border">
+        <ResizablePanelGroup orientation="horizontal" id="gallery-resizable">
+          <ResizablePanel id="gallery-resizable-folders" defaultSize="35%" minSize="25%">
+            <div className="flex h-full items-center justify-center text-sm">Folders</div>
+          </ResizablePanel>
+          <ResizableHandle
+            id="gallery-resizable-divider"
+            aria-label="Resize Folders And Assets"
+            withHandle
+          />
+          <ResizablePanel id="gallery-resizable-assets" minSize="25%">
+            <div className="flex h-full items-center justify-center text-sm">Assets</div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
+    </section>
+  );
+}
+
 export function ComponentGallery() {
   const [folderPath, setFolderPath] = useState("Content/Characters/Hero");
   return (
@@ -1155,6 +1229,8 @@ export function ComponentGallery() {
           </section>
 
           <GalleryForms />
+
+          <GalleryResizable />
 
           <section className="flex flex-col gap-4">
             <h2 className="text-lg font-medium">Tabs</h2>

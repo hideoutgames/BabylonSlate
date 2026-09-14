@@ -100,6 +100,8 @@ Wire every new kind through `apps/editor/src/shell/window-catalog.ts` (`Dockview
 
 Existing compact Texture `asset-settings` tabs and pinned Content Browser are exceptions until converted — do not add new types to that path. Model, Skeleton, Animation, and Audio open Sprite-style DockView documents (**Preview** + **Details**; Audio also has **Clips**). Skybox Creator is a DockView helper (not a Skybox document) with **Preview**, **Cubemap**, and **Details**.
 
+Content Browser splits Folders and Assets with the shared shadcn resizable panes. Drag **Resize Folders**, or focus the divider and use arrow keys, to redistribute their widths. Folders start at 224px with a 160px minimum; Assets retain at least 240px. Phones use the existing Folders drawer. Tree rows scroll on an immediate touch swipe; hold still for 250ms before moving to drag a row. Mouse rows drag on click-and-move, and scrollbar presses remain independent.
+
 ## Package rules
 
 Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js`:

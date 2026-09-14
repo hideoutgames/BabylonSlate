@@ -286,6 +286,10 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const [placeOpen, setPlaceOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
   const [deleteFolderId, setDeleteFolderId] = useState<string | null>(null);
+  const [deleteActorChoice, setDeleteActorChoice] = useState<{
+    actorId: string;
+    selectedIds: string[];
+  } | null>(null);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(
@@ -464,19 +468,22 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     ],
   );
 
-  const removeActor = useCallback(
-    (actorId: string) => {
+  const removeActors = useCallback(
+    (actorIds: readonly string[]) => {
       if (!scene) return;
       const doomed = new Set(
-        actorSubtree(scene, actorId).map((actor) => actor.id),
+        actorIds.flatMap((actorId) =>
+          actorSubtree(scene, actorId).map((actor) => actor.id),
+        ),
       );
       mutate({
         ...scene,
         actors: scene.actors.filter((actor) => !doomed.has(actor.id)),
       });
-      selectActor(null);
+      setSelectedActorIds(selectedActorIds.filter((id) => !doomed.has(id)));
+      setDeleteActorChoice(null);
     },
-    [mutate, scene, selectActor],
+    [mutate, scene, selectedActorIds, setSelectedActorIds],
   );
 
   const toggleFlag = useCallback(
@@ -708,12 +715,18 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           id: "delete-actor",
           label: "Delete",
           testId: `outliner-delete-${actorId}`,
-          onSelect: () => removeActor(actorId),
+          onSelect: () => {
+            if (selectedActorIds.length > 1) {
+              setDeleteActorChoice({ actorId, selectedIds: [...selectedActorIds] });
+            } else {
+              removeActors([actorId]);
+            }
+          },
         },
       );
       return items;
     },
-    [assetRegistry, frameActor, mutate, openDocument, removeActor, scene, selectActor, selectedActorIds],
+    [assetRegistry, frameActor, mutate, openDocument, removeActors, scene, selectActor, selectedActorIds],
   );
 
   const folderMenuItems = useCallback(
@@ -736,6 +749,10 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   const deletingFolder = deleteFolderId
     ? scene?.folders.find((folder) => folder.id === deleteFolderId)
+    : undefined;
+
+  const deletingActor = deleteActorChoice
+    ? scene?.actors.find((actor) => actor.id === deleteActorChoice.actorId)
     : undefined;
 
   const renamingFolder: SerializedOutlinerFolder | undefined = renameFolderId
@@ -888,6 +905,41 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         overlay={overlay}
       />
       <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
+      {deleteActorChoice && deletingActor ? (
+        <AlertDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleteActorChoice(null);
+          }}
+        >
+          <AlertDialogContent data-testid="outliner-delete-actor-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Scene Objects</AlertDialogTitle>
+              <AlertDialogDescription>
+                Delete all {deleteActorChoice.selectedIds.length} selected objects,
+                or only {deletingActor.name}? Attached children are also deleted.
+                Either choice can be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                size="sm"
+                variant="outline"
+                onClick={() => removeActors([deletingActor.id])}
+              >
+                Delete This Object
+              </AlertDialogAction>
+              <AlertDialogAction
+                size="sm"
+                onClick={() => removeActors(deleteActorChoice.selectedIds)}
+              >
+                Delete Selected ({deleteActorChoice.selectedIds.length})
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
       {deletingFolder ? (
         <AlertDialog
           open

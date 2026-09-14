@@ -10,6 +10,8 @@ const toggleVariants = cva(
       variant: {
         default: "border border-transparent bg-transparent",
         outline: "border border-input bg-transparent hover:bg-muted",
+        secondary:
+          "border border-transparent bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-pressed:bg-secondary aria-pressed:text-secondary-foreground data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground",
       },
       size: {
         default:
