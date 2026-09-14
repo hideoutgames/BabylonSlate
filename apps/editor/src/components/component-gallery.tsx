@@ -559,13 +559,13 @@ function GalleryComposites() {
         >
           <PropertyGrid
             orientation="horizontal"
+            readOnly
             rows={[
               {
                 kind: "text",
                 id: "gallery-inspect-name",
                 label: "Name",
                 value: "Hero",
-                disabled: true,
                 onChange: () => {},
               },
               {
@@ -573,7 +573,6 @@ function GalleryComposites() {
                 id: "gallery-inspect-health",
                 label: "Health",
                 value: 10,
-                disabled: true,
                 onChange: () => {},
               },
             ]}
@@ -925,6 +924,7 @@ function GalleryComposites() {
 
 function GalleryTouchControls() {
   const [tool, setTool] = useState("translate");
+  const [statsOpen, setStatsOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [category, setCategory] = useState("appearance");
   const [search, setSearch] = useState("");
@@ -955,9 +955,12 @@ function GalleryTouchControls() {
             <ToggleGroupItem value="rotate">Rotate</ToggleGroupItem>
             <ToggleGroupItem value="scale">Scale</ToggleGroupItem>
           </ToggleGroup>
+          <Toggle size="touch" variant="secondary" pressed={statsOpen} onPressedChange={setStatsOpen}>
+            Stats
+          </Toggle>
         </div>
         <p className="text-sm text-muted-foreground">
-          Outline marks an action. Toggle fill (`aria-pressed`) marks the active tool.
+          Outline marks an action. Pressed tools retain a primary outline; secondary toggles stay filled in both states.
         </p>
       </section>
 
