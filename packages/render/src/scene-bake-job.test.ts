@@ -108,7 +108,7 @@ async function setup() {
     ],
   };
   const adapter: SceneBakeJobAdapter = {
-    unwrap: vi.fn(async (_source, options) => ({
+    unwrap: vi.fn<SceneBakeJobAdapter["unwrap"]>(async (_source, options) => ({
       sourceHash: geometry,
       topology: structuredClone(topology),
       width: options.resolution,
@@ -116,7 +116,7 @@ async function setup() {
       paddingTexels: options.paddingTexels,
       provider: { id: "xatlasjs", version: "0.2.0", adapterVersion: "1" },
     })),
-    bake: vi.fn(async (input, options) => {
+    bake: vi.fn<SceneBakeJobAdapter["bake"]>(async (input, options) => {
       const irradiance = new Float32Array(input.size ** 2 * 4);
       const index = (16 * input.size + 16) * 4;
       irradiance.set(

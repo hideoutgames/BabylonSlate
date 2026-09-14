@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",
+    "@babylonslate/vfs": "workspace:*",
     "@types/three": "0.181.0",
     "typescript": "~5.8.2"
   }
