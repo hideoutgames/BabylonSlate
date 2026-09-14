@@ -32,6 +32,9 @@ afterEach(() => {
 function fixture() {
   const engine = new NullEngine();
   engines.push(engine);
+  // NullEngine reports WebGL1; expose the proven WebGL2 capability boundary
+  // without replacing the real container or its membership implementation.
+  vi.spyOn(engine, "version", "get").mockReturnValue(2);
   // The only substituted boundary is GPU capability evidence. Container,
   // registry, light membership, shader budget and resource lifetimes stay real.
   Object.assign(engine.getCaps(), {

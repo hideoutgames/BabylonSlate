@@ -141,26 +141,28 @@ export class ClusteredSceneLights {
             fail(error);
           }
         }
-        this.container.doNotSerialize = true;
-        this.container.renderPriority = Number.MAX_SAFE_INTEGER;
-        this.container.shadowEnabled = false;
+        const container = this.container;
+        if (!container) throw new Error("Clustered allocation did not return an owner.");
+        container.doNotSerialize = true;
+        container.renderPriority = Number.MAX_SAFE_INTEGER;
+        container.shadowEnabled = false;
         // Never use Babylon's default maxRange clamp to change attenuation.
-        this.container.maxRange = Math.max(
+        container.maxRange = Math.max(
           ...[...selected].map((light) => light.range),
         );
         for (const light of selected) {
-          if (this.container.lights.includes(light)) continue;
+          if (container.lights.includes(light)) continue;
           setClusteredLightMember(light, true);
           const shadowEnabled = light.shadowEnabled;
           try {
             // Babylon rejects even an empty old generator Map. Actual live maps
             // were excluded above; this synchronous admission flag is restored.
             light.shadowEnabled = false;
-            this.container.addLight(light);
+            container.addLight(light);
           } finally {
             light.shadowEnabled = shadowEnabled;
           }
-          if (!this.container.lights.includes(light)) {
+          if (!container.lights.includes(light)) {
             setClusteredLightMember(light, false);
             throw new Error("Babylon rejected an eligible clustered light.");
           }
@@ -169,12 +171,12 @@ export class ClusteredSceneLights {
         if (batches > this.allocatedBatches) {
           const fail = beginClusteredAllocation(this.scene);
           try {
-            this.container._updateBatches(this.scene.activeCamera);
+            container._updateBatches(this.scene.activeCamera);
             this.allocatedBatches = batches;
           } catch (error) {
             fail(error);
           }
-        } else this.container._updateBatches(this.scene.activeCamera);
+        } else container._updateBatches(this.scene.activeCamera);
       }
       const clustered = this.container?.lights.length ?? 0;
       const batches = clustered
