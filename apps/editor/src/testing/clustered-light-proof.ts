@@ -9,6 +9,7 @@ import {
   PBRMaterial,
   PointLight,
   Scene,
+  ShaderMaterial,
   SpotLight,
   Vector3,
 } from "@babylonjs/core";
@@ -306,6 +307,15 @@ export async function runClusteredLightProof() {
           return light;
         });
         const tieGraph = new ForwardSceneFrameGraph(scene);
+        const positionProbe = new ShaderMaterial(
+          "numeric tie probe",
+          scene,
+          {
+            vertexSource: `precision highp float;attribute vec3 position;uniform mat4 world;uniform mat4 viewProjection;varying vec3 probeWorld;void main(){vec4 p=world*vec4(position,1.0);probeWorld=p.xyz;gl_Position=viewProjection*p;}`,
+            fragmentSource: `precision highp float;varying vec3 probeWorld;float strength(vec3 p){vec3 d=p-probeWorld;return normalize(d).y*0.96*max(0.0,1.0-length(d)/12.0);}void main(){float delta=strength(vec3(-2.0,3.0,0.0))-strength(vec3(2.0,3.0,0.0));gl_FragColor=vec4(probeWorld.x*1000.0+0.5,delta*10000.0+0.5,probeWorld.z*1000.0+0.5,1.0);}`,
+          },
+          { attributes: ["position"], uniforms: ["world", "viewProjection"] },
+        );
         for (const [kind, material] of [
           ["native", native],
           ["graph", compiled.material],
@@ -329,6 +339,23 @@ export async function runClusteredLightProof() {
               ?.pickedPoint?.asArray();
             scene.render(false);
             const referenceSettled = await read();
+            const effectiveMaterial = surface.material;
+            const referenceDefines = surface.subMeshes[0]?.effect?.defines
+              .split("\n")
+              .filter((line) => /LIGHT|CEL/.test(line));
+            surface.material = positionProbe;
+            await tieGraph.prepare(camera);
+            scene.render(false);
+            const positionPixels = await read();
+            const centerIndex =
+              (Math.floor(canvas.height / 2) * canvas.width +
+                Math.floor(canvas.width / 2)) *
+              4;
+            const positionProbePixel = positionPixels.slice(
+              centerIndex,
+              centerIndex + 4,
+            );
+            surface.material = effectiveMaterial;
             const owner = new ClusteredSceneLights(scene, tieLights);
             beginEngineDrawCallFrame(engine);
             const prepared = await tieGraph.prepare(camera);
@@ -340,6 +367,8 @@ export async function runClusteredLightProof() {
               referenceSettled,
               referenceOrder,
               centerHit,
+              referenceDefines,
+              positionProbePixel,
               clustered: await read(),
               prepared,
               result,
@@ -351,6 +380,7 @@ export async function runClusteredLightProof() {
           }
         }
         tieGraph.dispose();
+        positionProbe.dispose();
         for (const light of tieLights) light.dispose();
         surface.dispose();
       }
