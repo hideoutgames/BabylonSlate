@@ -11,8 +11,22 @@ import App from "./App";
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("environmentWebgpuProof")
+) {
+  void import("./lib/environment-lighting-proof").then(
+    ({ runEnvironmentIrradianceWebGpuProof }) => {
+      Object.assign(window, {
+        __babylonslateEnvironmentWebGpuProof:
+          runEnvironmentIrradianceWebGpuProof,
+      });
+    },
+  );
+} else {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}

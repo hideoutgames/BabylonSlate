@@ -861,7 +861,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         renderingBaseline: () => Record<string, unknown> | null;
         environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
         environmentLightingProof: () => Promise<Record<string, unknown>>;
-        environmentIrradianceWebGpuProof: () => Promise<Record<string, unknown>>;
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
       };
     };
@@ -873,10 +872,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const measurements = new Set<() => void>();
 
       host.__babylonslateViewportTest = {
-        environmentIrradianceWebGpuProof: async () => {
-          if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Environment proof requires a test build.");
-          return (await import("../lib/environment-lighting-proof")).runEnvironmentIrradianceWebGpuProof();
-        },
       environmentLightingProof: async () => {
         if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Environment proof requires a test build.");
         return (await import("../lib/environment-lighting-proof")).runEnvironmentLightingProof();

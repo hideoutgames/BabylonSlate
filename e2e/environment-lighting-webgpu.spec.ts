@@ -1,6 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene } from "./open-test-project";
 import type { runEnvironmentIrradianceWebGpuProof } from "../apps/editor/src/lib/environment-lighting-proof";
 
 test.use({
@@ -38,16 +36,16 @@ test("WebGPU prepares directional base irradiance while preserving another targe
     )
       externalRequests.push(request.url());
   });
-  await openMinimalTestProject(page);
-  await openMainScene(page);
+  await page.goto("/?environmentWebgpuProof");
+  await page.waitForFunction(
+    () => "__babylonslateEnvironmentWebGpuProof" in window,
+  );
   const result = await page.evaluate(() =>
     (
       window as unknown as {
-        __babylonslateViewportTest: {
-          environmentIrradianceWebGpuProof: typeof runEnvironmentIrradianceWebGpuProof;
-        };
+        __babylonslateEnvironmentWebGpuProof: typeof runEnvironmentIrradianceWebGpuProof;
       }
-    ).__babylonslateViewportTest.environmentIrradianceWebGpuProof(),
+    ).__babylonslateEnvironmentWebGpuProof(),
   );
   await testInfo.attach("webgpu-environment", {
     body: JSON.stringify({ ...result, errors, externalRequests }),
