@@ -74,14 +74,25 @@ test("renders scene-isolated PBR and CEL environment response and raw graph samp
     close(`graph-pbr-${intensity}`, pixel(`native-pbr-${intensity}`));
   for (const rotation of [0, 90])
     close(`graph-oriented-${rotation}`, pixel(`native-oriented-${rotation}`));
+  for (const material of ["native", "graph"])
+    for (const rotation of [0, 90])
+      close(
+        `${material}-directional-sampled-${rotation}`,
+        pixel(`${material}-directional-supplied-${rotation}`),
+      );
   close("sibling-after-dispose", pixel("sibling-before-dispose"), 0);
   close("raw-disabled-green", [0, 255, 0]);
   close("raw-rotated-red", [255, 0, 0]);
   close("raw-zero-intensity-green", [0, 255, 0]);
-  close("raw-rough-blue", [0, 0, 255]);
+  close("raw-rough-blue", [0, 124, 231]); // DDS native prefilter scale is 0.8.
   close("raw-frozen-swap", [0, 89, 0]);
   close("raw-removed", [0, 0, 0]);
   close("raw-restored", pixel("raw-frozen-swap"), 0);
+  close("raw-prefilter-0.5", [188, 187, 0]);
+  close("raw-prefilter-1", [255, 0, 9]);
+  close("raw-prefilter-roughness-0.25", [0, 255, 0]);
+  close("raw-prefilter-roughness-0.75", [115, 115, 255]);
+  close("raw-prefilter-roughness-1", [255, 255, 255]);
   expect(pixel("replacement-0")[1]).toBeGreaterThan(20);
   close("replacement-4", pixel("replacement-0"), 0);
   close("raw-post-process", [0, 26, 0]);

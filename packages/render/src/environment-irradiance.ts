@@ -5,6 +5,7 @@ import type {
 } from "@babylonjs/core";
 import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 import type { ResourceCache } from "./resource-cache";
+import { readEnvironmentBaseRadiance } from "./environment-base-radiance";
 
 interface Preparation {
   hardware: InternalTexture["_hardwareTexture"];
@@ -82,32 +83,19 @@ function prepare(
     pending: true,
     listeners: new Set(),
   };
-  // Import validates a complete authored roughness mip chain. Reading an
-  // existing <=32px mip bounds temporary CPU memory independently of asset size.
-  const width = source.getSize().width;
-  const level = Math.max(0, Math.ceil(Math.log2(width / 32)));
-  const size = Math.max(1, width / 2 ** level);
   const rgbd = source.isRGBD;
   const gamma = source.gammaSpace;
   const exactSrgb = internal.getEngine().useExactSrgbConversions;
   cache.retain(source);
-  const reads = Array.from({ length: 6 }, (_, face) =>
-    Promise.resolve().then(() =>
-      source.readPixels(face, level, undefined, false),
-    ),
-  );
-  // Await every submitted read, including after one fails, before releasing the
-  // upload lease. Closing both Scenes cannot evict an in-flight GPU readback.
-  void Promise.allSettled(reads).then((results) => {
-    try {
-      if (
-        source.getInternalTexture() !== internal ||
-        internal._hardwareTexture !== request.hardware
-      )
-        return;
-      const faces = results.map((result) => {
-        if (result.status === "rejected") throw result.reason;
-        const pixels = result.value;
+  const current = () =>
+    source.getInternalTexture() === internal &&
+    internal._hardwareTexture === request.hardware;
+  // The helper awaits every submitted read before settling, including failures.
+  void readEnvironmentBaseRadiance(source, current)
+    .then((result) => {
+      if (!current() || !result) return;
+      const { size } = result;
+      const faces = result.faces.map((pixels) => {
         if (
           !(pixels instanceof Uint8Array || pixels instanceof Float32Array) ||
           pixels.length !== size * size * 4
@@ -115,7 +103,12 @@ function prepare(
           throw new Error(
             "Environment irradiance readback returned invalid cube pixels.",
           );
-        return linearPixels(pixels, rgbd, gamma, exactSrgb);
+        return linearPixels(
+          pixels,
+          result.linear ? false : rgbd,
+          result.linear ? false : gamma,
+          exactSrgb,
+        );
       });
       const [right, left, up, down, front, back] = faces;
       request.polynomial =
@@ -131,16 +124,17 @@ function prepare(
           type: 1,
           gammaSpace: false,
         });
-    } catch (cause) {
+    })
+    .catch((cause) => {
       request.error = new Error("Environment irradiance preparation failed.", {
         cause,
       });
-    } finally {
+    })
+    .finally(() => {
       request.pending = false;
       cache.release(source);
       for (const notify of request.listeners) notify();
-    }
-  });
+    });
   return request;
 }
 

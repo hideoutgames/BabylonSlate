@@ -32,24 +32,36 @@ import {
   isEnvironmentLightingReady,
 } from "../../../../packages/render/src/environment-lighting";
 import { isSceneFrameReady } from "../../../../packages/render/src/scene-perf";
+import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 
-async function greenEnvWithoutIrradiance(): Promise<Uint8Array> {
+async function numericEnv(
+  options: {
+    width?: number;
+    lodGenerationScale?: number;
+    irradiance?: Record<string, number[]>;
+    color?: (level: number, face: number) => readonly number[];
+  } = {},
+): Promise<Uint8Array> {
   const faces: Uint8Array[] = [];
-  for (const size of [2, 1]) {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = size;
-    const context = canvas.getContext("2d")!;
-    context.fillStyle = "rgb(0,255,0)";
-    context.fillRect(0, 0, size, size);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((value) =>
-        value
-          ? resolve(value)
-          : reject(new Error("Numeric ENV PNG encoding failed.")),
-      ),
-    );
-    const png = new Uint8Array(await blob.arrayBuffer());
-    faces.push(...Array<Uint8Array>(6).fill(png));
+  const width = options.width ?? 2;
+  for (let size = width, level = 0; size >= 1; size /= 2, level++) {
+    for (let face = 0; face < 6; face++) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const context = canvas.getContext("2d")!;
+      const color = options.color?.(level, face) ?? [0, 255, 0];
+      context.fillStyle = `rgb(${color.join(",")})`;
+      context.fillRect(0, 0, size, size);
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob((value) =>
+          value
+            ? resolve(value)
+            : reject(new Error("Numeric ENV PNG encoding failed.")),
+        ),
+      );
+      const png = new Uint8Array(await blob.arrayBuffer());
+      faces.push(png);
+    }
   }
   let position = 0;
   const mipmaps = faces.map((face) => {
@@ -60,9 +72,13 @@ async function greenEnvWithoutIrradiance(): Promise<Uint8Array> {
   const header = new TextEncoder().encode(
     JSON.stringify({
       version: 2,
-      width: 2,
+      width,
       imageType: "image/png",
-      specular: { mipmaps },
+      irradiance: options.irradiance,
+      specular: {
+        mipmaps,
+        lodGenerationScale: options.lodGenerationScale ?? 0.8,
+      },
     }),
   );
   const bytes = new Uint8Array(9 + header.length + position);
@@ -213,7 +229,7 @@ export async function runEnvironmentLightingProof() {
         entry.mesh.material!.freeze();
       }
     }
-    const fallback = await greenEnvWithoutIrradiance();
+    const fallback = await numericEnv();
     const oriented = buildFloatDdsCubeFixture({ color: [0, 1, 0, 1] });
     const orientedData = new DataView(oriented.buffer);
     // Both X faces are red at every mip; both Z faces remain green.
@@ -244,6 +260,61 @@ export async function runEnvironmentLightingProof() {
       for (const rotation of [0, 90]) {
         setSceneRenderSettings(entry.scene, settings("pbr", 0.5, rotation));
         await capture(`${name}-oriented-${rotation}`, entry.scene, entry.mesh);
+      }
+    }
+    // A full base-radiance CPU reference, with deliberately unrelated GGX mips.
+    const referenceFaces = Array.from({ length: 6 }, (_, face) => {
+      const pixels = new Float32Array(64 * 64 * 4);
+      for (let i = 0; i < pixels.length; i += 4)
+        pixels.set(face < 2 ? [1, 0, 0, 1] : [0, 1, 0, 1], i);
+      return pixels;
+    });
+    const polynomial =
+      CubeMapToSphericalPolynomialTools.ConvertCubeMapToSphericalPolynomial({
+        size: 64,
+        right: referenceFaces[0],
+        left: referenceFaces[1],
+        up: referenceFaces[2],
+        down: referenceFaces[3],
+        front: referenceFaces[4],
+        back: referenceFaces[5],
+        format: 5,
+        type: 1,
+        gammaSpace: false,
+      });
+    const coefficients = Object.fromEntries(
+      (["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"] as const).map(
+        (key) => [key, polynomial[key].asArray()],
+      ),
+    );
+    const directionalColor = (level: number, face: number) =>
+      level ? [0, 0, 255] : face < 2 ? [255, 0, 0] : [0, 255, 0];
+    for (const [kind, irradiance] of [
+      ["sampled", undefined],
+      ["supplied", coefficients],
+    ] as const) {
+      const bytes = await numericEnv({
+        width: 64,
+        color: directionalColor,
+        irradiance,
+      });
+      for (const [name, entry] of [
+        ["native", a],
+        ["graph", b],
+      ] as const) {
+        applyEnvironmentLighting(
+          entry.scene,
+          `directional-${kind}`,
+          assets(`directional-${kind}`, bytes),
+        );
+        for (const rotation of [0, 90]) {
+          setSceneRenderSettings(entry.scene, settings("pbr", 0.5, rotation));
+          await capture(
+            `${name}-directional-${kind}-${rotation}`,
+            entry.scene,
+            entry.mesh,
+          );
+        }
       }
     }
     applyEnvironmentLighting(b.scene, "green", assets("green", green));
@@ -332,6 +403,75 @@ export async function runEnvironmentLightingProof() {
     await capture("raw-removed", raw.scene, raw.mesh);
     applyEnvironmentLighting(raw.scene, "dim", assets("dim", dim));
     await capture("raw-restored", raw.scene, raw.mesh);
+    const parameterDoc = surface();
+    parameterDoc.shadingModel = "unlit";
+    parameterDoc.nodes.push(
+      {
+        id: "sample",
+        type: "input.environmentSample",
+        position: { x: 0, y: 0 },
+        properties: { "default:direction": [0, 0, 0] },
+      },
+      {
+        id: "roughness",
+        type: "param.float",
+        position: { x: 0, y: 0 },
+        properties: { value: [0.5], name: "Roughness" },
+      },
+    );
+    parameterDoc.edges = [
+      {
+        id: "roughness",
+        sourceNodeId: "roughness",
+        sourcePinId: "out",
+        targetNodeId: "sample",
+        targetPinId: "roughness",
+      },
+      {
+        id: "raw",
+        sourceNodeId: "sample",
+        sourcePinId: "color",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    ];
+    const parameterMaterial = await compile(raw.scene, parameterDoc);
+    raw.mesh.material = parameterMaterial.material;
+    const levelColors = [
+      [0, 255, 0],
+      [255, 0, 0],
+      [0, 0, 255],
+      [255, 255, 255],
+    ];
+    for (const scale of [0.5, 1]) {
+      const bytes = await numericEnv({
+        width: 8,
+        lodGenerationScale: scale,
+        color: (level) => levelColors[level]!,
+      });
+      applyEnvironmentLighting(
+        raw.scene,
+        `prefilter-${scale}`,
+        assets(`prefilter-${scale}`, bytes),
+      );
+      await capture(`raw-prefilter-${scale}`, raw.scene, raw.mesh);
+      parameterMaterial.material.freeze();
+    }
+    for (const roughness of [0.25, 0.75, 1]) {
+      if (
+        !parameterMaterial.setParameter("Roughness", {
+          kind: "float",
+          value: roughness,
+        })
+      )
+        throw new Error("Raw roughness parameter was not applied.");
+      await capture(
+        `raw-prefilter-roughness-${roughness}`,
+        raw.scene,
+        raw.mesh,
+      );
+    }
+    applyEnvironmentLighting(raw.scene, "dim", assets("dim", dim));
     const override = surface();
     override.nodes[0]!.properties = { value: [0, 0, 0] };
     override.nodes.find((node) => node.type === "output.surface")!.properties =

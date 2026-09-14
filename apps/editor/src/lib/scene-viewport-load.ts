@@ -41,9 +41,10 @@ export function sceneViewportRenderSettings(
   key: string,
   environmentLighting?: EnvironmentLightingSettings,
 ): Partial<RenderProjectSettings> {
-  const { environmentSource: _source, ...settings } = JSON.parse(
-    key,
-  ) as Partial<RenderProjectSettings> & { environmentSource: string | null };
+  const settings = JSON.parse(key) as Partial<RenderProjectSettings> & {
+    environmentSource?: string | null;
+  };
+  delete settings.environmentSource;
   return {
     ...settings,
     environmentLighting:

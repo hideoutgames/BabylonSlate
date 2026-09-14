@@ -330,9 +330,15 @@ it("shares bounded irradiance readback, survives one view closing, and retains a
   }) as CubeTexture;
   const internal = source.getInternalTexture()!;
   internal.width = internal.height = 64;
+  Object.assign(engine.getCaps(), {
+    textureFloatRender: true,
+    textureFloat: true,
+    textureLOD: true,
+  });
   const finish: Array<(pixels: Float32Array) => void> = [];
+  const baseReads = vi.spyOn(source, "readPixels");
   const read = vi
-    .spyOn(source, "readPixels")
+    .spyOn(engine, "_readTexturePixels")
     .mockImplementation(
       () => new Promise<Float32Array>((resolve) => finish.push(resolve)),
     );
@@ -343,10 +349,18 @@ it("shares bounded irradiance readback, survives one view closing, and retains a
   expect(isEnvironmentLightingReady(b)).toBe(false);
   const av = a.environmentTexture!;
   expect(av.sphericalPolynomial).toBeNull();
-  await Promise.resolve();
-  expect(read).toHaveBeenCalledTimes(6);
+  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(6));
+  expect(baseReads).not.toHaveBeenCalled();
   for (let face = 0; face < 6; face++)
-    expect(read).toHaveBeenCalledWith(face, 1, undefined, false);
+    expect(read.mock.calls[face]).toEqual([
+      expect.anything(),
+      32,
+      32,
+      -1,
+      0,
+      null,
+      true,
+    ]);
   a.dispose();
   expect(av.sphericalPolynomial).toBeNull();
   const pixels = new Float32Array(32 * 32 * 4);

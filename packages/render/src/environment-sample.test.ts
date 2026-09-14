@@ -30,6 +30,9 @@ function host() {
     .mockImplementation((url) => {
       const texture = engine.createTexture(url, false, false, null);
       texture.isCube = true;
+      texture.width = texture.height = 2;
+      texture._lodGenerationScale = 0.5;
+      texture._lodGenerationOffset = 0.25;
       return texture;
     });
   const assets = {
@@ -94,9 +97,12 @@ it("leases the scene cube only for a compiled raw consumer, preserves bindings a
   const mesh = MeshBuilder.CreateBox("consumer", {}, scene);
   mesh.material = compiled.material;
   await compiled.material.forceCompilationAsync(mesh);
-  expect(compiled.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
+  expect(compiled.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(
+    true,
+  );
   const effect = mesh.subMeshes[0]!.effect!;
   const textures = vi.spyOn(effect, "setTexture");
+  const parameters = vi.spyOn(effect, "setFloat4");
   compiled.material.bindForSubMesh(
     mesh.computeWorldMatrix(),
     mesh,
@@ -105,6 +111,13 @@ it("leases the scene cube only for a compiled raw consumer, preserves bindings a
   expect(textures.mock.calls.some(([, texture]) => texture === view)).toBe(
     true,
   );
+  expect(parameters.mock.calls).toContainEqual([
+    expect.stringContaining("slateEnvironmentPrefilter"),
+    2,
+    0.5,
+    0.25,
+    0,
+  ]);
   compiled.material.build();
   expect(scene.environmentTexture).toBe(view);
   expect(upload).toHaveBeenCalledTimes(1);

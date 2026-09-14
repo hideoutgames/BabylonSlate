@@ -19,6 +19,7 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
   private available = "";
   private matrix = "";
   private parameters = "";
+  private prefilter = "";
 
   constructor(name: string) {
     super(name, NodeMaterialBlockTargets.Fragment);
@@ -82,6 +83,13 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
       texture.gammaSpace ? 1 : 0,
       oppositeZ ? -1 : 1,
     );
+    effect.setFloat4(
+      this.prefilter,
+      texture.getSize().width,
+      texture.lodGenerationScale,
+      texture.lodGenerationOffset,
+      texture.linearSpecularLOD ? 1 : 0,
+    );
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -92,6 +100,7 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
     this.available = state._getFreeDefineName("SLATE_ENVIRONMENT");
     this.matrix = state._getFreeVariableName("slateEnvironmentMatrix");
     this.parameters = state._getFreeVariableName("slateEnvironmentParameters");
+    this.prefilter = state._getFreeVariableName("slateEnvironmentPrefilter");
     state.sharedData.blocksWithDefines.push(this);
     state.sharedData.blockingBlocks.push(this);
     // NodeMaterial's fullscreen onApply calls this list. Scene view changes
@@ -106,6 +115,10 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
       this.parameters,
       NodeMaterialBlockConnectionPointTypes.Vector4,
     );
+    state._emitUniformFromString(
+      this.prefilter,
+      NodeMaterialBlockConnectionPointTypes.Vector4,
+    );
     state._emitFunctionFromInclude(
       "helperFunctions",
       "Environment radiance decoding",
@@ -117,15 +130,26 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
       );
     const uniform = wgsl ? "uniforms." : "";
     const params = uniform + this.parameters;
+    const prefilter = uniform + this.prefilter;
     const direction = state._getFreeVariableName("slateEnvironmentDirection");
     const sampled = state._getFreeVariableName("slateEnvironmentSample");
-    const lod = `clamp(${this.roughness.associatedVariableName},0.0,1.0)*${params}.x`;
+    const roughness = state._getFreeVariableName("slateEnvironmentRoughness");
+    const lod = state._getFreeVariableName("slateEnvironmentLod");
     const sample = wgsl
       ? `textureSampleLevel(${this.sampler},${this.sampler}Sampler,${direction},${lod})`
       : `textureCubeLodEXT(${this.sampler},${direction},${lod})`;
     state.compilationString += `${state._declareOutput(this.color)} = ${wgsl ? "vec3f" : "vec3"}(0.0);\n#ifdef ${this.available}\n`;
-    state.compilationString += `${state._declareLocalVar(direction, NodeMaterialBlockConnectionPointTypes.Vector3)} = (${uniform}${this.matrix} * ${wgsl ? "vec4f" : "vec4"}(${this.direction.associatedVariableName},0.0)).xyz;\n`;
+    const vec3 = wgsl ? "vec3f" : "vec3";
+    state.compilationString += `${state._declareLocalVar(direction, NodeMaterialBlockConnectionPointTypes.Vector3)} = clamp(${this.direction.associatedVariableName},${vec3}(-1e8),${vec3}(1e8));\n`;
+    state.compilationString += `if (!(dot(${direction},${direction})>1e-12)) { ${direction}=${vec3}(0.0,0.0,1.0); }\n`;
+    state.compilationString += `${direction} = (${uniform}${this.matrix} * ${wgsl ? "vec4f" : "vec4"}(${direction},0.0)).xyz;\n`;
     state.compilationString += `${direction}.z *= ${params}.w;\n`;
+    // Babylon 9.20 PBR prefilter mapping at normal incidence. Raw sampling has
+    // no view normal, anisotropy or geometric AA input; texture metadata still applies.
+    state.compilationString += `${state._declareLocalVar(roughness, NodeMaterialBlockConnectionPointTypes.Float)}=clamp(${this.roughness.associatedVariableName},0.0,1.0);\n`;
+    state.compilationString += `${state._declareLocalVar(lod, NodeMaterialBlockConnectionPointTypes.Float)}=log2(${prefilter}.x*(${roughness}*${roughness}+0.0005));\n`;
+    state.compilationString += `if (${prefilter}.w>0.5) { ${lod}=${params}.x*${roughness}; }\n`;
+    state.compilationString += `${lod}=clamp(${lod}*${prefilter}.y+${prefilter}.z,0.0,${params}.x);\n`;
     state.compilationString += `${state._declareLocalVar(sampled, NodeMaterialBlockConnectionPointTypes.Vector4)} = ${sample};\n`;
     state.compilationString += `${this.color.associatedVariableName} = ${sampled}.rgb;\n`;
     state.compilationString += `if (${params}.y > 0.5) { ${this.color.associatedVariableName} = fromRGBD(${sampled}); } else if (${params}.z > 0.5) { ${this.color.associatedVariableName} = toLinearSpace(${sampled}.rgb); }\n#endif\n`;

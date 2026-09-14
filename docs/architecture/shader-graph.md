@@ -225,7 +225,9 @@ materials without a placeholder cube or graph rebuild.
 
 **Environment Sample** is a Surface/Post Process fragment input, also available
 through Material Functions. It samples the Scene-selected cube using world-space
-Direction and clamped Roughness across its authored mip chain. The result is raw
+Direction and clamped Roughness, using the cube's native normal-incidence PBR
+prefilter mapping and LOD generation metadata. Zero Direction uses world +Z.
+The result is raw
 decoded linear radiance, independent of automatic IBL intensity and Environment
 Influence; a missing cube returns black. An enabled sampler retains the cube even
 when automatic IBL is disabled. Set Environment Influence to zero when using
