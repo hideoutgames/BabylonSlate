@@ -190,4 +190,4 @@ Post-process entry controls keep Enabled and Scalable Resolution in one compact 
 
 Scene Details places a labeled **Add Component** button after actor properties and immediately before the component list. The Prefab Components toolbar uses the same visible label. Outliner actor-menu **Delete** with multiple actors selected asks for **Delete Selected**, **Delete This Object**, or **Cancel**, preserving the menu-opening selection.
 
-The project composer centers **New <TemplateName>** independently of its left-aligned Back button, using the selected built-in or imported template name.
+The project composer centers `New <TemplateName>` independently of its left-aligned Back button, using the selected built-in or imported template name.
