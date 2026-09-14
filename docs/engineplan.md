@@ -15,6 +15,8 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 ## 1. Where the project stands today
 
+Content Browser **Show References** opens a large read-only asset graph dialog, initially selecting and framing the requested asset. It shows the complete connected dependency chain with directed links, type-icon nodes, and missing references. See [asset registry](architecture/asset-registry.md).
+
 Model previews preserve authored rest/bind poses; Animation previews play the selected take with source-relative durations. Model instances defer animation players until needed and bind skin palettes per mesh even with frozen shared materials. FBX import converts locally to canonical GLB before creating the existing asset formats (see [asset import](architecture/asset-registry.md)).
 
 P0–P19 packages are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
