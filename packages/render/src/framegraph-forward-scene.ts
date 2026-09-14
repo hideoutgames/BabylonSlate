@@ -1,4 +1,4 @@
-import type { Camera, Observer, Scene } from "@babylonjs/core";
+import type { Camera, InternalTexture, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import {
   backbufferColorTextureHandle,
@@ -19,8 +19,28 @@ import {
 export type ForwardSceneGraphResult =
   { path: "frameGraph" } | { path: "classic"; reason: string };
 
+/** Native camera frustum calculation reads the currently bound target's aspect. */
+class CameraOutputCullTask extends FrameGraphCullObjectsTask {
+  override _execute(): void {
+    const target = this.camera.outputRenderTarget?.renderTarget;
+    if (!target) return super._execute();
+    const engine = this.camera.getEngine();
+    // Every preceding graph render pass restores the backbuffer. Bind only for
+    // the official cull task, without clearing or invoking RTT render observers.
+    try {
+      engine.bindFramebuffer(target);
+      this.camera.getViewMatrix();
+      this.camera.getProjectionMatrix(true);
+      super._execute();
+    } finally {
+      engine.restoreDefaultFramebuffer();
+    }
+  }
+}
+
 /**
- * Opt-in, backbuffer-only Forward proof. The caller retains its existing frame
+ * Opt-in Forward proof for the backbuffer or an explicit 2D color/depth target.
+ * The caller retains its existing frame
  * scheduler and calls render instead of Scene.render, exactly once per frame.
  * prepare only builds/probes effects; it never presents or consumes a frame.
  */
@@ -32,6 +52,8 @@ export class ForwardSceneFrameGraph {
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
   private preparedHeight = 0;
+  private outputColor: InternalTexture | null = null;
+  private outputDepth: InternalTexture | null = null;
   private pending: Promise<ForwardSceneGraphResult> | undefined;
   private disposed = false;
   private failure: string | undefined;
@@ -75,6 +97,7 @@ export class ForwardSceneFrameGraph {
     if (unavailable) return { path: "classic", reason: unavailable };
     this.syncShadowAdmission(camera);
     const engine = this.scene.getEngine();
+    const output = this.output(camera);
     const reason =
       this.unsupported(camera) ??
       this.failure ??
@@ -83,8 +106,9 @@ export class ForwardSceneFrameGraph {
         : undefined) ??
       (this.pending ||
       !this.graph ||
-      this.preparedWidth !== engine.getRenderWidth(true) ||
-      this.preparedHeight !== engine.getRenderHeight(true)
+      this.preparedWidth !== output.width ||
+      this.preparedHeight !== output.height ||
+      this.outputColor !== output.color || this.outputDepth !== output.depth
         ? "FrameGraph preparation is required."
         : undefined);
     this.scene.activeCamera = camera;
@@ -148,6 +172,10 @@ export class ForwardSceneFrameGraph {
       return "FrameGraph coordinator is disposed.";
     if (camera.getScene() !== this.scene || camera.isDisposed())
       return "Camera does not belong to this live scene.";
+    if (camera.outputRenderTarget &&
+      (camera.outputRenderTarget.getScene() !== this.scene ||
+        !camera.outputRenderTarget.getInternalTexture()))
+      return "Render target does not belong to this live scene.";
     return undefined;
   }
 
@@ -155,8 +183,6 @@ export class ForwardSceneFrameGraph {
     const scene = this.scene;
     const unavailable = this.unavailable(camera);
     if (unavailable) return unavailable;
-    if (scene.getEngine().isWebGPU)
-      return "Forward FrameGraph proof requires WebGL.";
     if (scene.frameGraph || scene.customRenderFunction)
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
@@ -164,10 +190,14 @@ export class ForwardSceneFrameGraph {
     // Pinned Scene flag also used by the official culling task.
     if (scene._activeMeshesFrozen)
       return "Frozen active-mesh lists require classic rendering.";
-    // Pinned AbstractEngine target state: graph.execute restores the default
-    // framebuffer, so it cannot borrow a caller-owned shared-view RTT.
-    if (camera.outputRenderTarget || scene.getEngine()._currentRenderTarget)
-      return "Render-target views require classic rendering.";
+    // FrameGraph restores the default framebuffer around execution. Only take
+    // a camera's explicit output from an otherwise unbound frame boundary.
+    if (scene.getEngine()._currentRenderTarget)
+      return "A caller-bound render target requires classic rendering.";
+    const target = camera.outputRenderTarget;
+    if (target && (target.isCube || target.is2DArray || target.samples !== 1 ||
+      !target.depthStencilTexture))
+      return "FrameGraph output requires a single-sample 2D color/depth texture.";
     if (camera._postProcesses.some(Boolean) || scene.postProcesses.length)
       return "Scene post-processing requires classic rendering.";
     if (
@@ -193,20 +223,43 @@ export class ForwardSceneFrameGraph {
 
   private async prepareGraph(camera: Camera): Promise<ForwardSceneGraphResult> {
     const scene = this.scene;
-    const engine = scene.getEngine();
     try {
-      if (this.shadows?.needsPreparation()) this.releaseGraph();
+      const output = this.output(camera);
+      if (this.shadows?.needsPreparation() || this.outputColor !== output.color ||
+        this.outputDepth !== output.depth) this.releaseGraph();
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         // Explicit owner: Scene.dispose must not race an asynchronous build.
         scene.removeFrameGraph(this.graph);
+        this.outputColor = output.color;
+        this.outputDepth = output.depth;
+        const textures = this.graph.textureManager;
+        const color = output.color
+          ? textures.importTexture("Forward output color", output.color)
+          : backbufferColorTextureHandle;
+        const depth = output.depth
+          ? textures.importTexture("Forward output depth", output.depth)
+          : backbufferDepthStencilTextureHandle;
+        if (output.depth) {
+          const borrowedDepth = output.depth;
+          const createTarget = textures.createRenderTarget.bind(textures);
+          // Babylon 9.20 retains imported color attachments for its wrappers,
+          // but not depth. Each owned wrapper must retain borrowed depth too,
+          // since wrapper.dispose releases both. Scope this to this graph only.
+          textures.createRenderTarget = (...args) => {
+            const target = createTarget(...args);
+            if (target.renderTargetWrapper?.depthStencilTexture === borrowedDepth)
+              borrowedDepth.incrementReferences();
+            return target;
+          };
+        }
         this.clear = new FrameGraphClearTextureTask(
           "Forward clear",
           this.graph,
         );
-        this.clear.targetTexture = backbufferColorTextureHandle;
-        this.clear.depthTexture = backbufferDepthStencilTextureHandle;
-        this.cull = new FrameGraphCullObjectsTask(
+        this.clear.targetTexture = color;
+        this.clear.depthTexture = depth;
+        this.cull = new CameraOutputCullTask(
           "Forward cull",
           this.graph,
           scene,
@@ -215,6 +268,9 @@ export class ForwardSceneFrameGraph {
           "Forward objects",
           this.graph,
           scene,
+          // The pinned graph initializes ObjectRenderer before binding its
+          // target. Recompute projection after binding, as Scene.render does.
+          { doNotChangeAspectRatio: false },
         );
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
@@ -228,8 +284,7 @@ export class ForwardSceneFrameGraph {
       this.objects!.camera = camera;
       this.cull!.camera = camera;
       this.syncSceneInputs();
-      const width = engine.getRenderWidth(true);
-      const height = engine.getRenderHeight(true);
+      const { width, height } = output;
       if (width !== this.preparedWidth || height !== this.preparedHeight) {
         // Babylon buildAsync preserves External entries, including the old
         // default-backbuffer dimensions. Refresh them through the public API
@@ -258,6 +313,18 @@ export class ForwardSceneFrameGraph {
       this.releaseGraph();
       return { path: "classic", reason: this.failure };
     }
+  }
+
+  private output(camera: Camera) {
+    const target = camera.outputRenderTarget;
+    const size = target?.getSize();
+    const engine = this.scene.getEngine();
+    return {
+      width: size?.width ?? engine.getRenderWidth(true),
+      height: size?.height ?? engine.getRenderHeight(true),
+      color: target?.getInternalTexture() ?? null,
+      depth: target?.depthStencilTexture ?? null,
+    };
   }
 
   private isReady(): boolean {
@@ -315,6 +382,7 @@ export class ForwardSceneFrameGraph {
     this.clear = undefined;
     this.cull = undefined;
     this.graph = undefined;
+    this.outputColor = this.outputDepth = null;
     this.preparedWidth = this.preparedHeight = 0;
   }
 }

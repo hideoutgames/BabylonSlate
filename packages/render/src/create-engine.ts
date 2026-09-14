@@ -1,5 +1,6 @@
 import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
+import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
 import {
   Engine,
@@ -2360,6 +2361,7 @@ function materialTextureGuidMap(
 }
 
 function sceneNodeMaterialsSampleReady(scene: Scene): boolean {
+  if (!isEnvironmentLightingReady(scene)) return false;
   for (const material of scene.materials) {
     if (material instanceof NodeMaterial && !nodeMaterialTexturesSampleReady(material)) return false;
     if (material.getActiveTextures().some((texture) => !texture.isReady())) return false;

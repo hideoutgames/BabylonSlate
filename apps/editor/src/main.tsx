@@ -13,6 +13,18 @@ initializeCapacitorAudioLifecycle();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("environmentWebgpuProof")
+) {
+  void import("./lib/environment-lighting-proof").then(
+    ({ runEnvironmentIrradianceWebGpuProof }) => {
+      Object.assign(window, {
+        __babylonslateEnvironmentWebGpuProof:
+          runEnvironmentIrradianceWebGpuProof,
+      });
+    },
+  );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("framegraphShadowProof")
 ) {
   void import("./testing/framegraph-shadow-proof").then(

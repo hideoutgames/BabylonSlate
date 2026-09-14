@@ -1,7 +1,6 @@
 import type { Camera, NodeMaterial, Observer } from "@babylonjs/core";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
-import { Effect } from "@babylonjs/core/Materials/effect";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
@@ -42,7 +41,7 @@ class GraphBoundPostProcess extends PostProcess {
     ]) {
       if (!name) continue;
       const key = name + suffix;
-      const source = Effect.ShadersStore[key];
+      const source = ShaderStore.GetShadersStore(this.shaderLanguage)[key];
       if (typeof source === "string") this.shaderSources.set(key, source);
     }
     super.updateEffect(...args);
@@ -52,8 +51,9 @@ class GraphBoundPostProcess extends PostProcess {
     if (this.disposed) return;
     this.disposed = true;
     super.dispose(camera);
+    const store = ShaderStore.GetShadersStore(this.shaderLanguage);
     for (const [key, source] of this.shaderSources) {
-      if (Effect.ShadersStore[key] === source) delete Effect.ShadersStore[key];
+      if (store[key] === source) delete store[key];
     }
     this.shaderSources.clear();
     // Babylon returns early from camera-less disposal before clearing these.
@@ -272,12 +272,6 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       );
       return;
     }
-    if (this._frameGraph.engine.isWebGPU) {
-      this.fail(
-        "The authored FrameGraph adapter currently requires the GLSL WebGL backend",
-      );
-      return;
-    }
     try {
       const compiled = this.options.library.acquire(
         this._frameGraph.scene,
@@ -322,7 +316,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     this.postProcess = new GraphBoundPostProcess(this.name, "", {
       engine: this._frameGraph.engine,
       blockCompilation: true,
-      shaderLanguage: ShaderLanguage.GLSL,
+      shaderLanguage: material.shaderLanguage,
     });
     this.postProcess.externalTextureSamplerBinding = true;
     material.createEffectForPostProcess(this.postProcess);

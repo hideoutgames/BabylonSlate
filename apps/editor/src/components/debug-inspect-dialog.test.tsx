@@ -54,6 +54,25 @@ function tapRow(id: string): void {
 }
 
 describe("DebugInspectDialog", () => {
+  it("uses runtime ancestry for custom class icons in the live object tree", () => {
+    const live: DebugInspectSnapshot = {
+      tickIndex: 4,
+      nodes: [
+        { ...snapshot.nodes[0]!, classId: "MyGame", ancestry: ["MyGame", "GameInstance", "BObject"] },
+        { ...snapshot.nodes[1]!, classId: "Hero", ancestry: ["Hero", "Actor", "BObject"] },
+        {
+          id: "health", kind: "component", label: "RegenHealth", classId: "RegenHealth",
+          ancestry: ["RegenHealth", "Health", "ActorComponent", "BObject"], parentId: "hero", variables: {},
+        },
+      ],
+    };
+    render(<DebugInspectDialog open onOpenChange={() => {}} snapshot={live} />);
+    for (const [id, glyph] of [["gi", "file-sliders"], ["hero", "file-box"], ["health", "file-cog"]]) {
+      const icon = screen.getByTestId(`tree-row-${id}`).querySelector(`svg.lucide-${glyph}`);
+      expect(icon?.getAttribute("stroke")).toBe("var(--asset-animation)");
+    }
+  });
+
   it("offers session actor destruction and camera possession only for valid selections", async () => {
     const execute = vi.fn().mockResolvedValue({ success: true, output: "ok" });
     const live = { ...snapshot, nodes: [...snapshot.nodes, {

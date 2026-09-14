@@ -3,6 +3,7 @@ import {
   type NodeDefinition,
   EXEC,
   actorRef,
+  arrayOf,
   classRef,
   objectRef,
   BOOL,
@@ -10,6 +11,32 @@ import {
 } from "@babylonslate/scripting";
 
 export const componentNodes: NodeDefinition[] = [
+  {
+    id: "component.getFirstOfType",
+    title: "Get First Component Of Type",
+    category: "component",
+    pure: true,
+    pins: () => [
+      pin("classId", "Class", "in", classRef("ActorComponent")),
+      pin("out", "Out", "out", objectRef("ActorComponent")),
+    ],
+    codegen: (ctx) => ({
+      out: `ctx.getFirstComponentOfType(${ctx.input("classId")})`,
+    }),
+  },
+  {
+    id: "component.getAllOfType",
+    title: "Get All Components Of Type",
+    category: "component",
+    pure: true,
+    pins: () => [
+      pin("classId", "Class", "in", classRef("ActorComponent")),
+      pin("out", "Out", "out", arrayOf(objectRef("ActorComponent"))),
+    ],
+    codegen: (ctx) => ({
+      out: `ctx.getAllComponentsOfType(${ctx.input("classId")})`,
+    }),
+  },
   {
     id: "component.get",
     title: "Get Component",

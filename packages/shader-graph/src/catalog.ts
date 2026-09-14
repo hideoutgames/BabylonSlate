@@ -269,6 +269,20 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     outputs: [{ id: "color", name: "Color", type: VEC4, colorHint: true }],
   },
   {
+    type: "input.environmentSample",
+    title: "Environment Sample",
+    category: "Input",
+    domains: ["surface", "postProcess"],
+    stages: ["fragment"],
+    cost: 2,
+    samples: 1,
+    inputs: [
+      { id: "direction", name: "Direction", type: VEC3, defaultValue: [0, 0, 1] },
+      { id: "roughness", name: "Roughness", type: FLOAT, defaultValue: [0] },
+    ],
+    outputs: [{ id: "color", name: "Linear Radiance", type: VEC3, colorHint: true }],
+  },
+  {
     type: "input.sceneDepth",
     title: "Scene Depth",
     category: "Input",
@@ -684,6 +698,7 @@ const OUTPUT_NODES: MaterialNodeDefinition[] = [
       },
       { id: "metallic", name: "Metallic", type: FLOAT, defaultValue: [0] },
       { id: "roughness", name: "Roughness", type: FLOAT, defaultValue: [0.5] },
+      { id: "environmentInfluence", name: "Environment Influence", type: FLOAT, defaultValue: [1] },
       { id: "normal", name: "Normal", type: VEC3 },
       {
         id: "emissive",

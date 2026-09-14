@@ -23,8 +23,6 @@ import {
   Actor,
   ActorComponent,
   BObject,
-  ComponentLogic,
-  hydrateClassVariableValue,
   SceneLayer,
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
@@ -699,6 +697,21 @@ class InProcessRuntime implements RuntimeDriver {
       guidFactory: () => `rt-${++guidSeq}`,
       onPhase: (phase) => this.markPhase(phase),
       canTickScene: () => this.canTickScene(),
+      componentHooksFor: (classId) => {
+        if (!registry.isA(classId, "ActorComponent")) return undefined;
+        const sceneChangeId = this.sceneChangeId;
+        return {
+          onCreation: (self) => {
+            if (this.stopped || this.sceneChangeId !== sceneChangeId) return;
+            this.scriptHost.bindInterfaceHandlers(self);
+            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
+          },
+          onTick: (self, ctx) =>
+            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
+          onDestroyed: (self) =>
+            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self)),
+        };
+      },
       onPhysics: (ctx) => {
         this.physicsSync.step(ctx.dt, this.world);
         this.overlayPhysicsSync.step(ctx.dt, this.world);
@@ -822,7 +835,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       addComponent: (actor, classId, transform) => {
         const target = actor;
-        if (!target || target.destroyed) return null;
+        if (this.stopped || !target || target.destroyed) return null;
         const id = String(classId ?? "").trim();
         if (!id) return null;
         const overlay = Boolean(target.sceneLayerId);
@@ -833,6 +846,7 @@ class InProcessRuntime implements RuntimeDriver {
           classId: id,
           ...(pose ? { transform: pose } : {}),
         });
+        this.scriptHost.bindInterfaceHandlers(component);
         target.attachComponent(component);
         return component;
       },
@@ -3528,22 +3542,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private applyActorDefaults(actor: Actor): void {
     for (const component of actor.components) {
-      if (component.classId !== "LogicComponent" || component.logic) continue;
-      const classId = component.getVariable("logicClass");
-      if (typeof classId !== "string" || !this.world.classRegistry.isA(classId, "ComponentLogic")) continue;
-      const hooks = this.scriptHost.hooksFor(classId);
-      const logic = new ComponentLogic(component, {
-        classId, guid: `${component.guid}:logic`,
-        variables: Object.fromEntries(this.world.classRegistry.inheritedVariables(classId).map((variable) => [variable.name, hydrateClassVariableValue(variable)])),
-        implementedInterfaces: this.world.classRegistry.inheritedInterfaces(classId),
-        hooks: {
-          onCreation: (self) => this.guardScript(() => hooks?.onCreation?.(self)),
-          onTick: (self, ctx) => this.guardScript(() => hooks?.onTick?.(self, ctx)),
-          onDestroyed: (self) => this.guardScript(() => hooks?.onDestroyed?.(self)),
-        },
-      });
-      component.logic = logic;
-      this.scriptHost.bindInterfaceHandlers(logic);
+      this.scriptHost.bindInterfaceHandlers(component);
     }
     const script = this.scriptHost.scriptsFor(actor.classId)[0];
     const defaults = script?.actorDefaults;
@@ -4125,10 +4124,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingSceneFinish = null;
     this.finalizeTrace();
     for (const actor of this.world.getActors()) {
-      for (const component of actor.components) {
-        if (component.logic && !component.logic.destroyed) {
-          component.logic.destroyed = true;
-          component.logic.callOnDestroyed();
+      for (const component of [...actor.components]) {
+        if (!component.destroyed) {
+          component.destroyed = true;
+          component.callOnDestroyed();
         }
       }
     }

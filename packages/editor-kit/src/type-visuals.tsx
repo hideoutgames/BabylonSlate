@@ -9,11 +9,16 @@ import {
   CircleDashedIcon,
   CloudIcon,
   CylinderIcon,
+  FileBoxIcon,
+  FileBracesCornerIcon,
+  FileCogIcon,
   FileIcon,
   FileJsonIcon,
+  FileSlidersIcon,
+  FileSpreadsheetIcon,
+  FileTerminalIcon,
   FilmIcon,
   Grid3x3Icon,
-  HexagonIcon,
   ImageIcon,
   ImagesIcon,
   Layers2Icon,
@@ -71,8 +76,8 @@ export type TypeVisualQuery = {
   family?: AssetVisualFamily;
 };
 
-const OBJECT_ICON = HexagonIcon;
-const ACTOR_ICON = PersonStandingIcon;
+const OBJECT_ICON = FileIcon;
+const ACTOR_ICON = FileBoxIcon;
 
 const ENGINE_PARENT: Record<string, string | null> = {
   BObject: null,
@@ -107,8 +112,6 @@ const ENGINE_PARENT: Record<string, string | null> = {
   BTComposite_Selector: "BTComposite",
   BTComposite_Sequence: "BTComposite",
   BTComposite_Parallel: "BTComposite",
-  ComponentLogic: "BObject",
-  LogicComponent: "ActorComponent",
   MeshComponent: "ActorComponent",
   SpriteComponent: "ActorComponent",
   TilemapComponent: "ActorComponent",
@@ -139,16 +142,16 @@ const ENGINE_PARENT: Record<string, string | null> = {
 const ICON_BY_ID: Record<string, LucideIcon> = {
   BObject: OBJECT_ICON,
   MaterialObject: PaintbrushIcon,
-  GameInstance: OBJECT_ICON,
-  FunctionLibrary: OBJECT_ICON,
-  BDebugCommand: OBJECT_ICON,
-  EditorUtilityObject: OBJECT_ICON,
-  EditorFunctionLibrary: OBJECT_ICON,
+  GameInstance: FileSlidersIcon,
+  FunctionLibrary: FileSpreadsheetIcon,
+  BDebugCommand: FileTerminalIcon,
+  EditorUtilityObject: FileBracesCornerIcon,
+  EditorFunctionLibrary: FileSpreadsheetIcon,
   BTTask: OBJECT_ICON,
   BTDecorator: OBJECT_ICON,
   BTService: OBJECT_ICON,
   BTComposite: OBJECT_ICON,
-  ActorComponent: OBJECT_ICON,
+  ActorComponent: FileCogIcon,
   Actor: ACTOR_ICON,
   SceneLayer: Layers2Icon,
   SceneLayerActor: ACTOR_ICON,
@@ -345,6 +348,13 @@ function familyFor(query: TypeVisualQuery, iconId: string | undefined): AssetVis
   if (query.family) return query.family;
   if (query.assetType) {
     return FAMILY_BY_ASSET_TYPE[query.assetType] ?? "unknown";
+  }
+  if (
+    query.classId &&
+    !(query.classId in ENGINE_PARENT) &&
+    query.ancestry?.includes("ActorComponent")
+  ) {
+    return "class";
   }
   if (iconId && COMPONENT_CLASS_IDS.has(iconId)) return "component";
   if (iconId && iconId in ENGINE_PARENT) return "class";

@@ -86,7 +86,6 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
 export const ENGINE_BASE_CLASSES = [
   "BObject",
   "Actor",
-  "ComponentLogic",
   "SceneLayerActor",
   "ActorComponent",
   "GameInstance",
@@ -1802,17 +1801,16 @@ export function assetHeaderDependencies(
   return [...unique].sort();
 }
 
-/** Include already-loaded edits without reading any closed document payloads. */
-export function assetReferencesIncludingOpenDocuments(
-  guid: string,
+/** Saved dependencies plus already-loaded edits, without reading closed payloads. */
+export function assetDependenciesIncludingOpenDocuments(
   assets: readonly IndexedAsset[],
   openDocuments: ReadonlyArray<{ ref: { path: string }; content: unknown }>,
-): { inbound: string[]; outbound: string[] } {
-  const inbound = new Set<string>();
-  const outbound = new Set<string>();
+): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  const documentsByPath = new Map(openDocuments.map((doc) => [doc.ref.path, doc]));
   for (const asset of assets) {
     const dependencies = new Set(asset.header.dependencies);
-    const open = openDocuments.find((doc) => doc.ref.path === asset.path);
+    const open = documentsByPath.get(asset.path);
     if (open?.content && typeof open.content === "object") {
       for (const dependency of assetHeaderDependencies(
         asset.header.type,
@@ -1821,12 +1819,22 @@ export function assetReferencesIncludingOpenDocuments(
         asset.header.parentClass,
       )) dependencies.add(dependency);
     }
-    if (dependencies.has(guid)) inbound.add(asset.header.guid);
-    if (asset.header.guid === guid) {
-      for (const dependency of dependencies) outbound.add(dependency);
-    }
+    result.set(asset.header.guid, [...dependencies].sort());
   }
-  return { inbound: [...inbound].sort(), outbound: [...outbound].sort() };
+  return result;
+}
+
+/** Include already-loaded edits without reading any closed document payloads. */
+export function assetReferencesIncludingOpenDocuments(
+  guid: string,
+  assets: readonly IndexedAsset[],
+  openDocuments: ReadonlyArray<{ ref: { path: string }; content: unknown }>,
+): { inbound: string[]; outbound: string[] } {
+  const dependencies = assetDependenciesIncludingOpenDocuments(assets, openDocuments);
+  return {
+    inbound: [...dependencies].filter(([, refs]) => refs.includes(guid)).map(([id]) => id).sort(),
+    outbound: dependencies.get(guid) ?? [],
+  };
 }
 
 /** Header payload fields Content Browser / pickers can read without loading the document. */
