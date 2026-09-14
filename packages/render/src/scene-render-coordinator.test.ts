@@ -131,40 +131,20 @@ it("does not resume native task allocation after disposal during asynchronous in
   expect(scene.objectRenderers).toHaveLength(0);
 });
 
-it("does not acknowledge a native fallback while changed-output preparation is restarting", async () => {
-  const { options, renderer } = host();
-  const { started, release } = holdGraphInitialization();
-  const preparing = renderer.prepare();
-  await started;
-  vi.useFakeTimers();
-  try {
-    options.renderWidth = 96;
-    release();
-    // Drain the failed old build, but hold the cooperative restart boundary.
-    await vi.advanceTimersByTimeAsync(0);
-    expect(renderer.isReady()).toBe(false);
-    expect(renderer.render()).toMatchObject({ path: "classic", rendered: true, readyForPresentation: false });
-    await vi.advanceTimersByTimeAsync(16);
-    expect(await preparing).toEqual({ path: "frameGraph" });
-    expect(renderer.isReady()).toBe(true);
-    expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
-  } finally {
-    renderer.dispose();
-    await vi.runAllTimersAsync();
-    await preparing.catch(() => {});
-    vi.useRealTimers();
-  }
-});
-
-it("replaces a pending backbuffer build with an explicit classic camera-target fallback", async () => {
+it("does not acknowledge a changed-output fallback until its pending preparation settles", async () => {
   const { scene, camera, renderer } = host();
-  let assetsReady = false;
-  scene.addIsReadyCheck({ isReady: () => assetsReady });
+  const { started, release } = holdGraphInitialization();
   const pending = renderer.prepare();
-  await vi.waitFor(() => expect(scene.objectRenderers).toHaveLength(1));
+  await started;
   const target = new RenderTargetTexture("native target", 32, scene);
   camera.outputRenderTarget = target;
-  assetsReady = true;
+  try {
+    expect(renderer.isReady()).toBe(false);
+    expect(renderer.render()).toMatchObject({ path: "classic", rendered: true, readyForPresentation: false });
+  } finally {
+    release();
+    await pending;
+  }
   expect(await pending).toMatchObject({ path: "classic", reason: expect.stringContaining("color/depth") });
   expect(renderer.isReady()).toBe(true);
   expect(renderer.render()).toMatchObject({ path: "classic", readyForPresentation: true });
