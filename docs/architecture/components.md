@@ -120,7 +120,7 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 ## App wrappers
 
-`SceneLoadingDialog` composes Dialog, Progress and compact Retry / Close buttons for document reads, viewport loading or rendering updates, and Play scene transitions. Play keeps an explicit Stop action available through teardown, asset/shader readiness, and first-frame presentation. Loading is blocking; failed document reads preserve the previous workspace, while failed viewport realization remains unready until retry.
+`SceneLoadingDialog` composes Dialog, Progress and compact Retry / Close buttons for document reads, viewport loading or rendering updates, and Play scene transitions. Play opens this blocker when its overlay mounts, including the interval before the Worker sends its first scene token, and keeps an explicit Stop action available through teardown, asset/shader readiness, and first-frame presentation. Loading is blocking; failed document reads preserve the previous workspace, while failed viewport realization remains unready until retry.
 
 `CelShadingFields` composes compact Field, NumberField, Select, Switch and Button controls for Project Settings and Scene Defaults, including Strongest Light / Additive / Blend mixing and an independent Specular switch. Scene fields display inherited values, independently enable overrides, and reset to live project values. Both hosts hide the controls in PBR projects; CEL has no Smooth falloff option. Scene Shadows and CEL Shading start closed inside `DisclosureSection`; property search reveals matching categories and clearing it restores their manual disclosure state without writing scene data. Future rendering override categories use the same closed initial state.
 

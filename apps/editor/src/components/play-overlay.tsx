@@ -265,7 +265,11 @@ export function PlayOverlay({
   const userPausedRef = useRef(pauseOnPlay);
   const [postProcessPasses, setPostProcessPasses] = useState(0);
   const [assignedMaterials, setAssignedMaterials] = useState("");
-  const [sceneLoading, setSceneLoading] = useState<SceneLoadProgress | null>(null);
+  // The Worker can take time to initialize before its first scene token arrives.
+  const [sceneLoading, setSceneLoading] = useState<Pick<SceneLoadProgress, "phase" | "progress"> | null>({
+    phase: "Preparing Scene",
+    progress: 0,
+  });
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
