@@ -142,7 +142,10 @@ export class ForwardSceneFrameGraph {
     this.pending = work;
     const settled = () => {
       this.pending = undefined;
-      if (this.disposed) this.releaseGraph();
+      if (this.disposed) {
+        try { this.releaseGraph(); }
+        catch (error) { this.cleanupFailure = error; }
+      }
     };
     void work.then(settled, settled);
     return work;
@@ -247,7 +250,8 @@ export class ForwardSceneFrameGraph {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.postProcessOwner?.dispose();
+    try { this.postProcessOwner?.dispose(); }
+    catch (error) { this.cleanupFailure = error; throw error; }
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.scene.onDisposeObservable.remove(this.onDispose);
     if (!this.pending) this.releaseGraph();

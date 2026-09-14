@@ -212,3 +212,18 @@ it("rejects retirement when owned task cleanup fails instead of permitting targe
   await expect(renderer.retire()).rejects.toThrow("native cleanup failed");
   dispose.mockRestore();
 });
+
+
+it("reports asynchronous retirement cleanup failure without permitting the borrowed owner to release", async () => {
+  const { scene, renderer } = host();
+  const { started, release } = holdGraphInitialization();
+  const preparing = expect(renderer.prepare()).rejects.toThrow();
+  await started;
+  const taskRenderer = scene.objectRenderers[0]!;
+  const dispose = vi.spyOn(taskRenderer, "dispose").mockImplementation(() => { throw new Error("pending cleanup failed"); });
+  const retirement = expect(renderer.retire()).rejects.toThrow("pending cleanup failed");
+  release();
+  await preparing;
+  await retirement;
+  dispose.mockRestore();
+});
