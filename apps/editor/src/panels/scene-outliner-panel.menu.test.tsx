@@ -246,7 +246,7 @@ describe("SceneOutlinerPanel menus", () => {
       row.getAttribute("aria-selected"),
     )).toEqual(["true", "true", "true", "false", "false"]);
 
-    fireEvent.click(screen.getByRole("button", { name: choice, exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: choice }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     if (remaining) {
       // Parent and child selections still produce one undoable scene edit.
