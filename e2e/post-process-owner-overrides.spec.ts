@@ -9,11 +9,17 @@ import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 import { DISABLED_MASK_GUID, POST_PROCESS_SCENE_GUID, postProcessFixture } from "./post-process-fixture";
 import { saveAllIfEnabled } from "./save-all";
 
+const errorsByPage = new WeakMap<Page, string[]>();
+test.afterEach(async ({ page }, info) => {
+  await info.attach("render-errors", { body: JSON.stringify(errorsByPage.get(page) ?? []), contentType: "application/json" });
+});
+
 function renderErrors(page: Page) {
   const errors: string[] = [];
+  errorsByPage.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
-    if (["warning", "error"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR:\s*0:|context lost|fatal error|texture.*(?:missing|not found|failed)/i.test(message.text())) errors.push(message.text());
+    if (["warning", "error"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR:\s*0:|context lost|fatal error|\[viewport\].*failed to load|texture.*(?:missing|not found|failed)/i.test(message.text())) errors.push(message.text());
   });
   return errors;
 }
