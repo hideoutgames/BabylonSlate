@@ -37,6 +37,7 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
       scene.updateTransformMatrix(true);
       for (const buffer of ["depth", "normal", "post-depth", "post-normal"] as const) {
         const graph = new FrameGraph(scene);
+        const graphDiagnostics: unknown[] = [];
         try {
           const depth = graph.textureManager.createRenderTargetTexture("Geometry Z", {
             size: { width: 32, height: 32 },
@@ -75,6 +76,16 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
                 ...["x", "y", "z"].map((channel) => ({ id: `depth-${channel}`, sourceNodeId: "buffer", sourcePinId: "depth", targetNodeId: "gray", targetPinId: channel })),
                 { id: "gray-output", sourceNodeId: "gray", sourcePinId: "xyzw", targetNodeId: "output", targetPinId: "color" },
               );
+            } else {
+              post.nodes.push(
+                { id: "split", type: "vector.split", properties: {}, position: { x: 0, y: 0 } },
+                { id: "normalColor", type: "vector.combine", properties: {}, position: { x: 0, y: 0 } },
+              );
+              post.edges.splice(1, 1,
+                { id: "normal-split", sourceNodeId: "buffer", sourcePinId: "normal", targetNodeId: "split", targetPinId: "value" },
+                ...["x", "y", "z"].map((channel) => ({ id: `normal-${channel}`, sourceNodeId: "split", sourcePinId: channel, targetNodeId: "normalColor", targetPinId: channel })),
+                { id: "normal-output", sourceNodeId: "normalColor", sourcePinId: "xyzw", targetNodeId: "output", targetPinId: "color" },
+              );
             }
             const stack = addAuthoredPostProcessTasks({
               // Opposite buffer makes a silent scene-color passthrough fail the oracle.
@@ -82,12 +93,13 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
               logicalBuffers: { sceneDepth: geometry.geometryNormViewDepthTexture, sceneNormal: geometry.geometryWorldNormalTexture },
               stack: [0, 1].map((order) => ({ id: `entry-${order}`, materialGuid: "logical", order, enabled: true })),
               documentFor: () => post,
-              onDiagnostic: (diagnostic) => { throw new Error(JSON.stringify(diagnostic)); },
+              onDiagnostic: (diagnostic) => { graphDiagnostics.push(diagnostic); },
             });
             copy.sourceTexture = stack.outputTexture;
           }
           graph.addTask(copy);
           await graph.buildAsync(false);
+          if (graphDiagnostics.length) throw new Error(JSON.stringify(graphDiagnostics));
           const deadline = performance.now() + 10_000;
           while (!graph.isReady()) {
             if (performance.now() > deadline) throw new Error("Geometry readiness timed out");
@@ -95,6 +107,7 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
           }
           engine.beginFrame();
           try { graph.execute(); } finally { engine.endFrame(); }
+          if (graphDiagnostics.length) throw new Error(JSON.stringify(graphDiagnostics));
           const pixels = await engine.readPixels(16, 16, 1, 1);
           const pixel = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, 4));
           if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
