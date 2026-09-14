@@ -47,11 +47,11 @@ test("uploads physical irradiance with receiver-local UV2 and releases shared at
     expect(entry.restored).toBe(true);
     expect(entry.alignmentRejected).toBe(entry.backend === "webgpu");
     expect(entry.bytesBefore).toEqual({
-      managedBytes: entry.backend === "webgpu" ? 8496 : 4396,
+      managedBytes: entry.backend === "webgpu" ? 8544 : 4396,
       quarantined: false,
     });
     expect(entry.bytesAwaitingRelease).toBe(
-      entry.backend === "webgpu" ? 8344 : 0,
+      entry.backend === "webgpu" ? 8368 : 0,
     );
     expect(entry.bytesAfter).toEqual({ managedBytes: 0, quarantined: false });
     expect(entry.atlasReleased).toBe(true);

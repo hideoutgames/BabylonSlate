@@ -392,6 +392,7 @@ export async function runBakedRuntimeProof() {
       const bytesAwaitingRelease =
         bakedGpuAllocationStatus(engine).managedBytes;
       // This isolated harness owns its Engine; the service itself never submits a sibling's frame.
+      await Promise.resolve();
       engine.beginFrame();
       engine.endFrame();
       result.push({

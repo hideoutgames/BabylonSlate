@@ -13,7 +13,10 @@ import {
 } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { SceneBakedLighting } from "./scene-baked-lighting";
-import { bakedGpuAllocationStatus } from "./baked-lighting-resources";
+import {
+  bakedGpuAllocationStatus,
+  reserveBakedGpuBytes,
+} from "./baked-lighting-resources";
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -240,6 +243,28 @@ it("accounts unexpected native buffer capacity and keeps realtime geometry after
   await expect(owner.load(f.optionsFor(f.mesh))).rejects.toThrow(/quarantined/);
   expect(allocate).toHaveBeenCalledTimes(allocations);
   owner.dispose();
+});
+
+it("retains WebGPU charges when disposal occurs inside the current end-frame notification", async () => {
+  const { engine, scene } = createTestEngine();
+  cleanup.push(() => {
+    scene.dispose();
+    engine.dispose();
+  });
+  // Only backend identity is substituted for this observer-boundary regression;
+  // the browser proof exercises actual native deferred destruction.
+  vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
+  const lease = reserveBakedGpuBytes(engine, 100);
+  engine.onEndFrameObservable.addOnce(() => lease.release());
+  engine.endFrame();
+  expect(bakedGpuAllocationStatus(engine).managedBytes).toBe(100);
+  await Promise.resolve();
+  expect(bakedGpuAllocationStatus(engine).managedBytes).toBe(100);
+  const laterOwner = vi.fn();
+  engine.onEndFrameObservable.add(laterOwner);
+  engine.endFrame();
+  expect(bakedGpuAllocationStatus(engine).managedBytes).toBe(0);
+  expect(laterOwner).toHaveBeenCalledOnce();
 });
 
 it("discards uploads when a receiver moves and restores realtime geometry on later invalidation", async () => {

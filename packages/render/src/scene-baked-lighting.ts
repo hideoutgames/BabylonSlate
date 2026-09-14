@@ -102,34 +102,47 @@ async function prepareGeometry(
     engine.isWebGPU ? Math.ceil(bytes / 4) * 4 : bytes;
   const bytes =
     capacity(source.indices.byteLength) +
-    source.attributes.reduce(
-      (total, attribute) => total + capacity(attribute.data.byteLength),
-      0,
-    );
+    source.attributes.reduce((total, attribute) => {
+      const stride = attribute.data.byteLength / source.vertexCount;
+      // Babylon retains both packed source and aligned sampling buffers.
+      const aligned =
+        engine._features.forceVertexBufferStrideAndOffsetMultiple4Bytes &&
+        stride % 4 !== 0
+          ? Math.ceil(stride / 4) * 4 * source.vertexCount
+          : 0;
+      return total + capacity(attribute.data.byteLength) + aligned;
+    }, 0);
   const reservation = reserveBakedGpuBytes(engine, bytes, ceiling);
   let geometry: Geometry | undefined;
   let staging: Mesh | undefined;
   let nativeAllocationStarted = false;
   try {
-    geometry = new Geometry("Baked receiver geometry", scene);
-    for (const attribute of source.attributes) {
-      const buffer = new VertexBuffer(engine, attribute.data, attribute.name, {
-        updatable: false,
-        postponeInternalCreation: true,
-        stride: attribute.data.byteLength / source.vertexCount,
-        size: attribute.components,
-        type: formats[attribute.componentType],
-        normalized: attribute.normalized,
-        useBytes: true,
-      });
-      geometry.setVerticesBuffer(buffer, source.vertexCount);
-    }
-    geometry.setIndices(source.indices, source.vertexCount, false);
-    staging = hiddenMesh(scene, "Baked geometry upload");
     const complete = beginBakedUpload(engine);
     let failed: unknown;
     try {
+      geometry = new Geometry("Baked receiver geometry", scene);
       nativeAllocationStarted = true;
+      for (const attribute of source.attributes) {
+        const buffer = new VertexBuffer(
+          engine,
+          attribute.data,
+          attribute.name,
+          {
+            updatable: false,
+            // Postponing only the source would create the aligned copy twice.
+            // Create both once, inside the owning upload error scope.
+            postponeInternalCreation: false,
+            stride: attribute.data.byteLength / source.vertexCount,
+            size: attribute.components,
+            type: formats[attribute.componentType],
+            normalized: attribute.normalized,
+            useBytes: true,
+          },
+        );
+        geometry.setVerticesBuffer(buffer, source.vertexCount);
+      }
+      geometry.setIndices(source.indices, source.vertexCount, false);
+      staging = hiddenMesh(scene, "Baked geometry upload");
       geometry.applyToMesh(staging);
     } catch (error) {
       failed = error;
@@ -137,24 +150,25 @@ async function prepareGeometry(
     await complete();
     if (failed) throw failed;
     if (
-      !geometry.isReady() ||
+      !geometry?.isReady() ||
       !geometry.getIndexBuffer() ||
       Object.values(geometry.getVertexBuffers() ?? {}).some(
-        (buffer) => !buffer.getBuffer(),
+        (buffer) => !buffer.getBuffer() || !buffer.effectiveBuffer,
       )
     )
       throw new Error("Baked receiver buffers are not ready.");
     const buffers = new Set([
       geometry.getIndexBuffer()!,
-      ...Object.values(geometry.getVertexBuffers() ?? {}).map((buffer) =>
+      ...Object.values(geometry.getVertexBuffers() ?? {}).flatMap((buffer) => [
         buffer.getBuffer()!,
-      ),
+        buffer.effectiveBuffer,
+      ]),
     ]);
     reservation.reconcile(
       [...buffers].reduce((total, buffer) => total + buffer.capacity, 0),
     );
-    geometry.releaseForMesh(staging);
-    staging.dispose();
+    geometry.releaseForMesh(staging!);
+    staging!.dispose();
     staging = undefined;
     const owned = geometry;
     let released = false;

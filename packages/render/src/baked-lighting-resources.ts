@@ -77,6 +77,7 @@ export function reserveBakedGpuBytes(
         // Pinned 9.20 destroys deferred GPU buffers/textures before onEndFrame.
         // Scene/view disposal alone does not make these bytes available to a sibling.
         let accounted = true;
+        let frame: ReturnType<typeof engine.onEndFrameObservable.add>;
         const finish = () => {
           if (!accounted) return;
           accounted = false;
@@ -84,8 +85,14 @@ export function reserveBakedGpuBytes(
           disposed?.remove(true);
           pool.bytes -= bytes;
         };
-        const frame = engine.onEndFrameObservable.add(finish);
         const disposed = engine.onDisposeObservable.add(finish);
+        // Babylon iterates a live observer array. A release requested by an
+        // endFrame observer must not attach to that already-destroyed boundary.
+        queueMicrotask(() => {
+          if (!accounted) return;
+          if (engine.isDisposed) finish();
+          else frame = engine.onEndFrameObservable.add(finish);
+        });
       } else pool.bytes -= bytes;
     },
     quarantine() {
