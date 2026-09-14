@@ -2,6 +2,7 @@
 import {
   Color3,
   Color4,
+  DirectionalLight,
   Camera,
   EngineStore,
   FreeCamera,
@@ -17,6 +18,7 @@ import {
 } from "@babylonjs/core";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import {
+  applyAuthoredLightProperties,
   compileMaterialPlan,
   createAppEngine,
   createAppWebGpuEngine,
@@ -27,6 +29,7 @@ import {
   ResourceCache,
   setSceneRenderSettings,
 } from "@babylonslate/render";
+import { normalizeShadowSettings } from "@babylonslate/core";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
@@ -37,6 +40,7 @@ export async function runWebGpuProof() {
   const captures = [];
   const previews = [];
   const helpers = [];
+  const shadows = [];
   let cancelledEngineReleased = false;
   for (const backend of ["webgl2", "webgpu"] as const) {
     if (backend === "webgpu" && !(await WebGPUEngine.IsSupportedAsync))
@@ -165,6 +169,9 @@ export async function runWebGpuProof() {
           pixels: await capturePreview(engine, mode),
         });
       }
+      engine.setSize(96, 72);
+      for (const mode of ["pbr", "cel"] as const)
+        shadows.push({ backend, mode, ...await captureSunShadows(engine, mode) });
     } finally {
       engine.dispose();
       canvas.remove();
@@ -174,9 +181,70 @@ export async function runWebGpuProof() {
     captures,
     previews,
     helpers,
+    shadows,
     cancelledEngineReleased,
     retainedEngines: EngineStore.Instances.length - initialEngines,
   };
+}
+
+async function captureSunShadows(engine: AbstractEngine, mode: "pbr" | "cel") {
+  const scene = new Scene(engine);
+  scene.clearColor = new Color4(0.04, 0.07, 0.12, 1);
+  const camera = new FreeCamera("shadow camera", new Vector3(0, 4, -7), scene);
+  camera.setTarget(new Vector3(0, 0.3, 0));
+  camera.minZ = 0.1;
+  camera.maxZ = 30;
+  new HemisphericLight("fill", Vector3.Up(), scene).intensity = 0.12;
+  const light = new DirectionalLight("sun", new Vector3(2, -4, 2).normalize(), scene);
+  const setShadows = (enabled: boolean) => applyAuthoredLightProperties(light, {
+    intensity: 2, castShadows: enabled,
+  });
+  setShadows(true);
+  const native = new PBRMaterial("native receiver", scene);
+  native.albedoColor = new Color3(0.05, 0.55, 0.12);
+  native.metallic = 0;
+  native.roughness = 1;
+  setSceneRenderSettings(scene, { mode, shadows: normalizeShadowSettings({
+    cascades: 2, mapSize: 256, autoBias: false, normalBias: 0.02,
+    depthBias: 0.0001, distance: 25,
+  }) });
+  const document = createDefaultMaterialDocument("graph receiver");
+  document.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.05, 0.55, 0.12];
+  const lowered = lowerMaterialDocument(document);
+  if (!lowered.ok) throw new Error("Shadow surface did not lower");
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "graph receiver" });
+  if (!compiled.ok || (await compiled.ready).some((entry) => entry.severity === "error"))
+    throw new Error("Shadow surface did not compile");
+  try {
+    for (const [index, material] of [native, compiled.material].entries()) {
+      const x = index === 0 ? -1.5 : 1.5;
+      const floor = MeshBuilder.CreateGround(`receiver-${index}`, { width: 3, height: 6 }, scene);
+      floor.position.x = x;
+      floor.material = material;
+      const caster = MeshBuilder.CreateBox(`caster-${index}`, { width: 0.7, depth: 0.7, height: 1.4 }, scene);
+      caster.position.set(x, 0.7, 0);
+      caster.material = material;
+    }
+    setSceneRenderSettings(scene);
+    const read = async () => {
+      await scene.whenReadyAsync(true);
+      for (let frame = 0; frame < 3; frame++) {
+        engine.beginFrame();
+        scene.render(false);
+        engine.endFrame();
+      }
+      const pixels = await engine.readPixels(0, 0, 96, 72);
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
+    };
+    const shadowed = await read();
+    setShadows(false);
+    setSceneRenderSettings(scene);
+    const unshadowed = await read();
+    return { shadowed, unshadowed };
+  } finally {
+    compiled.dispose();
+    scene.dispose();
+  }
 }
 
 async function captureHelper(engine: AbstractEngine, kind: "grid" | "bounds" | "msdf") {

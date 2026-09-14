@@ -12,6 +12,8 @@ If cleanup itself fails, the controller retains the uncertain ownership and bloc
 
 The editor grid, 2D camera bounds and MSDF text select native WGSL on WebGPU and GLSL on WebGL2. These built-in helpers do not require a downloaded GLSL compiler or translation runtime; the project transition browser fixture blocks those external requests.
 
+Authored PBR and CEL graph lighting binds cascaded shadows to each graph's connected View input. The pinned Babylon WGSL include otherwise refers to an absent native uniform, causing GPU validation failures and blank frames. The substitution is confined to app-owned blocks; shared native shader includes remain intact. The real-browser fixture requires visible sun shadows on both native and graph receivers, for both shading modes and backends, and rejects GPU validation warnings.
+
 The isolated WebGPU proof checks native and authored PBR/CEL surfaces, numeric grid/bounds/MSDF helper pixels, texture upload and readback. Authored NodeMaterials select the owning Engine's native shader language, avoiding an implicit GLSL translation dependency. A separate full-editor case switches the project backend three times, preserves an unsaved transform and Undo/Redo, enters and exits Play, and checks one remaining Engine. Standalone player backend selection and broader feature compatibility are separate integration work; these cases do not qualify WebGPU on iPad.
 
 The explicit local WebGPU browser case requests Chromium's SwiftShader WebGPU adapter and a software WebGL adapter (D3D11 WARP on Windows, SwiftShader elsewhere). Windows requires ANGLE to expose a D3D11 device to the WebGPU decoder. The fixture rejects external shader-compiler downloads and records the actual adapter; this is software functional evidence only.
