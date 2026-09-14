@@ -22,6 +22,12 @@ vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     openDocuments: [
       {
+        id: "asset-settings:assets/environment.babasset",
+        ref: { kind: "asset-settings", path: "assets/environment.babasset", label: "Environment" },
+        content: { usage: "skybox", dimension: "cube", container: "dds", encoding: "linearFloat32", width: 2, height: 2, mipLevels: 2, prefiltered: true },
+        layout: null, dirty: false,
+      },
+      {
         id: "font:assets/Display.font.babasset",
         ref: {
           kind: "font",
@@ -150,6 +156,16 @@ afterEach(() => {
 });
 
 describe("AssetDocumentWorkspace authoring", () => {
+  it("presents cube metadata without exposing 2D downsampling or compression", () => {
+    render(<AssetDocumentWorkspace documentId="asset-settings:assets/environment.babasset" />);
+    expect(screen.getByText("Environment Cube")).toBeTruthy();
+    expect(screen.getByLabelText("Encoding")).toHaveProperty("value", "Linear RGBA32F");
+    expect(screen.getByLabelText("Roughness Mip Levels")).toHaveProperty("value", "2");
+    expect(screen.queryByLabelText("Usage")).toBeNull();
+    expect(screen.queryByLabelText("Downsample")).toBeNull();
+    expect(screen.queryByTestId("texture-preview")).toBeNull();
+    expect(applyAssetDocumentChange).not.toHaveBeenCalled();
+  });
   it("reports an unavailable font source instead of claiming the preview is ready", async () => {
     readAssetChunk.mockResolvedValueOnce(new Uint8Array());
     render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);

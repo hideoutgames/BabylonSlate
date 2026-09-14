@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Mesh,
   MeshBuilder,
+  HemisphericLight,
   NodeMaterial,
   NodeMaterialModes,
   NullEngine,
@@ -9,11 +10,13 @@ import {
   SpotLight,
   ShadowGenerator,
   ShaderMaterial,
+  StandardMaterial,
   Scene,
   ThinEngine,
   UniversalCamera,
   Vector3,
   Viewport,
+  type Effect,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
@@ -237,6 +240,77 @@ describe("prewarmSceneMaterials", () => {
       expect(engine.areAllEffectsReady()).toBe(false);
     } finally {
       sibling.dispose();
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
+  it.each([PBRMaterial, StandardMaterial])("waits for a requested hot-swap variant on a frozen %s without waiting for another scene's effect", async (MaterialType) => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 2, -10), scene);
+    engine.currentRenderPassId = scene.activeCamera.renderPassId;
+    new HemisphericLight("fill", Vector3.Up(), scene);
+    const mesh = MeshBuilder.CreateBox("owned", {}, scene);
+    const material = new MaterialType("owned", scene);
+    mesh.material = material;
+    try {
+      await material.forceCompilationAsync(mesh);
+      expect(isSceneFrameReady(scene)).toBe(true);
+      const previous = mesh.subMeshes[0]!.effect!;
+      material.freeze();
+      scene.incrementRenderId();
+      expect(mesh.isReady(true)).toBe(true);
+      const onBind = vi.fn();
+      mesh.onBeforeBindObservable.add(onBind);
+      const unrelated = engine.createEffect({
+        vertexSource: "attribute vec3 position; void main() { gl_Position = vec4(position, 1.0); }",
+        fragmentSource: "precision highp float; void main() { gl_FragColor = vec4(1.0); }",
+      }, ["position"], [], [], "#define UNRELATED_PREVIEW");
+      vi.spyOn(unrelated, "isReady").mockReturnValue(false);
+      vi.spyOn(engine, "areAllEffectsReady").mockImplementation(() => ThinEngine.prototype.areAllEffectsReady.call(engine));
+
+      // NullEngine completes GPU compilation synchronously. Delay that boundary
+      // while keeping real material defines, hot swapping and draw wrappers.
+      let compiled = false;
+      const delayed = new WeakSet<Effect>();
+      const createEffect = engine.createEffect.bind(engine);
+      vi.spyOn(engine, "createEffect").mockImplementation((...args) => {
+        const effect = createEffect(...args);
+        if (effect !== previous && !delayed.has(effect)) {
+          delayed.add(effect);
+          const isReady = effect.isReady.bind(effect);
+          vi.spyOn(effect, "isReady").mockImplementation(() => compiled && isReady());
+        }
+        return effect;
+      });
+      new SpotLight("new light", new Vector3(0, 3, -2), Vector3.Down(), 1, 1, scene);
+      // A settings update can request a new variant within the same scene frame.
+      expect(mesh.isReady(true)).toBe(true); // Babylon can still draw the old variant.
+      expect(mesh.subMeshes[0]!.effect).toBe(previous);
+      expect(isSceneFrameReady(scene)).toBe(false);
+      expect(material.allowShaderHotSwapping).toBe(true);
+      expect(material.checkReadyOnEveryCall).toBe(false);
+      expect(material.isFrozen).toBe(true);
+      // Native callers after our probe must keep waiting, including a real draw.
+      expect(mesh.isReady(true)).toBe(false);
+      scene.render();
+      expect(onBind).not.toHaveBeenCalled();
+      compiled = true;
+      expect(isSceneFrameReady(scene)).toBe(true);
+      expect(mesh.subMeshes[0]!.effect).not.toBe(previous);
+      expect(mesh.subMeshes[0]!.effect!.defines).toContain("#define SPOTLIGHT1");
+      scene.render();
+      expect(onBind).toHaveBeenCalled();
+      expect(engine.areAllEffectsReady()).toBe(false);
+      const failure = new Error("material probe failed");
+      vi.spyOn(material, "isReadyForSubMesh").mockImplementationOnce(() => { throw failure; });
+      expect(() => isSceneFrameReady(scene)).toThrow(failure);
+      expect(material.allowShaderHotSwapping).toBe(true);
+      expect(material.checkReadyOnEveryCall).toBe(false);
+      expect(material.isFrozen).toBe(true);
+    } finally {
+      vi.restoreAllMocks();
       scene.dispose();
       engine.dispose();
     }

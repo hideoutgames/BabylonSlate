@@ -4,6 +4,7 @@ import {
   NodeMaterial,
   NodeMaterialModes,
   NullEngine,
+  type AbstractMesh,
   type Material,
   type RenderTargetTexture,
   type Scene,
@@ -200,8 +201,54 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
 /** Babylon exposes registration, but no enumeration, of custom readiness checks. */
 type SceneReadinessInternals = { _isReadyChecks: readonly { isReady(): boolean }[] };
 
+/** Probe requested material variants instead of Babylon's older hot-swap effects. */
+export function isMeshFrameReady(mesh: AbstractMesh): boolean {
+  const scene = mesh.getScene();
+  const states = new Map<Material, readonly [boolean, boolean, boolean]>();
+  const capture = (material: Material | null | undefined): void => {
+    if (!material || states.has(material)) return;
+    states.set(material, [material.allowShaderHotSwapping, material.checkReadyOnEveryCall, material.checkReadyOnlyOnce]);
+    // Material.forceCompilation also disables hot swapping. Its temporary
+    // submesh bypasses these caches; our live submeshes need public cache flags.
+    material.allowShaderHotSwapping = false;
+    material.checkReadyOnEveryCall = true;
+    material.checkReadyOnlyOnce = false;
+    if (material instanceof MultiMaterial)
+      for (const child of material.subMaterials) capture(child);
+  };
+  try {
+    capture(mesh.material ?? scene.defaultMaterial);
+    if (mesh.subMeshes) {
+      for (const part of mesh.subMeshes) {
+        const material = part.getMaterial();
+        capture(material);
+        // A strict probe can replace a ready effect with a compiling variant.
+        // Babylon 9.20 otherwise retains the previous effect's frozen/same-frame
+        // readiness and can bind the new effect before its pipeline exists.
+        if (material?._storeEffectOnSubMeshes) {
+          const wrapper = part._drawWrapperOverride ?? part._getDrawWrapper();
+          if (wrapper) wrapper._wasPreviouslyReady = false;
+          const defines = part.materialDefines;
+          if (defines) defines._renderId = -1;
+        }
+      }
+    }
+    for (const material of states.keys()) {
+      if (!material._storeEffectOnSubMeshes)
+        material._getDrawWrapper()._wasPreviouslyReady = false;
+    }
+    return mesh.isReady(true);
+  } finally {
+    for (const [material, [hotSwap, everyCall, onlyOnce]] of states) {
+      material.allowShaderHotSwapping = hotSwap;
+      material.checkReadyOnEveryCall = everyCall;
+      material.checkReadyOnlyOnce = onlyOnce;
+    }
+  }
+}
+
 /** Preserve shared render state even when Babylon's RTT probe throws mid-pass. */
-function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
+export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   const engine = scene.getEngine();
   const camera = scene.activeCamera;
   const sceneUbo = scene.getSceneUniformBuffer();
@@ -279,7 +326,7 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
     for (const mesh of scene.meshes) {
       if (!mesh.subMeshes?.length) continue;
       // Start all consumers' compilation even when an earlier one is unready.
-      if (!mesh.isReady(true)) { ready = false; continue; }
+      if (!isMeshFrameReady(mesh)) { ready = false; continue; }
       const instanced = mesh.hasThinInstances || mesh.getClassName() === "InstancedMesh" ||
         mesh.getClassName() === "InstancedLinesMesh" || Boolean(engine.getCaps().instancedArrays && mesh instanceof Mesh && mesh.instances.length);
       for (const step of scene._isReadyForMeshStage) {

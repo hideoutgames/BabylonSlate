@@ -54,6 +54,7 @@ import {
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScene,
   skyboxFaceGuidsFromScene,
+  environmentTextureGuidsFromScenes,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
@@ -609,6 +610,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         );
         controller.signal.throwIfAborted();
         const extraTextureGuids = [
+          ...environmentTextureGuidsFromScenes([scene]),
           ...materials.textureGuids,
           ...skyboxFaceGuidsFromScene(scene),
           ...overlayTextureGuidsFromScene(scene),
@@ -869,6 +871,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
         renderingBaseline: () => Record<string, unknown> | null;
+        environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
       };
     };
@@ -880,6 +883,24 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const measurements = new Set<() => void>();
 
     host.__babylonslateViewportTest = {
+      environmentTextureSamples: async () => {
+        const handle = engineRef.current;
+        const texture = handle?.scene.environmentTexture;
+        if (!handle || !texture) return null;
+        if (!texture.isReady()) return { ready: false, loadingError: texture.loadingError,
+          error: texture.errorObject ? { message: texture.errorObject.message, exception: String(texture.errorObject.exception) } : null,
+          size: texture.getSize(), isCube: texture.isCube };
+        const size = texture.getSize();
+        const lastMip = Math.floor(Math.log2(size.width));
+        const samples = [];
+        for (const face of [0, 5]) for (const level of [...new Set([0, lastMip])]) {
+          const pixels = await texture.readPixels(face, level, undefined, true, false, 0, 0, 1, 1);
+          samples.push({ face, level, type: pixels?.constructor.name, values: pixels ? Array.from(pixels as Uint8Array | Float32Array) : null });
+        }
+        return { size, isCube: texture.isCube, gammaSpace: texture.gammaSpace, samples,
+          sceneConsumers: handle.engine.scenes.filter((scene) => scene.environmentTexture === texture).length,
+          gpuType: texture.getInternalTexture()?.type };
+      },
       measureRenderingBaseline: async (durationMs) => {
         for (const cancel of measurements) cancel();
         const handle = engineRef.current;
@@ -992,6 +1013,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           engineScenes: handle.engine.scenes.length,
           estimatedTextureBytes: handle.resourceCache.accountedBytes(),
           estimatedGeometryBytes: handle.accountedGeometryBytes(),
+          ktx2Uploads: handle.engine.getLoadedTexturesCache()
+            .filter((texture) => texture.isReady && texture._extension === ".ktx2")
+            .map((texture) => ({ format: texture.format, type: texture.type, mips: texture.generateMipMaps })),
           sceneOverrides: sceneRef.current?.settings.shadowOverrides,
           capabilities: {
             maxTextureSize: caps.maxTextureSize,
