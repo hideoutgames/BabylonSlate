@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AddComponentDialog } from "./add-component-dialog";
-import type { AddComponentItem } from "../panels/add-component-catalog";
+import { projectAddComponentItems, type AddComponentItem } from "../panels/add-component-catalog";
 
 afterEach(() => {
   cleanup();
@@ -17,6 +17,21 @@ const projectModel: AddComponentItem = {
 };
 
 describe("AddComponentDialog", () => {
+  it("shows the class icon and color when choosing a nested ActorComponent subclass", () => {
+    const onSelect = vi.fn();
+    const projectItems = projectAddComponentItems([
+      { header: { guid: "health", name: "Health", type: "Class", parentClass: "ActorComponent" } },
+      { header: { guid: "regen", name: "RegenHealth", type: "Class", parentClass: "Health" } },
+    ]);
+    render(<AddComponentDialog open onOpenChange={vi.fn()} onSelect={onSelect} projectItems={projectItems} />);
+    const row = screen.getByTestId("add-component-catalog-item-class-RegenHealth");
+    const icon = row.querySelector("svg[data-type-icon]");
+    expect(icon?.getAttribute("data-type-icon")).toBe("ActorComponent");
+    expect(icon?.getAttribute("stroke")).toBe("var(--asset-animation)");
+    fireEvent.click(row);
+    expect(onSelect).toHaveBeenCalledWith({ classId: "RegenHealth", properties: {} });
+  });
+
   it("passes classId and property overrides when a project Model is picked", () => {
     const onSelect = vi.fn();
     render(

@@ -41,12 +41,30 @@ describe("component nodes", () => {
   });
 
   it("uses a classRef pin for component classId", () => {
-    for (const id of ["component.get", "component.has", "component.add"] as const) {
+    for (const id of [
+      "component.get",
+      "component.has",
+      "component.add",
+      "component.getFirstOfType",
+      "component.getAllOfType",
+    ] as const) {
       const def = componentNodes.find((node) => node.id === id);
       expect(def?.pins({}).find((entry) => entry.id === "classId")?.type).toEqual(
         classRef("ActorComponent"),
       );
     }
+  });
+
+  it("scene component query outputs support object references and arrays", () => {
+    const registry = createDefaultNodeRegistry();
+    expect(registry.get("component.getFirstOfType")?.pins({})
+      .find((entry) => entry.id === "out")?.type).toEqual({
+      kind: "objectRef", classId: "ActorComponent",
+    });
+    expect(registry.get("component.getAllOfType")?.pins({})
+      .find((entry) => entry.id === "out")?.type).toEqual({
+      kind: "array", element: { kind: "objectRef", classId: "ActorComponent" },
+    });
   });
 
   it("Get Component Ref uses typed objectRef and implicit self", () => {

@@ -2080,7 +2080,7 @@ describe("GraphEditor", () => {
     expect(preview?.compareDocumentPosition(label!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it("shows constraint type names on unconnected object and asset inputs", () => {
+  it("shows the selected class and constraint names on other reference inputs", () => {
     const graph: GraphDocument = {
       nodes: [
         {
@@ -2089,6 +2089,7 @@ describe("GraphEditor", () => {
           position: { x: 0, y: 0 },
           data: {
             title: "Spawn Actor",
+            "default:classId": "Mannequin",
             __pins: [
               {
                 id: "classId",
@@ -2133,7 +2134,7 @@ describe("GraphEditor", () => {
     );
     expect(
       container.querySelector('[data-pin-default="classRef"]')?.textContent,
-    ).toBe("Actor");
+    ).toBe("Mannequin");
     expect(
       container.querySelector('[data-pin-default="objectRef"]')?.textContent,
     ).toBe("CameraComponent");

@@ -181,7 +181,10 @@ describe("World tick", () => {
       onCreation: () => { events.push("created"); },
       onDestroyed: () => { events.push("destroyed"); },
     } });
-    const component = world.createComponent({ classId: "ActorComponent" });
+    const component = world.createComponent({ classId: "ActorComponent", hooks: {
+      onCreation: () => { events.push("component-created"); },
+      onDestroyed: () => { events.push("component-destroyed"); },
+    } });
     actor.attachComponent(component);
     world.spawnActor(actor);
     world.destroyActorInstance(actor);

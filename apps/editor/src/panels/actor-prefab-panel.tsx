@@ -4,6 +4,7 @@ import {
   PanelFrame,
   TreeView,
   TypeVisualIcon,
+  engineParentOf,
   resolveTypeVisual,
   walkAncestry,
   type TreeViewNode,
@@ -37,6 +38,7 @@ export function flattenPrefabComponents(
   components: readonly PrefabComponentView[],
   collapsed: ReadonlySet<string>,
   assetLabel?: (guid: string) => string | undefined,
+  parentOf: (id: string) => string | null | undefined = engineParentOf,
 ): TreeViewNode[] {
   const rows: TreeViewNode[] = [];
   const roots = childrenOfPrefabParent(components, null);
@@ -62,7 +64,10 @@ export function flattenPrefabComponents(
         expanded,
         icon: (
           <TypeVisualIcon
-            visual={resolveTypeVisual({ classId: component.classId })}
+            visual={resolveTypeVisual({
+              classId: component.classId,
+              ancestry: walkAncestry(component.classId, parentOf),
+            })}
           />
         ),
         trailing: inherited ? (
@@ -122,6 +127,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         (guid) =>
           listedAssets.find((asset) => asset.header.guid === guid)?.header
             .name,
+        classParentLookup(listedAssets),
       ),
     [collapsed, components, listedAssets],
   );

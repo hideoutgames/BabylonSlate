@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Actor, ClassRegistry } from "@babylonslate/object-model";
+import { Actor, ActorComponent, ClassRegistry } from "@babylonslate/object-model";
 import {
   compileGraph,
   type GraphNode,
@@ -185,6 +185,101 @@ describe("ScriptHost utility bindings", () => {
     expect(messages[0].indexOf("h1")).toBeLessThan(messages[0].indexOf("h2"));
     expect(messages[0].indexOf("h2")).toBeLessThan(messages[0].indexOf("h3"));
     expect(messages[1]).toContain("h1");
+  });
+
+  it("compiled component queries return usable live references in actor and attachment order", async () => {
+    const registry = createDefaultNodeRegistry();
+    const classRegistry = new ClassRegistry();
+    classRegistry.register({
+      id: "Health", parentClassId: "ActorComponent", kind: "component",
+      variables: [], implementedInterfaces: [],
+    });
+    classRegistry.register({
+      id: "Shield", parentClassId: "Health", kind: "component",
+      variables: [], implementedInterfaces: [],
+    });
+    const firstActor = new Actor({ classId: "Actor" });
+    const secondActor = new Actor({ classId: "Actor" });
+    const overlayActor = new Actor({ classId: "SceneLayerActor", sceneLayerId: "overlay" });
+    const destroyedActor = new Actor({ classId: "Actor" });
+    const first = new ActorComponent({ classId: "Shield" });
+    const second = new ActorComponent({ classId: "Health" });
+    const third = new ActorComponent({ classId: "Health" });
+    const overlay = new ActorComponent({ classId: "Health" });
+    const destroyed = new ActorComponent({ classId: "Health" });
+    firstActor.attachComponent(new ActorComponent({ classId: "AudioComponent" }));
+    firstActor.attachComponent(destroyed);
+    firstActor.attachComponent(first);
+    firstActor.attachComponent(second);
+    secondActor.attachComponent(third);
+    overlayActor.attachComponent(overlay);
+    destroyedActor.attachComponent(new ActorComponent({ classId: "Health" }));
+    destroyed.destroyed = true;
+    destroyedActor.destroyed = true;
+    let actors = [destroyedActor, firstActor, secondActor, overlayActor];
+    const host = new ScriptHost(stubServices({ classRegistry, getActors: () => actors }));
+    const graph: LogicGraph = {
+      id: "component-queries", kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "first", "component.getFirstOfType", { "default:classId": "Health" }),
+        node(registry, "all", "component.getAllOfType", { "default:classId": "Health" }),
+        node(registry, "storeFirst", "variables.set", {
+          variableName: "First", typeId: "object", typeClassId: "ActorComponent", implicitSelf: true,
+        }),
+        node(registry, "storeAll", "variables.set", {
+          variableName: "All", typeId: "object", typeClassId: "ActorComponent", container: "array", implicitSelf: true,
+        }),
+        node(registry, "update", "variables.set", { variableName: "Health", typeId: "float" }),
+      ],
+      edges: [
+        { id: "start", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "storeFirst", targetPinId: "execIn" },
+        { id: "next", sourceNodeId: "storeFirst", sourcePinId: "execOut", targetNodeId: "storeAll", targetPinId: "execIn" },
+        { id: "mutate", sourceNodeId: "storeAll", sourcePinId: "execOut", targetNodeId: "update", targetPinId: "execIn" },
+        { id: "firstValue", sourceNodeId: "first", sourcePinId: "out", targetNodeId: "storeFirst", targetPinId: "value" },
+        { id: "allValue", sourceNodeId: "all", sourcePinId: "out", targetNodeId: "storeAll", targetPinId: "value" },
+        { id: "target", sourceNodeId: "first", sourcePinId: "out", targetNodeId: "update", targetPinId: "target" },
+      ],
+    };
+    const runner = new Actor({ classId: "Runner" });
+    await host.load(toScript(graph, registry, "Runner"));
+    host.invokeEvent("Runner", "onBeginPlay", runner);
+    expect(runner.getVariable("First")).toBe(first);
+    const all = runner.getVariable("All") as ActorComponent[];
+    expect(all).toHaveLength(4);
+    expect(all[0]).toBe(first);
+    expect(all[1]).toBe(second);
+    expect(all[2]).toBe(third);
+    expect(all[3]).toBe(overlay);
+    expect(first.getVariable("Health")).toBe(0);
+    expect(second.getVariable("Health")).toBeUndefined();
+
+    // Query the current scene each time, rather than retaining earlier results.
+    const ctx = host.createContext(runner, 0, 0);
+    first.destroyed = true;
+    expect(ctx.getFirstComponentOfType("Health")).toBe(second);
+    const added = new ActorComponent({ classId: "Shield" });
+    secondActor.attachComponent(added);
+    expect(ctx.getAllComponentsOfType("Health")).toEqual([second, third, added, overlay]);
+    actors = [new Actor({ classId: "Actor" })];
+    expect(ctx.getFirstComponentOfType("Health")).toBeNull();
+    expect(ctx.getAllComponentsOfType("Health")).toEqual([]);
+  });
+
+  it("component queries handle missing types and worlds and match exact classes without a registry", () => {
+    const actor = new Actor({ classId: "Actor" });
+    const component = new ActorComponent({ classId: "MeshComponent" });
+    actor.attachComponent(component);
+    const ctx = new ScriptHost(stubServices({ getActors: () => [actor] })).createContext(null, 0, 0);
+    expect(ctx.getFirstComponentOfType("MeshComponent")).toBe(component);
+    expect(ctx.getAllComponentsOfType("MeshComponent")).toEqual([component]);
+    for (const classId of ["", "MissingComponent", "ActorComponent"]) {
+      expect(ctx.getFirstComponentOfType(classId)).toBeNull();
+      expect(ctx.getAllComponentsOfType(classId)).toEqual([]);
+    }
+    const empty = new ScriptHost(stubServices()).createContext(null, 0, 0);
+    expect(empty.getFirstComponentOfType("ActorComponent")).toBeNull();
+    expect(empty.getAllComponentsOfType("ActorComponent")).toEqual([]);
   });
 
   it("Add World Offset mutates actor location in place", () => {
