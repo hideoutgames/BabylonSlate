@@ -4,7 +4,7 @@ import { DEFAULT_RENDER_PROJECT_SETTINGS } from "../packages/core/src/index";
 import { collectExportReachability, exportGame, PREVIEW_STOP_MESSAGE } from "../packages/exporter/src/index";
 import { serveExportFiles } from "./export-static-server";
 import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene } from "./open-test-project";
+import { clickListedTestProject, openMainScene, waitForEditorInteractive } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 import { DISABLED_MASK_GUID, POST_PROCESS_SCENE_GUID, postProcessFixture } from "./post-process-fixture";
 import { saveAllIfEnabled } from "./save-all";
@@ -67,6 +67,9 @@ test("saved duplicate Post Process texture overrides survive editor reload, Play
   await expectPixel(page.getByTestId("viewport-canvas"), expected, "editor-disabled-again", info);
   await saveAllIfEnabled(page);
   await page.reload();
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await clickListedTestProject(page);
+  await waitForEditorInteractive(page);
   await openMainScene(page);
   await expectPixel(page.getByTestId("viewport-canvas"), expected, "editor-reopened", info);
   await clickPlayAndWaitForOverlay(page);
