@@ -162,3 +162,52 @@ for (const clustered of [false, true])
       }
     },
   );
+
+
+test("Shared managed lighting reservations constrain real clustered and shadow allocations across scenes", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if ((message.type() === "error" || message.type() === "warning") &&
+        /shader|ERROR: 0:|VALIDATE_STATUS|GL_INVALID|GL_OUT_OF_MEMORY|context lost/i.test(message.text()))
+      errors.push(message.text());
+  });
+  await page.goto("/?test=1&framegraphShadowProof=1");
+  await page.waitForFunction(() => typeof (window as unknown as {
+    __babylonslateFrameGraphShadowProof?: unknown;
+  }).__babylonslateFrameGraphShadowProof === "function");
+  const result = await page.evaluate(() => (window as unknown as {
+    __babylonslateFrameGraphShadowProof: typeof runFrameGraphShadowProof;
+  }).__babylonslateFrameGraphShadowProof({ clustered: true, constrainedResources: true }));
+  await testInfo.attach("managed-lighting-reservations", { body: JSON.stringify(result), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  expect(result.webGLVersion).toBe(2);
+  const proof = result.resourceProof!;
+  expect(proof.before.shadowBytes).toBeGreaterThan(0);
+  expect(proof.before.clusterBytes).toBeGreaterThan(0);
+  expect(proof.starved.resources.reservedBytes).toBe(proof.before.reservedBytes);
+  expect(proof.starved.clusterCount).toBe(0);
+  expect(proof.starved.shadowMaps).toBe(0);
+  expect(proof.starved.ownedMaps).toBe(0);
+  expect(proof.starved.reason).toContain("Shared managed lighting memory");
+  expect(proof.starved.firstMapRetained).toBe(true);
+  expect(proof.recovered.clusterCount).toBeGreaterThan(0);
+  expect(proof.recovered.shadowMaps).toBe(1);
+  expect(proof.recovered.ownedMaps).toBe(2);
+  expect(proof.recovered.resources.reservedBytes).toBeLessThanOrEqual(proof.recovered.resources.limit);
+  expect(proof.recovered.resources.pendingBytes).toBe(0);
+  expect(proof.disposed.reservedBytes).toBe(0);
+  expect(result.captures).toHaveLength(3);
+  for (const capture of result.captures) {
+    expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
+    expect(capture.readinessDraws, capture.name).toBe(0);
+    expect(capture.sameMap && capture.sameMask, capture.name).toBe(true);
+    expect(capture.graph.draws, capture.name).toBeGreaterThanOrEqual(4);
+    for (const frame of [capture.graph, capture.settled, capture.forceGraph]) {
+      const difference = Math.max(...frame.pixels.map((value, index) => Math.abs(value - capture.classic.pixels[index]!)));
+      expect(difference, capture.name).toBeLessThanOrEqual(1);
+      expect(frame.pixels.some((value, index) => index % 4 === 1 && value > 60), capture.name).toBe(true);
+    }
+  }
+});

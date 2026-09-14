@@ -38,14 +38,16 @@ import {
 import { compileMaterialPlan } from "./material-compiler";
 import { isSceneFrameReady } from "./scene-perf";
 
+import { limitManagedLightingBytes, managedLightingReservations } from "./managed-lighting-resources";
+
 const engines: NullEngine[] = [];
 afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
   vi.restoreAllMocks();
 });
 
-function fixture() {
-  const engine = new NullEngine();
+function fixture(engine = new NullEngine()) {
+  if (!engines.includes(engine)) {
   engines.push(engine);
   // NullEngine reports WebGL1; expose the proven WebGL2 capability boundary
   // without replacing the real container or its membership implementation.
@@ -86,6 +88,15 @@ function fixture() {
       return target;
     },
   );
+  // Pinned NullEngine omits the requested RTT format, unlike real WebGL.
+  const createTargetWithFormat = engine.createRenderTargetTexture.bind(engine);
+  vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
+    const target = createTargetWithFormat(size, options);
+    if (target.texture && typeof options === "object" && options.format !== undefined)
+      target.texture.format = options.format;
+    return target;
+  });
+  }
   const scene = new Scene(engine);
   updateSceneRenderingSettings(scene, {
     quality: normalizeRenderingQuality({
@@ -117,6 +128,79 @@ function fixture() {
 }
 
 describe("explicit clustered light ownership", () => {
+  it("starves a sibling before construction and admits it after the exact owner's lease is released", () => {
+    const first = fixture();
+    limitManagedLightingBytes(first.engine, 18224);
+    const owner = new ClusteredSceneLights(first.scene, first.lights.slice(0, 2));
+    expect(owner.status().clustered).toBe(2);
+    const sibling = fixture(first.engine);
+    const before = first.engine._renderTargetWrapperCache.slice();
+    const waiting = new ClusteredSceneLights(sibling.scene, sibling.lights.slice(0, 2));
+    expect(waiting.status().clustered).toBe(0);
+    expect(waiting.status().fallbackReason).toContain("Shared managed lighting memory");
+    expect(first.engine._renderTargetWrapperCache).toEqual(before);
+    expect(sibling.lights.every(isAuthoredLightEnabled)).toBe(true);
+    owner.dispose();
+    waiting.sync();
+    expect(waiting.status().clustered).toBe(2);
+    expect(managedLightingReservations(first.engine).reservedBytes).toBe(18224);
+    waiting.dispose();
+    expect(managedLightingReservations(first.engine).reservedBytes).toBe(0);
+  });
+
+  it("reserves replacement peaks and retains high-water bytes on shrink without reallocating settled frames", () => {
+    const { engine, scene, lights } = fixture();
+    limitManagedLightingBytes(engine, 72896);
+    const owner = new ClusteredSceneLights(scene, lights.slice(0, 2));
+    const original = owner.target(scene.activeCamera!);
+    let peak = 0;
+    const allocate = vi.mocked(engine.createRenderTargetTexture).getMockImplementation()!;
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((...args) => {
+      peak = managedLightingReservations(engine).reservedBytes;
+      return allocate(...args);
+    });
+    owner.setLights(lights);
+    expect(peak).toBe(72896);
+    expect(owner.status().clustered).toBe(48);
+    expect(owner.status().estimatedBytes).toBe(54672);
+    expect(owner.target(scene.activeCamera!)).not.toBe(original);
+    const grown = owner.target(scene.activeCamera!);
+    owner.setLights(lights.slice(0, 2));
+    for (let i = 0; i < 3; i++) { owner.sync(); owner.target(scene.activeCamera!); }
+    expect(owner.target(scene.activeCamera!)).toBe(grown);
+    expect(managedLightingReservations(engine)).toMatchObject({ clusterBytes: 54672, pendingBytes: 0 });
+    owner.setLights([]);
+    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+  });
+
+  it("preserves same-scene shadow reservations while clusters contend and recover after context restoration", () => {
+    const { engine, scene, lights } = fixture();
+    const key = new SpotLight("key", new Vector3(0, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
+    applyAuthoredLightProperties(key, { enabled: true, castShadows: true, range: 12 });
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({
+      localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 }) });
+    const shadows = sceneShadowController(scene);
+    shadows.sync();
+    const shadowBytes = managedLightingReservations(engine).shadowBytes;
+    expect(shadowBytes).toBeGreaterThan(0);
+    const generator = shadows.generator(key);
+    limitManagedLightingBytes(engine, shadowBytes + 18224);
+    const owner = new ClusteredSceneLights(scene, lights);
+    expect(owner.status().clustered).toBe(23);
+    expect(owner.limits().join()).toContain("Shared managed lighting memory");
+    shadows.sync();
+    expect(shadows.generator(key)).toBe(generator);
+    expect(managedLightingReservations(engine).reservedBytes).toBe(shadowBytes + 18224);
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    shadows.sync(); owner.sync();
+    expect(owner.status().clustered).toBe(23);
+    expect(shadows.generator(key)).not.toBeNull();
+    expect(managedLightingReservations(engine).reservedBytes).toBe(shadowBytes + 18224);
+    scene.dispose();
+    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+  });
+
   it("does not re-admit the removed cluster proxy when Babylon delivers its deferred mesh-added notification", async () => {
     const { scene, lights } = fixture();
     applyAuthoredLightProperties(lights[0]!, {
@@ -629,6 +713,7 @@ describe("explicit clustered light ownership", () => {
     owner.setLights(lights);
     expect(owner.status().clustered).toBe(0);
     expect(owner.limits().join()).toContain("Larger mask allocation rejected");
+    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
     expect(engine._renderTargetWrapperCache).toEqual(wrappers);
     expect(
       scene.textures.some((texture) => texture.name === "TileMaskTexture"),

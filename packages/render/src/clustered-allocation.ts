@@ -4,6 +4,7 @@ import { Light, type AbstractMesh, type Scene } from "@babylonjs/core";
 /** Synchronous constructor/growth boundary; cleanup releases only new owned resources. */
 export function beginClusteredAllocation(
   scene: Scene,
+  afterCleanup?: () => void,
 ): (failure: unknown) => never {
   const engine = scene.getEngine();
   const lights = new Set(scene.lights);
@@ -50,6 +51,7 @@ export function beginClusteredAllocation(
         attempt(() => texture.dispose());
     if (errors.length > 1)
       throw new AggregateError(errors, "Clustered allocation cleanup failed.");
+    afterCleanup?.();
     throw failure;
   };
 }

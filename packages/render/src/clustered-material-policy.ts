@@ -77,6 +77,26 @@ function compatible(material: Material): boolean {
   );
 }
 
+
+function unqualifiedNativeFeature(material: Material): string | undefined {
+  if (material instanceof MultiMaterial)
+    return material.subMaterials.map((child) => child && unqualifiedNativeFeature(child)).find(Boolean) ?? undefined;
+  if (material.constructor === CelMaterial)
+    return unqualifiedNativeFeature((material as CelMaterial).source);
+  if (material instanceof PBRMaterial) {
+    if (material.clearCoat.isEnabled) return "Clear Coat";
+    if (material.anisotropy.isEnabled) return "Anisotropy";
+    if (material.iridescence.isEnabled) return "Iridescence";
+    if (material.sheen.isEnabled) return "Sheen";
+    const sub = material.subSurface;
+    if (sub.isRefractionEnabled || sub.isTranslucencyEnabled || sub.isScatteringEnabled || sub.isDispersionEnabled)
+      return "Subsurface";
+  }
+  if ((material instanceof PBRMaterial || material instanceof StandardMaterial) && material.detailMap.isEnabled)
+    return "Detail Map";
+  return undefined;
+}
+
 /** Inspect actual scene consumers; unused preview/proxy/post-process materials do not select the path. */
 export function clusteredSceneMaterialReason(scene: Scene): string | undefined {
   if (!scene.lightsEnabled)
@@ -85,6 +105,9 @@ export function clusteredSceneMaterialReason(scene: Scene): string | undefined {
     // Empty transform/proxy nodes do not submit a material pass.
     if (!mesh.getTotalVertices()) continue;
     const material = mesh.material ?? scene.defaultMaterial;
+    const feature = unqualifiedNativeFeature(material);
+    if (feature)
+      return `Material "${material.name}" enables ${feature}, whose combined clustered sampler contract is not qualified; using Forward.`;
     if (!compatible(material))
       return `Material "${material.name}" has no supported clustered lighting contract; using Forward.`;
   }

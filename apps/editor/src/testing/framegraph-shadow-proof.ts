@@ -34,8 +34,10 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
+import { limitManagedLightingBytes, managedLightingReservations } from "@babylonslate/render/managed-lighting-resources";
+
 export async function runFrameGraphShadowProof(
-  options: { clustered?: boolean } = {},
+  options: { clustered?: boolean; constrainedResources?: boolean } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -291,6 +293,40 @@ export async function runFrameGraphShadowProof(
     };
   };
   try {
+    if (options.constrainedResources) {
+      const first = await fixture("pbr", "spot");
+      await first.capture("reserved");
+      const before = managedLightingReservations(engine);
+      limitManagedLightingBytes(engine, before.reservedBytes);
+      const firstMap = first.map();
+      const firstMask = first.mask();
+      const sibling = await fixture("pbr", "spot");
+      await sibling.capture("starved");
+      const starved = {
+        resources: managedLightingReservations(engine),
+        clusterCount: sibling.owner?.status().clustered,
+        reason: sibling.owner?.status().fallbackReason,
+        shadowMaps: sibling.light.getShadowGenerators()?.size ?? 0,
+        ownedMaps: sibling.scene.textures.filter((texture) => texture.isRenderTarget).length,
+        firstMapRetained: first.map() === firstMap && first.mask() === firstMask,
+      };
+      first.graph.dispose();
+      first.scene.dispose();
+      // Per-owner sync reuses released capacity; it does not revoke a sibling's
+      // live map or mutate the authored request in order to fit a new client.
+      sibling.owner?.sync();
+      await sibling.capture("released-capacity");
+      const recovered = {
+        resources: managedLightingReservations(engine),
+        clusterCount: sibling.owner?.status().clustered,
+        shadowMaps: sibling.light.getShadowGenerators()?.size ?? 0,
+        ownedMaps: sibling.scene.textures.filter((texture) => texture.isRenderTarget).length,
+      };
+      sibling.graph.dispose();
+      sibling.scene.dispose();
+      return { webGLVersion: engine.webGLVersion, captures, lifecycle,
+        resourceProof: { before, starved, recovered, disposed: managedLightingReservations(engine) } };
+    }
     for (const mode of ["pbr", "cel"] as const)
       for (const kind of ["point", "spot", "sun"] as const) {
         engine.setSize(96, 72);
@@ -371,7 +407,7 @@ export async function runFrameGraphShadowProof(
           remainingScenes: engine.scenes.length,
         });
       }
-    return { webGLVersion: engine.webGLVersion, captures, lifecycle };
+    return { webGLVersion: engine.webGLVersion, captures, lifecycle, resourceProof: undefined };
   } finally {
     engine.dispose();
     canvas.remove();

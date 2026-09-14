@@ -9,6 +9,7 @@
     "./render-scheduler": "./src/render-scheduler.ts",
     "./framegraph-post-process": "./src/framegraph-post-process.ts",
     "./clustered-scene-lights": "./src/clustered-scene-lights.ts",
+    "./managed-lighting-resources": "./src/managed-lighting-resources.ts",
     "./clustered-light-capabilities": "./src/clustered-light-capabilities.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"

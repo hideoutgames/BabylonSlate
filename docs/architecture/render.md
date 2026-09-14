@@ -379,15 +379,34 @@ Authored World Position and Camera Position graph inputs add the render origin
 back; lighting and view-direction calculations remain camera-relative. Moving
 the camera therefore does not move world-space procedural material coordinates.
 
-All Scene, Play and preview controllers share an Engine shadow reservation ceiling
-of 512 MiB and 64 faces/passes. Per-quality scene ceilings further restrict admission.
-Maps are admitted before construction, including all six cube faces, RGBA
-half/float/byte attachments selected from capabilities, conservative four-byte depth,
-and the temporary four-layer CSM constructor. Eight fragment samplers are reserved
-for materials; PCSS costs two shadow samplers, other supported filters one.
+All Scene, Play and preview controllers share a 512 MiB managed lighting texture
+reservation ceiling; shadows also retain their 64-face/pass ceiling and lower
+per-quality scene limits. Shadow maps are admitted before construction, including
+all six cube faces, capability-selected RGBA half/float/byte attachments,
+conservative four-byte depth and the temporary four-layer CSM constructor.
+Cluster mask and light-data textures consume the same Engine allowance, including
+clusters owned by the same Scene. Native construction and growth reserve the
+entire replacement peak while the previous textures remain leased. Failed owned
+allocations release a pending lease only after confirmed cleanup; uncertain cleanup
+retains it. Membership shrink retains native high-water storage until disposal.
+Actual unique InternalTexture handles reconcile declared float format, dimensions,
+mips and sample/resolve storage before publication; graph imports borrow the same
+handles without reserving duplicate storage. Diagnostics distinguish shadow,
+cluster, pending and total reserved managed-lighting bytes. Context restoration
+releases each owner's old resources before allowing its replacement; it never
+clears a sibling's reservation globally.
+
 These are conservative policy allowances, not measured VRAM or A16 performance.
-The ledger covers shadows only; full engine accounting of textures, effects,
-reflection targets and transition copies remains future work.
+The ledger covers managed shadow attachments and cluster mask/data textures only;
+proxy geometry/UBOs, material caches, effects, reflection targets, transition copies
+and separate authoring GPU contexts remain outside this ledger. Eight fragment
+samplers remain conservative legacy shadow headroom; PCSS costs two shadow
+samplers and other supported filters one. This does not qualify every combined
+material/cluster sampler layout. Enabled native Clear Coat, Anisotropy, Iridescence,
+Sheen, Subsurface and Detail Map features retain the requested path but explicitly
+fall back to Forward pending their combined binding/pixel matrix. General sampler
+admission derived from fully lowered graph/native feature bindings remains separate
+work; this texture reservation slice makes no universal sampler-safety claim.
 Play stats report CPU submission time, asynchronous engine GPU timing when
 supported, effective target size/sample count, allocated shadow passes and an
 attachment-memory estimate. Unsupported or pending GPU timing is labeled rather
