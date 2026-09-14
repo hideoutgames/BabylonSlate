@@ -37,6 +37,19 @@ export async function startPlayerWithBackend(
       meshoptBasePath: new URL("./meshopt/", document.baseURI).href,
     },
   });
+  let released = false;
+  let releaseFailure: unknown;
+  const releaseOwner = () => {
+    if (released) return;
+    released = true;
+    const errors: unknown[] = [];
+    try { owner.dispose(); } catch (error) { errors.push(error); }
+    try { options.onStopped?.(); } catch (error) { errors.push(error); }
+    if (errors.length) {
+      releaseFailure = errors.length === 1 ? errors[0] : new AggregateError(errors, "Player backend cleanup failed.");
+      throw releaseFailure;
+    }
+  };
   let player: PlayerBootHandle;
   try {
     options.signal?.throwIfAborted();
@@ -47,9 +60,9 @@ export async function startPlayerWithBackend(
     }]);
     options.signal?.throwIfAborted();
     owner.engine.inputElement = options.canvas;
-    player = startPlayer({ ...options, content, sharedEngine: owner.engine });
+    player = startPlayer({ ...options, content, sharedEngine: owner.engine, onStopped: releaseOwner });
   } catch (error) {
-    try { owner.dispose(); }
+    try { releaseOwner(); }
     catch (cleanupError) {
       throw new AggregateError([error, cleanupError], "Player startup cleanup failed.", { cause: error });
     }
@@ -69,7 +82,8 @@ export async function startPlayerWithBackend(
       stopped = true;
       const errors: unknown[] = [];
       try { result = player.stop(); } catch (error) { errors.push(error); }
-      try { owner.dispose(); } catch (error) { errors.push(error); }
+      try { releaseOwner(); } catch (error) { errors.push(error); }
+      if (releaseFailure !== undefined && !errors.includes(releaseFailure)) errors.push(releaseFailure);
       if (errors.length) throw new AggregateError(errors, "Player shutdown failed.");
       return result;
     },

@@ -114,11 +114,30 @@ async function launchLoaded(
   refreshHostMemory();
   // Session-scoped HUD feed; cleared with the page, same as the render loop.
   const memoryInterval = window.setInterval(refreshHostMemory, 1000);
+  let stopped = false;
+  let layoutObserver: ResizeObserver | null = null;
+  const cleanupPage = () => {
+    if (stopped) return;
+    stopped = true;
+    stopCurrentPlayer = undefined;
+    rootEl().dataset.booted = "false";
+    const errors: unknown[] = [];
+    for (const release of [
+      () => window.removeEventListener("message", onSessionMessage),
+      () => window.clearInterval(memoryInterval),
+      () => layoutObserver?.disconnect(),
+      stopAudioOverlays,
+    ]) {
+      try { release(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(errors, "Player page cleanup failed.");
+  };
 
   const session = await startPlayerWithBackend({
     signal: startupAbort.signal,
     canvas,
     game,
+    onStopped: cleanupPage,
     onConsoleEvent: (command) => {
       hud.applyCommand(command);
       if (window.parent === window || !previewMode()) return;
@@ -139,6 +158,7 @@ async function launchLoaded(
       }
     },
     onStats: (stats) => {
+      if (stopped) return;
       currentLightsDebugText = stats.lightsDebugText ?? null;
       hud.setStats({ ...stats, ...hostMemory });
       setRootState({
@@ -166,21 +186,19 @@ async function launchLoaded(
       );
     },
   }).catch((error: unknown) => {
-    window.clearInterval(memoryInterval);
-    stopAudioOverlays();
+    try { cleanupPage(); } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Player page startup cleanup failed.", { cause: error });
+    }
     throw error;
   });
-  if (startupAbort.signal.aborted) {
-    try { session.stop(); } finally {
-      window.clearInterval(memoryInterval);
-      stopAudioOverlays();
-    }
+  if (stopped || startupAbort.signal.aborted) {
+    try { session.stop(); } finally { cleanupPage(); }
     return;
   }
   rootEl().dataset.requestedBackend = session.backend.requestedBackend;
   rootEl().dataset.effectiveBackend = session.backend.effectiveBackend;
   rootEl().dataset.backendFallback = session.backend.fallbackReason ?? "";
-  const layoutObserver =
+  layoutObserver =
     typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => layoutFromManifest(game.manifest));
@@ -222,16 +240,10 @@ async function launchLoaded(
     );
   }
   let inspecting = false;
-  let stopped = false;
   const stop = () => {
     if (stopped) return;
-    stopped = true;
-    stopCurrentPlayer = undefined;
-    window.removeEventListener("message", onSessionMessage);
-    window.clearInterval(memoryInterval);
-    layoutObserver?.disconnect();
-    stopAudioOverlays();
-    const result = session.stop();
+    let result: ReturnType<typeof session.stop>;
+    try { result = session.stop(); } finally { cleanupPage(); }
     if (window.parent !== window && result.diagnostics.length > 0) {
       window.parent.postMessage(
         { type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics: result.diagnostics },

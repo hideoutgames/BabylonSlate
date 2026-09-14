@@ -194,8 +194,15 @@ for (const mode of ["Play", "Preview Build"] as const) {
       await testInfo.attach(`continuity-${reload}.json`, { body: JSON.stringify(result), contentType: "application/json" });
     }
     await canvas.evaluate(() => (globalThis as unknown as { continuity: Observation }).continuity.stop());
-    await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
     await canvas.screenshot({ path: testInfo.outputPath("retained-global-layer.png") });
+    if (mode === "Preview Build") {
+      await page.getByTestId("debug-console-input").fill(`changescene ${WORLD}`);
+      await page.getByTestId("debug-console-submit").click();
+      await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
+      await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root")).toHaveAttribute("data-booted", "false");
+    } else await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
     await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
     await waitForSceneViewportReady(page);
     expect(errors).toEqual([]);

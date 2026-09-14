@@ -95,6 +95,8 @@ export type PlayerBootOptions = {
   game: LoadedGame;
   sharedEngine?: AbstractEngine;
   content?: PackedGameContent;
+  /** Runs after every player resource has attempted cleanup, including startup rollback. */
+  onStopped?: () => void;
   onStats?: (stats: {
     ticks: number;
     fps: number;
@@ -129,6 +131,8 @@ export function startPlayer(options: PlayerBootOptions): PlayerBootHandle {
     }
     return errors;
   };
+  // First acquired, last released: the backend owner must outlive every view.
+  own(() => options.onStopped?.());
   try {
     return initializePlayer(options, own, releaseAll);
   } catch (error) {

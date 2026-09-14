@@ -4,8 +4,10 @@ import { exportGame } from "@babylonslate/exporter";
 import * as rendering from "@babylonslate/render";
 import * as runtimes from "@babylonslate/runtime";
 import type { BridgeHostMessage, BridgeWorkerMessage } from "@babylonslate/bridge";
+import type { AbstractEngine } from "@babylonjs/core";
 import { loadGameFromFiles } from "./artifact";
 import { startPlayer, type PlayerBootHandle } from "./boot";
+import { startPlayerWithBackend } from "./player-backend";
 import * as inputs from "./input";
 
 class TestWorker {
@@ -69,10 +71,23 @@ async function fixture() {
   return { game, canvas, handle, input: () => input! };
 }
 
+async function backendFixture() {
+  const value = await fixture();
+  const owner: rendering.BackendEngineSession = {
+    engine: {} as AbstractEngine,
+    requestedBackend: "webgl2",
+    effectiveBackend: "webgl2",
+    dispose: vi.fn(() => { expect(value.handle.dispose).toHaveBeenCalledOnce(); }),
+  };
+  vi.spyOn(rendering, "createBackendEngineSession").mockResolvedValue(owner);
+  return { ...value, owner };
+}
+
 describe("player startup and Stop ownership", () => {
   it("stops before the worker's first loading token and detaches late commands and input", async () => {
-    const { game, canvas, handle, input } = await fixture();
-    const session = startPlayer({ game, canvas });
+    const { game, canvas, handle, input, owner } = await backendFixture();
+    const onStopped = vi.fn();
+    const session = await startPlayerWithBackend({ game, canvas, onStopped });
     sessions.push(session);
     const worker = TestWorker.instances[0]!;
     const staleMessage = worker.onmessage!;
@@ -81,7 +96,12 @@ describe("player startup and Stop ownership", () => {
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(worker.onmessage).toBeNull();
     expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(owner.dispose).toHaveBeenCalledOnce();
+    expect(onStopped).toHaveBeenCalledOnce();
     expect(document.querySelector("dialog")).toBeNull();
+    session.stop();
+    expect(owner.dispose).toHaveBeenCalledOnce();
+    expect(onStopped).toHaveBeenCalledOnce();
     expect(frames.size).toBe(0);
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
     expect(input().ring.drain()).toEqual([]);
@@ -91,12 +111,16 @@ describe("player startup and Stop ownership", () => {
     expect(document.querySelector("dialog")).toBeNull();
   });
 
-  it("releases every later owner and reports a cleanup failure without repeating already released resources", async () => {
-    const { game, canvas, handle, input } = await fixture();
-    const session = startPlayer({ game, canvas });
+  it("releases the backend from loading-dialog Stop even when an inner cleanup fails", async () => {
+    const { game, canvas, handle, input, owner } = await backendFixture();
+    const session = await startPlayerWithBackend({ game, canvas });
     sessions.push(session);
     const releaseInput = input().dispose;
     const failedDispose = vi.spyOn(input(), "dispose").mockImplementation(() => { releaseInput(); throw new Error("Input disposal failed"); });
+    TestWorker.instances[0]!.command({ channel: "command", payload: { type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 } });
+    expect(document.querySelector("dialog")?.open).toBe(true);
+    document.querySelector<HTMLButtonElement>("dialog button")!.click();
+    expect(owner.dispose).toHaveBeenCalledOnce();
     const result = session.stop();
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "player.cleanup.failed", message: expect.stringContaining("Input disposal failed") }));
     expect(TestWorker.instances[0]!.terminate).toHaveBeenCalledOnce();
@@ -106,6 +130,7 @@ describe("player startup and Stop ownership", () => {
     session.stop();
     expect(failedDispose).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(owner.dispose).toHaveBeenCalledOnce();
   });
 
   it("terminates a partially initialized worker before starting the real in-process fallback", async () => {
@@ -131,11 +156,12 @@ describe("player startup and Stop ownership", () => {
   });
 
   it("rolls back the acquired scene when later startup setup throws", async () => {
-    const { game, canvas, handle } = await fixture();
+    const { game, canvas, handle, owner } = await backendFixture();
     vi.spyOn(inputs, "attachInputCapture").mockImplementation(() => { throw new Error("Input setup failed"); });
-    expect(() => startPlayer({ game, canvas })).toThrow("Input setup failed");
+    await expect(startPlayerWithBackend({ game, canvas })).rejects.toThrow("Input setup failed");
     expect(TestWorker.instances[0]!.terminate).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(owner.dispose).toHaveBeenCalledOnce();
     expect(document.querySelector("dialog")).toBeNull();
     expect(frames.size).toBe(0);
   });
@@ -159,8 +185,8 @@ describe("player startup and Stop ownership", () => {
   });
 
   it("unwinds a loading failure even when the worker transport can no longer accept Stop", async () => {
-    const { game, canvas, handle } = await fixture();
-    const session = startPlayer({ game, canvas });
+    const { game, canvas, handle, owner } = await backendFixture();
+    const session = await startPlayerWithBackend({ game, canvas });
     sessions.push(session);
     const worker = TestWorker.instances[0]!;
     worker.command({ channel: "command", payload: { type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 } });
@@ -169,7 +195,9 @@ describe("player startup and Stop ownership", () => {
     worker.command({ channel: "command", payload: { type: "sceneLoadFailed", sceneAssetGuid: "world", sceneLoadId: 1, message: "Owned scene realization failed" } });
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(owner.dispose).toHaveBeenCalledOnce();
     expect(document.querySelector("dialog")).toBeNull();
     expect(session.stop().diagnostics).toContainEqual(expect.objectContaining({ code: "scene.load.failed" }));
+    expect(owner.dispose).toHaveBeenCalledOnce();
   });
 });

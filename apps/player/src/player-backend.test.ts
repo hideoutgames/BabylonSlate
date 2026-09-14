@@ -139,4 +139,22 @@ describe("packed player backend lifetime", () => {
     handle.stop();
     expect(events).toEqual(["player", "engine"]);
   });
+
+  it("reports internal cleanup failures without disposing the uncertain backend again", async () => {
+    const loaded = await game();
+    const engineFailure = new Error("Device disposal failed");
+    const pageFailure = new Error("Page cleanup failed");
+    vi.mocked(owner.dispose).mockImplementation(() => { events.push("engine"); throw engineFailure; });
+    const onStopped = vi.fn(() => { throw pageFailure; });
+    const handle = await startPlayerWithBackend({ game: loaded, canvas, onStopped });
+    const boot = start.mock.calls[0]![0] as PlayerBootOptions;
+    let failure: unknown;
+    try { boot.onStopped!(); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([engineFailure, pageFailure]);
+    expect(() => handle.stop()).toThrow("Player shutdown failed");
+    handle.stop();
+    expect(owner.dispose).toHaveBeenCalledOnce();
+    expect(onStopped).toHaveBeenCalledOnce();
+  });
 });
