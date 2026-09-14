@@ -63,6 +63,23 @@ test("WebGPU prepares directional base irradiance while preserving another targe
   expect(externalRequests).toEqual([]);
   expect(result.failure).toBeUndefined();
   expect(result.retainedEngines).toBe(0);
+  expect(result.optionalGraph).toEqual({
+    sameBuild: true,
+    frozen: true,
+    noCubeBefore: true,
+  });
+  expect(result.captures["graph-before-environment"]).toEqual([0, 0, 0, 255]);
+  expect(result.captures["graph-removed-environment"]).toEqual([0, 0, 0, 255]);
+  for (const [graph, reference] of [
+    ["graph-late-environment", "supplied-0"],
+    ["graph-reassigned-environment", "supplied-90"],
+  ]) {
+    result.captures[graph]!.forEach((value, index) =>
+      expect(
+        Math.abs(value - result.captures[reference]![index]!),
+      ).toBeLessThanOrEqual(2),
+    );
+  }
   expect(result.states).toHaveLength(2);
   for (const state of result.states) {
     expect(state.restored).toBe(true);

@@ -1,4 +1,8 @@
-import { ReflectionBlock } from "@babylonjs/core";
+import {
+  NodeMaterialBlockConnectionPointTypes,
+  ReflectionBlock,
+  type NodeMaterialBuildState,
+} from "@babylonjs/core";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 
 /** Keep optional scene IBL bindable when a graph builds before asset collection. */
@@ -13,6 +17,31 @@ export class SceneReflectionBlock extends ReflectionBlock {
   // still inspect the actual texture and disable it while none is admitted.
   override get hasTexture(): boolean {
     return true;
+  }
+
+  override handleFragmentSideCodeReflectionCoords(
+    state: NodeMaterialBuildState,
+    worldNormalVarName: string,
+    worldPos?: string,
+    onlyReflectionVector = false,
+    doNotEmitInvertZ = false,
+  ): string {
+    // Babylon emits computeReflectionCoordsPBR even without REFLECTION, but
+    // declares its returned vector only under texture mapping defines. Keep
+    // that unused function valid before assignment and after texture removal.
+    const coordinates = super.handleFragmentSideCodeReflectionCoords(
+      state,
+      worldNormalVarName,
+      worldPos,
+      onlyReflectionVector,
+      doNotEmitInvertZ,
+    );
+    return `#ifdef REFLECTION
+${coordinates}
+#else
+${state._declareLocalVar(this._reflectionVectorName, NodeMaterialBlockConnectionPointTypes.Vector3)} = vec3${state.fSuffix}(0.0);
+#endif
+`;
   }
 }
 RegisterClass("BABYLON.SceneReflectionBlock", SceneReflectionBlock);

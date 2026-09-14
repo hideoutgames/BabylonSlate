@@ -108,6 +108,8 @@ export async function runEnvironmentLightingProof() {
   const captures: Record<string, { pixel: number[]; png: string }> = {};
   let sharedUpload = false;
   let distinctViews = false;
+  let optionalGraph:
+    { sameBuild: boolean; frozen: boolean; noCubeBefore: boolean } | undefined;
   const started = performance.now();
   const settings = (
     mode: "pbr" | "cel",
@@ -210,7 +212,15 @@ export async function runEnvironmentLightingProof() {
     native.metallic = 0;
     native.roughness = 1;
     a.mesh.material = native;
-    b.mesh.material = (await compile(b.scene, surface())).material;
+    const graph = (await compile(b.scene, surface())).material;
+    b.mesh.material = graph;
+    setSceneRenderSettings(b.scene, settings("pbr", 0.25));
+    await capture("graph-before-environment", b.scene, b.mesh);
+    graph.freeze();
+    const initialBuildId = graph.buildId;
+    const noCubeBefore =
+      b.scene.environmentTexture === null &&
+      !engine.getLoadedTexturesCache().some((texture) => texture.isCube);
     for (const entry of [a, b]) {
       setSceneRenderSettings(entry.scene, settings("pbr"));
       applyEnvironmentLighting(entry.scene, "green", assets("green", green));
@@ -219,6 +229,17 @@ export async function runEnvironmentLightingProof() {
       a.scene.environmentTexture!.getInternalTexture() ===
       b.scene.environmentTexture!.getInternalTexture();
     distinctViews = a.scene.environmentTexture !== b.scene.environmentTexture;
+    setSceneRenderSettings(b.scene, settings("pbr", 0.25));
+    await capture("graph-late-environment", b.scene, b.mesh);
+    applyEnvironmentLighting(b.scene, null, assets("green", green));
+    await capture("graph-removed-environment", b.scene, b.mesh);
+    applyEnvironmentLighting(b.scene, "green", assets("green", green));
+    await capture("graph-reassigned-environment", b.scene, b.mesh);
+    optionalGraph = {
+      sameBuild: graph.buildId === initialBuildId,
+      frozen: graph.isFrozen,
+      noCubeBefore,
+    };
     for (const [name, entry] of [
       ["native", a],
       ["graph", b],
@@ -546,11 +567,12 @@ export async function runEnvironmentLightingProof() {
     await capture("raw-post-process", raw.scene, raw.mesh);
     pass.dispose();
     const hardware = engine.getGlInfo();
-    return { sharedUpload, distinctViews, hardware, captures };
+    return { sharedUpload, distinctViews, optionalGraph, hardware, captures };
   } catch (error) {
     return {
       sharedUpload,
       distinctViews,
+      optionalGraph,
       hardware: engine.getGlInfo(),
       captures,
       failure: error instanceof Error ? error.message : String(error),
@@ -585,6 +607,8 @@ export async function runEnvironmentIrradianceWebGpuProof() {
   const captures: Record<string, number[]> = {};
   const states: Record<string, unknown>[] = [];
   const polynomials: Record<string, number[]> = {};
+  let optionalGraph:
+    { sameBuild: boolean; frozen: boolean; noCubeBefore: boolean } | undefined;
   const started = performance.now();
   const wait = async (ready: () => boolean) => {
     while (!ready()) {
@@ -592,6 +616,23 @@ export async function runEnvironmentIrradianceWebGpuProof() {
         throw new Error("WebGPU irradiance readiness timed out.");
       await new Promise((resolve) => setTimeout(resolve, 16));
     }
+  };
+  const capture = async (name: string, scene: Scene, mesh: Mesh) => {
+    await mesh.material!.forceCompilationAsync(mesh);
+    await wait(() => isSceneFrameReady(scene));
+    engine.beginFrame();
+    scene.render();
+    engine.endFrame();
+    const pixels = await engine.readPixels(32, 32, 1, 1);
+    const pixel = new Uint8Array(
+      pixels.buffer,
+      pixels.byteOffset,
+      pixels.byteLength,
+    );
+    captures[name] =
+      swapChainFormat === "bgra8unorm"
+        ? [pixel[2]!, pixel[1]!, pixel[0]!, pixel[3]!]
+        : Array.from(pixel);
   };
   const colors = [
     [1, 0, 0],
@@ -714,21 +755,90 @@ export async function runEnvironmentIrradianceWebGpuProof() {
               rotationYDegrees,
             }),
           });
-          await material.forceCompilationAsync(mesh);
-          await wait(() => isSceneFrameReady(scene));
-          engine.beginFrame();
-          scene.render();
-          engine.endFrame();
-          const pixels = await engine.readPixels(32, 32, 1, 1);
-          const pixel = new Uint8Array(
-            pixels.buffer,
-            pixels.byteOffset,
-            pixels.byteLength,
-          );
-          captures[`${kind}-${rotationYDegrees}`] =
-            swapChainFormat === "bgra8unorm"
-              ? [pixel[2], pixel[1], pixel[0], pixel[3]]
-              : Array.from(pixel);
+          await capture(`${kind}-${rotationYDegrees}`, scene, mesh);
+        }
+        if (kind === "supplied") {
+          const lateScene = new Scene(engine);
+          let graphResult: { dispose(): void } | undefined;
+          try {
+            lateScene.clearColor = new Color4(0, 0, 0, 1);
+            const lateCamera = new FreeCamera(
+              "late-camera",
+              new Vector3(0, 0, -2),
+              lateScene,
+            );
+            lateCamera.setTarget(Vector3.Zero());
+            const lateMesh = MeshBuilder.CreatePlane(
+              "late-receiver",
+              { size: 2 },
+              lateScene,
+            );
+            lateMesh.rotation.x = -Math.PI / 6;
+            const doc = createDefaultMaterialDocument();
+            doc.nodes[0]!.properties = { value: [1, 1, 1] };
+            doc.nodes.find(
+              (node) => node.type === "output.surface",
+            )!.properties = {
+              "default:roughness": [1],
+            };
+            const plan = lowerMaterialDocument(doc);
+            if (plan.ok === false)
+              throw new Error(JSON.stringify(plan.diagnostics));
+            const cubesBefore = engine
+              .getLoadedTexturesCache()
+              .filter((texture) => texture.isCube).length;
+            const result = compileMaterialPlan(plan.plan, {
+              scene: lateScene,
+              name: "late-wgsl-environment",
+            });
+            if (result.ok === false)
+              throw new Error(JSON.stringify(result.diagnostics));
+            graphResult = result;
+            const diagnostics = await result.ready;
+            if (diagnostics.length)
+              throw new Error(JSON.stringify(diagnostics));
+            const graph = result.material;
+            lateMesh.material = graph;
+            setSceneRenderSettings(lateScene, {
+              environmentLighting: normalizeEnvironmentLightingSettings({
+                intensity: 0.5,
+              }),
+            });
+            await capture("graph-before-environment", lateScene, lateMesh);
+            graph.freeze();
+            const buildId = graph.buildId;
+            const noCubeBefore =
+              lateScene.environmentTexture === null &&
+              engine
+                .getLoadedTexturesCache()
+                .filter((texture) => texture.isCube).length === cubesBefore;
+            const graphAssets = {
+              resourceCache: cache,
+              textureBytes: new Map([[kind, bytes]]),
+            };
+            applyEnvironmentLighting(lateScene, kind, graphAssets);
+            await wait(() => isEnvironmentLightingReady(lateScene));
+            await capture("graph-late-environment", lateScene, lateMesh);
+            applyEnvironmentLighting(lateScene, null, graphAssets);
+            await capture("graph-removed-environment", lateScene, lateMesh);
+            applyEnvironmentLighting(lateScene, kind, graphAssets);
+            setSceneRenderSettings(lateScene, {
+              environmentLighting: normalizeEnvironmentLightingSettings({
+                intensity: 0.5,
+                rotationYDegrees: 90,
+              }),
+            });
+            await wait(() => isEnvironmentLightingReady(lateScene));
+            await capture("graph-reassigned-environment", lateScene, lateMesh);
+            optionalGraph = {
+              sameBuild: graph.buildId === buildId,
+              frozen: graph.isFrozen,
+              noCubeBefore,
+            };
+          } finally {
+            graphResult?.dispose();
+            lateScene.dispose();
+          }
         }
       } finally {
         scene.dispose();
@@ -746,6 +856,7 @@ export async function runEnvironmentIrradianceWebGpuProof() {
     captures,
     states,
     polynomials,
+    optionalGraph,
     retainedEngines: EngineStore.Instances.length - beforeEngines,
     hardware: engine.getInfo(),
   };
