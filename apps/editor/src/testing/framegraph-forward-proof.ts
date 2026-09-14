@@ -51,6 +51,16 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
     );
   };
+  // Observe the actual retained canvas bitmap, rather than a WebGPU swapchain
+  // texture whose frame lifetime can end while an unrelated RTT is rendering.
+  const readCanvas = () => {
+    const copy = document.createElement("canvas");
+    copy.width = canvas.width;
+    copy.height = canvas.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(canvas, 0, 0);
+    return Array.from(context.getImageData(0, 0, copy.width, copy.height).data);
+  };
   const captures = [];
   const lifecycle = [];
   try {
@@ -165,6 +175,7 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         after++;
         if (scene.activeCamera !== expectedCamera) cameraFailures++;
       });
+      const existingRenderers = scene.objectRenderers.length;
       const coordinator = new ForwardSceneFrameGraph(scene);
       const capture = async (name: string) => {
         scene.activeCamera = expectedCamera;
@@ -173,7 +184,7 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         draw(() => scene.render(false));
         const classicDraws = readEngineDrawCalls(engine);
         const classic = await read(target);
-        engine.restoreDefaultFramebuffer();
+        engine.restoreDefaultFramebuffer(true);
         beginEngineDrawCallFrame(engine);
         const previousBefore = before;
         const previousAfter = after;
@@ -184,7 +195,7 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         const result = draw(() => coordinator.render(expectedCamera, false));
         const graphDraws = readEngineDrawCalls(engine);
         const graph = await read(target);
-        engine.restoreDefaultFramebuffer();
+        engine.restoreDefaultFramebuffer(true);
         captures.push({
           name: `${mode}-${name}`,
           classic,
@@ -228,9 +239,9 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         sibling,
       );
       draw(() => sibling.render(false));
-      const siblingBefore = await read();
+      const siblingBefore = target ? readCanvas() : await read();
       await capture("after-sibling");
-      const siblingPreservedDuringTarget = target ? await read() : null;
+      const siblingPreservedDuringTarget = target ? readCanvas() : null;
       const color = target?.getInternalTexture();
       const depth = target?.depthStencilTexture;
       coordinator.dispose();
@@ -239,7 +250,8 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       const classicAfterDispose = target ? (
         draw(() => scene.render(false)), await read(target)
       ) : null;
-      const retainedRenderers = scene.objectRenderers.length;
+      // The caller's RTT owns its own ObjectRenderer and must remain usable.
+      const retainedRenderers = scene.objectRenderers.length - existingRenderers;
       const retainedGraphs = scene.frameGraphs.length;
       scene.dispose();
       draw(() => sibling.render(false));
@@ -249,7 +261,7 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         retainedRenderers,
         retainedGraphs,
         siblingBefore,
-        siblingAfter: await read(),
+        siblingAfter: target ? readCanvas() : await read(),
         siblingPreservedDuringTarget,
         targetReferencesAfter,
         targetAfterDispose,
