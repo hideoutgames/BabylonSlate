@@ -40,6 +40,22 @@ import {
 } from "./journal";
 
 describe("journal", () => {
+  it("replays and undoes an optional scene setting reset after JSON serialization", () => {
+    const scene = createDefaultScene();
+    scene.settings.renderPath = "forward";
+    const reset = new SetSceneSettingCommand("renderPath", "forward", undefined);
+    const serialized = serializeJournalLine({
+      v: 1,
+      docId: "scene:assets/main.scene.babasset",
+      at: "2026-09-14T12:00:00.000Z",
+      command: commandToJournalPayload(reset),
+    });
+    const revived = reviveCommand(parseJournalLine(serialized).command)!;
+    const applied = revived.apply(scene) as typeof scene;
+    expect(Object.hasOwn(applied.settings, "renderPath")).toBe(false);
+    expect(revived.invert().apply(applied)).toStrictEqual(scene);
+  });
+
   it("serializes and parses journal lines", () => {
     const line: JournalLine = {
       v: 1,

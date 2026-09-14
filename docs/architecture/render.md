@@ -15,7 +15,9 @@ The public rendering contract separates project `settings.render.renderPath` (`a
 
 Optional `scene.settings.renderPath` inherits from the project. `resolveRenderingPipeline` applies project → scene → local preview → session path precedence; deleting an override resumes live inheritance. Backend selection remains project-wide because all live views share one Engine. Save/reopen and project ZIP export retain authored requests, including unsupported requests.
 
-This contract slice exposes no new renderer. Its pure resolver reports effective Forward/WebGL2 with explicit limits for Auto/ClusteredForward or Auto/WebGPU requests; it preserves the authored values. It describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation, controls and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
+Project Settings → Rendering exposes independent Render Path and GPU Backend preferences alongside PBR/CEL. Scene Defaults → Rendering starts closed and supports a per-field path override; Reset To Project removes that key without changing other Scene settings. Property search temporarily expands the matching category. SceneLayer documents cannot author project Engine or normal Scene paths.
+
+The effective-selection feedback currently resolves Auto to Forward/WebGL2. Explicit Clustered Forward or WebGPU requests show their unavailable fallback while preserving the preference through Save/reopen and export. Settings commit on Done/close; changing a preference without changing its effective renderer does not rebuild the viewport. This policy describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
 
 Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
 The blocking viewport paints its Presenting First Frame phase before permitting that frame, including when cached resources finish readiness within one microtask batch.
@@ -354,10 +356,13 @@ diagnostic; authored cascade settings and global engine state remain unchanged.
 Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
 and report completed RTT readback-plus-copy duration separately.
 
-Local shadow allocation follows authored priority, then intensity and camera
-distance, with a 15% retention bonus to avoid oscillation. A substantially more
-relevant light can replace an existing allocation without disabling it first.
-The current active camera supplies relevance, including possession changes.
+Local shadow allocation follows authored priority, then nearest relevant camera
+distance; brightness does not displace a nearer light. Maps have a 250 ms minimum
+residency and a 15% squared-distance retention bonus to reduce camera-boundary
+oscillation. Higher authored priority, camera possession changes and loss of
+eligibility take effect immediately. Byte/face/sampler/quality limits still apply
+during residency. The current active camera supplies relevance, and ranking
+refreshes parent transforms and uses local positions after light detachment.
 Compatible generators/maps survive camera, distance, bias, fade and filter edits.
 Lighting synchronization tracks shadow-generator membership and per-light/global
 shadow enablement as shader changes. Frozen surface graphs keep their freeze policy
@@ -375,8 +380,35 @@ are kept separate from errors raised by the allocation. These checks run
 only when constructing a map, so unchanged frames do not poll driver errors.
 Exhausted requests remain suppressed until settings change, scene reload or context
 restoration. Cleanup failures stop retries and propagate a recovery error.
-Dirty-map scheduling, mobility-aware refresh and a distinct free-camera inspection
-override are not implemented in this safety slice.
+Local maps with known opaque, undeformed casters render once and refresh on change.
+A scene-wide caster revision covers actual world-matrix changes (including externally
+supplied frozen attachment matrices), geometry edits, visibility, participation and
+material depth/culling changes. Unchanged forced matrix computations do not invalidate
+maps. Local light pose/projection, depth range, camera identity and floating render-origin
+changes also invalidate. Maps keep their allocation; no per-frame signature arrays or
+per-light whole-scene scans are added. Diagnostics expose `on-change` or `continuous`.
+The policy scans before allocation/projection and again before per-camera targets,
+after active-mesh evaluation. It uses Babylon render-once counters and explicit resets;
+readiness probes do not count as a completed render. Unready caster shaders retain
+Babylon's automatic retry. Geometry observers preserve and restore existing callbacks.
+Empty model and tilemap roots may have no submesh list yet; they remain valid during
+loading, and later geometry/submesh creation or removal invalidates cached maps.
+
+Only known native opaque materials and compiler-certified opaque surface graphs with
+identity world-position offset can cache local maps. Classification uses the fully
+lowered graph, rejects custom GLSL and is invalidated by out-of-band shader changes.
+Alpha, skeletons, morphs, deformation, instances, updatable vertex or index buffers, camera-dependent
+geometry and unknown shader/hooks keep refreshing conservatively. Any uncertain visible
+caster currently keeps every local map live; any dirty caster invalidates all local maps.
+Index mutability uses a narrow Babylon 9.20 adapter read because dynamic index edits
+can bypass geometry notifications; an unknown mutability state also keeps maps live.
+The camera-dependent sun always refreshes. This policy adds no authored mobility defaults,
+staggered refresh, baking or distinct free-camera inspection override. Spatially selective
+invalidation and device performance qualification remain separate work.
+The targeted `e2e/shadow-refresh.spec.ts` browser regression observes real cube-map
+draws and compares cached receiver pixels with a freshly rendered map at the same
+pose after caster/light edits, resize and reload. It verifies correctness and idle
+map reuse, without collecting timing samples or qualifying device performance.
 Light diagnostics distinguish disabled, non-illuminating, intentionally unshadowed,
 globally disabled shadows, distance limits, budget limits and allocation failure.
 They report the actual filter, including Babylon's point-light Poisson fallback.
