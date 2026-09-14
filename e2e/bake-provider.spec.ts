@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { BakePrototypeInput, BakePrototypeMesh } from "../packages/render/src/bake-prototype-input";
 
-// Driver isolation applies only to this proof, never the shared browser config.
-if (process.env.BL_BAKE_ANGLE) test.use({ launchOptions: { args: [`--use-angle=${process.env.BL_BAKE_ANGLE}`] } });
+// Use the validated software adapter on Windows; other hosts retain Chromium's
+// default SwiftShader. Overrides apply only to this proof, never the shared config.
+const bakeAngle = process.env.BL_BAKE_ANGLE ?? (process.platform === "win32" ? "d3d11-warp" : undefined);
+if (bakeAngle) test.use({ launchOptions: { args: [`--use-angle=${bakeAngle}`] } });
 
 type MeshInput = Omit<BakePrototypeMesh, "positions" | "uv2"> & { positions: number[]; uv2?: number[] };
 type Input = Omit<BakePrototypeInput, "meshes"> & { meshes: MeshInput[] };
