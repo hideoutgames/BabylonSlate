@@ -743,3 +743,5 @@ Entry reads and resets resolve owned authored overrides and reachable root defau
 Coordinator post-process diagnostics count compiled, enabled graph effects individually and native fallback passes on the selected path. Unacquired, failed, disabled, and disposed graph tasks contribute zero; the camera attachment list remains native-only. A cancelled build never latches a fallback failure onto its replacement loading owner.
 
 Texture Sample RGBA color decoding uses the vector WGSL conversion helper on Babylon 9.20, matching WebGL RGB decoding while preserving alpha. The fix is scoped to the owned texture block; color/data authoring and global shader helpers remain unchanged.
+
+Environment Sample uses the corresponding WGSL vec3 color decoder for gamma-encoded cube data. A numeric cube fixture checks native and graph post-process sampling on both backends independently of diffuse IBL preparation.
