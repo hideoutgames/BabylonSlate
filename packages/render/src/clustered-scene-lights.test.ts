@@ -280,6 +280,15 @@ describe("explicit clustered light ownership", () => {
   it("registers cluster defines and samplers when an already compiled point-light slot changes type", async () => {
     const { engine, scene, mesh, lights } = fixture();
     for (const light of lights.slice(1)) setAuthoredLightEnabled(light, false);
+    // NullEngine discards all unresolved GPU uniform locations, so inspect the
+    // actual createEffect binding request before native effect finalization.
+    const samplerRequests: string[][] = [];
+    const createEffect = engine.createEffect.bind(engine);
+    vi.spyOn(engine, "createEffect").mockImplementation((...args) => {
+      const options = args[1];
+      if (!Array.isArray(options)) samplerRequests.push([...options.samplers]);
+      return createEffect(...args);
+    });
     const lower = lowerMaterialDocument(
       createDefaultMaterialDocument("surface"),
     );
@@ -295,14 +304,15 @@ describe("explicit clustered light ownership", () => {
     syncSceneLighting(scene);
     await vi.waitFor(() => expect(isSceneFrameReady(scene)).toBe(true));
     const previous = mesh.subMeshes[0]!.effect!;
-    expect(previous.getSamplers()).not.toContain("tileMaskTexture0");
+    expect(samplerRequests.flat()).not.toContain("tileMaskTexture0");
+    samplerRequests.length = 0;
     const owner = new ClusteredSceneLights(scene, lights);
     await vi.waitFor(() => expect(isSceneFrameReady(scene)).toBe(true));
     const clustered = mesh.subMeshes[0]!.effect!;
     expect(clustered).not.toBe(previous);
     expect(clustered.defines).toMatch(/#define CLUSTLIGHT_SLICES [1-9]/);
     expect(clustered.defines).toContain("#define CLUSTLIGHT_BATCH 23");
-    expect(clustered.getSamplers()).toEqual(
+    expect(samplerRequests.flat()).toEqual(
       expect.arrayContaining(["lightDataTexture0", "tileMaskTexture0"]),
     );
     owner.dispose();
