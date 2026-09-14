@@ -69,7 +69,10 @@ export class FrameGraphClusteredLightsTask extends FrameGraphTask {
       const stages = this.target._disableEngineStages;
       const depth = engine.getDepthBuffer(),
         write = engine.getDepthWrite();
-      const alpha = engine.getAlphaMode();
+      // Babylon uses -1 after a cache reset while alphaState is disabled.
+      // Passing that sentinel back to setAlphaMode enables stale additive blend.
+      const alpha = Math.max(0, engine.getAlphaMode());
+      const equation = engine.getAlphaEquation();
       const errors: unknown[] = [];
       try {
         this.target._disableEngineStages = true;
@@ -88,9 +91,10 @@ export class FrameGraphClusteredLightsTask extends FrameGraphTask {
         };
         this.target._disableEngineStages = stages;
         this.scene._intermediateRendering = intermediate;
+        restore(() => engine.setAlphaMode(alpha, true));
+        if (equation >= 0) restore(() => engine.setAlphaEquation(equation));
         restore(() => engine.setDepthBuffer(depth));
         restore(() => engine.setDepthWrite(write));
-        restore(() => engine.setAlphaMode(alpha));
         restore(() => {
           if (engine._currentRenderTarget !== target) {
             if (target) engine.bindFramebuffer(target);

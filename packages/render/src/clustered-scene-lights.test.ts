@@ -246,7 +246,7 @@ describe("explicit clustered light ownership", () => {
   });
 
   it("orders one borrowed mask draw after readiness and leaves it live when the graph is disposed", async () => {
-    const { engine, scene, lights } = fixture();
+    const { engine, scene, mesh, lights } = fixture();
     vi.spyOn(engine, "buildTextureLayout").mockImplementation(
       (enabled, backbuffer) =>
         backbuffer
@@ -268,7 +268,16 @@ describe("explicit clustered light ownership", () => {
       path: "frameGraph",
     });
     expect(draw).not.toHaveBeenCalled();
+    // A new/resized WebGL framebuffer can invalidate the cached alpha mode.
+    // The ordered mask must not turn that sentinel into additive surface draws.
+    engine._resetAlphaMode();
+    engine.alphaState.reset();
+    const surfaceBlendStates: boolean[] = [];
+    mesh.onBeforeDrawObservable.add(() =>
+      surfaceBlendStates.push(engine.alphaState.alphaBlend),
+    );
     expect(graph.render(scene.activeCamera!)).toEqual({ path: "frameGraph" });
+    expect(surfaceBlendStates).toEqual([false]);
     expect(draw).toHaveBeenCalledTimes(1);
     expect(graph.render(scene.activeCamera!)).toEqual({ path: "frameGraph" });
     expect(draw).toHaveBeenCalledTimes(2);
@@ -339,18 +348,30 @@ describe("explicit clustered light ownership", () => {
     const owner = new ClusteredSceneLights(scene, lights.slice(0, 2));
     owner.setLights(lights.slice(0, 1));
     // Observable.remove marks synchronously and removes its entry next task.
-    await vi.waitFor(() => expect(lights[1]!.onDisposeObservable.observers).toHaveLength(observerCount));
+    await vi.waitFor(() =>
+      expect(lights[1]!.onDisposeObservable.observers).toHaveLength(
+        observerCount,
+      ),
+    );
     const createTarget = engine.createRenderTargetTexture.bind(engine);
-    vi.spyOn(engine, "createRenderTargetTexture").mockImplementationOnce((...args) => {
-      createTarget(...args);
-      throw new Error("Larger mask allocation rejected");
-    });
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementationOnce(
+      (...args) => {
+        createTarget(...args);
+        throw new Error("Larger mask allocation rejected");
+      },
+    );
     owner.setLights(lights);
     expect(owner.status().clustered).toBe(0);
     expect(owner.limits().join()).toContain("Larger mask allocation rejected");
     expect(engine._renderTargetWrapperCache).toEqual(wrappers);
-    expect(scene.textures.some((texture) => texture.name === "TileMaskTexture")).toBe(false);
-    expect(lights.every((light) => !light.isDisposed() && scene.lights.includes(light))).toBe(true);
+    expect(
+      scene.textures.some((texture) => texture.name === "TileMaskTexture"),
+    ).toBe(false);
+    expect(
+      lights.every(
+        (light) => !light.isDisposed() && scene.lights.includes(light),
+      ),
+    ).toBe(true);
     owner.dispose();
   });
 });
