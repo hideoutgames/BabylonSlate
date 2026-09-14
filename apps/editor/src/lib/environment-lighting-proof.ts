@@ -87,7 +87,7 @@ export async function runEnvironmentLightingProof() {
       scene,
       name: `proof${compiled.length}`,
     });
-    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    if (result.ok === false) throw new Error(JSON.stringify(result.diagnostics));
     compiled.push(result);
     const errors = await result.ready;
     if (errors.length) throw new Error(JSON.stringify(errors));
