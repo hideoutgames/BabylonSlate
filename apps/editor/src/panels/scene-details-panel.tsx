@@ -621,7 +621,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       "Scene Settings",
     );
     const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
-    const showPostProcess = matches("Post Processing Material Enabled Scalable Resolution");
+    const showPostProcess = matches("Post Processing Material Entry ID Enabled Scalable Resolution");
     const showShadows = !overlay && matches(SHADOW_SETTINGS_SEARCH_TEXT);
     const showEnvironment = !overlay && matches(ENVIRONMENT_LIGHTING_SEARCH_TEXT);
     const showPipeline = !overlay && matches("Rendering Render Path GPU Backend Auto Forward Clustered Forward WebGL2 WebGPU Effective Selection");
@@ -656,14 +656,24 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   },
                 })
               }
-              renderItemHeader={({ item, index }) =>
-                stackAssetPicker(
-                  item.materialGuid,
-                  `scene-post-process-${index}-material`,
-                  `Pass ${index + 1} Material`,
-                  () => setPostProcessPick({ id: item.id }),
-                )
-              }
+              renderItemHeader={({ item, index }) => (
+                <>
+                  {stackAssetPicker(
+                    item.materialGuid,
+                    `scene-post-process-${index}-material`,
+                    `Pass ${index + 1} Material`,
+                    () => setPostProcessPick({ id: item.id }),
+                  )}
+                  <PropertyGrid density="compact" rows={[{
+                    kind: "text",
+                    id: `scene-post-process-${item.id}-entry-id`,
+                    label: "Entry ID",
+                    value: item.id,
+                    readOnly: true,
+                    onChange: () => {},
+                  }]} />
+                </>
+              )}
               renderItem={({ item, index, onChange }) => (
                 <div className="flex items-center justify-between gap-2 px-2 pointer-coarse:flex-wrap">
                 <Field

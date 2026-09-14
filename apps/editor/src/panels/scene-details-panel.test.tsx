@@ -702,6 +702,26 @@ describe("SceneDetailsPanel authoring", () => {
     expect(next.actors.map((actor) => actor.id)).toEqual(actorIds);
   });
 
+  it("exposes selectable immutable Entry IDs for repeated passes through reordering", () => {
+    scene().settings.postProcessStack = [
+      { id: "first-tint", materialGuid: "pp-blur", enabled: true },
+      { id: "disabled-tint", materialGuid: "pp-blur", enabled: false },
+    ];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const inputs = () => screen.getAllByRole("textbox", { name: "Entry ID" }) as HTMLInputElement[];
+    expect(inputs().map((input) => input.value)).toEqual(["first-tint", "disabled-tint"]);
+    const first = inputs()[0]!;
+    fireEvent.focus(first);
+    expect(first.disabled).toBe(false);
+    expect(first.readOnly).toBe(true);
+    expect(first.value.slice(first.selectionStart!, first.selectionEnd!)).toBe("first-tint");
+    fireEvent.change(first, { target: { value: "changed" } });
+    fireEvent.blur(first);
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("scene-post-process-stack-1-move-up"));
+    expect(inputs().map((input) => input.value)).toEqual(["disabled-tint", "first-tint"]);
+  });
+
   it("moves and removes repeated post-process assets with their own enabled state", () => {
     scene().settings.postProcessStack = [
       { id: "a", materialGuid: "pp-blur", enabled: true },
