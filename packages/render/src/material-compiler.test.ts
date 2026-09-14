@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock, ScaleBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -163,7 +163,7 @@ describe("material compiler", () => {
         throw new Error(result.diagnostics.map((d) => d.message).join(", "));
       disposers.push(result.dispose);
       const fragment = result.material.attachedBlocks.find(
-        (block) => block.getClassName() === "FragmentOutputBlock",
+        (block) => block instanceof FragmentOutputBlock,
       )!;
       const visited = new Set<typeof fragment>();
       const visit = (block: typeof fragment) => {

@@ -26,7 +26,7 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
     const native = new PBRMaterial("Native Reference", scene);
     const document = createDefaultMaterialDocument("Geometry Surface");
     const compiled = library.acquire(scene, "surface", document);
-    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    if (compiled.ok === false) throw new Error(JSON.stringify(compiled.diagnostics));
     const diagnostics = await compiled.ready;
     if (diagnostics.length) throw new Error(JSON.stringify(diagnostics));
     for (const mode of ["native", "pbr", "cel", "pbr-return"] as const) {
@@ -35,10 +35,11 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
       mesh.computeWorldMatrix(true);
       scene.updateTransformMatrix(true);
       for (const buffer of ["depth", "normal"] as const) {
-        const graph = new FrameGraph(engine, false, scene);
+        const graph = new FrameGraph(scene);
         try {
           const depth = graph.textureManager.createRenderTargetTexture("Geometry Z", {
             size: { width: 32, height: 32 },
+            sizeIsPercentage: false,
             options: { types: [Constants.TEXTURETYPE_FLOAT], formats: [Constants.TEXTUREFORMAT_DEPTH32_FLOAT], samples: 1 },
           });
           const clear = new FrameGraphClearTextureTask("Geometry Z Clear", graph);
