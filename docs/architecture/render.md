@@ -523,14 +523,14 @@ Preview render and shader-readiness errors are reported without terminating fram
 
 CEL band and highlight softness of zero uses discrete thresholds with no implicit derivative smoothing. Positive softness is an explicit artistic choice. Basic 3D templates bind the Mannequin material slot to a PBR material with nonmetallic, rough shading; ordinary glTF imports retain their authored shading model.
 
-Rendering scalability uses neutral Low, Medium, High and Ultra labels. Engineering targets (not editor labels): Low is mid/high Android, Medium is iPad A16, High is midrange gaming PC, Ultra is high-end gaming PC. Initial shadow allocations are:
+Rendering scalability targets Low for a budget Android phone, Medium for Apple A16, High for a performance desktop, and Ultra for a high-end gaming PC. These are authored targets, not performance qualifications. Requested shadow defaults are:
 
-| Quality | Directional Map | Cascades | Local Map | PCF Quality |
-| --- | --- | --- | --- | --- |
-| Low | 1024 | 2 | 512 | Low |
-| Medium (Default) | 2048 | 4 | 1024 | High |
-| High | 2048 | 4 | 2048 | High |
-| Ultra | 4096 | 4 | 2048 | High |
+| Quality | Distance | Directional Map | Cascades | Local Map | PCF Quality |
+| --- | --- | --- | --- | --- | --- |
+| Low | 80 | 1024 | 1 | 512 | Low |
+| Medium (Default) | 200 | 2048 | 2 | 1024 | Medium |
+| High | 350 | 2048 | 4 | 2048 | High |
+| Ultra | 600 | 4096 | 4 | 2048 | High |
 
 The table lists requested map settings. Actual maps also satisfy the following
 conservative admission policy, pending device qualification:
@@ -542,23 +542,32 @@ conservative admission policy, pending device qualification:
 | High | 4 | 256 | 28 |
 | Ultra | 8 | 384 | 52 |
 
-New settings default to Auto. Manual preserves any nonnegative safe-integer upper
-limit; selecting Low after Manual 16 still reduces effective allocation through
-the byte/pass limits. Presets retain the chosen Auto/Manual mode and saved Manual
-limit. Legacy full project settings with a numeric capacity migrate to Manual,
+New settings default to Auto. Applying a shadow or overall preset resets the
+complete shadow category, including Auto mode, the saved Manual count (1/2/4/8),
+distance, filtering and bias. Switching only Auto/Manual retains its saved count.
+Legacy full project settings with a numeric capacity migrate to Manual,
 including the ambiguous value four that historical normalization wrote by default.
 Scene v3-to-v4 migration applies this once to authored numeric overrides; current
 sparse fields stay independent, and resetting mode resumes project inheritance.
 Project normalization, export and player hydration retain the mode. The authored
-shadow distance defaults to 200 world units and does not limit map size. PCSS
-remains an explicit PBR artistic choice. None of these tables certifies sustained
-device performance.
+shadow distance defaults to 200 world units and does not limit map size. The
+conservative actual byte ceilings remain unchanged: selecting Ultra does not
+assume that Safari or a GPU texture-size limit proves available VRAM. Oversized
+sun maps halve deterministically before allocation to fit this ceiling, including
+Babylon's temporary four-layer CSM construction peak. Diagnostics report the
+requested/effective reduction; none of these tables certifies sustained performance.
 
 Only the first enabled directional light in stable scene order illuminates a scene. Authored enabled values are preserved so disabling/removing the owner activates the next eligible sun. Editor billboards show white for configured operation, red for disabled or non-illuminating lights, and yellow for requested illumination excluded by the device Forward light capacity or requested shadows without an allocation. Forward exclusions take precedence over the temporary effective-disabled state; authored Disabled and zero intensity remain red. Intentionally unshadowed lights and enabled hemispheric fills are white; authored color never tints status icons.
 
 Material color inputs and Color (sRGB) samples decode to linear graph values; Data (Linear) samples remain numerical data. Unlit converts its final color to display space once. CEL converts base/emissive graph colors before its display-space ramp, without changing texture decoding when switching render modes. PBR retains its linear lighting and image-processing output. The obsolete Legacy (Unconverted) texture option is removed.
 
-Scalability groups cover shadow allocation resolution/filtering, fixed/dynamic render resolution, texture residency/anisotropy/LOD, and opt-in post-process pass resolution. Authored post-process passes stay enabled; only passes marked scalable may render below full resolution. Runtime `quality` queries requested settings; Stats/light diagnostics show actual allocations and limiting reasons. `quality medium`, `quality shadows ultra`, `quality shadows budget 6` (Manual), `quality shadows budget auto`, `quality shadows distance 200`, `quality shadows enabled off`, and `quality resolution scale 0.75` apply immediately without resetting simulation. `quality shadows reset` resets one group; `quality reset` restores all current project/scene values. The obsolete renderquality, shadowquality and resolutionscale commands are removed; framecap remains independent.
+The shared core ownership registry covers every scalability field: Shadows owns all shadow controls; Resolution owns scale, dynamic/minimum scale and target FPS; Textures owns residency budget, anisotropy and LOD bias; Post Processing owns opt-in pass resolution; Lighting owns local direct-light Auto/Manual capacity (4/16/64/256). Local illumination and shadow-map counts are independent. Manual illumination counts override the Auto target; Forward shader or clustered storage admission can still reduce the effective count. Global sun/fill slots remain separate. The same resolver drives project controls, typed Play/player commands and console queries.
+
+Each category saves `preset` provenance independently from its `profile` admission tier. Any manual cost edit makes the category Custom, even if it matches another preset. Reload preserves Custom; reapplying a category preset resets its complete cost settings. Legacy values are retained and classified by their actual complete settings. Scene sparse shadow overrides and local/session overrides report Custom until reset to inheritance or replaced by an explicit preset. Artistic and structural choices are independent: CEL/PBR and CEL style, IBL enablement/intensity/orientation/strength, render path/backend, output design size/aspect and frame caps neither change nor mark categories Custom. Authored post-process passes stay enabled and ordered; only passes marked scalable may render below full resolution.
+
+Project-only settings/version edits enable Save All and participate in close/reload warnings and Play preparation. The exact successfully saved snapshot acknowledges them; failed writes and newer edits remain dirty. Loading or closing a project resets this ownership, so an old pending save cannot acknowledge its successor. Registry path refreshes do not independently dirty authored settings.
+
+Runtime `quality` queries requested settings and provenance; Stats/light diagnostics show actual allocations and limiting reasons. `quality medium`, `quality shadows ultra`, `quality shadows budget 6` (Manual), `quality shadows budget auto`, `quality shadows distance 200`, `quality shadows enabled off`, `quality lighting budget 4`, and `quality resolution scale 0.75` apply without resetting simulation. `quality shadows reset` resets one group; `quality reset` restores all current project/scene values. The obsolete renderquality, shadowquality and resolutionscale commands are removed; framecap remains independent.
 
 `lightsdebug on/off` controls an independent, default-off light diagnostic overlay in editor Play and debug players. Detailed light rows are collected only while enabled; Stats retains aggregate rendering costs. Illumination exclusion and shadow allocation are reported separately.
 
@@ -628,14 +637,12 @@ The attached Post Process stack reads or resets one entry by stable ID. Reset re
 FrameGraph entry reads and resets preserve the same saved-override precedence. Reset while disabled updates the replay state without allocating a Material; re-enabling applies it to the new instance. Reads of an uncompiled default return null until an instance is prepared, while saved/live overrides are readable. Runtime Color writes and reads use owned copies, so caller mutations cannot alter a later rebuild.
 
 
-Explicit FrameGraph camera targets borrow their existing color and depth textures and rebuild imports after resize or replacement. Babylon 9.20 retains imported color attachments but omits the matching depth retain; the graph-owned texture manager balances that depth ownership per created wrapper so disposing a graph leaves the caller target usable. The actual surface fixture compares classic/graph RTT pixels and checks sibling backbuffer preservation, final color/depth reference counts, and subsequent classic rendering. This does not yet migrate the production view/compositor target construction.
 
 Camera-target culling binds the target while computing the native frustum, and the object task refreshes projection after binding its output. Managed shadows establish that projection before the cascaded-shadow before-bind hook reads it. This preserves perspective framing and cascade coverage when the texture and canvas have different aspect ratios. The managed-shadow texture fixture covers both backends before and after resize; caller-owned sampleable depth must be recreated alongside a resized target.
 
 Frozen active-mesh scenes retain the explicit classic fallback. Babylon freezes submesh dispatch and LOD choices in addition to mesh membership; a new graph ObjectRenderer cannot reproduce that queue by copying active meshes. This preserves camera-mask behavior and applies an `onBeforeRender` unfreeze within the same native frame. Graph culling resumes after unfreeze. Both backend/target pixel fixtures assert this fallback, then require actual graph rendering for camera changes and resize with frozen world matrices/materials.
 
 
-The opt-in authored FrameGraph Post Process adapter compiles each owned effect with its material's native GLSL or WGSL language. Shader source cleanup uses the matching language store and retains identity checks during replacement/disposal. The backend fixture compares the legacy stack with the graph for numeric color, UV orientation, parameters, time, nested functions, texture changes, failed/disabled passes, resize and hot rebuild; it rejects GPU errors and external shader compiler requests. Production stack migration remains separate integration work.
 
 The content host lowers each Material with its complete MaterialFunction context and sends a worker-neutral parameter catalog to both worker and in-process Play/player. Only reachable root Float/Color/Texture parameter bindings are public; function-local and disconnected nodes are excluded. Domain, plan hash and typed authored defaults travel with the catalog. Available canonical 2D Texture payloads form the Texture parameter allowlist; ENV/DDS environment containers do not. Runtime values are owned per Material handle, with copied Colors, and never mutate asset documents or saved entry overrides. Older direct in-process mesh-only callers without a catalog retain their existing setter contract; new entry lookup and reads/resets require metadata. Structural entry add/remove/reorder nodes are not introduced here.
 
