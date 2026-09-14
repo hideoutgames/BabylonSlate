@@ -11,6 +11,9 @@ describe("isPlayEngineCommandType", () => {
     expect(isPlayEngineCommandType("setMaterialParameter")).toBe(true);
   });
   it("forwards SceneLayer compositor commands and despawn onto the Play engine", () => {
+    expect(isPlayEngineCommandType("sceneLoading")).toBe(true);
+    expect(isPlayEngineCommandType("activeScene")).toBe(true);
+    expect(isPlayEngineCommandType("sceneLayerLoading")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerCreate")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerRemove")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerClear")).toBe(true);
