@@ -237,6 +237,17 @@ describe("SettingsModal project authoring", () => {
     const field = await screen.findByTestId("settings-audio-reverb-decay-scale");
     await waitFor(() => expect(document.activeElement).toBe(field));
   });
+  it("starts environment lighting closed and reveals the matching control from search", async () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByLabelText("Environment Rotation")).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "environment rotation" } });
+    fireEvent.click(screen.getByRole("button", { name: /Environment Rotation/ }));
+    const field = await screen.findByLabelText("Environment Rotation");
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("true");
+  });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     expect(screen.queryByTestId("settings-modal-category-input")).toBeNull();

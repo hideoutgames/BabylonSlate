@@ -1,19 +1,54 @@
-import { resolveShadowSettings, type ShadowOverrides, resolveCelShadingSettings, type CelShadingOverrides, type RenderProjectSettings } from "@babylonslate/core";
+import {
+  resolveShadowSettings,
+  type ShadowOverrides,
+  resolveCelShadingSettings,
+  type CelShadingOverrides,
+  type RenderProjectSettings,
+  resolveEnvironmentLightingSettings,
+  normalizeEnvironmentLightingSettings,
+  type EnvironmentLightingOverrides,
+  type EnvironmentLightingSettings,
+} from "@babylonslate/core";
 
 /** Only effective rendering changes rebuild GPU scene resources. */
 export function sceneViewportRenderSettingsKey(
   project: Partial<RenderProjectSettings> = {},
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
+  environmentOverrides?: EnvironmentLightingOverrides,
+  environmentSource: string | null = null,
 ): string {
   return JSON.stringify({
     ...project,
     mode: project.mode ?? "pbr",
+    environmentLighting: {
+      enabled: resolveEnvironmentLightingSettings(
+        project.environmentLighting,
+        environmentOverrides,
+      ).enabled,
+    },
+    environmentSource,
     shadows: resolveShadowSettings(project.shadows, shadowOverrides),
-    cel: project.mode === "cel"
-      ? resolveCelShadingSettings(project.cel, overrides)
-      : undefined,
+    cel:
+      project.mode === "cel"
+        ? resolveCelShadingSettings(project.cel, overrides)
+        : undefined,
   });
+}
+
+/** Resource identity stays in the key; live environment scalars use latest defaults. */
+export function sceneViewportRenderSettings(
+  key: string,
+  environmentLighting?: EnvironmentLightingSettings,
+): Partial<RenderProjectSettings> {
+  const { environmentSource: _source, ...settings } = JSON.parse(
+    key,
+  ) as Partial<RenderProjectSettings> & { environmentSource: string | null };
+  return {
+    ...settings,
+    environmentLighting:
+      normalizeEnvironmentLightingSettings(environmentLighting),
+  };
 }
 
 export const SCENE_LOAD_PHASES = [

@@ -60,6 +60,7 @@ import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
   sceneViewportRenderSettingsKey,
+  sceneViewportRenderSettings,
   waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
@@ -230,7 +231,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     projectDocument?.settings.render,
     scene?.settings.celShading,
     scene?.settings.shadowOverrides,
+    scene?.settings.environmentLighting,
+    scene?.settings.environmentTextureGuid,
   );
+  const environmentSettingsKey = JSON.stringify(projectDocument?.settings.render.environmentLighting ?? {});
+  const environmentSettingsRef = useRef(projectDocument?.settings.render.environmentLighting);
+  environmentSettingsRef.current = projectDocument?.settings.render.environmentLighting;
   const [renderSettingsKey, setRenderSettingsKey] = useState(requestedRenderSettingsKey);
   // Shading changes replace compiled material ownership. Other rendering settings
   // are reconciled by the existing scene quality, lighting and material controllers.
@@ -239,6 +245,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const timer = window.setTimeout(() => setRenderSettingsKey(requestedRenderSettingsKey), 150);
     return () => window.clearTimeout(timer);
   }, [requestedRenderSettingsKey]);
+
+  useEffect(() => {
+    if (requestedRenderSettingsKey !== renderSettingsKey || appliedRenderSettingsRef.current !== renderSettingsKey) return;
+    engineRef.current?.setRenderSettings(sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current));
+  }, [environmentSettingsKey, requestedRenderSettingsKey, renderSettingsKey, engineEpoch]);
 
   useEffect(() => {
     sceneRef.current = scene;
@@ -365,7 +376,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
         const handle = createEngine(canvas, {
           editor: true,
-          renderSettings: JSON.parse(renderSettingsKey),
+          renderSettings: sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current),
           editorViewportId: dropViewportId,
           sharedEngine,
           viewportMode,
@@ -576,7 +587,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       const realize = () => {
         if (!isCurrent()) return;
         if (appliedRenderSettingsRef.current !== renderSettingsKey) {
-          handle.setRenderSettings(JSON.parse(renderSettingsKey));
+          handle.setRenderSettings(sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current));
           appliedRenderSettingsRef.current = renderSettingsKey;
         }
         // Saved Material refreshes must not realize or re-dirty scene structure.
