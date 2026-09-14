@@ -34,3 +34,6 @@ export * from "./sorting";
 export * from "./render-quality";
 export * from "./render-path";
 export * from "./environment-lighting";
+export * from "./baked-lighting";
+export * from "./baked-geometry";
+export * from "./baking";
