@@ -138,6 +138,7 @@ export async function runFrameGraphShadowProof() {
     const prepared = await graph.prepare(camera);
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
     const map = () => light.getShadowGenerator()?.getShadowMap() ?? null;
+    let captureShadowState = false;
     const render = async (path: "graph" | "classic", force = false) => {
       // Graph readiness warms its own ObjectRenderer render-pass variants. The
       // independent classic oracle must also be ready on the camera's pass.
@@ -148,6 +149,30 @@ export async function runFrameGraphShadowProof() {
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
       const target = map();
+      const shadow = light.getShadowGenerator() as ShadowGenerator | null;
+      const shadowDrawState: unknown[] = [];
+      const gl = Reflect.get(engine, "_gl") as WebGL2RenderingContext;
+      const shadowObserver = captureShadowState
+        ? shadow?.onAfterShadowMapRenderMeshObservable.add((mesh) => {
+            shadowDrawState.push({
+              mesh: mesh.name,
+              world: Array.from(mesh.getWorldMatrix().m),
+              sceneUbo: Array.from(scene.getSceneUniformBuffer().getData()),
+              meshUbo: Array.from(mesh.getMeshUniformBuffer().getData()),
+              depthFunction: gl.getParameter(gl.DEPTH_FUNC),
+              depthWrite: gl.getParameter(gl.DEPTH_WRITEMASK),
+              depthRange: Array.from(gl.getParameter(gl.DEPTH_RANGE)),
+              cull: gl.getParameter(gl.CULL_FACE_MODE),
+              front: gl.getParameter(gl.FRONT_FACE),
+              viewport: Array.from(gl.getParameter(gl.VIEWPORT)),
+              scissor: gl.getParameter(gl.SCISSOR_TEST),
+              blend: gl.getParameter(gl.BLEND),
+              offset: gl.getParameter(gl.POLYGON_OFFSET_FILL),
+              offsetFactor: gl.getParameter(gl.POLYGON_OFFSET_FACTOR),
+              offsetUnits: gl.getParameter(gl.POLYGON_OFFSET_UNITS),
+            });
+          })
+        : undefined;
       let shadowDraws = 0;
       let shadowBefore = 0;
       const before = target?.onBeforeBindObservable.add(() => {
@@ -163,16 +188,18 @@ export async function runFrameGraphShadowProof() {
       const draws = readEngineDrawCalls(engine);
       if (before) target?.onBeforeBindObservable.remove(before);
       if (after) target?.onAfterUnbindObservable.remove(after);
+      if (shadowObserver)
+        shadow?.onAfterShadowMapRenderMeshObservable.remove(shadowObserver);
       const faces = boundTargets.filter(
         (target) => target === map()?.renderTarget,
       ).length;
       const active = scene.getActiveMeshes();
-      const shadow = light.getShadowGenerator() as ShadowGenerator | null;
       return {
         pixels: await read(),
         draws,
         faces,
         shadowDraws,
+        shadowDrawState,
         classicReadyBefore,
         activeMeshes: active.data
           .slice(0, active.length)
@@ -191,6 +218,7 @@ export async function runFrameGraphShadowProof() {
       };
     };
     const capture = async (pose: string) => {
+      captureShadowState = kind === "spot" && pose === "initial";
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
       const prepared = await graph.prepare(camera);
@@ -201,6 +229,8 @@ export async function runFrameGraphShadowProof() {
       const graphFrame = await render("graph");
       const beforeClassic = await render("graph");
       const beforeClassicForced = await render("graph", true);
+      await scene.whenReadyAsync(true);
+      const afterClassicReady = await render("graph", true);
       const classic = await render("classic", true);
       const settled = await render("graph");
       const forceGraph = await render("graph", true);
@@ -212,6 +242,7 @@ export async function runFrameGraphShadowProof() {
         graph: graphFrame,
         beforeClassic,
         beforeClassicForced,
+        afterClassicReady,
         classic,
         settled,
         forceGraph,
