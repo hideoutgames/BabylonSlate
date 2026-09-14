@@ -320,6 +320,15 @@ export class EditorSceneSync {
     return this.meshes.get(actorId) ?? null;
   }
 
+  /** Exact authored component visual; asset consumers never infer identity from mesh order. */
+  meshForComponent(actorId: string, componentId: string): Mesh | null {
+    const actor = this.lastScene?.actors.find((entry) => entry.id === actorId);
+    const component = actor?.components.find((entry) => entry.id === componentId);
+    const root = this.meshes.get(actorId);
+    return root && component?.classId === "MeshComponent"
+      ? visualForMeshComponent(root, actorId, componentId) : null;
+  }
+
   visualMeshesForActor(actorId: string): Mesh[] {
     const mesh = this.meshes.get(actorId);
     if (!mesh) return [];

@@ -5,6 +5,7 @@ import {
   meshBakeParticipation,
   resolveEnvironmentLightingSettings,
   type BakeGeometrySource,
+  type BakeAuthoringSettings,
   type BakeInputHashes,
   type BakedLightingSource,
   type BakedReceiverIdentity,
@@ -33,12 +34,7 @@ import type {
 } from "./bake-prototype-input";
 import { snapshotBakeMesh } from "./bake-mesh-snapshot";
 
-export interface SceneBakeSettings {
-  resolution: number;
-  paddingTexels: number;
-  samples: number;
-  bounces: number;
-}
+export type SceneBakeSettings = BakeAuthoringSettings;
 export interface SceneBakeOwner {
   sceneGuid: string;
   generation: number;

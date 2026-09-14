@@ -33,6 +33,7 @@ import {
 } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
+import { useOptionalSceneBake } from "../context/scene-bake-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
@@ -136,6 +137,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const [engineEpoch, setEngineEpoch] = useState(0);
   const [reloadVersion, setReloadVersion] = useState(0);
   const navBake = useOptionalNavBake();
+  const sceneBake = useOptionalSceneBake();
   const [navOverlayGeneration, setNavOverlayGeneration] = useState(0);
   const selectActorRef = useRef(selectActor);
   selectActorRef.current = selectActor;
@@ -264,6 +266,34 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [scene]);
 
   const registerNavBakeCollector = navBake?.registerCollector;
+  const registerSceneBakeCollector = sceneBake?.registerCollector;
+  useEffect(() => {
+    if (!registerSceneBakeCollector) return;
+    if (!sceneReady || playing || preparing || !scene) {
+      registerSceneBakeCollector(null);
+      return;
+    }
+    registerSceneBakeCollector((source, owner) => {
+      const handle = engineRef.current;
+      const current = () => !!handle?.editor && !handle.scene.isDisposed && engineRef.current === handle &&
+        sceneRef.current === source && handle.editor.sync.serializedScene() === source && !playingRef.current;
+      if (!current()) throw new Error("Wait for the Scene viewport to finish loading before baking.");
+      return { isCurrent: current, prepare: async (settings, signal) => {
+        const { prepareSceneBake } = await import("@babylonslate/render/scene-bake-preparation");
+        signal.throwIfAborted();
+        const materials = await collectPlayMaterialLibrary(source);
+        signal.throwIfAborted();
+        if (!current()) throw new Error("The loaded Scene changed during Bake preparation.");
+        return prepareSceneBake({ owner, current: () => current() ? owner : { ...owner, generation: owner.generation + 1 },
+          document: source, settings, signal, materials: materials.documents,
+          functions: Object.fromEntries(materials.functions),
+          projectEnvironment: projectDocument?.settings.render.environmentLighting,
+          meshForComponent: (actorId, componentId) => handle!.editor!.sync.meshForComponent(actorId, componentId),
+        });
+      } };
+    });
+    return () => registerSceneBakeCollector(null);
+  }, [registerSceneBakeCollector, sceneReady, scene, playing, preparing, engineEpoch, collectPlayMaterialLibrary, projectDocument]);
   useEffect(() => {
     if (!registerNavBakeCollector) return;
     registerNavBakeCollector((extras) => {
