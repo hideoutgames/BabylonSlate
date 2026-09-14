@@ -138,6 +138,35 @@ function fixture(engine = new NullEngine()) {
 }
 
 describe("explicit clustered light ownership", () => {
+  it("cleans up an actual texture layout larger than its pre-allocation reservation before publishing a container", () => {
+    const { engine, scene, lights } = fixture();
+    const before = scene.textures.slice();
+    const wrappers = engine._renderTargetWrapperCache.slice();
+    const allocate = vi
+      .mocked(engine.createRenderTargetTexture)
+      .getMockImplementation()!;
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementationOnce(
+      (...args) => {
+        const target = allocate(...args);
+        target.texture!.format = 5; // RGBA instead of the declared single-channel R32F mask.
+        return target;
+      },
+    );
+    const owner = new ClusteredSceneLights(scene, lights);
+    expect(owner.status().clustered).toBe(0);
+    expect(owner.status().fallbackReason).toContain("reserved peak");
+    expect(scene.textures).toEqual(before);
+    expect(engine._renderTargetWrapperCache).toEqual(wrappers);
+    expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+    expect(
+      lights.every(
+        (light) =>
+          scene.lights.includes(light) && isAuthoredLightEnabled(light),
+      ),
+    ).toBe(true);
+    owner.dispose();
+  });
+
   it("starves a sibling before construction and admits it after the exact owner's lease is released", () => {
     const first = fixture();
     limitManagedLightingBytes(first.engine, 18224);
@@ -217,6 +246,9 @@ describe("explicit clustered light ownership", () => {
       range: 12,
     });
     updateSceneRenderingSettings(scene, {
+      quality: normalizeRenderingQuality({
+        lighting: { localLightMode: "manual", maxLocalLights: 256 },
+      }),
       shadows: normalizeShadowSettings({
         localLightMode: "manual",
         maxLocalLights: 1,

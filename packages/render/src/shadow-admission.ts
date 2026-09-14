@@ -8,9 +8,8 @@ import {
 export type ShadowCost = { bytes: number; passes: number; samplers: number };
 const reservations = new WeakMap<AbstractEngine, Map<Scene, ShadowCost>>();
 
-// Shared by every Scene/Play/preview client. This shadow-only ceiling deliberately
-// leaves other resource categories outside the allocation allowance; it is not a
-// browser VRAM measurement or a complete engine resource ledger.
+// Per-Engine shadow category ceiling. Cluster textures additionally consume the
+// shared managed lighting byte allowance; neither is total GPU memory.
 export const ENGINE_SHADOW_BUDGET = { bytes: 512 * 1024 ** 2, passes: 64 };
 export const SHADOW_MATERIAL_SAMPLER_RESERVE = 8;
 
