@@ -13,9 +13,10 @@ const authoredEnabled = new WeakMap<
 >();
 const excluded = new WeakSet<Light>();
 const forwardExcluded = new WeakSet<Light>();
+const clusteredMembers = new WeakSet<Light>();
 const forwardSelections = new WeakMap<Scene, Set<Light>>();
 
-function requestedEnabled(light: Light): boolean {
+export function isAuthoredLightEnabled(light: Light): boolean {
   const current = light.isEnabled(false);
   const previous = authoredEnabled.get(light);
   return !previous || current !== previous.effective
@@ -28,13 +29,21 @@ function applyEnabled(light: Light, enabled: boolean): void {
     enabled &&
     light.intensity > 0 &&
     !excluded.has(light) &&
-    !forwardExcluded.has(light);
+    (!forwardExcluded.has(light) || clusteredMembers.has(light));
   const previous = authoredEnabled.get(light);
   if (previous) {
     previous.enabled = enabled;
     previous.effective = effective;
   } else authoredEnabled.set(light, { enabled, effective });
   if (light.isEnabled(false) !== effective) light.setEnabled(effective);
+}
+
+/** A borrowed clustered child does not consume its previous conventional slot. */
+export function setClusteredLightMember(light: Light, member: boolean): void {
+  const enabled = isAuthoredLightEnabled(light);
+  if (member) clusteredMembers.add(light);
+  else clusteredMembers.delete(light);
+  applyEnabled(light, enabled);
 }
 
 /** Authored state stays separate from Babylon's effective illumination state. */
@@ -48,7 +57,7 @@ export function isDirectionalLightExcluded(light: Light): boolean {
 }
 
 export function isForwardLightExcluded(light: Light): boolean {
-  return forwardExcluded.has(light) && requestedEnabled(light);
+  return !clusteredMembers.has(light) && forwardExcluded.has(light) && isAuthoredLightEnabled(light);
 }
 
 /** Stable scene order selects one enabled sun, regardless of shadow settings. */
@@ -56,7 +65,7 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
   let owner: Light | undefined;
   for (const light of scene.lights) {
     if (!(light instanceof DirectionalLight)) continue;
-    const enabled = requestedEnabled(light);
+    const enabled = isAuthoredLightEnabled(light);
     const illuminating =
       enabled &&
       light.intensity > 0 &&
@@ -83,7 +92,7 @@ export function syncForwardLightPolicy(
   const camera = scene.activeCamera;
   camera?.getViewMatrix();
   const eligible = (light: Light) =>
-    requestedEnabled(light) &&
+    isAuthoredLightEnabled(light) &&
     light.intensity > 0 &&
     !excluded.has(light) &&
     (!light.parent || light.parent.isEnabled());
@@ -131,7 +140,7 @@ export function syncForwardLightPolicy(
     selected.add(candidates[index]!);
   const limited = candidates.slice(capacity);
   for (const light of scene.lights) {
-    const enabled = requestedEnabled(light);
+    const enabled = isAuthoredLightEnabled(light);
     if (eligible(light) && !selected.has(light)) forwardExcluded.add(light);
     else forwardExcluded.delete(light);
     applyEnabled(light, enabled);

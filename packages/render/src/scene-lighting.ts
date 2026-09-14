@@ -1,6 +1,7 @@
 import "./texture-quality";
 import { syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import { clusteredLightingLimits, syncClusteredLightPolicy } from "./clustered-light-policy";
 import {
   Material,
   NodeMaterial,
@@ -48,7 +49,7 @@ export function syncSceneLighting(scene: Scene): void {
 }
 
 export function sceneLightingLimits(scene: Scene): string[] {
-  return lightingByScene.get(scene)?.limits() ?? [];
+  return [...clusteredLightingLimits(scene), ...(lightingByScene.get(scene)?.limits() ?? [])];
 }
 
 function installSceneLighting(scene: Scene): SceneLighting {
@@ -70,6 +71,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
 
   const sync = (): void => {
     if (scene.isDisposed) return;
+    syncClusteredLightPolicy(scene);
     budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.

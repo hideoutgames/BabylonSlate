@@ -157,6 +157,8 @@ export class ForwardSceneFrameGraph {
     if (unavailable) return unavailable;
     if (scene.getEngine().isWebGPU)
       return "Forward FrameGraph proof requires WebGL.";
+    if (scene.lights.some((light) => light.getClassName() === "ClusteredLightContainer"))
+      return "Clustered mask ordering requires its explicit FrameGraph adapter.";
     if (scene.frameGraph || scene.customRenderFunction)
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
