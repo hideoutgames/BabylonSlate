@@ -2,7 +2,7 @@
 export type BakePrototypeColor = readonly [number, number, number];
 
 export interface BakePrototypeMesh {
-  /** Unindexed, counterclockwise triangles. Flat geometric normals are derived. */
+  /** Unindexed triangles with two-sided opaque transport. Winding defines receiver normals. */
   positions: Float32Array;
   /** Supplied atlas coordinates per vertex; absence means occluder/bounce surface only. */
   uv2?: Float32Array;

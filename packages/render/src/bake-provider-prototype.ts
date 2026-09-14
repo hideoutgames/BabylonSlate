@@ -1,5 +1,5 @@
 import {
-  BufferAttribute, BufferGeometry, Color, DataTexture, FloatType, LinearSRGBColorSpace, Mesh,
+  BufferAttribute, BufferGeometry, Color, DataTexture, DoubleSide, FloatType, LinearSRGBColorSpace, Mesh,
   MeshPhysicalMaterial, NearestFilter, NoToneMapping, OrthographicCamera, PerspectiveCamera, PointLight,
   RGBAFormat, Scene, ShaderMaterial, WebGLRenderer,
 } from "three";
@@ -170,7 +170,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
       const material = new MeshPhysicalMaterial({
         color: new Color(...mesh.material.albedo),
         emissive: new Color(...(mesh.material.emission ?? [0, 0, 0])),
-        roughness: 1, metalness: 0, specularIntensity: 0,
+        roughness: 1, metalness: 0, specularIntensity: 0, side: DoubleSide,
       });
       owned.push(material);
       scene.add(new Mesh(geometry, material));
