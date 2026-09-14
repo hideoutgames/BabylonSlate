@@ -498,7 +498,7 @@ export function createMaterialPreviewPresenter(
         if (canvas.height !== height) canvas.height = height;
         ctx.putImageData(
           new ImageData(
-            flipReadPixelsRgba(buffer, width, height, host.scene.getEngine().hasOriginBottomLeft),
+            flipReadPixelsRgba(buffer, width, height),
             width,
             height,
           ),

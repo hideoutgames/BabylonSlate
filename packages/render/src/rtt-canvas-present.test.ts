@@ -124,12 +124,10 @@ describe("createRttCanvasPresent", () => {
     globalThis.ImageData = previous;
   });
 
-  it.each([
-    { originBottomLeft: true, first: [0, 0, 255, 255], last: [255, 0, 0, 255] },
-    { originBottomLeft: false, first: [255, 0, 0, 255], last: [0, 0, 255, 255] },
-  ])("presents GPU row order for bottom-left=$originBottomLeft", async ({ originBottomLeft, first, last }) => {
-    const { engine, scene, camera, canvas } = host();
-    engine.hasOriginBottomLeft = originBottomLeft;
+  it("flips Babylon render-target rows for the 2D canvas", async () => {
+    const { scene, camera, canvas } = host();
+    const first = [0, 0, 255, 255];
+    const last = [255, 0, 0, 255];
     const width = 128;
     const height = 64;
     const row = width * 4;

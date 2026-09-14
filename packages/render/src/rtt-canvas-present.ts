@@ -81,7 +81,7 @@ export function createRttCanvasPresent(
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
         ctx.putImageData(
-          new ImageData(flipReadPixelsRgba(buffer, width, height, scene.getEngine().hasOriginBottomLeft), width, height),
+          new ImageData(flipReadPixelsRgba(buffer, width, height), width, height),
           0,
           0,
         );

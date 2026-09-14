@@ -1,9 +1,8 @@
-/** Copy GPU RGBA rows to Canvas2D / PNG, flipping only bottom-left origins. */
+/** Copy Babylon RGBA render targets to Canvas2D / PNG. Both backends use flipped RTT rows. */
 export function flipReadPixelsRgba(
   buffer: ArrayBuffer | ArrayBufferView,
   width: number,
   height: number,
-  originBottomLeft = true,
 ): Uint8ClampedArray {
   const bytes =
     buffer instanceof ArrayBuffer
@@ -19,7 +18,7 @@ export function flipReadPixelsRgba(
   const flipped = new Uint8ClampedArray(byteLength);
   for (let y = 0; y < height; y++) {
     const src = y * row;
-    flipped.set(bytes.subarray(src, src + row), (originBottomLeft ? height - 1 - y : y) * row);
+    flipped.set(bytes.subarray(src, src + row), (height - 1 - y) * row);
   }
   return flipped;
 }

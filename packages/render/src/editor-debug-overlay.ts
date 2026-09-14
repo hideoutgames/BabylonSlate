@@ -394,7 +394,7 @@ export class EditorDebugOverlay {
       canvas.width = width;
       canvas.height = height;
       ctx.putImageData(
-        new ImageData(flipReadPixelsRgba(buffer, width, height, this.scene.getEngine().hasOriginBottomLeft), width, height),
+        new ImageData(flipReadPixelsRgba(buffer, width, height), width, height),
         0,
         0,
       );
