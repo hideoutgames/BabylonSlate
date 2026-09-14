@@ -29,6 +29,8 @@ function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
 function ResizableHandle({
   withHandle,
   className,
+  disabled,
+  onPointerDown,
   ...props
 }: ResizablePrimitive.SeparatorProps & {
   withHandle?: boolean;
@@ -40,6 +42,15 @@ function ResizableHandle({
         "relative flex w-1.5 items-center justify-center bg-background ring-offset-background after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-hidden aria-[orientation=horizontal]:h-1.5 aria-[orientation=horizontal]:w-full aria-[orientation=horizontal]:after:inset-y-auto aria-[orientation=horizontal]:after:top-1/2 aria-[orientation=horizontal]:after:left-0 aria-[orientation=horizontal]:after:h-px aria-[orientation=horizontal]:after:w-full aria-[orientation=horizontal]:after:translate-x-0 aria-[orientation=horizontal]:after:-translate-y-1/2 [&[aria-orientation=horizontal]>div]:rotate-90 [@media(pointer:coarse)]:w-(--touch-target) [@media(pointer:coarse)]:aria-[orientation=horizontal]:h-(--touch-target) [@media(pointer:coarse)]:aria-[orientation=horizontal]:w-full",
         className,
       )}
+      disabled={disabled}
+      onPointerDown={(event) => {
+        onPointerDown?.(event);
+        if (disabled || event.pointerType !== "mouse" || event.button !== 0)
+          return;
+        // Adjacent editor controls may stop pointermove propagation. Capture
+        // before leaving the divider so the library receives the first move.
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
       {...props}
     >
       {withHandle && (

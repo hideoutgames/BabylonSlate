@@ -7,6 +7,9 @@ import {
 } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 
+// Headless Chromium hides native scrollbars by default; exercise the real thumb.
+test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+
 async function openTrees(page: Page) {
   await page.goto("/?test=1&gallery=1");
   await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
