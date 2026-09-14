@@ -360,7 +360,7 @@ describe("editor camera controller", () => {
     expect(controller.orthoHalfHeight()).toBeCloseTo(3, 5);
   });
 
-  it("dollies 3D toward the cursor without snapping alpha or beta", () => {
+  it("dollies 3D along the view center without shifting the target or orientation", () => {
     const { scene, engine } = createHandle();
     const controller = createEditorCamera(scene, { mode: "3d" });
     controller.look(0.35, 0.15);
@@ -373,30 +373,18 @@ describe("editor camera controller", () => {
       height: engine.getRenderHeight(),
     };
     const pivot = { x: canvas.width * 0.25, y: canvas.height * 0.3, ...canvas };
-    const before = worldPositionFromCanvas(
-      controller.camera,
-      pivot.x,
-      pivot.y,
-      canvas,
-      "3d",
-    );
+    const targetBefore = controller.camera.target.clone();
+    const eyeBefore = controller.camera.position.clone();
 
     controller.zoom(2, pivot);
     controller.camera.getViewMatrix();
 
     expect(controller.camera.alpha).toBeCloseTo(alpha, 5);
     expect(controller.camera.beta).toBeCloseTo(beta, 5);
-    expect(controller.camera.radius).toBeLessThan(radiusBefore);
-    const after = worldPositionFromCanvas(
-      controller.camera,
-      pivot.x,
-      pivot.y,
-      canvas,
-      "3d",
-    );
-    expect(after[0]).toBeCloseTo(before[0], 3);
-    expect(after[1]).toBeCloseTo(before[1], 3);
-    expect(after[2]).toBeCloseTo(before[2], 3);
+    expect(controller.camera.radius).toBeCloseTo(radiusBefore / 2, 5);
+    expect(controller.camera.target.equalsWithEpsilon(targetBefore)).toBe(true);
+    const expectedEye = Vector3.Center(eyeBefore, targetBefore);
+    expect(controller.camera.position.equalsWithEpsilon(expectedEye)).toBe(true);
   });
 
   it("clears ArcRotate inertia so look-in-place does not keep drifting", () => {
