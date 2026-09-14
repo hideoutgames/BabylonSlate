@@ -192,7 +192,7 @@ EnvironmentLightingFields shares compact IBL enablement, intensity, Y rotation a
 
 EngineSettingsForm gates local resolution, texture budget and post-processing fields behind Override Project Rendering; project inheritance is the default. Settings search includes render mode, quality groups, shadow distance, local shadow budget and the local override switch.
 
-Post-process entry controls keep Enabled and Scalable Resolution in one compact desktop row, wrapping for coarse pointers without overlapping touch targets.
+Post-process entry controls keep Enabled and Scalable Resolution in one compact desktop row, wrapping for coarse pointers without overlapping touch targets. A compact Entry ID action beside the Material picker opens a Dialog with a selectable read-only PropertyGrid field, keeping IDs available for native copy without expanding every pass row.
 
 Scene Details places a labeled **Add Component** button after actor properties and immediately before the component list. The Prefab Components toolbar uses the same visible label. Outliner actor-menu **Delete** with multiple actors selected asks for **Delete Selected**, **Delete This Object**, or **Cancel**, preserving the menu-opening selection.
 
