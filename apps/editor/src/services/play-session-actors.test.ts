@@ -94,9 +94,10 @@ describe.each(["worker", "in-process"] as const)(
           finishBoot();
         });
         const reportError = runtime.reportError.bind(runtime);
-        vi.spyOn(runtime, "reportError").mockImplementation((error) => {
-          reportError(error);
-          failBoot(error);
+        vi.spyOn(runtime, "reportError").mockImplementation((...args) => {
+          const diagnostic = reportError(...args);
+          failBoot(args[0]);
+          return diagnostic;
         });
         return runtime;
       });
