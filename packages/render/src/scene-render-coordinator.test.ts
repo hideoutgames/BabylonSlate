@@ -177,3 +177,25 @@ it("admits the native frozen queue as an explicit ready fallback", async () => {
   expect(drawn).toHaveBeenCalledTimes(1);
   renderer.dispose();
 });
+
+
+it("retires pending allocation before the host releases a borrowed target", async () => {
+  const { scene, camera, renderer } = host();
+  const target = new RenderTargetTexture("borrowed output", 32, scene);
+  target.createDepthStencilTexture();
+  camera.outputRenderTarget = target;
+  const { started, release } = holdGraphInitialization();
+  const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
+  await started;
+  let retired = false;
+  const retirement = renderer.retire().then(() => { retired = true; });
+  await Promise.resolve();
+  expect(retired).toBe(false);
+  expect(target.getInternalTexture()).not.toBeNull();
+  release();
+  await pending;
+  await retirement;
+  expect(scene.objectRenderers).toHaveLength(0);
+  expect(target.getInternalTexture()).not.toBeNull();
+  target.dispose();
+});

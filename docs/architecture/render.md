@@ -709,3 +709,8 @@ The authored FrameGraph adapter accepts caller-owned logical depth/normal handle
 ### Scene-owned post-process preparation
 
 Before constructing graph resources, the scene preparation plan filters disabled entries and resolves enabled Materials through the same function-aware MaterialLibrary lowering used for acquisition. Invalid or missing Materials contribute diagnostics without allocating buffers or removing valid siblings. The plan retains ordered entry IDs, owned parameter/document snapshots, and the union of successfully lowered depth/normal requirements. This preparation seam does not itself allocate targets or replace the production camera stack.
+
+
+The coordinator's Post Process attachment facade owns one normalized entry stack and lazily selects its native fallback. Live entry values replay across rebuilds without changing authored reset defaults. Native and graph instances are mutually exclusive; a pending graph cannot draw an unprocessed native frame as a substitute for authored effects. This ownership seam still uses the native path until scene graph allocation is integrated.
+
+`SceneRenderCoordinator.retire()` cancels preparation and settles task cleanup before hosts dispose borrowed output textures. Cancellation alone is not permission to destroy a target still referenced by asynchronous graph initialization. Cleanup failures reject retirement so the host can retain uncertain resources; GPU ledger release remains tied to the Engine's natural destruction boundary.
