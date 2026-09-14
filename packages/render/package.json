@@ -13,7 +13,8 @@
     "./audio-playback-backend": "./src/audio-playback-backend.ts",
     "./bake-uv-atlas": "./src/bake-uv-atlas.ts",
     "./scene-bake-preparation": "./src/scene-bake-preparation.ts",
-    "./scene-bake-job": "./src/scene-bake-job.ts"
+    "./scene-bake-job": "./src/scene-bake-job.ts",
+    "./scene-baked-lighting": "./src/scene-baked-lighting.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
