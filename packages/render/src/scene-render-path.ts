@@ -90,7 +90,10 @@ class SceneRenderPath {
   private syncing = false;
   private published = "";
 
-  constructor(private readonly scene: Scene) {
+  private readonly scene: Scene;
+
+  constructor(scene: Scene) {
+    this.scene = scene;
     this.status = this.selection = requested(scene);
     scene.onDisposeObservable.addOnce(() => {
       this.cluster?.dispose();
@@ -166,7 +169,7 @@ class SceneRenderPath {
   private availability(): ClusteredRenderingAvailability {
     const scene = this.scene;
     const capability = clusteredLightCapabilities(scene.getEngine());
-    if (!capability.supported) return capability;
+    if (capability.supported === false) return capability;
     const camera = scene.activeCamera;
     if (
       !camera ||

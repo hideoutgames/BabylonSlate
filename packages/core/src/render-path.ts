@@ -88,10 +88,10 @@ export function resolveRenderingPipeline(
       limits.push(
         "Clustered Forward requires WebGL2; using Forward on WebGPU.",
       );
-    } else if (clustered?.supported) {
+    } else if (clustered?.supported === true) {
       if (requested.renderPath === "clusteredForward" || clustered.autoEligible)
         renderPath = "clusteredForward";
-    } else if (clustered) {
+    } else if (clustered?.supported === false) {
       limits.push(clustered.reason);
     } else if (requested.renderPath === "clusteredForward") {
       limits.push(
