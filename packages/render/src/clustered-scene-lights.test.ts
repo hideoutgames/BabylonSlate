@@ -71,6 +71,21 @@ function fixture() {
     texture.isReady = true;
     return texture;
   });
+  // Like the shadow-controller fixture, complete NullEngine's missing cube
+  // wrapper attachment so repeated real admission sees the allocated map size.
+  const createCubeTarget = engine.createRenderTargetCubeTexture.bind(engine);
+  vi.spyOn(engine, "createRenderTargetCubeTexture").mockImplementation(
+    (...args) => {
+      const target = createCubeTarget(...args);
+      if (!target.texture) {
+        const texture = engine.getLoadedTexturesCache().at(-1);
+        if (!texture)
+          throw new Error("NullEngine cube allocation has no texture");
+        target.setTexture(texture);
+      }
+      return target;
+    },
+  );
   const scene = new Scene(engine);
   updateSceneRenderingSettings(scene, {
     quality: normalizeRenderingQuality({
@@ -126,7 +141,7 @@ describe("explicit clustered light ownership", () => {
     controller.sync();
     expect(scene.meshes).not.toContain(proxy);
     const generator = controller.generator(lights[0]!);
-    expect(generator, JSON.stringify({ status: controller.status(lights[0]!), enabled: lights[0]!.isEnabled(), owner: owner.status(), limits: controller.limits() })).not.toBeNull();
+    expect(generator).not.toBeNull();
     const shadow = generator!.getShadowMap()!;
     expect(shadow.renderList).not.toContain(proxy);
     // The real thin-instance ShaderMaterial proxy must not force otherwise
