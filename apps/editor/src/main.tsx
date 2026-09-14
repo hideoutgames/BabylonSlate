@@ -13,6 +13,13 @@ initializeCapacitorAudioLifecycle();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("scenePostProcessHostProof")
+) {
+  void import("./testing/scene-post-process-host-proof").then(({ createScenePostProcessHostProof }) => {
+    Object.assign(window, { __babylonslateScenePostProcessHostProof: createScenePostProcessHostProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("scenePostProcessCoordinatorProof")
 ) {
   void import("./testing/scene-post-process-coordinator-proof").then(({ runScenePostProcessCoordinatorProof }) => {
