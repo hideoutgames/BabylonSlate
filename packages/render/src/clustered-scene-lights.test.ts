@@ -24,7 +24,10 @@ import {
 import { applyAuthoredLightProperties } from "./scene-illumination";
 import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
-import { normalizeRenderingQuality, normalizeShadowSettings } from "@babylonslate/core";
+import {
+  normalizeRenderingQuality,
+  normalizeShadowSettings,
+} from "@babylonslate/core";
 import { syncSceneLighting } from "./scene-lighting";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import {
@@ -68,9 +71,11 @@ function fixture() {
     return texture;
   });
   const scene = new Scene(engine);
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({
-    lighting: { localLightMode: "manual", maxLocalLights: 256 },
-  }) });
+  updateSceneRenderingSettings(scene, {
+    quality: normalizeRenderingQuality({
+      lighting: { localLightMode: "manual", maxLocalLights: 256 },
+    }),
+  });
   const camera = new FreeCamera("camera", new Vector3(0, 3, -5), scene);
   camera.minZ = 0.1;
   camera.maxZ = 50;
@@ -146,16 +151,37 @@ describe("explicit clustered light ownership", () => {
     for (const light of lights.slice(6)) setAuthoredLightEnabled(light, false);
     const sun = new DirectionalLight("sun", Vector3.Down(), scene);
     applyAuthoredLightProperties(sun, { enabled: true, castShadows: false });
-    const spot = new SpotLight("shadowed", new Vector3(0, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
+    const spot = new SpotLight(
+      "shadowed",
+      new Vector3(0, 3, 0),
+      Vector3.Down(),
+      Math.PI / 2,
+      1,
+      scene,
+    );
     spot.renderPriority = 2;
-    const settings = (manual?: number) => updateSceneRenderingSettings(scene, {
-      quality: normalizeRenderingQuality({ lighting: { profile: "low",
-        localLightMode: manual === undefined ? "auto" : "manual", maxLocalLights: manual ?? 4 } }),
-      shadows: normalizeShadowSettings({ enabled: true, localMapSize: 64,
-        localLightMode: "manual", maxLocalLights: 1 }),
-    });
+    const settings = (manual?: number) =>
+      updateSceneRenderingSettings(scene, {
+        quality: normalizeRenderingQuality({
+          lighting: {
+            profile: "low",
+            localLightMode: manual === undefined ? "auto" : "manual",
+            maxLocalLights: manual ?? 4,
+          },
+        }),
+        shadows: normalizeShadowSettings({
+          enabled: true,
+          localMapSize: 64,
+          localLightMode: "manual",
+          maxLocalLights: 1,
+        }),
+      });
     settings();
-    applyAuthoredLightProperties(spot, { enabled: true, castShadows: true, range: 12 });
+    applyAuthoredLightProperties(spot, {
+      enabled: true,
+      castShadows: true,
+      range: 12,
+    });
     const locals = [...lights.slice(0, 6), spot];
     const owner = new ClusteredSceneLights(scene, locals);
     const controller = sceneShadowController(scene);

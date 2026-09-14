@@ -120,7 +120,11 @@ export class ClusteredSceneLights {
   }
 
   allowsLocal(light: Light): boolean {
-    return !this.localSelection || !this.registryMembership.has(light) || this.localSelection.has(light);
+    return (
+      !this.localSelection ||
+      !this.registryMembership.has(light) ||
+      this.localSelection.has(light)
+    );
   }
 
   clusteredCount(): number {
@@ -165,19 +169,36 @@ export class ClusteredSceneLights {
       // Controller entries retain the authored registry even while clustered
       // children leave scene.lights. New admitted maps therefore promote them.
       findSceneShadowController(this.scene)?.sync();
-      const requestedLocals = this.registry.filter((light) => !light.isDisposed() &&
-        !(light instanceof DirectionalLight) && !(light instanceof HemisphericLight) &&
-        isAuthoredLightEnabled(light) && light.intensity > 0 &&
-        (!light.parent || light.parent.isEnabled()));
+      const requestedLocals = this.registry.filter(
+        (light) =>
+          !light.isDisposed() &&
+          !(light instanceof DirectionalLight) &&
+          !(light instanceof HemisphericLight) &&
+          isAuthoredLightEnabled(light) &&
+          light.intensity > 0 &&
+          (!light.parent || light.parent.isEnabled()),
+      );
       const localBudget = sceneRenderingSettings(this.scene).localLightBudget;
       if (requestedLocals.length > localBudget)
-        requestedLocals.sort(compareLightAdmission(this.scene, requestedLocals, this.localSelection ?? new Set()));
+        requestedLocals.sort(
+          compareLightAdmission(
+            this.scene,
+            requestedLocals,
+            this.localSelection ?? new Set(),
+          ),
+        );
       const selection = this.localSelection ?? new Set<Light>();
       selection.clear();
-      for (let index = 0; index < Math.min(localBudget, requestedLocals.length); index++)
+      for (
+        let index = 0;
+        index < Math.min(localBudget, requestedLocals.length);
+        index++
+      )
         selection.add(requestedLocals[index]!);
       this.localSelection = selection;
-      const eligible = requestedLocals.filter((light) => this.localSelection!.has(light) && this.eligible(light));
+      const eligible = requestedLocals.filter(
+        (light) => this.localSelection!.has(light) && this.eligible(light),
+      );
       // Bounded prototype resources: 256 children at most, and both physical
       // texture dimensions must fit before Babylon constructs/grows its batch.
       const maxBatches = Math.min(
@@ -191,7 +212,13 @@ export class ClusteredSceneLights {
           capability.batchSize,
       );
       if (eligible.length > limit)
-        eligible.sort(compareLightAdmission(this.scene, eligible, new Set(this.container?.lights)));
+        eligible.sort(
+          compareLightAdmission(
+            this.scene,
+            eligible,
+            new Set(this.container?.lights),
+          ),
+        );
       const selected = new Set(eligible.slice(0, limit));
       for (const light of this.container?.lights.slice() ?? []) {
         if (!selected.has(light)) this.returnLight(light);
@@ -270,8 +297,10 @@ export class ClusteredSceneLights {
             : [],
       };
       if (requestedLocals.length > localBudget)
-        this.statusValue.reasons = [...this.statusValue.reasons,
-          `Local lighting quality budget: ${this.localSelection.size}/${requestedLocals.length} requested locals selected across clustered and conventional lighting.`];
+        this.statusValue.reasons = [
+          ...this.statusValue.reasons,
+          `Local lighting quality budget: ${this.localSelection.size}/${requestedLocals.length} requested locals selected across clustered and conventional lighting.`,
+        ];
       if (clustered && this.usesUnboundedPhysicalLighting())
         this.statusValue = {
           ...this.statusValue,

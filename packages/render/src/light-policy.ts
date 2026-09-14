@@ -7,7 +7,10 @@ import {
   type Scene,
 } from "@babylonjs/core";
 
-import { isClusteredLocalAllowed, isManagedClusteredLight } from "./clustered-light-policy";
+import {
+  isClusteredLocalAllowed,
+  isManagedClusteredLight,
+} from "./clustered-light-policy";
 
 const authoredEnabled = new WeakMap<
   Light,
@@ -102,12 +105,19 @@ export function syncForwardLightPolicy(
     !excluded.has(light) &&
     (!light.parent || light.parent.isEnabled());
   const global = isGlobalLight;
-  const local = (light: Light) => !global(light) && !isManagedClusteredLight(scene, light);
-  const candidates = scene.lights.filter((light) => eligible(light) &&
-    (!local(light) || isClusteredLocalAllowed(scene, light)));
+  const local = (light: Light) =>
+    !global(light) && !isManagedClusteredLight(scene, light);
+  const candidates = scene.lights.filter(
+    (light) =>
+      eligible(light) &&
+      (!local(light) || isClusteredLocalAllowed(scene, light)),
+  );
   const capacity = Math.max(0, Math.floor(slots));
   const localCapacity = Math.max(0, Math.floor(localSlots));
-  if (candidates.length > capacity || candidates.filter(local).length > localCapacity)
+  if (
+    candidates.length > capacity ||
+    candidates.filter(local).length > localCapacity
+  )
     candidates.sort(compareLightAdmission(scene, candidates, previous));
   const selected = previous;
   selected.clear();
@@ -115,7 +125,11 @@ export function syncForwardLightPolicy(
   const limited: Light[] = [];
   for (const light of candidates) {
     const authoredLocal = local(light);
-    if (selected.size >= capacity || (authoredLocal && selectedLocals >= localCapacity)) limited.push(light);
+    if (
+      selected.size >= capacity ||
+      (authoredLocal && selectedLocals >= localCapacity)
+    )
+      limited.push(light);
     else {
       selected.add(light);
       if (authoredLocal) selectedLocals++;
@@ -130,7 +144,11 @@ export function syncForwardLightPolicy(
     applyEnabled(light, enabled);
   }
   forwardSelections.set(scene, selected);
-  return { requested: selected.size + limited.length, admitted: selected.size, limited };
+  return {
+    requested: selected.size + limited.length,
+    admitted: selected.size,
+    limited,
+  };
 }
 
 function isGlobalLight(light: Light): boolean {
@@ -153,14 +171,26 @@ export function compareLightAdmission(
       light.parent?.computeWorldMatrix(true);
       light.computeTransformedInformation();
     }
-    const squared = camera && !isGlobalLight(light)
-      ? Vector3.DistanceSquared(light instanceof ShadowLight && !light.parent
-        ? light.position : light.getAbsolutePosition(), camera.globalPosition) : 0;
-    distances.set(light, Math.max(1, squared) / (previous.has(light) ? 1.15 : 1));
+    const squared =
+      camera && !isGlobalLight(light)
+        ? Vector3.DistanceSquared(
+            light instanceof ShadowLight && !light.parent
+              ? light.position
+              : light.getAbsolutePosition(),
+            camera.globalPosition,
+          )
+        : 0;
+    distances.set(
+      light,
+      Math.max(1, squared) / (previous.has(light) ? 1.15 : 1),
+    );
   }
-  return (a, b) => Number(isGlobalLight(b)) - Number(isGlobalLight(a)) ||
-    Number(isManagedClusteredLight(scene, b)) - Number(isManagedClusteredLight(scene, a)) ||
+  return (a, b) =>
+    Number(isGlobalLight(b)) - Number(isGlobalLight(a)) ||
+    Number(isManagedClusteredLight(scene, b)) -
+      Number(isManagedClusteredLight(scene, a)) ||
     (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
       (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
-    distances.get(a)! - distances.get(b)! || a.uniqueId - b.uniqueId;
+    distances.get(a)! - distances.get(b)! ||
+    a.uniqueId - b.uniqueId;
 }
