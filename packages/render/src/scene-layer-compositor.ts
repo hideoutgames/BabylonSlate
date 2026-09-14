@@ -49,6 +49,7 @@ export interface SceneLayerView {
 export interface SceneLayerCompositorOptions {
   engine: AbstractEngine;
   postProcessingEnabled?: () => boolean;
+  isLayerReady?: (layerId: string) => boolean;
   attachLayerPostProcess?: (
     layer: SceneLayerView,
     stack: SceneLayerPostProcessEntry[],
@@ -69,6 +70,7 @@ type LayerRecord = SceneLayerView & {
  */
 export class SceneLayerCompositor {
   private readonly engine: AbstractEngine;
+  private readonly isLayerReady: (layerId: string) => boolean;
   private readonly postProcessingEnabled: () => boolean;
   private readonly attachLayerPostProcess?: SceneLayerCompositorOptions["attachLayerPostProcess"];
   private readonly byId = new Map<string, LayerRecord>();
@@ -77,6 +79,7 @@ export class SceneLayerCompositor {
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
+    this.isLayerReady = options.isLayerReady ?? (() => true);
     this.postProcessingEnabled = options.postProcessingEnabled ?? (() => true);
     this.attachLayerPostProcess = options.attachLayerPostProcess;
   }
@@ -210,8 +213,9 @@ export class SceneLayerCompositor {
     }
   }
 
-  render(): void {
+  render(presentingLayers: ReadonlySet<string> = new Set()): void {
     for (const layer of this.sortedLayers()) {
+      if (!this.isLayerReady(layer.layerId) && !presentingLayers.has(layer.layerId)) continue;
       const record = layer as LayerRecord;
       this.bindHudCamera(record);
       if (record.rtt) {
@@ -226,8 +230,10 @@ export class SceneLayerCompositor {
     }
   }
 
-  isReady(): boolean {
+  isReady(layerId?: string): boolean {
+    if (layerId && !this.byId.has(layerId)) return false;
     for (const record of this.byId.values()) {
+      if (layerId ? record.layerId !== layerId : !this.isLayerReady(record.layerId)) continue;
       if (!isSceneFrameReady(record.scene, record.rtt ? [record.rtt] : [])) return false;
       if (record.rtt && (!record.blitScene || !isSceneFrameReady(record.blitScene))) return false;
     }
@@ -264,6 +270,7 @@ export class SceneLayerCompositor {
     };
 
     for (const layer of [...this.sortedLayers()].reverse()) {
+      if (!this.isLayerReady(layer.layerId)) continue;
       this.bindHudCamera(layer as LayerRecord);
       const pick = layer.scene.pick(canvasX, canvasY, undefined, false);
       if (pick?.hit && pick.pickedMesh) {

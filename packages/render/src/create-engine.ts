@@ -1,3 +1,4 @@
+import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
@@ -191,6 +192,7 @@ import {
   applyEditorMaterialFreeze,
   freezeEditorActiveMeshes,
   isSceneFrameReady,
+  isSceneTextureWorkReady,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
@@ -289,9 +291,9 @@ export interface EngineHandle {
   /** Material asset guids whose editor tab is open — those stay unfrozen. */
   setEditingMaterialGuids: (guids: ReadonlySet<string>) => void;
   /** Compile shaders before the first editor draw (scene-load warm). */
-  prewarmSceneMaterials: () => Promise<void>;
+  prewarmSceneMaterials: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Present one loading frame without resuming normal paused/obstructed drawing. */
-  presentFirstFrame: () => Promise<void>;
+  presentFirstFrame: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Unlock AudioV2 after a user gesture and drain the pre-unlock queue. */
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */
@@ -303,9 +305,9 @@ export interface EngineHandle {
   /** Fly the Play free camera; no-op while it is off. */
   steerPlayFreeCam: (forward: number, right: number) => void;
   /** Resolves when editor or Play GLB instantiations from the last apply have finished. */
-  whenEditorModelsReady: () => Promise<void>;
+  whenEditorModelsReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Resolves when library NodeMaterials can sample authored textures (or timeout). */
-  whenMaterialTexturesReady: () => Promise<void>;
+  whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Snapshot/editor GLB loads currently tracked (including settled promises). */
   modelLoadCount: () => number;
 }
@@ -734,19 +736,25 @@ function initializeEngine(
   let disposed = false;
   let contextLost = false;
   let loadGeneration = 0;
-  let pendingPresentation: {
+  let worldLoading = false;
+  const layerLoads = new Map<string, { loadId: number; ready: boolean }>();
+  type PendingPresentation = {
     promise: Promise<void>;
     resolve: () => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
     rendered: boolean;
-  } | null = null;
-  const cancelPresentation = (error: Error) => {
-    const pending = pendingPresentation;
-    if (!pending) return;
-    pendingPresentation = null;
-    clearTimeout(pending.timer);
-    pending.reject(error);
+    owner?: SceneLayerLoadIdentity;
+  };
+  const pendingPresentations = new Map<string, PendingPresentation>();
+  const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
+  const cancelPresentation = (error: Error, key?: string) => {
+    for (const [id, pending] of pendingPresentations) {
+      if (key !== undefined && id !== key) continue;
+      pendingPresentations.delete(id);
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
   };
   const assertCurrent = (generation: number) => {
     if (disposed || scene.isDisposed || generation !== loadGeneration) {
@@ -806,9 +814,13 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered) && scheduler.canPresentLoadingFrame();
+  const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
+  const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
+  const shouldRenderFrame = (now: number) => hasLoadingFrame() || (hasReadyContent() &&
+    (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now)));
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
-    !disposed && !contextLost && ((pendingPresentation !== null && !pendingPresentation.rendered && scheduler.canPresentLoadingFrame()) ||
-      scheduler.shouldRender(performance.now()))) : null;
+    !disposed && !contextLost && shouldRenderFrame(performance.now())) : null;
   onRollback(() => releaseViewAdmission?.());
   if (options.editor) {
     scheduler.setAlwaysRender(true);
@@ -1074,6 +1086,7 @@ function initializeEngine(
     ? new SceneLayerCompositor({
         engine,
         postProcessingEnabled: () => postProcessingEnabled,
+        isLayerReady: (layerId) => layerLoads.get(layerId)?.ready !== false,
         attachLayerPostProcess: (layer, stack) => {
           return attachPostProcessStack({
             scene: layer.scene,
@@ -1253,7 +1266,7 @@ function initializeEngine(
     assertCurrent(loadGeneration);
     if (!editorSync) throw new Error("Chunked scene realization requires an editor scene.");
     const generation = ++loadGeneration;
-    cancelPresentation(new Error("Scene loading was superseded."));
+    cancelPresentation(new Error("Scene loading was superseded."), "world");
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
@@ -1270,7 +1283,7 @@ function initializeEngine(
   const loadScene = (sceneData: SerializedScene) => {
     assertCurrent(loadGeneration);
     loadGeneration += 1;
-    cancelPresentation(new Error("Scene loading was superseded."));
+    cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -1650,6 +1663,20 @@ function initializeEngine(
   const renderDiagnostics = () => (readDiagnostics ??= createRenderDiagnostics(
     scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
   ))();
+  const loadingScope = (owner?: SceneLayerLoadIdentity) => {
+    const generation = loadGeneration;
+    const layer = owner ? layerLoads.get(owner.layerId) : undefined;
+    const target = owner ? sceneLayerCompositor?.layers().find((entry) => entry.layerId === owner.layerId)?.scene : scene;
+    const assert = () => {
+      if (!owner) { assertCurrent(generation); return; }
+      if (disposed || !target || target.isDisposed || layerLoads.get(owner.layerId) !== layer || layer?.loadId !== owner.layerLoadId) {
+        throw new Error("SceneLayer loading was superseded or disposed.");
+      }
+      if (contextLost) throw new Error("Rendering context was lost during SceneLayer loading.");
+    };
+    assert();
+    return { target: target!, assert };
+  };
   const tilemapPreviewStart = performance.now();
   const renderLoop = () => {
     if (disposed || contextLost || registeredView?.enabled === false) return;
@@ -1657,9 +1684,8 @@ function initializeEngine(
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
     const frameStart = performance.now();
-    const loadingFrame = pendingPresentation !== null &&
-      !pendingPresentation.rendered && scheduler.canPresentLoadingFrame();
-    if (!loadingFrame && !scheduler.shouldRender(frameStart)) {
+    const loadingFrame = hasLoadingFrame();
+    if (!shouldRenderFrame(frameStart)) {
       return;
     }
     const sampled = interpolator.sample(interpAlpha);
@@ -1702,19 +1728,21 @@ function initializeEngine(
       updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
     }
     try {
-      const readyBefore = !pendingPresentation || (isSceneFrameReady(scene) &&
-        (sceneLayerCompositor?.isReady() ?? true));
-      scene.render();
-      sceneLayerCompositor?.render();
+      const candidates = [...pendingPresentations.values()].filter((pending) => !pending.rendered);
+      const presentingLayers = new Set(candidates.flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
+      const ready = (pending: PendingPresentation) => pending.owner
+        ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true
+        : isSceneFrameReady(scene) && (sceneLayerCompositor?.isReady() ?? true);
+      const readyBefore = new Map(candidates.map((pending) => [pending, ready(pending)]));
+      if (!worldLoading || candidates.some((pending) => !pending.owner)) scene.render();
+      else engine.clear(scene.clearColor, true, true, true);
+      sceneLayerCompositor?.render(presentingLayers);
       if (rttPresent) rttPresent.blit();
-      // Babylon can return from render while skipping unready effects. Require
-      // readiness on both sides of the frame: the first draw can create passes.
-      if (pendingPresentation) {
-        pendingPresentation.rendered = readyBefore && isSceneFrameReady(scene) &&
-          (sceneLayerCompositor?.isReady() ?? true);
-      }
+      // A draw can create effects. Both checks belong to the same owner; another
+      // pending layer neither draws nor delays the ready owner's acknowledgement.
+      for (const pending of candidates) pending.rendered = readyBefore.get(pending) === true && ready(pending);
     } catch (error) {
-      if (!pendingPresentation) throw error;
+      if (!pendingPresentations.size) throw error;
       cancelPresentation(error instanceof Error ? error : new Error(String(error)));
       return;
     }
@@ -1725,11 +1753,16 @@ function initializeEngine(
     if (!loadingFrame) scaling.noteFrameTime(lastRenderCpuMs);
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
-    const pending = pendingPresentation;
-    if (!pending?.rendered) return;
-    pendingPresentation = null;
-    clearTimeout(pending.timer);
-    pending.resolve();
+    for (const [key, pending] of pendingPresentations) {
+      if (!pending.rendered) continue;
+      pendingPresentations.delete(key);
+      clearTimeout(pending.timer);
+      if (pending.owner) {
+        const layer = layerLoads.get(pending.owner.layerId);
+        if (layer?.loadId === pending.owner.layerLoadId) layer.ready = true;
+      } else worldLoading = false;
+      pending.resolve();
+    }
   });
   onRollback(() => engine.onEndFrameObservable.remove(presentationObserver));
   onRollback(() => engine.stopRenderLoop(renderLoop));
@@ -1979,16 +2012,28 @@ function initializeEngine(
         refreshPlayActiveCamera(scene, binding);
         rebuildIfActiveCameraChanged(previousCamera);
       }
+      if (command.type === "sceneLoading" || command.type === "activeScene") worldLoading = true;
+      if (command.type === "sceneLayerLoading") {
+        const previous = layerLoads.get(command.layerId);
+        if (!previous || previous.loadId < command.layerLoadId) {
+          cancelPresentation(new Error("SceneLayer loading was superseded."), `layer:${command.layerId}`);
+          layerLoads.set(command.layerId, { loadId: command.layerLoadId, ready: false });
+        }
+      }
       if (command.type === "sceneLayerCreate") {
         sceneLayerCompositor?.create(command);
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerRemove") {
+        cancelPresentation(new Error("SceneLayer was removed."), `layer:${command.layerId}`);
+        layerLoads.delete(command.layerId);
         sceneLayerCompositor?.remove(command.layerId);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerClear") {
+        for (const layerId of layerLoads.keys()) cancelPresentation(new Error("SceneLayer was removed."), `layer:${layerId}`);
+        layerLoads.clear();
         pendingOverlayAssign.clear();
         sceneLayerCompositor?.clear();
         scheduler.invalidate("snapshot");
@@ -2273,40 +2318,40 @@ function initializeEngine(
       freezeLibraryMaterials();
       scheduler.invalidate("asset");
     },
-    prewarmSceneMaterials: async () => {
-      const generation = loadGeneration;
-      assertCurrent(generation);
-      await warmSceneMaterials(scene, () => assertCurrent(generation));
-      assertCurrent(generation);
+    prewarmSceneMaterials: async (owner) => {
+      const scope = loadingScope(owner);
+      await warmSceneMaterials(scope.target, scope.assert);
+      scope.assert();
       freezeLibraryMaterials();
-      if (options.editor) freezeEditorActiveMeshes(scene);
+      if (options.editor && !owner) freezeEditorActiveMeshes(scene);
     },
-    whenMaterialTexturesReady: async () => {
-      const generation = loadGeneration;
-      assertCurrent(generation);
+    whenMaterialTexturesReady: async (owner) => {
+      const scope = loadingScope(owner);
       const started = Date.now();
-      while (!sceneNodeMaterialsSampleReady(scene)) {
-        assertCurrent(generation);
+      while (!sceneNodeMaterialsSampleReady(scope.target)) {
+        scope.assert();
         if (Date.now() - started >= SCENE_SHADER_WARM_TIMEOUT_MS) {
           throw new Error("Material textures did not become ready before the loading deadline.");
         }
         await new Promise((resolve) => setTimeout(resolve, 16));
       }
-      assertCurrent(generation);
+      scope.assert();
     },
-    presentFirstFrame: () => {
-      try { assertCurrent(loadGeneration); } catch (error) { return Promise.reject(error); }
+    presentFirstFrame: (owner) => {
+      try { loadingScope(owner); } catch (error) { return Promise.reject(error); }
       if (registeredView && !registeredViewIsEnabled(registeredView)) {
         return Promise.reject(new Error("The loading viewport is not active."));
       }
-      if (pendingPresentation) return pendingPresentation.promise;
+      const key = presentationKey(owner);
+      const previous = pendingPresentations.get(key);
+      if (previous) return previous.promise;
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
       const timer = setTimeout(() => {
-        cancelPresentation(new Error("The scene did not present a frame before the loading deadline."));
+        cancelPresentation(new Error("The scene did not present a frame before the loading deadline."), key);
       }, SCENE_SHADER_WARM_TIMEOUT_MS);
-      pendingPresentation = { promise, resolve, reject, timer, rendered: false };
+      pendingPresentations.set(key, { promise, resolve, reject, timer, rendered: false, owner });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
@@ -2320,15 +2365,14 @@ function initializeEngine(
     steerPlayFreeCam: (forward, right) => {
       playFreeCam?.fly(forward, right);
     },
-    whenEditorModelsReady: async () => {
-      const generation = loadGeneration;
-      assertCurrent(generation);
-      await (editorSync?.whenEditorModelsReady() ?? Promise.resolve());
-      const playLoads = [...(binding.slotAnimLoads?.values() ?? [])];
-      if (playLoads.length > 0) {
-        await Promise.all(playLoads);
-      }
-      assertCurrent(generation);
+    whenEditorModelsReady: async (owner) => {
+      const scope = loadingScope(owner);
+      if (!owner) await (editorSync?.whenEditorModelsReady() ?? Promise.resolve());
+      const playLoads = [...(binding.slotAnimLoads?.entries() ?? [])]
+        .filter(([slotId]) => (sceneLayerCompositor?.layerIdForSlot(slotId) ?? undefined) === owner?.layerId)
+        .map(([, pending]) => pending);
+      await Promise.all(playLoads);
+      scope.assert();
     },
     modelLoadCount: () =>
       (editorSync?.pendingModelLoadCount() ?? 0) +
@@ -2365,6 +2409,9 @@ function materialTextureGuidMap(
 }
 
 function sceneNodeMaterialsSampleReady(scene: Scene): boolean {
+  // Native RGBD environment/BRDF decoding outlives the texture load event and
+  // can render asynchronously even when no current material samples the map.
+  if (!isSceneTextureWorkReady(scene)) return false;
   for (const material of scene.materials) {
     if (material instanceof NodeMaterial && !nodeMaterialTexturesSampleReady(material)) return false;
     if (material.getActiveTextures().some((texture) => !texture.isReady())) return false;

@@ -410,6 +410,10 @@ export function startPlayer(options: {
       worker?.postControl({ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId });
       runtime?.notifySceneModelsReady(sceneAssetGuid, sceneLoadId);
     },
+    onLayerReady: ({ layerId, layerLoadId }) => {
+      worker?.postControl({ type: "sceneLayerReady", layerId, layerLoadId });
+      runtime?.notifySceneLayerReady(layerId, layerLoadId);
+    },
     onFailed: (_scene, error) => {
       diagnostics.push({
         message: `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -434,7 +438,7 @@ export function startPlayer(options: {
     if (command.type === "snapshotLayout")
       handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
-    if (command.type === "sceneRealized" && runtime) {
+    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized") && runtime) {
       if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
       handle.pushSnapshot(snapBuf);
     }

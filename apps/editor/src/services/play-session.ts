@@ -686,6 +686,10 @@ export function startPlaySession(options: {
       worker?.postControl({ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId });
       runtime?.notifySceneModelsReady(sceneAssetGuid, sceneLoadId);
     },
+    onLayerReady: ({ layerId, layerLoadId }) => {
+      worker?.postControl({ type: "sceneLayerReady", layerId, layerLoadId });
+      runtime?.notifySceneLayerReady(layerId, layerLoadId);
+    },
     onFailed: (_scene, error) => {
       options.onLog?.(`Scene loading failed: ${error instanceof Error ? error.message : String(error)}`, "error");
       queueMicrotask(() => options.onFatalDiagnostic?.());
@@ -732,7 +736,7 @@ export function startPlaySession(options: {
     ) {
       handle.applyCommand(command);
     }
-    if (command.type === "sceneRealized" && runtime) {
+    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized") && runtime) {
       if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
       handle.pushSnapshot(snapBuf);
     }

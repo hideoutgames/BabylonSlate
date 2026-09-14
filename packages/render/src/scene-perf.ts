@@ -252,6 +252,15 @@ function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   return result;
 }
 
+/** Native texture decoding may render asynchronously after its load observable. */
+export function isSceneTextureWorkReady(scene: Scene): boolean {
+  if (scene.isDisposed) return false;
+  for (const texture of scene.textures) {
+    if (!texture.isRenderTarget && !texture.isReady()) return false;
+  }
+  return true;
+}
+
 /**
  * Babylon 9.20 Scene.isReady also waits for every cached Engine effect. Mirror
  * its scene-owned checks so an unrelated preview cannot block this viewport.
@@ -260,7 +269,7 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
   if (scene.isDisposed) return false;
   return withSceneReadinessState(scene, () => {
     const engine = scene.getEngine();
-    let ready = scene.getWaitingItemsCount() === 0;
+    let ready = scene.getWaitingItemsCount() === 0 && isSceneTextureWorkReady(scene);
     scene.prePassRenderer?.update();
     if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer && !scene.depthPeelingRenderer.isReady()) ready = false;
     const renderTargets = new Set([...scene.customRenderTargets, ...targets]);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -378,6 +378,66 @@ describe("Play createEngine view", () => {
     await frame;
     engine.onEndFrameObservable.notifyObservers(engine);
     expect(handle.scheduler.stats().renderedFrames).toBe(0);
+  });
+
+  it("keeps a ready global layer drawing while a different owner waits, and cancels only the removed layer's frame", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const render = runLoop.mock.calls[0]![0];
+    const addLayer = (layerId: string, layerLoadId: number) => {
+      handle.applyCommand({ type: "sceneLayerLoading", layerId, layerLoadId, assetGuid: "overlay" });
+      handle.applyCommand({ type: "sceneLayerCreate", layerId, assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [] });
+      return engine.scenes.at(-1)!;
+    };
+    const global = addLayer("global", 1);
+    const frames: string[] = [];
+    handle.scene.onAfterRenderObservable.add(() => { frames.push("world"); });
+    global.onAfterRenderObservable.add(() => { frames.push("global"); });
+    const release = handle.scheduler.acquireObstruction();
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
+    const first = handle.presentFirstFrame({ layerId: "global", layerLoadId: 1 });
+    render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await first;
+    expect(frames).toEqual(["global"]);
+    const pending = addLayer("pending", 2);
+    pending.onAfterRenderObservable.add(() => { frames.push("pending"); });
+    const notReady = { isReady: () => false };
+    pending.addIsReadyCheck(notReady);
+    const time = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1000);
+    render();
+    expect(frames).toEqual(["global", "global"]);
+    handle.setPaused(true);
+    render();
+    expect(frames).toHaveLength(2);
+    const cancelled = expect(handle.presentFirstFrame({ layerId: "pending", layerLoadId: 2 })).rejects.toThrow("removed");
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "pending" });
+    await cancelled;
+    handle.setPaused(false);
+    time.mockRestore();
+    release();
+  });
+
+  it("waits for owned BRDF decode after texture load without waiting on an unrelated scene texture", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene, false);
+    const internal = texture.getInternalTexture()!;
+    handle.scene.environmentBRDFTexture = texture;
+    internal.isReady = false;
+    texture.onLoadObservable.notifyObservers(texture);
+    let ready = false;
+    const loaded = handle.whenMaterialTexturesReady().then(() => { ready = true; });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    const unrelated = new Scene(engine);
+    const other = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 0, 255]), 1, 1, unrelated, false);
+    other.getInternalTexture()!.isReady = false;
+    internal.isReady = true;
+    await loaded;
+    expect(ready).toBe(true);
+    unrelated.dispose();
   });
 
   it("does not evict shared GPU textures on restore or retain disposed handle callbacks", () => {
