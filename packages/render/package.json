@@ -13,6 +13,7 @@
     "./clustered-scene-lights": "./src/clustered-scene-lights.ts",
     "./managed-lighting-resources": "./src/managed-lighting-resources.ts",
     "./clustered-light-capabilities": "./src/clustered-light-capabilities.ts",
+    "./scene-render-coordinator": "./src/scene-render-coordinator.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },
