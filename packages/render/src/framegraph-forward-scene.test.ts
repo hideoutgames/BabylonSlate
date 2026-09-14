@@ -178,7 +178,7 @@ it("falls back before replacing unmanaged shadows or a shared-view target", asyn
   camera.outputRenderTarget = target;
   expect(await graph.prepare(camera)).toMatchObject({
     path: "classic",
-    reason: expect.stringContaining("Render-target views"),
+    reason: expect.stringContaining("color/depth texture"),
   });
   camera.outputRenderTarget = null;
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
