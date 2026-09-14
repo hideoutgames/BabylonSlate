@@ -1,4 +1,8 @@
-import type { BakeInputHashes, BakedLightingManifest, BakedLightingValidity } from "@babylonslate/core";
+import type {
+  BakeInputHashes,
+  BakedLightingManifest,
+  BakedLightingValidity,
+} from "@babylonslate/core";
 import {
   bakedLightingImportResult,
   bakedLightingValidity,
@@ -18,7 +22,11 @@ export interface BakePublicationOwner {
 
 export type BakePublicationResult =
   | { status: "published"; guid: string }
-  | { status: "refused"; reason: "aborted" | "stale" | "not-accepted"; candidateGuid: string | null };
+  | {
+      status: "refused";
+      reason: "aborted" | "stale" | "not-accepted";
+      candidateGuid: string | null;
+    };
 
 /**
  * Writes a new immutable candidate before changing any Scene reference. The synchronous
@@ -39,31 +47,51 @@ export async function publishBakedLighting(options: {
   const manifest = parseBakedLightingManifest(options.manifest);
   const guid = newAssetGuid();
   const candidate = await bakedLightingImportResult({
-    guid, name: options.name, manifest, atlases: options.atlases,
+    guid,
+    name: options.name,
+    manifest,
+    atlases: options.atlases,
   });
   const refusal = (): "aborted" | "stale" | null => {
     if (options.signal?.aborted) return "aborted";
     const current = options.current();
-    if (bakedLightingValidity(expected.sceneGuid, expected.inputs, manifest).status !== "valid" ||
-      current.generation !== expected.generation || current.sceneGuid !== expected.sceneGuid ||
-      bakedLightingValidity(current.sceneGuid, current.inputs, manifest).status !== "valid") return "stale";
+    if (
+      bakedLightingValidity(expected.sceneGuid, expected.inputs, manifest)
+        .status !== "valid" ||
+      current.generation !== expected.generation ||
+      current.sceneGuid !== expected.sceneGuid ||
+      bakedLightingValidity(current.sceneGuid, current.inputs, manifest)
+        .status !== "valid"
+    )
+      return "stale";
     return null;
   };
   const before = refusal();
   if (before) return { status: "refused", reason: before, candidateGuid: null };
   for (const dependency of manifest.dependencies) {
     const asset = options.registry.getByGuid(dependency);
-    if (!asset || asset.placeholder) throw new Error(`Baked lighting input asset ${dependency} is unavailable.`);
+    if (!asset || asset.placeholder)
+      throw new Error(
+        `Baked lighting input asset ${dependency} is unavailable.`,
+      );
   }
-  await options.registry.createAsset(options.rootId, `BakedLighting/${guid}.babasset`, candidate);
+  await options.registry.createAsset(
+    options.rootId,
+    `BakedLighting/${guid}.babasset`,
+    candidate,
+  );
   const after = refusal();
   if (after) return { status: "refused", reason: after, candidateGuid: guid };
-  if (manifest.dependencies.some((dependency) => {
-    const asset = options.registry.getByGuid(dependency);
-    return !asset || asset.placeholder;
-  })) return { status: "refused", reason: "stale", candidateGuid: guid };
+  if (
+    manifest.dependencies.some((dependency) => {
+      const asset = options.registry.getByGuid(dependency);
+      return !asset || asset.placeholder;
+    })
+  )
+    return { status: "refused", reason: "stale", candidateGuid: guid };
   // No await between the ownership check and this synchronous publication.
-  if (!options.commit(guid, expected)) return { status: "refused", reason: "not-accepted", candidateGuid: guid };
+  if (!options.commit(guid, expected))
+    return { status: "refused", reason: "not-accepted", candidateGuid: guid };
   return { status: "published", guid };
 }
 
@@ -82,20 +110,42 @@ export async function loadBakedLightingReference(options: {
   const referenceGuid = options.guid ?? null;
   const inputs = { ...options.inputs };
   const sceneGuid = options.sceneGuid;
-  const missing = (reason: string) => ({ referenceGuid, validity: { status: "missing" as const, reason }, retained: null });
-  const asset = referenceGuid ? options.registry.getByGuid(referenceGuid) : undefined;
-  if (!asset || asset.placeholder) return missing("The assigned baked lighting asset is unavailable.");
+  const missing = (reason: string) => ({
+    referenceGuid,
+    validity: { status: "missing" as const, reason },
+    retained: null,
+  });
+  const asset = referenceGuid
+    ? options.registry.getByGuid(referenceGuid)
+    : undefined;
+  if (!asset || asset.placeholder)
+    return missing("The assigned baked lighting asset is unavailable.");
   try {
-    const bytes = await options.registry.storageFor(asset.rootId).readBinary(asset.path);
-    const retained = await decodeBakedLightingAsset(bytes,
-      (sha256) => options.registry.blobsFor(asset.rootId).readBlob(sha256));
-    if (retained.guid !== referenceGuid) return missing("Baked lighting asset identity changed.");
+    const bytes = await options.registry
+      .storageFor(asset.rootId)
+      .readBinary(asset.path);
+    const retained = await decodeBakedLightingAsset(bytes, (sha256) =>
+      options.registry.blobsFor(asset.rootId).readBlob(sha256),
+    );
+    if (retained.guid !== referenceGuid)
+      return missing("Baked lighting asset identity changed.");
     for (const dependency of retained.manifest.dependencies) {
       const input = options.registry.getByGuid(dependency);
-      if (!input || input.placeholder) return { referenceGuid, retained,
-        validity: { status: "missing", reason: `Baked lighting input asset ${dependency} is unavailable.` } };
+      if (!input || input.placeholder)
+        return {
+          referenceGuid,
+          retained,
+          validity: {
+            status: "missing",
+            reason: `Baked lighting input asset ${dependency} is unavailable.`,
+          },
+        };
     }
-    return { referenceGuid, retained, validity: bakedLightingValidity(sceneGuid, inputs, retained.manifest) };
+    return {
+      referenceGuid,
+      retained,
+      validity: bakedLightingValidity(sceneGuid, inputs, retained.manifest),
+    };
   } catch (error) {
     return missing(error instanceof Error ? error.message : String(error));
   }
