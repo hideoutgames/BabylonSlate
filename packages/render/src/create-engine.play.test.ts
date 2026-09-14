@@ -23,6 +23,7 @@ import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
+import { prewarmSceneMaterials } from "./scene-perf";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -456,8 +457,8 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
-    await handle.prewarmSceneMaterials();
     handle.setPaused(true);
+    await handle.prewarmSceneMaterials();
     vi.spyOn(handle.scene, "render").mockImplementation(() => { throw new Error("allocation failed"); });
     const frame = expect(handle.presentFirstFrame()).rejects.toThrow("allocation failed");
     runLoop.mock.calls[0]![0]();
@@ -1282,7 +1283,7 @@ describe("Play createEngine view", () => {
     expect(livePassCount(overlay?.scene.activeCamera)).toBe(0);
   });
 
-  it("parents overlay spawn meshes into the SceneLayer scene and draws by z-order", () => {
+  it("parents overlay spawn meshes into the SceneLayer scene and draws by z-order", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -1291,6 +1292,7 @@ describe("Play createEngine view", () => {
       playMode: true,
     });
     handles.push(handle);
+    handle.setPaused(true);
     handle.applyCommand({
       type: "sceneLayerCreate",
       layerId: "back",
@@ -1323,19 +1325,20 @@ describe("Play createEngine view", () => {
     const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
     expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    await prewarmSceneMaterials(front!.scene);
 
     const order: string[] = [];
-    const worldRender = vi.spyOn(handle.scene, "render").mockImplementation(() => {
+    handle.scene.onAfterRenderObservable.add(() => {
       order.push("world");
     });
     for (const layer of handle.sceneLayerScenes()) {
-      vi.spyOn(layer.scene, "render").mockImplementation(() => {
+      layer.scene.onAfterRenderObservable.add(() => {
         order.push(layer.layerId);
       });
     }
+    handle.setPaused(false);
     runRenderLoop.mock.calls[0]?.[0]?.();
     expect(order).toEqual(["world", "back", "front"]);
-    worldRender.mockRestore();
   });
 
   it("does not parent overlay spawn meshes into the world when the layer scene is missing", () => {
