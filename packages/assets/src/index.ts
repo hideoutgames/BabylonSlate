@@ -59,3 +59,8 @@ export * from "./unique-names";
 export * from "./worker-encode";
 export * from "./model-animation-duration";
 export * from "./environment-texture";
+export * from "./baked-lighting";
+export * from "./baked-lighting-store";
+export * from "./bake-geometry";
+export * from "./baked-geometry";
+export * from "./baked-geometry-store";
