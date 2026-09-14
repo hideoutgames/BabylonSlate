@@ -1,0 +1,218 @@
+import { z } from "zod";
+import type { BakeInputHashes, BakedLightingManifest, BakedLightingValidity } from "@babylonslate/core";
+import { decodeBabasset, encodeBabasset, type BabassetHeader, type ChunkInput } from "./babasset";
+import { sha256Hex, stableStringify } from "./bytes";
+import type { ImportResult } from "./importers/types";
+
+export const BAKED_LIGHTING_ASSET_TYPE = "BakedLighting";
+export const BAKED_LIGHTING_MANIFEST_CHUNK = "document";
+/** Authoring/import bounds, independent of viewport quality and GPU admission. */
+export const BAKED_LIGHTING_MAX_BYTES = 64 * 1024 * 1024;
+const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
+const id = z.string().trim().min(1).max(512);
+const hash = z.string().regex(/^[a-f0-9]{64}$/);
+const integer = z.number().int().nonnegative();
+const hashFields = {
+  geometry: hash, uv: hash, transforms: hash, materials: hash,
+  lights: hash, environment: hash, settings: hash, provider: hash,
+};
+const hashesSchema = z.object(hashFields).strict();
+const receiverHashesSchema = z.object({
+  geometry: hash, uv: hash, transforms: hash, materials: hash,
+}).strict();
+const identitySchema = z.object({
+  actorId: id,
+  componentId: id,
+  primitive: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("mesh") }).strict(),
+    z.object({ kind: z.literal("model"), assetGuid: id, nodeIndex: integer,
+      meshIndex: integer, primitiveIndex: integer }).strict(),
+  ]),
+}).strict();
+const atlasSchema = z.object({
+  guid: id, chunkId: id, width: integer.min(1).max(4096), height: integer.min(1).max(4096),
+  sha256: hash, encoding: z.literal("rgba32float-le"), colorSpace: z.literal("linear"),
+  quantity: z.literal("diffuseIrradiance"), convention: z.literal("physical-E"),
+  alpha: z.literal("coverage"), rowOrder: z.literal("bottomFirst"), uvSet: z.literal(1),
+  mipLevels: z.literal(1), gutterTexels: integer,
+}).strict();
+const manifestSchema = z.object({
+  version: z.literal(1), sceneGuid: id, inputs: hashesSchema,
+  provider: z.object({ id, version: id, adapterVersion: id }).strict(),
+  settingsVersion: id,
+  dependencies: z.array(id).max(10000),
+  sources: z.array(z.discriminatedUnion("kind", [
+    z.object({ id, kind: z.literal("light"), actorId: id, componentId: id,
+      mobility: z.enum(["static", "stationary"]), inputHash: hash }).strict(),
+    z.object({ id, kind: z.literal("environment"), assetGuid: id, inputHash: hash }).strict(),
+  ])).max(10000),
+  receivers: z.array(z.object({
+    identity: identitySchema, hashes: receiverHashesSchema, atlasGuid: id,
+    scale: z.tuple([z.number().positive().max(1), z.number().positive().max(1)]),
+    offset: z.tuple([z.number().nonnegative().max(1), z.number().nonnegative().max(1)]),
+    contributions: z.array(z.object({ sourceId: id,
+      term: z.enum(["directAndIndirect", "indirectOnly", "environmentDiffuse"]),
+    }).strict()).max(10000),
+  }).strict())).min(1).max(10000),
+  atlases: z.array(atlasSchema).min(1).max(16),
+}).strict();
+
+function unique(values: readonly string[], label: string): void {
+  if (new Set(values).size !== values.length) throw new Error(`Duplicate ${label} in baked lighting.`);
+}
+
+/** Stable even when names or runtime object allocation order change. */
+export function bakedReceiverKey(identity: BakedLightingManifest["receivers"][number]["identity"]): string {
+  return stableStringify(identitySchema.parse(identity));
+}
+
+/** Strict V1 validation: unsupported representations are rejected, never normalized into a plausible bake. */
+export function parseBakedLightingManifest(value: unknown): BakedLightingManifest {
+  const manifest = manifestSchema.parse(value);
+  unique(manifest.dependencies, "dependency");
+  if (manifest.dependencies.includes(manifest.sceneGuid)) throw new Error("A bake must not depend on its owning Scene.");
+  unique(manifest.sources.map((source) => source.id), "source ID");
+  unique(manifest.sources.map((source) => source.kind === "light"
+    ? stableStringify([source.kind, source.actorId, source.componentId])
+    : stableStringify([source.kind, source.assetGuid])), "source identity");
+  unique(manifest.atlases.map((atlas) => atlas.guid), "atlas GUID");
+  unique(manifest.atlases.map((atlas) => atlas.chunkId), "atlas chunk");
+  unique(manifest.receivers.map((receiver) => bakedReceiverKey(receiver.identity)), "receiver identity");
+  const sources = new Map(manifest.sources.map((source) => [source.id, source]));
+  const atlases = new Map(manifest.atlases.map((atlas) => [atlas.guid, atlas]));
+  let bytes = 0;
+  for (const atlas of manifest.atlases) {
+    if (atlas.chunkId === BAKED_LIGHTING_MANIFEST_CHUNK || atlas.chunkId.startsWith("nested:"))
+      throw new Error("Atlas chunk uses a reserved asset chunk ID.");
+    bytes += atlas.width * atlas.height * 16;
+  }
+  if (bytes > BAKED_LIGHTING_MAX_BYTES) throw new Error("Baked lighting exceeds the 64 MiB authoring payload limit.");
+  const used = new Set<string>();
+  for (const receiver of manifest.receivers) {
+    const atlas = atlases.get(receiver.atlasGuid);
+    if (!atlas) throw new Error("Baked receiver references a missing atlas.");
+    used.add(atlas.guid);
+    for (const axis of [0, 1] as const) {
+      const size = axis === 0 ? atlas.width : atlas.height;
+      const gutter = atlas.gutterTexels / size;
+      if (receiver.offset[axis] < gutter || receiver.offset[axis] + receiver.scale[axis] > 1 - gutter + 1e-12)
+        throw new Error("Baked receiver atlas rectangle or gutter is outside the atlas.");
+    }
+    unique(receiver.contributions.map((contribution) => contribution.sourceId), "receiver contribution");
+    for (const contribution of receiver.contributions) {
+      const source = sources.get(contribution.sourceId);
+      if (!source) throw new Error("Baked receiver references a missing source.");
+      if (source.kind === "environment" ? contribution.term !== "environmentDiffuse"
+        : contribution.term === "environmentDiffuse" ||
+          (source.mobility === "stationary" && contribution.term !== "indirectOnly"))
+        throw new Error("Baked contribution is incompatible with its source or mobility.");
+    }
+    if (receiver.identity.primitive.kind === "model" && !manifest.dependencies.includes(receiver.identity.primitive.assetGuid))
+      throw new Error("Baked model input is missing from asset dependencies.");
+  }
+  for (const source of manifest.sources)
+    if (source.kind === "environment" && !manifest.dependencies.includes(source.assetGuid))
+      throw new Error("Baked environment input is missing from asset dependencies.");
+  if (used.size !== atlases.size) throw new Error("Baked lighting contains an unreferenced atlas.");
+  return manifest;
+}
+
+/** Each supplied value is canonical JSON; geometry/UV binary data may use SHA-256 digests as values. */
+export async function fingerprintBakeInputs(inputs: Record<keyof BakeInputHashes, unknown>): Promise<BakeInputHashes> {
+  const keys = Object.keys(hashFields) as Array<keyof BakeInputHashes>;
+  if (Object.keys(inputs).length !== keys.length || keys.some((key) => !(key in inputs)))
+    throw new Error("Every bake input category must be supplied.");
+  const entries = await Promise.all(keys.map(async (key) => {
+    const value = z.json().parse(inputs[key]);
+    return [key, await sha256Hex(new TextEncoder().encode(stableStringify(value)))];
+  }));
+  return Object.fromEntries(entries) as unknown as BakeInputHashes;
+}
+
+/** A retained old output is never labelled current merely because its bytes exist. */
+export function bakedLightingValidity(
+  sceneGuid: string,
+  currentInputs: BakeInputHashes,
+  manifest: BakedLightingManifest | null,
+): BakedLightingValidity {
+  if (!manifest) return { status: "missing", reason: "No readable baked lighting output is assigned." };
+  const current = hashesSchema.parse(currentInputs);
+  const reasons: string[] = [];
+  if (manifest.sceneGuid !== sceneGuid) reasons.push("Scene identity changed");
+  for (const key of Object.keys(hashFields) as Array<keyof BakeInputHashes>)
+    if (manifest.inputs[key] !== current[key]) reasons.push(`${key} changed`);
+  return reasons.length ? { status: "stale", reasons } : { status: "valid" };
+}
+
+export interface DecodedBakedLighting {
+  guid: string;
+  manifest: BakedLightingManifest;
+  /** Owned CPU bytes; callers must not mutate validated atlas contents. */
+  atlases: ReadonlyMap<string, Uint8Array>;
+}
+
+export async function validateBakedLightingChunks(
+  header: Pick<BabassetHeader, "guid" | "type" | "version" | "dependencies">,
+  chunks: readonly ChunkInput[],
+): Promise<DecodedBakedLighting> {
+  if (header.type !== BAKED_LIGHTING_ASSET_TYPE || header.version !== 1)
+    throw new Error("Unsupported baked lighting asset type or version.");
+  unique(chunks.map((chunk) => chunk.id), "asset chunk");
+  const document = chunks.find((chunk) => chunk.id === BAKED_LIGHTING_MANIFEST_CHUNK);
+  if (!document || document.data.byteLength > MAX_MANIFEST_BYTES)
+    throw new Error("Baked lighting manifest is missing or exceeds its size limit.");
+  const manifest = parseBakedLightingManifest(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(document.data)));
+  if (stableStringify([...header.dependencies].sort()) !== stableStringify([...manifest.dependencies].sort()))
+    throw new Error("Baked lighting header dependencies do not match the manifest.");
+  if (chunks.length !== manifest.atlases.length + 1) throw new Error("Unexpected baked lighting asset chunks.");
+  const atlases = new Map<string, Uint8Array>();
+  for (const atlas of manifest.atlases) {
+    const chunk = chunks.find((candidate) => candidate.id === atlas.chunkId);
+    if (!chunk || chunk.kind !== "diffuseIrradiance" || chunk.mime !== "application/octet-stream" ||
+      chunk.data.byteLength !== atlas.width * atlas.height * 16)
+      throw new Error(`Missing or malformed irradiance atlas ${atlas.guid}.`);
+    if (await sha256Hex(chunk.data) !== atlas.sha256) throw new Error(`Irradiance atlas ${atlas.guid} hash mismatch.`);
+    const view = new DataView(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength);
+    for (let offset = 0; offset < view.byteLength; offset += 4) {
+      const value = view.getFloat32(offset, true);
+      if (!Number.isFinite(value) || value < 0 || (offset % 16 === 12 && value > 1))
+        throw new Error(`Irradiance atlas ${atlas.guid} contains invalid radiance or coverage.`);
+    }
+    atlases.set(atlas.guid, chunk.data);
+  }
+  return { guid: header.guid, manifest, atlases };
+}
+
+export async function bakedLightingImportResult(options: {
+  guid: string; name: string; manifest: BakedLightingManifest; atlases: ReadonlyMap<string, Uint8Array>;
+}): Promise<ImportResult> {
+  const manifest = parseBakedLightingManifest(options.manifest);
+  const chunks: ChunkInput[] = [{ id: BAKED_LIGHTING_MANIFEST_CHUNK, kind: "document", mime: "application/json",
+    data: new TextEncoder().encode(stableStringify(manifest)) }];
+  for (const atlas of manifest.atlases) {
+    const data = options.atlases.get(atlas.guid);
+    if (!data) throw new Error(`Missing irradiance atlas ${atlas.guid}.`);
+    chunks.push({ id: atlas.chunkId, kind: "diffuseIrradiance", mime: "application/octet-stream", data });
+  }
+  const result: ImportResult = { type: BAKED_LIGHTING_ASSET_TYPE, version: 1,
+    guid: id.parse(options.guid), name: id.parse(options.name), dependencies: manifest.dependencies,
+    payload: {}, chunks };
+  await validateBakedLightingChunks(result, chunks);
+  return result;
+}
+
+/** Runtime/export uses the same complete container, without a baker or external blob files. */
+export async function encodeBakedLightingAsset(result: ImportResult): Promise<Uint8Array> {
+  await validateBakedLightingChunks(result, result.chunks);
+  return encodeBabasset({ header: { ...result, mode: "bundled", engineVersion: "0.0.0" }, chunks: result.chunks });
+}
+
+export async function decodeBakedLightingAsset(
+  bytes: Uint8Array,
+  readBlob?: (sha256: string) => Promise<Uint8Array>,
+): Promise<DecodedBakedLighting> {
+  const decoded = await decodeBabasset(bytes, readBlob);
+  return validateBakedLightingChunks(decoded.header, decoded.header.chunks.map((entry) => ({
+    id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)!,
+  })));
+}
