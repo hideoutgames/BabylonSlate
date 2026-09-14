@@ -341,23 +341,37 @@ describe("Play createEngine view", () => {
   it("waits for the exact RTT canvas copy after engine end-frame", async () => {
     const engine = sharedEngine();
     const loops = vi.spyOn(engine, "runRenderLoop");
-    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, present: "rtt" });
+    const canvas = new FakeCanvas();
+    let copied = false;
+    vi.spyOn(canvas, "getContext").mockImplementation(() => ({ putImageData: () => { copied = true; } }));
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, present: "rtt", playMode: true });
     handles.push(handle);
     handle.setPaused(true);
-    let resolve!: (pixels: null) => void;
-    const pixels = new Promise<null>((done) => { resolve = done; });
+    let resolve!: (pixels: Uint8Array) => void;
+    const pixels = new Promise<Uint8Array>((done) => { resolve = done; });
     const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockReturnValue(pixels);
+    const previousImageData = globalThis.ImageData;
+    globalThis.ImageData = class { constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) {} } as unknown as typeof ImageData;
     let ready = false;
     const presented = handle.presentFirstFrame().then(() => { ready = true; });
-    loops.mock.calls[0]![0]();
-    engine.onEndFrameObservable.notifyObservers(engine);
-    await Promise.resolve();
-    expect(ready).toBe(false);
-    expect(read).toHaveBeenCalledOnce();
-    resolve(null);
-    await presented;
-    expect(ready).toBe(true);
-    read.mockRestore();
+    void presented.catch(() => {});
+    try {
+      loops.mock.calls[0]![0]();
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await Promise.resolve();
+      expect(ready).toBe(false);
+      expect(copied).toBe(false);
+      expect(read).toHaveBeenCalledOnce();
+      resolve(new Uint8Array(256 * 256 * 4));
+      await presented;
+      expect(ready).toBe(true);
+      expect(copied).toBe(true);
+    } finally {
+      handle.dispose();
+      await presented.catch(() => {});
+      read.mockRestore();
+      globalThis.ImageData = previousImageData;
+    }
   });
 
   it("does not spend a loading permit on a sibling view or a hidden document", async () => {
