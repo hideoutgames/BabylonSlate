@@ -85,7 +85,7 @@ export function RenderPipelineFields(props: Props) {
           <FieldLabel>Effective Selection</FieldLabel>
           <FieldDescription role="status" data-testid={`${props.scope}-render-pipeline-status`}>
             {pathLabels[resolved.effective.renderPath]} · {backendLabels[resolved.effective.gpuBackend]}
-            {resolved.limits.length ? ` — ${resolved.limits.join(" ")} Your preferences are retained.` : ""}
+            {resolved.limits.length ? `. ${resolved.limits.join(" ")} Your preferences are retained.` : ""}
           </FieldDescription>
         </Field>
       </FieldGroup>
