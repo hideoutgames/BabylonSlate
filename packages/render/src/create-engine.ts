@@ -1807,12 +1807,13 @@ function initializeEngine(
     }
     try {
       const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
-      const drawOwner = (key: string, draw: () => boolean) => {
+      const drawOwner = (key: string, draw: () => boolean, fallback?: () => void) => {
         const pending = pendingPresentations.get(key);
         if (!pending) { draw(); return; }
         if (!presentationReady(pending)) {
           pending.rendered = false;
           pending.copied = false;
+          fallback?.();
           return;
         }
         if (pending.rendered || pending.submission) { draw(); return; }
@@ -1836,7 +1837,7 @@ function initializeEngine(
         return true;
       });
       else engine.clear(scene.clearColor, true, true, true);
-      sceneLayerCompositor?.render(presentingLayers, (layerId, draw) => drawOwner(`layer:${layerId}`, draw));
+      sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
       if (rttPresent) {
         const owners = [...pendingPresentations.entries()].filter(([, pending]) => pending.rendered);
         void rttPresent.blit().then(() => {

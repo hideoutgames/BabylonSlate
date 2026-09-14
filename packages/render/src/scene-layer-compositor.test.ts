@@ -327,6 +327,14 @@ describe("SceneLayerCompositor", () => {
     expect(acknowledged).toBe(false);
     expect(fallbackDraw).toHaveBeenCalledOnce();
     expect(disposeFirst).not.toHaveBeenCalled();
+    // A host pending-presentation gate may reject the new render before the
+    // draw closure runs. It must still be able to compose the retained image.
+    compositor.render(new Set(["overlay"]), (_id, _draw, fallback) => {
+      acknowledged = false;
+      fallback();
+    });
+    expect(acknowledged).toBe(false);
+    expect(fallbackDraw).toHaveBeenCalledTimes(2);
     compositor.setPostProcess("overlay", [{ materialGuid: "third", enabled: true }]);
     await vi.waitFor(() => { expect(disposeUnrendered).toHaveBeenCalledOnce(); });
     expect(disposeFirst).not.toHaveBeenCalled();
@@ -335,7 +343,7 @@ describe("SceneLayerCompositor", () => {
     compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
     expect(acknowledged).toBe(true);
     await vi.waitFor(() => { expect(disposeFirst).toHaveBeenCalledOnce(); });
-    expect(fallbackDraw).toHaveBeenCalledOnce();
+    expect(fallbackDraw).toHaveBeenCalledTimes(2);
     await compositor.dispose();
   });
 

@@ -253,7 +253,7 @@ export class SceneLayerCompositor {
     if (this.byId.get(layerId) !== layer) throw new Error("SceneLayer rendering preparation was superseded.");
   }
 
-  render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean) => void = (_id, render) => render()): void {
+  render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
     for (const layer of this.sortedLayers()) {
       if (!this.isLayerReady(layer.layerId) && !presentingLayers.has(layer.layerId)) continue;
       const record = layer as LayerRecord;
@@ -285,7 +285,7 @@ export class SceneLayerCompositor {
           if (readyForPresentation) this.releaseFallback(record);
         }
         return readyForPresentation;
-      });
+      }, () => { this.blitFallback(record); });
     }
   }
 
