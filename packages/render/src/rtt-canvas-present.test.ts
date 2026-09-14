@@ -124,8 +124,12 @@ describe("createRttCanvasPresent", () => {
     globalThis.ImageData = previous;
   });
 
-  it("flips WebGL readPixels so the 2D canvas is not upside down", async () => {
-    const { scene, camera, canvas } = host();
+  it.each([
+    { originBottomLeft: true, first: [0, 0, 255, 255], last: [255, 0, 0, 255] },
+    { originBottomLeft: false, first: [255, 0, 0, 255], last: [0, 0, 255, 255] },
+  ])("presents GPU row order for bottom-left=$originBottomLeft", async ({ originBottomLeft, first, last }) => {
+    const { engine, scene, camera, canvas } = host();
+    engine.hasOriginBottomLeft = originBottomLeft;
     const width = 128;
     const height = 64;
     const row = width * 4;
@@ -159,10 +163,10 @@ describe("createRttCanvasPresent", () => {
     present.blit();
     await vi.waitFor(() => expect(fake.capturedImages.length).toBeGreaterThan(0));
     const image = fake.capturedImages[0]!;
-    expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
+    expect([...image.data.subarray(0, 4)]).toEqual(first);
     expect([
       ...image.data.subarray((height - 1) * row, (height - 1) * row + 4),
-    ]).toEqual([255, 0, 0, 255]);
+    ]).toEqual(last);
     readPixels.mockRestore();
     present.dispose();
     globalThis.ImageData = previous;

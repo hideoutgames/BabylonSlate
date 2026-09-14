@@ -956,9 +956,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const caps = handle.engine.getCaps();
         return {
           userAgent: navigator.userAgent,
-          backend: "webgl2",
-          webGLVersion: handle.engine.webGLVersion,
-          glInfo: handle.engine.getGlInfo(),
+          backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
+          webGLVersion: "webGLVersion" in handle.engine ? handle.engine.webGLVersion : null,
+          glInfo: "getGlInfo" in handle.engine && typeof handle.engine.getGlInfo === "function" ? handle.engine.getGlInfo() : null,
+          gpuInfo: "getInfo" in handle.engine && typeof handle.engine.getInfo === "function" ? handle.engine.getInfo() : null,
           render: handle.renderDiagnostics(),
           frameCount: handle.scheduler.stats().renderedFrames,
           viewportFrameCap,

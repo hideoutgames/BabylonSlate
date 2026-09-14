@@ -117,7 +117,7 @@ export async function captureModelThumbnailPng(
     return encodeRgbaPng(
       size,
       size,
-      new Uint8Array(flipReadPixelsRgba(pixels, size, size)),
+      new Uint8Array(flipReadPixelsRgba(pixels, size, size, engine.hasOriginBottomLeft)),
     );
   } catch {
     return null;

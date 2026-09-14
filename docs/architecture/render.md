@@ -1,6 +1,7 @@
 # Render sync and resource cache (P4)
 
 Shared Scene/Play views and asset previews accept Babylon's AbstractEngine contract, which both WebGL2 and WebGPU implement. Engine construction remains a separate project-lifetime responsibility; a Scene never changes its owning backend in place.
+RGBA render-target readback for preview canvases and thumbnails uses the owning Engine's row origin and preserves the returned buffer view's byte range. WebGPU previews therefore retain their orientation instead of applying WebGL's vertical flip. Swap-chain BGRA readback is a separate format from these RGBA targets.
 
 The isolated WebGPU proof initializes Babylon's asynchronous backend and checks native and authored PBR/CEL surfaces with texture upload and readback. Authored NodeMaterials select the owning Engine's native shader language, avoiding an implicit GLSL translation dependency. This proof does not switch the project's default Engine or qualify WebGPU on iPad; project-wide restart, compatibility policy and recovery remain separate integration work.
 
