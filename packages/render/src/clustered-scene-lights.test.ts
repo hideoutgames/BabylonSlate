@@ -329,7 +329,7 @@ describe("explicit clustered light ownership", () => {
     expect(owner.limits().join()).toContain("perspective camera");
     owner.dispose();
   });
-  it("releases departed registry observers and rolls back a failing smaller batch allocation", () => {
+  it("releases departed registry observers and rolls back a failing smaller batch allocation", async () => {
     const { engine, scene, lights } = fixture();
     const observerCount = lights[47]!.onDisposeObservable.observers.length;
     const wrappers = engine._renderTargetWrapperCache.slice();
@@ -340,7 +340,9 @@ describe("explicit clustered light ownership", () => {
       throw new Error("Smaller mask allocation rejected");
     });
     owner.setLights(lights.slice(0, 2));
-    expect(lights[47]!.onDisposeObservable.observers).toHaveLength(observerCount);
+    // Observable.remove marks synchronously and removes its public entry on
+    // the next task; wait for that native removal before checking retention.
+    await vi.waitFor(() => expect(lights[47]!.onDisposeObservable.observers).toHaveLength(observerCount));
     expect(owner.status().clustered).toBe(0);
     expect(owner.limits().join()).toContain("Smaller mask allocation rejected");
     expect(engine._renderTargetWrapperCache).toEqual(wrappers);
