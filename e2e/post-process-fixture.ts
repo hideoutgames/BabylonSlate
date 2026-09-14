@@ -28,7 +28,7 @@ export function numericTexturePostProcess(): MaterialDocument {
   doc.nodes.push(
     node("mask", "param.texture", { name: "Mask", textureGuid: guid(21) }),
     node("gain", "param.float", { name: "Gain", value: [1] }),
-    node("sample", "texture.sample"), node("tint", "math.multiply"),
+    node("sample", "texture.sample", { colorSpace: "data" }), node("tint", "math.multiply"),
     node("multiply", "math.multiply"), node("split", "vector.split"), node("opaque", "vector.combine"),
   );
   doc.edges = doc.edges.filter((edge) => edge.id !== "e-scene-output");
