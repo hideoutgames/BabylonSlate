@@ -145,6 +145,29 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("installs collected editor assets and materials without replaying the previous document", async () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    const oldActor = createActor("old", "Old", { components: [createMeshComponent("old-mesh", "box")] });
+    const newActor = createActor("next", "Next", { components: [createMeshComponent("next-mesh", "box")] });
+    handle.loadScene({ ...createDefaultScene(), actors: [oldActor] });
+    const addMesh = vi.spyOn(handle.scene, "addMesh");
+    await handle.loadSceneAsync({ ...createDefaultScene(), actors: [newActor] }, {
+      signal: new AbortController().signal,
+      assets: { pixelsPerUnit: 64 },
+      materialDocuments: new Map(),
+      materialFunctions: new Map(),
+    });
+    const created = addMesh.mock.calls.map(([mesh]) => mesh.name);
+    addMesh.mockRestore();
+    expect(created.filter((name) => name === editorMeshName("old"))).toHaveLength(0);
+    expect(created.filter((name) => name === editorMeshName("next"))).toHaveLength(1);
+    expect(handle.scene.getMeshByName(editorMeshName("old"))).toBeNull();
+    expect(handle.scene.getMeshByName(editorMeshName("next"))?.isDisposed()).toBe(false);
+  });
+
   function sharedEngine(): NullEngine {
     const engine = new NullEngine();
     engines.push(engine);

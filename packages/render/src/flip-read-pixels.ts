@@ -1,4 +1,4 @@
-/** Flip WebGL `readPixels` (bottom-left origin) to Canvas2D / PNG (top-left). */
+/** Copy Babylon RGBA render targets to Canvas2D / PNG. Both backends use flipped RTT rows. */
 export function flipReadPixelsRgba(
   buffer: ArrayBuffer | ArrayBufferView,
   width: number,

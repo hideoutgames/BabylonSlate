@@ -59,6 +59,7 @@ Pure functions keyed by extension: `(bytes, options) → ImportResult[]`.
 | Inputs | Produces |
 | --- | --- |
 | images | Texture |
+| ENV / prefiltered DDS | Texture with cube dimension, HDR encoding, face size and roughness mip metadata; original `source` chunk retained |
 | glb / gltf | Model (+ Material / Texture / Skeleton / Animation as needed) |
 | audio | Audio |
 | woff2 / woff / ttf / otf | Font |
@@ -66,6 +67,10 @@ Pure functions keyed by extension: `(bytes, options) → ImportResult[]`.
 | `.babasset` | Unpack / remapped copy |
 
 Cross-project import remaps colliding guids and rewrites references in the incoming set. Template instantiate keeps guids as-is.
+
+Environment imports accept Babylon RGBD ENV v1/v2 and square, power-of-two, six-face DDS cubes with a complete mip chain in linear RGBA16F or RGBA32F (legacy FourCC or DX10). ENV base faces must be at least 2×2 to match the native Babylon loader; their complete chain still includes 1×1 mips. DDS must already be authored as prefiltered: headers establish layout and encoding, not whether convolution was performed. Ambiguous RGB/DXT DDS, arrays, volumes, missing faces/mips and out-of-bounds data are rejected. ENV headers, image dimensions, face ranges and optional irradiance coefficients are validated; Babylon owns image decoding and reports invalid encoded pixels when loading. HDR conversion and runtime prefiltering are not part of import.
+
+Cube Texture metadata is read-only in the existing asset editor. Assign cubes through Scene Defaults → Environment Texture. Ordinary Material Texture Sample/Parameter pickers and runtime validators require 2D textures. Source bytes and metadata survive rename, reopen and export; the normal scene GUID reference retains the cube in export closure. Cube dimension bypasses compression and 2D LOD even if stale usage/encode settings are present.
 
 ## Thumbnails
 

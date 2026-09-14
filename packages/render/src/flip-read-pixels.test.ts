@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 
 describe("flipReadPixelsRgba", () => {
+  it("copies only the readback view's byte range without changing the allocation", () => {
+    const allocation = new Uint8Array([
+      99, 99, 99, 99,
+      10, 20, 30, 255,
+      40, 50, 60, 255,
+      88, 88, 88, 88,
+    ]);
+    const view = new DataView(allocation.buffer, 4, 8);
+    const pixels = flipReadPixelsRgba(view, 1, 2);
+    expect([...pixels]).toEqual([40, 50, 60, 255, 10, 20, 30, 255]);
+    pixels[0] = 0;
+    expect(allocation[8]).toBe(40);
+  });
+
   it("puts the WebGL bottom row at the 2D canvas top", () => {
     const width = 2;
     const height = 3;

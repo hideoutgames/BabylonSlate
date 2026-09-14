@@ -22,6 +22,7 @@ import { registerClusteredLightPolicy } from "./clustered-light-policy";
 import {
   isAuthoredLightEnabled,
   setClusteredLightMember,
+  compareLightAdmission,
 } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
@@ -49,6 +50,8 @@ export class ClusteredSceneLights {
   private container: ClusteredLightContainer | undefined;
   private readonly materialBindings = new Map<NodeMaterial, () => void>();
   private registry: readonly Light[];
+  private registryMembership = new Set<Light>();
+  private localSelection: Set<Light> | undefined;
   private readonly childDisposals = new Map<Light, Observer<Node>>();
   private disposed = false;
   private syncing = false;
@@ -71,6 +74,7 @@ export class ClusteredSceneLights {
   constructor(scene: Scene, lights: readonly Light[]) {
     this.scene = scene;
     this.registry = this.validateRegistry(lights);
+    this.registryMembership = new Set(this.registry);
     this.unregister = registerClusteredLightPolicy(scene, this);
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
     this.restored = scene.getEngine().onContextRestoredObservable.add(() => {
@@ -82,7 +86,9 @@ export class ClusteredSceneLights {
   }
 
   setLights(lights: readonly Light[]): void {
+    if (this.disposed) return;
     this.registry = this.validateRegistry(lights);
+    this.registryMembership = new Set(this.registry);
     this.watchLights();
     syncSceneLighting(this.scene);
   }
@@ -115,6 +121,18 @@ export class ClusteredSceneLights {
     return light === this.container;
   }
 
+  allowsLocal(light: Light): boolean {
+    return (
+      !this.localSelection ||
+      !this.registryMembership.has(light) ||
+      this.localSelection.has(light)
+    );
+  }
+
+  clusteredCount(): number {
+    return this.container?.lights.length ?? 0;
+  }
+
   /** A frame boundary transaction: remove the previous contribution before adding its replacement. */
   sync(): void {
     if (this.disposed || this.scene.isDisposed || this.syncing) return;
@@ -139,6 +157,7 @@ export class ClusteredSceneLights {
       const capability = clusteredLightCapabilities(this.scene.getEngine());
       const reason = this.unsupported(this.scene.activeCamera, capability);
       if (reason) {
+        this.localSelection = undefined;
         this.releaseContainer();
         this.statusValue = {
           clustered: 0,
@@ -152,7 +171,36 @@ export class ClusteredSceneLights {
       // Controller entries retain the authored registry even while clustered
       // children leave scene.lights. New admitted maps therefore promote them.
       findSceneShadowController(this.scene)?.sync();
-      const eligible = this.registry.filter((light) => this.eligible(light));
+      const requestedLocals = this.registry.filter(
+        (light) =>
+          !light.isDisposed() &&
+          !(light instanceof DirectionalLight) &&
+          !(light instanceof HemisphericLight) &&
+          isAuthoredLightEnabled(light) &&
+          light.intensity > 0 &&
+          (!light.parent || light.parent.isEnabled()),
+      );
+      const localBudget = sceneRenderingSettings(this.scene).localLightBudget;
+      if (requestedLocals.length > localBudget)
+        requestedLocals.sort(
+          compareLightAdmission(
+            this.scene,
+            requestedLocals,
+            this.localSelection ?? new Set(),
+          ),
+        );
+      const selection = this.localSelection ?? new Set<Light>();
+      selection.clear();
+      for (
+        let index = 0;
+        index < Math.min(localBudget, requestedLocals.length);
+        index++
+      )
+        selection.add(requestedLocals[index]!);
+      this.localSelection = selection;
+      const eligible = requestedLocals.filter(
+        (light) => this.localSelection!.has(light) && this.eligible(light),
+      );
       // Bounded prototype resources: 256 children at most, and both physical
       // texture dimensions must fit before Babylon constructs/grows its batch.
       const maxBatches = Math.min(
@@ -165,10 +213,14 @@ export class ClusteredSceneLights {
         Math.floor(capability.maxTextureSize / capability.batchSize) *
           capability.batchSize,
       );
-      eligible.sort(
-        (a, b) =>
-          b.renderPriority - a.renderPriority || a.uniqueId - b.uniqueId,
-      );
+      if (eligible.length > limit)
+        eligible.sort(
+          compareLightAdmission(
+            this.scene,
+            eligible,
+            new Set(this.container?.lights),
+          ),
+        );
       const selected = new Set(eligible.slice(0, limit));
       for (const light of this.container?.lights.slice() ?? []) {
         if (!selected.has(light)) this.returnLight(light);
@@ -251,6 +303,11 @@ export class ClusteredSceneLights {
               ]
             : [],
       };
+      if (requestedLocals.length > localBudget)
+        this.statusValue.reasons = [
+          ...this.statusValue.reasons,
+          `Local lighting quality budget: ${this.localSelection.size}/${requestedLocals.length} requested locals selected across clustered and conventional lighting.`,
+        ];
       if (clustered && this.usesUnboundedPhysicalLighting())
         this.statusValue = {
           ...this.statusValue,
@@ -260,6 +317,7 @@ export class ClusteredSceneLights {
           ],
         };
     } catch (error) {
+      this.localSelection = undefined;
       this.allocationFailure = `Clustered allocation failed: ${error instanceof Error ? error.message : String(error)}`;
       this.releaseContainer();
       this.statusValue = {

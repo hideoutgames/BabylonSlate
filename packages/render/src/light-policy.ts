@@ -7,7 +7,10 @@ import {
   type Scene,
 } from "@babylonjs/core";
 
-import { isManagedClusteredLight } from "./clustered-light-policy";
+import {
+  isClusteredLocalAllowed,
+  isManagedClusteredLight,
+} from "./clustered-light-policy";
 
 const authoredEnabled = new WeakMap<
   Light,
@@ -88,6 +91,7 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
 export function syncForwardLightPolicy(
   scene: Scene,
   slots: number,
+  localSlots = Number.MAX_SAFE_INTEGER,
 ): {
   requested: number;
   admitted: number;
@@ -95,19 +99,80 @@ export function syncForwardLightPolicy(
 } {
   syncDirectionalLightPolicy(scene);
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
-  const camera = scene.activeCamera;
-  camera?.getViewMatrix();
   const eligible = (light: Light) =>
     isAuthoredLightEnabled(light) &&
     light.intensity > 0 &&
     !excluded.has(light) &&
     (!light.parent || light.parent.isEnabled());
-  const candidates = scene.lights.filter(eligible);
-  const global = (light: Light) =>
-    light instanceof DirectionalLight || light instanceof HemisphericLight;
-  const distance = (light: Light) => {
+  const global = isGlobalLight;
+  const local = (light: Light) =>
+    !global(light) && !isManagedClusteredLight(scene, light);
+  const candidates = scene.lights.filter(
+    (light) =>
+      eligible(light) &&
+      (!local(light) || isClusteredLocalAllowed(scene, light)),
+  );
+  const capacity = Math.max(0, Math.floor(slots));
+  const localCapacity = Math.max(0, Math.floor(localSlots));
+  if (
+    candidates.length > capacity ||
+    candidates.filter(local).length > localCapacity
+  )
+    candidates.sort(compareLightAdmission(scene, candidates, previous));
+  const selected = previous;
+  selected.clear();
+  let selectedLocals = 0;
+  const limited: Light[] = [];
+  for (const light of candidates) {
+    const authoredLocal = local(light);
+    if (
+      selected.size >= capacity ||
+      (authoredLocal && selectedLocals >= localCapacity)
+    )
+      limited.push(light);
+    else {
+      selected.add(light);
+      if (authoredLocal) selectedLocals++;
+    }
+  }
+  for (const light of scene.lights) {
+    const enabled = isAuthoredLightEnabled(light);
+    if (eligible(light) && !selected.has(light)) {
+      forwardExcluded.add(light);
+      if (!candidates.includes(light)) limited.push(light);
+    } else forwardExcluded.delete(light);
+    applyEnabled(light, enabled);
+  }
+  forwardSelections.set(scene, selected);
+  return {
+    requested: selected.size + limited.length,
+    admitted: selected.size,
+    limited,
+  };
+}
+
+function isGlobalLight(light: Light): boolean {
+  return light instanceof DirectionalLight || light instanceof HemisphericLight;
+}
+
+/** Shared authored-local ordering before clustered and conventional resource admission. */
+export function compareLightAdmission(
+  scene: Scene,
+  candidates: readonly Light[],
+  previous: ReadonlySet<Light>,
+): (a: Light, b: Light) => number {
+  const camera = scene.activeCamera;
+  camera?.getViewMatrix();
+  const distances = new Map<Light, number>();
+  for (const light of candidates) {
+    if (light instanceof ShadowLight && !isGlobalLight(light)) {
+      // Excluded children never reach normal shader binding. Refresh parented
+      // positions before either quality or shader-capacity selection.
+      light.parent?.computeWorldMatrix(true);
+      light.computeTransformedInformation();
+    }
     const squared =
-      camera && !global(light)
+      camera && !isGlobalLight(light)
         ? Vector3.DistanceSquared(
             light instanceof ShadowLight && !light.parent
               ? light.position
@@ -115,44 +180,17 @@ export function syncForwardLightPolicy(
             camera.globalPosition,
           )
         : 0;
-    // An incumbent remains selected around equal-distance boundaries. A clearly
-    // nearer light or explicitly higher renderPriority still replaces it.
-    return Math.max(1, squared) / (previous.has(light) ? 1.15 : 1);
-  };
-  const capacity = Math.max(0, Math.floor(slots));
-  if (candidates.length > capacity) {
-    if (camera) {
-      for (const light of candidates) {
-        if (!(light instanceof ShadowLight) || global(light)) continue;
-        // Excluded lights do not reach Babylon's shader binding path, which
-        // normally refreshes this cached position. Update ancestors too, even
-        // when admission runs again before the next scene render.
-        light.parent?.computeWorldMatrix(true);
-        light.computeTransformedInformation();
-      }
-    }
-    candidates.sort(
-      (a, b) =>
-        Number(global(b)) - Number(global(a)) ||
-        Number(isManagedClusteredLight(scene, b)) -
-          Number(isManagedClusteredLight(scene, a)) ||
-        (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
-          (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
-        distance(a) - distance(b) ||
-        a.uniqueId - b.uniqueId,
+    distances.set(
+      light,
+      Math.max(1, squared) / (previous.has(light) ? 1.15 : 1),
     );
   }
-  const selected = previous;
-  selected.clear();
-  for (let index = 0; index < Math.min(capacity, candidates.length); index++)
-    selected.add(candidates[index]!);
-  const limited = candidates.slice(capacity);
-  for (const light of scene.lights) {
-    const enabled = isAuthoredLightEnabled(light);
-    if (eligible(light) && !selected.has(light)) forwardExcluded.add(light);
-    else forwardExcluded.delete(light);
-    applyEnabled(light, enabled);
-  }
-  forwardSelections.set(scene, selected);
-  return { requested: candidates.length, admitted: selected.size, limited };
+  return (a, b) =>
+    Number(isGlobalLight(b)) - Number(isGlobalLight(a)) ||
+    Number(isManagedClusteredLight(scene, b)) -
+      Number(isManagedClusteredLight(scene, a)) ||
+    (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
+      (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
+    distances.get(a)! - distances.get(b)! ||
+    a.uniqueId - b.uniqueId;
 }

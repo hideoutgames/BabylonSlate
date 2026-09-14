@@ -2,6 +2,7 @@ import { importAudio } from "./audio";
 import { importBabasset } from "./babasset";
 import { importFont, isMsdfAtlasPng } from "./font";
 import { importImage } from "./image";
+import { importEnvironmentTexture } from "./environment";
 import { importModel } from "./model";
 import type { ImportOptions, ImportResult, Importer } from "./types";
 import { extensionOf } from "./util";
@@ -12,6 +13,8 @@ const IMPORTERS_BY_EXTENSION: Record<string, Importer> = {
   jpeg: importImage,
   webp: importImage,
   gif: importImage,
+  env: importEnvironmentTexture,
+  dds: importEnvironmentTexture,
   glb: importModel,
   gltf: importModel,
   mp3: importAudio,
@@ -63,6 +66,7 @@ export * from "./font";
 export * from "./glb-parse";
 export * from "./guid-remap";
 export * from "./image";
+export * from "./environment";
 export * from "./model";
 export * from "./gltf-import-batch";
 export * from "./msdf-import-batch";

@@ -237,6 +237,17 @@ describe("SettingsModal project authoring", () => {
     const field = await screen.findByTestId("settings-audio-reverb-decay-scale");
     await waitFor(() => expect(document.activeElement).toBe(field));
   });
+  it("starts environment lighting closed and reveals the matching control from search", async () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByLabelText("Environment Rotation")).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "environment rotation" } });
+    fireEvent.click(screen.getByRole("button", { name: /Environment Rotation/ }));
+    const field = await screen.findByLabelText("Environment Rotation");
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("true");
+  });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     expect(screen.queryByTestId("settings-modal-category-input")).toBeNull();
@@ -414,6 +425,29 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-width")).toBeTruthy();
     expect(screen.getByTestId("setting-render-height")).toBeTruthy();
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
+  });
+
+  it("stages independent pipeline preferences until Done and displays their effective fallback", async () => {
+    const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    const select = async (id: string, name: string) => {
+      fireEvent.click(screen.getByTestId(id));
+      const option = await screen.findByRole("option", { name });
+      fireEvent.pointerDown(option);
+      fireEvent.click(option);
+      await waitFor(() => expect(screen.getByTestId(id).textContent).toContain(name));
+    };
+    await select("project-render-path", "Clustered Forward");
+    await select("project-gpu-backend", "WebGPU");
+    await select("setting-render-mode", "CEL");
+    expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Forward · WebGL2");
+    expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Your preferences are retained.");
+    expect(lastProjectRender.current).toBeNull();
+    // Unrelated provider rerenders must not commit or discard the active draft.
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    expect(screen.getByTestId("project-render-path").textContent).toContain("Clustered Forward");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(lastProjectRender.current).toMatchObject({ renderPath: "clusteredForward", gpuBackend: "webgpu", mode: "cel" });
   });
 
   it("shows CEL controls only in CEL and retains their values when returning from PBR", async () => {

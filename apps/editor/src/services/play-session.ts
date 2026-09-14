@@ -48,6 +48,8 @@ import {
 import {
   createEngine,
   createSceneLoadReadiness,
+  waitForSceneLoadingPaint,
+  type SceneLoadProgress,
   navDebugBlockersFromActors,
   type AudioLibrary,
   type EngineHandle,
@@ -512,6 +514,7 @@ export function startPlaySession(options: {
   onFatalDiagnostic?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
+  onSceneLoading?: (state: SceneLoadProgress | null) => void;
   onSessionPaused?: (paused: boolean) => void;
   onShowFps?: (enabled: boolean) => void;
   onStatHighlight?: (name: string, enabled: boolean) => void;
@@ -649,6 +652,7 @@ export function startPlaySession(options: {
 
   let runtimeMode: "worker" | "in-process" = "in-process";
   let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
+  let resetBoot = () => {};
   // Aggregates diagnostics received over the command channel (Worker mode).
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
@@ -658,6 +662,15 @@ export function startPlaySession(options: {
   let receivedActiveScene = false;
   const sceneReadiness = createSceneLoadReadiness({
     handle,
+    loading: {
+      acquire: () => handle.scheduler.acquireObstruction(),
+      progress: (state) => options.onSceneLoading?.(state),
+      paint: waitForSceneLoadingPaint,
+      painted: ({ sceneAssetGuid, sceneLoadId }) => {
+        worker?.postControl({ type: "sceneLoadingPainted", sceneAssetGuid, sceneLoadId });
+        runtime?.notifySceneLoadingPainted(sceneAssetGuid, sceneLoadId);
+      },
+    },
     activate: ({ sceneAssetGuid }) => {
       hostSceneGuid = applyPlayActiveScene({
         handle,
@@ -718,6 +731,10 @@ export function startPlaySession(options: {
       shouldForwardPlayEngineCommand(command.type)
     ) {
       handle.applyCommand(command);
+    }
+    if (command.type === "sceneRealized" && runtime) {
+      if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
+      handle.pushSnapshot(snapBuf);
     }
     sceneReadiness.receive(command);
     if (command.type === "log") {
@@ -869,6 +886,7 @@ export function startPlaySession(options: {
     ]);
     const inProcess = runtime;
     const boot = createPlayBootCoordinator();
+    resetBoot = () => boot.reset();
     pauseGate = createPlayPauseGate({
       pause: () => inProcess.pause(),
       resume: () => inProcess.resume(),
@@ -922,9 +940,9 @@ export function startPlaySession(options: {
       boot.queueNavMesh(inProcess, options.navmeshBytes);
     }
     void pauseGate
-      .beginPlay(() => boot.play(inProcess))
-      .catch((error) => {
-        inProcess.reportError(error);
+      .beginPlay((onStarted) => boot.play(inProcess, onStarted))
+      .catch((error: unknown) => {
+        if (!stopped) inProcess.reportError(error);
       });
     if (options.pauseOnPlay) {
       pauseGate.setPaused(true);
@@ -1101,6 +1119,8 @@ export function startPlaySession(options: {
     },
     stop: () => {
       if (stopped && stopResult) return stopResult;
+      resetBoot();
+      pauseGate?.reset();
       sceneReadiness.dispose();
       stopped = true;
       releaseConsoleCapture();

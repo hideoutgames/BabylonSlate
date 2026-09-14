@@ -68,8 +68,16 @@ async function particleStats(page: Page): Promise<{
 test.describe("P17 particles", () => {
   test("authors Emitter/System, plays billboard quads, and tears down", async ({
     page,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(240_000);
+    const shaderErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && /shader error|error compiling effect/i.test(message.text())) shaderErrors.push(message.text());
+    });
+    const shaderFallbacks: string[] = [];
+    page.on("request", (request) => {
+      if (/\/Shaders\/material:.*\.fx(?:\?|$)/.test(request.url())) shaderFallbacks.push(request.url());
+    });
     await openTestProject(page);
     await openContentBrowser(page);
 
@@ -178,6 +186,16 @@ test.describe("P17 particles", () => {
     await saveAllIfEnabled(page);
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
+    try {
+      await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 30_000 });
+    } catch (error) {
+      await testInfo.attach("particle-shader-failure.json", { body: JSON.stringify({
+        shaderErrors, shaderFallbacks,
+      }), contentType: "application/json" });
+      await page.getByTestId("scene-loading-dialog").getByRole("button", { name: "Stop", exact: true }).click({ timeout: 5_000 });
+      await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+      throw error;
+    }
     await expect
       .poll(async () => particleStats(page), { timeout: 15_000 })
       .toEqual(expect.objectContaining({ systems: 1, playing: 1 }));
@@ -187,6 +205,8 @@ test.describe("P17 particles", () => {
     await expect
       .poll(async () => particleStats(page), { timeout: 10_000 })
       .toEqual(expect.objectContaining({ systems: 0, playing: 0 }));
+    expect(shaderFallbacks).toEqual([]);
+    expect(shaderErrors).toEqual([]);
   });
 
   test("Play/Stop Particles are on the Class palette; missing texture diagnoses", async ({

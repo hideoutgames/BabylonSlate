@@ -53,7 +53,7 @@ Class recovery and state-preservation tests wait for a visible graph node before
 
 The plugin export/re-import journey has a two-minute test deadline because it authors two projects and transfers a real downloaded file. Its assertions and the other browser-test deadlines are unchanged.
 
-The Auto Bake On Save browser test waits for its original Save All operation to finish before reading the navmesh chunk from the reported scene path. It must not trigger a second overlapping save when the bake dialog closes.
+The Auto Bake On Save browser test waits for its original Save All invocation to report completion, successful persistence, and clean documents before reading the navmesh chunk from the reported scene path. Closing the bake dialog completes the navigation phase; document and project writes can still be pending. The test must not trigger a second overlapping save when that dialog closes.
 
 The shared Save All browser helper waits for scene reloads to finish and uses an actionable click, so a loading backdrop cannot consume the save. CEL pixel checks compare shadowed and unshadowed surfaces as well as cast shadows on a large receiver.
 

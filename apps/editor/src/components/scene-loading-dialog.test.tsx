@@ -18,6 +18,14 @@ describe("SceneLoadingDialog", () => {
     expect(dialog.querySelector("[data-slot='progress']")).not.toBeNull();
   });
 
+  it("keeps Stop available during a Play transition", () => {
+    const onStop = vi.fn();
+    render(<SceneLoadingDialog open progress={10} phase="Removing Previous Scene" onStop={onStop} />);
+    expect(screen.getByRole("dialog").textContent).toContain("Removing Previous Scene");
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
   it("hides when closed", () => {
     render(
       <SceneLoadingDialog open={false} progress={100} phase="Loading Models" />,

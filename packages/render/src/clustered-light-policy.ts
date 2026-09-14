@@ -10,6 +10,8 @@ type ClusteredPolicy = {
   limits(): string[];
   target(camera: Camera): RenderTargetTexture | undefined;
   ownsContainer(light: Light): boolean;
+  allowsLocal(light: Light): boolean;
+  clusteredCount(): number;
 };
 const policies = new WeakMap<Scene, ClusteredPolicy>();
 
@@ -44,4 +46,14 @@ export function clusteredLightTarget(
 
 export function isManagedClusteredLight(scene: Scene, light: Light): boolean {
   return policies.get(scene)?.ownsContainer(light) ?? false;
+}
+
+/** The cluster container is not another authored local contribution. */
+export function clusteredLocalContributionCount(scene: Scene): number {
+  return policies.get(scene)?.clusteredCount() ?? 0;
+}
+
+/** Shared quality selection also limits requested conventional fallback lights. */
+export function isClusteredLocalAllowed(scene: Scene, light: Light): boolean {
+  return policies.get(scene)?.allowsLocal(light) ?? true;
 }

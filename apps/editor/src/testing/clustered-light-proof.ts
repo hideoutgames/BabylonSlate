@@ -1,7 +1,4 @@
-import {
-  normalizeCelShadingSettings,
-  normalizeShadowSettings,
-} from "@babylonslate/core";
+import { normalizeCelShadingSettings, normalizeShadowSettings, normalizeRenderingQuality } from "@babylonslate/core";
 /** Real GPU contribution oracle; this hook is available only in test builds. */
 import {
   Color3,
@@ -71,6 +68,7 @@ export async function runClusteredLightProof() {
       native.roughness = 1;
       setSceneRenderSettings(scene, {
         mode,
+        quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 48 } }),
         cel: normalizeCelShadingSettings({
           lightMixing: mixing === "pbr" ? "strongest" : mixing,
           lightColorInfluence: 1,

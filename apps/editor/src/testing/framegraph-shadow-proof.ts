@@ -15,7 +15,12 @@ import {
   Vector3,
   type RenderTargetWrapper,
 } from "@babylonjs/core";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
+import {
+  normalizeRenderingQuality,
+  normalizeShadowSettings,
+} from "@babylonslate/core";
+import { ClusteredSceneLights } from "@babylonslate/render/clustered-scene-lights";
 import {
   applyAuthoredLightProperties,
   beginEngineDrawCallFrame,
@@ -29,7 +34,9 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-export async function runFrameGraphShadowProof() {
+export async function runFrameGraphShadowProof(
+  options: { clustered?: boolean } = {},
+) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 72;
@@ -80,12 +87,46 @@ export async function runFrameGraphShadowProof() {
         castShadows: enabled,
       });
     setShadows(true);
+    const extraLights = options.clustered
+      ? Array.from({ length: 48 }, (_, index) => {
+          const position = new Vector3(index % 2 ? 2 : -2, 3, 1);
+          const extra =
+            index % 2
+              ? new SpotLight(
+                  `cluster-${index}`,
+                  position,
+                  position.negate().normalize(),
+                  Math.PI / 2,
+                  1,
+                  scene,
+                )
+              : new PointLight(`cluster-${index}`, position, scene);
+          applyAuthoredLightProperties(extra, {
+            intensity: 0.015,
+            range: 20,
+            outerAngle: 90,
+            innerAngle: 60,
+            castShadows: false,
+          });
+          return extra;
+        })
+      : [];
     const native = new PBRMaterial("native", scene);
     native.albedoColor = new Color3(0.05, 0.55, 0.12);
     native.metallic = 0;
     native.roughness = 1;
     setSceneRenderSettings(scene, {
       mode,
+      ...(options.clustered
+        ? {
+            quality: normalizeRenderingQuality({
+              lighting: {
+                localLightMode: "manual",
+                maxLocalLights: 64,
+              },
+            }),
+          }
+        : {}),
       shadows: normalizeShadowSettings({
         cascades: 2,
         mapSize: 256,
@@ -133,6 +174,10 @@ export async function runFrameGraphShadowProof() {
       casters.push(caster);
     }
     setSceneRenderSettings(scene);
+    const owner = options.clustered
+      ? new ClusteredSceneLights(scene, [light, ...extraLights])
+      : undefined;
+    const mask = () => owner?.target(camera);
     const graph = new ForwardSceneFrameGraph(scene);
     const prepared = await graph.prepare(camera);
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
@@ -147,6 +192,7 @@ export async function runFrameGraphShadowProof() {
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
       const target = map();
+      const clusterTarget = mask()?.renderTarget;
       let shadowDraws = 0;
       let shadowBefore = 0;
       const before = target?.onBeforeBindObservable.add(() => {
@@ -171,6 +217,8 @@ export async function runFrameGraphShadowProof() {
         draws,
         faces,
         shadowDraws,
+        maskPasses: boundTargets.filter((target) => target === clusterTarget)
+          .length,
         classicReadyBefore,
         activeMeshes: active.data
           .slice(0, active.length)
@@ -184,6 +232,8 @@ export async function runFrameGraphShadowProof() {
       const prepared = await graph.prepare(camera);
       const readinessDraws = readEngineDrawCalls(engine);
       const readinessFaces = boundTargets.length;
+      const currentMask = mask();
+      const maskTexture = currentMask?.getInternalTexture();
       const currentMap = map();
       const texture = currentMap?.getInternalTexture();
       const graphFrame = await render("graph");
@@ -201,6 +251,17 @@ export async function runFrameGraphShadowProof() {
         forceGraph,
         width: canvas.width,
         height: canvas.height,
+        clusterCount: owner?.status().clustered ?? 0,
+        keyContributions:
+          Number(scene.lights.includes(light) && light.isEnabled()) +
+          scene.lights.filter(
+            (entry) =>
+              entry instanceof ClusteredLightContainer &&
+              entry.lights.includes(light),
+          ).length,
+        sameMask:
+          currentMask === mask() &&
+          maskTexture === mask()?.getInternalTexture(),
         sameMap:
           currentMap === map() && texture === map()?.getInternalTexture(),
         allocations: scene.textures.filter((texture) => texture.isRenderTarget)
@@ -216,6 +277,9 @@ export async function runFrameGraphShadowProof() {
     };
     return {
       scene,
+      owner,
+      mask,
+      extraLights,
       camera,
       light,
       graph,
@@ -231,6 +295,8 @@ export async function runFrameGraphShadowProof() {
       for (const kind of ["point", "spot", "sun"] as const) {
         engine.setSize(96, 72);
         const host = await fixture(mode, kind);
+        const initialMask = host.mask();
+        const initialMaskTexture = initialMask?.getInternalTexture();
         const initialMap = host.map();
         const initialTexture = initialMap?.getInternalTexture();
         const initial = await host.capture("initial");
@@ -252,20 +318,33 @@ export async function runFrameGraphShadowProof() {
         const unshadowed = await host.capture("disabled");
         host.setShadows(true);
         await host.capture("reenabled");
+        const stableMask =
+          host.mask() === initialMask &&
+          host.mask()?.getInternalTexture() === initialMaskTexture;
         // Sequential client switching on the same Engine must not render or
         // release the sibling's admitted maps, even while disposing the first.
         const sibling = await fixture(mode, "spot");
         const siblingMap = sibling.map();
+        const siblingMask = sibling.mask();
         const siblingBefore = await sibling.render("classic", true);
         await host.capture("after-sibling");
         host.graph.dispose();
         const ownedAfterGraphDispose = host.map() !== null;
+        const maskOwnedAfterGraphDispose = host.mask() === initialMask;
+        host.owner?.dispose();
+        const liveChildrenAfterOwnerDispose = host.extraLights.filter(
+          (light) => !light.isDisposed() && host.scene.lights.includes(light),
+        ).length;
+        const remainingClusterMaps = host.scene.lights.filter(
+          (light) => light instanceof ClusteredLightContainer,
+        ).length;
         const retainedGraphObjects = host.scene.objectRenderers.filter(
           (renderer) => renderer.name === "Forward objects",
         ).length;
         host.scene.dispose();
         const siblingAfter = await sibling.render("classic", true);
-        const siblingPreserved = sibling.map() === siblingMap;
+        const siblingPreserved =
+          sibling.map() === siblingMap && sibling.mask() === siblingMask;
         sibling.graph.dispose();
         sibling.scene.dispose();
         engine.setSize(96, 72);
@@ -276,6 +355,10 @@ export async function runFrameGraphShadowProof() {
         lifecycle.push({
           name: `${mode}-${kind}`,
           stableAllocation,
+          stableMask,
+          maskOwnedAfterGraphDispose,
+          liveChildrenAfterOwnerDispose,
+          remainingClusterMaps,
           shadowed,
           unshadowed,
           initial,

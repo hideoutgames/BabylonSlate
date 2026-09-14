@@ -89,7 +89,7 @@ describe("ktx2 transcoder config", () => {
     expect(decoderOptions.forceRGBA).toBe(true);
   });
 
-  it("forces RGBA for packed play even when ASTC caps look valid", () => {
+  it("retains hardware compression when packed play decodes on the main thread", () => {
     const decoderOptions = {
       forceRGBA: false,
       useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
@@ -104,7 +104,7 @@ describe("ktx2 transcoder config", () => {
       renderer: "WebKit WebGL",
     });
     expect(mock.DefaultNumWorkers).toBe(0);
-    expect(decoderOptions.forceRGBA).toBe(true);
+    expect(decoderOptions.forceRGBA).toBe(false);
   });
 
   it("keeps GPU compressed transcode when ASTC is available", () => {

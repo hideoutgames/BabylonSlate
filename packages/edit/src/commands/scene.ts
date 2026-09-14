@@ -548,9 +548,11 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
+    const settings = { ...doc.settings, [this.key]: this.to } as SceneSettings;
+    if (this.to === undefined) Reflect.deleteProperty(settings, this.key);
     return {
       ...doc,
-      settings: { ...doc.settings, [this.key]: this.to } as SceneSettings,
+      settings,
     };
   }
 

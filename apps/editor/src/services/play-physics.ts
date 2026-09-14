@@ -215,6 +215,7 @@ export function playLoadControl(options: {
     audioAssetGuids: options.audioAssetGuids,
     animClipCatalog: options.animClipCatalog,
     deferSceneModelsReady: true,
+    deferSceneLoadingPaint: true,
   };
 }
 

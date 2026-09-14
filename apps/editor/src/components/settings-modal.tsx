@@ -1,6 +1,8 @@
 import { RenderQualityFields } from "./render-quality-fields";
+import { RenderPipelineFields } from "./render-pipeline-fields";
 import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
+import { EnvironmentLightingFields } from "./environment-lighting-fields";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CelShadingFields } from "./cel-shading-fields";
@@ -8,6 +10,7 @@ import {
   AssetPicker,
   AssetPickerControl,
   CatalogDialog,
+  DisclosureSection,
   ClassPicker,
   NamedListEditor,
   NumberField,
@@ -22,6 +25,7 @@ import {
   isErr,
   MAX_COLLISION_LAYERS,
   normalizeCelShadingSettings,
+  normalizeEnvironmentLightingSettings,
 } from "@babylonslate/core";
 import {
   Empty,
@@ -322,6 +326,7 @@ export function SettingsModal({
     }
   }, [open, scope, projectGuid, commitRendering]);
   const [search, setSearch] = useState("");
+  const [environmentOpen, setEnvironmentOpen] = useState(false);
   const settingsBodyRef = useRef<HTMLDivElement>(null);
   const [pendingFocus, setPendingFocus] = useState<{ targetId?: string } | null>(null);
   const [tokenDraft, setTokenDraft] = useState("");
@@ -554,6 +559,7 @@ export function SettingsModal({
                 onClick={() => {
                   setActiveCategoryId(result.categoryId);
                   setSearch("");
+                  if (result.targetId?.startsWith("project-environment-")) setEnvironmentOpen(true);
                   setPendingFocus({ targetId: result.targetId });
                 }}
               >
@@ -1031,6 +1037,8 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Rendering</FieldLegend>
+            <RenderPipelineFields hideTitle scope="project" project={projectDocument.settings.render}
+              onChange={(pipeline) => updateProjectSettings({ render: { ...projectDocument.settings.render, ...pipeline } })} />
             <Field className="settings-field">
               <FieldLabel htmlFor="setting-render-mode">Render Mode</FieldLabel>
               <Select value={projectDocument.settings.render.mode ?? "pbr"}
@@ -1049,6 +1057,9 @@ export function SettingsModal({
             </Field>
 <RenderQualityFields settings={projectDocument.settings.render} onChange={(render) => updateProjectSettings({ render })} />
 <ShadowSettingsFields project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
+            <DisclosureSection title="Environment Lighting" open={environmentOpen} onOpenChange={setEnvironmentOpen}>
+              <EnvironmentLightingFields hideTitle cel={projectDocument.settings.render.mode === "cel"} project={projectDocument.settings.render.environmentLighting} onChange={(environmentLighting) => updateProjectSettings({ render: { ...projectDocument.settings.render, environmentLighting: normalizeEnvironmentLightingSettings(environmentLighting) } })} />
+            </DisclosureSection>
             {projectDocument.settings.render.mode === "cel" ? (
               <CelShadingFields
                 project={normalizeCelShadingSettings(projectDocument.settings.render.cel)}
