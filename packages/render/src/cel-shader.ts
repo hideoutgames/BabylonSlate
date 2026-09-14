@@ -148,9 +148,15 @@ export function celLightingFunctions(source: string, wgsl: boolean): string {
 
 for (const wgsl of [false, true]) {
   const store = ShaderStore.GetIncludesShadersStore(wgsl ? 1 : 0);
+  const fragment = (wgsl ? lightFragmentWGSL : lightFragment).shader;
   store.slateCelLightFragment = checkedShader(
     withShadowDistanceFade(
-      (wgsl ? lightFragmentWGSL : lightFragment).shader,
+      wgsl
+        ? fragment
+        : checkedShader(fragment, "clustered CEL sequential call").replace(
+            "ivec2(light{X}.vSliceRanges[sliceIndex]),glossiness);}",
+            "ivec2(light{X}.vSliceRanges[sliceIndex]),glossiness,slateCelPeak);}",
+          ).value,
       wgsl,
     ),
     wgsl ? "light fragment WGSL" : "light fragment GLSL",
@@ -161,22 +167,19 @@ for (const wgsl of [false, true]) {
         _match,
         shadow: string,
       ) => `${wgsl ? "var slateCelIncoming{X}: f32" : "float slateCelIncoming{X}"}=slateCelStrength(info.diffuse*${shadow === "shadow" ? "slateCelShadowVisibility(shadow)" : shadow});
-${
-  wgsl
-    ? ""
-    : `#ifdef CLUSTLIGHT{X}
-slateCelIncoming{X}=info.slateCelPeak;
-#endif`
-}
 slateCelWins=0.0;
 if (slateCelIncoming{X}>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }
-slateCelPeak=max(slateCelPeak,slateCelIncoming{X});
 ${
   wgsl
-    ? "slateCelTotal+=slateCelIncoming{X};"
+    ? "slateCelPeak=max(slateCelPeak,slateCelIncoming{X});slateCelTotal+=slateCelIncoming{X};"
     : `#ifdef CLUSTLIGHT{X}
+// The children already compared against the conventional prefix in sequence.
+// Comparing their final maximum again would break epsilon ties.
+slateCelWins=info.slateCelWins;
+slateCelPeak=info.slateCelPeak;
 slateCelTotal+=info.slateCelTotal;
 #else
+slateCelPeak=max(slateCelPeak,slateCelIncoming{X});
 slateCelTotal+=slateCelIncoming{X};
 #endif`
 }
