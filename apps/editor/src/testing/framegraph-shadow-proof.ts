@@ -282,7 +282,8 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         host.camera.setTarget(new Vector3(0, 0.3, 0));
         await host.capture("camera-moved");
         engine.setSize(112, 80);
-        host.outputTarget?.resize({ width: 100, height: 76 });
+        // Keep enough receiver pixels for the positive spot-shadow oracle.
+        host.outputTarget?.resize({ width: 128, height: 96 });
         // Explicit sampleable depth is owned separately from RTT resize options.
         host.outputTarget?.createDepthStencilTexture();
         const shadowed = await host.capture("resized");
