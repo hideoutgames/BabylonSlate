@@ -49,13 +49,20 @@ function fixture(engine = new NullEngine()) {
   });
   // Pinned NullEngine omits the requested RTT format, unlike real WebGL.
   if (!vi.isMockFunction(engine.createRenderTargetTexture)) {
-  const createTargetWithFormat = engine.createRenderTargetTexture.bind(engine);
-  vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
-    const target = createTargetWithFormat(size, options);
-    if (target.texture && typeof options === "object" && options.format !== undefined)
-      target.texture.format = options.format;
-    return target;
-  });
+    const createTargetWithFormat =
+      engine.createRenderTargetTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation(
+      (size, options) => {
+        const target = createTargetWithFormat(size, options);
+        if (
+          target.texture &&
+          typeof options === "object" &&
+          options.format !== undefined
+        )
+          target.texture.format = options.format;
+        return target;
+      },
+    );
   }
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 3, -5), scene);
@@ -95,7 +102,9 @@ describe("scene render path selection", () => {
     material.clearCoat.isEnabled = true;
     syncSceneLighting(scene);
     expect(container(scene)).toBeUndefined();
-    expect(sceneRenderPathStatus(scene).requested.renderPath).toBe("clusteredForward");
+    expect(sceneRenderPathStatus(scene).requested.renderPath).toBe(
+      "clusteredForward",
+    );
     expect(sceneRenderPathStatus(scene).effective.renderPath).toBe("forward");
     expect(sceneRenderPathStatus(scene).limits.join()).toContain("Clear Coat");
     material.clearCoat.isEnabled = false;

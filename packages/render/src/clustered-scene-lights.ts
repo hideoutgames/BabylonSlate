@@ -35,9 +35,15 @@ import { forwardLightBudget } from "./forward-light-budget";
 import { ManagedClusteredLightContainer } from "./clustered-light-container";
 import { bindClusteredMaterialVariants } from "./clustered-material-bindings";
 
-import { availableManagedLightingBytes, beginManagedLightingAllocation,
-  type ManagedLightingLease } from "./managed-lighting-resources";
-import { clusteredTextureAllocationBytes, clusteredTextureResources } from "./clustered-resource-cost";
+import {
+  availableManagedLightingBytes,
+  beginManagedLightingAllocation,
+  type ManagedLightingLease,
+} from "./managed-lighting-resources";
+import {
+  clusteredTextureAllocationBytes,
+  clusteredTextureResources,
+} from "./clustered-resource-cost";
 
 export type ClusteredSceneLightStatus = {
   clustered: number;
@@ -236,13 +242,19 @@ export class ClusteredSceneLights {
         Math.floor(capability.maxTextureSize / capability.batchSize) *
           capability.batchSize,
       );
-      const batchBytes = clusteredTextureAllocationBytes(capability.batchSize, 1);
+      const batchBytes = clusteredTextureAllocationBytes(
+        capability.batchSize,
+        1,
+      );
       const available = availableManagedLightingBytes(this.scene.getEngine());
       // Native construction allocates one empty batch before a larger replacement.
       // Both generations are reserved until synchronous cleanup is confirmed.
-      const affordableBatches = Math.floor(available / batchBytes) -
+      const affordableBatches =
+        Math.floor(available / batchBytes) -
         (!this.container && available >= batchBytes * 2 ? 1 : 0);
-      const resourceLimit = Math.max(this.allocatedBatches, affordableBatches) * capability.batchSize;
+      const resourceLimit =
+        Math.max(this.allocatedBatches, affordableBatches) *
+        capability.batchSize;
       const limit = Math.min(storageLimit, resourceLimit);
       // CEL ordering is a stable structural decision; memory contention must not
       // silently split a Strongest tail and change equal-light tie semantics.
@@ -272,13 +284,21 @@ export class ClusteredSceneLights {
           ),
         );
       const memoryLimited = eligible.length > limit && limit < storageLimit;
-      if (memoryLimited && (limit === 0 ||
-          (this.celCandidates && eligible.length > limit))) {
+      if (
+        memoryLimited &&
+        (limit === 0 || (this.celCandidates && eligible.length > limit))
+      ) {
         this.localSelection = undefined;
         this.releaseContainer();
-        const reason = "Shared managed lighting memory is reserved by other allocations; using conventional lighting.";
-        this.statusValue = { clustered: 0, conventional: this.registry.length,
-          estimatedBytes: 0, reasons: [reason], fallbackReason: reason };
+        const reason =
+          "Shared managed lighting memory is reserved by other allocations; using conventional lighting.";
+        this.statusValue = {
+          clustered: 0,
+          conventional: this.registry.length,
+          estimatedBytes: 0,
+          reasons: [reason],
+          fallbackReason: reason,
+        };
         return;
       }
       const selected = new Set(eligible.slice(0, limit));
@@ -290,7 +310,9 @@ export class ClusteredSceneLights {
       } else {
         if (!this.container) {
           const lease = this.reserveTextures(capability.batchSize, 1);
-          const fail = beginClusteredAllocation(this.scene, () => lease.release());
+          const fail = beginClusteredAllocation(this.scene, () =>
+            lease.release(),
+          );
           try {
             this.container = new ManagedClusteredLightContainer(
               "Slate clustered prototype",
@@ -338,7 +360,9 @@ export class ClusteredSceneLights {
         const batches = Math.ceil(selected.size / capability.batchSize);
         if (batches > this.allocatedBatches) {
           const lease = this.reserveTextures(capability.batchSize, batches);
-          const fail = beginClusteredAllocation(this.scene, () => lease.release());
+          const fail = beginClusteredAllocation(this.scene, () =>
+            lease.release(),
+          );
           try {
             container._updateBatches(this.scene.activeCamera);
             this.adoptTextures(lease, batches);
@@ -371,8 +395,10 @@ export class ClusteredSceneLights {
             : [],
       };
       if (memoryLimited)
-        this.statusValue.reasons = [...this.statusValue.reasons,
-          "Shared managed lighting memory limits clustered storage; remaining locals use conventional admission."];
+        this.statusValue.reasons = [
+          ...this.statusValue.reasons,
+          "Shared managed lighting memory limits clustered storage; remaining locals use conventional admission.",
+        ];
       if (requestedLocals.length > localBudget)
         this.statusValue.reasons = [
           ...this.statusValue.reasons,
@@ -473,10 +499,18 @@ export class ClusteredSceneLights {
     this.restoreAuthoredOrder();
   }
 
-  private reserveTextures(batchSize: number, batches: number): ManagedLightingLease {
-    const lease = beginManagedLightingAllocation(this.scene.getEngine(),
-      clusteredTextureAllocationBytes(batchSize, batches));
-    if (!lease) throw new Error("Shared managed lighting replacement peak exceeds the available budget.");
+  private reserveTextures(
+    batchSize: number,
+    batches: number,
+  ): ManagedLightingLease {
+    const lease = beginManagedLightingAllocation(
+      this.scene.getEngine(),
+      clusteredTextureAllocationBytes(batchSize, batches),
+    );
+    if (!lease)
+      throw new Error(
+        "Shared managed lighting replacement peak exceeds the available budget.",
+      );
     return lease;
   }
 
@@ -486,7 +520,10 @@ export class ClusteredSceneLights {
     // Native _updateBatches has disposed the old textures before returning.
     this.resourceLease?.release();
     this.resourceLease = lease;
-    this.reservedTextureBytes = resources.reduce((sum, resource) => sum + resource.bytes, 0);
+    this.reservedTextureBytes = resources.reduce(
+      (sum, resource) => sum + resource.bytes,
+      0,
+    );
     this.allocatedBatches = batches;
   }
 

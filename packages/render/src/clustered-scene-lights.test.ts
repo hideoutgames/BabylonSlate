@@ -38,7 +38,10 @@ import {
 import { compileMaterialPlan } from "./material-compiler";
 import { isSceneFrameReady } from "./scene-perf";
 
-import { limitManagedLightingBytes, managedLightingReservations } from "./managed-lighting-resources";
+import {
+  limitManagedLightingBytes,
+  managedLightingReservations,
+} from "./managed-lighting-resources";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -48,54 +51,61 @@ afterEach(() => {
 
 function fixture(engine = new NullEngine()) {
   if (!engines.includes(engine)) {
-  engines.push(engine);
-  // NullEngine reports WebGL1; expose the proven WebGL2 capability boundary
-  // without replacing the real container or its membership implementation.
-  vi.spyOn(engine, "version", "get").mockReturnValue(2);
-  // The only substituted boundary is GPU capability evidence. Container,
-  // registry, light membership, shader budget and resource lifetimes stay real.
-  Object.assign(engine.getCaps(), {
-    texelFetch: true,
-    colorBufferFloat: true,
-    blendFloat: true,
-    shaderFloatPrecision: 23,
-  });
-  vi.spyOn(capabilities, "clusteredLightCapabilities").mockReturnValue({
-    supported: true,
-    batchSize: 23,
-    maxTextureSize: 4096,
-  });
-  // Native NullEngine raw uploads retain data but never mark it ready. Supply
-  // that absent GPU completion boundary so real material/graph probes can run.
-  const createRawTexture = engine.createRawTexture.bind(engine);
-  vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
-    const texture = createRawTexture(...args);
-    texture.isReady = true;
-    return texture;
-  });
-  // Like the shadow-controller fixture, complete NullEngine's missing cube
-  // wrapper attachment so repeated real admission sees the allocated map size.
-  const createCubeTarget = engine.createRenderTargetCubeTexture.bind(engine);
-  vi.spyOn(engine, "createRenderTargetCubeTexture").mockImplementation(
-    (...args) => {
-      const target = createCubeTarget(...args);
-      if (!target.texture) {
-        const texture = engine.getLoadedTexturesCache().at(-1);
-        if (!texture)
-          throw new Error("NullEngine cube allocation has no texture");
-        target.setTexture(texture);
-      }
-      return target;
-    },
-  );
-  // Pinned NullEngine omits the requested RTT format, unlike real WebGL.
-  const createTargetWithFormat = engine.createRenderTargetTexture.bind(engine);
-  vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
-    const target = createTargetWithFormat(size, options);
-    if (target.texture && typeof options === "object" && options.format !== undefined)
-      target.texture.format = options.format;
-    return target;
-  });
+    engines.push(engine);
+    // NullEngine reports WebGL1; expose the proven WebGL2 capability boundary
+    // without replacing the real container or its membership implementation.
+    vi.spyOn(engine, "version", "get").mockReturnValue(2);
+    // The only substituted boundary is GPU capability evidence. Container,
+    // registry, light membership, shader budget and resource lifetimes stay real.
+    Object.assign(engine.getCaps(), {
+      texelFetch: true,
+      colorBufferFloat: true,
+      blendFloat: true,
+      shaderFloatPrecision: 23,
+    });
+    vi.spyOn(capabilities, "clusteredLightCapabilities").mockReturnValue({
+      supported: true,
+      batchSize: 23,
+      maxTextureSize: 4096,
+    });
+    // Native NullEngine raw uploads retain data but never mark it ready. Supply
+    // that absent GPU completion boundary so real material/graph probes can run.
+    const createRawTexture = engine.createRawTexture.bind(engine);
+    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+      const texture = createRawTexture(...args);
+      texture.isReady = true;
+      return texture;
+    });
+    // Like the shadow-controller fixture, complete NullEngine's missing cube
+    // wrapper attachment so repeated real admission sees the allocated map size.
+    const createCubeTarget = engine.createRenderTargetCubeTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetCubeTexture").mockImplementation(
+      (...args) => {
+        const target = createCubeTarget(...args);
+        if (!target.texture) {
+          const texture = engine.getLoadedTexturesCache().at(-1);
+          if (!texture)
+            throw new Error("NullEngine cube allocation has no texture");
+          target.setTexture(texture);
+        }
+        return target;
+      },
+    );
+    // Pinned NullEngine omits the requested RTT format, unlike real WebGL.
+    const createTargetWithFormat =
+      engine.createRenderTargetTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation(
+      (size, options) => {
+        const target = createTargetWithFormat(size, options);
+        if (
+          target.texture &&
+          typeof options === "object" &&
+          options.format !== undefined
+        )
+          target.texture.format = options.format;
+        return target;
+      },
+    );
   }
   const scene = new Scene(engine);
   updateSceneRenderingSettings(scene, {
@@ -131,13 +141,21 @@ describe("explicit clustered light ownership", () => {
   it("starves a sibling before construction and admits it after the exact owner's lease is released", () => {
     const first = fixture();
     limitManagedLightingBytes(first.engine, 18224);
-    const owner = new ClusteredSceneLights(first.scene, first.lights.slice(0, 2));
+    const owner = new ClusteredSceneLights(
+      first.scene,
+      first.lights.slice(0, 2),
+    );
     expect(owner.status().clustered).toBe(2);
     const sibling = fixture(first.engine);
     const before = first.engine._renderTargetWrapperCache.slice();
-    const waiting = new ClusteredSceneLights(sibling.scene, sibling.lights.slice(0, 2));
+    const waiting = new ClusteredSceneLights(
+      sibling.scene,
+      sibling.lights.slice(0, 2),
+    );
     expect(waiting.status().clustered).toBe(0);
-    expect(waiting.status().fallbackReason).toContain("Shared managed lighting memory");
+    expect(waiting.status().fallbackReason).toContain(
+      "Shared managed lighting memory",
+    );
     expect(first.engine._renderTargetWrapperCache).toEqual(before);
     expect(sibling.lights.every(isAuthoredLightEnabled)).toBe(true);
     owner.dispose();
@@ -154,11 +172,15 @@ describe("explicit clustered light ownership", () => {
     const owner = new ClusteredSceneLights(scene, lights.slice(0, 2));
     const original = owner.target(scene.activeCamera!);
     let peak = 0;
-    const allocate = vi.mocked(engine.createRenderTargetTexture).getMockImplementation()!;
-    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((...args) => {
-      peak = managedLightingReservations(engine).reservedBytes;
-      return allocate(...args);
-    });
+    const allocate = vi
+      .mocked(engine.createRenderTargetTexture)
+      .getMockImplementation()!;
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation(
+      (...args) => {
+        peak = managedLightingReservations(engine).reservedBytes;
+        return allocate(...args);
+      },
+    );
     owner.setLights(lights);
     expect(peak).toBe(72896);
     expect(owner.status().clustered).toBe(48);
@@ -166,19 +188,41 @@ describe("explicit clustered light ownership", () => {
     expect(owner.target(scene.activeCamera!)).not.toBe(original);
     const grown = owner.target(scene.activeCamera!);
     owner.setLights(lights.slice(0, 2));
-    for (let i = 0; i < 3; i++) { owner.sync(); owner.target(scene.activeCamera!); }
+    for (let i = 0; i < 3; i++) {
+      owner.sync();
+      owner.target(scene.activeCamera!);
+    }
     expect(owner.target(scene.activeCamera!)).toBe(grown);
-    expect(managedLightingReservations(engine)).toMatchObject({ clusterBytes: 54672, pendingBytes: 0 });
+    expect(managedLightingReservations(engine)).toMatchObject({
+      clusterBytes: 54672,
+      pendingBytes: 0,
+    });
     owner.setLights([]);
     expect(managedLightingReservations(engine).reservedBytes).toBe(0);
   });
 
   it("preserves same-scene shadow reservations while clusters contend and recover after context restoration", () => {
     const { engine, scene, lights } = fixture();
-    const key = new SpotLight("key", new Vector3(0, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
-    applyAuthoredLightProperties(key, { enabled: true, castShadows: true, range: 12 });
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({
-      localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 }) });
+    const key = new SpotLight(
+      "key",
+      new Vector3(0, 3, 0),
+      Vector3.Down(),
+      Math.PI / 2,
+      1,
+      scene,
+    );
+    applyAuthoredLightProperties(key, {
+      enabled: true,
+      castShadows: true,
+      range: 12,
+    });
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({
+        localLightMode: "manual",
+        maxLocalLights: 1,
+        localMapSize: 256,
+      }),
+    });
     const shadows = sceneShadowController(scene);
     shadows.sync();
     const shadowBytes = managedLightingReservations(engine).shadowBytes;
@@ -190,13 +234,18 @@ describe("explicit clustered light ownership", () => {
     expect(owner.limits().join()).toContain("Shared managed lighting memory");
     shadows.sync();
     expect(shadows.generator(key)).toBe(generator);
-    expect(managedLightingReservations(engine).reservedBytes).toBe(shadowBytes + 18224);
+    expect(managedLightingReservations(engine).reservedBytes).toBe(
+      shadowBytes + 18224,
+    );
     engine.onContextRestoredObservable.notifyObservers(engine);
     expect(managedLightingReservations(engine).reservedBytes).toBe(0);
-    shadows.sync(); owner.sync();
+    shadows.sync();
+    owner.sync();
     expect(owner.status().clustered).toBe(23);
     expect(shadows.generator(key)).not.toBeNull();
-    expect(managedLightingReservations(engine).reservedBytes).toBe(shadowBytes + 18224);
+    expect(managedLightingReservations(engine).reservedBytes).toBe(
+      shadowBytes + 18224,
+    );
     scene.dispose();
     expect(managedLightingReservations(engine).reservedBytes).toBe(0);
   });

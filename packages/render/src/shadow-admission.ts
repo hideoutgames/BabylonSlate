@@ -1,6 +1,9 @@
 import type { AbstractEngine, Scene } from "@babylonjs/core";
 
-import { availableManagedLightingBytes, reserveManagedShadowBytes } from "./managed-lighting-resources";
+import {
+  availableManagedLightingBytes,
+  reserveManagedShadowBytes,
+} from "./managed-lighting-resources";
 
 export type ShadowCost = { bytes: number; passes: number; samplers: number };
 const reservations = new WeakMap<AbstractEngine, Map<Scene, ShadowCost>>();
@@ -47,6 +50,8 @@ export function reserveSceneShadows(scene: Scene, cost: ShadowCost): void {
 
 /** This Scene may replace its own shadows, but cannot spend any cluster lease. */
 export function availableSceneShadowBytes(scene: Scene): number {
-  return availableManagedLightingBytes(scene.getEngine()) +
-    (reservations.get(scene.getEngine())?.get(scene)?.bytes ?? 0);
+  return (
+    availableManagedLightingBytes(scene.getEngine()) +
+    (reservations.get(scene.getEngine())?.get(scene)?.bytes ?? 0)
+  );
 }

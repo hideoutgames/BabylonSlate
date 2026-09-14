@@ -458,7 +458,11 @@ export class SceneShadowController {
     const other = otherShadowReservations(scene);
     const byteBudget = Math.max(
       0,
-      Math.min(profile.byteBudget, ENGINE_SHADOW_BUDGET.bytes - other.bytes, availableSceneShadowBytes(scene)),
+      Math.min(
+        profile.byteBudget,
+        ENGINE_SHADOW_BUDGET.bytes - other.bytes,
+        availableSceneShadowBytes(scene),
+      ),
     );
     const passBudget = Math.max(
       0,

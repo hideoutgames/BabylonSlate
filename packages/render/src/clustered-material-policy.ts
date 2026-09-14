@@ -77,10 +77,13 @@ function compatible(material: Material): boolean {
   );
 }
 
-
 function unqualifiedNativeFeature(material: Material): string | undefined {
   if (material instanceof MultiMaterial)
-    return material.subMaterials.map((child) => child && unqualifiedNativeFeature(child)).find(Boolean) ?? undefined;
+    return (
+      material.subMaterials
+        .map((child) => child && unqualifiedNativeFeature(child))
+        .find(Boolean) ?? undefined
+    );
   if (material.constructor === CelMaterial)
     return unqualifiedNativeFeature((material as CelMaterial).source);
   if (material instanceof PBRMaterial) {
@@ -89,10 +92,18 @@ function unqualifiedNativeFeature(material: Material): string | undefined {
     if (material.iridescence.isEnabled) return "Iridescence";
     if (material.sheen.isEnabled) return "Sheen";
     const sub = material.subSurface;
-    if (sub.isRefractionEnabled || sub.isTranslucencyEnabled || sub.isScatteringEnabled || sub.isDispersionEnabled)
+    if (
+      sub.isRefractionEnabled ||
+      sub.isTranslucencyEnabled ||
+      sub.isScatteringEnabled ||
+      sub.isDispersionEnabled
+    )
       return "Subsurface";
   }
-  if ((material instanceof PBRMaterial || material instanceof StandardMaterial) && material.detailMap.isEnabled)
+  if (
+    (material instanceof PBRMaterial || material instanceof StandardMaterial) &&
+    material.detailMap.isEnabled
+  )
     return "Detail Map";
   return undefined;
 }

@@ -34,7 +34,10 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-import { limitManagedLightingBytes, managedLightingReservations } from "@babylonslate/render/managed-lighting-resources";
+import {
+  limitManagedLightingBytes,
+  managedLightingReservations,
+} from "@babylonslate/render/managed-lighting-resources";
 
 export async function runFrameGraphShadowProof(
   options: { clustered?: boolean; constrainedResources?: boolean } = {},
@@ -307,8 +310,11 @@ export async function runFrameGraphShadowProof(
         clusterCount: sibling.owner?.status().clustered,
         reason: sibling.owner?.status().fallbackReason,
         shadowMaps: sibling.light.getShadowGenerators()?.size ?? 0,
-        ownedMaps: sibling.scene.textures.filter((texture) => texture.isRenderTarget).length,
-        firstMapRetained: first.map() === firstMap && first.mask() === firstMask,
+        ownedMaps: sibling.scene.textures.filter(
+          (texture) => texture.isRenderTarget,
+        ).length,
+        firstMapRetained:
+          first.map() === firstMap && first.mask() === firstMask,
       };
       first.graph.dispose();
       first.scene.dispose();
@@ -320,12 +326,23 @@ export async function runFrameGraphShadowProof(
         resources: managedLightingReservations(engine),
         clusterCount: sibling.owner?.status().clustered,
         shadowMaps: sibling.light.getShadowGenerators()?.size ?? 0,
-        ownedMaps: sibling.scene.textures.filter((texture) => texture.isRenderTarget).length,
+        ownedMaps: sibling.scene.textures.filter(
+          (texture) => texture.isRenderTarget,
+        ).length,
       };
       sibling.graph.dispose();
       sibling.scene.dispose();
-      return { webGLVersion: engine.webGLVersion, captures, lifecycle,
-        resourceProof: { before, starved, recovered, disposed: managedLightingReservations(engine) } };
+      return {
+        webGLVersion: engine.webGLVersion,
+        captures,
+        lifecycle,
+        resourceProof: {
+          before,
+          starved,
+          recovered,
+          disposed: managedLightingReservations(engine),
+        },
+      };
     }
     for (const mode of ["pbr", "cel"] as const)
       for (const kind of ["point", "spot", "sun"] as const) {
@@ -407,7 +424,12 @@ export async function runFrameGraphShadowProof(
           remainingScenes: engine.scenes.length,
         });
       }
-    return { webGLVersion: engine.webGLVersion, captures, lifecycle, resourceProof: undefined };
+    return {
+      webGLVersion: engine.webGLVersion,
+      captures,
+      lifecycle,
+      resourceProof: undefined,
+    };
   } finally {
     engine.dispose();
     canvas.remove();

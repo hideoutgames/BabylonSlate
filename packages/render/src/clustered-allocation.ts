@@ -27,7 +27,8 @@ export function beginClusteredAllocation(
       // Pinned constructor boundary: the proxy has left scene.meshes before its
       // first RTT allocation. The ordinary subclass dispose assumes both target
       // fields exist; a thrown constructor has not necessarily assigned them.
-      const proxy = (light as unknown as { _proxyMesh?: AbstractMesh })._proxyMesh;
+      const proxy = (light as unknown as { _proxyMesh?: AbstractMesh })
+        ._proxyMesh;
       if (proxy) attempt(() => proxy.dispose(false, true));
       attempt(() => Light.prototype.dispose.call(light));
     }
