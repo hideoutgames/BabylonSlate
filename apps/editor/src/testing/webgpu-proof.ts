@@ -32,12 +32,15 @@ export async function runWebGpuProof() {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 64;
     document.getElementById("root")!.append(canvas);
+    const swapChainFormat =
+      backend === "webgpu" ? navigator.gpu.getPreferredCanvasFormat() : null;
     const engine =
       backend === "webgpu"
         ? new WebGPUEngine(canvas, {
             antialias: false,
             adaptToDeviceRatio: false,
             enableAllFeatures: false,
+            swapChainFormat: swapChainFormat!,
           })
         : new Engine(canvas, false, {
             preserveDrawingBuffer: true,
@@ -106,6 +109,8 @@ export async function runWebGpuProof() {
               ? engine.getInfo()
               : engine.getGlInfo(),
           shaderLanguage: compiled.material.shaderLanguage,
+          pixelFormat: swapChainFormat ?? "rgba8unorm",
+          pixelOrigin: backend === "webgpu" ? "top-left" : "bottom-left",
           pixels: [
             ...new Uint8Array(
               readback.buffer,

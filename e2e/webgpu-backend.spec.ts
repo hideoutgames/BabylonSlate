@@ -75,4 +75,48 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
       ).toBeGreaterThan(100);
     }
   }
+  // Native readback follows each API's origin and swap-chain channel order.
+  // Compare the same displayed pixels without hiding texture orientation errors.
+  const rgbaTopLeft = (capture: (typeof result.captures)[number]) => {
+    const pixels: number[] = [];
+    expect(["rgba8unorm", "bgra8unorm"]).toContain(capture.pixelFormat);
+    const channels =
+      capture.pixelFormat === "bgra8unorm" ? [2, 1, 0, 3] : [0, 1, 2, 3];
+    for (let y = 0; y < 64; y++) {
+      const row = capture.pixelOrigin === "bottom-left" ? 63 - y : y;
+      for (let x = 0; x < 64; x++)
+        for (const channel of channels)
+          pixels.push(capture.pixels[(row * 64 + x) * 4 + channel]);
+    }
+    return pixels;
+  };
+  for (const mode of ["pbr", "cel"]) {
+    const reference = rgbaTopLeft(
+      result.captures.find(
+        (capture) => capture.backend === "webgl2" && capture.mode === mode,
+      )!,
+    );
+    const actual = rgbaTopLeft(
+      result.captures.find(
+        (capture) => capture.backend === "webgpu" && capture.mode === mode,
+      )!,
+    );
+    let maxDifference = 0;
+    for (let i = 0; i < reference.length; i++)
+      maxDifference = Math.max(
+        maxDifference,
+        Math.abs(reference[i] - actual[i]),
+      );
+    expect(maxDifference, `${mode} backend pixel parity`).toBeLessThanOrEqual(
+      2,
+    );
+    // Both texture rows must remain distinct; a solid-color/missing texture
+    // fallback could otherwise satisfy backend parity.
+    const upperGreen = actual[(24 * 64 + 20) * 4 + 1];
+    const lowerGreen = actual[(40 * 64 + 20) * 4 + 1];
+    expect(
+      Math.abs(upperGreen - lowerGreen),
+      `${mode} texture rows`,
+    ).toBeGreaterThan(40);
+  }
 });
