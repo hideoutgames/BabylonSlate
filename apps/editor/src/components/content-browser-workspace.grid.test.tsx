@@ -477,7 +477,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(assets).toHaveLength(1);
   });
 
-  it("opens an asset directly from the references dialog", async () => {
+  it("opens the connected reference graph focused on the target and navigates to a selected asset", async () => {
     const asset = texture(0);
     const dependency = texture(1);
     asset.header.dependencies = [dependency.header.guid];
@@ -485,7 +485,12 @@ describe("ContentBrowserWorkspace grid window", () => {
     render(<ContentBrowserWorkspace />);
     fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Show References" }));
-    fireEvent.click(screen.getByRole("button", { name: "tex-1" }));
+    const dialog = screen.getByTestId("content-browser-refs-dialog");
+    const root = within(dialog).getByTestId("asset-reference-node-tex-0");
+    await waitFor(() => expect(root.getAttribute("data-selected")).toBe("true"));
+    expect(within(dialog).queryByTestId("graph-add-node")).toBeNull();
+    fireEvent.click(within(dialog).getByTestId("asset-reference-node-tex-1"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Open Asset", exact: true }));
     await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith({ kind: "asset-settings", path: "assets/tex-1.babasset", label: "Tex 1" }));
   });
   it("preserves a folder name and explains a failed create so it can be retried", async () => {

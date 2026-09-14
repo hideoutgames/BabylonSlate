@@ -41,6 +41,7 @@ import {
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import { AssetReferenceDialog } from "./asset-reference-dialog";
 import { classAssetReference, classDeletionCandidates, validateClassDeletionReplacements } from "../lib/class-deletion";
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
 import { resolvePluginIcon } from "../lib/plugin-icons";
@@ -299,11 +300,7 @@ export function ContentBrowserWorkspace({
     | null
   >(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
-  const [refsSummary, setRefsSummary] = useState<{
-    name: string;
-    inbound: string[];
-    outbound: string[];
-  } | null>(null);
+  const [referenceGuid, setReferenceGuid] = useState<string | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
   );
@@ -1063,12 +1060,7 @@ export function ContentBrowserWorkspace({
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
-          const refs = assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments);
-          setRefsSummary({
-            name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
-            inbound: refs.inbound,
-            outbound: refs.outbound,
-          });
+          setReferenceGuid(guid);
         },
       },
       {
@@ -2795,45 +2787,16 @@ export function ContentBrowserWorkspace({
         folderSourcePaths={moveTarget?.folderSourcePaths}
       />
 
-      <AlertDialog
-        open={refsSummary !== null}
-        onOpenChange={(open) => {
-          if (!open) setRefsSummary(null);
-        }}
-      >
-        <AlertDialogContent
-          className="flex max-h-[calc(100dvh-2rem)] flex-col"
-          data-testid="content-browser-refs-dialog"
-        >
-          <AlertDialogHeader className="shrink-0">
-            <AlertDialogTitle>References</AlertDialogTitle>
-            <AlertDialogDescription>
-              Dependencies for {refsSummary?.name}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain break-words text-sm">
-            {([['Used By', refsSummary?.inbound ?? []], ['Uses', refsSummary?.outbound ?? []]] as const).map(([label, guids]) => (
-              <div key={label} className="flex flex-col gap-1">
-                <p className="font-medium">{label}</p>
-                {guids.length === 0 ? <p>None</p> : guids.map((guid) => {
-                  const asset = assetRegistry?.getByGuid(guid);
-                  return asset && documentKindForAssetType(asset.header.type) ? (
-                    <Button key={guid} variant="ghost" size="sm" className="h-auto justify-start whitespace-normal text-left" title={asset.path} onClick={() => {
-                      setRefsSummary(null);
-                      void openOrFocusDocument(asset);
-                    }}>{displayAssetTitle(asset.header.name)}</Button>
-                  ) : <SelectableText key={guid}>{asset ? displayAssetTitle(asset.header.name) : `${guid} (Missing Asset)`}</SelectableText>;
-                })}
-              </div>
-            ))}
-          </div>
-          <AlertDialogFooter className="shrink-0">
-            <AlertDialogAction onClick={() => setRefsSummary(null)}>
-              Close
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {referenceGuid ? (
+        <AssetReferenceDialog
+          key={referenceGuid}
+          rootGuid={referenceGuid}
+          assets={referenceAssets}
+          openDocuments={openDocuments}
+          onClose={() => setReferenceGuid(null)}
+          onOpenAsset={(asset) => { void openOrFocusDocument(asset); }}
+        />
+      ) : null}
 
       <Dialog open={deleteProgress !== null}>
         <DialogContent showCloseButton={false} data-testid="deleting-overlay">
