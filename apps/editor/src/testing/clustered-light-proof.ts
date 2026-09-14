@@ -1,4 +1,8 @@
-import { normalizeCelShadingSettings, normalizeShadowSettings, normalizeRenderingQuality } from "@babylonslate/core";
+import {
+  normalizeCelShadingSettings,
+  normalizeShadowSettings,
+  normalizeRenderingQuality,
+} from "@babylonslate/core";
 /** Real GPU contribution oracle; this hook is available only in test builds. */
 import {
   Color3,
@@ -19,6 +23,7 @@ import {
   compileMaterialPlan,
   readEngineDrawCalls,
   setSceneRenderSettings,
+  type RenderShadingSettings,
 } from "@babylonslate/render";
 import { ClusteredSceneLights } from "@babylonslate/render/clustered-scene-lights";
 import { clusteredLightCapabilities } from "@babylonslate/render/clustered-light-capabilities";
@@ -66,15 +71,18 @@ export async function runClusteredLightProof() {
       native.albedoColor = new Color3(0.8, 0.8, 0.8);
       native.metallic = 0;
       native.roughness = 1;
-      setSceneRenderSettings(scene, {
+      const renderSettings: RenderShadingSettings = {
         mode,
-        quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 48 } }),
+        quality: normalizeRenderingQuality({
+          lighting: { localLightMode: "manual", maxLocalLights: 48 },
+        }),
         cel: normalizeCelShadingSettings({
           lightMixing: mixing === "pbr" ? "strongest" : mixing,
           lightColorInfluence: 1,
           specularEnabled: false,
         }),
-      });
+      };
+      setSceneRenderSettings(scene, renderSettings);
       const document = createDefaultMaterialDocument("graph");
       document.nodes.find((node) => node.id === "baseColor")!.properties.value =
         [0.8, 0.8, 0.8];
@@ -388,6 +396,7 @@ export async function runClusteredLightProof() {
         // reducing the last two lights first would spuriously replace the red
         // conventional prefix. The point map is real, with an unoccluded floor.
         setSceneRenderSettings(scene, {
+          ...renderSettings,
           shadows: normalizeShadowSettings({
             localLightMode: "manual",
             maxLocalLights: 1,

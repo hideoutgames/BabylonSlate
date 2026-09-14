@@ -13,6 +13,7 @@ import {
   SpotLight,
   StandardMaterial,
   Vector3,
+  type AbstractMesh,
 } from "@babylonjs/core";
 import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
 import * as capabilities from "./clustered-light-capabilities";
@@ -101,6 +102,37 @@ function fixture() {
 }
 
 describe("explicit clustered light ownership", () => {
+  it("does not re-admit the removed cluster proxy when Babylon delivers its deferred mesh-added notification", async () => {
+    const { scene, lights } = fixture();
+    applyAuthoredLightProperties(lights[0]!, {
+      enabled: true,
+      castShadows: true,
+      range: 12,
+    });
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({
+        localLightMode: "manual",
+        maxLocalLights: 1,
+        localMapSize: 64,
+      }),
+    });
+    const controller = sceneShadowController(scene);
+    let proxy: AbstractMesh | undefined;
+    scene.onNewMeshAddedObservable.add((mesh) => {
+      if (mesh.name === "ProxyMesh") proxy = mesh;
+    });
+    const owner = new ClusteredSceneLights(scene, lights);
+    await vi.waitFor(() => expect(proxy).toBeDefined());
+    controller.sync();
+    expect(scene.meshes).not.toContain(proxy);
+    const shadow = controller.generator(lights[0]!)!.getShadowMap()!;
+    expect(shadow.renderList).not.toContain(proxy);
+    // The real thin-instance ShaderMaterial proxy must not force otherwise
+    // static local maps into continuous refresh.
+    expect(shadow.refreshRate).toBe(0);
+    owner.dispose();
+  });
+
   it("keeps CEL Strongest interleaving conventional until an authored priority change creates a contiguous tail", () => {
     const { scene, mesh, lights } = fixture();
     for (const light of lights.slice(3)) light.dispose();
