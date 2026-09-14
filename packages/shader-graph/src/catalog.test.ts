@@ -179,6 +179,7 @@ describe("material node catalog", () => {
       "baseColor",
       "metallic",
       "roughness",
+      "environmentInfluence",
       "normal",
       "emissive",
       "opacity",
