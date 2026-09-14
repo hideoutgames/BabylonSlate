@@ -1,5 +1,9 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { TypeVisualIcon, resolveTypeVisual, TYPE_VISUAL_ICON_TILE_SIZE } from "@babylonslate/editor-kit";
+import {
+  TypeVisualIcon,
+  resolveTypeVisual,
+  TYPE_VISUAL_ICON_TILE_SIZE,
+} from "@babylonslate/editor-kit";
 import { cn } from "@babylonslate/ui/lib/utils";
 
 type AssetReferenceData = {
@@ -11,7 +15,11 @@ type AssetReferenceData = {
 };
 
 /** Inspection-only asset identity, deliberately separate from scripting nodes. */
-export function AssetReferenceNode({ id, data, selected }: NodeProps<Node<AssetReferenceData>>) {
+export function AssetReferenceNode({
+  id,
+  data,
+  selected,
+}: NodeProps<Node<AssetReferenceData>>) {
   return (
     <div
       className={cn(
@@ -22,19 +30,38 @@ export function AssetReferenceNode({ id, data, selected }: NodeProps<Node<AssetR
       data-testid={`asset-reference-node-${id}`}
       data-selected={selected ? "true" : "false"}
     >
-      <Handle id="used-by" type="target" position={Position.Left} isConnectable={false} />
+      <Handle
+        id="used-by"
+        type="target"
+        position={Position.Left}
+        isConnectable={false}
+      />
       <TypeVisualIcon
-        visual={resolveTypeVisual({ assetType: data.assetType, parentClass: data.parentClass })}
+        visual={resolveTypeVisual({
+          assetType: data.assetType,
+          parentClass: data.parentClass,
+        })}
         size={TYPE_VISUAL_ICON_TILE_SIZE}
         className="shrink-0"
       />
       <div className="flex w-full min-w-0 flex-col items-center gap-1 text-center">
-        <span className="line-clamp-2 w-full break-all text-sm font-medium">{data.title ?? id}</span>
-        {data.missing ? <span className="text-xs text-muted-foreground">Missing Asset</span> : null}
+        <span className="line-clamp-2 w-full break-all text-sm font-medium">
+          {data.title ?? id}
+        </span>
+        {data.missing ? (
+          <span className="text-xs text-muted-foreground">Missing Asset</span>
+        ) : null}
       </div>
-      <Handle id="uses" type="source" position={Position.Right} isConnectable={false} />
+      <Handle
+        id="uses"
+        type="source"
+        position={Position.Right}
+        isConnectable={false}
+      />
     </div>
   );
 }
 
-export const assetReferenceNodeTypes = { "asset-reference": AssetReferenceNode };
+export const assetReferenceNodeTypes = {
+  "asset-reference": AssetReferenceNode,
+};

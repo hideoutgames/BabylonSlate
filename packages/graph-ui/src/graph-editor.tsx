@@ -757,9 +757,13 @@ function GraphEditorCanvas({
       setNodes((current) => {
         const constrained = lockNodeDragAxis(changes, current, lockDragAxis);
         const applied = readOnly
-          ? constrained.filter(
-              (change) => change.type === "select" || change.type === "dimensions",
-            )
+          ? constrained.flatMap((change): NodeChange<CanvasNode>[] => {
+              if (change.type === "select" || change.type === "dimensions") return [change];
+              // React Flow setNodes (focus/host selection/marquee) emits replace
+              // changes. In inspection mode accept only their selection state.
+              if (change.type === "replace") return [{ type: "select", id: change.id, selected: change.item.selected === true }];
+              return [];
+            })
           : constrained;
         const next = applyNodeChanges(applied, current);
         const allocated = allocateGraphDragTransaction(

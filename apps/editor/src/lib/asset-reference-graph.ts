@@ -1,6 +1,9 @@
 import type { IndexedAsset } from "@babylonslate/assets";
 import type { GraphDocument } from "@babylonslate/graph-ui";
-import { assetDependenciesIncludingOpenDocuments, displayAssetTitle } from "./content-browser-helpers";
+import {
+  assetDependenciesIncludingOpenDocuments,
+  displayAssetTitle,
+} from "./content-browser-helpers";
 
 /** Walk the entire connected component, including other users of shared dependencies. */
 export function buildAssetReferenceGraph(
@@ -8,8 +11,13 @@ export function buildAssetReferenceGraph(
   assets: readonly IndexedAsset[],
   openDocuments: ReadonlyArray<{ ref: { path: string }; content: unknown }>,
 ): GraphDocument {
-  const assetsByGuid = new Map(assets.map((asset) => [asset.header.guid, asset]));
-  const outbound = assetDependenciesIncludingOpenDocuments(assets, openDocuments);
+  const assetsByGuid = new Map(
+    assets.map((asset) => [asset.header.guid, asset]),
+  );
+  const outbound = assetDependenciesIncludingOpenDocuments(
+    assets,
+    openDocuments,
+  );
   const inbound = new Map<string, string[]>();
   for (const [source, targets] of outbound) {
     for (const target of targets) {
@@ -47,7 +55,8 @@ export function buildAssetReferenceGraph(
   }
   const nodes: GraphDocument["nodes"] = [];
   for (const [column, guids] of rows) {
-    const rootRow = column === 0 ? guids.indexOf(rootGuid) : (guids.length - 1) / 2;
+    const rootRow =
+      column === 0 ? guids.indexOf(rootGuid) : (guids.length - 1) / 2;
     guids.forEach((guid, row) => {
       const asset = assetsByGuid.get(guid);
       const missing = !asset || asset.placeholder === true;
