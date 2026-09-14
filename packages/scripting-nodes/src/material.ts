@@ -50,9 +50,8 @@ function getter(
       pin("found", "Found", "out", BOOL),
     ],
     codegen: (ctx) => {
-      ctx.emit(
-        `({ value: ${ctx.output("Value")}, found: ${ctx.output("Found")} } = ctx.getMaterial${kind}Parameter(${ctx.input("Material")}, ${ctx.input("Name")}));`,
-      );
+      const read = `ctx.getMaterial${kind}Parameter(${ctx.input("Material")}, ${ctx.input("Name")})`;
+      return { Value: `${read}.value`, Found: `${read}.found` };
     },
   };
 }
@@ -86,10 +85,9 @@ export const materialNodes: NodeDefinition[] = [
       { ...pin("entryId", "Entry ID", "in", STRING), defaultValue: "" },
       pin("material", "Material", "out", objectRef("MaterialObject")),
     ],
-    codegen: (ctx) =>
-      ctx.emit(
-        `${ctx.output("Material")} = ctx.getPostProcessEntry(${ctx.input("Owner")}, ${ctx.input("Entry ID")});`,
-      ),
+    codegen: (ctx) => ({
+      Material: `ctx.getPostProcessEntry(${ctx.input("Owner")}, ${ctx.input("Entry ID")})`,
+    }),
   },
   getter("Float", FLOAT),
   getter("Color", VEC4),
