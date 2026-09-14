@@ -191,7 +191,7 @@ import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, setRegisteredViewEnabled } from "./registered-view-admission";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
@@ -737,6 +737,8 @@ function initializeEngine(
   const registeredView = sharedViewBlit
     ? engine.registerView(canvas, undefined, true)
     : null;
+  const releaseOffscreenDispatch = presentRtt ? retainOffscreenFrameDispatch(engine) : null;
+  onRollback(() => releaseOffscreenDispatch?.());
   if (registeredView && options.playMode) {
     // Scene tabs stay mounted; Babylon _renderViews still setSize+blit every
     // enabled view. Disable them so overlay Play owns the framebuffer.
@@ -1990,6 +1992,7 @@ function initializeEngine(
       engine.onContextRestoredObservable.remove(contextRestoredObserver);
       engine.onEndFrameObservable.remove(presentationObserver);
       releaseViewAdmission?.();
+      releaseOffscreenDispatch?.();
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
