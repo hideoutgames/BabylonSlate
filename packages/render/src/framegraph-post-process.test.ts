@@ -369,7 +369,8 @@ it.each(["replace", "dispose"] as const)(
         // The graph also compiles its own copy Effect. Delay an authored pass,
         // identified by its actual native key, instead of whichever compiles first.
         if (!pendingPipeline && engine.postProcesses.some((pass) =>
-          pass.getEffect()?.key.replace(/\r/g, "").replace(/\n/g, "|") === pipeline._name)) {
+          pass.getEffect()?.key.replace(/\r/g, "").replace(/\n/g, "|") ===
+            (pipeline as WebGLPipelineContext & { _name: string })._name)) {
           pendingPipeline = pipeline;
           pipeline.isParallelCompiled = true;
         }

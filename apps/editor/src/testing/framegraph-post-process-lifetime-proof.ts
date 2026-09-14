@@ -26,6 +26,7 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
   const diagnostics: string[] = [];
   const retired: Array<{ effect: Effect; pending: boolean; lateProbes: number; compiledAfterRetirement: boolean }> = [];
   const captures: Array<{ action: string; pixel: number[] }> = [];
+  const lifetime = { retainedPasses: -1, retainedMaterials: -1, retainedScenes: -1 };
   try {
     // A 256-byte row also avoids native WebGPU readback padding ambiguity.
     const pixels = new Uint8Array(64 * 4 * 4);
@@ -91,7 +92,7 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       await capture(`sibling-after-${action}`, sibling);
     }
     return {
-      backend, captures, diagnostics,
+      backend, captures, diagnostics, lifetime,
       retired: retired.map(({ pending, lateProbes, compiledAfterRetirement }) => ({ pending, lateProbes, compiledAfterRetirement })),
       siblingReady: siblingEffect.isReady(),
     };
@@ -99,6 +100,9 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     for (const owner of owners) { owner.stack.dispose(); owner.graph.dispose(); }
     library.dispose();
     scene.dispose();
+    lifetime.retainedPasses = engine.postProcesses.length;
+    lifetime.retainedMaterials = scene.materials.length;
+    lifetime.retainedScenes = engine.scenes.length;
     engine.dispose();
     canvas.remove();
   }

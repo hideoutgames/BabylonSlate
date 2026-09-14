@@ -22,6 +22,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       await testInfo.attach("post-process-effect-lifetime", { body: JSON.stringify(result), contentType: "application/json" });
       expect(result.diagnostics).toEqual([]);
       expect(result.siblingReady).toBe(true);
+      expect(result.lifetime).toEqual({ retainedPasses: 0, retainedMaterials: 0, retainedScenes: 0 });
       expect(result.captures).toHaveLength(4);
       for (const capture of result.captures) expect(capture.pixel, capture.action).toEqual([160, 80, 40, 255]);
       for (const retired of result.retired) {
