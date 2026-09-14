@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
+import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { createDefaultScene, MAIN_SCENE_FILE, type SerializedScene } from "../packages/core/src/index";
 import type { ExportIndexedAsset } from "../packages/exporter/src/index";
@@ -56,6 +57,7 @@ async function numericPng(page: Page, rgba: readonly number[]): Promise<Uint8Arr
 
 export async function postProcessFixture(page: Page) {
   const files = await minimalProjectFiles();
+  const migrations = createDefaultMigrationRegistry();
   const scene: SerializedScene = createDefaultScene();
   scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
   scene.settings.grid.showGrid = false;
@@ -73,7 +75,7 @@ export async function postProcessFixture(page: Page) {
     assets.push({ guid: id, type, name, path, rootId: "project", dependencies });
     payloads.set(id, payload);
     bytes.set(id, pixels ?? new TextEncoder().encode(JSON.stringify(payload)));
-    files.set(path, await encodeAssetDocument({ guid: id, type, name, version: type === "Scene" ? 3 : 1, payload: payload as Record<string, unknown> }, {
+    files.set(path, await encodeAssetDocument({ guid: id, type, name, version: migrations.currentVersion(type), payload: payload as Record<string, unknown> }, {
       dependencies,
       ...(pixels ? { headerPayload: payload as Record<string, unknown>, extraChunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: pixels }] } : {}),
     }));
