@@ -72,6 +72,8 @@ export type PropertyRow =
     })
   | (PropertyRowBase & {
       kind: "text";
+      /** Keep text focusable and selectable for native copy without allowing edits. */
+      readOnly?: boolean;
       value: string;
       defaultValue?: string;
       onChange: (value: string) => void;
@@ -267,8 +269,9 @@ function RowControl({ row }: { row: PropertyRow }) {
           className="min-h-[var(--chrome-row,28px)] px-2"
           value={row.value}
           disabled={row.disabled}
-          onChange={(event) => row.onChange(event.target.value)}
-          onBlur={(event) => row.onCommit?.(event.target.value)}
+          readOnly={row.readOnly}
+          onChange={(event) => { if (!row.readOnly) row.onChange(event.target.value); }}
+          onBlur={(event) => { if (!row.readOnly) row.onCommit?.(event.target.value); }}
           data-testid={`property-${row.id}`}
         />
       );
@@ -393,7 +396,7 @@ function RowControl({ row }: { row: PropertyRow }) {
 }
 
 function rowResetButton(row: PropertyRow) {
-  if (!hasDefault(row) || row.disabled) return null;
+  if (!hasDefault(row) || row.disabled || (row.kind === "text" && row.readOnly)) return null;
   return (
     <Button
       variant="ghost"

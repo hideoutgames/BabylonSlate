@@ -1,12 +1,13 @@
-import { RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { NullEngine, RenderTargetTexture, type Scene } from "@babylonjs/core";
 import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 
 export type RttCanvasPresent = {
   /** Size the RTT from the canvas and assign `camera.outputRenderTarget`. */
   bind: () => void;
-  /** Best-effort 2D blit of the last RTT. NullEngine readback is a no-op. */
-  blit: () => void;
+  /** Resolves after this RTT generation reaches the canvas; NullEngine has no pixels. */
+  blit: () => Promise<void>;
+  isPresenting: () => boolean;
   /** Assign bitmap size from CSS so a skipped blit stays blank, not stretched. */
   clear: () => void;
   dispose: () => void;
@@ -26,10 +27,14 @@ export function createRttCanvasPresent(
   const name = options.name ?? "rttCanvas";
   const maxSize = options.maxSize ?? 2048;
   let rtt: RenderTargetTexture | null = null;
-  let blitInFlight = false;
+  let blitInFlight: Promise<void> | null = null;
+  let generation = new AbortController();
+  let disposed = false;
   let lastReadbackMs: number | null = null;
 
   const release = () => {
+    disposed = true;
+    generation.abort(new Error("RTT presentation was disposed."));
     const camera = scene.activeCamera;
     if (camera) camera.outputRenderTarget = null;
     rtt?.dispose();
@@ -39,6 +44,7 @@ export function createRttCanvasPresent(
   const canvasSize = () => cssCanvasPixelSize(canvas);
 
   const bind = () => {
+    if (disposed) return;
     const camera = scene.activeCamera;
     if (!camera) return;
     const rawW = Math.floor(canvas.clientWidth || 0);
@@ -50,6 +56,8 @@ export function createRttCanvasPresent(
     const height = Math.max(1, Math.floor(rawH * scale));
     const current = rtt?.getSize();
     if (!rtt || current?.width !== width || current?.height !== height) {
+      generation.abort(new Error("RTT presentation was superseded by a resize."));
+      generation = new AbortController();
       camera.outputRenderTarget = null;
       rtt?.dispose();
       rtt = new RenderTargetTexture(
@@ -66,17 +74,22 @@ export function createRttCanvasPresent(
     snapCanvasDrawingBuffer(canvas);
   };
 
-  const blit = () => {
-    if (!rtt || blitInFlight || typeof canvas.getContext !== "function") return;
-    blitInFlight = true;
+  const blit = (): Promise<void> => {
+    if (blitInFlight) return blitInFlight;
+    if (disposed || !rtt || typeof canvas.getContext !== "function") return Promise.reject(new Error("The RTT presentation target is unavailable."));
     const texture = rtt;
-    void (async () => {
+    const signal = generation.signal;
+    const work = (async () => {
       const start = performance.now();
       try {
         const buffer = await texture.readPixels();
-        if (!buffer) return;
+        signal.throwIfAborted();
+        if (!buffer) {
+          if (scene.getEngine() instanceof NullEngine) return;
+          throw new Error("The RTT presentation returned no pixels.");
+        }
         const ctx = canvas.getContext("2d");
-        if (!ctx) return;
+        if (!ctx) throw new Error("The RTT presentation canvas is unavailable.");
         const { width, height } = texture.getSize();
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
@@ -86,14 +99,23 @@ export function createRttCanvasPresent(
           0,
         );
         lastReadbackMs = performance.now() - start;
-      } catch {
+      } catch (error) {
         lastReadbackMs = null;
-        // NullEngine / missing GPU readback is fine — tests assert the RTT.
-      } finally {
-        blitInFlight = false;
+        signal.throwIfAborted();
+        // Native NullEngine cannot provide a GPU readback; it still tests RTT
+        // ownership and cancellation. Real engines must not acknowledge failure.
+        if (!(scene.getEngine() instanceof NullEngine)) throw error;
       }
     })();
+    const pending = new Promise<void>((resolve, reject) => {
+      const abort = () => reject(signal.reason);
+      signal.addEventListener("abort", abort, { once: true });
+      void work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+      if (signal.aborted) reject(signal.reason);
+    }).finally(() => { if (blitInFlight === pending) blitInFlight = null; });
+    blitInFlight = pending;
+    return pending;
   };
 
-  return { bind, blit, clear, dispose: release, canvasSize, readbackMs: () => lastReadbackMs };
+  return { bind, blit, isPresenting: () => blitInFlight !== null, clear, dispose: release, canvasSize, readbackMs: () => lastReadbackMs };
 }

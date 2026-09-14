@@ -505,6 +505,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     if (!isTestModeEnabled()) return;
     const host = globalThis as {
       __babylonslatePrefabViewportTest?: {
+        diagnostics: () => unknown;
         visuals: () => Array<
           MaterialViewportTestSnapshot & {
             actorId: string;
@@ -515,6 +516,23 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       };
     };
     host.__babylonslatePrefabViewportTest = {
+      diagnostics: () => {
+        const handle = engineRef.current;
+        if (!handle) return null;
+        const scene = handle.scene;
+        return {
+          frames: handle.scheduler.stats(),
+          pendingModels: handle.modelLoadCount(),
+          camera: scene.activeCamera && { name: scene.activeCamera.name, position: scene.activeCamera.position.asArray() },
+          activeMeshes: scene.getActiveMeshes().data.slice(0, scene.getActiveMeshes().length).map((mesh) => mesh.name),
+          meshes: scene.meshes.map((mesh) => ({
+            name: mesh.name, enabled: mesh.isEnabled(), visible: mesh.isVisible, visibility: mesh.visibility,
+            vertices: mesh.getTotalVertices(), position: mesh.getAbsolutePosition().asArray(),
+            material: mesh.material?.name, parent: mesh.parent?.name,
+          })),
+          textures: scene.textures.map((texture) => ({ name: texture.name, ready: texture.isReady(), error: texture.loadingError })),
+        };
+      },
       visuals: () => {
         const sync = engineRef.current?.editor?.sync;
         if (!sync) return [];

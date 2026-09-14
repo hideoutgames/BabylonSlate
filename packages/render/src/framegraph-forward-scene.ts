@@ -1,5 +1,6 @@
 import type { Camera, InternalTexture, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import {
   backbufferColorTextureHandle,
   backbufferDepthStencilTextureHandle,
@@ -20,6 +21,7 @@ import {
 /** Internal proof result; renderer selection and authored settings are untouched. */
 export type ForwardSceneGraphResult =
   { path: "frameGraph" } | { path: "classic"; reason: string };
+export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & { ready: boolean };
 
 /** Native camera frustum calculation reads the currently bound target's aspect. */
 class CameraOutputCullTask extends FrameGraphCullObjectsTask {
@@ -80,18 +82,38 @@ export class ForwardSceneFrameGraph {
   }
 
   /** Build or resize the persistent tasks and await actual object/effect readiness. */
-  prepare(camera: Camera): Promise<ForwardSceneGraphResult> {
-    if (this.pending) return this.pending;
+  prepare(camera: Camera, assertCurrent: () => void = () => {}): Promise<ForwardSceneGraphResult> {
+    assertCurrent();
+    if (this.pending) return this.pending.then((result) => { assertCurrent(); return result; });
     if (!this.unavailable(camera)) this.syncShadowAdmission(camera);
     const reason = this.unsupported(camera);
     if (reason) return Promise.resolve({ path: "classic", reason });
-    const work = this.prepareGraph(camera);
+    const work = this.prepareGraph(camera, assertCurrent);
     this.pending = work;
-    void work.finally(() => {
+    const settled = () => {
       this.pending = undefined;
       if (this.disposed) this.releaseGraph();
-    });
+    };
+    void work.then(settled, settled);
     return work;
+  }
+
+  /** A pending eligible graph is distinct from an admitted classic fallback. */
+  readiness(camera: Camera): ForwardSceneGraphReadiness {
+    const unavailable = this.unavailable(camera);
+    if (unavailable) return { path: "classic", reason: unavailable, ready: false };
+    this.syncShadowAdmission(camera);
+    const reason = this.unsupported(camera) ?? this.failure;
+    if (reason) return { path: "classic", reason, ready: true };
+    const output = this.output(camera);
+    if (this.pending || !this.graph || this.shadows?.needsPreparation() ||
+      this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
+      this.outputColor !== output.color || this.outputDepth !== output.depth)
+      return { path: "frameGraph", ready: false };
+    this.objects!.camera = camera;
+    this.cull!.camera = camera;
+    this.syncSceneInputs();
+    return { path: "frameGraph", ready: this.isReady() };
   }
 
   /** Render one scene frame, with an explicit, observable classic fallback. */
@@ -202,9 +224,10 @@ export class ForwardSceneFrameGraph {
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
       return "Multiple and rig cameras require classic rendering.";
-    // Pinned Scene flag also used by the official culling task.
+    // Native freezing retains a submesh/LOD render queue, not just mesh
+    // membership. A new ObjectRenderer would re-filter it for the new camera.
     if (scene._activeMeshesFrozen)
-      return "Frozen active-mesh lists require classic rendering.";
+      return "Frozen active-mesh queues require classic rendering.";
     // FrameGraph restores the default framebuffer around execution. Only take
     // a camera's explicit output from an otherwise unbound frame boundary.
     if (scene.getEngine()._currentRenderTarget)
@@ -240,9 +263,10 @@ export class ForwardSceneFrameGraph {
     });
   }
 
-  private async prepareGraph(camera: Camera): Promise<ForwardSceneGraphResult> {
+  private async prepareGraph(camera: Camera, assertCurrent: () => void): Promise<ForwardSceneGraphResult> {
     const scene = this.scene;
     try {
+      assertCurrent();
       const output = this.output(camera);
       if (
         this.shadows?.needsPreparation() ||
@@ -318,11 +342,27 @@ export class ForwardSceneFrameGraph {
         // default-backbuffer dimensions. Refresh them through the public API
         // before tasks record their viewport dimensions for the resized frame.
         this.graph.textureManager.resetBackBufferTextures();
-        await this.graph.buildAsync(false);
+        // Native buildAsync awaits imports before recording/allocating. Check
+        // this owner again at that boundary, before it can touch a removed
+        // Scene's borrowed targets or disposed ObjectRenderer.
+        const tasks: FrameGraphTask[] = [this.shadows!, this.clear!, this.cull!, this.objects!];
+        const restore = tasks.map((task) => {
+          const record = task.record;
+          const guarded = () => {
+            if (this.disposed || scene.isDisposed) throw new Error("FrameGraph coordinator is disposed.");
+            assertCurrent(); record.call(task); assertCurrent();
+          };
+          task.record = guarded;
+          return () => { if (task.record === guarded) task.record = record; };
+        });
+        try { await this.graph.buildAsync(false); }
+        finally { for (const action of restore) action(); }
+        assertCurrent();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       const deadline = performance.now() + 10_000;
       while (!this.disposed && !this.isReady()) {
+        assertCurrent();
         if (performance.now() >= deadline)
           throw new Error("Forward FrameGraph readiness timed out.");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
@@ -332,6 +372,7 @@ export class ForwardSceneFrameGraph {
           path: "classic",
           reason: "FrameGraph coordinator is disposed.",
         };
+      assertCurrent();
       this.preparedWidth = width;
       this.preparedHeight = height;
       this.failure = undefined;
@@ -339,6 +380,9 @@ export class ForwardSceneFrameGraph {
     } catch (error) {
       this.failure = error instanceof Error ? error.message : String(error);
       this.releaseGraph();
+      // Cancellation must reach the loading owner, never become a successful
+      // classic fallback for a superseded scene/camera/output generation.
+      assertCurrent();
       return { path: "classic", reason: this.failure };
     }
   }

@@ -92,6 +92,7 @@ function host(
   documents: Array<MaterialDocument | null>,
   functions = {},
   disabled: number[] = [],
+  parameters: Array<Record<string, import("@babylonslate/core").MaterialParameterValue>> = [],
 ) {
   const engine = new NullEngine({
     renderWidth: 16,
@@ -148,6 +149,7 @@ function host(
       materialGuid: String(order),
       order,
       enabled: !disabled.includes(order),
+      parameters: parameters[order],
     })),
     documentFor: (guid) => documents[Number(guid)]!,
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
@@ -194,6 +196,11 @@ it("runs real authored apply bindings with independent per-entry parameters and 
   graph.execute();
   expect(writes[0]!.mock.calls.some(([, value]) => value === 0.25)).toBe(true);
   expect(writes[1]!.mock.calls.some(([, value]) => value === 0.5)).toBe(true);
+  expect(tasks[0]!.getParameter("Gain")).toEqual({ kind: "float", value: 0.25 });
+  expect(tasks[0]!.resetParameter("Gain")).toBe(true);
+  writes[0]!.mockClear();
+  graph.execute();
+  expect(writes[0]!.mock.calls.some(([, value]) => value === 0.5)).toBe(true);
   expect(diagnostics).toEqual([]);
 });
 
@@ -445,6 +452,27 @@ it("admits no disabled material and preserves overrides across disable and re-en
   graph.execute();
   expect(replay.mock.calls.some(([, value]) => value === 0.25)).toBe(true);
   expect(diagnostics).toEqual([]);
+});
+
+it("resets to the owned authored entry override across disabled replay", async () => {
+  const authored = { Gain: { kind: "float" as const, value: 0.2 } };
+  const { graph, tasks, engine } = host([gainDocument()], {}, [], [authored]);
+  await graph.buildAsync();
+  const task = tasks[0]!;
+  authored.Gain.value = 0.9;
+  expect(task.setParameter("Gain", { kind: "float", value: 0.75 })).toBe(true);
+  task.disabled = true;
+  expect(task.resetParameter("Gain")).toBe(true);
+  expect(task.getParameter("Gain")).toEqual({ kind: "float", value: 0.2 });
+  task.disabled = false;
+  await task.initAsync();
+  await graph.whenReadyAsync();
+  const writes = vi.spyOn(engine.postProcesses[0]!.getEffect(), "setFloat");
+  graph.execute();
+  expect(writes.mock.calls.some(([, value]) => value === 0.2)).toBe(true);
+  task.dispose();
+  expect(task.getParameter("Gain")).toBeNull();
+  expect(task.resetParameter("Gain")).toBe(false);
 });
 
 it("cannot attach a late effect after disabling a pending acquisition", async () => {

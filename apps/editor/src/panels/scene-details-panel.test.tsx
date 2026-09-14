@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene, ShadowSettings, RenderPath } from "@babylonslate/core";
 import {
@@ -700,6 +700,41 @@ describe("SceneDetailsPanel authoring", () => {
       { assetGuid: "layer-hud", zOrder: 0, enabled: true },
     ]);
     expect(next.actors.map((actor) => actor.id)).toEqual(actorIds);
+  });
+
+  it("opens selectable immutable Entry IDs on demand and preserves each repeated pass through reordering", async () => {
+    scene().settings.postProcessStack = [
+      { id: "first-tint", materialGuid: "pp-blur", enabled: true },
+      { id: "disabled-tint", materialGuid: "pp-blur", enabled: false },
+    ];
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const open = async (pass: number) => {
+      fireEvent.click(screen.getByRole("button", { name: `Pass ${pass} Entry ID` }));
+      return await screen.findByRole("textbox", { name: "Entry ID" }) as HTMLInputElement;
+    };
+    const close = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    };
+    expect(screen.queryByRole("textbox", { name: "Entry ID" })).toBeNull();
+    const first = await open(1);
+    expect(first.value).toBe("first-tint");
+    fireEvent.focus(first);
+    expect(first.disabled).toBe(false);
+    expect(first.readOnly).toBe(true);
+    expect(first.value.slice(first.selectionStart!, first.selectionEnd!)).toBe("first-tint");
+    fireEvent.change(first, { target: { value: "changed" } });
+    fireEvent.blur(first);
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    await close();
+    expect((await open(2)).value).toBe("disabled-tint");
+    await close();
+    fireEvent.click(screen.getByTestId("scene-post-process-stack-1-move-up"));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect((await open(1)).value).toBe("disabled-tint");
+    await close();
+    expect((await open(2)).value).toBe("first-tint");
   });
 
   it("moves and removes repeated post-process assets with their own enabled state", () => {

@@ -1,0 +1,259 @@
+--- a/Misc/rgbdTextureTools.js
++++ b/Misc/rgbdTextureTools.js
+@@ -1,3 +1,4 @@
++import { Logger } from "./logger.js";
+ 
+ import { PostProcess } from "../PostProcesses/postProcess.pure.js";
+ import { ApplyPostProcess } from "./textureTools.js";
+@@ -11,84 +12,161 @@
+      */
+     static ExpandRGBDTexture(texture) {
+         const internalTexture = texture._texture;
+-        if (!internalTexture || !texture.isRGBD) {
++        const scene = texture.getScene();
++        if (!internalTexture || !texture.isRGBD || !scene || scene.isDisposed) {
+             return;
+         }
+-        // Gets everything ready.
+         const engine = internalTexture.getEngine();
+         const caps = engine.getCaps();
+         const isReady = internalTexture.isReady;
+-        let expandTexture = false;
+-        // If half float available we can uncompress the texture
+-        if (caps.textureHalfFloatRender && caps.textureHalfFloatLinearFiltering) {
+-            expandTexture = true;
+-            internalTexture.type = 2;
++        const type = caps.textureHalfFloatRender && caps.textureHalfFloatLinearFiltering ? 2 :
++            caps.textureFloatRender && caps.textureFloatLinearFiltering ? 1 : null;
++        if (type === null) {
++            return;
+         }
+-        // If full float available we can uncompress the texture
+-        else if (caps.textureFloatRender && caps.textureFloatLinearFiltering) {
+-            expandTexture = true;
+-            internalTexture.type = 1;
+-        }
+-        if (expandTexture) {
+-            // Do not use during decode.
++        internalTexture.type = type;
++        internalTexture.isReady = false;
++        internalTexture._isRGBD = false;
++        internalTexture.invertY = false;
++        texture._loadingError = false;
++        texture._errorObject = undefined;
++        let cancelled = false;
++        let postProcess = null;
++        let expandedTexture = null;
++        let effect = null;
++        let compileObserver = null;
++        let errorObserver = null;
++        let loadObserver = null;
++        const hasAttachedTexture = () => !engine.isDisposed && !scene.isDisposed &&
++            texture.getScene() === scene && texture.getInternalTexture() === internalTexture;
++        const ownsTexture = () => !cancelled && hasAttachedTexture();
++        const cleanup = () => {
++            cancelled = true;
++            clearTimeout(deadline);
++            texture.onDisposeObservable.remove(disposeObserver);
++            scene.onDisposeObservable.remove(sceneDisposeObserver);
++            engine.onContextLostObservable.remove(contextLostObserver);
++            texture.onLoadObservable.remove(loadObserver);
++            effect?.onCompileObservable.remove(compileObserver);
++            effect?.onErrorObservable.remove(errorObserver);
++            const ownedPostProcess = postProcess;
++            const ownedTarget = expandedTexture;
++            postProcess = null;
++            expandedTexture = null;
++            // Both resources are independently owned, including allocation failures.
++            const errors = [];
++            try { ownedPostProcess?.dispose(); } catch (error) { errors.push(error); }
++            try { ownedTarget?.dispose(); } catch (error) { errors.push(error); }
++            if (errors.length) throw new AggregateError(errors, "RGBD decode cleanup failed.");
++        };
++        const cancel = () => {
++            try { cleanup(); } catch (error) { Logger.Error(String(error)); }
++        };
++        const fail = (error, afterCleanup = false) => {
++            if (!(afterCleanup ? hasAttachedTexture() : ownsTexture())) { cancel(); return; }
+             internalTexture.isReady = false;
+-            internalTexture._isRGBD = false;
+-            internalTexture.invertY = false;
+-        }
+-        const expandRgbdTextureAsync = async () => {
+-            const isWebGpu = engine.isWebGPU;
+-            const shaderLanguage = isWebGpu ? 1 /* ShaderLanguage.WGSL */ : 0 /* ShaderLanguage.GLSL */;
++            texture._loadingError = true;
++            try { cleanup(); } catch (cleanupError) { error = new AggregateError([error, cleanupError], "RGBD decode and cleanup failed.", { cause: error }); }
++            texture._errorObject = { message: "RGBD texture decode failed.", exception: error };
++            Logger.Error(`RGBD texture decode failed: ${String(error)}`);
++            internalTexture.onErrorObservable.notifyObservers({ message: texture._errorObject.message, exception: error });
++        };
++        const disposeObserver = texture.onDisposeObservable.add(cancel);
++        const sceneDisposeObserver = scene.onDisposeObservable.add(cancel);
++        const contextLostObserver = engine.onContextLostObservable.add(() => fail(new Error("RGBD texture decode lost its GPU context.")));
++        const deadline = setTimeout(() => fail(new Error("RGBD texture decode exceeded its 30 second deadline.")), 30000);
++        const decode = () => {
++            if (!ownsTexture()) { cancel(); return; }
++            const target = expandedTexture;
++            const pass = postProcess;
++            const previousTarget = engine._currentRenderTarget;
++            const previousViewport = { ...engine._viewportCached };
++            const previousDepthWrite = engine.getDepthWrite();
++            const previousDepthBuffer = engine.getDepthBuffer();
++            const previousAlphaMode = engine.getAlphaMode();
++            const gl = engine._gl;
++            const previousFramebuffer = gl ? gl.getParameter(gl.FRAMEBUFFER_BINDING) : null;
++            const previousReadFramebuffer = gl && engine.webGLVersion > 1 ? gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) : null;
++            const previousGlViewport = gl ? gl.getParameter(gl.VIEWPORT) : null;
++            const previousFramebufferCache = engine._currentFramebuffer;
++            const previousAttachment = engine.isWebGPU ? { ...engine._rttRenderPassWrapper.colorAttachmentViewDescriptor } : null;
++            const previousMrtAttachments = engine.isWebGPU ? engine._mrtAttachments?.slice() ?? [] : null;
++            const errors = [];
++            try {
++                pass.onApply = (boundEffect) => {
++                    boundEffect._bindTexture("textureSampler", internalTexture);
++                    boundEffect.setFloat2("scale", 1, 1);
++                };
++                scene.postProcessManager.directRender([pass], target, true);
++            } catch (error) { errors.push(error); }
++            try {
++                engine.unBindFramebuffer(target, true);
++                if (gl) {
++                    // Preserve the exact framebuffer objects/attachments, including
++                    // a caller's nonzero cube face, mip, and separate read binding.
++                    gl.bindFramebuffer(gl.FRAMEBUFFER, previousFramebuffer);
++                    if (engine.webGLVersion > 1) gl.bindFramebuffer(gl.READ_FRAMEBUFFER, previousReadFramebuffer);
++                    engine._currentFramebuffer = previousFramebufferCache;
++                    engine._currentRenderTarget = previousTarget;
++                } else if (previousTarget) {
++                    const baseLayer = previousAttachment?.baseArrayLayer ?? 0;
++                    engine.bindFramebuffer(previousTarget, previousTarget.isCube ? baseLayer % 6 : 0, undefined, undefined, true,
++                        previousAttachment?.baseMipLevel ?? 0, previousTarget.isCube ? Math.floor(baseLayer / 6) : baseLayer);
++                    if (previousTarget.isMulti) engine.bindAttachments(previousMrtAttachments);
++                } else {
++                    // Do not start an empty WebGPU swapchain pass during decoding.
++                    engine.restoreDefaultFramebuffer(true);
++                }
++                engine._viewport(previousViewport.x, previousViewport.y, previousViewport.z, previousViewport.w);
++                if (gl) gl.viewport(...previousGlViewport);
++                engine.setAlphaMode(Math.max(0, previousAlphaMode));
++                engine.setDepthWrite(previousDepthWrite);
++                engine.setDepthBuffer(previousDepthBuffer);
++                engine.wipeCaches();
++            } catch (error) { errors.push(error); }
++            if (errors.length) { fail(new AggregateError(errors, "RGBD decode or framebuffer restoration failed.")); return; }
++            if (!ownsTexture()) { cancel(); return; }
++            try {
++                engine._releaseTexture(internalTexture);
++                target._swapAndDie(internalTexture);
++                expandedTexture = null;
++                cleanup();
++                if (hasAttachedTexture()) internalTexture.isReady = true;
++            } catch (error) { fail(error, cancelled); }
++        };
++        const expand = async () => {
++            if (!ownsTexture()) { cancel(); return; }
++            // A later native image upload marks the internal texture ready
++            // before notifying its load event. Decoding still owns readiness.
+             internalTexture.isReady = false;
+-            if (isWebGpu) {
++            const shaderLanguage = engine.isWebGPU ? 1 : 0;
++            if (engine.isWebGPU) {
+                 await import("../ShadersWGSL/rgbdDecode.fragment.js");
+-            }
+-            else {
++            } else {
+                 await import("../Shaders/rgbdDecode.fragment.js");
+             }
+-            // Expand the texture if possible
+-            // Simply run through the decode PP.
+-            const rgbdPostProcess = new PostProcess("rgbdDecode", "rgbdDecode", null, null, 1, null, 3, engine, false, undefined, internalTexture.type, undefined, null, false, undefined, shaderLanguage);
+-            rgbdPostProcess.externalTextureSamplerBinding = true;
+-            // Hold the output of the decoding.
+-            const expandedTexture = engine.createRenderTargetTexture(internalTexture.width, {
+-                generateDepthBuffer: false,
+-                generateMipMaps: false,
+-                generateStencilBuffer: false,
+-                samplingMode: internalTexture.samplingMode,
+-                type: internalTexture.type,
+-                format: 5,
++            if (!ownsTexture()) { cancel(); return; }
++            postProcess = new PostProcess("rgbdDecode", "rgbdDecode", null, null, 1, null, 3, engine, false,
++                undefined, internalTexture.type, undefined, null, true, undefined, shaderLanguage);
++            postProcess.externalTextureSamplerBinding = true;
++            expandedTexture = engine.createRenderTargetTexture(internalTexture.width, {
++                generateDepthBuffer: false, generateMipMaps: false, generateStencilBuffer: false,
++                samplingMode: internalTexture.samplingMode, type: internalTexture.type, format: 5,
+             });
+-            rgbdPostProcess.onEffectCreatedObservable.addOnce((e) => {
+-                e.executeWhenCompiled(() => {
+-                    // PP Render Pass
+-                    rgbdPostProcess.onApply = (effect) => {
+-                        effect._bindTexture("textureSampler", internalTexture);
+-                        effect.setFloat2("scale", 1, 1);
+-                    };
+-                    texture.getScene()?.postProcessManager.directRender([rgbdPostProcess], expandedTexture, true);
+-                    // Cleanup
+-                    engine.restoreDefaultFramebuffer();
+-                    engine._releaseTexture(internalTexture);
+-                    if (rgbdPostProcess) {
+-                        rgbdPostProcess.dispose();
+-                    }
+-                    // Internal Swap
+-                    expandedTexture._swapAndDie(internalTexture);
+-                    // Ready to get rolling again.
+-                    internalTexture.isReady = true;
+-                });
++            postProcess.onEffectCreatedObservable.addOnce((createdEffect) => {
++                effect = createdEffect;
++                if (!ownsTexture()) { cancel(); return; }
++                errorObserver = effect.onErrorObservable.add(() => fail(new Error(effect.getCompilationError())));
++                if (effect.getCompilationError()) { fail(new Error(effect.getCompilationError())); return; }
++                const decodeWhenCompiled = () => { try { decode(); } catch (error) { fail(error); } };
++                if (effect.isReady()) decodeWhenCompiled();
++                else compileObserver = effect.onCompileObservable.addOnce(decodeWhenCompiled);
+             });
++            postProcess.updateEffect();
+         };
+-        if (expandTexture) {
+-            if (isReady) {
+-                // eslint-disable-next-line @typescript-eslint/no-floating-promises
+-                expandRgbdTextureAsync();
+-            }
+-            else {
+-                // eslint-disable-next-line @typescript-eslint/no-misused-promises
+-                texture.onLoadObservable.addOnce(expandRgbdTextureAsync);
+-            }
+-        }
++        const start = () => { void expand().catch(fail); };
++        if (isReady) start();
++        else loadObserver = texture.onLoadObservable.addOnce(start);
+     }
+     /**
+      * Encode the texture to RGBD if possible.
+--- a/Materials/effect.pure.js
++++ b/Materials/effect.pure.js
+@@ -186,6 +186,7 @@
+         if (!cachedPipeline) {
+             // eslint-disable-next-line github/no-then
+             void this._processShaderCodeAsync(null, false, null, extraInitializationsAsync).catch((error) => {
++                if (this._isDisposed || this._engine.isDisposed) return;
+                 const message = error?.message ?? String(error);
+                 const asyncError = new Error(`Effect async shader preparation failed for "${String(this.name)}": ${message}`);
+                 if (error && typeof error.stack === "string") {
+@@ -216,6 +217,7 @@
+         if (extraInitializationsAsync) {
+             await extraInitializationsAsync();
+         }
++        if (this._isDisposed || this._engine.isDisposed) return;
+         this._processingContext = shaderProcessingContext || this._engine._getShaderProcessingContext(this._shaderLanguage, false);
+         const processorOptions = {
+             defines: this.defines.split("\n"),
+@@ -234,6 +236,7 @@
+             processCodeAfterIncludes: this._processCodeAfterIncludes,
+         };
+         _ProcessShaderCode(processorOptions, this.name, this._processFinalCode, (migratedVertexCode, migratedFragmentCode) => {
++            if (this._isDisposed || this._engine.isDisposed) return;
+             this._vertexSourceCode = migratedVertexCode;
+             this._fragmentSourceCode = migratedFragmentCode;
+             this._prepareEffect(keepExistingPipelineContext);

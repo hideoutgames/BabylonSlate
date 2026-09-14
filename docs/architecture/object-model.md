@@ -38,9 +38,11 @@ Order is fixed and named from the first commit:
 
 Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable arrays.
 
-`WorldOptions.componentHooksFor` binds script lifecycle hooks to both serialized and dynamically created components. Component creation is deferred until its owner enters the world, runs once, and is skipped for cancelled preparation. Adding a component to a live Actor begins it immediately. ActorComponent subclasses expose Begin Play, Tick, and Destroyed in Class graphs; Self is the attached component itself.
+`WorldOptions.componentHooksFor` binds script lifecycle hooks to both serialized and dynamically created components. Component creation is deferred until its owner enters the world, runs once, and is skipped for cancelled preparation. In Play, component callbacks use the owning Scene or SceneLayer readiness gate: Begin Play waits for its valid presented frame, retained ready layers continue ticking, and cancelled components never run Begin Play or Destroyed. Adding a component to a ready live Actor begins it immediately. ActorComponent subclasses expose Begin Play, Tick, and Destroyed in Class graphs; Self is the attached component itself.
 
 `WorldOptions.canTickScene` can suspend actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance continues ticking. It is rechecked after Game Instance and between actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` exposes the same unspawned single-actor construction used by the synchronous scene helpers.
+
+`WorldOptions.canTickActor` adds an independent owner gate for world actors and each SceneLayer. The World rechecks it between actor and component callbacks, so a newly blocked owner cannot continue the same tick while another ready layer remains active. It does not defer structural spawning or replace the driver's separate physics and authored creation-callback readiness policy.
 
 ## Destroy / spawn during tick
 

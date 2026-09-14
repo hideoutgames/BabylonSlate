@@ -3,6 +3,7 @@ import {
   InputBlock,
   RawTexture,
   Texture,
+  TextureBlock,
   type NodeMaterial,
 } from "@babylonjs/core";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
@@ -52,6 +53,23 @@ export function createMaterialParameterBindings(
       ]),
   );
   const textureObservers = new Map<string, () => void>();
+  const copy = (value: MaterialParameterValue): MaterialParameterValue => value.kind === "color"
+    ? { kind: "color", value: [...value.value] }
+    : { ...value };
+  const defaults = new Map<string, MaterialParameterValue>();
+  for (const [name, operation] of parameters) {
+    const block = realized.get(operation.id)?.blocks[0];
+    if (operation.nodeType === "param.texture") {
+      defaults.set(name, { kind: "texture", textureAssetGuid:
+        typeof operation.properties.textureGuid === "string" ? operation.properties.textureGuid : null });
+    } else if (block instanceof InputBlock && operation.nodeType === "param.float") {
+      defaults.set(name, { kind: "float", value: block.value as number });
+    } else if (block instanceof InputBlock && block.value instanceof Color4) {
+      const color = block.value;
+      defaults.set(name, { kind: "color", value: [color.r, color.g, color.b, color.a] });
+    }
+  }
+  const values = new Map([...defaults].map(([name, value]) => [name, copy(value)]));
   let emptyTexture: RawTexture | null = null;
   let disposed = false;
 
@@ -82,7 +100,15 @@ export function createMaterialParameterBindings(
     }
   };
 
-  return {
+  const bindings = {
+    getParameter(name: string): MaterialParameterValue | null {
+      const value = !disposed && values.get(name);
+      return value ? copy(value) : null;
+    },
+    resetParameter(name: string): boolean {
+      const value = defaults.get(name);
+      return !!value && bindings.setParameter(name, value);
+    },
     setParameter(name: string, parameter: MaterialParameterValue): boolean {
       if (disposed) return false;
       const operation = parameters.get(name);
@@ -99,7 +125,7 @@ export function createMaterialParameterBindings(
         const block = realized.get(operation.id)?.outputs.out?.ownerBlock as
           { texture?: Texture | null } | undefined;
         if (!block) return false;
-        if (block.texture === texture) return true;
+        if (block.texture === texture) { values.set(name, copy(parameter)); return true; }
         block.texture = texture;
         textureObservers.get(name)?.();
         textureObservers.delete(name);
@@ -110,6 +136,7 @@ export function createMaterialParameterBindings(
           );
         }
         dirty(true);
+        values.set(name, copy(parameter));
         return true;
       }
       const block = realized.get(operation.id)?.blocks[0];
@@ -121,15 +148,20 @@ export function createMaterialParameterBindings(
         block.value = new Color4(r, g, b, a);
       }
       dirty();
+      values.set(name, copy(parameter));
       return true;
     },
     dispose(): void {
       disposed = true;
+      values.clear();
+      defaults.clear();
       for (const remove of textureObservers.values()) remove();
       textureObservers.clear();
       if (emptyTexture) {
         for (const realization of realized.values()) {
           for (const block of realization.blocks) {
+            // ImageSourceBlock owns the texture behind connected sample getters.
+            if (block instanceof TextureBlock && block.hasImageSource) continue;
             const textured = block as { texture?: Texture | null };
             if (textured.texture === emptyTexture) textured.texture = null;
           }
@@ -139,4 +171,5 @@ export function createMaterialParameterBindings(
       }
     },
   };
+  return bindings;
 }

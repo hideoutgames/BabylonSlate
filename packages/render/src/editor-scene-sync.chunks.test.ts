@@ -6,7 +6,8 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
-import { EditorSceneSync } from "./editor-scene-sync";
+import { EditorSceneSync, type EditorSceneSyncOptions } from "./editor-scene-sync";
+import { StandardMaterial } from "@babylonjs/core";
 import { createEditorCamera } from "./editor-camera";
 import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
@@ -39,7 +40,7 @@ function holdModelContainer(name?: string) {
   });
   return { ready, release };
 }
-function fixture() {
+function fixture(options: EditorSceneSyncOptions = {}) {
   const handle = createTestEngine();
   handles.push(handle);
   createEditorCamera(handle.scene, { mode: "3d" });
@@ -47,7 +48,7 @@ function fixture() {
   return {
     ...handle,
     onAfterApply,
-    sync: new EditorSceneSync(handle.scene, undefined, { onAfterApply }),
+    sync: new EditorSceneSync(handle.scene, undefined, { ...options, onAfterApply }),
   };
 }
 function document(count = 80): SerializedScene {
@@ -62,6 +63,71 @@ function document(count = 80): SerializedScene {
 }
 
 describe("cooperative editor realization", () => {
+  it.each(["abort", "replace", "dispose"] as const)("discards a deferred material refresh after %s", async (action) => {
+    let resolve = () => null as StandardMaterial | null;
+    const { sync, scene, onAfterApply } = fixture({ resolveMaterial: () => resolve() });
+    const first = new StandardMaterial("First", scene);
+    const nextMaterial = new StandardMaterial("Next", scene);
+    resolve = () => first;
+    const next = document();
+    for (const actor of next.actors) actor.components[0]!.properties.materialGuid = "surface";
+    const previous = { ...next, actors: next.actors.slice(0, 1) };
+    sync.apply(previous);
+    const root = sync.meshForActor("actor-0")!;
+    onAfterApply.mockClear();
+    const controller = new AbortController();
+    const failure = new Error("Material owner cancelled");
+    let acted = false;
+    const applying = sync.applyAsync(next, {
+      signal: controller.signal,
+      yieldControl: async () => {
+        if (acted || sync.actorCount() < 2) return;
+        acted = true;
+        resolve = () => nextMaterial;
+        sync.refreshMaterials();
+        expect(root.material).toBe(first);
+        if (action === "abort") controller.abort(failure);
+        else if (action === "replace") sync.apply(document(0));
+        else sync.dispose();
+      },
+    });
+    await expect(applying).rejects.toThrow(action === "abort" ? failure.message : action === "replace" ? "superseded" : "disposed");
+    expect(acted).toBe(true);
+    const callsAtCancellation = onAfterApply.mock.calls.length;
+    sync.refreshMaterials();
+    expect(onAfterApply).toHaveBeenCalledTimes(callsAtCancellation + (action === "replace" ? 1 : 0));
+    if (action === "abort") {
+      expect(root.material).toBe(first);
+      expect(sync.serializedScene()).toBe(previous);
+      await expect(sync.whenEditorModelsReady()).rejects.toBe(failure);
+    } else {
+      expect(root.isDisposed()).toBe(true);
+      expect(sync.actorCount()).toBe(0);
+    }
+  });
+
+  it("keeps model adoption and its readiness pending when material bindings refresh", async () => {
+    const { sync } = fixture();
+    const next = document(1);
+    next.actors[0]!.components[0]!.properties.assetGuid = "model";
+    const delayed = holdModelContainer();
+    const requests = vi.spyOn(modelLoads, "beginSlotModelAnimLoad");
+    sync.setMeshAssets({ modelBytes: new Map([["model", encodeTriangleGlb()]]) });
+    sync.apply(next);
+    await delayed.ready;
+    const root = sync.meshForActor("actor-0")!;
+    sync.refreshMaterials();
+    let ready = false;
+    const readiness = sync.whenEditorModelsReady().then(() => { ready = true; });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    expect(requests).toHaveBeenCalledOnce();
+    delayed.release();
+    await readiness;
+    expect(sync.meshForActor("actor-0")).toBe(root);
+    expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
+  });
+
   it("yields during actor and light creation and commits only after all phases", async () => {
     const { sync, scene, onAfterApply } = fixture();
     const next = document();

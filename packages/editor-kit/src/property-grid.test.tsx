@@ -568,6 +568,25 @@ describe("PropertyGrid", () => {
     expect(screen.queryByTestId("property-speed-reset")).toBeNull();
   });
 
+  it("keeps read-only text selectable for native copy without edits or resets", () => {
+    const onChange = vi.fn();
+    const onCommit = vi.fn();
+    render(<PropertyGrid rows={[{
+      kind: "text", id: "entry-id", label: "Entry ID", value: "first-tint",
+      defaultValue: "other", readOnly: true, onChange, onCommit,
+    }]} />);
+    const input = screen.getByRole("textbox", { name: "Entry ID" }) as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    expect(input.readOnly).toBe(true);
+    fireEvent.focus(input);
+    expect(input.value.slice(input.selectionStart!, input.selectionEnd!)).toBe("first-tint");
+    fireEvent.change(input, { target: { value: "changed" } });
+    fireEvent.blur(input);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /^Reset / })).toBeNull();
+  });
+
   it("keeps read-only live values current while blocking edits, picks, and resets", () => {
     const onChange = vi.fn();
     const onCommit = vi.fn();

@@ -102,6 +102,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   private document: MaterialDocument | null;
   private readonly options: AuthoredPostProcessOptions;
   private readonly parameters = new Map<string, MaterialParameterValue>();
+  private readonly authoredParameters: Record<string, MaterialParameterValue>;
 
   constructor(name: string, options: AuthoredPostProcessOptions) {
     super(name, options.frameGraph);
@@ -110,7 +111,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     super.disabled = options.enabled === false;
     this.outputTexture =
       options.frameGraph.textureManager.createDanglingHandle();
-    for (const [name, value] of Object.entries(normalizeMaterialParameterOverrides(options.parameters)))
+    this.authoredParameters = normalizeMaterialParameterOverrides(options.parameters);
+    for (const [name, value] of Object.entries(this.authoredParameters))
       this.parameters.set(name, value);
     this.pending = this.replaceDocument(options.document);
   }
@@ -163,7 +165,29 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       )
     )
       return false;
-    this.parameters.set(name, value);
+    this.parameters.set(name, value.kind === "color" ? { kind: "color", value: [...value.value] } : { ...value });
+    return true;
+  }
+
+  getParameter(name: string): MaterialParameterValue | null {
+    if (this.disposed) return null;
+    if (this.acquired) return this.options.library.getParameter(
+      this._frameGraph.scene, this.options.materialGuid, name, { instanceKey: this.instanceKey },
+    );
+    const value = this.parameters.get(name);
+    return value ? value.kind === "color" ? { kind: "color", value: [...value.value] } : { ...value } : null;
+  }
+
+  resetParameter(name: string): boolean {
+    if (this.disposed || !this.document?.nodes.some((node) =>
+      /^(param.float|param.color|param.texture)$/.test(node.type) &&
+      typeof node.properties.name === "string" && node.properties.name.trim() === name)) return false;
+    const authored = this.authoredParameters[name];
+    if (authored && this.setParameter(name, authored)) return true;
+    if (this.acquired && !this.options.library.resetParameter(
+      this._frameGraph.scene, this.options.materialGuid, name, { instanceKey: this.instanceKey },
+    )) return false;
+    this.parameters.delete(name);
     return true;
   }
 

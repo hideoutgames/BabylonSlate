@@ -87,6 +87,8 @@ interface CacheEntry {
   refCount: number;
   dispose: () => void;
   setParameter: (name: string, parameter: MaterialParameterValue) => boolean;
+  getParameter: (name: string) => MaterialParameterValue | null;
+  resetParameter: (name: string) => boolean;
   instanceKey?: string;
   ready: Promise<readonly MaterialDiagnostic[]>;
 }
@@ -196,6 +198,8 @@ export class MaterialLibrary {
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
       dispose: compiled.dispose,
       setParameter: compiled.setParameter,
+      getParameter: compiled.getParameter,
+      resetParameter: compiled.resetParameter,
       instanceKey: options?.instanceKey,
       ready: compiled.ready,
     };
@@ -334,6 +338,18 @@ export class MaterialLibrary {
     const entry = this.pending.get(scene)?.get(key) ?? this.scenes.get(scene)?.get(key);
     if (!entry || isDisposedNodeMaterial(entry.material, scene)) return false;
     return entry.setParameter(name, parameter);
+  }
+
+  getParameter(scene: Scene, assetGuid: string, name: string, options?: MaterialAcquireOptions): MaterialParameterValue | null {
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey);
+    const entry = this.pending.get(scene)?.get(key) ?? this.scenes.get(scene)?.get(key);
+    return entry && !isDisposedNodeMaterial(entry.material, scene) ? entry.getParameter(name) : null;
+  }
+
+  resetParameter(scene: Scene, assetGuid: string, name: string, options?: MaterialAcquireOptions): boolean {
+    const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey);
+    const entry = this.pending.get(scene)?.get(key) ?? this.scenes.get(scene)?.get(key);
+    return !!entry && !isDisposedNodeMaterial(entry.material, scene) && entry.resetParameter(name);
   }
 
   /**

@@ -25,6 +25,8 @@ import {
   ActorComponent,
   BObject,
   MaterialObject,
+  PostProcessMaterialObject,
+  type MaterialInstanceObject,
   Scene,
   SceneLayer,
   dispatchInterface,
@@ -67,6 +69,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  /** Whether an object may receive authored calls during its owner's load. */
+  canRunOwner?(owner: BObject): boolean;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   getProjectName?(): string;
@@ -168,10 +172,13 @@ export interface ScriptHostServices {
   setGlobalVolume?(volume: number): void;
   setRenderResolution?(width: number, height: number): void;
   setMaterialParameter?(
-    material: MaterialObject,
+    material: MaterialInstanceObject,
     parameterName: string,
     parameter: MaterialParameterValue,
   ): void;
+  getPostProcessEntry?(owner: Scene | SceneLayer, entryId: string): PostProcessMaterialObject | null;
+  getMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null;
+  resetMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): boolean;
   possessCamera?(target: unknown): void;
   updateIllumination?(target: unknown): void;
   refreshComponent?(component: ActorComponent): void;
@@ -479,6 +486,13 @@ export interface ScriptContext {
     name: string,
     value: string | null,
   ): void;
+  getPostProcessEntry(owner: unknown, entryId: string): PostProcessMaterialObject | null;
+  getMaterialFloatParameter(material: unknown, name: string): { found: boolean; value: number };
+  getMaterialColorParameter(material: unknown, name: string): { found: boolean; value: ScriptColor };
+  getMaterialTextureParameter(material: unknown, name: string): { found: boolean; value: string | null };
+  resetMaterialFloatParameter(material: unknown, name: string): boolean;
+  resetMaterialColorParameter(material: unknown, name: string): boolean;
+  resetMaterialTextureParameter(material: unknown, name: string): boolean;
   possessCamera(target: unknown): void;
   getCameraFieldOfView(target: unknown): number;
   setCameraFieldOfView(target: unknown, fov: number): void;
@@ -548,6 +562,8 @@ export class ScriptHost {
     Record<string, unknown>
   >();
   private readonly services: ScriptHostServices;
+  private invokingOwner: BObject | null = null;
+  private finalizingOwner: BObject | null = null;
   private commandResult = { success: true, output: "" };
   private readonly rng: Rng = createSeededRng(1);
 
@@ -600,7 +616,7 @@ export class ScriptHost {
       },
       onDestroyed: (self) => {
         this.clearFlowState(self);
-        this.dispatchEvent(loaded, "onDestroyed", self, 0, 0);
+        this.dispatchFinalEvent(loaded, "onDestroyed", self);
       },
     };
   }
@@ -618,6 +634,39 @@ export class ScriptHost {
     return this.commandResult;
   }
 
+  /** The driver calls this only for the actual GameInstance shutdown lifecycle. */
+  invokeGameShutdownEvent(classId: string, event: "onEnd" | "onSceneExit", self: BObject, args: Record<string, unknown> = {}): void {
+    const loaded = this.byClassId.get(classId);
+    if (loaded) this.dispatchFinalEvent(loaded, event, self, args);
+  }
+
+  private dispatchFinalEvent(loaded: readonly LoadedScript[], event: string, self: BObject, args: Record<string, unknown> = {}): void {
+    const previous = this.finalizingOwner;
+    this.finalizingOwner = self;
+    try {
+      this.dispatchEvent(loaded, event, self, 0, 0, args);
+    } finally {
+      this.finalizingOwner = previous;
+    }
+  }
+
+  private canInvokeOwner(owner: BObject): boolean {
+    // Only synchronous calls from the finalizing object itself inherit its final
+    // lifecycle. Calling through another object must reapply normal admission.
+    if (owner === this.finalizingOwner && owner === this.invokingOwner) return true;
+    return !owner.destroyed && this.services.canRunOwner?.(owner) !== false;
+  }
+
+  private invokeOwned<T>(owner: BObject | null, invoke: () => T): T {
+    const previous = this.invokingOwner;
+    this.invokingOwner = owner;
+    try {
+      return invoke();
+    } finally {
+      this.invokingOwner = previous;
+    }
+  }
+
   /** Fire a compiled entry point (Begin Play, Tick, or a custom event name). */
   invokeEvent(
     classId: string,
@@ -628,6 +677,7 @@ export class ScriptHost {
   ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
+    if (self && !this.canInvokeOwner(self)) return;
     this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, undefined, componentId);
   }
 
@@ -678,7 +728,7 @@ export class ScriptHost {
       loaded[0]!.script.assetGuid,
     );
     try {
-      const result = (evaluate as (context: ScriptContext) => unknown)(ctx);
+      const result = this.invokeOwned(self, () => (evaluate as (context: ScriptContext) => unknown)(ctx));
       if (!result || typeof result !== "object") return undefined;
       const row = result as { enter?: unknown; exit?: unknown };
       return {
@@ -705,6 +755,7 @@ export class ScriptHost {
           const exportName = impl.exportName;
           const key = interfaceHandlerKey(iface, impl.method);
           object.interfaceHandlers.set(key, (args) => {
+            if (!this.canInvokeOwner(object)) return {};
             const fn = entry.exports[exportName];
             if (typeof fn !== "function") return {};
             const ctx = this.createContext(
@@ -717,7 +768,7 @@ export class ScriptHost {
               entry.script.assetGuid,
             );
             try {
-              const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
+              const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
               if (result instanceof Promise) {
                 void result.catch((error) => this.services.reportError(error));
                 return {};
@@ -768,7 +819,7 @@ export class ScriptHost {
           entry.script.assetGuid,
         );
         try {
-          const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
+          const result = this.invokeOwned(self, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
           if (result instanceof Promise) {
             if (self) this.markPending(self, key);
             void result
@@ -885,6 +936,26 @@ export class ScriptHost {
           this.applyComponentVariable(object, String(name ?? ""), value);
         }
       },
+      getPostProcessEntry: (owner, entryId) => {
+        if (!(owner instanceof Scene || owner instanceof SceneLayer) || !this.canInvokeOwner(owner) || typeof entryId !== "string" || !entryId.trim()) return null;
+        return services.getPostProcessEntry?.(owner, entryId.trim()) ?? null;
+      },
+      getMaterialFloatParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "float");
+        return { found: result?.kind === "float", value: result?.kind === "float" ? result.value : 0 };
+      },
+      getMaterialColorParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "color");
+        const [x, y, z, w] = result?.kind === "color" ? result.value : [0, 0, 0, 1];
+        return { found: result?.kind === "color", value: { x: x!, y: y!, z: z!, w: w! } };
+      },
+      getMaterialTextureParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "texture");
+        return { found: result?.kind === "texture", value: result?.kind === "texture" ? result.textureAssetGuid : null };
+      },
+      resetMaterialFloatParameter: (material, name) => this.resetMaterialParameter(material, name, "float"),
+      resetMaterialColorParameter: (material, name) => this.resetMaterialParameter(material, name, "color"),
+      resetMaterialTextureParameter: (material, name) => this.resetMaterialParameter(material, name, "texture"),
       setMaterialFloatParameter: (material, name, value) => {
         if (typeof value !== "number" || !Number.isFinite(value)) return;
         this.setMaterialParameter(material, name, { kind: "float", value });
@@ -1057,9 +1128,14 @@ export class ScriptHost {
         const receiver = (target ?? self) as InterfaceDispatchTarget | null;
         const registry = services.interfaceRegistry;
         if (!registry || !receiver) return {};
+        const admitted = !(receiver instanceof BObject) || this.canInvokeOwner(receiver);
         return dispatchInterface(
           registry,
-          receiver,
+          admitted ? receiver : {
+            guid: receiver.guid,
+            classId: receiver.classId,
+            implementedInterfaces: receiver.implementedInterfaces,
+          },
           String(interfaceGuid),
           String(method),
           args ?? {},
@@ -1119,7 +1195,7 @@ export class ScriptHost {
       },
       invokeCustomEvent: (target, eventName, eventArgs) => {
         const receiver = (target ?? self) as BObject | null;
-        if (!receiver || typeof eventName !== "string" || !eventName) return;
+        if (!receiver || !this.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
         const loaded = this.byClassId.get(receiver.classId);
         if (loaded && loaded.length > 0) {
           this.dispatchEvent(
@@ -1142,6 +1218,7 @@ export class ScriptHost {
         }
       },
       invokeEvent: (classId, eventName, eventArgs) => {
+        if (self && !this.canInvokeOwner(self)) return;
         if (typeof classId !== "string" || !classId.trim()) return;
         if (typeof eventName !== "string" || !eventName) return;
         const loaded = this.byClassId.get(classId.trim());
@@ -1167,7 +1244,7 @@ export class ScriptHost {
           loaded = this.byClassId.get(target);
         } else {
           const object = (target ?? self) as BObject | null;
-          if (!object) return {};
+          if (!object || !this.canInvokeOwner(object)) return {};
           receiver = object;
           loaded = this.byClassId.get(object.classId);
         }
@@ -1186,7 +1263,7 @@ export class ScriptHost {
             entry.script.assetGuid,
           );
           try {
-            const value = (fn as (ctx: ScriptContext) => unknown)(nested);
+            const value = this.invokeOwned(receiver, () => (fn as (ctx: ScriptContext) => unknown)(nested));
             if (value instanceof Promise) {
               return value.then(
                 (resolved) =>
@@ -1471,10 +1548,23 @@ export class ScriptHost {
     name: string,
     parameter: MaterialParameterValue,
   ): void {
-    if (!(material instanceof MaterialObject) || material.destroyed) return;
-    if (material.component.getVariable("materialObject") !== material) return;
-    if (typeof name !== "string" || !name.trim()) return;
+    if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return;
     this.services.setMaterialParameter?.(material, name.trim(), parameter);
+  }
+
+  private materialAvailable(material: unknown): material is MaterialInstanceObject {
+    if (!(material instanceof MaterialObject || material instanceof PostProcessMaterialObject) || !this.canInvokeOwner(material)) return false;
+    return material instanceof PostProcessMaterialObject ? material.isCurrent() : material.component.getVariable("materialObject") === material;
+  }
+
+  private getMaterialParameter(material: unknown, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null {
+    if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return null;
+    return this.services.getMaterialParameter?.(material, name.trim(), kind) ?? null;
+  }
+
+  private resetMaterialParameter(material: unknown, name: string, kind: MaterialParameterValue["kind"]): boolean {
+    if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return false;
+    return this.services.resetMaterialParameter?.(material, name.trim(), kind) ?? false;
   }
 
   private applyComponentVariable(
