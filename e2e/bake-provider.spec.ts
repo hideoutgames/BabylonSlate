@@ -78,6 +78,19 @@ function meanRGB(pixels: number[]) {
   return result;
 }
 
+test("native upstream camera transport completes the tiny provider control", async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  await openProvider(page);
+  await page.waitForFunction(() => "__bakeNativeDiagnostic" in globalThis);
+  const result = await page.evaluate(async () => {
+    const provider = (globalThis as unknown as { __bakeNativeDiagnostic: typeof import("../packages/render/src/bake-provider-diagnostic") }).__bakeNativeDiagnostic;
+    return provider.diagnoseNativeBakeTransport((phase) => console.info(`bake-progress:${JSON.stringify({ phase })}`));
+  });
+  expect(result.pixels.every(Number.isFinite)).toBe(true);
+  expect(meanRGB(result.pixels)[0]).toBeGreaterThan(0.01);
+  await testInfo.attach("native-transport-control.json", { body: JSON.stringify(result), contentType: "application/json" });
+});
+
 test("browser bake solves receiver irradiance, occlusion and separated colored bounce", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
