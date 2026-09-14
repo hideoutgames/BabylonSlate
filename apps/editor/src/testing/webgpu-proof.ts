@@ -227,8 +227,10 @@ async function captureSunShadows(engine: AbstractEngine, mode: "pbr" | "cel") {
     }
     setSceneRenderSettings(scene);
     const read = async () => {
-      await scene.whenReadyAsync(true);
       for (let frame = 0; frame < 3; frame++) {
+        // The first native render applies shadow admission. Await the shader
+        // variants it dirtied before each subsequent fixture frame.
+        await scene.whenReadyAsync(true);
         engine.beginFrame();
         scene.render(false);
         engine.endFrame();
