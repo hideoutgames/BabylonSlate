@@ -230,6 +230,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     projectDocument?.settings.render,
     scene?.settings.celShading,
     scene?.settings.shadowOverrides,
+    scene?.settings,
   );
   const [renderSettingsKey, setRenderSettingsKey] = useState(requestedRenderSettingsKey);
   // Shading changes replace compiled material ownership. Other rendering settings
