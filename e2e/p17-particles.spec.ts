@@ -68,7 +68,7 @@ async function particleStats(page: Page): Promise<{
 test.describe("P17 particles", () => {
   test("authors Emitter/System, plays billboard quads, and tears down", async ({
     page,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(240_000);
     const shaderErrors: string[] = [];
     page.on("console", (message) => {
@@ -186,7 +186,16 @@ test.describe("P17 particles", () => {
     await saveAllIfEnabled(page);
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
-    await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 30_000 });
+    try {
+      await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 30_000 });
+    } catch (error) {
+      await testInfo.attach("particle-shader-failure.json", { body: JSON.stringify({
+        shaderErrors, shaderFallbacks, loading: await page.getByTestId("scene-loading-dialog").allTextContents(),
+      }), contentType: "application/json" });
+      await page.getByTestId("scene-loading-dialog").getByRole("button", { name: "Stop", exact: true }).click();
+      await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+      throw error;
+    }
     await expect
       .poll(async () => particleStats(page), { timeout: 15_000 })
       .toEqual(expect.objectContaining({ systems: 1, playing: 1 }));
