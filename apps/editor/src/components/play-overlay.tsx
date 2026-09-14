@@ -1,5 +1,7 @@
 import { useAppSettings } from "../context/app-settings-context";
 import { lightsDebugText } from "@babylonslate/render";
+import { SceneLoadingDialog } from "./scene-loading-dialog";
+import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -263,6 +265,11 @@ export function PlayOverlay({
   const userPausedRef = useRef(pauseOnPlay);
   const [postProcessPasses, setPostProcessPasses] = useState(0);
   const [assignedMaterials, setAssignedMaterials] = useState("");
+  // The Worker can take time to initialize before its first scene token arrives.
+  const [sceneLoading, setSceneLoading] = useState<Pick<SceneLoadProgress, "phase" | "progress"> | null>({
+    phase: "Preparing Scene",
+    progress: 0,
+  });
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -497,6 +504,7 @@ export function PlayOverlay({
       audioReverbBytes: audioReverbBytesRef.current,
       audioProjectSettings: audioProjectSettingsRef.current,
       pauseOnPlay: initialPauseOnPlayRef.current,
+      onSceneLoading: setSceneLoading,
       onSessionPaused: (next) => {
         userPausedRef.current = next;
         setPaused(next);
@@ -707,6 +715,8 @@ export function PlayOverlay({
       data-post-process-passes={String(postProcessPasses)}
       data-assigned-materials={assignedMaterials}
     >
+      <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
+        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} />
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}

@@ -15,6 +15,7 @@ import {
   selectionGizmoRoots,
   syncEditorPlayState,
   type EngineHandle,
+  type EditorSceneLoadOptions,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
@@ -52,6 +53,7 @@ import {
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScene,
   skyboxFaceGuidsFromScene,
+  environmentTextureGuidsFromScenes,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
@@ -573,15 +575,22 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene", rendering });
     }
     void (async () => {
-      const realize = () => {
+      let collected: EditorSceneLoadOptions | null = null;
+      const realize = async () => {
         if (!isCurrent()) return;
         if (appliedRenderSettingsRef.current !== renderSettingsKey) {
           handle.setRenderSettings(JSON.parse(renderSettingsKey));
           appliedRenderSettingsRef.current = renderSettingsKey;
         }
         // Saved Material refreshes must not realize or re-dirty scene structure.
-        if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
-        handle.loadScene(scene);
+        if (blocking) {
+          if (!collected) throw new Error("Scene assets were not collected before realization.");
+          await handle.loadSceneAsync(scene, collected);
+          if (!isCurrent()) return;
+        } else {
+          if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
+          handle.loadScene(scene);
+        }
         appliedSceneRef.current = { scene, handle };
       };
       const applyCollectedAssets = async () => {
@@ -600,6 +609,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         );
         controller.signal.throwIfAborted();
         const extraTextureGuids = [
+          ...environmentTextureGuidsFromScenes([scene]),
           ...materials.textureGuids,
           ...skyboxFaceGuidsFromScene(scene),
           ...overlayTextureGuidsFromScene(scene),
@@ -624,10 +634,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const fontFaceEntries = await collectPlayFontFaceEntries();
         const fontCss = collectPlayFontCssStacks();
         if (!isCurrent()) return;
-        handle.setMaterialDocuments(materials.documents, materials.functions);
         await handle.registerFonts(fontFaceEntries);
         if (!isCurrent()) return;
-        handle.setMeshAssets({
+        const assets = {
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
@@ -643,7 +652,21 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
           sortingLayers: projectDocument?.settings.twoD.sortingLayers,
-        });
+        };
+        if (blocking) {
+          collected = {
+            signal: controller.signal,
+            assets,
+            materialDocuments: materials.documents,
+            materialFunctions: materials.functions,
+            onProgress: (progress) => {
+              if (isCurrent()) setSceneLoad({ open: true, progress: 20 + 25 * progress, phase: "Realizing Scene", rendering });
+            },
+          };
+        } else {
+          handle.setMaterialDocuments(materials.documents, materials.functions);
+          handle.setMeshAssets(assets);
+        }
       };
       try {
         if (blocking) {
@@ -676,7 +699,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             },
           });
         } else {
-          realize();
+          await realize();
           await applyCollectedAssets();
           if (isCurrent()) {
             await handle.whenEditorModelsReady();
@@ -847,6 +870,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
         renderingBaseline: () => Record<string, unknown> | null;
+        environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
       };
     };
@@ -858,6 +882,24 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const measurements = new Set<() => void>();
 
     host.__babylonslateViewportTest = {
+      environmentTextureSamples: async () => {
+        const handle = engineRef.current;
+        const texture = handle?.scene.environmentTexture;
+        if (!handle || !texture) return null;
+        if (!texture.isReady()) return { ready: false, loadingError: texture.loadingError,
+          error: texture.errorObject ? { message: texture.errorObject.message, exception: String(texture.errorObject.exception) } : null,
+          size: texture.getSize(), isCube: texture.isCube };
+        const size = texture.getSize();
+        const lastMip = Math.floor(Math.log2(size.width));
+        const samples = [];
+        for (const face of [0, 5]) for (const level of [...new Set([0, lastMip])]) {
+          const pixels = await texture.readPixels(face, level, undefined, true, false, 0, 0, 1, 1);
+          samples.push({ face, level, type: pixels?.constructor.name, values: pixels ? Array.from(pixels as Uint8Array | Float32Array) : null });
+        }
+        return { size, isCube: texture.isCube, gammaSpace: texture.gammaSpace, samples,
+          sceneConsumers: handle.engine.scenes.filter((scene) => scene.environmentTexture === texture).length,
+          gpuType: texture.getInternalTexture()?.type };
+      },
       measureRenderingBaseline: async (durationMs) => {
         for (const cancel of measurements) cancel();
         const handle = engineRef.current;
@@ -968,6 +1010,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           engineScenes: handle.engine.scenes.length,
           estimatedTextureBytes: handle.resourceCache.accountedBytes(),
           estimatedGeometryBytes: handle.accountedGeometryBytes(),
+          ktx2Uploads: handle.engine.getLoadedTexturesCache()
+            .filter((texture) => texture.isReady && texture._extension === ".ktx2")
+            .map((texture) => ({ format: texture.format, type: texture.type, mips: texture.generateMipMaps })),
           sceneOverrides: sceneRef.current?.settings.shadowOverrides,
           capabilities: {
             maxTextureSize: caps.maxTextureSize,

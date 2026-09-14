@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createDefaultScene } from "@babylonslate/core";
-import type { BridgeHostMessage, ControlMessage } from "@babylonslate/bridge";
+import type { BridgeHostMessage, CommandMessage, ControlMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import {
   createRuntimeFromLoad,
@@ -20,7 +20,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("loading scripts without a spawn list does not create unplaced actors in the game worker", async () => {
+it("waits for the matching host paint before loading the authored world without unplaced script actors", async () => {
   const host = {
     onmessage: undefined as
       ((event: { data: BridgeHostMessage }) => void) | undefined,
@@ -30,7 +30,10 @@ it("loading scripts without a spawn list does not create unplaced actors in the 
     addEventListener() {},
   };
   vi.stubGlobal("self", host);
-  vi.stubGlobal("postMessage", () => {});
+  const commands: CommandMessage[] = [];
+  vi.stubGlobal("postMessage", (message: { channel: string; payload: CommandMessage }) => {
+    if (message.channel === "command") commands.push(message.payload);
+  });
   let runtime!: RuntimeDriver;
   let finishBoot!: () => void;
   const booted = new Promise<void>((resolve) => {
@@ -42,9 +45,9 @@ it("loading scripts without a spawn list does not create unplaced actors in the 
       onCommand,
       preferSoftwarePhysics: true,
     });
-    const resume = runtime.resume.bind(runtime);
-    vi.spyOn(runtime, "resume").mockImplementation(() => {
-      resume();
+    const finish = runtime.finishPlayLoading.bind(runtime);
+    vi.spyOn(runtime, "finishPlayLoading").mockImplementation(() => {
+      finish();
       finishBoot();
     });
     return runtime;
@@ -55,6 +58,7 @@ it("loading scripts without a spawn list does not create unplaced actors in the 
   send({
     type: "load",
     sceneAssetGuid: "empty",
+    deferSceneLoadingPaint: true,
     scene: { ...createDefaultScene(), actors: [] },
   });
   send({
@@ -73,7 +77,14 @@ it("loading scripts without a spawn list does not create unplaced actors in the 
     ],
   });
   send({ type: "play" });
+  await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneLoading")).toBe(true));
+  expect(commands.some((command) => command.type === "activeScene")).toBe(false);
+  send({ type: "sceneLoadingPainted", sceneAssetGuid: "empty", sceneLoadId: 99 });
+  await Promise.resolve();
+  expect(commands.some((command) => command.type === "activeScene")).toBe(false);
+  send({ type: "sceneLoadingPainted", sceneAssetGuid: "empty", sceneLoadId: 1 });
   await booted;
+  expect(commands.some((command) => command.type === "activeScene")).toBe(true);
   runtime.tick();
   expect(runtime.getWorld().getActors()).toHaveLength(0);
 });

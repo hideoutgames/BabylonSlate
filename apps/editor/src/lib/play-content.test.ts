@@ -38,6 +38,7 @@ import {
   spriteAnimationGuidsFromBehaviourTrees,
   spriteAssetGuidsFromScene,
   skyboxFaceGuidsFromScene,
+  environmentTextureGuidsFromScenes,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
@@ -579,6 +580,13 @@ describe("scene-referenced Play content", () => {
       nz: null,
     };
     expect(skyboxFaceGuidsFromScene(scene)).toEqual(["tex-right", "tex-front"]);
+  });
+  it("collects distinct environment cubes from the active and destination scene library", () => {
+    const active = createDefaultScene();
+    active.settings.environmentTextureGuid = "active-cube";
+    const destination = createDefaultScene();
+    destination.settings.environmentTextureGuid = "destination-cube";
+    expect(environmentTextureGuidsFromScenes([active, null, destination, active, createDefaultScene()])).toEqual(["active-cube", "destination-cube"]);
   });
 
   it("collects MeshComponent materialGuid values as surface materials", () => {

@@ -173,7 +173,7 @@ describe("pinDefaultPreview", () => {
     ).toEqual({ kind: "color", rgb: "rgb(255, 128, 0)" });
   });
 
-  it("returns class and enum constraint type names in a text field", () => {
+  it("returns the class constraint type name in a text field", () => {
     const classPin = pin({
       id: "classId",
       name: "classId",
@@ -181,25 +181,32 @@ describe("pinDefaultPreview", () => {
       direction: "in",
       type: { kind: "classRef", classId: "Actor" },
     });
-    const enumPin = pin({
-      id: "mode",
-      name: "mode",
-      kind: "data",
-      direction: "in",
-      type: { kind: "enumRef", guid: "e1" },
-    });
     expect(pinDefaultPreview(classPin, {}, false)).toEqual({
       kind: "classRef",
       text: "Actor",
     });
-    expect(
-      pinDefaultPreview(enumPin, { "default:mode": "Walk" }, false, {
-        e1: "Team",
-      }),
-    ).toEqual({ kind: "enumRef", text: "Team" });
-    expect(pinDefaultPreview(enumPin, { "default:mode": "Walk" }, false)).toEqual(
-      { kind: "enumRef", text: "e1" },
-    );
+  });
+
+  it("shows the selected enum member with authored, legacy, and catalog default precedence", () => {
+    const enumPin: SerializedPin = {
+      id: "mode-id",
+      name: "mode",
+      kind: "data",
+      direction: "in",
+      type: { kind: "enumRef", guid: "e1" },
+      defaultValue: "walk",
+    };
+    expect(pinDefaultPreview(enumPin, { "default:mode-id": "runFast", "default:mode": "Idle" }, false, { e1: "Movement Mode" }))
+      .toEqual({ kind: "enumRef", text: "Run Fast" });
+    expect(pinDefaultPreview(enumPin, { "default:mode": "Idle" }, false))
+      .toEqual({ kind: "enumRef", text: "Idle" });
+    expect(pinDefaultPreview(enumPin, {}, false))
+      .toEqual({ kind: "enumRef", text: "Walk" });
+    expect(pinDefaultPreview(enumPin, { "default:mode-id": "" }, false))
+      .toEqual({ kind: "enumRef", text: "" });
+    expect(pinDefaultPreview({ ...enumPin, defaultValue: undefined }, {}, false, { e1: "Movement Mode" }))
+      .toEqual({ kind: "enumRef", text: "" });
+    expect(pinDefaultPreview(enumPin, { "default:mode-id": "Idle" }, true)).toBeNull();
   });
 
   it("returns an assetRef type name instead of the authored guid", () => {

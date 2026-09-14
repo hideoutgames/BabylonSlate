@@ -13,6 +13,7 @@ import {
   MeshBuilder,
   ParticleSystem,
   NodeMaterial,
+  ShaderLanguage,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   NodeMaterialSystemValues,
@@ -60,6 +61,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
 import { FlatNormalBlock } from "./flat-normal-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
+import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
@@ -179,7 +181,11 @@ export function compileMaterialPlan(
   const { scene } = options;
   const cacheableShadowShape = plan.domain === "surface" && plan.blendMode === "opaque" &&
     plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
-  const material = new NodeMaterial(options.name, scene);
+  const material = new NodeMaterial(options.name, scene, {
+    shaderLanguage: scene.getEngine().isWebGPU
+      ? ShaderLanguage.WGSL
+      : ShaderLanguage.GLSL,
+  });
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
     plan.domain === "postProcess"
@@ -217,6 +223,7 @@ export function compileMaterialPlan(
   // Engine-owned plumbing must exist before operations so nodes such as World
   // Normal and Screen UV read the real transformed values.
   try {
+    if (material.mode === NodeMaterialModes.Particle) prepareNodeMaterialParticleBindings(material);
     if (plan.domain === "postProcess") {
       outputNodes.push(
         ...createPostProcessPlumbing(options.name, created, plumbing),

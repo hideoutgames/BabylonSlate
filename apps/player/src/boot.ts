@@ -18,6 +18,7 @@ import {
   attachLifecyclePause,
   createEngine,
   createSceneLoadReadiness,
+  waitForSceneLoadingPaint,
   navDebugBlockersFromActors,
   particleStats,
   type EngineHandle,
@@ -30,6 +31,7 @@ import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
 } from "./engine-commands";
+import { mountPlayerSceneLoading } from "./scene-loading-overlay";
 import { mountPlayerPrintOverlay } from "./print-overlay";
 import { packedBootControls, packedContentFromGame } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
@@ -339,6 +341,7 @@ export function startPlayer(options: {
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     animClipCatalog: content.animClipCatalog,
     deferSceneModelsReady: true,
+    deferSceneLoadingPaint: true,
   };
 
   let ticks = 0;
@@ -349,6 +352,7 @@ export function startPlayer(options: {
   const pauseState = createPlayerPauseState();
   let detachLifecycle = () => {};
   let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
+  let resetBoot = () => {};
   let hudStats: PlayerHudStats | undefined;
   let snapBuf = new Float32Array(snapshotFloatCount(256));
 
@@ -365,7 +369,10 @@ export function startPlayer(options: {
   const haltPlayback = () => {
     if (halted) return;
     halted = true;
+    resetBoot();
+    pauseGate?.reset();
     sceneReadiness.dispose();
+    sceneLoading.dispose();
     detachLifecycle();
     handle.setPaused(true);
     cancelAnimationFrame(raf);
@@ -378,10 +385,20 @@ export function startPlayer(options: {
     printHud.dispose();
   };
 
+  const sceneLoading = mountPlayerSceneLoading(canvas.parentElement ?? document.body, () => stopPlayer());
   let hostSceneGuid: string | null = startup;
   let receivedActiveScene = false;
   const sceneReadiness = createSceneLoadReadiness({
     handle,
+    loading: {
+      acquire: () => handle.scheduler.acquireObstruction(),
+      progress: (state) => sceneLoading.update(state),
+      paint: waitForSceneLoadingPaint,
+      painted: ({ sceneAssetGuid, sceneLoadId }) => {
+        worker?.postControl({ type: "sceneLoadingPainted", sceneAssetGuid, sceneLoadId });
+        runtime?.notifySceneLoadingPainted(sceneAssetGuid, sceneLoadId);
+      },
+    },
     activate: ({ sceneAssetGuid }) => {
       if (!applyPlayerActiveScene(handle, game.scenes, { type: "activeScene", sceneAssetGuid }, hostSceneGuid, receivedActiveScene)) {
         throw new Error("The requested scene is not available in this build.");
@@ -417,6 +434,10 @@ export function startPlayer(options: {
     if (command.type === "snapshotLayout")
       handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
+    if (command.type === "sceneRealized" && runtime) {
+      if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
+      handle.pushSnapshot(snapBuf);
+    }
     sceneReadiness.receive(command);
     if (command.type === "print") {
       printHud.applyPrint({
@@ -483,6 +504,7 @@ export function startPlayer(options: {
       resume: () => inProcess.resume(),
     });
     const boot = createPlayBootCoordinator();
+    resetBoot = () => boot.reset();
     if (game.scripts.length > 0) {
       boot.queueScripts(inProcess, game.scripts, []);
     }
@@ -525,9 +547,9 @@ export function startPlayer(options: {
       boot.queueNavMesh(inProcess, content.navmeshBytes);
     }
     void pauseGate
-      .beginPlay(() => boot.play(inProcess))
-      .catch((error) => {
-        inProcess.reportError(error);
+      .beginPlay((onStarted) => boot.play(inProcess, onStarted))
+      .catch((error: unknown) => {
+        if (!halted) inProcess.reportError(error);
       });
   }
 
@@ -594,27 +616,32 @@ export function startPlayer(options: {
     });
   }
 
+  function stopPlayer(): { diagnostics: PlayerDiagnostic[] } {
+    halted = true;
+    resetBoot();
+    pauseGate?.reset();
+    sceneReadiness.dispose();
+    sceneLoading.dispose();
+    detachLifecycle();
+    cancelAnimationFrame(raf);
+    resizeObserver?.disconnect();
+    input?.dispose();
+    releaseUnlock();
+    printHud.dispose();
+    worker?.terminate();
+    runtime?.stop();
+    consoleHost.dispose();
+    releaseConsole();
+    handle.dispose();
+    return { diagnostics };
+  }
+
   return {
     ticks: () => ticks,
     visuals: () => handle.playVisualStates(),
     meshMaterialNames: () => handle.playMeshMaterialNames(),
     executeConsoleCommand: (line) => consoleHost.execute(line),
     inspectWorld: () => consoleHost.inspectWorld(),
-    stop: () => {
-      halted = true;
-      sceneReadiness.dispose();
-      detachLifecycle();
-      cancelAnimationFrame(raf);
-      resizeObserver?.disconnect();
-      input?.dispose();
-      releaseUnlock();
-      printHud.dispose();
-      worker?.terminate();
-      runtime?.stop();
-      consoleHost.dispose();
-      releaseConsole();
-      handle.dispose();
-      return { diagnostics };
-    },
+    stop: stopPlayer,
   };
 }

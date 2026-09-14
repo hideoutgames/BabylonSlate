@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./style-audit": "./src/style-audit.ts"
+    "./style-audit": "./src/style-audit.ts",
+    "./environment-fixtures": "./src/environment-fixtures.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

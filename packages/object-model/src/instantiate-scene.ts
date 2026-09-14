@@ -100,7 +100,8 @@ export function createActorsFromSerializedSceneLayer(
   });
 }
 
-function createActorFromSerialized(
+/** Build one unspawned Actor so callers can yield between owned preparations. */
+export function createActorFromSerialized(
   world: World,
   serialized: SerializedActor,
   hooksFor?: SceneActorHooks,
