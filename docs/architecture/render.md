@@ -14,6 +14,8 @@ Readiness probes enter and restore their scene's floating-origin context, so a n
 
 Model readiness retains real GLB loader and instantiation failures, including loads started during fire-and-forget Play command delivery. A failed assigned model cannot advance scene loading to warming or presentation. Replacing/despawning the assignment clears its retained failure; late failures from superseded or disposed actors do not fail the current load.
 
+Particle material effects wait for their compiled NodeMaterial source before native effect creation. Pending or failed builds participate in their owning scene's readiness, preventing an empty generated shader from falling back to a network URL or exposing an incomplete first frame. Rebinding or disposing the particle system cancels its pending binding; a late build cannot attach effects to an obsolete system.
+
 ## Project PBR / CEL rendering
 
 The Mannequin browser regression keeps its 1% illumination-change limit on unoccluded surfaces under frontal light. A separate oblique-light phase requires visible self-shadows from the head/torso and requires live Cast Shadows removal to restore the matching unshadowed frame within the same limit. Expected geometric occlusion therefore cannot masquerade as an illumination regression or conceal a missing shadow.
