@@ -356,8 +356,8 @@ it("disposal during deferred graph compilation cannot attach a late pass", async
   ).toHaveLength(0);
 });
 
-it.each(["replace", "dispose"] as const)(
-  "%s before GPU compilation completes stops native polling without retiring the ready sibling",
+it.each(["replace", "dispose", "deadline", "engine-dispose", "shared"] as const)(
+  "%s while GPU compilation is pending retains native ownership until its release boundary",
   async (action) => {
     vi.useFakeTimers();
     try {
@@ -378,6 +378,7 @@ it.each(["replace", "dispose"] as const)(
       });
       let deletedProgramQueries = 0;
       const deletedPipelines = new Set<unknown>();
+      let compiled = false;
       const deletePipeline = engine._deletePipelineContext.bind(engine);
       vi.spyOn(engine, "_deletePipelineContext").mockImplementation((pipeline) => {
         deletePipeline(pipeline);
@@ -387,6 +388,12 @@ it.each(["replace", "dispose"] as const)(
       // no GPU compiler; only its driver's pending-completion query is supplied.
       vi.spyOn(engine, "_isRenderingStateCompiled").mockImplementation((pipeline) => {
         if (deletedPipelines.has(pipeline)) deletedProgramQueries++;
+        if (compiled) {
+          const native = pipeline as WebGLPipelineContext;
+          native.onCompiled?.();
+          native.onCompiled = undefined;
+          return true;
+        }
         return false;
       });
       await graph.buildAsync(false);
@@ -401,19 +408,53 @@ it.each(["replace", "dispose"] as const)(
       expect(retiring.isReady()).toBe(false);
       const applied = vi.fn();
       sibling.onApplyObservable.add(applied);
+      let shared: Effect | undefined;
+      if (action === "shared") {
+        shared = engine.createEffect(retiring.name, {
+          attributes: retiring.getAttributesNames(), uniformsNames: retiring.getUniformNames(),
+          samplers: retiring.getSamplers(), defines: retiring.defines,
+          fallbacks: null, onCompiled: null, onError: null,
+        });
+        expect(shared).toBe(retiring);
+        expect(shared._refCount).toBe(2);
+      }
 
       if (action === "replace") await task.replaceDocument(gainDocument());
       else task.dispose();
-      expect(retiring.isDisposed).toBe(true);
+      expect(retiring.isDisposed).toBe(false);
+      expect(retiring._refCount).toBe(1);
       await vi.advanceTimersByTimeAsync(32);
       expect(deletedProgramQueries).toBe(0);
       expect(errors).not.toHaveBeenCalled();
-      expect(vi.getTimerCount()).toBe(0);
       expect(graph.isReady()).toBe(true);
       graph.execute();
       expect(applied).toHaveBeenCalledOnce();
       expect(sibling.getEffect().isDisposed).toBe(false);
       expect(diagnostics).toEqual([]);
+      if (action === "deadline") {
+        const result = task.whenDisposed().catch((error: AggregateError) => error);
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(await result).toMatchObject({ errors: [expect.objectContaining({ message: expect.stringContaining("uncertain") })] });
+        expect(retiring.isDisposed).toBe(false);
+        expect(deletedPipelines.has(pendingPipeline)).toBe(false);
+      }
+      if (action === "engine-dispose") {
+        engine.dispose();
+        await task.whenDisposed();
+      } else {
+        compiled = true;
+        await vi.advanceTimersByTimeAsync(32);
+        if (shared) {
+          await task.whenDisposed();
+          expect(shared.isDisposed).toBe(false);
+          expect(shared.isReady()).toBe(true);
+          shared.dispose();
+        } else if (action === "dispose") await task.whenDisposed();
+      }
+      expect(retiring.isDisposed).toBe(true);
+      await vi.advanceTimersByTimeAsync(32);
+      expect(deletedProgramQueries).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }

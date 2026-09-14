@@ -39,10 +39,10 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
   const library = new MaterialLibrary();
   const owners: Array<{ graph: FrameGraph; stack: ReturnType<typeof addAuthoredPostProcessTasks> }> = [];
   const diagnostics: string[] = [];
-  const retired: Array<{ effect: Effect; pending: boolean; lateProbes: number; compiledAfterRetirement: boolean }> = [];
+  const retired: Array<{ effect: Effect; pending: boolean; lateProbes: number; compiledAfterRetirement: boolean; completedWhileRetained: boolean; referencesBefore: number }> = [];
   const captures: Array<{ action: string; pixel: number[] }> = [];
   const lifetime = { retainedPasses: -1, retainedMaterials: -1, retainedScenes: -1 };
-  try {
+  const run = async () => {
     // A 256-byte row also avoids native WebGPU readback padding ambiguity.
     const pixels = new Uint8Array(64 * 4 * 4);
     for (let offset = 0; offset < pixels.length; offset += 4)
@@ -83,7 +83,8 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       await owner.graph.buildAsync(false);
       const pass = engine.postProcesses.find((candidate) => !previousPasses.has(candidate))!;
       const effect = pass.getEffect();
-      const record = { effect, pending: !effect.isReady(), lateProbes: 0, compiledAfterRetirement: false };
+      const record = { effect, pending: !effect.isReady(), lateProbes: 0, compiledAfterRetirement: false,
+        completedWhileRetained: false, referencesBefore: effect._refCount };
       retired.push(record);
       // Observe the real per-Effect native retry without replacing its result,
       // timer or GPU query. It must run its disposal exit after owner retirement.
@@ -95,6 +96,7 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       };
       if (record.pending) effect.executeWhenCompiled(() => {
         record.compiledAfterRetirement = effect.isDisposed;
+        record.completedWhileRetained = !effect.isDisposed;
       });
       if (action === "replace") {
         await owner.stack.tasks[0]!.replaceDocument(gainDocument(0.25));
@@ -102,8 +104,9 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       } else {
         owner.stack.dispose();
         owner.graph.dispose();
+        await owner.stack.whenDisposed();
       }
-      if (record.pending) await until(() => record.lateProbes > 0, `${action} native retry disposal exit`);
+      await until(() => effect.isDisposed, `${action} native retirement completion`);
       if (!effect.isDisposed || effect.isReady()) throw new Error(`${action} retained a ready retired Effect`);
       if (siblingEffect.isDisposed) throw new Error(`${action} retired the sibling Effect`);
       await capture(`sibling-after-${action}`, sibling);
@@ -111,11 +114,15 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     return {
       backend, captures, diagnostics, lifetime,
       engines: EngineStore.Instances.map((candidate, index) => ({ index, proof: candidate === engine })),
-      retired: retired.map(({ pending, lateProbes, compiledAfterRetirement }) => ({ pending, lateProbes, compiledAfterRetirement })),
+      retired: retired.map(({ pending, lateProbes, compiledAfterRetirement, completedWhileRetained, referencesBefore }) =>
+        ({ pending, lateProbes, compiledAfterRetirement, completedWhileRetained, referencesBefore })),
       siblingReady: siblingEffect.isReady(),
     };
-  } finally {
+  };
+  const outcome = (await Promise.allSettled([run()]))[0]!;
+  {
     for (const owner of owners) { owner.stack.dispose(); owner.graph.dispose(); }
+    const cleanup = await Promise.allSettled(owners.map((owner) => owner.stack.whenDisposed()));
     library.dispose();
     scene.dispose();
     lifetime.retainedPasses = engine.postProcesses.length;
@@ -123,5 +130,11 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     lifetime.retainedScenes = engine.scenes.length;
     engine.dispose();
     canvas.remove();
+    const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    const errors = failures.map((result) => result.reason);
+    if (outcome.status === "rejected") errors.unshift(outcome.reason);
+    if (errors.length) throw new AggregateError(errors, "Post-process lifetime proof failed");
   }
+  if (outcome.status === "rejected") throw outcome.reason;
+  return outcome.value;
 }
