@@ -246,20 +246,26 @@ it("blocks readiness for pending IO and never applies a cancelled owner after la
   const wait = new Promise<void>((resolve) => {
     release = resolve;
   });
+  let began!: () => void;
+  const started = new Promise<void>((resolve) => {
+    began = resolve;
+  });
   const options = f.optionsFor(f.mesh);
   const loading = owner.load({
     ...options,
     readAsset: async (guid) => {
+      began();
       await wait;
       return options.readAsset(guid);
     },
   });
+  await started;
   expect(owner.isReady()).toBe(false);
   owner.dispose();
-  release();
   await expect(loading).rejects.toMatchObject({ name: "AbortError" });
   expect(f.mesh.getTotalVertices()).toBe(4);
   expect(bakedGpuAllocationStatus(f.engine).managedBytes).toBe(0);
+  release();
 });
 
 it("rejects unsupported float filtering before allocation and quarantines hidden constructor failures", async () => {

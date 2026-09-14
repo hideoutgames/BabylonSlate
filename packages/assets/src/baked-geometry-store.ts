@@ -6,6 +6,7 @@ import {
 } from "./baked-geometry";
 import type { AssetRegistry } from "./registry";
 import type { BakeRuntimeAssetReader } from "./baked-lighting-runtime";
+import { awaitBakeRuntimeRead } from "./bake-runtime-read";
 
 export class StaleBakedGeometryError extends Error {}
 
@@ -40,12 +41,15 @@ export async function loadBakedGeometryArtifacts(
     if (!reference) continue;
     if (result.size >= 64)
       throw new Error("Too many generated receiver geometries.");
-    const asset = await readAsset(reference.assetGuid, signal);
+    const asset = await awaitBakeRuntimeRead(signal, () =>
+      readAsset(reference.assetGuid, signal),
+    );
     signal?.throwIfAborted();
     if (!asset) throw new Error("Generated receiver geometry is unavailable.");
     const geometry = await decodeBakedGeometryAsset(
       asset.bytes,
-      asset.readBlob,
+      asset.readBlob &&
+        ((hash) => awaitBakeRuntimeRead(signal, () => asset.readBlob!(hash))),
     );
     signal?.throwIfAborted();
     if (

@@ -9,6 +9,7 @@ import {
 } from "./baked-lighting";
 import { loadBakedGeometryArtifacts } from "./baked-geometry-store";
 import type { DecodedBakedGeometry } from "./baked-geometry";
+import { awaitBakeRuntimeRead } from "./bake-runtime-read";
 
 /** Complete exported containers or an editor container with its owning blob reader. */
 export interface BakeRuntimeAsset {
@@ -44,7 +45,9 @@ export async function loadRuntimeBake(options: {
       validity: { status: "missing", reason: "No baked lighting is assigned." },
     };
   try {
-    const source = await readAsset(assetGuid, signal);
+    const source = await awaitBakeRuntimeRead(signal, () =>
+      readAsset(assetGuid, signal),
+    );
     signal?.throwIfAborted();
     if (!source)
       return {
@@ -55,7 +58,8 @@ export async function loadRuntimeBake(options: {
       };
     const lighting = await decodeBakedLightingAsset(
       source.bytes,
-      source.readBlob,
+      source.readBlob &&
+        ((hash) => awaitBakeRuntimeRead(signal, () => source.readBlob!(hash))),
     );
     signal?.throwIfAborted();
     if (lighting.guid !== assetGuid)

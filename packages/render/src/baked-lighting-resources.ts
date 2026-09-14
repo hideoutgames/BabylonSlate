@@ -137,6 +137,8 @@ export async function acquireBakedAtlas(
     let constructorStarted = false;
     const ready = Promise.resolve()
       .then(async () => {
+        if (engine.isDisposed)
+          throw new Error("The baked upload Engine was disposed.");
         if (bytes.byteLength !== atlas.width * atlas.height * 16)
           throw new Error("Baked atlas byte length changed.");
         const values = new Float32Array(bytes.byteLength / 4);
