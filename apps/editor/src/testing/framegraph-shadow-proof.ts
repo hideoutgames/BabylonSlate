@@ -14,6 +14,7 @@ import {
   SpotLight,
   Vector3,
   type RenderTargetWrapper,
+  type ShadowGenerator,
 } from "@babylonjs/core";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import {
@@ -166,6 +167,7 @@ export async function runFrameGraphShadowProof() {
         (target) => target === map()?.renderTarget,
       ).length;
       const active = scene.getActiveMeshes();
+      const shadow = light.getShadowGenerator() as ShadowGenerator | null;
       return {
         pixels: await read(),
         draws,
@@ -175,6 +177,16 @@ export async function runFrameGraphShadowProof() {
         activeMeshes: active.data
           .slice(0, active.length)
           .map((mesh) => mesh.name),
+        shadowState: shadow
+          ? {
+              view: Array.from(shadow.viewMatrix.m),
+              projection: Array.from(shadow.projectionMatrix.m),
+              bias: shadow.bias,
+              normalBias: shadow.normalBias,
+              depthScale: shadow.depthScale,
+              filter: shadow.filter,
+            }
+          : null,
         result,
       };
     };
@@ -187,6 +199,7 @@ export async function runFrameGraphShadowProof() {
       const currentMap = map();
       const texture = currentMap?.getInternalTexture();
       const graphFrame = await render("graph");
+      const beforeClassic = await render("graph");
       const classic = await render("classic", true);
       const settled = await render("graph");
       const forceGraph = await render("graph", true);
@@ -196,6 +209,7 @@ export async function runFrameGraphShadowProof() {
         readinessDraws,
         readinessFaces,
         graph: graphFrame,
+        beforeClassic,
         classic,
         settled,
         forceGraph,
