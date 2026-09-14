@@ -51,4 +51,18 @@ describe("createPlayPauseGate", () => {
     gate.setPaused(true);
     expect(events).toEqual(["start", "pause"]);
   });
+  it("ignores both the early start and completion from a reset boot", async () => {
+    const events: string[] = [];
+    const pending = deferred<void>();
+    let started!: () => void;
+    const gate = createPlayPauseGate({ pause: () => events.push("pause"), resume: () => events.push("resume") });
+    const playing = gate.beginPlay((onStarted) => { started = onStarted; return pending.promise; });
+    gate.setPaused(true);
+    gate.reset();
+    started();
+    pending.resolve();
+    await playing;
+    expect(events).toEqual([]);
+  });
+
 });

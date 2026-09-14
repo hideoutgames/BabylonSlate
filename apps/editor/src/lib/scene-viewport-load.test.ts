@@ -83,13 +83,36 @@ describe("runSceneViewportBlockingLoad", () => {
     await task;
     expect(progress).toEqual([
       { value: 0, phase: "Preparing Scene" },
-      { value: 10, phase: "Realizing Scene" },
-      { value: 20, phase: "Collecting Assets" },
+      { value: 10, phase: "Collecting Assets" },
+      { value: 20, phase: "Realizing Scene" },
       { value: 45, phase: "Loading Models" },
       { value: 70, phase: "Warming Shaders" },
       { value: 90, phase: "Presenting First Frame" },
       { value: 100, phase: "Presenting First Frame" },
     ]);
+  });
+
+  it("waits for chunked realization after collection before inspecting model readiness", async () => {
+    let finish!: () => void;
+    const order: string[] = [];
+    const whenModelsReady = vi.fn(async () => {});
+    const task = runSceneViewportBlockingLoad({
+      signal: new AbortController().signal,
+      collect: async () => { order.push("collect"); },
+      realize: () => { order.push("realize"); return new Promise<void>((resolve) => { finish = resolve; }); },
+      whenModelsReady,
+      warmShaders: async () => {},
+      presentFirstFrame: async () => {},
+      onProgress: () => {},
+    });
+    paint();
+    await vi.waitFor(() => expect(order).toEqual(["collect", "realize"]));
+    expect(whenModelsReady).not.toHaveBeenCalled();
+    finish();
+    await vi.waitFor(() => expect(frames).toHaveLength(1));
+    paint();
+    await task;
+    expect(whenModelsReady).toHaveBeenCalledOnce();
   });
 
   it.each(["realize", "collect", "whenModelsReady", "warmShaders", "presentFirstFrame"] as const)(

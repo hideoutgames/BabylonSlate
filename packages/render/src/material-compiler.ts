@@ -60,6 +60,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
 import { FlatNormalBlock } from "./flat-normal-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
+import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
@@ -217,6 +218,7 @@ export function compileMaterialPlan(
   // Engine-owned plumbing must exist before operations so nodes such as World
   // Normal and Screen UV read the real transformed values.
   try {
+    if (material.mode === NodeMaterialModes.Particle) prepareNodeMaterialParticleBindings(material);
     if (plan.domain === "postProcess") {
       outputNodes.push(
         ...createPostProcessPlumbing(options.name, created, plumbing),

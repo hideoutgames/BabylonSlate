@@ -100,7 +100,7 @@ export interface ScriptHostServices {
   setCursorVisible?(visible: boolean): void;
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
-  delay(seconds: number): Promise<void>;
+  delay(seconds: number, owner?: BObject | null): Promise<void>;
   reportError(error: unknown): void;
   reportCommand?(success: boolean, output: string): void;
   /** Debugger loop guard; omitted in release players. */
@@ -1049,7 +1049,7 @@ export class ScriptHost {
       getOwner: (actor) => readActorLink(services, actor, "ownerId"),
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
-      delay: (seconds) => services.delay(seconds),
+      delay: (seconds) => services.delay(seconds, self),
       callInterface: (target, interfaceGuid, method, args) => {
         const receiver = (target ?? self) as InterfaceDispatchTarget | null;
         const registry = services.interfaceRegistry;

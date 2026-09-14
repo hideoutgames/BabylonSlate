@@ -121,7 +121,7 @@ function node(
 }
 
 describe("p7-play-scene-load", () => {
-  it("realizes the authored scene instead of demo actors", () => {
+  it("realizes the authored scene instead of demo actors", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -144,7 +144,7 @@ describe("p7-play-scene-load", () => {
     );
 
     expect(runtime.getWorld().getActors()).toHaveLength(0);
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     const actors = runtime.getWorld().getActors();
     expect(actors.map((actor) => actor.guid)).toEqual(["actor-1"]);
     expect(actors[0]!.getVariable("name")).toBe("Cube");
@@ -509,7 +509,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("possesses a camera that opts into Attempt Possess View Target", () => {
+  it("possesses a camera that opts into Attempt Possess View Target", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -519,7 +519,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
 
     const possess = commands.filter((c) => c.type === "possessCamera");
     expect(possess).toHaveLength(1);
@@ -530,7 +530,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("leaves the camera alone when the option is off", () => {
+  it("leaves the camera alone when the option is off", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -540,12 +540,12 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     expect(commands.some((c) => c.type === "possessCamera")).toBe(false);
     runtime.stop();
   });
 
-  it("does not possess a camera whose actor never reached the world", () => {
+  it("does not possess a camera whose actor never reached the world", async () => {
     const commands: CommandMessage[] = [];
     const scene = cameraPossessScene(true);
     scene.actors = [];
@@ -557,7 +557,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     expect(commands.some((c) => c.type === "possessCamera")).toBe(false);
     runtime.stop();
   });
@@ -625,7 +625,7 @@ describe("p7-play-scene-load", () => {
         entryPoints: compiled.entryPoints,
       },
     ]);
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
 
     const possess = commands.filter((c) => c.type === "possessCamera");
     expect(possess).toHaveLength(1);
@@ -636,7 +636,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits assignMesh.parts for a two-mesh actor", () => {
+  it("emits assignMesh.parts for a two-mesh actor", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -666,7 +666,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     const meshAssign = commands.filter((c) => c.type === "assignMesh");
     expect(meshAssign).toHaveLength(1);
     expect(meshAssign[0]).toMatchObject({
@@ -693,7 +693,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("resolves Play mesh parenting through a non-visual component", () => {
+  it("resolves Play mesh parenting through a non-visual component", async () => {
     const commands: CommandMessage[] = [];
     const root = createMeshComponent("root-visual", "box");
     const leaf = createMeshComponent("leaf-visual", "sphere");
@@ -726,7 +726,7 @@ describe("p7-play-scene-load", () => {
       (command) => commands.push(command),
     );
 
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     const assignment = commands.find((command) => command.type === "assignMesh");
     expect(assignment).toEqual(
       expect.objectContaining({
@@ -741,7 +741,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits light and Default Camera properties on assignMesh", () => {
+  it("emits light and Default Camera properties on assignMesh", async () => {
     const commands: CommandMessage[] = [];
     const settings = createDefaultSceneSettings();
     settings.mainCameraActorId = "cam";
@@ -793,7 +793,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     const assigns = commands.filter((c) => c.type === "assignMesh");
     expect(assigns).toEqual(
       expect.arrayContaining([
@@ -822,7 +822,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits light:* on assignMesh parts and audio as meshKind audio", () => {
+  it("emits light:* on assignMesh parts and audio as meshKind audio", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -866,7 +866,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     const assigns = commands.filter((c) => c.type === "assignMesh");
     expect(assigns).toEqual(
       expect.arrayContaining([
@@ -893,7 +893,7 @@ describe("p7-play-scene-load", () => {
     { meshKind: "model", assetGuid: "model-rock" },
   ])(
     "keeps $meshKind geometry separate from its material assignment",
-    ({ meshKind, assetGuid }) => {
+    async ({ meshKind, assetGuid }) => {
       const commands: CommandMessage[] = [];
       const mesh = createMeshComponent("component-1", meshKind);
       mesh.properties.assetGuid = assetGuid;
@@ -916,7 +916,7 @@ describe("p7-play-scene-load", () => {
         },
         (command) => commands.push(command),
       );
-      runtime.realizePlayWorld();
+      await runtime.realizePlayWorld();
       expect(
         commands.filter((command) => command.type === "assignMesh"),
       ).toEqual([
@@ -938,7 +938,7 @@ describe("p7-play-scene-load", () => {
     },
   );
 
-  it("emits assignMaterial for a mesh in a default scene that already has a camera", () => {
+  it("emits assignMaterial for a mesh in a default scene that already has a camera", async () => {
     const commands: CommandMessage[] = [];
     const mesh = createMeshComponent("box-mesh", "box");
     mesh.properties.materialGuid = "mat-rock";
@@ -956,7 +956,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     expect(commands.filter((command) => command.type === "assignMaterial")).toEqual([
       {
         type: "assignMaterial",
@@ -971,7 +971,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits per-component assignMaterial for a two-mesh actor", () => {
+  it("emits per-component assignMaterial for a two-mesh actor", async () => {
     const commands: CommandMessage[] = [];
     const box = createMeshComponent("box", "box");
     box.properties.materialGuid = "mat-box";
@@ -1000,7 +1000,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
       expect.objectContaining({
         meshAssetGuid: null,
@@ -1211,7 +1211,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("changeScene re-possesses the destination camera on a recycled slot", () => {
+  it("changeScene re-possesses the destination camera on a recycled slot", async () => {
     const level2 = cameraPossessScene(true);
     level2.name = "Level2";
     const commands: CommandMessage[] = [];
@@ -1224,13 +1224,14 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     runtime.start();
     const firstPossess = commands.filter((c) => c.type === "possessCamera");
     expect(firstPossess).toHaveLength(1);
     const sourceSlot = (firstPossess[0] as { slotId: number }).slotId;
     commands.length = 0;
     runtime.executeConsoleCommand("changescene scene-2");
+    await runtime.realizePlayWorld();
     const nextPossess = commands.filter((c) => c.type === "possessCamera");
     expect(nextPossess).toHaveLength(1);
     expect((nextPossess[0] as { slotId: number }).slotId).toBe(sourceSlot);
@@ -1297,7 +1298,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("changeScene emits activeScene with the canonical guid when addressed by name", () => {
+  it("changeScene emits activeScene with the canonical guid when addressed by name", async () => {
     const level2: SerializedScene = {
       name: "Level 2",
       viewportMode: "3d",
@@ -1327,9 +1328,10 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     runtime.start();
     runtime.executeConsoleCommand('changescene scene="Level 2"');
+    await runtime.realizePlayWorld();
     expect(
       commands.filter((command) => command.type === "activeScene"),
     ).toEqual([
@@ -1339,7 +1341,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("changeScene emits activeScene when addressed by guid", () => {
+  it("changeScene emits activeScene when addressed by guid", async () => {
     const level2: SerializedScene = {
       name: "Level 2",
       viewportMode: "3d",
@@ -1363,9 +1365,10 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     runtime.start();
     runtime.executeConsoleCommand("changescene scene-2");
+    await runtime.realizePlayWorld();
     expect(
       commands.some(
         (command) =>
@@ -1496,7 +1499,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits assignMesh meshKind skybox with size and faces", () => {
+  it("emits assignMesh meshKind skybox with size and faces", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -1516,7 +1519,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
       {
         type: "assignMesh",
@@ -1540,7 +1543,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits assignMesh meshKind text3d with authored text properties", () => {
+  it("emits assignMesh meshKind text3d with authored text properties", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -1569,7 +1572,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
       {
         type: "assignMesh",
@@ -1590,7 +1593,7 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits assignMesh meshKind 2dtext with authored overlay text properties", () => {
+  it("emits assignMesh meshKind 2dtext with authored overlay text properties", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -1634,7 +1637,7 @@ describe("p7-play-scene-load", () => {
       },
       (command) => commands.push(command),
     );
-    runtime.realizePlayWorld();
+    await runtime.realizePlayWorld();
     expect(
       commands.find(
         (command) => command.type === "assignMesh" && command.actorGuid === "label",

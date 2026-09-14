@@ -10,6 +10,9 @@ import {
   type Texture,
 } from "@babylonjs/core";
 import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
+import { prewarmMaterial } from "./material-compiler";
+import { isDisposedNodeMaterial } from "./gpu-resource-live";
+import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import {
   applyParticleEmitterPayload,
   resolveParticleEmitterCapacity,
@@ -212,15 +215,51 @@ export function applyParticleLook(options: {
   if (options.texture) {
     options.system.particleTexture = options.texture;
   }
+  pendingParticleMaterials.get(options.system)?.();
   if (options.material && options.material.mode === NodeMaterialModes.Particle) {
     if (options.texture) {
       bindParticleTextureBlocks(options.material, options.texture);
     }
-    options.material.createEffectForParticles(options.system);
+    bindReadyParticleMaterial(options.system, options.material);
     if (options.texture) {
       options.system.particleTexture = options.texture;
     }
   }
+}
+
+const pendingParticleMaterials = new WeakMap<IParticleSystem, () => void>();
+
+function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMaterial): void {
+  const scene = system.getScene();
+  if (!scene) throw new Error("Particle materials require an owning scene.");
+  let failure: unknown;
+  let failed = false;
+  const readiness = { isReady: () => {
+    if (failed) throw failure;
+    return false;
+  } };
+  const cancel = () => {
+    if (pendingParticleMaterials.get(system) !== cancel) return;
+    pendingParticleMaterials.delete(system);
+    scene.removeIsReadyCheck(readiness);
+    system.onDisposeObservable.remove(disposeObserver);
+  };
+  const disposeObserver = system.onDisposeObservable.addOnce(cancel);
+  pendingParticleMaterials.set(system, cancel);
+  scene.addIsReadyCheck(readiness);
+  // Babylon's first NodeMaterial build can finish asynchronously. Creating the
+  // particle effect before then registers no fragment source and fetches a .fx URL.
+  void prewarmMaterial(material, null).then(() => {
+    if (pendingParticleMaterials.get(system) !== cancel || scene.isDisposed) return;
+    if (isDisposedNodeMaterial(material, scene)) throw new Error("Particle material was disposed before its build completed.");
+    prepareNodeMaterialParticleBindings(material);
+    material.createEffectForParticles(system);
+    cancel();
+  }).catch((error: unknown) => {
+    if (pendingParticleMaterials.get(system) !== cancel || scene.isDisposed) return;
+    failure = error;
+    failed = true;
+  });
 }
 
 function bindParticleTextureBlocks(

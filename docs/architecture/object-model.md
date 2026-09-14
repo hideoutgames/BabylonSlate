@@ -38,9 +38,13 @@ Order is fixed and named from the first commit:
 
 Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable arrays.
 
+`WorldOptions.canTickScene` can suspend actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance continues ticking. It is rechecked after Game Instance and between actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` exposes the same unspawned single-actor construction used by the synchronous scene helpers.
+
 ## Destroy / spawn during tick
 
 Mid-tick `destroy` and `spawn` enqueue work. Deferred queues flush after the current phase (or end of tick) so destroying one actor never skips a sibling in the same phase.
+
+Preparation rollback uses `World.destroyActorInstance` to target the owned object rather than a reusable guid. An actor cancelled before spawn is removed from the pending queue without firing creation/destruction hooks; an already spawned actor follows normal deferred destruction. Repeated cleanup cannot destroy a later actor with the same guid. SceneLayer destruction removes the owned layer from the live registry before its destruction hooks and removes actors by identity, protecting layers/actors created reentrantly by those hooks.
 
 ## Snapshot (harness, not bridge)
 
