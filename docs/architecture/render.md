@@ -749,3 +749,5 @@ Coordinator post-process diagnostics count compiled, enabled graph effects indiv
 Texture Sample RGBA color decoding uses the vector WGSL conversion helper on Babylon 9.20, matching WebGL RGB decoding while preserving alpha. The fix is scoped to the owned texture block; color/data authoring and global shader helpers remain unchanged.
 
 Environment Sample uses the corresponding WGSL vec3 color decoder for gamma-encoded cube data. A numeric cube fixture checks native and graph post-process sampling on both backends independently of diffuse IBL preparation.
+
+Post-process retirement tracks every detached generation with separate bounded cleanup reports and actual CPU/native release. A timeout remains reportable but does not authorize freeing a Scene or Material library; confirmed late release can complete ownership cleanup. Failed actual release remains quarantined. Settled promises are removed while failures remain recorded.

@@ -1,3 +1,4 @@
+import { PostProcessRetirement } from "./post-process-retirement";
 import { createScenePostProcessGraph, type ScenePostProcessGraph } from "./scene-post-process-graph";
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
@@ -61,6 +62,8 @@ export class ForwardSceneFrameGraph {
   private postProcessRevision = 0;
   private preparedPostProcessRevision = -1;
   private retirement: Promise<void> | undefined;
+  private released: Promise<void> | undefined;
+  private readonly postProcessRetirement = new PostProcessRetirement();
   private cleanupFailure: unknown;
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
@@ -106,6 +109,8 @@ export class ForwardSceneFrameGraph {
     const current = () => !this.disposed && this.postProcessOwner === owner;
     return {
       get passes() { return current() ? owner.passes : []; },
+      whenDisposed: () => owner.whenDisposed(),
+      whenReleased: () => owner.whenReleased(),
       setParameter: (id, name, value) => current() && owner.setParameter(id, name, value),
       getParameter: (id, name) => current() ? owner.getParameter(id, name) : null,
       resetParameter: (id, name) => current() && owner.resetParameter(id, name),
@@ -138,8 +143,24 @@ export class ForwardSceneFrameGraph {
       try { await this.pending; } catch { /* preparation failure is not cleanup failure */ }
       if (this.cleanupFailure) throw this.cleanupFailure;
       this.releaseGraph();
+      await this.postProcessRetirement.whenDisposed();
     })();
     return this.retirement;
+  }
+
+  /** Confirm actual CPU/native release even after a bounded cleanup timeout. */
+  whenReleased(): Promise<void> {
+    if (this.released) return this.released;
+    try { this.dispose(); }
+    catch (error) { this.released = Promise.reject(error); return this.released; }
+    this.released = (async () => {
+      try { await this.pending; } catch { /* cancellation still finishes owned cleanup */ }
+      if (this.cleanupFailure) throw this.cleanupFailure;
+      this.releaseGraph();
+      await this.postProcessRetirement.whenReleased();
+      if (this.cleanupFailure) throw this.cleanupFailure;
+    })();
+    return this.released;
   }
 
   invalidate(): void {
@@ -573,7 +594,13 @@ export class ForwardSceneFrameGraph {
   }
 
   private releasePostProcessOwner(): void {
-    try { this.postProcessOwner?.dispose(); }
+    try {
+      if (this.postProcessOwner) {
+        this.postProcessOwner.dispose();
+        this.postProcessRetirement.add(this.postProcessOwner);
+        this.postProcessOwner = undefined;
+      }
+    }
     catch (error) { this.cleanupFailure = error; throw error; }
   }
 
@@ -594,6 +621,7 @@ export class ForwardSceneFrameGraph {
     this.clear?.dispose();
     this.cull?.dispose();
     this.graph?.dispose();
+    if (this.postProcessGraph) this.postProcessRetirement.add(this.postProcessGraph);
     void this.postProcessGraph?.releaseAfterGraphDisposal().catch((error: unknown) => {
       this.cleanupFailure = error;
     });

@@ -38,6 +38,12 @@ export class SceneRenderCoordinator {
     await this.graph.retire();
   }
 
+  /** Actual CPU/native release; never waits for an Engine presentation frame. */
+  async whenReleased(): Promise<void> {
+    this.dispose();
+    await this.graph.whenReleased();
+  }
+
   invalidate(): void {
     this.generation += 1;
     this.failure = undefined;
