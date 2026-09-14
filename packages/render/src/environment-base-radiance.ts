@@ -133,7 +133,7 @@ export async function readEnvironmentBaseRadiance(
   });
   let renderer: EffectRenderer | undefined;
   let target: RenderTargetWrapper | undefined;
-  let reads: Promise<ArrayBufferView | null>[] = [];
+  const reads: Promise<ArrayBufferView | null>[] = [];
   try {
     await new Promise<void>((resolve, reject) =>
       effect.updateEffect(

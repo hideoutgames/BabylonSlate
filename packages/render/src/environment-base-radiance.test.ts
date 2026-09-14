@@ -58,7 +58,7 @@ it("restores the owning Engine before deferred readback and releases temporary s
     expect(engine.getLoadedTexturesCache().length).toBe(before + 1);
     for (const resolve of finish) resolve(new Float32Array(32 * 32 * 4));
     expect(await operation).toMatchObject({ size: 32, linear: true });
-    expect(engine.onContextRestoredObservable.observers.length).toBe(observers);
+    await vi.waitFor(() => expect(engine.onContextRestoredObservable.observers.length).toBe(observers));
     expect(engine._currentRenderTarget).toBe(previous);
     expect(source.isReady()).toBe(true);
     previous.dispose();
@@ -84,7 +84,7 @@ it("restores state and disposes its temporary target on a draw failure, and reje
     expect(engine.currentViewport?.width).toBe(0.5);
     expect(engine.getColorWrite()).toBe(false);
     expect(engine._currentRenderTarget).toBeNull();
-    expect(engine.onContextRestoredObservable.observers.length).toBe(before);
+    await vi.waitFor(() => expect(engine.onContextRestoredObservable.observers.length).toBe(before));
     expect(target.mock.results[0]!.value.texture).toBeNull();
     draw.mockRestore();
     target.mockClear();
