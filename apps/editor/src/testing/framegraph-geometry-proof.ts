@@ -107,7 +107,7 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
             copy.sourceTexture = stack.outputTexture;
           }
           graph.addTask(copy);
-          await graph.buildAsync(false);
+          await graph.buildAsync(!!replaceAfterBuild);
           await replaceAfterBuild?.();
           if (graphDiagnostics.length) throw new Error(JSON.stringify(graphDiagnostics));
           const deadline = performance.now() + 10_000;
