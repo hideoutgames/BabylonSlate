@@ -547,6 +547,10 @@ describe("Game Instance native events and scene APIs", () => {
           expect(commands.some((entry) => entry.type === "assignMesh" && entry.sceneLayerId !== undefined)).toBe(true);
           runtime.notifySceneModelsReady(command.sceneAssetGuid, command.sceneLoadId);
         }
+        if (command.type === "sceneLayerRealized") {
+          expect(commands.some((entry) => entry.type === "assignMesh" && entry.sceneLayerId === command.layerId)).toBe(true);
+          runtime.notifySceneLayerReady(command.layerId, command.layerLoadId);
+        }
       },
     });
     await runtime.loadScripts([
