@@ -33,7 +33,8 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     const gl = (engine as unknown as { _gl: WebGL2RenderingContext })._gl;
     const query = gl.getProgramParameter;
     gl.getProgramParameter = function (program, parameter) {
-      if (!this.isProgram(program)) invalidPrograms.push({
+      const result = query.call(this, program, parameter);
+      if (result === null) invalidPrograms.push({
         phase, parameter, stack: new Error().stack,
         effects: [...effects].filter((effect) =>
           (effect.getPipelineContext() as unknown as { program?: WebGLProgram })?.program === program).map((effect) => ({
@@ -41,7 +42,7 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
             pipelineDisposed: (effect.getPipelineContext() as unknown as { _isDisposed?: boolean })?._isDisposed,
           })),
       });
-      return query.call(this, program, parameter);
+      return result;
     };
   }
   const scene = new Scene(engine);
