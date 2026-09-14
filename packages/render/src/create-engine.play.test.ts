@@ -338,6 +338,38 @@ describe("Play createEngine view", () => {
     Reflect.deleteProperty(engine, "_gl");
   });
 
+  it("draws an RTT preview once while every registered canvas retains its paused bitmap", async () => {
+    const engine = sharedEngine();
+    const nativeDispatch = engine._renderViews;
+    const source = new FakeCanvas();
+    vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(source as unknown as HTMLCanvasElement);
+    const visible = new FakeCanvas();
+    const clear = vi.fn();
+    const copy = vi.fn();
+    vi.spyOn(visible, "getContext").mockReturnValue({ clearRect: clear, drawImage: copy });
+    const main = createEngine(visible as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    const preview = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, present: "rtt" });
+    handles.push(main, preview);
+    main.setPaused(true);
+    const mainDraw = vi.fn();
+    const previewDraw = vi.fn();
+    main.scene.onAfterRenderObservable.add(mainDraw);
+    preview.scene.onAfterRenderObservable.add(previewDraw);
+    engine.beginFrame();
+    expect(engine.views?.every((view) => !view.enabled)).toBe(true);
+    if (!engine._renderViews()) engine._renderFrame();
+    engine.endFrame();
+    await Promise.resolve();
+    expect(previewDraw).toHaveBeenCalledOnce();
+    expect(mainDraw).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+    expect(copy).not.toHaveBeenCalled();
+    expect(engine.activeView).toBeNull();
+    expect(engine._currentRenderTarget).toBeNull();
+    preview.dispose();
+    expect(engine._renderViews).toBe(nativeDispatch);
+  });
+
   it("waits for the exact RTT canvas copy after engine end-frame", async () => {
     const engine = sharedEngine();
     const loops = vi.spyOn(engine, "runRenderLoop");

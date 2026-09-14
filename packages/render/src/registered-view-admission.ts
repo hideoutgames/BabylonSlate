@@ -2,6 +2,40 @@ import type { AbstractEngine, EngineView } from "@babylonjs/core";
 
 type Admission = { requestedEnabled: boolean; held: boolean };
 const admissions = new WeakMap<EngineView, Admission>();
+const offscreenDispatch = new WeakMap<AbstractEngine, { clients: number; release: () => void }>();
+
+/** Keep the Engine's existing frame callbacks alive when every native copy view is held. */
+export function retainOffscreenFrameDispatch(engine: AbstractEngine): () => void {
+  let owner = offscreenDispatch.get(engine);
+  if (!owner) {
+    const descriptor = Object.getOwnPropertyDescriptor(engine, "_renderViews");
+    const renderViews = engine._renderViews;
+    const dispatch = function (this: AbstractEngine): boolean {
+      const enabled = this.views?.some((view) => view.enabled) ?? false;
+      const rendered = renderViews.call(this);
+      // Babylon 9.20 returns true for a nonempty all-disabled views array,
+      // suppressing _renderFrame entirely. Native dispatch still restores
+      // activeView; returning false lets its ordinary frame loop run once.
+      return enabled && rendered;
+    };
+    engine._renderViews = dispatch;
+    owner = { clients: 0, release: () => {
+      if (engine._renderViews !== dispatch) return;
+      if (descriptor) Object.defineProperty(engine, "_renderViews", descriptor);
+      else Reflect.deleteProperty(engine, "_renderViews");
+    } };
+    offscreenDispatch.set(engine, owner);
+  }
+  owner.clients += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--owner.clients > 0) return;
+    owner.release();
+    offscreenDispatch.delete(engine);
+  };
+}
 
 export function registeredViewIsEnabled(view: EngineView): boolean {
   const admission = admissions.get(view);
