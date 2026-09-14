@@ -1,12 +1,12 @@
 import type { Camera, NodeMaterial, Observer } from "@babylonjs/core";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
-import { Effect } from "@babylonjs/core/Materials/effect";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
+import { normalizeMaterialParameterOverrides } from "@babylonslate/core";
 import type {
   MaterialBuildPlan,
   MaterialDiagnostic,
@@ -42,7 +42,7 @@ class GraphBoundPostProcess extends PostProcess {
     ]) {
       if (!name) continue;
       const key = name + suffix;
-      const source = Effect.ShadersStore[key];
+      const source = ShaderStore.GetShadersStore(this.shaderLanguage)[key];
       if (typeof source === "string") this.shaderSources.set(key, source);
     }
     super.updateEffect(...args);
@@ -52,8 +52,9 @@ class GraphBoundPostProcess extends PostProcess {
     if (this.disposed) return;
     this.disposed = true;
     super.dispose(camera);
+    const store = ShaderStore.GetShadersStore(this.shaderLanguage);
     for (const [key, source] of this.shaderSources) {
-      if (Effect.ShadersStore[key] === source) delete Effect.ShadersStore[key];
+      if (store[key] === source) delete store[key];
     }
     this.shaderSources.clear();
     // Babylon returns early from camera-less disposal before clearing these.
@@ -73,6 +74,7 @@ interface AuthoredPostProcessOptions {
   materialGuid: string;
   document: MaterialDocument | null;
   enabled?: boolean;
+  parameters?: Record<string, MaterialParameterValue>;
   sourceTexture: FrameGraphTextureHandle;
   /** Unscaled scene color determines pass resolution, independent of order. */
   sceneColorTexture: FrameGraphTextureHandle;
@@ -108,6 +110,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     super.disabled = options.enabled === false;
     this.outputTexture =
       options.frameGraph.textureManager.createDanglingHandle();
+    for (const [name, value] of Object.entries(normalizeMaterialParameterOverrides(options.parameters)))
+      this.parameters.set(name, value);
     this.pending = this.replaceDocument(options.document);
   }
 
@@ -272,12 +276,6 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       );
       return;
     }
-    if (this._frameGraph.engine.isWebGPU) {
-      this.fail(
-        "The authored FrameGraph adapter currently requires the GLSL WebGL backend",
-      );
-      return;
-    }
     try {
       const compiled = this.options.library.acquire(
         this._frameGraph.scene,
@@ -303,8 +301,11 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
         this.fail(diagnostics[0]!.message, diagnostics[0]);
         return;
       }
-      for (const [name, value] of this.parameters)
-        this.setParameter(name, value);
+      for (const [name, value] of this.parameters) {
+        if (!this.setParameter(name, value))
+          this.options.onDiagnostic?.({ materialGuid: this.options.materialGuid, code: "material.parameter",
+            message: `Post-process parameter "${name}" is unavailable or has an incompatible value` });
+      }
       this.createPostProcess(compiled.material);
       this.buildObserver = compiled.material.onBuildObservable.add(() => {
         if (!this.disposed && this.generation === generation)
@@ -322,7 +323,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     this.postProcess = new GraphBoundPostProcess(this.name, "", {
       engine: this._frameGraph.engine,
       blockCompilation: true,
-      shaderLanguage: ShaderLanguage.GLSL,
+      shaderLanguage: material.shaderLanguage,
     });
     this.postProcess.externalTextureSamplerBinding = true;
     material.createEffectForPostProcess(this.postProcess);
@@ -407,6 +408,7 @@ export function addAuthoredPostProcessTasks(options: {
         materialGuid: entry.materialGuid,
         document: options.documentFor(entry.materialGuid),
         enabled: entry.enabled,
+        parameters: entry.parameters,
         sourceTexture,
         sceneColorTexture: options.sourceTexture,
         resolutionScale: entry.scalable ? options.resolutionScale : 1,

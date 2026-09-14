@@ -1,13 +1,10 @@
-import type { QualityOverrides, RenderProjectSettings } from "@babylonslate/core";
+import type { QualityOverrides, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Serializable runtime override of one named Material Graph parameter. */
-export type MaterialParameterValue =
-  | { kind: "float"; value: number }
-  | { kind: "color"; value: [number, number, number, number] }
-  | { kind: "texture"; textureAssetGuid: string | null };
+export type { MaterialParameterValue } from "@babylonslate/core";
 
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
@@ -188,6 +185,8 @@ export type ControlMessage =
     }
   | { type: "audioVoiceEnded"; voiceId: string }
   | { type: "sceneLoadingPainted"; sceneAssetGuid: string; sceneLoadId: number }
+  | { type: "sceneLayerLoadingPainted"; layerId: string; layerLoadId: number }
+  | { type: "sceneLayerReady"; layerId: string; layerLoadId: number }
   | { type: "sceneModelsReady"; sceneAssetGuid: string; sceneLoadId: number };
 
 export type DebugColliderPrimitive = {
@@ -433,6 +432,9 @@ export type CommandMessage =
   | { type: "possessCamera"; slotId: number }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneLoadFailed"; sceneAssetGuid: string; sceneLoadId: number; message: string }
+  | { type: "sceneLayerLoading"; layerId: string; assetGuid: string; layerLoadId: number }
+  | { type: "sceneLayerLoadFailed"; layerId: string; layerLoadId: number; message: string }
+  | { type: "sceneLayerRealized"; layerId: string; layerLoadId: number }
   | {
       /** Canonical scene after `changescene` / `ctx.changeScene`. */
       type: "activeScene";
@@ -632,7 +634,7 @@ export type CommandMessage =
       assetGuid: string;
       zOrder: number;
       ownerSceneGuid: string | null;
-      postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+      postProcessStack: ScenePostProcessEntry[];
       layerBounds?: { width: number; height: number };
     }
   | { type: "sceneLayerRemove"; layerId: string }
@@ -640,7 +642,7 @@ export type CommandMessage =
   | {
       type: "sceneLayerPostProcess";
       layerId: string;
-      postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+      postProcessStack: ScenePostProcessEntry[];
     };
 
 export type BridgeHostMessage =

@@ -36,6 +36,10 @@ describe("runtime departing Scene loading", () => {
       runtime.start();
       const world = runtime.getWorld();
       const globalLayer = runtime.createSceneLayer("global")!;
+      const layerLoading = commands.find((command) => command.type === "sceneLayerLoading" && command.layerId === globalLayer.guid);
+      if (layerLoading?.type !== "sceneLayerLoading") throw new Error("Missing layer loading identity");
+      runtime.notifySceneLayerLoadingPainted(globalLayer.guid, layerLoading.layerLoadId);
+      await vi.waitFor(() => expect(world.findActor("global")).toBeDefined());
       const globalActor = world.findActor("global")!;
       const previous = [...world.getActors()].filter((actor) => !actor.sceneLayerId);
       const exit = vi.spyOn(world, "exitActiveScene");

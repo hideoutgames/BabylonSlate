@@ -10,6 +10,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   RawTexture,
+  RenderTargetTexture,
   Scene,
   Texture,
   Vector3,
@@ -17,6 +18,7 @@ import {
 import {
   beginEngineDrawCallFrame,
   compileMaterialPlan,
+  createAppWebGpuEngine,
   readEngineDrawCalls,
   setSceneRenderSettings,
 } from "@babylonslate/render";
@@ -26,21 +28,38 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-export async function runFrameGraphForwardProof() {
+export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "webgl2", output: "backbuffer" | "texture" = "backbuffer") {
   const canvas = document.createElement("canvas");
   canvas.width = 80;
   canvas.height = 64;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, {
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
     preserveDrawingBuffer: true,
     stencil: true,
     disableWebGL2Support: false,
   });
-  const read = async () => {
-    const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
+  const draw = <T>(render: () => T): T => {
+    engine.beginFrame();
+    try { return render(); } finally { engine.endFrame(); }
+  };
+  const read = async (target?: RenderTargetTexture) => {
+    const pixels = target
+      ? await target.readPixels()
+      : await engine.readPixels(0, 0, canvas.width, canvas.height);
+    if (!pixels) throw new Error("Missing rendered pixels");
     return Array.from(
       new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
     );
+  };
+  // Observe the actual retained canvas bitmap, rather than a WebGPU swapchain
+  // texture whose frame lifetime can end while an unrelated RTT is rendering.
+  const readCanvas = () => {
+    const copy = document.createElement("canvas");
+    copy.width = canvas.width;
+    copy.height = canvas.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(canvas, 0, 0);
+    return Array.from(context.getImageData(0, 0, copy.width, copy.height).data);
   };
   const captures = [];
   const lifecycle = [];
@@ -59,6 +78,11 @@ export async function runFrameGraphForwardProof() {
       );
       secondCamera.setTarget(new Vector3(0, 0.2, 0));
       scene.activeCamera = camera;
+      const target = output === "texture"
+        ? new RenderTargetTexture("owned output", { width: 80, height: 64 }, scene, false)
+        : undefined;
+      target?.createDepthStencilTexture();
+      camera.outputRenderTarget = secondCamera.outputRenderTarget = target ?? null;
       new HemisphericLight("fill", Vector3.Up(), scene).intensity = 0.4;
       new DirectionalLight("key", new Vector3(0.4, -1, 0.6), scene).intensity =
         1.4;
@@ -151,14 +175,19 @@ export async function runFrameGraphForwardProof() {
         after++;
         if (scene.activeCamera !== expectedCamera) cameraFailures++;
       });
+      const existingRenderers = scene.objectRenderers.length;
       const coordinator = new ForwardSceneFrameGraph(scene);
-      const capture = async (name: string) => {
+      const capture = async (name: string, beforeTarget?: () => void) => {
         scene.activeCamera = expectedCamera;
         await scene.whenReadyAsync();
         beginEngineDrawCallFrame(engine);
-        scene.render(false);
+        draw(() => {
+          beforeTarget?.();
+          scene.render(false);
+        });
         const classicDraws = readEngineDrawCalls(engine);
-        const classic = await read();
+        const classic = await read(target);
+        engine.restoreDefaultFramebuffer(true);
         beginEngineDrawCallFrame(engine);
         const previousBefore = before;
         const previousAfter = after;
@@ -166,9 +195,17 @@ export async function runFrameGraphForwardProof() {
         const readinessDraws = readEngineDrawCalls(engine);
         if (before !== previousBefore || after !== previousAfter)
           throw new Error("Graph readiness consumed a scene frame");
-        const result = coordinator.render(expectedCamera, false);
+        const result = draw(() => {
+          beforeTarget?.();
+          return coordinator.render(expectedCamera, false);
+        });
         const graphDraws = readEngineDrawCalls(engine);
-        const graph = await read();
+        // A registered view copies this bitmap synchronously at the end of its
+        // admitted frame. WebGPU's private constructor canvas is not persistent
+        // storage across later presentation frames.
+        const visibleSibling = beforeTarget ? readCanvas() : null;
+        const graph = await read(target);
+        engine.restoreDefaultFramebuffer(true);
         captures.push({
           name: `${mode}-${name}`,
           classic,
@@ -178,26 +215,37 @@ export async function runFrameGraphForwardProof() {
           readinessDraws,
           prepared,
           result,
-          width: canvas.width,
-          height: canvas.height,
+          width: target?.getSize().width ?? canvas.width,
+          height: target?.getSize().height ?? canvas.height,
           frames: [before - previousBefore, after - previousAfter],
           frozen: scene.meshes.every(
             (mesh) => mesh.isWorldMatrixFrozen && mesh.material?.isFrozen,
           ),
         });
+        return visibleSibling;
       };
       await capture("surface");
       for (const mesh of scene.meshes) {
         mesh.freezeWorldMatrix();
         mesh.material?.freeze();
       }
+      await new Promise<void>((resolve, reject) =>
+        scene.freezeActiveMeshes(false, resolve, reject),
+      );
       await capture("frozen");
+      // The classic owner retains native submesh queues while active membership
+      // is frozen. After unfreeze, every subsequent capture must use the graph.
+      scene.unfreezeActiveMeshes();
       expectedCamera = secondCamera;
       await capture("camera-switched");
       secondCamera.position.x = -2;
       secondCamera.setTarget(new Vector3(0, 0.2, 0));
       await capture("camera-moved");
       engine.setSize(96, 72);
+      if (target) {
+        target.resize({ width: 96, height: 72 });
+        if (!target.depthStencilTexture) target.createDepthStencilTexture();
+      }
       await capture("resized");
 
       const sibling = new Scene(engine);
@@ -207,25 +255,40 @@ export async function runFrameGraphForwardProof() {
         new Vector3(0, 0, -4),
         sibling,
       );
-      sibling.render(false);
-      const siblingBefore = await read();
-      await capture("after-sibling");
+      draw(() => sibling.render(false));
+      const siblingBefore = target ? readCanvas() : await read();
+      const siblingPreservedDuringTarget = await capture(
+        "after-sibling",
+        target ? () => sibling.render(false) : undefined,
+      );
+      const color = target?.getInternalTexture();
+      const depth = target?.depthStencilTexture;
       coordinator.dispose();
-      const retainedRenderers = scene.objectRenderers.length;
+      const targetReferencesAfter = target ? [color?._references, depth?._references] : null;
+      const targetAfterDispose = target ? await read(target) : null;
+      const classicAfterDispose = target ? (
+        draw(() => scene.render(false)), await read(target)
+      ) : null;
+      // The caller's RTT owns its own ObjectRenderer and must remain usable.
+      const retainedRenderers = scene.objectRenderers.length - existingRenderers;
       const retainedGraphs = scene.frameGraphs.length;
       scene.dispose();
-      sibling.render(false);
+      draw(() => sibling.render(false));
       lifecycle.push({
         mode,
         cameraFailures,
         retainedRenderers,
         retainedGraphs,
         siblingBefore,
-        siblingAfter: await read(),
+        siblingAfter: target ? readCanvas() : await read(),
+        siblingPreservedDuringTarget,
+        targetReferencesAfter,
+        targetAfterDispose,
+        classicAfterDispose,
       });
       sibling.dispose();
     }
-    return { captures, lifecycle, webGLVersion: engine.webGLVersion };
+    return { captures, lifecycle, backend, output, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null };
   } finally {
     engine.dispose();
     canvas.remove();

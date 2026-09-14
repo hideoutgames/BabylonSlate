@@ -101,7 +101,7 @@ describe("cooperative runtime scene realization", () => {
       expect(child.getVariable("parentId")).toBe("actor-39");
       const second = runtime.createSceneLayer("layer");
       expect(second).not.toBeNull();
-      expect(runtime.getWorld().getActors().filter((actor) => actor.sceneLayerId === second!.guid)).toHaveLength(40);
+      await vi.waitFor(() => expect(runtime.getWorld().getActors().filter((actor) => actor.sceneLayerId === second!.guid)).toHaveLength(40));
     } finally { chunks.release(); runtime.stop(); }
   });
 
@@ -148,6 +148,7 @@ describe("cooperative runtime scene realization", () => {
     try {
       await runtime.realizePlayWorld();
       const globalLayer = runtime.createSceneLayer("global")!;
+      await vi.waitFor(() => expect(runtime.getWorld().findActor("global")).toBeDefined());
       runtime.start();
       runtime.tick();
       runtime.getPhysicsSync()!.setActorLinearVelocity("actor-0", { x: 60 });

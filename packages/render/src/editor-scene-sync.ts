@@ -64,6 +64,9 @@ export class EditorSceneSync {
   private pendingApply: AbortController | null = null;
   private realization: Promise<void> | null = null;
   private applyingScene: SerializedScene | null = null;
+  private materialRefreshGeneration: number | null = null;
+  private materialsRefreshable = false;
+  private disposed = false;
 
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
@@ -172,7 +175,9 @@ export class EditorSceneSync {
     this.pendingApply?.abort(new Error("Scene realization was superseded."));
     this.pendingApply = null;
     this.realization = null;
-    ++this.applyGeneration;
+    const generation = ++this.applyGeneration;
+    this.materialRefreshGeneration = null;
+    this.materialsRefreshable = false;
     this.resetModelReadiness();
     this.applyingScene = sceneData;
     try {
@@ -180,8 +185,13 @@ export class EditorSceneSync {
         // Gizmos and other immediate consumers retain synchronous behavior.
         void _progress;
       }
+      while (this.materialRefreshGeneration === generation) {
+        this.materialRefreshGeneration = null;
+        for (const _progress of this.materialRefreshSteps(sceneData)) void _progress;
+      }
+      this.completeApply(sceneData, generation);
     } finally {
-      this.applyingScene = null;
+      if (generation === this.applyGeneration) this.applyingScene = null;
     }
   }
 
@@ -189,6 +199,8 @@ export class EditorSceneSync {
     this.pendingApply?.abort(new Error("Scene realization was superseded."));
     const controller = new AbortController();
     const generation = ++this.applyGeneration;
+    this.materialRefreshGeneration = null;
+    this.materialsRefreshable = false;
     this.resetModelReadiness();
     this.pendingApply = controller;
     const abort = () => controller.abort(options.signal.reason);
@@ -198,10 +210,18 @@ export class EditorSceneSync {
     try {
       // Install the readiness latch before setup, progress callbacks or actor
       // work can fail. Even a pre-aborted replacement owns a failed latch.
-      this.realization = Promise.resolve().then(() => {
+      this.realization = Promise.resolve().then(async () => {
         controller.signal.throwIfAborted();
         const rebuild = options.assets ? this.installAssets(options.assets).rebuild : false;
-        return runSceneWork(this.applySteps(sceneData, rebuild, true), { ...options, signal: controller.signal });
+        const work = { ...options, signal: controller.signal };
+        await runSceneWork(this.applySteps(sceneData, rebuild, true), work);
+        while (this.materialRefreshGeneration === generation) {
+          this.materialRefreshGeneration = null;
+          await runSceneWork(this.materialRefreshSteps(sceneData), work);
+        }
+        controller.signal.throwIfAborted();
+        this.completeApply(sceneData, generation);
+        controller.signal.throwIfAborted();
       });
       await this.realization;
     } finally {
@@ -209,6 +229,7 @@ export class EditorSceneSync {
       if (generation === this.applyGeneration) {
         this.pendingApply = null;
         this.applyingScene = null;
+        this.materialRefreshGeneration = null;
       }
     }
   }
@@ -305,11 +326,46 @@ export class EditorSceneSync {
       if (mesh) freezeStaticActorWorldMatrix(mesh);
       yield 0.94 + 0.05 * ++index / actorCount;
     }
+  }
+
+  private completeApply(sceneData: SerializedScene, generation: number): void {
     this.lastScene = sceneData;
     this.assetsNeedRebuild = false;
     this.onAfterApply?.();
+    if (generation !== this.applyGeneration) return;
+    freezeEditorActiveMeshes(this.scene);
+    this.applyingScene = null;
+    this.materialsRefreshable = true;
+    this.scheduler?.invalidate("asset");
+  }
+
+  /** A material publication belongs to the current load, not a new document edit. */
+  refreshMaterials(): void {
+    if (this.disposed || this.scene.isDisposed || this.pendingApply?.signal.aborted) return;
+    if (this.applyingScene) {
+      this.materialRefreshGeneration = this.applyGeneration;
+      return;
+    }
+    // An aborted/failed apply retains partial roots for the next reconciliation.
+    // Late material publication must not reactivate that partial generation.
+    if (!this.materialsRefreshable || !this.lastScene) return;
+    unfreezeEditorActiveMeshes(this.scene);
+    for (const _progress of this.materialRefreshSteps(this.lastScene)) void _progress;
+    this.onAfterApply?.();
     freezeEditorActiveMeshes(this.scene);
     this.scheduler?.invalidate("asset");
+  }
+
+  private *materialRefreshSteps(sceneData: SerializedScene): Generator<number, void, unknown> {
+    for (const actor of sceneData.actors) {
+      const root = this.meshes.get(actor.id);
+      if (root && !root.isDisposed()) {
+        this.restoreMeshComponentConstruction(actor, root);
+        this.applyModelSlots(actor, root);
+        this.bindActorMeshMaterials(actor, root);
+      }
+      yield 0.99;
+    }
   }
 
   serializedScene(): SerializedScene | null {
@@ -628,6 +684,9 @@ export class EditorSceneSync {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.materialsRefreshable = false;
+    this.materialRefreshGeneration = null;
     this.pendingApply?.abort(new Error("Scene realization was disposed."));
     this.pendingApply = null;
     this.realization = null;

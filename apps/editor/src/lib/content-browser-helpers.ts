@@ -86,7 +86,6 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
 export const ENGINE_BASE_CLASSES = [
   "BObject",
   "Actor",
-  "ComponentLogic",
   "SceneLayerActor",
   "ActorComponent",
   "GameInstance",

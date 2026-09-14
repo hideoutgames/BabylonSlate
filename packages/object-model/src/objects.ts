@@ -1,6 +1,8 @@
 import {
   identityTransform,
   newGuid,
+  normalizeScenePostProcessStack,
+  type ScenePostProcessEntry,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   type Guid,
   type InputKey,
@@ -138,25 +140,18 @@ export class Actor extends BObject {
     }
     component.owner = this;
     this.components.push(component);
-    component.callOnCreation();
+    if (this.world) component.callOnCreation();
   }
 }
 
 export class ActorComponent extends BObject {
   private materialObject: MaterialObject | null = null;
-  logic: ComponentLogic | null = null;
+  private creationCalled = false;
 
-  override callOnTick(ctx: TickContext): void {
-    super.callOnTick(ctx);
-    if (!this.destroyed) this.logic?.callOnTick(ctx);
-  }
-
-  override callOnDestroyed(): void {
-    if (this.logic && !this.logic.destroyed) {
-      this.logic.destroyed = true;
-      this.logic.callOnDestroyed();
-    }
-    super.callOnDestroyed();
+  override callOnCreation(): void {
+    if (this.creationCalled || this.destroyed || !this.owner?.world) return;
+    this.creationCalled = true;
+    super.callOnCreation();
   }
   private materialRevision = 0;
   owner: Actor | null = null;
@@ -242,21 +237,6 @@ export class ActorComponent extends BObject {
   }
 }
 
-/** One authored logic instance owned by a Logic Component. */
-export class ComponentLogic extends BObject {
-  readonly component: ActorComponent;
-  constructor(component: ActorComponent, options: ConstructorParameters<typeof BObject>[0]) {
-    super(options);
-    this.component = component;
-  }
-  override getVariable(name: string): unknown {
-    return name === "component" ? this.component : super.getVariable(name);
-  }
-  override setVariable(name: string, value: unknown): void {
-    if (name !== "component") super.setVariable(name, value);
-  }
-}
-
 /** Engine-neutral reference to one mesh component's current material instance. */
 export class MaterialObject extends BObject {
   readonly component: ActorComponent;
@@ -290,7 +270,7 @@ export class SceneLayer extends BObject {
   assetGuid: string;
   zOrder: number;
   ownerSceneGuid: string | null;
-  postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+  postProcessStack: ScenePostProcessEntry[];
   layerBounds: { width: number; height: number };
 
   constructor(options: {
@@ -300,7 +280,7 @@ export class SceneLayer extends BObject {
     assetGuid: string;
     zOrder: number;
     ownerSceneGuid?: string | null;
-    postProcessStack?: Array<{ materialGuid: string; enabled: boolean }>;
+    postProcessStack?: ScenePostProcessEntry[];
     layerBounds?: { width: number; height: number };
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
@@ -315,7 +295,7 @@ export class SceneLayer extends BObject {
     this.assetGuid = options.assetGuid;
     this.zOrder = options.zOrder;
     this.ownerSceneGuid = options.ownerSceneGuid ?? null;
-    this.postProcessStack = [...(options.postProcessStack ?? [])];
+    this.postProcessStack = normalizeScenePostProcessStack(options.postProcessStack);
     this.layerBounds = {
       width: options.layerBounds?.width && options.layerBounds.width > 0
         ? options.layerBounds.width

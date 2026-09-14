@@ -4,6 +4,7 @@ import {
   Mesh,
   NullEngine,
   Scene,
+  ShaderMaterial,
   Texture,
   TextureBlock,
 } from "@babylonjs/core";
@@ -198,6 +199,11 @@ describe("material parameter bindings", () => {
     const scene = host();
     const first = new Texture(null, scene);
     const second = new Texture(null, scene);
+    const sibling = new ShaderMaterial("sibling", scene, "color", {});
+    sibling.setTexture("shared", second);
+    let borrowedDisposals = 0;
+    first.onDisposeObservable.add(() => { borrowedDisposals++; });
+    second.onDisposeObservable.add(() => { borrowedDisposals++; });
     const doc = parameterDocument();
     doc.nodes.push(
       {
@@ -274,6 +280,13 @@ describe("material parameter bindings", () => {
     expect(bound).not.toBe(second);
     expect(bound).not.toBeNull();
     expect(bound!.getSize()).toMatchObject({ width: 1, height: 1 });
+    let emptyDisposals = 0;
+    bound!.onDisposeObservable.add(() => { emptyDisposals++; });
+    expect(() => compiled.dispose()).not.toThrow();
+    compiled.dispose();
+    expect(emptyDisposals).toBe(1);
+    expect(borrowedDisposals).toBe(0);
+    expect(sibling.hasTexture(second)).toBe(true);
   });
 });
 

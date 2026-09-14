@@ -262,7 +262,7 @@ describe("SceneLayer runtime compositor", () => {
       ...overlayLayer(),
       settings: {
         ...overlayLayer().settings,
-        postProcessStack: [{ materialGuid: "bloom", enabled: true }],
+        postProcessStack: [{ id: "bloom-pass", materialGuid: "bloom", enabled: true, scalable: true }],
       },
       actors: [
         createActor("banner", "Banner", {
@@ -288,8 +288,11 @@ describe("SceneLayer runtime compositor", () => {
     runtime.realizePlayWorld();
     const layer = runtime.createSceneLayer("hud", 4)!;
     expect(layer.postProcessStack).toEqual([
-      { materialGuid: "bloom", enabled: true },
+      { id: "bloom-pass", materialGuid: "bloom", enabled: true, scalable: true },
     ]);
+    expect(commands.find((command) => command.type === "sceneLayerCreate")).toMatchObject({
+      postProcessStack: [{ id: "bloom-pass", materialGuid: "bloom", enabled: true, scalable: true }],
+    });
     expect(
       commands.some(
         (command) =>
@@ -326,8 +329,12 @@ describe("SceneLayer runtime compositor", () => {
     ]);
     runtime.unregisterSceneLayerPostProcess(layer.guid, "bloom");
     expect(layer.postProcessStack).toEqual([
-      { materialGuid: "vignette", enabled: true },
+      { id: expect.any(String), materialGuid: "vignette", enabled: true },
     ]);
+    const removedId = layer.postProcessStack[0]!.id;
+    runtime.unregisterSceneLayerPostProcess(layer.guid, "vignette");
+    runtime.registerSceneLayerPostProcess(layer.guid, "vignette");
+    expect(layer.postProcessStack[0]!.id).not.toBe(removedId);
   });
 
   it("skips disabled scene-owned layers and remints actor guids for a second instance", () => {

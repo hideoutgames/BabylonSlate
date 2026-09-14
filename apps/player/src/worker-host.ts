@@ -23,10 +23,12 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
   const commandHandlers: Array<(command: CommandMessage) => void> = [];
   const snapshotHandlers: Array<(buffer: Float32Array) => void> = [];
   let installedGeneration = 0;
+  let stopped = false;
   const post = (message: BridgeHostMessage, transfer?: Transferable[]) => {
     worker.postMessage(message, transfer ?? []);
   };
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
+    if (stopped) return;
     const msg = event.data;
     if (msg.channel === "command") {
       if (msg.payload.type === "snapshotLayout") {
@@ -59,6 +61,13 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
     onSnapshot: (handler) => {
       snapshotHandlers.push(handler);
     },
-    terminate: () => worker.terminate(),
+    terminate: () => {
+      if (stopped) return;
+      stopped = true;
+      worker.onmessage = null;
+      commandHandlers.length = 0;
+      snapshotHandlers.length = 0;
+      worker.terminate();
+    },
   };
 }
