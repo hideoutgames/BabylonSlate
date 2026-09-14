@@ -1,6 +1,7 @@
 import {
   AddBlock,
   BonesBlock,
+  ClampBlock,
   InstancesBlock,
   MorphTargetsBlock,
   Constants,
@@ -13,12 +14,13 @@ import {
   MeshBuilder,
   ParticleSystem,
   NodeMaterial,
+  ShaderLanguage,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   NodeMaterialSystemValues,
   PBRMetallicRoughnessBlock,
-  ReflectionBlock,
   RemapBlock,
+  ScaleBlock,
   TransformBlock,
   VectorMergerBlock,
   Vector3,
@@ -58,8 +60,12 @@ import {
 import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
+import { retainEnvironmentSample } from "./environment-lighting";
+import { EnvironmentSampleBlock } from "./environment-sample-block";
+import { SceneReflectionBlock } from "./scene-reflection-block";
 import { FlatNormalBlock } from "./flat-normal-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
+import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
@@ -117,6 +123,7 @@ export function nodeMaterialTexturesSampleReady(
   material: NodeMaterial,
 ): boolean {
   for (const block of material.attachedBlocks) {
+    if (block instanceof EnvironmentSampleBlock && !block.isReady()) return false;
     const textured = block as { texture?: Texture | null };
     if (!textured.texture) continue;
     if (!isGpuTextureSampleReady(textured.texture)) return false;
@@ -179,7 +186,11 @@ export function compileMaterialPlan(
   const { scene } = options;
   const cacheableShadowShape = plan.domain === "surface" && plan.blendMode === "opaque" &&
     plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
-  const material = new NodeMaterial(options.name, scene);
+  const material = new NodeMaterial(options.name, scene, {
+    shaderLanguage: scene.getEngine().isWebGPU
+      ? ShaderLanguage.WGSL
+      : ShaderLanguage.GLSL,
+  });
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
     plan.domain === "postProcess"
@@ -217,6 +228,7 @@ export function compileMaterialPlan(
   // Engine-owned plumbing must exist before operations so nodes such as World
   // Normal and Screen UV read the real transformed values.
   try {
+    if (material.mode === NodeMaterialModes.Particle) prepareNodeMaterialParticleBindings(material);
     if (plan.domain === "postProcess") {
       outputNodes.push(
         ...createPostProcessPlumbing(options.name, created, plumbing),
@@ -324,6 +336,10 @@ export function compileMaterialPlan(
         severity: "error",
         nodeId: anchorNodeId(operation),
       });
+      return false;
+    }
+    if (operation.nodeType === "input.environmentSample" && !scene.getEngine().isWebGPU && !scene.getEngine().getCaps().textureLOD) {
+      diagnostics.push({ code: "material.capability", message: "Environment Sample requires explicit cube mip sampling (WebGL2 or WebGPU).", severity: "error", nodeId: anchorNodeId(operation) });
       return false;
     }
 
@@ -621,6 +637,10 @@ export function compileMaterialPlan(
     });
   }
   try {
+    if (plan.operations.some((operation) => operation.nodeType === "input.environmentSample")) {
+      const release = retainEnvironmentSample(scene, material);
+      material.onDisposeObservable.addOnce(release);
+    }
     material.build();
   } catch (error) {
     buildError =
@@ -1138,7 +1158,7 @@ function attachSurfaceShading(
   const pbr = new PBRMetallicRoughnessBlock(`${options.name}_pbr`);
   pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
   pbr.alpha.connectTo(fragment.a);
-  const reflection = new ReflectionBlock(`${options.name}_reflection`);
+  const reflection = new SceneReflectionBlock(`${options.name}_reflection`);
   plumbing.position?.connectTo(reflection.position);
   plumbing.world?.connectTo(reflection.world);
   reflection.reflection.connectTo(pbr.reflection);
@@ -1181,14 +1201,29 @@ function attachSurfaceShading(
   const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
   if (opacity) opacity.connectTo(pbr.opacity);
 
-  if (emissive) {
+  const environmentOperand = plan.outputs.environmentInfluence;
+  const customEnvironment = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1);
+  if (emissive || customEnvironment) {
     // These are the linear contributions supported by our surface compiler.
     // pbr.lighting has already passed through image processing and must not be
     // used for an additive linear emissive contribution.
     const diffuse = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
     const lit = addColor(diffuse, pbr.specularDir, "litColor");
-    const indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
-    const color = addColor(addColor(lit, indirect, "totalLighting"), emissive, "surfaceEmission");
+    let indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
+    if (customEnvironment) {
+      const influence = outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)!;
+      const clamp = new ClampBlock(`${options.name}_environmentInfluenceClamp`);
+      clamp.minimum = 0;
+      clamp.maximum = 1;
+      const scale = new ScaleBlock(`${options.name}_environmentInfluenceScale`);
+      created.push(clamp, scale);
+      influence.connectTo(clamp.value);
+      clamp.output.connectTo(scale.factor);
+      indirect.connectTo(scale.input);
+      indirect = scale.output;
+    }
+    const lighting = addColor(lit, indirect, "totalLighting");
+    const color = emissive ? addColor(lighting, emissive, "surfaceEmission") : lighting;
     const imageProcessing = new LinearSurfaceImageProcessingBlock(
       `${options.name}_imageProcessing`,
     );

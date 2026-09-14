@@ -72,6 +72,7 @@ export {
   attachSerializedComponents,
   runtimeTransformFromSerialized,
   type SceneActorHooks,
+  createActorFromSerialized,
 } from "./instantiate-scene";
 export {
   createWorldSnapshot,

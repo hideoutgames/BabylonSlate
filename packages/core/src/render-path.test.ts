@@ -120,12 +120,17 @@ describe("rendering pipeline contract", () => {
     expect(normalizeScene({}).settings).not.toHaveProperty("renderPath");
   });
 
-  it.each([
-    { renderPath: "auto", gpuBackend: "auto" },
-    { renderPath: "clusteredForward", gpuBackend: "webgpu" },
-  ] as const)(
-    "reports unavailable renderer requests without activating them: %j",
-    (requested) => {
+  it("resolves Auto deterministically without treating Auto itself as unavailable", () => {
+    const result = resolveRenderingPipeline({ renderPath: "auto", gpuBackend: "auto" });
+    expect(result).toEqual({
+      requested: { renderPath: "auto", gpuBackend: "auto" },
+      effective: { renderPath: "forward", gpuBackend: "webgl2" },
+      limits: [],
+    });
+  });
+
+  it("reports unavailable renderer requests without activating them", () => {
+      const requested = { renderPath: "clusteredForward", gpuBackend: "webgpu" } as const;
       const saved = { ...requested };
       const result = resolveRenderingPipeline(requested);
       expect(result.requested).toEqual(saved);
@@ -135,7 +140,7 @@ describe("rendering pipeline contract", () => {
         gpuBackend: "webgl2",
       });
       expect(result.limits).toEqual([
-        expect.stringContaining("ClusteredForward"),
+        expect.stringContaining("Clustered Forward"),
         expect.stringContaining("WebGPU"),
       ]);
       expect(
@@ -144,6 +149,17 @@ describe("rendering pipeline contract", () => {
           gpuBackend: "webgl2",
         }).limits,
       ).toEqual([]);
-    },
-  );
+  });
+
+  it("reports the initialized backend and its fallback reason without rewriting preferences", () => {
+    const requested = { gpuBackend: "webgpu" as const };
+    const active = resolveRenderingPipeline(requested, undefined, undefined, undefined, { gpuBackend: "webgpu" });
+    expect(active.effective.gpuBackend).toBe("webgpu");
+    expect(active.limits).toEqual([]);
+    const fallback = resolveRenderingPipeline(requested, undefined, undefined, undefined,
+      { gpuBackend: "webgl2", reason: "Material uses Custom GLSL." });
+    expect(fallback.requested.gpuBackend).toBe("webgpu");
+    expect(fallback.effective.gpuBackend).toBe("webgl2");
+    expect(fallback.limits).toEqual(["Material uses Custom GLSL."]);
+  });
 });

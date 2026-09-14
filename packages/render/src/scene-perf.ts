@@ -16,6 +16,7 @@ import { prewarmMaterial } from "./material-compiler";
 import { isEngineDefaultMaterial } from "./default-material";
 import { actorVisualFingerprint } from "./scene-loader";
 import { syncSceneLighting } from "./scene-lighting";
+import { isEnvironmentLightingReady } from "./environment-lighting";
 
 /** Fast large-scene lookups (§2.4). Babylon 9 defaults these on; pass them explicitly. */
 export const SCENE_LOOKUP_MAPS: SceneOptions = {
@@ -290,7 +291,7 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
   if (scene.isDisposed) return false;
   return withSceneReadinessState(scene, () => {
     const engine = scene.getEngine();
-    let ready = scene.getWaitingItemsCount() === 0;
+    let ready = scene.getWaitingItemsCount() === 0 && isEnvironmentLightingReady(scene);
     scene.prePassRenderer?.update();
     if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer && !scene.depthPeelingRenderer.isReady()) ready = false;
     const renderTargets = new Set([...scene.customRenderTargets, ...targets]);

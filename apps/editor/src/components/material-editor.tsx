@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isEnvironmentTexturePayload } from "@babylonslate/assets";
 import { MessageDetails } from "./message-details";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 import { GlslCodePreview } from "./glsl-code-preview";
@@ -244,7 +245,10 @@ function useMaterialFunctionDocument(): {
 function useTextureExists(): (guid: string) => boolean {
   const { assetRegistry } = useDocuments();
   return useCallback(
-    (guid: string) => assetRegistry?.getByGuid(guid)?.header.type === "Texture",
+    (guid: string) => {
+      const header = assetRegistry?.getByGuid(guid)?.header;
+      return header?.type === "Texture" && !isEnvironmentTexturePayload(header.payload);
+    },
     [assetRegistry],
   );
 }
@@ -853,7 +857,7 @@ function MaterialNodeDetails({
   }
 
   const textureAssets = (assetRegistry?.list() ?? [])
-    .filter((asset) => asset.header.type === "Texture")
+    .filter((asset) => asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload))
     .map((asset) => ({
       guid: asset.header.guid,
       name: asset.header.name,

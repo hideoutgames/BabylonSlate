@@ -2,6 +2,7 @@ import "./texture-quality";
 import { syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
 import { clusteredLightingLimits, syncClusteredLightPolicy } from "./clustered-light-policy";
+import { sceneRenderingSettings } from "./render-settings";
 import {
   Material,
   NodeMaterial,
@@ -75,7 +76,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
-    admission = syncForwardLightPolicy(scene, budget.slots);
+    admission = syncForwardLightPolicy(scene, budget.slots, sceneRenderingSettings(scene).localLightBudget);
     nextEnabled.length = 0;
     nextShadowLayout.length = 0;
     for (const light of scene.lights) {
@@ -169,7 +170,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     limits: () =>
       admission.limited.length
         ? [
-            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved). Limited: ${admission.limited
+            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${sceneRenderingSettings(scene).localLightBudget} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved). Limited: ${admission.limited
               .slice(0, 16)
               .map((light) => light.name)
               .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`,

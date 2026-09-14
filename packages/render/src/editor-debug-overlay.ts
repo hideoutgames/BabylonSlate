@@ -393,9 +393,8 @@ export class EditorDebugOverlay {
       const { width, height } = texture.getSize();
       canvas.width = width;
       canvas.height = height;
-      const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
       ctx.putImageData(
-        new ImageData(flipReadPixelsRgba(bytes, width, height), width, height),
+        new ImageData(flipReadPixelsRgba(buffer, width, height), width, height),
         0,
         0,
       );

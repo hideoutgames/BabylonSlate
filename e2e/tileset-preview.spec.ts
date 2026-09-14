@@ -173,7 +173,7 @@ test(
 
 test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async ({
   page,
-}) => {
+}, testInfo) => {
   const files = await atlasFiles(page, 64, 64, true);
   const tilemap = createDefaultTilemapPayload();
   tilemap.tilesetGuid = tilesetGuid;
@@ -227,6 +227,39 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
   await openMinimalTestProject(page, files);
   await openMainScene(page);
   await expectGreenIllumination(page.getByTestId("viewport-canvas"));
+  const upload = await page.evaluate(() =>
+    (
+      window as unknown as {
+        __babylonslateViewportTest: {
+          renderingBaseline(): {
+            estimatedTextureBytes: number;
+            glInfo: { renderer: string };
+            ktx2Uploads: Array<{ format: number; type: number; mips: boolean }>;
+          };
+        };
+      }
+    ).__babylonslateViewportTest.renderingBaseline(),
+  );
+  expect(upload.ktx2Uploads.length).toBeGreaterThan(0);
+  if (
+    /swiftshader|llvmpipe|softpipe|microsoft basic render|\bsoftware\b/i.test(
+      upload.glInfo.renderer,
+    )
+  ) {
+    // The encoded 64x64 RGBA atlas uploads all seven levels (21844 bytes),
+    // even though Tilemap uses a no-mip sampling policy. This also excludes
+    // the previous fixed-ASTC estimate and last-mip-only fallback estimate.
+    expect(
+      upload.ktx2Uploads.every(
+        (texture) => texture.format === 5 && texture.type === 0 && texture.mips,
+      ),
+    ).toBe(true);
+    expect(upload.estimatedTextureBytes).toBeGreaterThanOrEqual(21844);
+  }
+  await testInfo.attach("ktx2-upload", {
+    body: JSON.stringify(upload),
+    contentType: "application/json",
+  });
   await clickPlayAndWaitForOverlay(page);
   await expectGreenIllumination(page.getByTestId("play-canvas"));
   await page.getByTestId("play-overlay-close").click();

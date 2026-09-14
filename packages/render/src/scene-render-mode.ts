@@ -13,6 +13,7 @@ import {
 } from "./render-settings";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { syncSceneLighting } from "./scene-lighting";
+import { syncEnvironmentLighting } from "./environment-lighting";
 
 const controllers = new WeakMap<Scene, () => void>();
 
@@ -24,6 +25,7 @@ export function setSceneRenderSettings(
   shadowOverrides?: ShadowOverrides,
 ): void {
   updateSceneRenderingSettings(scene, project, overrides, shadowOverrides);
+  syncEnvironmentLighting(scene);
   let sync = controllers.get(scene);
   if (!sync) {
     const replacements = new Map<Material, Material>();

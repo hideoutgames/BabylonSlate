@@ -31,15 +31,21 @@ export async function spillRecordedTraceDocument(options: {
   };
 }
 
-/** Finalize an in-flight recorder, then stop Play so `lastTrace` is populated. */
+/** Finalize an in-flight recorder, with a bounded wait if its Worker is unavailable. */
 export async function finishPlaySessionWithTrace(options: {
   executeConsoleCommand: (line: string) => Promise<unknown>;
   stop: () => PlaySessionResult;
 }): Promise<PlaySessionResult> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
-    await options.executeConsoleCommand("snapshot stop");
+    await Promise.race([
+      options.executeConsoleCommand("snapshot stop"),
+      new Promise<void>((resolve) => { timeout = setTimeout(resolve, 2_000); }),
+    ]);
   } catch {
     // Worker may already be gone; in-process `stop()` still finalizes.
+  } finally {
+    clearTimeout(timeout);
   }
   return options.stop();
 }

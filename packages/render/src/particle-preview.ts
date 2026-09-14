@@ -1,6 +1,6 @@
 import {
   NodeMaterialModes,
-  type Engine,
+  type AbstractEngine,
   type NodeMaterial,
   type Scene,
   type Texture,
@@ -29,7 +29,7 @@ import {
  * The preview primitive is hidden so only billboard quads are visible.
  */
 export function createParticlePreviewScene(
-  engine: Engine,
+  engine: AbstractEngine,
   options?: { skybox?: boolean },
 ): MaterialPreviewScene {
   const host = createMaterialPreviewScene(engine);

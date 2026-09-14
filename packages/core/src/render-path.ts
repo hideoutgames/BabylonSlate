@@ -50,7 +50,7 @@ export function normalizeRenderPathOverrides(
 
 export interface ResolvedRenderingPipeline {
   requested: RenderingPipelineSettings;
-  effective: { renderPath: "forward"; gpuBackend: "webgl2" };
+  effective: { renderPath: "forward"; gpuBackend: "webgl2" | "webgpu" };
   limits: string[];
 }
 
@@ -64,6 +64,7 @@ export function resolveRenderingPipeline(
   scene?: RenderPathOverrides,
   local?: RenderPathOverrides,
   session?: RenderPathOverrides,
+  backend?: { gpuBackend: "webgl2" | "webgpu"; reason?: string },
 ): ResolvedRenderingPipeline {
   const requested = {
     ...normalizeRenderingPipeline(project),
@@ -72,15 +73,16 @@ export function resolveRenderingPipeline(
     ...normalizeRenderPathOverrides(session),
   };
   const limits: string[] = [];
-  if (requested.renderPath !== "forward") {
-    limits.push("ClusteredForward is not implemented; using Forward.");
+  if (requested.renderPath === "clusteredForward") {
+    limits.push("Clustered Forward is unavailable; using Forward.");
   }
-  if (requested.gpuBackend !== "webgl2") {
-    limits.push("WebGPU is not implemented; using WebGL2.");
+  if (backend?.reason) limits.push(backend.reason);
+  else if (!backend && requested.gpuBackend === "webgpu") {
+    limits.push("WebGPU is not active; using WebGL2.");
   }
   return {
     requested,
-    effective: { renderPath: "forward", gpuBackend: "webgl2" },
+    effective: { renderPath: "forward", gpuBackend: backend?.gpuBackend ?? "webgl2" },
     limits,
   };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import {
   DEFAULT_SKYBOX_SIZE,
   SKYBOX_FACE_KEYS,
@@ -35,7 +35,7 @@ export function SkyboxCreatorPreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const [engine, setEngine] = useState<Engine | null>(null);
+  const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const faceKey = SKYBOX_FACE_KEYS.map((key) => facePngs[key]?.byteLength ?? 0).join(",");
 
   useEffect(() => {

@@ -1,103 +1,169 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BackendEngineSession, BackendEngineSessionOptions } from "@babylonslate/render";
+const { createSession } = vi.hoisted(() => ({ createSession: vi.fn() }));
+vi.mock("@babylonslate/render", () => ({ createBackendEngineSession: createSession }));
+import { createProjectEngineController, createProjectEngineSession, type ProjectEngineRequest } from "./project-engine";
 
-const { createAppEngineMock, releaseResourceCacheForEngineMock } = vi.hoisted(
-  () => {
-    const createAppEngineMock = vi.fn((canvas: HTMLCanvasElement) => {
-      return {
-        canvas,
-        isDisposed: false,
-        dispose() {
-          this.isDisposed = true;
-        },
-      };
+function request(backend: ProjectEngineRequest["backend"] = "webgl2"): ProjectEngineRequest {
+  return { projectGuid: "project", backend, prepare: async () => undefined };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+describe("project Engine transitions", () => {
+  const sessions: BackendEngineSession[] = [];
+  beforeEach(() => {
+    vi.resetAllMocks();
+    createSession.mockImplementation(async (options: BackendEngineSessionOptions) => {
+      const canvas = options.createCanvas();
+      canvas.style.display = "block";
+      const engine = { isDisposed: false };
+      const session = {
+        engine,
+        requestedBackend: options.requestedBackend,
+        effectiveBackend: options.requestedBackend === "webgpu" ? "webgpu" : "webgl2",
+        dispose: vi.fn(() => { engine.isDisposed = true; options.releaseCanvas(canvas); }),
+      } as unknown as BackendEngineSession;
+      sessions.push(session);
+      return session;
     });
-    const releaseResourceCacheForEngineMock = vi.fn();
-    return { createAppEngineMock, releaseResourceCacheForEngineMock };
-  },
-);
-
-vi.mock("@babylonslate/render", () => ({
-  createAppEngine: createAppEngineMock,
-  releaseResourceCacheForEngine: releaseResourceCacheForEngineMock,
-}));
-
-import {
-  createProjectEngineController,
-  createProjectEngineSession,
-} from "./project-engine";
-
-describe("createProjectEngineSession", () => {
+  });
   afterEach(() => {
-    createAppEngineMock.mockClear();
-    releaseResourceCacheForEngineMock.mockClear();
+    for (const session of sessions.splice(0)) session.dispose();
     document.body.replaceChildren();
   });
 
-  it("creates an Engine on a hidden tagged canvas", () => {
-    const session = createProjectEngineSession();
-    expect(session).not.toBeNull();
-    expect(createAppEngineMock).toHaveBeenCalledTimes(1);
-    const canvas = createAppEngineMock.mock.calls[0][0];
+  it("keeps the constructor canvas hidden after async initialization and releases it on close", async () => {
+    const session = await createProjectEngineSession("webgpu", new AbortController().signal);
+    const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="project-engine-canvas"]')!;
     expect(canvas.isConnected).toBe(true);
     expect(canvas.style.display).toBe("none");
-    expect(canvas.getAttribute("data-testid")).toBe("project-engine-canvas");
-    session?.dispose();
-  });
-
-  it("keeps the constructor canvas hidden after Engine construction", () => {
-    createAppEngineMock.mockImplementationOnce((canvas: HTMLCanvasElement) => {
-      canvas.style.display = "block";
-      canvas.style.touchAction = "none";
-      return {
-        canvas,
-        isDisposed: false,
-        dispose() {
-          this.isDisposed = true;
-        },
-      };
-    });
-    const session = createProjectEngineSession();
-    const canvas = createAppEngineMock.mock.calls[0][0];
-    expect(canvas.style.display).toBe("none");
-    session?.dispose();
-  });
-
-  it("releases the resource cache, disposes the Engine, and removes the canvas", () => {
-    const session = createProjectEngineSession();
-    const engine = session!.engine;
-    const canvas = createAppEngineMock.mock.calls[0][0];
-    session!.dispose();
-    expect(releaseResourceCacheForEngineMock).toHaveBeenCalledWith(engine);
-    expect(engine.isDisposed).toBe(true);
+    session.dispose();
     expect(canvas.isConnected).toBe(false);
   });
-});
 
-describe("createProjectEngineController", () => {
-  afterEach(() => {
-    createAppEngineMock.mockClear();
-    releaseResourceCacheForEngineMock.mockClear();
-    document.body.replaceChildren();
+  it("reuses a live session and does not allocate for a closed project", async () => {
+    const host = createProjectEngineController();
+    await host.sync(null);
+    expect(createSession).not.toHaveBeenCalled();
+    await host.sync(request());
+    const first = host.getSnapshot().session;
+    await host.sync(request());
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(host.getSnapshot().session).toBe(first);
+    await host.sync(null);
+    expect(first?.engine.isDisposed).toBe(true);
+    expect(host.getSnapshot()).toEqual({ phase: "idle", session: null });
   });
 
-  it("creates once while a project is open and disposes when it closes", () => {
+  it("detaches clients before preparation and releases the old Engine before allocating its replacement", async () => {
     const host = createProjectEngineController();
-    const first = host.sync(true);
-    const second = host.sync(true);
-    expect(first).toBe(second);
-    expect(createAppEngineMock).toHaveBeenCalledTimes(1);
-    expect(host.sync(false)).toBeNull();
-    expect(first?.isDisposed).toBe(true);
-    expect(releaseResourceCacheForEngineMock).toHaveBeenCalledTimes(1);
-    const third = host.sync(true);
-    expect(third).not.toBe(first);
-    expect(createAppEngineMock).toHaveBeenCalledTimes(2);
-    host.dispose();
+    await host.sync(request());
+    const first = host.getSnapshot().session!;
+    const paint = deferred<string | undefined>();
+    const next = host.sync({ ...request("webgpu"), prepare: () => paint.promise });
+    expect(host.getSnapshot()).toEqual({ phase: "preparing", session: null });
+    expect(first.engine.isDisposed).toBe(false);
+    expect(createSession).toHaveBeenCalledTimes(1);
+    const factory = createSession.getMockImplementation()!;
+    createSession.mockImplementationOnce((options) => {
+      expect(first.engine.isDisposed).toBe(true);
+      return factory(options);
+    });
+    paint.resolve(undefined);
+    await next;
+    expect(host.getSnapshot().session?.effectiveBackend).toBe("webgpu");
+    expect(document.querySelectorAll('[data-testid="project-engine-canvas"]')).toHaveLength(1);
+    await host.sync(null);
   });
 
-  it("does not create an Engine when no project is open", () => {
+  it("waits for uncancellable initialization and disposes its stale result before the latest request", async () => {
     const host = createProjectEngineController();
-    expect(host.sync(false)).toBeNull();
-    expect(createAppEngineMock).not.toHaveBeenCalled();
+    const device = deferred<BackendEngineSession>();
+    const first = { engine: { isDisposed: false }, dispose: vi.fn() } as unknown as BackendEngineSession;
+    createSession.mockImplementationOnce(() => device.promise);
+    const published: Array<BackendEngineSession | null> = [];
+    const unsubscribe = host.subscribe(() => published.push(host.getSnapshot().session));
+    const old = host.sync(request("webgpu"));
+    await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    const latest = host.sync(request("webgl2"));
+    expect(createSession).toHaveBeenCalledTimes(1);
+    const factory = createSession.getMockImplementation()!;
+    createSession.mockImplementationOnce((options) => {
+      expect(first.dispose).toHaveBeenCalledTimes(1);
+      return factory(options);
+    });
+    device.resolve(first);
+    await Promise.all([old, latest]);
+    expect(published).not.toContain(first);
+    expect(host.getSnapshot().session?.effectiveBackend).toBe("webgl2");
+    unsubscribe();
+    await host.sync(null);
+  });
+
+  it("keeps failed initialization unready and retries explicitly", async () => {
+    const host = createProjectEngineController();
+    const failure = new Error("Initialization failed");
+    createSession.mockRejectedValueOnce(failure);
+    await host.sync(request());
+    expect(host.getSnapshot()).toEqual({ phase: "failed", session: null, error: failure });
+    await host.sync(request());
+    expect(createSession).toHaveBeenCalledTimes(1);
+    await host.sync(request(), true);
+    expect(host.getSnapshot().phase).toBe("ready");
+    await host.sync(null);
+  });
+
+  it("closes during preparation without creating an Engine and permits a later project", async () => {
+    const host = createProjectEngineController();
+    const paint = deferred<string | undefined>();
+    const pending = host.sync({ ...request(), prepare: () => paint.promise });
+    await Promise.resolve();
+    const closed = host.sync(null);
+    paint.resolve(undefined);
+    await Promise.all([pending, closed]);
+    expect(createSession).not.toHaveBeenCalled();
+    await host.sync({ ...request(), projectGuid: "next-project" });
+    expect(host.getSnapshot().phase).toBe("ready");
+    await host.sync(null);
+  });
+
+  it("quarantines failed outgoing cleanup across Retry and project reopen", async () => {
+    const host = createProjectEngineController();
+    await host.sync(request());
+    const outgoing = host.getSnapshot().session!;
+    const dispose = vi.mocked(outgoing.dispose);
+    dispose.mockImplementationOnce(() => { throw new Error("GPU cleanup failed"); });
+    await host.sync(request("webgpu"));
+    expect(host.getSnapshot()).toMatchObject({ phase: "failed", session: null, retryable: false });
+    await host.sync(request("webgpu"), true);
+    await host.sync(null);
+    await host.sync({ ...request(), projectGuid: "another-project" });
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(host.getSnapshot().error).toBeInstanceOf(Error);
+  });
+
+  it("does not allocate after stale initialization cleanup or factory cleanup fails", async () => {
+    const host = createProjectEngineController();
+    const device = deferred<BackendEngineSession>();
+    createSession.mockImplementationOnce(() => device.promise);
+    const old = host.sync(request("webgpu"));
+    await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    const next = host.sync(request());
+    device.resolve({ dispose: () => { throw new Error("Stale Engine cleanup failed"); } } as unknown as BackendEngineSession);
+    await Promise.all([old, next]);
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(host.getSnapshot()).toMatchObject({ phase: "failed", retryable: false });
+
+    const failedFactory = createProjectEngineController();
+    createSession.mockRejectedValueOnce(new AggregateError([new Error("Partial device cleanup failed")]));
+    await failedFactory.sync(request("webgpu"));
+    await failedFactory.sync(request(), true);
+    expect(createSession).toHaveBeenCalledTimes(2);
+    expect(failedFactory.getSnapshot()).toMatchObject({ phase: "failed", retryable: false });
   });
 });

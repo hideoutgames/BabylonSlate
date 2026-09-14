@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Engine, Texture } from "@babylonjs/core";
+import type { AbstractEngine, Texture } from "@babylonjs/core";
 import {
   MaterialLibrary,
   attachMaterialPreviewGestures,
@@ -105,7 +105,7 @@ export function MaterialEditingProvider({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
-  const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
+  const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [renderCoolingDown, setRenderCoolingDown] = useState(false);
 
   const hostRef = useRef<MaterialPreviewScene | null>(null);
@@ -113,8 +113,8 @@ export function MaterialEditingProvider({
   const libraryRef = useRef<MaterialLibrary | null>(null);
   const functionsRef = useRef<Record<string, MaterialFunctionDocument>>({});
   const textureBytesRef = useRef(new Map<string, Uint8Array>());
-  const retainedTexturesRef = useRef(new Map<string, { bytes: Uint8Array; texture: Texture; engine: Engine }>());
-  const engineRef = useRef<Engine | null>(null);
+  const retainedTexturesRef = useRef(new Map<string, { bytes: Uint8Array; texture: Texture; engine: AbstractEngine }>());
+  const engineRef = useRef<AbstractEngine | null>(null);
   const generationRef = useRef(0);
   const manualRenderPendingRef = useRef(false);
   const renderCooldownTimerRef = useRef<number | null>(null);

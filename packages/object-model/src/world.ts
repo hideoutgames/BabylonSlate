@@ -45,6 +45,8 @@ export interface WorldOptions {
   onPostPhysics?: (ctx: TickContext) => void;
   /** Resolved input for this world; filled by the runtime driver each tick. */
   input?: WorldInputProvider;
+  /** Rechecked after Game Instance and between scene objects during loading. */
+  canTickScene?: () => boolean;
 }
 
 export class World {
@@ -57,6 +59,7 @@ export class World {
   private readonly onPhysics?: (ctx: TickContext) => void;
   private readonly onPostPhysics?: (ctx: TickContext) => void;
   private inputProvider: WorldInputProvider | null;
+  private readonly canTickScene: () => boolean;
 
   gameInstance: GameInstance | null = null;
   currentScene: Scene | null = null;
@@ -64,7 +67,7 @@ export class World {
   private readonly actors: Actor[] = [];
   private readonly sceneLayers: SceneLayer[] = [];
   private readonly pendingSpawn: Actor[] = [];
-  private readonly pendingDestroy: Guid[] = [];
+  private readonly pendingDestroy: Array<Guid | Actor> = [];
   private started = false;
   /** True while a tick phase is executing (before deferred flush). */
   private ticking = false;
@@ -82,6 +85,7 @@ export class World {
     this.onPhysics = options.onPhysics;
     this.onPostPhysics = options.onPostPhysics;
     this.inputProvider = options.input ?? null;
+    this.canTickScene = options.canTickScene ?? (() => true);
   }
 
   setInputProvider(provider: WorldInputProvider | null): void {
@@ -158,6 +162,24 @@ export class World {
     this.pendingDestroy.push(guid);
   }
 
+  /** Cancel owned preparation without deleting a later Actor with the same guid. */
+  destroyActorInstance(actor: Actor): void {
+    if (actor.world === this) {
+      this.pendingDestroy.push(actor);
+      return;
+    }
+    if (actor.world || actor.destroyed) return;
+    const pending = this.pendingSpawn.indexOf(actor);
+    if (pending >= 0) this.pendingSpawn.splice(pending, 1);
+    // An unspawned actor never received creation hooks and has no live world.
+    for (const component of actor.components) {
+      component.destroyed = true;
+      component.owner = null;
+    }
+    actor.components.length = 0;
+    actor.destroyed = true;
+  }
+
   getActors(): readonly Actor[] {
     return this.actors;
   }
@@ -194,14 +216,14 @@ export class World {
     const index = this.sceneLayers.findIndex((layer) => layer.guid === guid);
     if (index < 0) return;
     const layer = this.sceneLayers[index]!;
+    this.sceneLayers.splice(index, 1);
     for (const actor of [...this.actors]) {
       if (actor.sceneLayerId === guid) {
-        this.commitDestroy(actor.guid);
+        this.commitDestroy(actor);
       }
     }
     layer.destroyed = true;
     layer.callOnDestroyed();
-    this.sceneLayers.splice(index, 1);
   }
 
   createScene(options: {
@@ -257,10 +279,14 @@ export class World {
     }
   }
 
-  private commitDestroy(guid: Guid): void {
-    const index = this.actors.findIndex((a) => a.guid === guid);
+  private commitDestroy(target: Guid | Actor): void {
+    const index = typeof target === "string"
+      ? this.actors.findIndex((actor) => actor.guid === target)
+      : this.actors.indexOf(target);
     if (index < 0) return;
     const actor = this.actors[index]!;
+    this.actors.splice(index, 1);
+    actor.destroyed = true;
     for (const component of [...actor.components].reverse()) {
       component.destroyed = true;
       component.callOnDestroyed();
@@ -270,7 +296,6 @@ export class World {
     actor.destroyed = true;
     actor.callOnDestroyed();
     actor.world = null;
-    this.actors.splice(index, 1);
     // Reassign dense spawn indices so order stays contiguous after removal.
     for (let i = 0; i < this.actors.length; i++) {
       this.actors[i]!.spawnIndex = i;
@@ -287,6 +312,7 @@ export class World {
   }
 
   private runPhase(phase: TickPhase, tickIndex: number): void {
+    if (phase !== "gameInstance" && !this.canTickScene()) return;
     this.onPhase?.(phase, this.clock.dt, tickIndex);
     const ctx = this.phaseContext(tickIndex);
 
@@ -298,13 +324,16 @@ export class World {
           break;
         case "actors":
           for (const actor of [...this.actors]) {
+            if (!this.canTickScene()) break;
             if (!actor.destroyed) actor.callOnTick(ctx);
           }
           break;
         case "components":
           for (const actor of [...this.actors]) {
+            if (!this.canTickScene()) break;
             if (actor.destroyed) continue;
             for (const component of [...actor.components]) {
+              if (!this.canTickScene()) break;
               if (!component.destroyed) component.callOnTick(ctx);
             }
           }

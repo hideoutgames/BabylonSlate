@@ -1,6 +1,8 @@
 /** Authored shadow settings. Device limits never mutate these values. */
 export type ShadowProfile = "low" | "medium" | "high" | "ultra";
 export interface ShadowSettings {
+  /** UI provenance; profile remains the admission tier when this is Custom. */
+  preset?: ShadowProfile | "custom";
   enabled: boolean;
   distance: number;
   fadeFraction: number;
@@ -18,40 +20,60 @@ export interface ShadowSettings {
   localMapSize: number;
 }
 export type ShadowOverrides = Partial<ShadowSettings>;
-export const SHADOW_PROFILES = {
-  low: { mapSize: 1024, cascades: 2, filterQuality: "low", localMapSize: 512 },
-  medium: {
-    mapSize: 2048,
-    cascades: 4,
-    filterQuality: "high",
-    localMapSize: 1024,
-  },
-  high: {
-    mapSize: 2048,
-    cascades: 4,
-    filterQuality: "high",
-    localMapSize: 2048,
-  },
-  ultra: {
-    mapSize: 4096,
-    cascades: 4,
-    filterQuality: "high",
-    localMapSize: 2048,
-  },
-} as const;
-export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
+const SHADOW_PROFILE_COMMON = {
   enabled: true,
-  distance: 200,
   fadeFraction: 0.1,
-  profile: "medium",
-  ...SHADOW_PROFILES.medium,
-  localLightMode: "auto",
-  maxLocalLights: 4,
   filter: "pcf",
   softness: 0.05,
   autoBias: true,
   depthBias: 0.0001,
   normalBias: 0.005,
+  localLightMode: "auto",
+} as const;
+export const SHADOW_PROFILES = {
+  low: {
+    ...SHADOW_PROFILE_COMMON,
+    distance: 80,
+    mapSize: 1024,
+    cascades: 1,
+    filterQuality: "low",
+    localMapSize: 512,
+    maxLocalLights: 1,
+  },
+  medium: {
+    ...SHADOW_PROFILE_COMMON,
+    distance: 200,
+    mapSize: 2048,
+    cascades: 2,
+    filterQuality: "medium",
+    localMapSize: 1024,
+    maxLocalLights: 2,
+  },
+  high: {
+    ...SHADOW_PROFILE_COMMON,
+    distance: 350,
+    mapSize: 2048,
+    cascades: 4,
+    filterQuality: "high",
+    localMapSize: 2048,
+    maxLocalLights: 4,
+  },
+  ultra: {
+    ...SHADOW_PROFILE_COMMON,
+    distance: 600,
+    mapSize: 4096,
+    cascades: 4,
+    filterQuality: "high",
+    localMapSize: 2048,
+    maxLocalLights: 8,
+  },
+} as const satisfies Record<
+  ShadowProfile,
+  Omit<ShadowSettings, "profile" | "preset">
+>;
+export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
+  profile: "medium",
+  ...SHADOW_PROFILES.medium,
 };
 export const SHADOW_LIMITS = {
   distance: [1, 1_000_000],
@@ -66,6 +88,12 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;
   const result: ShadowOverrides = {};
+  if (
+    source.preset === "custom" ||
+    (typeof source.preset === "string" &&
+      Object.hasOwn(SHADOW_PROFILES, source.preset))
+  )
+    result.preset = source.preset as ShadowSettings["preset"];
   if (typeof source.enabled === "boolean") result.enabled = source.enabled;
   if (typeof source.autoBias === "boolean") result.autoBias = source.autoBias;
   if (source.localLightMode === "auto" || source.localLightMode === "manual")
@@ -127,11 +155,29 @@ export function normalizeShadowSettings(value: unknown): ShadowSettings {
   // Keep that ambiguous value as a manual limit instead of inventing intent.
   if (clean.maxLocalLights !== undefined && clean.localLightMode === undefined)
     clean.localLightMode = "manual";
-  return {
+  const settings: ShadowSettings = {
     ...DEFAULT_SHADOW_SETTINGS,
     ...SHADOW_PROFILES[clean.profile ?? "medium"],
     ...clean,
   };
+  const preferred =
+    clean.preset !== "custom" ? (clean.preset ?? settings.profile) : undefined;
+  const levels = [preferred, ...Object.keys(SHADOW_PROFILES)] as (
+    ShadowProfile | undefined
+  )[];
+  settings.preset =
+    clean.preset === "custom"
+      ? "custom"
+      : (levels.find(
+          (level) =>
+            level &&
+            level === settings.profile &&
+            Object.entries(SHADOW_PROFILES[level]).every(
+              ([key, expected]) =>
+                settings[key as keyof ShadowSettings] === expected,
+            ),
+        ) ?? "custom");
+  return settings;
 }
 export function resolveShadowSettings(
   project?: ShadowOverrides,
