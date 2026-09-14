@@ -25,6 +25,14 @@ async function fixture() {
   const { engine, scene } = createTestEngine();
   engine.getCaps().textureFloat = true;
   engine.getCaps().textureFloatLinearFiltering = true;
+  // Pinned NullEngine omits the upload completion flag set by both real backends.
+  // Keep its actual InternalTexture allocation, type and lifetime behavior.
+  const createRawTexture = engine.createRawTexture.bind(engine);
+  vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+    const texture = createRawTexture(...args);
+    texture.isReady = true;
+    return texture;
+  });
   const { source, topology } = bakeGeometryFixture();
   const sourceHash = await fingerprintBakeGeometry(source);
   const { manifest, atlases } = await createBakedLightingFixture(2, 2);
