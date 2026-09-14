@@ -1,5 +1,5 @@
 /** Native camera transport control for the bounded provider-selection browser proof. */
-import { BufferAttribute, BufferGeometry, Color, Mesh, MeshPhysicalMaterial, PerspectiveCamera, PointLight, Scene, WebGLRenderer } from "three";
+import { BufferAttribute, BufferGeometry, Color, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, PerspectiveCamera, PointLight, Scene, WebGLRenderer } from "three";
 import { WebGLPathTracer } from "three-gpu-pathtracer";
 import { readBakePixels, waitForBakeGpu } from "./bake-prototype-gpu";
 
@@ -27,6 +27,24 @@ export async function diagnoseNativeBakeTransport(report: (phase: string) => voi
   camera.lookAt(0, 0, 0);
   let tracer: WebGLPathTracer | undefined;
   try {
+    const debug = gl.getExtension("WEBGL_debug_renderer_info");
+    report(`renderer ${debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER))}`);
+    renderer.setClearColor(0x4080bf, 1);
+    renderer.clear();
+    report("clear fence submitted");
+    await waitForBakeGpu(gl, checkpoint);
+    report("clear fence completed");
+    const raster = new MeshBasicMaterial({ color: 0xffffff });
+    try {
+      scene.overrideMaterial = raster;
+      renderer.render(scene, camera);
+      report("raster fence submitted");
+      await waitForBakeGpu(gl, checkpoint);
+      report("raster fence completed");
+    } finally {
+      scene.overrideMaterial = null;
+      raster.dispose();
+    }
     report("native constructing");
     tracer = new WebGLPathTracer(renderer);
     tracer.renderDelay = 0;
@@ -39,6 +57,7 @@ export async function diagnoseNativeBakeTransport(report: (phase: string) => voi
     report("native sampling");
     while (tracer.samples < 1) {
       tracer.renderSample();
+      report(`native tile submitted, samples ${tracer.samples}, target ${tracer.target.width}x${tracer.target.height}`);
       await waitForBakeGpu(gl, checkpoint);
     }
     report(`native completed ${tracer.target.width}x${tracer.target.height}`);
