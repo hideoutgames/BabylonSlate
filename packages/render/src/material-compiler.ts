@@ -63,6 +63,7 @@ import { retainEnvironmentSample } from "./environment-lighting";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { SceneReflectionBlock } from "./scene-reflection-block";
 import { FlatNormalBlock } from "./flat-normal-block";
+import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
@@ -1121,7 +1122,8 @@ function attachSurfaceShading(
     asColor: boolean,
   ) => NodeMaterialConnectionPoint | null,
 ): NodeMaterialBlock {
-  const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
+  const fragment = new GeometrySurfaceOutputBlock(`${options.name}_fragment`);
+  connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${options.name}_geometryNormal`, false), created);
   created.push(fragment);
 
   const baseColor = outputPoint("baseColor", `${options.name}_baseColor`, true);

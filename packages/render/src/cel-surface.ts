@@ -2,7 +2,6 @@ import { DisplayColorBlock } from "./display-color-block";
 import {
   AddBlock,
   FogBlock,
-  FragmentOutputBlock,
   InputBlock,
   NodeMaterialSystemValues,
   VectorMergerBlock,
@@ -17,6 +16,7 @@ import {
   type MaterialPlumbing,
 } from "./material-block-registry";
 import { sceneRenderingSettings } from "./render-settings";
+import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
 import { syncSceneLighting } from "./scene-lighting";
 
 type OutputPoint = (
@@ -91,7 +91,8 @@ function createCelSurface(
   outputPoint: OutputPoint,
 ): NodeMaterialBlock {
   const lighting = new CelLightBlock(`${name}_cel`);
-  const fragment = new FragmentOutputBlock(`${name}_celFragment`);
+  const fragment = new GeometrySurfaceOutputBlock(`${name}_celFragment`);
+  connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${name}_geometryNormal`, false), created);
   created.push(lighting, fragment);
   plumbing.worldPosition?.connectTo(lighting.worldPosition);
   plumbing.worldNormal4?.connectTo(lighting.worldNormal);

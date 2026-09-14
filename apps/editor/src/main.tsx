@@ -13,6 +13,13 @@ initializeCapacitorAudioLifecycle();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("framegraphGeometryProof")
+) {
+  void import("./testing/framegraph-geometry-proof").then(({ runFrameGraphGeometryProof }) => {
+    Object.assign(window, { __babylonslateFrameGraphGeometryProof: runFrameGraphGeometryProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("environmentWebgpuProof")
 ) {
   void import("./lib/environment-lighting-proof").then(

@@ -619,3 +619,9 @@ Compiled Material parameter bindings and the scene Material library expose typed
 The attached Post Process stack reads or resets one entry by stable ID. Reset restores that entry's saved override when valid, otherwise the compiled Material default; duplicate entries and shared assets keep their own values. Detached or unavailable entries return null/false. FrameGraph replay and gameplay node routing must retain this same authored-reset contract when integrated.
 
 FrameGraph entry reads and resets preserve the same saved-override precedence. Reset while disabled updates the replay state without allocating a Material; re-enabling applies it to the new instance. Reads of an uncompiled default return null until an instance is prepared, while saved/live overrides are readable. Runtime Color writes and reads use owned copies, so caller mutations cannot alter a later rebuild.
+
+### Geometry output adapter
+
+Compiled Surface materials retain their ordinary fragment output and additionally write requested FrameGraph normalized view-depth and encoded world-normal attachments. The adapter follows the active PBR/CEL surface output, including switches, and uses final deformed world position and the authored or flat normal channel. Geometry attachment zero need not be color. Post Process and Particle outputs retain their existing behavior.
+
+This is an internal adapter under qualification, not default geometry-buffer allocation or complete screen-space effect support. The numeric browser fixture compares a native PBR plane with compiled PBR/CEL, using `(viewZ - near) / (far - near)` depth and `normal * 0.5 + 0.5`. Shared resource ownership, logical post-process injection and the full geometry/material feature matrix remain separate integration work.
