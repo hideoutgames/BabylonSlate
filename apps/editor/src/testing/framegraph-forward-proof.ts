@@ -10,6 +10,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   RawTexture,
+  RenderTargetTexture,
   Scene,
   Texture,
   Vector3,
@@ -27,7 +28,7 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "webgl2", output: "backbuffer" | "texture" = "backbuffer") {
   const canvas = document.createElement("canvas");
   canvas.width = 80;
   canvas.height = 64;
@@ -41,8 +42,11 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
     engine.beginFrame();
     try { return render(); } finally { engine.endFrame(); }
   };
-  const read = async () => {
-    const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
+  const read = async (target?: RenderTargetTexture) => {
+    const pixels = target
+      ? await target.readPixels()
+      : await engine.readPixels(0, 0, canvas.width, canvas.height);
+    if (!pixels) throw new Error("Missing rendered pixels");
     return Array.from(
       new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
     );
@@ -64,6 +68,11 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       );
       secondCamera.setTarget(new Vector3(0, 0.2, 0));
       scene.activeCamera = camera;
+      const target = output === "texture"
+        ? new RenderTargetTexture("owned output", { width: 80, height: 64 }, scene, false)
+        : undefined;
+      target?.createDepthStencilTexture();
+      camera.outputRenderTarget = secondCamera.outputRenderTarget = target ?? null;
       new HemisphericLight("fill", Vector3.Up(), scene).intensity = 0.4;
       new DirectionalLight("key", new Vector3(0.4, -1, 0.6), scene).intensity =
         1.4;
@@ -163,7 +172,8 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         beginEngineDrawCallFrame(engine);
         draw(() => scene.render(false));
         const classicDraws = readEngineDrawCalls(engine);
-        const classic = await read();
+        const classic = await read(target);
+        engine.restoreDefaultFramebuffer();
         beginEngineDrawCallFrame(engine);
         const previousBefore = before;
         const previousAfter = after;
@@ -173,7 +183,8 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
           throw new Error("Graph readiness consumed a scene frame");
         const result = draw(() => coordinator.render(expectedCamera, false));
         const graphDraws = readEngineDrawCalls(engine);
-        const graph = await read();
+        const graph = await read(target);
+        engine.restoreDefaultFramebuffer();
         captures.push({
           name: `${mode}-${name}`,
           classic,
@@ -183,8 +194,8 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
           readinessDraws,
           prepared,
           result,
-          width: canvas.width,
-          height: canvas.height,
+          width: target?.getSize().width ?? canvas.width,
+          height: target?.getSize().height ?? canvas.height,
           frames: [before - previousBefore, after - previousAfter],
           frozen: scene.meshes.every(
             (mesh) => mesh.isWorldMatrixFrozen && mesh.material?.isFrozen,
@@ -203,6 +214,10 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       secondCamera.setTarget(new Vector3(0, 0.2, 0));
       await capture("camera-moved");
       engine.setSize(96, 72);
+      if (target) {
+        target.resize({ width: 96, height: 72 });
+        if (!target.depthStencilTexture) target.createDepthStencilTexture();
+      }
       await capture("resized");
 
       const sibling = new Scene(engine);
@@ -215,7 +230,15 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       draw(() => sibling.render(false));
       const siblingBefore = await read();
       await capture("after-sibling");
+      const siblingPreservedDuringTarget = target ? await read() : null;
+      const color = target?.getInternalTexture();
+      const depth = target?.depthStencilTexture;
       coordinator.dispose();
+      const targetReferencesAfter = target ? [color?._references, depth?._references] : null;
+      const targetAfterDispose = target ? await read(target) : null;
+      const classicAfterDispose = target ? (
+        draw(() => scene.render(false)), await read(target)
+      ) : null;
       const retainedRenderers = scene.objectRenderers.length;
       const retainedGraphs = scene.frameGraphs.length;
       scene.dispose();
@@ -227,10 +250,14 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         retainedGraphs,
         siblingBefore,
         siblingAfter: await read(),
+        siblingPreservedDuringTarget,
+        targetReferencesAfter,
+        targetAfterDispose,
+        classicAfterDispose,
       });
       sibling.dispose();
     }
-    return { captures, lifecycle, backend, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null };
+    return { captures, lifecycle, backend, output, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null };
   } finally {
     engine.dispose();
     canvas.remove();

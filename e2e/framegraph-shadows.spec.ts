@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { runFrameGraphShadowProof } from "../apps/editor/src/testing/framegraph-shadow-proof";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-test.use({ launchOptions: { args: ["--enable-unsafe-webgpu", process.platform === "win32" ? "--use-angle=d3d11-warp" : "--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader"] } });
+test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of ["webgl2", "webgpu"] as const) {
 test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on ${backend}`, async ({
