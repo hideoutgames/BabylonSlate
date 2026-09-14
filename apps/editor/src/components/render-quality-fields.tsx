@@ -4,8 +4,10 @@ import {
   qualityGroupLabel,
   qualityPresetPatch,
   resolveRenderingQuality,
-  normalizeRenderingQuality,
-  normalizeShadowSettings,
+  applyProjectQualityPatch,
+  qualitySettingPatch,
+  QUALITY_TARGET_LABELS,
+  resolveLocalLightBudget,
   type RenderProjectSettings,
   type QualityGroup,
   type QualityLevel,
@@ -30,6 +32,7 @@ import { Switch } from "@babylonslate/ui/components/switch";
 
 const labels = {
   shadows: "Shadows",
+  lighting: "Lighting",
   resolution: "Resolution",
   textures: "Textures",
   postprocessing: "Post Processing",
@@ -43,16 +46,17 @@ export function RenderQualityFields({
 }) {
   const effective = resolveRenderingQuality(settings);
   const apply = (level: QualityLevel, group?: QualityGroup) => {
-    const patch = qualityPresetPatch(level, group);
-    onChange({
-      ...settings,
-      shadows: normalizeShadowSettings({
-        ...effective.shadows,
-        ...patch.shadows,
-      }),
-      quality: normalizeRenderingQuality({ ...effective, ...patch }),
-    });
+    onChange(
+      applyProjectQualityPatch(settings, qualityPresetPatch(level, group)),
+    );
   };
+  const edit = <G extends QualityGroup>(
+    group: G,
+    patch: Parameters<typeof qualitySettingPatch<G>>[1],
+  ) =>
+    onChange(
+      applyProjectQualityPatch(settings, qualitySettingPatch(group, patch)),
+    );
   const displayLabel = (value: string) =>
     value[0]!.toUpperCase() + value.slice(1);
   const groupLabels = QUALITY_GROUPS.map((group) =>
@@ -97,6 +101,13 @@ export function RenderQualityFields({
                 </SelectGroup>
               </SelectContent>
             </Select>
+            {!group ? (
+              <FieldDescription>
+                Low targets a budget Android phone, Medium Apple A16, and Ultra
+                a high-end gaming PC. These are unqualified targets; device
+                admission can reduce effective cost.
+              </FieldDescription>
+            ) : null}
           </Field>
         ),
       )}
@@ -110,15 +121,7 @@ export function RenderQualityFields({
           min={0.25}
           max={1}
           step={0.05}
-          onChange={(scale) =>
-            onChange({
-              ...settings,
-              quality: {
-                ...effective,
-                resolution: { ...effective.resolution, scale },
-              },
-            })
-          }
+          onChange={(scale) => edit("resolution", { scale })}
         />
         <FieldDescription>
           Fraction of the target width and height. Runtime quality commands can
@@ -132,15 +135,7 @@ export function RenderQualityFields({
         <Switch
           id="quality-resolution-dynamic"
           checked={effective.resolution.dynamic}
-          onCheckedChange={(dynamic) =>
-            onChange({
-              ...settings,
-              quality: {
-                ...effective,
-                resolution: { ...effective.resolution, dynamic },
-              },
-            })
-          }
+          onCheckedChange={(dynamic) => edit("resolution", { dynamic })}
         />
       </Field>
       <Field className="settings-field">
@@ -154,17 +149,122 @@ export function RenderQualityFields({
           max={effective.resolution.scale}
           step={0.05}
           disabled={!effective.resolution.dynamic}
-          onChange={(minScale) =>
-            onChange({
-              ...settings,
-              quality: {
-                ...effective,
-                resolution: { ...effective.resolution, minScale },
-              },
-            })
-          }
+          onChange={(minScale) => edit("resolution", { minScale })}
         />
       </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="quality-resolution-target">
+          Dynamic Resolution Target FPS
+        </FieldLabel>
+        <NumberField
+          id="quality-resolution-target"
+          min={1}
+          max={240}
+          value={effective.resolution.targetFps}
+          disabled={!effective.resolution.dynamic}
+          onChange={(targetFps) => edit("resolution", { targetFps })}
+        />
+      </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="quality-textures-lod">Texture LOD Bias</FieldLabel>
+        <NumberField
+          id="quality-textures-lod"
+          min={0}
+          max={8}
+          value={effective.textures.lodBias}
+          onChange={(lodBias) => edit("textures", { lodBias })}
+        />
+      </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="quality-textures-anisotropy">
+          Texture Anisotropy
+        </FieldLabel>
+        <NumberField
+          id="quality-textures-anisotropy"
+          min={1}
+          max={16}
+          value={effective.textures.anisotropy}
+          onChange={(anisotropy) => edit("textures", { anisotropy })}
+        />
+      </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="quality-textures-budget">
+          Texture Budget (MiB)
+        </FieldLabel>
+        <NumberField
+          id="quality-textures-budget"
+          min={1}
+          value={effective.textures.byteBudget / 1024 ** 2}
+          onChange={(mib) => edit("textures", { byteBudget: mib * 1024 ** 2 })}
+        />
+        <FieldDescription>
+          Textures category. Uploaded texture accounting drives cache eviction;
+          referenced textures retain their ownership.
+        </FieldDescription>
+      </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="quality-postprocessing-scale">
+          Post Processing Resolution Scale
+        </FieldLabel>
+        <NumberField
+          id="quality-postprocessing-scale"
+          min={0.25}
+          max={1}
+          step={0.05}
+          value={effective.postprocessing.resolutionScale}
+          onChange={(resolutionScale) =>
+            edit("postprocessing", { resolutionScale })
+          }
+        />
+        <FieldDescription>
+          Applies to passes authored with Scalable Resolution. Authored
+          enablement and pass order are retained.
+        </FieldDescription>
+      </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="quality-lighting-mode">
+          Local Light Budget Mode
+        </FieldLabel>
+        <Select
+          value={effective.lighting.localLightMode}
+          onValueChange={(mode) => {
+            if (mode === "auto" || mode === "manual")
+              edit("lighting", { localLightMode: mode });
+          }}
+        >
+          <SelectTrigger id="quality-lighting-mode">
+            <SelectValue>
+              {effective.lighting.localLightMode === "auto" ? "Auto" : "Manual"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="auto">Auto</SelectItem>
+              <SelectItem value="manual">Manual</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <FieldDescription>
+          Lighting category. {resolveLocalLightBudget(effective.lighting)} local
+          lights requested within the{" "}
+          {QUALITY_TARGET_LABELS[effective.lighting.profile ?? "medium"]} tier;
+          hardware shader/storage admission can limit this further. Sun and fill
+          lights use separate slots.
+        </FieldDescription>
+      </Field>
+      {effective.lighting.localLightMode === "manual" ? (
+        <Field className="settings-field">
+          <FieldLabel htmlFor="quality-lighting-budget">
+            Local Light Budget
+          </FieldLabel>
+          <NumberField
+            id="quality-lighting-budget"
+            min={0}
+            value={effective.lighting.maxLocalLights}
+            onChange={(maxLocalLights) => edit("lighting", { maxLocalLights })}
+          />
+        </Field>
+      ) : null}
     </FieldSet>
   );
 }

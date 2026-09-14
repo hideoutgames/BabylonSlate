@@ -17,7 +17,7 @@ import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
 } from "./render-settings";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { normalizeShadowSettings, qualityPresetPatch } from "@babylonslate/core";
 import { otherShadowReservations } from "./shadow-admission";
 
 const engines: NullEngine[] = [];
@@ -67,6 +67,18 @@ function fixture() {
   return { scene, controller: sceneShadowController(scene) };
 }
 describe("shared shadow lifecycle", () => {
+  it("downsizes an oversized Ultra sun within conservative memory admission while retaining requested settings", () => {
+    const { scene, controller } = fixture();
+    scene.getEngine()._features.supportCSM = true;
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings(qualityPresetPatch("ultra").shadows) });
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+    controller.register(sun, true);
+    controller.sync();
+    expect(controller.generator(sun)).not.toBeNull();
+    expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: 2048 });
+    expect(controller.metrics().bytes).toBeLessThanOrEqual(384 * 1024 ** 2);
+    expect(sceneRenderingSettings(scene).shadows).toMatchObject({ profile: "ultra", preset: "ultra", mapSize: 4096, cascades: 4, maxLocalLights: 8 });
+  });
   it.each([
     {
       ownerSupport: true,
