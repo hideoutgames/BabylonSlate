@@ -12,6 +12,7 @@ import {
   type PinType,
 } from "@babylonslate/scripting";
 import type { SerializedPin } from "./graph-types";
+import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 
 export type PinTypeNames = Readonly<Record<string, string>>;
 
@@ -135,8 +136,7 @@ function pinConstraintPreview(
         typeof type.assetType === "string" ? type.assetType.trim() : "";
       return { kind: "assetRef", text: assetType };
     }
-    case "structRef":
-    case "enumRef": {
+    case "structRef": {
       const guid = typeof type.guid === "string" ? type.guid : "";
       return { kind: type.kind, text: namedGuid(guid, names) };
     }
@@ -153,6 +153,12 @@ export function pinDefaultPreview(
 ): PinDefaultPreview | null {
   if (connected) return null;
   if (pin.direction !== "in" || pin.kind !== "data") return null;
+  if (pin.type.kind === "enumRef") {
+    return {
+      kind: "enumRef",
+      text: humanizePropertyLabel(pinDefaultAsString(readPreviewValue(pin, properties))),
+    };
+  }
   if (pin.type.kind === "structRef" && pin.type.guid === "engine:InputType") {
     const input = readPreviewValue(pin, properties) as { Name?: string } | undefined;
     return input?.Name ? { kind: "structRef", text: input.Name } : null;
