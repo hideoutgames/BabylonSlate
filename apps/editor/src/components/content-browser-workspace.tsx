@@ -41,6 +41,7 @@ import {
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import { AssetReferenceDialog } from "./asset-reference-dialog";
 import { classAssetReference, classDeletionCandidates, validateClassDeletionReplacements } from "../lib/class-deletion";
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
 import { resolvePluginIcon } from "../lib/plugin-icons";
@@ -54,6 +55,11 @@ import {
   pickImportFiles,
 } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@babylonslate/ui/components/resizable";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from "@babylonslate/ui/components/empty";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
@@ -299,11 +305,7 @@ export function ContentBrowserWorkspace({
     | null
   >(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
-  const [refsSummary, setRefsSummary] = useState<{
-    name: string;
-    inbound: string[];
-    outbound: string[];
-  } | null>(null);
+  const [referenceGuid, setReferenceGuid] = useState<string | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
   );
@@ -1063,12 +1065,7 @@ export function ContentBrowserWorkspace({
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
-          const refs = assetReferencesIncludingOpenDocuments(guid, referenceAssets, openDocuments);
-          setRefsSummary({
-            name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
-            inbound: refs.inbound,
-            outbound: refs.outbound,
-          });
+          setReferenceGuid(guid);
         },
       },
       {
@@ -2306,14 +2303,35 @@ export function ContentBrowserWorkspace({
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <ResizablePanelGroup
+        orientation="horizontal"
+        className="min-h-0 flex-1 overflow-hidden"
+      >
         {!phone ? (
-          <aside className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-hidden border-r border-border bg-sidebar p-2">
-            {folderNavigation}
-          </aside>
+          <>
+            <ResizablePanel
+              id="content-browser-folders"
+              defaultSize="224px"
+              minSize="160px"
+              style={{ overflow: "hidden" }}
+            >
+              <aside
+                className="flex h-full min-h-0 flex-col gap-1 overflow-hidden bg-sidebar p-2"
+                data-testid="content-browser-sidebar"
+              >
+                {folderNavigation}
+              </aside>
+            </ResizablePanel>
+            <ResizableHandle aria-label="Resize Folders" />
+          </>
         ) : null}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <ResizablePanel
+          id="content-browser-assets"
+          minSize={phone ? 0 : "240px"}
+          className="flex h-full min-h-0 min-w-0 flex-col"
+          style={{ overflow: "hidden" }}
+        >
           <div className="shrink-0 border-b border-border/60 bg-sidebar px-1 py-0.5">
             <FolderBreadcrumbs
               root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_ROOT_ID ? "Content" : folderRoot.label }}
@@ -2469,8 +2487,8 @@ export function ContentBrowserWorkspace({
               </div>
             )}
           </div>
-        </div>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {phone && selectionCount > 0 ? (
         <div
@@ -2795,45 +2813,16 @@ export function ContentBrowserWorkspace({
         folderSourcePaths={moveTarget?.folderSourcePaths}
       />
 
-      <AlertDialog
-        open={refsSummary !== null}
-        onOpenChange={(open) => {
-          if (!open) setRefsSummary(null);
-        }}
-      >
-        <AlertDialogContent
-          className="flex max-h-[calc(100dvh-2rem)] flex-col"
-          data-testid="content-browser-refs-dialog"
-        >
-          <AlertDialogHeader className="shrink-0">
-            <AlertDialogTitle>References</AlertDialogTitle>
-            <AlertDialogDescription>
-              Dependencies for {refsSummary?.name}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain break-words text-sm">
-            {([['Used By', refsSummary?.inbound ?? []], ['Uses', refsSummary?.outbound ?? []]] as const).map(([label, guids]) => (
-              <div key={label} className="flex flex-col gap-1">
-                <p className="font-medium">{label}</p>
-                {guids.length === 0 ? <p>None</p> : guids.map((guid) => {
-                  const asset = assetRegistry?.getByGuid(guid);
-                  return asset && documentKindForAssetType(asset.header.type) ? (
-                    <Button key={guid} variant="ghost" size="sm" className="h-auto justify-start whitespace-normal text-left" title={asset.path} onClick={() => {
-                      setRefsSummary(null);
-                      void openOrFocusDocument(asset);
-                    }}>{displayAssetTitle(asset.header.name)}</Button>
-                  ) : <SelectableText key={guid}>{asset ? displayAssetTitle(asset.header.name) : `${guid} (Missing Asset)`}</SelectableText>;
-                })}
-              </div>
-            ))}
-          </div>
-          <AlertDialogFooter className="shrink-0">
-            <AlertDialogAction onClick={() => setRefsSummary(null)}>
-              Close
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {referenceGuid ? (
+        <AssetReferenceDialog
+          key={referenceGuid}
+          rootGuid={referenceGuid}
+          assets={referenceAssets}
+          openDocuments={openDocuments}
+          onClose={() => setReferenceGuid(null)}
+          onOpenAsset={(asset) => { void openOrFocusDocument(asset); }}
+        />
+      ) : null}
 
       <Dialog open={deleteProgress !== null}>
         <DialogContent showCloseButton={false} data-testid="deleting-overlay">

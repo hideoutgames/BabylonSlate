@@ -1406,7 +1406,7 @@ describe("EditorSceneSync", () => {
     expect((pivotMesh?.material as StandardMaterial).disableLighting).toBe(true);
   });
 
-  it("applies Model material slots after the GLB loads and lets materialGuid win", async () => {
+  it("applies Model defaults, scene overrides, explicit None and a default reset without editing model slots", async () => {
     const { scene } = createHandle();
     const slotMat = new StandardMaterial("slot-mat", scene);
     const meshMat = new StandardMaterial("mesh-mat", scene);
@@ -1444,7 +1444,7 @@ describe("EditorSceneSync", () => {
     const visible = sync
       .meshForActor("a")!
       .getChildMeshes()
-      .filter((child) => child.visibility > 0);
+      .filter((child) => child.visibility > 0 && child.getTotalVertices() > 0);
     expect(visible.some((child) => child.material === slotMat)).toBe(true);
 
     mesh.properties.materialGuid = "mat-mesh";
@@ -1453,6 +1453,15 @@ describe("EditorSceneSync", () => {
     for (const child of sync.meshForActor("a")!.getChildMeshes()) {
       expect(child.material).toBe(meshMat);
     }
+
+    mesh.properties.materialGuid = null;
+    mesh.properties.materialSource = "override";
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    expect(sync.meshForActor("a")!.getChildMeshes().every((child) => child.material === null)).toBe(true);
+
+    mesh.properties.materialSource = "model";
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    expect(visible.every((child) => child.material === slotMat)).toBe(true);
   });
 
   it("adopts every UV'd glTF part and applies slot 0 to all of them", async () => {

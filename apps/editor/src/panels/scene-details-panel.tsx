@@ -1,7 +1,8 @@
 import { scenePipelineKey, useScenePipelineStatus } from "../lib/scene-pipeline-status";
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
 import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
-import { isEnvironmentTexturePayload } from "@babylonslate/assets";
+import { isEnvironmentTexturePayload, normalizeModelPayload } from "@babylonslate/assets";
+import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -1000,8 +1001,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 candidate.id === component.id
                   ? {
                       ...candidate,
-                      properties: patchComponentProperties(
-                        candidate.properties,
+                      properties: patchInspectorComponentProperty(
+                        candidate,
                         property,
                         value,
                       ),
@@ -1014,6 +1015,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             collisionLayers,
             assetLabel,
             assetType,
+            modelMaterialSlots: (guid) => normalizeModelPayload(
+              openDocuments.find((doc) => doc.ref.kind === "model" && doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
+                ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
+            ).materialSlots,
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
@@ -1079,20 +1084,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     );
 
   return (
-    <PanelFrame
-      data-testid="scene-details-panel"
-      toolbar={
-        <IconActionButton
-          label={
-            multiSelection ? `Add Component To ${actor.name}` : "Add Component"
-          }
-          onClick={() => setAddComponentOpen(true)}
-          data-testid="details-add-component"
-        >
-          <PlusIcon />
-        </IconActionButton>
-      }
-    >
+    <PanelFrame data-testid="scene-details-panel">
       {propertySearch}
       <div className="flex flex-col gap-3 pb-4">
         {visibleTransformRows.length > 0 ? (
@@ -1126,6 +1118,19 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         {!visibleTransformRows.length && !componentDetails.length
           ? noMatchingProperties
           : null}
+        <div className="mx-2 flex">
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-coarse:min-h-11"
+            aria-label={multiSelection ? `Add Component To ${actor.name}` : "Add Component"}
+            onClick={() => setAddComponentOpen(true)}
+            data-testid="details-add-component"
+          >
+            <PlusIcon data-icon="inline-start" />
+            Add Component
+          </Button>
+        </div>
         {componentDetails.map(
           ({
             component,
@@ -1317,7 +1322,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={pickerAssets}
+        assets={assetPick?.property === "materialGuid" && actor.components.some((component) => component.id === assetPick.componentId && component.classId === "MeshComponent" && component.properties.assetGuid)
+          ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
+          : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
         title={assetPick?.title ?? "Pick Asset"}
         allowNone
@@ -1328,8 +1335,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             ...entry,
             components: entry.components.map((candidate) => {
               if (candidate.id !== componentId) return candidate;
-              let properties = patchComponentProperties(
-                candidate.properties,
+              let properties = patchInspectorComponentProperty(
+                candidate,
                 property,
                 guid,
               );

@@ -45,7 +45,9 @@ Unit tests inject `FakeAudioPlaybackBackend` (`NullEngine` cannot decode/play). 
 
 **AudioMixer** is a user asset, not a singleton: `globalVolume` default `1`; `channels: { channelGuid, volume }[]` (duplicate `channelGuid` invalid).
 
-**SoundAttenuation** opts Audio into 3D (`null` = non-spatial): `innerRadius` default `1`, `maxRadius` default `50` (`maxRadius >= innerRadius`, both `>= 0`); `distanceModel` `linear \| inverse \| exponential`; `rolloff` default `1`; `spatialisation` `equalPower \| hrtf`; optional `cone` and `doppler`.
+**SoundAttenuation** opts Audio into 3D (`null` = non-spatial): `innerRadius` default `10`, `maxRadius` default `250` (`maxRadius >= innerRadius`, both `>= 0`); `distanceModel` `linear \| inverse \| exponential`; `rolloff` default `1`; `spatialisation` `equalPower \| hrtf`; optional `cone` and `doppler`. Existing authored radii are preserved.
+
+Selected Audio Components in Scene and Prefab viewports show green Inner Radius and yellow Max Radius wire spheres when their Audio asset references valid Sound Attenuation. These helpers use saved metadata or open Audio/Attenuation drafts without loading sound bytes, follow the live emitter position, retain world-space radii when the actor is scaled, and disappear on deselection. Non-spatial audio has no radius helper.
 
 **Project Settings** `audio`: `audioMixerGuid` default `null` (None); `occlusionEnabled` default `true`; `reverbWetScale` / `reverbDecayScale` / `reverbDampingScale` default `1`, clamp `0..2`. Overlay Play, Preview Build, and packed `game.json` thread these into `AudioService.setProjectAudioSettings`.
 

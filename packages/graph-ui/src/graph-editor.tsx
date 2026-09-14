@@ -436,11 +436,11 @@ function clientPoint(
 }
 
 function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
-  const { getNode, setNodes, setEdges } = useReactFlow();
+  const { setNodes, setEdges } = useReactFlow();
+  const nodeExists = useStore((state) => !!selectedNodeId && state.nodeLookup.has(selectedNodeId));
 
   useEffect(() => {
-    if (!selectedNodeId) return;
-    if (!getNode(selectedNodeId)) return;
+    if (!selectedNodeId || !nodeExists) return;
     setNodes((current) => {
       const already =
         current.some((entry) => entry.id === selectedNodeId && entry.selected) &&
@@ -458,7 +458,7 @@ function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
         ? current.map((edge) => ({ ...edge, selected: false }))
         : current,
     );
-  }, [getNode, selectedNodeId, setEdges, setNodes]);
+  }, [nodeExists, selectedNodeId, setEdges, setNodes]);
 
   return null;
 }
@@ -470,12 +470,15 @@ function FocusedNodeSync({
   focusedNodeId?: string;
   fitViewOptions: GraphViewport["focusedFitViewOptions"];
 }) {
-  const { fitView, getNode, setNodes } = useReactFlow();
+  const { fitView, setNodes } = useReactFlow();
+  const nodeExists = useStore((state) => !!focusedNodeId && state.nodeLookup.has(focusedNodeId));
+  const canFrame = useStore((state) => {
+    const node = focusedNodeId ? state.nodeLookup.get(focusedNodeId) : undefined;
+    return !!(node?.measured.width && node.measured.height && state.panZoom && state.width && state.height);
+  });
 
   useEffect(() => {
-    if (!focusedNodeId) return;
-    const node = getNode(focusedNodeId);
-    if (!node) return;
+    if (!focusedNodeId || !nodeExists) return;
 
     setNodes((current) =>
       current.map((entry) => ({
@@ -484,11 +487,15 @@ function FocusedNodeSync({
       })),
     );
 
+  }, [focusedNodeId, nodeExists, setNodes]);
+
+  useEffect(() => {
+    if (!focusedNodeId || !canFrame) return;
     void fitView({
       nodes: [{ id: focusedNodeId }],
       ...fitViewOptions,
     });
-  }, [fitView, fitViewOptions, focusedNodeId, getNode, setNodes]);
+  }, [canFrame, fitView, fitViewOptions, focusedNodeId]);
 
   return null;
 }
@@ -757,9 +764,13 @@ function GraphEditorCanvas({
       setNodes((current) => {
         const constrained = lockNodeDragAxis(changes, current, lockDragAxis);
         const applied = readOnly
-          ? constrained.filter(
-              (change) => change.type === "select" || change.type === "dimensions",
-            )
+          ? constrained.flatMap((change): NodeChange<CanvasNode>[] => {
+              if (change.type === "select" || change.type === "dimensions") return [change];
+              // React Flow setNodes (focus/host selection/marquee) emits replace
+              // changes. In inspection mode accept only their selection state.
+              if (change.type === "replace") return [{ type: "select", id: change.id, selected: change.item.selected === true }];
+              return [];
+            })
           : constrained;
         const next = applyNodeChanges(applied, current);
         const allocated = allocateGraphDragTransaction(
@@ -1131,25 +1142,43 @@ function GraphEditorCanvas({
 
   const handleNodeDrag: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
+      const moving = dragged.length ? dragged : [node];
       const zoom = storeApi.getState().transform[2];
-      if (interactions.shakeEnabled && !readOnly && nodesDraggable && proximityDragRef.current) {
-        shakenRef.current ||= shakeTracker.current.move(node.position.x * zoom, node.position.y * zoom, performance.now());
+      if (
+        interactions.shakeEnabled && !readOnly && nodesDraggable &&
+        proximityDragRef.current && !shakenRef.current &&
+        shakeTracker.current.move(node.position.x * zoom, node.position.y * zoom, performance.now())
+      ) {
+        // Disconnect as soon as the gesture crosses the threshold, and keep
+        // assistance suppressed until release so these pins stay disconnected.
+        shakenRef.current = true;
+        const ids = new Set(moving.map((entry) => entry.id));
+        const nextEdges = graphStateRef.current.edges.filter(
+          (edge) => !ids.has(edge.source) && !ids.has(edge.target),
+        );
+        if (nextEdges.length !== graphStateRef.current.edges.length) {
+          const positions = new Map(moving.map((entry) => [entry.id, entry.position]));
+          const nextNodes = graphStateRef.current.nodes.map((entry) =>
+            positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry,
+          );
+          graphStateRef.current = { nodes: nextNodes, edges: nextEdges };
+          setNodes(nextNodes);
+          setEdges(nextEdges);
+          emitChange(nextNodes, nextEdges);
+        }
       }
-      const paths = collectProximityConnections(
-        dragged.length ? dragged : [node],
-      );
+      const paths = collectProximityConnections(moving);
       proximityPathsRef.current = paths;
       setProximityPaths(paths);
     },
-    [collectProximityConnections, interactions.shakeEnabled, nodesDraggable, readOnly, storeApi],
+    [collectProximityConnections, emitChange, interactions.shakeEnabled, nodesDraggable, readOnly, storeApi],
   );
 
   const handleNodeDragStop: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
       const moving = dragged.length ? dragged : [node];
       if (shakenRef.current && interactions.shakeEnabled && !readOnly && nodesDraggable) {
-        const ids = new Set(moving.map((entry) => entry.id));
-        const nextEdges = graphStateRef.current.edges.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target));
+        const nextEdges = graphStateRef.current.edges;
         const positions = new Map(moving.map((entry) => [entry.id, entry.position]));
         const nextNodes = graphStateRef.current.nodes.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry);
         cancelProximityConnections();

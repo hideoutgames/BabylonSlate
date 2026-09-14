@@ -1,4 +1,5 @@
 export { animTransitionEdgeMarkers } from "./anim-transition-markers";
+export { AssetReferenceNode, assetReferenceNodeTypes, assetReferenceEdgeTypes } from "./asset-reference-node";
 export * from "./graph-editor";
 export { resolveGraphViewport, resolveGraphMountViewport } from "./graph-viewport";
 export {
