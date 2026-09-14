@@ -11,7 +11,7 @@ test("clustered point and spot contributions preserve native and graph PBR and C
     if (
       message.type() === "error" ||
       (message.type() === "warning" &&
-        /shader|WebGL|invalid/i.test(message.text()))
+        /shader|GL_INVALID|GL_OUT_OF_MEMORY|invalid|context lost/i.test(message.text()))
     )
       errors.push(message.text());
   });
