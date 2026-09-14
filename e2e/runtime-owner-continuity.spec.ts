@@ -64,7 +64,7 @@ async function filesForContinuity() {
 
 type Sample = { atMs: number; paintHeld: boolean; phase: string; lit: number; hud: number; center: number; hudX: number | null; width: number; height: number };
 type Observation = { samples: Sample[]; phases: string[]; resizing: boolean; stop: () => void };
-type LoadingPaintGate = { held: boolean; arm: () => void; release: () => void };
+type LoadingPaintGate = { held: boolean; workCommands: string[]; arm: () => void; release: () => void };
 
 async function observeCanvas(canvas: Locator) {
   await canvas.evaluate((node: HTMLCanvasElement) => {
@@ -132,7 +132,8 @@ for (const mode of ["Play", "Preview Build"] as const) {
       let pending: (() => void) | undefined;
       const gate: LoadingPaintGate = {
         get held() { return pending !== undefined; },
-        arm: () => { armed = true; },
+        workCommands: [],
+        arm: () => { gate.workCommands.length = 0; armed = true; },
         release: () => { armed = false; const send = pending; pending = undefined; send?.(); },
       };
       (globalThis as unknown as { loadingPaintGate: LoadingPaintGate }).loadingPaintGate = gate;
@@ -140,7 +141,11 @@ for (const mode of ["Play", "Preview Build"] as const) {
         const message = args[0] as { channel?: unknown; payload?: { type?: unknown } };
         if (armed && message?.channel === "control" && message.payload?.type === "sceneLoadingPainted") {
           armed = false;
-          pending = () => Reflect.apply(nativePost, this, args);
+          const observe = (event: MessageEvent<{ channel?: unknown; payload?: { type?: unknown } }>) => {
+            if (event.data?.channel === "command" && typeof event.data.payload?.type === "string") gate.workCommands.push(event.data.payload.type);
+          };
+          this.addEventListener("message", observe);
+          pending = () => { this.removeEventListener("message", observe); Reflect.apply(nativePost, this, args); };
           return;
         }
         Reflect.apply(nativePost, this, args);
@@ -218,9 +223,14 @@ for (const mode of ["Play", "Preview Build"] as const) {
           const sameSize = held.filter((sample) => sample.width === latest.width && sample.height === latest.height);
           return new Set(sameSize.map((sample) => sample.center)).size;
         }).toBeGreaterThan(1);
-        expect((await samples(canvas)).filter((sample) => sample.paintHeld).every((sample) => sample.phase === "Preparing Scene")).toBe(true);
+        const work = await canvas.evaluate(() => (globalThis as unknown as { loadingPaintGate: LoadingPaintGate }).loadingPaintGate.workCommands);
+        expect(work.filter((type) => ["despawn", "activeScene", "assignMesh", "sceneRealized"].includes(type))).toEqual([]);
       } finally {
-        try { await testInfo.attach(`held-loading-${reload}.json`, { body: JSON.stringify(await samples(canvas)), contentType: "application/json" }); }
+        try {
+          await testInfo.attach(`held-loading-${reload}.json`, { body: JSON.stringify(await samples(canvas)), contentType: "application/json" });
+          await testInfo.attach(`held-runtime-commands-${reload}.json`, { body: JSON.stringify(await canvas.evaluate(() =>
+            (globalThis as unknown as { loadingPaintGate: LoadingPaintGate }).loadingPaintGate.workCommands)), contentType: "application/json" });
+        }
         finally { await releaseLoadingPaint(canvas); }
       }
       await expect(dialog).toBeHidden({ timeout: 30_000 });
