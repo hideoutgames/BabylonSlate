@@ -1,4 +1,5 @@
 import type { AbstractEngine } from "@babylonjs/core";
+import { EngineStore } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
@@ -958,6 +959,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         return {
           userAgent: navigator.userAgent,
           backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
+          engineCount: EngineStore.Instances.length,
           webGLVersion: "webGLVersion" in handle.engine ? handle.engine.webGLVersion : null,
           glInfo: "getGlInfo" in handle.engine && typeof handle.engine.getGlInfo === "function" ? handle.engine.getGlInfo() : null,
           gpuInfo: "getInfo" in handle.engine && typeof handle.engine.getInfo === "function" ? handle.engine.getInfo() : null,
