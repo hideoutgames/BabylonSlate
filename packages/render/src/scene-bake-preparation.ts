@@ -291,6 +291,28 @@ export async function prepareSceneBake(options: {
   if (document.actors.length > 1024)
     throw new Error("Bake preparation admits at most 1024 actors.");
   const worldOf = transforms(document.actors);
+  const actorById = new Map(document.actors.map((actor) => [actor.id, actor]));
+  const assertFixedOwner = (actor: SerializedActor) => {
+    const visited = new Set<string>();
+    let owner: SerializedActor | undefined = actor;
+    while (owner) {
+      if (visited.has(owner.id))
+        throw new Error("Bake Scene has cyclic actor attachments.");
+      visited.add(owner.id);
+      if (
+        owner.components.some(
+          (entry) =>
+            /Animation/.test(entry.classId) ||
+            (entry.classId === "RigidBodyComponent" &&
+              entry.properties.motionType !== "static"),
+        )
+      )
+        throw new Error(
+          `Bake actor ${actor.name} has potentially moving or animated ownership through ${owner.name}.`,
+        );
+      owner = owner.parentId ? actorById.get(owner.parentId) : undefined;
+    }
+  };
   const dependencies = new Set<string>();
   const meshSources: Array<{
     key: string;
@@ -311,11 +333,13 @@ export async function prepareSceneBake(options: {
   let triangles = 0;
   let geometryBytes = 0;
   for (const actor of document.actors) {
-    if (!actor.visible) continue;
     for (const component of actor.components) {
       check();
       const key = stableStringify([actor.id, component.id]);
-      if (component.classId === "LightComponent") {
+      if (
+        component.classId === "LightComponent" ||
+        component.classId === "HemisphericFillLightComponent"
+      ) {
         const mobility = lightMobility(component.properties);
         if (
           mobility === "dynamic" ||
@@ -323,7 +347,25 @@ export async function prepareSceneBake(options: {
           component.properties.intensity === 0
         )
           continue;
-        if ((component.properties.lightKind ?? "point") !== "point")
+        assertFixedOwner(actor);
+        if (actor.parentId || component.parentId)
+          throw new Error(
+            `Bake light ${actor.name} needs complete authored attachment parity in the realtime renderer before parented point baking can be enabled.`,
+          );
+        if (
+          actor.components.filter(
+            (entry) =>
+              entry.classId === "LightComponent" ||
+              entry.classId === "HemisphericFillLightComponent",
+          ).length > 1
+        )
+          throw new Error(
+            `Bake actor ${actor.name} needs per-component realtime light identity before multiple light components can be baked.`,
+          );
+        if (
+          component.classId !== "LightComponent" ||
+          (component.properties.lightKind ?? "point") !== "point"
+        )
           throw new Error(
             `Bake light ${actor.name} currently requires Point transport.`,
           );
@@ -366,20 +408,15 @@ export async function prepareSceneBake(options: {
           },
         });
       } else if (component.classId === "MeshComponent") {
+        // Mesh visibility is authored per actor; lights instead use their own Enabled field.
+        if (!actor.visible) continue;
         const participation = meshBakeParticipation(component.properties);
         if (participation === "none") continue;
         if (component.properties.assetGuid)
           throw new Error(
             `Bake model ${actor.name} needs verified source node/mesh/primitive provenance; renderer order cannot identify it.`,
           );
-        if (
-          actor.components.some((entry) =>
-            /Animation|RigidBody/.test(entry.classId),
-          )
-        )
-          throw new Error(
-            `Bake mesh ${actor.name} has potentially moving or animated ownership.`,
-          );
+        assertFixedOwner(actor);
         const guid = component.properties.materialGuid;
         if (typeof guid !== "string" || !options.materials.has(guid))
           throw new Error(

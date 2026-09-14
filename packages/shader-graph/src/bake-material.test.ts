@@ -44,6 +44,7 @@ describe("bake diffuse material closure", () => {
     expect(closure.albedo).toEqual([0.1, 0.3, 0.7]);
     expect(closure.emission).toEqual([0, 0, 0]);
     expect(closure.dependencies).toContain("function-1");
+    const capturedPlan = structuredClone(closure.resolvedPlan);
     const changed = structuredClone(doc);
     changed.nodes[0].properties.value = [0.2, 0.3, 0.7];
     expect(
@@ -65,9 +66,10 @@ describe("bake diffuse material closure", () => {
         targetPinId: "out_value",
       },
     ];
+    expect(closure.resolvedPlan).toEqual(capturedPlan);
     expect(() =>
       resolveBakeDiffuseClosure(doc, { functions: { "function-1": fn } }),
-    ).toThrow(/clock|invalid/i);
+    ).toThrow("clock");
   });
 
   it("rejects unsupported sidedness, deformation and dynamic material nodes", () => {

@@ -163,10 +163,9 @@ describe("authored Scene bake preparation", () => {
       }),
     );
     document.actors[0].parentId = "parent";
-    document.actors[1].parentId = "parent";
     sync.meshForActor("receiver")!.position.x = 70;
     const prepared = await prepareSceneBake(options);
-    expect(prepared.batches[0].lights[0].position).toEqual([3, 2, 0]);
+    expect(prepared.batches[0].lights[0].position).toEqual([0, 2, 0]);
     const positions = prepared.meshes[0].transport.positions;
     const xs = Array.from(positions).filter((_, index) => index % 3 === 0);
     expect(Math.min(...xs)).toBeCloseTo(2);
@@ -177,6 +176,10 @@ describe("authored Scene bake preparation", () => {
     expect(
       Vector3.Cross(b.subtract(a), c.subtract(a)).normalize().y,
     ).toBeCloseTo(1);
+    document.actors[1].parentId = "parent";
+    await expect(prepareSceneBake(options)).rejects.toThrow(
+      "attachment parity",
+    );
   });
 
   it("invalidates relevant light, UV, geometry and settings inputs while ignoring display labels", async () => {
@@ -208,6 +211,68 @@ describe("authored Scene bake preparation", () => {
     ).not.toBe(initial.inputs.settings);
   });
 
+  it("rejects moving ancestors for receivers and baked lights while admitting fixed static bodies", async () => {
+    const { options, document } = fixture();
+    const parent = createActor("moving-parent", "Moving Parent", {
+      components: [
+        {
+          id: "body",
+          classId: "RigidBodyComponent",
+          properties: { motionType: "dynamic" },
+        },
+      ],
+    });
+    document.actors.push(parent);
+    document.actors[0].parentId = parent.id;
+    await expect(prepareSceneBake(options)).rejects.toThrow(
+      "through Moving Parent",
+    );
+    parent.components[0].properties.motionType = "static";
+    await expect(prepareSceneBake(options)).resolves.toMatchObject({
+      owner: options.owner,
+    });
+    document.actors[0].parentId = null;
+    document.actors[1].parentId = parent.id;
+    parent.components[0] = {
+      id: "animation",
+      classId: "AnimationGraphComponent",
+      properties: {},
+    };
+    await expect(prepareSceneBake(options)).rejects.toThrow(
+      "through Moving Parent",
+    );
+  });
+
+  it("matches mesh visibility and light Enabled independently of hidden actor/ancestor visuals", async () => {
+    const { options, document, sync, scene } = fixture();
+    const parent = createActor("hidden-parent", "Hidden Parent", {
+      visible: false,
+    });
+    document.actors.push(parent);
+    document.actors[0].parentId = parent.id;
+    document.actors[1].visible = false;
+    document.actors[2].components[0].properties.enabled = false;
+    // MeshComponent has no authored Enabled/Visible switch: these unrelated fields must not hide geometry.
+    document.actors[0].components[0].properties.enabled = false;
+    document.actors[0].components[0].properties.visible = false;
+    sync.apply(document);
+    expect(sync.meshForActor("receiver")!.isVisible).toBe(true);
+    expect(
+      scene.lights
+        .find((light) => light instanceof PointLight && light.intensity === 4)!
+        .isEnabled(),
+    ).toBe(true);
+    const prepared = await prepareSceneBake(options);
+    expect(prepared.meshes).toHaveLength(1);
+    expect(prepared.sources).toHaveLength(1);
+    expect(prepared.sources[0]).toMatchObject({
+      actorId: "lamp",
+      mobility: "static",
+    });
+    document.actors[0].visible = false;
+    await expect(prepareSceneBake(options)).rejects.toThrow("Static Receiver");
+  });
+
   it("rejects unsupported sources before transport or publication instead of dropping them", async () => {
     const { options, document } = fixture();
     document.actors[0].components[0].properties.assetGuid = "model-1";
@@ -216,6 +281,9 @@ describe("authored Scene bake preparation", () => {
     document.actors[1].components[0].properties.lightKind = "spot";
     await expect(prepareSceneBake(options)).rejects.toThrow("Point transport");
     document.actors[1].components[0].properties.lightKind = "point";
+    document.actors[1].components[0].classId = "HemisphericFillLightComponent";
+    await expect(prepareSceneBake(options)).rejects.toThrow("Point transport");
+    document.actors[1].components[0].classId = "LightComponent";
     document.settings.environmentTextureGuid = "environment-1";
     await expect(prepareSceneBake(options)).rejects.toThrow("environment cube");
   });

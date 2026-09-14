@@ -1,5 +1,9 @@
 import { componentCount } from "./types";
-import { lowerMaterialDocument, type MaterialOperand } from "./lower";
+import {
+  lowerMaterialDocument,
+  type MaterialBuildPlan,
+  type MaterialOperand,
+} from "./lower";
 import type { MaterialDocument } from "./document";
 import type { MaterialValidationContext } from "./validate";
 
@@ -9,6 +13,8 @@ export interface BakeDiffuseClosure {
   emission: [number, number, number];
   /** Fully lowered semantic graph identity, including nested function bodies. */
   planHash: string;
+  /** Owned semantic inputs for collision-resistant bake hashing, beyond the renderer's short cache key. */
+  resolvedPlan: MaterialBuildPlan;
   dependencies: string[];
 }
 
@@ -111,6 +117,7 @@ export function resolveBakeDiffuseClosure(
     albedo: rgb("baseColor", 1),
     emission: rgb("emissive", 100),
     planHash: plan.hash,
+    resolvedPlan: structuredClone(plan),
     dependencies: [
       ...plan.dependencies.functions,
       ...plan.dependencies.textures,
