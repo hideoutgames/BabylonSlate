@@ -1,5 +1,5 @@
 import { Color4, Engine, FreeCamera, MeshBuilder, PBRMaterial, Scene, Vector3 } from "@babylonjs/core";
-import { MaterialLibrary, createAppWebGpuEngine, type PostProcessStackEntry } from "@babylonslate/render";
+import { MaterialLibrary, createAppWebGpuEngine } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedLightingReservations } from "@babylonslate/render/managed-lighting-resources";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
@@ -49,7 +49,7 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
   const documents = { gain: documentFor("gain"), depth: documentFor("depth"), normal: documentFor("normal") };
   const diagnostics: unknown[] = [];
   const captures: Array<{ name: string; path: string; pixel: number[]; reservedBytes: number }> = [];
-  const configure = (stack: PostProcessStackEntry[]) => renderer.attachPostProcess({
+  const configure = (stack: Parameters<SceneRenderCoordinator["attachPostProcess"]>[0]["stack"]) => renderer.attachPostProcess({
     scene, camera, library, stack,
     documentFor: (guid) => documents[guid as keyof typeof documents] ?? null,
     onDiagnostic: (diagnostic) => { diagnostics.push(diagnostic); },

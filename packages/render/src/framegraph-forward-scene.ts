@@ -563,7 +563,9 @@ export class ForwardSceneFrameGraph {
     this.clear?.dispose();
     this.cull?.dispose();
     this.graph?.dispose();
-    this.postProcessGraph?.releaseAfterGraphDisposal();
+    void this.postProcessGraph?.releaseAfterGraphDisposal().catch((error: unknown) => {
+      this.cleanupFailure = error;
+    });
     this.postProcessGraph = undefined;
     this.outputCopy = undefined;
     this.objects = undefined;
