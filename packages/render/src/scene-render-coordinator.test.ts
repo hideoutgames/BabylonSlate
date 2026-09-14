@@ -186,6 +186,7 @@ it("retires pending allocation before the host releases a borrowed target", asyn
   // or draws attachments. Supply the supported-target boundary only.
   vi.spyOn(target, "depthStencilTexture", "get").mockReturnValue(target.getInternalTexture());
   camera.outputRenderTarget = target;
+  const borrowedRenderers = [...scene.objectRenderers];
   const { started, release } = holdGraphInitialization();
   const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
   await started;
@@ -197,7 +198,17 @@ it("retires pending allocation before the host releases a borrowed target", asyn
   release();
   await pending;
   await retirement;
-  expect(scene.objectRenderers).toHaveLength(0);
+  expect(scene.objectRenderers).toEqual(borrowedRenderers);
   expect(target.getInternalTexture()).not.toBeNull();
   target.dispose();
+});
+
+
+it("rejects retirement when owned task cleanup fails instead of permitting target destruction", async () => {
+  const { scene, renderer } = host();
+  await renderer.prepare();
+  const taskRenderer = scene.objectRenderers[0]!;
+  const dispose = vi.spyOn(taskRenderer, "dispose").mockImplementationOnce(() => { throw new Error("native cleanup failed"); });
+  await expect(renderer.retire()).rejects.toThrow("native cleanup failed");
+  dispose.mockRestore();
 });

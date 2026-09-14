@@ -116,7 +116,8 @@ export class ForwardSceneFrameGraph {
   /** Settle CPU ownership before a host releases a borrowed output target. */
   retire(): Promise<void> {
     if (this.retirement) return this.retirement;
-    this.dispose();
+    try { this.dispose(); }
+    catch (error) { this.retirement = Promise.reject(error); return this.retirement; }
     this.retirement = (async () => {
       // Cancellation rejects preparation; its cleanup still runs before this continuation.
       try { await this.pending; } catch { /* preparation failure is not cleanup failure */ }

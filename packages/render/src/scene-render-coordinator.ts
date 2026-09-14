@@ -31,9 +31,9 @@ export class SceneRenderCoordinator {
     return this.graph.attachPostProcess(options, () => this.invalidate());
   }
 
-  retire(): Promise<void> {
+  async retire(): Promise<void> {
     this.dispose();
-    return this.graph.retire();
+    await this.graph.retire();
   }
 
   invalidate(): void {
