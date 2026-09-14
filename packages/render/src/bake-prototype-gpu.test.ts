@@ -39,7 +39,14 @@ it("does not finish a tile before the GPU signals completion", async () => {
   device.gl.clientWaitSync = () => ready ? 0x911c : 0x911b;
   let release!: () => void;
   const checkpoint = new Promise<void>((resolve) => { release = resolve; });
-  const pending = waitForBakeGpu(device.context, () => checkpoint).then(() => { completed = true; });
+  let waiting!: () => void, checkpoints = 0;
+  const stillWaiting = new Promise<void>((resolve) => { waiting = resolve; });
+  const pending = waitForBakeGpu(device.context, () => {
+    if (++checkpoints === 1) return Promise.resolve();
+    waiting();
+    return checkpoint;
+  }).then(() => { completed = true; });
+  await stillWaiting;
   expect(completed).toBe(false);
   ready = true;
   release();
