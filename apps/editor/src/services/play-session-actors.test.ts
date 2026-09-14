@@ -57,6 +57,7 @@ describe.each(["worker", "in-process"] as const)(
         scripts?: ScriptBundleEntry[];
         gameInstanceClass?: string;
         presentFirstFrame?: () => Promise<void>;
+        onFatalDiagnostic?: () => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
@@ -142,6 +143,7 @@ describe.each(["worker", "in-process"] as const)(
         scene: { ...createDefaultScene(), actors: options.actors ?? [] },
         scripts: [mainScript, ...(options.scripts ?? [])],
         gameInstanceClass: options.gameInstanceClass,
+        onFatalDiagnostic: options.onFatalDiagnostic,
       });
       await booted;
       runtime.tick();
@@ -179,6 +181,25 @@ describe.each(["worker", "in-process"] as const)(
       expect(runtime.getWorld().gameInstance?.getVariable("finished")).not.toBe(true);
       present();
       await vi.waitFor(() => expect(runtime.getWorld().gameInstance?.getVariable("finished")).toBe(true));
+    });
+
+    it("retains first-frame failure diagnostics after the Play overlay closes", async () => {
+      let rejectPresentation!: (error: Error) => void;
+      const presentFirstFrame = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectPresentation = reject; }));
+      let stopped: ReturnType<PlaySession["stop"]> | undefined;
+      const onFatalDiagnostic = vi.fn(() => {
+        stopped = session!.stop();
+        session = undefined;
+      });
+      await play({ presentFirstFrame, onFatalDiagnostic });
+      await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
+      const failure = new Error("First frame shader pipeline unavailable");
+      rejectPresentation(failure);
+      await vi.waitFor(() => expect(onFatalDiagnostic).toHaveBeenCalledOnce());
+      expect(stopped?.diagnostics).toEqual([expect.objectContaining({
+        code: "scene.loading.failed", assetGuid: "scene", severity: "error",
+        message: "Scene loading failed: First frame shader pipeline unavailable", stack: failure.stack,
+      })]);
     });
 
     it("keeps a placed main actor at its authored position and runs Begin Play", async () => {

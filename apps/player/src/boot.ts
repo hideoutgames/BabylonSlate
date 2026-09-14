@@ -105,6 +105,39 @@ export function startPlayer(options: {
     command: { type: string } & Record<string, unknown>,
   ) => void;
 }): PlayerBootHandle {
+  const cleanups = new Set<() => void>();
+  const own = (dispose: () => void) => {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      cleanups.delete(release);
+      dispose();
+    };
+    cleanups.add(release);
+    return release;
+  };
+  const releaseAll = () => {
+    const errors: unknown[] = [];
+    for (const release of [...cleanups].reverse()) {
+      try { release(); } catch (error) { errors.push(error); }
+    }
+    return errors;
+  };
+  try {
+    return initializePlayer(options, own, releaseAll);
+  } catch (error) {
+    const errors = releaseAll();
+    if (errors.length) throw new AggregateError([error, ...errors], "Player startup and cleanup failed.", { cause: error });
+    throw error;
+  }
+}
+
+function initializePlayer(
+  options: Parameters<typeof startPlayer>[0],
+  own: (cleanup: () => void) => () => void,
+  releaseAll: () => unknown[],
+): PlayerBootHandle {
   const { canvas, game } = options;
   const manifest: GameManifest = game.manifest;
   const startup = manifest.startupSceneGuid;
@@ -126,6 +159,7 @@ export function startPlayer(options: {
     post: (command) => worker?.postControl(command),
   });
 
+  own(() => consoleHost.dispose());
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
     frameCap: manifest.playFrameCap,
@@ -249,6 +283,7 @@ export function startPlayer(options: {
       else runtime?.applyAudioVoiceEnded(control);
     },
   });
+  own(() => handle.dispose());
   handle.applySceneEnvironment(scene);
   const releaseConsoleCapture = captureConsoleLogs(
     console,
@@ -279,8 +314,10 @@ export function startPlayer(options: {
     window.removeEventListener("error", onWindowError);
     window.removeEventListener("unhandledrejection", onRejection);
   };
+  own(releaseConsole);
   handle.scheduler.invalidate("play");
   const printHud = mountPlayerPrintOverlay(canvas.parentElement ?? canvas);
+  own(() => printHud.dispose());
   if (typeof window !== "undefined") {
     (
       window as { __babylonslateAudioStats?: typeof audioStats }
@@ -306,6 +343,7 @@ export function startPlayer(options: {
             handle.resize();
           }
         });
+  own(() => resizeObserver?.disconnect());
   resizeObserver?.observe(canvas);
 
   const scenes = [...game.scenes.entries()].map(([guid, authored]) => ({
@@ -355,6 +393,10 @@ export function startPlayer(options: {
   let resetBoot = () => {};
   let hudStats: PlayerHudStats | undefined;
   let snapBuf = new Float32Array(snapshotFloatCount(256));
+  own(() => { halted = true; cancelAnimationFrame(raf); });
+  own(() => resetBoot());
+  own(() => pauseGate?.reset());
+  own(() => detachLifecycle());
 
   const emitHudStats = (next: PlayerHudStats) => {
     hudStats = {
@@ -367,25 +409,11 @@ export function startPlayer(options: {
   };
 
   const haltPlayback = () => {
-    if (halted) return;
-    halted = true;
-    resetBoot();
-    pauseGate?.reset();
-    sceneReadiness.dispose();
-    sceneLoading.dispose();
-    detachLifecycle();
-    handle.setPaused(true);
-    cancelAnimationFrame(raf);
-    worker?.postControl({ type: "stop" });
-    worker?.terminate();
-    worker = null;
-    runtime?.stop();
-    consoleHost.dispose();
-    releaseConsole();
-    printHud.dispose();
+    if (!halted) stopPlayer();
   };
 
   const sceneLoading = mountPlayerSceneLoading(canvas.parentElement ?? document.body, () => stopPlayer());
+  own(() => sceneLoading.dispose());
   let hostSceneGuid: string | null = startup;
   let receivedActiveScene = false;
   const sceneReadiness = createSceneLoadReadiness({
@@ -424,11 +452,12 @@ export function startPlayer(options: {
         severity: "error",
         code: "scene.load.failed",
       });
-      options.onDiagnostic?.(diagnostics);
-      haltPlayback();
+      try { options.onDiagnostic?.(diagnostics); } finally { haltPlayback(); }
     },
   });
+  own(() => sceneReadiness.dispose());
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    if (halted) return;
     if (command.type === "sessionPaused") {
       const paused = pauseState.setConsolePaused(command.paused === true);
       handle.setPaused(paused);
@@ -479,17 +508,20 @@ export function startPlayer(options: {
         bodyLine:
           typeof command.bodyLine === "number" ? command.bodyLine : undefined,
       });
-      options.onDiagnostic?.(diagnostics);
-      if (shouldHaltPlayerOnDiagnostic(command.code)) {
-        haltPlayback();
+      try { options.onDiagnostic?.(diagnostics); } finally {
+        if (shouldHaltPlayerOnDiagnostic(command.code)) haltPlayback();
       }
     }
   };
 
+  let releaseWorker = () => {};
   try {
-    worker = createPlayerWorkerHost();
+    const ownedWorker = createPlayerWorkerHost();
+    worker = ownedWorker;
+    releaseWorker = own(() => ownedWorker.terminate());
     worker.onCommand((cmd) => onCommand(cmd as never));
     worker.onSnapshot((buffer) => {
+      if (halted) return;
       lastWorkerTickIndex = applyPlayerSnapshotTick(
         lastWorkerTickIndex,
         buffer,
@@ -501,12 +533,16 @@ export function startPlayer(options: {
     for (const control of packedBootControls(content, game.scripts)) {
       worker.postControl(control);
     }
-  } catch {
+  } catch (error) {
     worker = null;
+    try { releaseWorker(); } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Player worker startup and termination failed.", { cause: error });
+    }
     const inProcess = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command as never),
     );
     runtime = inProcess;
+    own(() => inProcess.stop());
     pauseGate = createPlayPauseGate({
       pause: () => inProcess.pause(),
       resume: () => inProcess.resume(),
@@ -561,12 +597,15 @@ export function startPlayer(options: {
       });
   }
 
+  if (halted) return playerHandle();
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
   });
+  own(() => input?.dispose());
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
     void handle.unlockAudio();
   }, canvas);
+  own(releaseUnlock);
   let last = performance.now();
   let fpsWindowStart = last;
 
@@ -626,30 +665,27 @@ export function startPlayer(options: {
 
   function stopPlayer(): { diagnostics: PlayerDiagnostic[] } {
     halted = true;
-    resetBoot();
-    pauseGate?.reset();
-    sceneReadiness.dispose();
-    sceneLoading.dispose();
-    detachLifecycle();
-    cancelAnimationFrame(raf);
-    resizeObserver?.disconnect();
-    input?.dispose();
-    releaseUnlock();
-    printHud.dispose();
-    worker?.terminate();
-    runtime?.stop();
-    consoleHost.dispose();
-    releaseConsole();
-    handle.dispose();
+    const errors = releaseAll();
+    worker = null;
+    runtime = null;
+    input = null;
+    if (errors.length) {
+      diagnostics.push({ code: "player.cleanup.failed", severity: "error",
+        message: `Player cleanup failed: ${errors.map((error) => error instanceof Error ? error.message : String(error)).join("; ")}` });
+      options.onDiagnostic?.(diagnostics);
+    }
     return { diagnostics };
   }
 
-  return {
-    ticks: () => ticks,
-    visuals: () => handle.playVisualStates(),
-    meshMaterialNames: () => handle.playMeshMaterialNames(),
-    executeConsoleCommand: (line) => consoleHost.execute(line),
-    inspectWorld: () => consoleHost.inspectWorld(),
-    stop: stopPlayer,
-  };
+  function playerHandle(): PlayerBootHandle {
+    return {
+      ticks: () => ticks,
+      visuals: () => handle.playVisualStates(),
+      meshMaterialNames: () => handle.playMeshMaterialNames(),
+      executeConsoleCommand: (line) => consoleHost.execute(line),
+      inspectWorld: () => consoleHost.inspectWorld(),
+      stop: stopPlayer,
+    };
+  }
+  return playerHandle();
 }

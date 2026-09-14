@@ -656,6 +656,7 @@ export function startPlaySession(options: {
   // Aggregates diagnostics received over the command channel (Worker mode).
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
+  const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
   let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
@@ -694,9 +695,13 @@ export function startPlaySession(options: {
       worker?.postControl({ type: "sceneLayerReady", layerId, layerLoadId });
       runtime?.notifySceneLayerReady(layerId, layerLoadId);
     },
-    onFailed: (_scene, error) => {
-      options.onLog?.(`Scene loading failed: ${error instanceof Error ? error.message : String(error)}`, "error");
-      queueMicrotask(() => options.onFatalDiagnostic?.());
+    onFailed: (scene, error) => {
+      const message = `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`;
+      hostDiagnostics.push({ code: "scene.loading.failed", severity: "error", message,
+        assetGuid: scene.sceneAssetGuid, frameId: 0,
+        stack: error instanceof Error ? error.stack : undefined });
+      try { options.onLog?.(message, "error"); }
+      finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
     },
   });
   const consoleWaiters: Array<
@@ -1150,6 +1155,8 @@ export function startPlaySession(options: {
         sessionDiagnostics = workerDiagnostics.entries();
         droppedDiagnostics = workerDiagnostics.droppedCount();
       }
+      sessionDiagnostics.push(...hostDiagnostics.entries());
+      droppedDiagnostics += hostDiagnostics.droppedCount();
       worker?.postControl({ type: "stop" });
       worker?.terminate();
       const liveAfter = handle.liveObjectCounts();
