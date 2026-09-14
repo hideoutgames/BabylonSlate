@@ -1245,6 +1245,7 @@ describe("Play createEngine view", () => {
     const options = { sharedEngine: sharedEngine(), materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]), postProcessStack: [{ materialGuid: "pp", enabled: true }] };
     const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, editor: true });
     handles.push(editor);
+    editor.setPostProcessStack(options.postProcessStack);
     expect(attach).not.toHaveBeenCalled();
     expect(editor.postProcessPassCount()).toBe(1);
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, playMode: true });
@@ -1310,6 +1311,7 @@ describe("Play createEngine view", () => {
       handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 });
     write(worldOwner, "first", 0.7);
+    await handle.prewarmSceneMaterials();
     expect(values(handle.scene)).toEqual([0.25, 0.5]);
     const present = async (owner?: { layerId: string; layerLoadId: number }) => {
       await handle.prewarmSceneMaterials(owner);
@@ -1320,17 +1322,19 @@ describe("Play createEngine view", () => {
     write(worldOwner, "first", 0.7); write(worldOwner, "disabled", 0.9);
     expect(values(handle.scene)).toEqual([0.7, 0.5]);
     handle.setPostProcessStack(authored.map((entry) => ({ ...entry, enabled: true })));
+    await handle.prewarmSceneMaterials();
     expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     handle.setPostProcessingEnabled(false); expect(values(handle.scene)).toEqual([]);
-    handle.setPostProcessingEnabled(true); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    handle.setPostProcessingEnabled(true); await handle.prewarmSceneMaterials(); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     handle.applyCommand({ type: "sceneLayerLoading", layerId: "overlay", layerLoadId: 1, assetGuid: "overlay-asset" });
     handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: authored });
     const layer = handle.sceneLayerScenes()[0]!.scene;
     const layerOwner = { kind: "sceneLayer" as const, layerId: "overlay", layerLoadId: 1 };
-    write(layerOwner, "first", 0.6); expect(values(layer)).toEqual([0.25, 0.5]);
+    write(layerOwner, "first", 0.6); await handle.prewarmSceneMaterials({ layerId: "overlay", layerLoadId: 1 }); expect(values(layer)).toEqual([0.25, 0.5]);
     await present({ layerId: "overlay", layerLoadId: 1 });
     write(layerOwner, "first", 0.6); write(layerOwner, "disabled", 0.8);
     handle.applyCommand({ type: "sceneLayerPostProcess", layerId: "overlay", postProcessStack: authored.map((entry) => ({ ...entry, enabled: true })) });
+    await handle.prewarmSceneMaterials({ layerId: "overlay", layerLoadId: 1 });
     expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     write({ ...worldOwner, sceneLoadId: 0 }, "first", 0.1);
     write({ ...layerOwner, layerLoadId: 0 }, "first", 0.1);
@@ -1338,13 +1342,14 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 2 });
     const reloaded = createDefaultScene(); reloaded.settings.postProcessStack = authored;
     handle.loadScene(reloaded); write(worldOwner, "first", 0.1);
+    await handle.prewarmSceneMaterials();
     expect(values(handle.scene)).toEqual([0.25, 0.5]);
     handle.applyCommand({ type: "sceneLayerRemove", layerId: "overlay" }); write(layerOwner, "first", 0.1);
     expect(handle.sceneLayerScenes()).toEqual([]);
     expect({ document, authored }).toEqual(before);
   });
 
-  it("attaches an authored post-process stack when the local gate is on", () => {
+  it("attaches an authored post-process stack when the local gate is on", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
@@ -1356,10 +1361,11 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
+    await handle.prewarmSceneMaterials();
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
-  it("keeps world post-process on the world camera when a SceneLayer is created", () => {
+  it("keeps world post-process on the world camera when a SceneLayer is created", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
@@ -1371,6 +1377,7 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
+    await handle.prewarmSceneMaterials();
     const worldPasses = handle.postProcessPassCount();
     expect(worldPasses).toBeGreaterThan(0);
     handle.applyCommand({
@@ -2033,7 +2040,7 @@ describe("Play createEngine view", () => {
     expect(handle.assignedMaterialGuids()).toEqual(["mat-rock"]);
   });
 
-  it("moves the post-process stack onto the authored Default Camera", () => {
+  it("moves the post-process stack onto the authored Default Camera", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -2046,6 +2053,7 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
+    await handle.prewarmSceneMaterials();
     const fallback = handle.scene.getCameraByName("camera");
     expect(livePassCount(fallback)).toBeGreaterThan(0);
 
@@ -2073,6 +2081,7 @@ describe("Play createEngine view", () => {
     });
     handle.pushSnapshot(buf);
     runRenderLoop.mock.calls[0]?.[0]?.();
+    await handle.prewarmSceneMaterials();
 
     const authored = handle.scene.activeCamera;
     expect(authored?.name).toBe("authoredCamera:1");
@@ -2080,7 +2089,7 @@ describe("Play createEngine view", () => {
     expect(livePassCount(fallback)).toBe(0);
   });
 
-  it("reattaches the post-process stack to the fallback camera after Default Camera despawn", () => {
+  it("reattaches the post-process stack to the fallback camera after Default Camera despawn", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -2118,6 +2127,7 @@ describe("Play createEngine view", () => {
     });
     handle.pushSnapshot(spawn);
     callback?.();
+    await handle.prewarmSceneMaterials();
     expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
     expect(livePassCount(handle.scene.activeCamera)).toBeGreaterThan(0);
 
@@ -2132,6 +2142,7 @@ describe("Play createEngine view", () => {
     handle.pushSnapshot(empty);
     callback?.();
 
+    await handle.prewarmSceneMaterials();
     const fallback = handle.scene.getCameraByName("camera");
     expect(handle.scene.activeCamera).toBe(fallback);
     expect(fallback?.isDisposed()).toBe(false);

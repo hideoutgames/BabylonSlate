@@ -305,6 +305,7 @@ describe("SceneLayerCompositor", () => {
     } });
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
     await compositor.prepare("overlay", () => {});
+    await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
     let acknowledged = false;
     compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
     expect(acknowledged).toBe(true);
@@ -324,6 +325,7 @@ describe("SceneLayerCompositor", () => {
     await vi.waitFor(() => { expect(disposeUnrendered).toHaveBeenCalledOnce(); });
     expect(disposeFirst).not.toHaveBeenCalled();
     await compositor.prepare("overlay", () => {});
+    await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
     compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
     expect(acknowledged).toBe(true);
     await vi.waitFor(() => { expect(disposeFirst).toHaveBeenCalledOnce(); });
