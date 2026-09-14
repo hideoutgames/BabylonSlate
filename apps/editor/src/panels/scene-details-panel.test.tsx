@@ -713,7 +713,7 @@ describe("SceneDetailsPanel authoring", () => {
       return await screen.findByRole("textbox", { name: "Entry ID" }) as HTMLInputElement;
     };
     const close = async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     };
     expect(screen.queryByRole("textbox", { name: "Entry ID" })).toBeNull();
