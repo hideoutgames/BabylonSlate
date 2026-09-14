@@ -626,7 +626,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(harness.applySceneChange).toHaveBeenCalled();
     const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
     expect(next.settings.postProcessStack).toEqual([
-      { materialGuid: "pp-blur", enabled: true },
+      { id: expect.any(String), materialGuid: "pp-blur", enabled: true },
     ]);
   });
 
@@ -695,21 +695,33 @@ describe("SceneDetailsPanel authoring", () => {
 
   it("moves and removes repeated post-process assets with their own enabled state", () => {
     scene().settings.postProcessStack = [
-      { materialGuid: "pp-blur", enabled: true },
-      { materialGuid: "pp-blur", enabled: false },
+      { id: "a", materialGuid: "pp-blur", enabled: true },
+      { id: "b", materialGuid: "pp-blur", enabled: false, scalable: true },
     ];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("scene-post-process-stack-1-move-up"));
     expect(
       harness.applySceneChange.mock.calls.at(-1)![1].settings.postProcessStack,
     ).toEqual([
-      { materialGuid: "pp-blur", enabled: false },
-      { materialGuid: "pp-blur", enabled: true },
+      { id: "b", materialGuid: "pp-blur", enabled: false, scalable: true },
+      { id: "a", materialGuid: "pp-blur", enabled: true },
     ]);
     fireEvent.click(screen.getByTestId("scene-post-process-stack-0-remove"));
     expect(
       harness.applySceneChange.mock.calls.at(-1)![1].settings.postProcessStack,
-    ).toEqual([{ materialGuid: "pp-blur", enabled: false }]);
+    ).toEqual([{ id: "b", materialGuid: "pp-blur", enabled: false, scalable: true }]);
+  });
+
+  it("retains pass identity and scalability when replacing its Material", async () => {
+    scene().settings.postProcessStack = [
+      { id: "retained", materialGuid: "pp-old", enabled: false, scalable: true },
+    ];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("scene-post-process-0-material"));
+    fireEvent.click(await screen.findByTestId("search-item-pp-blur"));
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].settings.postProcessStack).toEqual([
+      { id: "retained", materialGuid: "pp-blur", enabled: false, scalable: true },
+    ]);
   });
 
   it("keeps repeated layers' Z-Order and enabled state when moving and editing them", () => {

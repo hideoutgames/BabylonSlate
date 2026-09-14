@@ -1,6 +1,8 @@
 import {
   identityTransform,
   newGuid,
+  normalizeScenePostProcessStack,
+  type ScenePostProcessEntry,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   type Guid,
   type InputKey,
@@ -290,7 +292,7 @@ export class SceneLayer extends BObject {
   assetGuid: string;
   zOrder: number;
   ownerSceneGuid: string | null;
-  postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+  postProcessStack: ScenePostProcessEntry[];
   layerBounds: { width: number; height: number };
 
   constructor(options: {
@@ -300,7 +302,7 @@ export class SceneLayer extends BObject {
     assetGuid: string;
     zOrder: number;
     ownerSceneGuid?: string | null;
-    postProcessStack?: Array<{ materialGuid: string; enabled: boolean }>;
+    postProcessStack?: ScenePostProcessEntry[];
     layerBounds?: { width: number; height: number };
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
@@ -315,7 +317,7 @@ export class SceneLayer extends BObject {
     this.assetGuid = options.assetGuid;
     this.zOrder = options.zOrder;
     this.ownerSceneGuid = options.ownerSceneGuid ?? null;
-    this.postProcessStack = [...(options.postProcessStack ?? [])];
+    this.postProcessStack = normalizeScenePostProcessStack(options.postProcessStack);
     this.layerBounds = {
       width: options.layerBounds?.width && options.layerBounds.width > 0
         ? options.layerBounds.width

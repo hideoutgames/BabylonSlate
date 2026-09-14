@@ -38,6 +38,8 @@ import {
   type SerializedScene,
   isSceneWorkspaceKind,
   normalizeCelShadingSettings,
+  normalizeScenePostProcessStack,
+  newGuid,
 } from "@babylonslate/core";
 import {
   ChevronDownIcon,
@@ -637,6 +639,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               title="Post Processing"
               data-testid="scene-post-process-stack"
               items={scene.settings.postProcessStack}
+              getItemKey={(item, index) => item.id ?? index}
               addLabel="Add Pass"
               countNoun={{ one: "pass", other: "passes" }}
               onAdd={() => setPostProcessPick("add")}
@@ -645,7 +648,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   ...scene,
                   settings: {
                     ...scene.settings,
-                    postProcessStack,
+                    postProcessStack: normalizeScenePostProcessStack(postProcessStack),
                   },
                 })
               }
@@ -860,7 +863,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             const stack = [...scene.settings.postProcessStack];
             if (postProcessPick === "add") {
               if (materialGuid) {
-                stack.push({ materialGuid, enabled: true });
+                stack.push({ id: newGuid(), materialGuid, enabled: true });
               }
             } else if (typeof postProcessPick === "number") {
               if (!materialGuid) {
@@ -868,6 +871,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               } else {
                 const current = stack[postProcessPick];
                 stack[postProcessPick] = {
+                  ...current,
                   materialGuid,
                   enabled: current?.enabled !== false,
                 };
@@ -875,7 +879,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             }
             mutate({
               ...scene,
-              settings: { ...scene.settings, postProcessStack: stack },
+              settings: { ...scene.settings, postProcessStack: normalizeScenePostProcessStack(stack) },
             });
             setPostProcessPick(null);
           }}

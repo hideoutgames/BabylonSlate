@@ -76,7 +76,7 @@ describe("SceneLayer schema", () => {
       "SpriteComponent",
     ]);
     expect(layer.settings.postProcessStack).toEqual([
-      { materialGuid: "pp-1", enabled: true },
+      { id: expect.any(String), materialGuid: "pp-1", enabled: true },
     ]);
     expect(SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS).toEqual([
       "SkyboxComponent",
