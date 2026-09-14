@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Color3,
+  Matrix,
+  SphericalPolynomial,
   InputBlock,
   Material,
   MeshBuilder,
@@ -17,12 +19,15 @@ import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
-import { normalizeCelShadingSettings } from "@babylonslate/core";
+import { normalizeCelShadingSettings, normalizeEnvironmentLightingSettings } from "@babylonslate/core";
 import { CelMaterial } from "./cel-material";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings } from "./render-settings";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { ResourceCache } from "./resource-cache";
+import { applyEnvironmentLighting } from "./environment-lighting";
+import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -35,6 +40,51 @@ function host() {
 }
 
 describe("native CEL render mode", () => {
+  it("binds opted-in diffuse irradiance for frozen native and graph CEL without changing the default contribution", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const engine = scene.getEngine();
+    const cache = new ResourceCache();
+    scene.onDisposeObservable.addOnce(() => cache.dispose());
+    const polynomial = new SphericalPolynomial();
+    polynomial.yy.set(0.2, 0.7, 0.4);
+    vi.spyOn(engine, "createPrefilteredCubeTexture").mockImplementation((url) => {
+      const internal = engine.createTexture(url, false, false, null);
+      internal.isCube = true;
+      internal._sphericalPolynomial = polynomial;
+      return internal;
+    });
+    const settings = { mode: "cel" as const, environmentLighting: normalizeEnvironmentLightingSettings({ intensity: 4 }) };
+    setSceneRenderSettings(scene, settings);
+    applyEnvironmentLighting(scene, "environment", { resourceCache: cache, textureBytes: new Map([["environment", buildFloatDdsCubeFixture()]]) });
+    const source = new PBRMaterial("source", scene);
+    const native = new CelMaterial(source, scene);
+    const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+    if (!lowered.ok) throw new Error("Invalid fixture");
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "graph-environment" });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    expect(await compiled.ready).toEqual([]);
+    for (const material of [native, compiled.material]) {
+      const mesh = MeshBuilder.CreateBox(material.name, {}, scene);
+      mesh.material = material;
+      await material.forceCompilationAsync(mesh);
+      const subMesh = mesh.subMeshes[0]!;
+      expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+      const effect = subMesh.effect!;
+      const uniforms = vi.spyOn(effect, "setFloat4");
+      material.freeze();
+      setSceneRenderSettings(scene, settings);
+      material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+      expect(uniforms.mock.calls.filter(([name]) => name === "slateCelEnvironment").at(-1)).toEqual(["slateCelEnvironment", 0, 0, 0, 0]);
+      setSceneRenderSettings(scene, { ...settings, environmentLighting: { ...settings.environmentLighting, celStrength: 0.5 } });
+      material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+      expect(uniforms.mock.calls.filter(([name]) => name === "slateCelEnvironment").at(-1)).toEqual(["slateCelEnvironment", 2, 0, 0, 0]);
+      expect(uniforms.mock.calls.filter(([name]) => name === "slateCelIrradiance_yy").at(-1)).toEqual(["slateCelIrradiance_yy", 0.2, 0.7, 0.4, 0]);
+      expect(material.isFrozen).toBe(true);
+      uniforms.mockRestore();
+    }
+    compiled.dispose();
+  });
   it("adapts imported slots and late meshes, preserving textures, alpha and PBR restoration", () => {
     const scene = host();
     const pbr = new PBRMaterial("imported", scene);

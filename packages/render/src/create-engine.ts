@@ -2,6 +2,7 @@ import { submitPresentedFrame } from "./presented-frame";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
+import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
 import {
   Engine,
@@ -2491,7 +2492,7 @@ function materialTextureGuidMap(
 function sceneNodeMaterialsSampleReady(scene: Scene): boolean {
   // Native RGBD environment/BRDF decoding outlives the texture load event and
   // can render asynchronously even when no current material samples the map.
-  if (!isSceneTextureWorkReady(scene)) return false;
+  if (!isEnvironmentLightingReady(scene) || !isSceneTextureWorkReady(scene)) return false;
   for (const material of scene.materials) {
     if (material instanceof NodeMaterial && !nodeMaterialTexturesSampleReady(material)) return false;
     if (material.getActiveTextures().some((texture) => !texture.isReady())) return false;
