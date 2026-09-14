@@ -42,6 +42,12 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
     disableWebGL2Support: false,
   });
   const boundTargets: RenderTargetWrapper[] = [];
+  let readinessDrawStacks: string[] | undefined;
+  const drawElements = engine.drawElementsType.bind(engine);
+  engine.drawElementsType = (...args) => {
+    readinessDrawStacks?.push(new Error("Readiness draw").stack ?? "Unknown draw");
+    drawElements(...args);
+  };
   const bind = engine.bindFramebuffer.bind(engine);
   engine.bindFramebuffer = (target, ...args) => {
     boundTargets.push(target);
@@ -191,7 +197,10 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
     const capture = async (pose: string) => {
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
+      readinessDrawStacks = [];
       const prepared = await graph.prepare(camera);
+      const readinessStacks = readinessDrawStacks;
+      readinessDrawStacks = undefined;
       const readinessDraws = readEngineDrawCalls(engine);
       const readinessFaces = boundTargets.length;
       const currentMap = map();
@@ -204,6 +213,7 @@ export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "w
         name: `${mode}-${kind}-${pose}`,
         prepared,
         readinessDraws,
+        readinessStacks,
         readinessFaces,
         graph: graphFrame,
         classic,
