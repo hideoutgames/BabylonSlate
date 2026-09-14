@@ -27,7 +27,7 @@ describe("AddComponentDialog", () => {
     const row = screen.getByTestId("add-component-catalog-item-class-RegenHealth");
     const icon = row.querySelector("svg[data-type-icon]");
     expect(icon?.getAttribute("data-type-icon")).toBe("ActorComponent");
-    expect(icon?.getAttribute("color")).toBe("var(--asset-animation)");
+    expect(icon?.getAttribute("stroke")).toBe("var(--asset-animation)");
     fireEvent.click(row);
     expect(onSelect).toHaveBeenCalledWith({ classId: "RegenHealth", properties: {} });
   });

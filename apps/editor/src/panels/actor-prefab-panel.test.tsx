@@ -131,7 +131,7 @@ describe("ActorPrefabPanel", () => {
     const icon = screen.getByTestId("tree-row-regen").querySelector("svg[data-type-icon]");
     expect(icon?.getAttribute("data-type-icon")).toBe("ActorComponent");
     expect(icon?.classList.contains("lucide-file-cog")).toBe(true);
-    expect(icon?.getAttribute("color")).toBe("var(--asset-animation)");
+    expect(icon?.getAttribute("stroke")).toBe("var(--asset-animation)");
   });
 
   it("frames Prefab Root on double-tap", () => {
