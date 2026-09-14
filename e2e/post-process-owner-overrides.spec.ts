@@ -1,8 +1,7 @@
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
-import { collectAndExportGame } from "../apps/editor/src/services/export-game";
 import { loadPlayerDistFiles } from "../apps/editor/src/services/load-player-files";
 import { DEFAULT_RENDER_PROJECT_SETTINGS } from "../packages/core/src/index";
-import { PREVIEW_STOP_MESSAGE } from "../packages/exporter/src/index";
+import { collectExportReachability, exportGame, PREVIEW_STOP_MESSAGE } from "../packages/exporter/src/index";
 import { serveExportFiles } from "./export-static-server";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
@@ -77,13 +76,22 @@ test("export closure retains disabled override textures and packed player presen
   test.setTimeout(120_000);
   const errors = renderErrors(page);
   const fixture = await postProcessFixture(page);
-  const result = await collectAndExportGame({
+  const closure = collectExportReachability({
     startupSceneGuid: POST_PROCESS_SCENE_GUID,
-    assets: fixture.assets, plugins: [], projectPluginOverrides: {},
+    assets: fixture.assets, pluginEnabledGuids: new Set(),
     parentOf: () => null, graphByGuid: () => null,
     sceneByGuid: (id) => id === POST_PROCESS_SCENE_GUID ? fixture.scene : null,
     payloadByGuid: (id) => fixture.payloads.get(id) ?? null,
-    bytesByGuid: (id) => fixture.bytes.get(id) ?? null,
+  });
+  if (!closure.ok) throw new Error(closure.error);
+  expect(closure.value.guids).toContain(DISABLED_MASK_GUID);
+  const result = await exportGame({
+    startupSceneGuid: POST_PROCESS_SCENE_GUID, bundleDebugger: false, scripts: [],
+    assets: fixture.assets.filter((asset) => closure.value.guids.includes(asset.guid)).map((asset) => ({
+      guid: asset.guid, type: asset.type, name: asset.name, sceneGuid: POST_PROCESS_SCENE_GUID,
+      bytes: fixture.bytes.get(asset.guid)!,
+      ...(asset.type === "Texture" ? { width: 1, height: 1 } : {}),
+    })),
     customResolution: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgl2", customResolution: true, width: 320, height: 180, blackBars: true },
     playFrameCap: 60, physicsWorld: "3d",
     playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
