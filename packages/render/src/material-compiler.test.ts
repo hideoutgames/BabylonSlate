@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock, ScaleBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -72,6 +72,23 @@ function planFor(doc: MaterialDocument, functions = {}) {
   }
   return lowered.plan;
 }
+
+it("scales only indirect surface lighting with a live Environment Influence parameter", async () => {
+  const scene = host();
+  const doc = createDefaultMaterialDocument();
+  doc.nodes.push({ id: "environmentWeight", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Environment Weight", value: [0] } });
+  const output = doc.nodes.find((node) => node.type === "output.surface")!;
+  doc.edges.push({ id: "environment-weight-output", sourceNodeId: "environmentWeight", sourcePinId: "out", targetNodeId: output.id, targetPinId: "environmentInfluence" });
+  const result = compileMaterialPlan(planFor(doc), { scene, name: "influence" });
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(await result.ready).toEqual([]);
+  const scale = result.material.getBlockByName("influence_environmentInfluenceScale") as ScaleBlock;
+  expect(scale.input.connectedPoint?.ownerBlock.name).toBe("influence_environmentColor");
+  expect(result.setParameter("Environment Weight", { kind: "float", value: 0.6 })).toBe(true);
+  expect(result.material.getBlockByName("environmentWeight")).toHaveProperty("value", 0.6);
+  expect(result.material.compiledShaders).toContain("pbrBlockDirectLighting");
+  result.dispose();
+});
 
 /** Base Color driven by a Multiply so the graph is not a bare constant. */
 function multiplyMaterial(): MaterialDocument {

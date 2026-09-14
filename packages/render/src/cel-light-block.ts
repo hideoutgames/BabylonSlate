@@ -15,11 +15,21 @@ import {
   celFunctions,
   celLightAccumulators,
   celLightingFunctions,
+  celEnvironmentAccumulation,
   CEL_UNIFORMS,
 } from "./cel-shader";
 
 /** Native CEL light evaluation inside authored surface graphs. */
 export class CelLightBlock extends LightBlock {
+  constructor(name: string) {
+    super(name);
+    this.registerInput("environmentInfluence", NodeMaterialBlockConnectionPointTypes.Float, true, NodeMaterialBlockTargets.Fragment);
+  }
+
+  get environmentInfluence() {
+    return this.getInputByName("environmentInfluence")!;
+  }
+
   override getClassName(): string {
     return "CelLightBlock";
   }
@@ -63,6 +73,7 @@ export class CelLightBlock extends LightBlock {
           state.shaderLanguage === 1,
         );
       const generated = checkedShader(state.compilationString.slice(start), state.shaderLanguage === 1 ? "graph WGSL" : "graph GLSL")
+        .replace("aggShadow = aggShadow / numLights;", `${celEnvironmentAccumulation(state.shaderLanguage === 1, this.environmentInfluence.isConnected ? this.environmentInfluence.associatedVariableName : "1.0")}\naggShadow = aggShadow / numLights;`)
         .replaceAll(
           "#include<lightFragment>",
           "#include<slateCelLightFragment>",

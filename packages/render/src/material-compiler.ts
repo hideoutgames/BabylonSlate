@@ -1,6 +1,7 @@
 import {
   AddBlock,
   BonesBlock,
+  ClampBlock,
   InstancesBlock,
   MorphTargetsBlock,
   Constants,
@@ -19,6 +20,7 @@ import {
   PBRMetallicRoughnessBlock,
   ReflectionBlock,
   RemapBlock,
+  ScaleBlock,
   TransformBlock,
   VectorMergerBlock,
   Vector3,
@@ -1177,14 +1179,29 @@ function attachSurfaceShading(
   const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
   if (opacity) opacity.connectTo(pbr.opacity);
 
-  if (emissive) {
+  const environmentOperand = plan.outputs.environmentInfluence;
+  const customEnvironment = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1);
+  if (emissive || customEnvironment) {
     // These are the linear contributions supported by our surface compiler.
     // pbr.lighting has already passed through image processing and must not be
     // used for an additive linear emissive contribution.
     const diffuse = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
     const lit = addColor(diffuse, pbr.specularDir, "litColor");
-    const indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
-    const color = addColor(addColor(lit, indirect, "totalLighting"), emissive, "surfaceEmission");
+    let indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
+    if (customEnvironment) {
+      const influence = outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)!;
+      const clamp = new ClampBlock(`${options.name}_environmentInfluenceClamp`);
+      clamp.minimum = 0;
+      clamp.maximum = 1;
+      const scale = new ScaleBlock(`${options.name}_environmentInfluenceScale`);
+      created.push(clamp, scale);
+      influence.connectTo(clamp.value);
+      clamp.output.connectTo(scale.factor);
+      indirect.connectTo(scale.input);
+      indirect = scale.output;
+    }
+    const lighting = addColor(lit, indirect, "totalLighting");
+    const color = emissive ? addColor(lighting, emissive, "surfaceEmission") : lighting;
     const imageProcessing = new LinearSurfaceImageProcessingBlock(
       `${options.name}_imageProcessing`,
     );

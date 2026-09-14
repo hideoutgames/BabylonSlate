@@ -15,6 +15,7 @@ import { defaultPixelShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.frag
 import {
   bindCelSettings,
   celLightAccumulators,
+  celEnvironmentAccumulation,
   CEL_UNIFORMS,
 } from "./cel-shader";
 
@@ -54,7 +55,7 @@ for (const wgsl of [false, true]) {
     )
     .replace(
       "#ifdef EMISSIVEASILLUMINATION",
-      "diffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\n#ifdef SPECULARTERM\nspecularBase=slateCelSurfaceSpecular(specularBase,slateCelPeak,slateCelTotal);\n#endif\n#ifdef EMISSIVEASILLUMINATION",
+      `${celEnvironmentAccumulation(wgsl)}\ndiffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\n#ifdef SPECULARTERM\nspecularBase=slateCelSurfaceSpecular(specularBase,slateCelPeak,slateCelTotal);\n#endif\n#ifdef EMISSIVEASILLUMINATION`,
       2,
     ).value;
 }
@@ -79,7 +80,7 @@ export class CelMaterial extends StandardMaterial {
     this.onBindObservable.add(() => {
       const effect = this.getEffect();
       if (effect) {
-        bindCelSettings(effect, scene, this.disableLighting);
+        bindCelSettings(effect, scene, this.disableLighting, source instanceof PBRMaterial ? source.environmentIntensity : 1);
         effect.setFloat4(
           "slateCelTextures",
           this.diffuseTexture
