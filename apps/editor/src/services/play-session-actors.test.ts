@@ -15,6 +15,8 @@ import { startPlaySession, type PlaySession } from "./play-session";
 vi.mock("@babylonslate/render", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@babylonslate/render")>()),
   createEngine: vi.fn(),
+  // Actor tests drive ticks explicitly; browser paint is covered by the host tests.
+  waitForSceneLoadingPaint: () => Promise.resolve(),
 }));
 vi.mock("@babylonslate/runtime", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@babylonslate/runtime")>()),
@@ -62,7 +64,7 @@ describe.each(["worker", "in-process"] as const)(
       vi.stubGlobal("cancelAnimationFrame", () => {});
       vi.mocked(createEngine).mockReturnValue({
         applySceneEnvironment() {},
-        scheduler: { invalidate() {} },
+        scheduler: { invalidate() {}, acquireObstruction: () => () => {} },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
         applyCommand() {},
         whenEditorModelsReady: () => Promise.resolve(),
@@ -74,8 +76,10 @@ describe.each(["worker", "in-process"] as const)(
 
       let runtime!: RuntimeDriver;
       let finishBoot!: () => void;
-      const booted = new Promise<void>((resolve) => {
+      let failBoot!: (error: unknown) => void;
+      const booted = new Promise<void>((resolve, reject) => {
         finishBoot = resolve;
+        failBoot = reject;
       });
       vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand) => {
         runtime = createInProcessRuntime({
@@ -83,10 +87,15 @@ describe.each(["worker", "in-process"] as const)(
           onCommand,
           preferSoftwarePhysics: true,
         });
-        const resume = runtime.resume.bind(runtime);
-        vi.spyOn(runtime, "resume").mockImplementation(() => {
-          resume();
+        const finishLoading = runtime.finishPlayLoading.bind(runtime);
+        vi.spyOn(runtime, "finishPlayLoading").mockImplementation(() => {
+          finishLoading();
           finishBoot();
+        });
+        const reportError = runtime.reportError.bind(runtime);
+        vi.spyOn(runtime, "reportError").mockImplementation((error) => {
+          reportError(error);
+          failBoot(error);
         });
         return runtime;
       });
@@ -110,10 +119,15 @@ describe.each(["worker", "in-process"] as const)(
               runtime = createRuntimeFromLoad(control, onCommand);
             if (control.type === "loadScripts")
               boot.queueScripts(runtime, control.scripts, control.spawn ?? []);
-            if (control.type === "play") void boot.play(runtime);
+            if (control.type === "play") void boot.play(runtime).catch(failBoot);
+            if (control.type === "sceneLoadingPainted")
+              runtime.notifySceneLoadingPainted(control.sceneAssetGuid, control.sceneLoadId);
             if (control.type === "sceneModelsReady")
               runtime.notifySceneModelsReady(control.sceneAssetGuid, control.sceneLoadId);
-            if (control.type === "stop") runtime.stop();
+            if (control.type === "stop") {
+              boot.reset();
+              runtime.stop();
+            }
           },
         });
       }
