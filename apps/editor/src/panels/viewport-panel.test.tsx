@@ -8,6 +8,7 @@ import { syncEditorPlayState } from "@babylonslate/render";
 import { createActor, createDefaultScene, createEmptyProject, engineCommandBus, type SerializedScene } from "@babylonslate/core";
 import { encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { playAudioLibraryFromAssets } from "../lib/play-audio";
 
 const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() => {
   const handle = {
@@ -95,6 +96,10 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       })),
       collectPlayModelBytes: vi.fn(async () => new Map()),
       collectPlayModelPayloads: vi.fn(async () => new Map()),
+      collectPlayAudio: vi.fn<() => Promise<{
+        library: import("../lib/play-audio").PlayAudioLibrary;
+        loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;
+      }>>(),
       collectPlayMaterialLibrary: vi.fn(async () => ({
         documents: new Map(),
         functions: new Map(),
@@ -145,6 +150,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayFontCssStacks: documents.collectPlayFontCssStacks,
     collectPlayModelBytes: documents.collectPlayModelBytes,
     collectPlayModelPayloads: documents.collectPlayModelPayloads,
+    collectPlayAudio: documents.collectPlayAudio,
     collectPlayMaterialLibrary: documents.collectPlayMaterialLibrary,
     readAssetChunk: documents.readAssetChunk,
     assetRegistry: documents.assetRegistry,
@@ -251,6 +257,30 @@ describe("ViewportPanel engine", () => {
     });
     documents.collectPlayTextureBytes.mockReset().mockResolvedValue(new Map());
     documents.collectPlaySpritePayloads.mockReset().mockResolvedValue([]);
+    documents.collectPlayAudio.mockReset();
+    handle.editor.syncSelectionDebug.mockClear();
+  });
+
+  it("supplies attenuation metadata for selected scene audio without loading source clips", async () => {
+    const audioActor = createActor("speaker", "Speaker", { components: [{
+      id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" },
+    }] });
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...createDefaultScene(), actors: [audioActor] },
+    }];
+    const library = playAudioLibraryFromAssets({ mixerGuid: null, assets: [
+      { guid: "sound", type: "Audio", payload: { soundAttenuationGuid: "near" } },
+      { guid: "near", type: "SoundAttenuation", payload: { innerRadius: 3, maxRadius: 12 } },
+    ] });
+    const loadSourceBytes = vi.fn(async () => null);
+    documents.collectPlayAudio.mockResolvedValue({ library, loadSourceBytes });
+    selection.actorIds = ["speaker"];
+    renderViewport();
+    await waitFor(() => expect(handle.editor.syncSelectionDebug).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedActorIds: ["speaker"], audioLibrary: library }),
+    ));
+    expect(loadSourceBytes).not.toHaveBeenCalled();
   });
 
   it("defers a hidden dock canvas without blocking its sibling, then waits for a real presentation", async () => {

@@ -38,7 +38,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
-import { HomepageTemplateBrowser } from "./homepage-template-browser";
+import { HomepageTemplateBrowser, homepageTemplates } from "./homepage-template-browser";
 import { ProjectIdentityBadge } from "./homepage-project-identity";
 import {
   PROJECT_COLOR_PRESETS,
@@ -231,6 +231,7 @@ export function HomepageCreateDialog({
             <Button
               variant="ghost"
               size="touch-icon"
+              className="homepage-composer-back"
               aria-label="Choose Template"
               disabled={busy}
               onClick={() => setStep("templates")}
@@ -243,7 +244,7 @@ export function HomepageCreateDialog({
               ? "Edit Project"
               : step === "templates"
                 ? "Start With"
-                : "New Project"}
+                : `New ${homepageTemplates(templates).find((template) => template.id === templateId)?.name ?? "Project"}`}
           </DialogTitle>
           <DialogDescription className="sr-only">
             {editing
