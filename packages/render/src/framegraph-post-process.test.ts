@@ -362,15 +362,18 @@ it.each(["replace", "dispose"] as const)(
     vi.useFakeTimers();
     try {
       const { engine, graph, tasks, diagnostics } = host([gainDocument(), gainDocument()]);
-      const createPipeline = engine.createPipelineContext.bind(engine);
+      const preparePipeline = engine._preparePipelineContextAsync.bind(engine);
       let pendingPipeline: WebGLPipelineContext | undefined;
-      vi.spyOn(engine, "createPipelineContext").mockImplementation((...args) => {
-        const pipeline = createPipeline(...args) as WebGLPipelineContext;
-        if (!pendingPipeline) {
+      vi.spyOn(engine, "_preparePipelineContextAsync").mockImplementation((...args) => {
+        const pipeline = args[0] as WebGLPipelineContext;
+        // The graph also compiles its own copy Effect. Delay an authored pass,
+        // identified by its actual native key, instead of whichever compiles first.
+        if (!pendingPipeline && engine.postProcesses.some((pass) =>
+          pass.getEffect()?.key.replace(/\r/g, "").replace(/\n/g, "|") === pipeline._name)) {
           pendingPipeline = pipeline;
           pipeline.isParallelCompiled = true;
         }
-        return pipeline;
+        return preparePipeline(...args);
       });
       let deletedProgramQueries = 0;
       // Retain native Effect, pipeline, retry timer and disposal. NullEngine has
@@ -380,8 +383,11 @@ it.each(["replace", "dispose"] as const)(
         return false;
       });
       await graph.buildAsync(false);
-      const retiring = engine.postProcesses[0]!.getEffect();
-      const sibling = engine.postProcesses[1]!;
+      await vi.waitFor(() => expect(pendingPipeline).toBeDefined());
+      const retiringPass = engine.postProcesses.find((pass) => pass.getEffect().getPipelineContext() === pendingPipeline)!;
+      const retiring = retiringPass.getEffect();
+      const sibling = engine.postProcesses.find((pass) => pass !== retiringPass)!;
+      const task = tasks.find((candidate) => candidate.name === retiringPass.name)!;
       const errors = vi.fn();
       retiring.onErrorObservable.add(errors);
       await vi.waitFor(() => expect(sibling.getEffect().isReady()).toBe(true));
@@ -389,8 +395,8 @@ it.each(["replace", "dispose"] as const)(
       const applied = vi.fn();
       sibling.onApplyObservable.add(applied);
 
-      if (action === "replace") await tasks[0]!.replaceDocument(gainDocument());
-      else tasks[0]!.dispose();
+      if (action === "replace") await task.replaceDocument(gainDocument());
+      else task.dispose();
       expect(retiring.isDisposed).toBe(true);
       await vi.advanceTimersByTimeAsync(32);
       expect(deletedProgramQueries).toBe(0);
