@@ -165,8 +165,8 @@ describe("material compiler", () => {
       const fragment = result.material.attachedBlocks.find(
         (block) => block instanceof FragmentOutputBlock,
       )!;
-      const visited = new Set<typeof fragment>();
-      const visit = (block: typeof fragment) => {
+      const visited = new Set<import("@babylonjs/core").NodeMaterialBlock>();
+      const visit = (block: import("@babylonjs/core").NodeMaterialBlock) => {
         if (visited.has(block)) return;
         visited.add(block);
         for (const input of block.inputs) {
