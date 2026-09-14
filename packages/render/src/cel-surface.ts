@@ -97,6 +97,7 @@ function createCelSurface(
   plumbing.worldNormal4?.connectTo(lighting.worldNormal);
   plumbing.cameraPosition?.connectTo(lighting.cameraPosition);
   plumbing.view?.connectTo(lighting.view);
+  outputPoint("environmentInfluence", `${name}_celEnvironmentInfluence`, false)?.connectTo(lighting.environmentInfluence);
   const toDisplay = (point: NodeMaterialConnectionPoint, suffix: string) => {
     const conversion = new DisplayColorBlock(`${name}_${suffix}`);
     created.push(conversion);
