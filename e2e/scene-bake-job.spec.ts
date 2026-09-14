@@ -210,7 +210,10 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
     saved.actors.find((actor) => actor.id === "source-actor")!.components[0]!
       .properties,
   ).toMatchObject({ mobility: "static", intensity: 4, castShadows: false });
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog
+    .locator('[data-slot="dialog-footer"]')
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
   await expect(page.getByTestId("scene-bake-validity")).toHaveText("Valid", {
     timeout: 20_000,
   });
@@ -244,7 +247,10 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
     { timeout: 30_000 },
   );
   expect((await currentScene(page)).settings.bakedLightingAssetGuid).toBe(guid);
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await dialog
+    .locator('[data-slot="dialog-footer"]')
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
   await expect(page.getByTestId("scene-bake-validity")).toHaveText("Stale", {
     timeout: 20_000,
   });
