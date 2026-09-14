@@ -10,7 +10,7 @@ import { loadGameFromFiles } from "./artifact";
 const { createBackend, start } = vi.hoisted(() => ({ createBackend: vi.fn(), start: vi.fn() }));
 vi.mock("@babylonslate/render", async () => ({
   createBackendEngineSession: createBackend,
-  ...await import("@babylonslate/render/material-backend-compatibility"),
+  ...await import("../../../packages/render/src/material-backend-compatibility"),
 }));
 vi.mock("./boot", () => ({ startPlayer: start }));
 import { startPlayerWithBackend } from "./player-backend";
