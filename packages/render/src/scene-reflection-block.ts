@@ -19,6 +19,14 @@ export class SceneReflectionBlock extends ReflectionBlock {
     return true;
   }
 
+  override handleFragmentSideInits(state: NodeMaterialBuildState): void {
+    // Babylon emits this block's sampler declarations here. WebGPU requires
+    // every declared binding, including samplers used only by an inactive branch.
+    state._samplerDeclaration += "#ifdef REFLECTION\n";
+    super.handleFragmentSideInits(state);
+    state._samplerDeclaration += "#endif\n";
+  }
+
   override handleFragmentSideCodeReflectionCoords(
     state: NodeMaterialBuildState,
     worldNormalVarName: string,

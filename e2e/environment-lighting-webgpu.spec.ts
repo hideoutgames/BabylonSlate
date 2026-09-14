@@ -30,7 +30,7 @@ test("WebGPU prepares directional base irradiance while preserving another targe
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (
-      /WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:/i.test(
+      /WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:|not found in the material context/i.test(
         message.text(),
       )
     )
