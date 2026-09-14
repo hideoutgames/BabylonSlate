@@ -26,7 +26,7 @@ describe("compiled particle effect bindings", () => {
       await vi.waitFor(() => expect(system.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)).toBeTruthy());
       return system;
     };
-    return { engine, create, library };
+    return { engine, scene, create, library, compiled };
   }
 
   it("settles live define changes without appending callbacks during the same bind", async () => {
@@ -60,6 +60,10 @@ describe("compiled particle effect bindings", () => {
     await vi.waitFor(() => {
       for (const effect of effects) expect(effect.onBindObservable.hasObservers()).toBe(false);
     });
+    await vi.waitFor(() => {
+      engine.endFrame();
+      for (const effect of effects) expect(effect.isDisposed).toBe(true);
+    });
   });
 
   it("releases only the disposed system's observers on a shared effect", async () => {
@@ -72,5 +76,20 @@ describe("compiled particle effect bindings", () => {
     expect(() => effect.onBindObservable.notifyObservers(effect)).not.toThrow();
     library.dispose();
     await vi.waitFor(() => expect(effect.onBindObservable.hasObservers()).toBe(false));
+  });
+
+  it("removes compiler probe bindings before a live system reuses their effect", async () => {
+    const { scene, create, compiled } = await host();
+    await compiled.ready;
+    // The compiler's temporary shader probe precedes the first factory binding.
+    const probe = new ParticleSystem("compile-probe", 1, scene);
+    compiled.material.createEffectForParticles(probe);
+    const live = await create("live");
+    const effect = live.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)!;
+    expect(probe.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)).toBe(effect);
+    probe.dispose(false);
+    await vi.waitFor(() => expect(effect.onBindObservable.observers).toHaveLength(1));
+    expect(() => effect.onBindObservable.notifyObservers(effect)).not.toThrow();
+    live.dispose(false);
   });
 });

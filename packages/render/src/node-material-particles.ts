@@ -1,4 +1,4 @@
-import type { Effect, IParticleSystem, NodeMaterial, Observer } from "@babylonjs/core";
+import { DrawWrapper, type Effect, type IParticleSystem, type NodeMaterial, type Observer } from "@babylonjs/core";
 
 type NativeParticleBinder = (
   system: IParticleSystem, blend: number,
@@ -6,7 +6,7 @@ type NativeParticleBinder = (
   effect?: Effect, defines?: unknown, joined?: string,
 ) => void;
 type ParticleMaterialInternals = { _createEffectForParticles: NativeParticleBinder };
-type Binding = { effect: Effect; observer: Observer<Effect> };
+type Binding = { effect: Effect; observer: Observer<Effect>; wrapper: DrawWrapper };
 const adapted = new WeakSet<NodeMaterial>();
 
 /**
@@ -55,10 +55,14 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     // Preserve other systems' observers when they share this cached Effect.
     const currentEffect = system.getCustomEffect(blend);
     const observer = currentEffect?.onBindObservable.observers.at(-1);
-    if (!currentEffect || !observer || observer === previous?.observer) {
+    const wrapper = (system as unknown as { _customWrappers?: Record<number, DrawWrapper> })._customWrappers?.[blend];
+    if (!currentEffect || !observer || observer === previous?.observer || !(wrapper instanceof DrawWrapper) || wrapper.effect !== currentEffect) {
       throw new Error("Babylon did not install the expected particle binding observer.");
     }
-    owned.bindings.set(blend, { effect: currentEffect, observer });
+    owned.bindings.set(blend, { effect: currentEffect, observer, wrapper });
+    // Native setCustomEffect allocates a new wrapper without releasing the old
+    // one. Its public deferred disposal preserves the currently executing draw.
+    if (previous && previous.wrapper !== wrapper) previous.wrapper.dispose();
   };
   native._createEffectForParticles = bind;
   adapted.add(material);
