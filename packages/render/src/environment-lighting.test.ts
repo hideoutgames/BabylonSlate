@@ -298,6 +298,7 @@ it("keeps all pending face reads alive after rejection and ignores obsolete work
 
 it("decodes RGBD fallback radiance and exposes readback failures to the owning scene", async () => {
   const { engine, cache, a, b, bytes, assets } = fixture(false);
+  engine.useExactSrgbConversions = true;
   const source = cache.getTexture("environment", engine, bytes, {
     isCube: true,
   }) as CubeTexture;
@@ -310,7 +311,7 @@ it("decodes RGBD fallback radiance and exposes readback failures to the owning s
   expect(isEnvironmentLightingReady(a)).toBe(false);
   await vi.waitFor(() => expect(isEnvironmentLightingReady(a)).toBe(true));
   expect(a.environmentTexture!.sphericalPolynomial!.yy.y).toBeCloseTo(
-    (128 / 255) ** 2.2 / (64 / 255),
+    ((128 / 255 + 0.055) / 1.055) ** 2.4 / (64 / 255),
     2,
   );
   const broken = cache.getTexture("broken", engine, bytes, {

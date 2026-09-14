@@ -63,8 +63,13 @@ class EnvironmentLighting {
   private requestChanged = false;
   private settingsKey = "";
   private disposed = false;
+  private readonly scene: Scene;
 
-  constructor(private readonly scene: Scene) {
+  constructor(scene: Scene) {
+    this.scene = scene;
+    scene.onBeforeRenderObservable.add(() => {
+      if (this.view) this.isReady();
+    });
     scene.onDisposeObservable.addOnce(() => {
       this.disposed = true;
       this.clear();

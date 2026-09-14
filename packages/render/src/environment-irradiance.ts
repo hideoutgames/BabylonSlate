@@ -89,6 +89,7 @@ function prepare(
   const size = Math.max(1, width / 2 ** level);
   const rgbd = source.isRGBD;
   const gamma = source.gammaSpace;
+  const exactSrgb = internal.getEngine().useExactSrgbConversions;
   cache.retain(source);
   const reads = Array.from({ length: 6 }, (_, face) =>
     Promise.resolve().then(() =>
@@ -114,7 +115,7 @@ function prepare(
           throw new Error(
             "Environment irradiance readback returned invalid cube pixels.",
           );
-        return linearPixels(pixels, rgbd, gamma);
+        return linearPixels(pixels, rgbd, gamma, exactSrgb);
       });
       const [right, left, up, down, front, back] = faces;
       request.polynomial =
@@ -147,6 +148,7 @@ function linearPixels(
   pixels: Uint8Array | Float32Array,
   rgbd: boolean,
   gamma: boolean,
+  exactSrgb: boolean,
 ): Float32Array {
   const result = new Float32Array(pixels.length);
   const scale = pixels instanceof Uint8Array ? 1 / 255 : 1;
@@ -156,8 +158,16 @@ function linearPixels(
       throw new Error("Environment RGBD pixels have a zero divisor.");
     for (let c = 0; c < 3; c++) {
       const encoded = pixels[i + c] * scale;
-      // Babylon's ENV RGBD decoder uses its default 2.2 gamma conversion.
-      const linear = rgbd || gamma ? encoded ** 2.2 : encoded;
+      // Match the owning Engine's shader decoder, including the editor's
+      // exact sRGB setting. Software fallbacks can retain packed RGBD uploads.
+      const linear =
+        rgbd || gamma
+          ? exactSrgb
+            ? encoded <= 0.04045
+              ? encoded / 12.92
+              : ((encoded + 0.055) / 1.055) ** 2.4
+            : encoded ** 2.2
+          : encoded;
       result[i + c] = linear / divisor;
       if (!Number.isFinite(result[i + c]))
         throw new Error("Environment irradiance contains non-finite radiance.");
