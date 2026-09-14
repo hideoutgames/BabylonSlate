@@ -93,15 +93,14 @@ export function AssetReferenceDialog({
           <SelectableText>
             {graph.nodes.length} Assets · {graph.edges.length} References
           </SelectableText>
-          <SelectableText
-            className="truncate"
-            title={selected?.path ?? selectedGuid ?? ""}
-          >
-            {selected?.path ??
-              (selectedGuid
-                ? `${selectedGuid} (Missing Asset)`
-                : "Select An Asset To Inspect")}
-          </SelectableText>
+          <span className="truncate" title={selected?.path ?? selectedGuid ?? ""}>
+            <SelectableText>
+              {selected?.path ??
+                (selectedGuid
+                  ? `${selectedGuid} (Missing Asset)`
+                  : "Select An Asset To Inspect")}
+            </SelectableText>
+          </span>
         </div>
         <DialogFooter className="shrink-0">
           <Button

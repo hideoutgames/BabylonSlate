@@ -30,7 +30,7 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
       name: `Referrer ${index} ${"Long Asset Name ".repeat(8)}`,
       version: 1,
       payload: { ...createDefaultScene(), actors: [createActor(`actor-${index}`, "Placed Class", { classId: "Mannequin" })] },
-    }, { dependencies: [guid!] })),
+    }, { dependencies: index === 0 ? [guid!, "qa-referrer-0", "qa-missing"] : [guid!] })),
   })));
   await page.evaluate(async (assets) => {
     const root = await navigator.storage.getDirectory();
@@ -104,6 +104,22 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
     await test.info().attach(`delete-references-${viewport.width}`, { body: await deletion.screenshot(), contentType: "image/png" });
   }
   await page.getByTestId("content-browser-delete-cancel").click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByTestId("content-browser-search").fill("Referrer 0");
+  await page.locator('[data-asset-path="assets/referrer-0.scene.babasset"]').click({ button: "right" });
+  await page.getByTestId("context-menu-item-show-references").click();
+  const selfNode = dialog.getByTestId("asset-reference-node-qa-referrer-0");
+  await expect(selfNode).toHaveAttribute("data-selected", "true");
+  await expect(dialog.getByTestId("asset-reference-node-qa-missing")).toContainText("Missing Asset");
+  const loop = dialog.locator(".react-flow__edge-asset-reference-self .react-flow__edge-path");
+  await expect(async () => {
+    const nodeBounds = await selfNode.boundingBox();
+    const loopBounds = await loop.boundingBox();
+    expect(loopBounds!.y).toBeLessThan(nodeBounds!.y);
+    expect(loopBounds!.width).toBeGreaterThan(nodeBounds!.width);
+  }).toPass();
+  await test.info().attach("reference-self-loop", { body: await dialog.screenshot(), contentType: "image/png" });
+  await close.click();
 });
 
 test("H17: referenced Class deletion confirms twice and clears open scene usages", async ({
