@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mesh, Quaternion, type Engine } from "@babylonjs/core";
+import { Mesh, Quaternion, type AbstractEngine } from "@babylonjs/core";
 import {
   modelMaterialGuids,
   normalizeModelPayload,
