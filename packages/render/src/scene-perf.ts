@@ -256,6 +256,8 @@ function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
 export function isSceneTextureWorkReady(scene: Scene): boolean {
   if (scene.isDisposed) return false;
   for (const texture of scene.textures) {
+    if (texture.loadingError) throw new Error(texture.errorObject?.message ?? `Texture ${texture.name} failed to load.`,
+      { cause: texture.errorObject?.exception });
     if (!texture.isRenderTarget && !texture.isReady()) return false;
   }
   return true;
