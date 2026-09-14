@@ -211,6 +211,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     documents: Array<MaterialDocument | null>,
     disabled: number[] = [],
     resolutionScale = 1,
+    sharedMaterial = false,
   ) => {
     legacy?.dispose();
     legacy = undefined;
@@ -223,7 +224,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     );
     const entries = documents.map((_, order) => ({
       id: `entry-${order}`,
-      materialGuid: `proof-${order}`,
+      materialGuid: `proof-${sharedMaterial ? 0 : order}`,
       order,
       enabled: !disabled.includes(order),
       scalable: resolutionScale < 1,
@@ -409,6 +410,14 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     await capture("resized");
     await rebuild([gain], [], 0.5);
     await capture("half-resolution");
+    await rebuild([gain, gain], [], 1, true);
+    for (const [index, value] of [0.25, 0.75].entries()) {
+      const parameter = { kind: "float" as const, value };
+      if (!stack!.tasks[index]!.setParameter("Gain", parameter) ||
+        !legacy!.setParameter(`entry-${index}`, "Gain", parameter))
+        throw new Error("Duplicate pass parameter was not independently bound");
+    }
+    await capture("duplicate-entry-parameters");
     stack!.dispose();
     legacy!.dispose();
     graph!.dispose();
