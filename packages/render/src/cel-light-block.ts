@@ -10,6 +10,7 @@ import {
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { checkedShader } from "./checked-shader";
+import { bindNodeShadowView } from "./node-shadow-view";
 import {
   bindCelSettings,
   celFunctions,
@@ -63,6 +64,7 @@ export class CelLightBlock extends LightBlock {
     }
     const start = state.compilationString.length;
     super._buildBlock(state);
+    bindNodeShadowView(state, start, this.view.associatedVariableName);
     if (state.target === NodeMaterialBlockTargets.Fragment) {
       const key = Object.keys(state.functions).find((name) =>
         name.startsWith("lightsFragmentFunctions"),

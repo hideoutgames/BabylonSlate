@@ -174,9 +174,7 @@ export class SceneShadowController {
     // Per-camera target rendering follows active-mesh/world-matrix evaluation.
     // Catch those updates before Babylon decides whether each shadow map renders.
     scene.onBeforeRenderTargetsRenderObservable.add(() => {
-      this.refresh.syncCasters(scene, this.meshes);
-      for (const entry of this.entries.values())
-        if (entry.generator) this.refresh.apply(entry.generator);
+      this.refreshShadowMaps();
     });
     scene.onDisposeObservable.addOnce(() => {
       engine.onContextRestoredObservable.remove(restored);
@@ -244,6 +242,12 @@ export class SceneShadowController {
   }
   generator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
+  }
+  /** Refreshes admitted maps after the owning renderer updates caster transforms. */
+  refreshShadowMaps(): void {
+    this.refresh.syncCasters(this.scene, this.meshes);
+    for (const entry of this.entries.values())
+      if (entry.generator) this.refresh.apply(entry.generator);
   }
   status(light: Light): ShadowLightStatus | undefined {
     return this.entries.get(light)?.status;
@@ -829,6 +833,11 @@ export class SceneShadowController {
     generator.normalBias = settings.normalBias;
     generator.frustumEdgeFalloff = 0;
   }
+}
+
+/** Internal renderer lookup; observing a scene never installs a second owner. */
+export function findSceneShadowController(scene: Scene): SceneShadowController | undefined {
+  return controllers.get(scene);
 }
 
 export function sceneShadowController(scene: Scene): SceneShadowController {
