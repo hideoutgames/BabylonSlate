@@ -20,7 +20,7 @@ export function ProjectRenderingDialog({ state, onRetry, onDismiss }: {
       </DialogHeader>
       {failed ? <DialogFooter>
         <Button size="sm" variant="outline" onClick={onDismiss}>Close</Button>
-        <Button size="sm" onClick={onRetry}>Retry</Button>
+        <Button size="sm" disabled={state.retryable === false} onClick={onRetry}>Retry</Button>
       </DialogFooter> : <Progress value={state.phase === "preparing" ? 10 : 50}>
         <ProgressLabel>{state.phase === "preparing" ? "Preparing Rendering" : "Starting Renderer"}</ProgressLabel>
       </Progress>}

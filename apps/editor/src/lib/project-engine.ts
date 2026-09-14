@@ -8,6 +8,7 @@ export type ProjectEngineState = {
   phase: "idle" | "preparing" | "initializing" | "ready" | "failed";
   session: ProjectEngineSession | null;
   error?: unknown;
+  retryable?: boolean;
 };
 export type ProjectEngineRequest = {
   projectGuid: string;
@@ -61,15 +62,26 @@ export function createProjectEngineController(): ProjectEngineController {
   let key: string | null = null;
   let abort: AbortController | null = null;
   let tail = Promise.resolve();
+  let cleanupFailure: Error | undefined;
   const listeners = new Set<() => void>();
   const publish = (next: ProjectEngineState) => {
     state = next;
     for (const listener of listeners) listener();
   };
+  const quarantine = (cause: unknown) => {
+    cleanupFailure ??= new Error("Rendering cleanup failed. Close this message, save your work, and reload the editor before trying again.", { cause });
+    return cleanupFailure;
+  };
   const drop = () => {
+    if (cleanupFailure) throw cleanupFailure;
     const outgoing = owned;
+    try {
+      outgoing?.dispose();
+    } catch (cause) {
+      // A partially disposed Engine cannot authorize a replacement allocation.
+      throw quarantine(cause);
+    }
     owned = null;
-    outgoing?.dispose();
   };
   const controller: ProjectEngineController = {
     getSnapshot: () => state,
@@ -90,20 +102,25 @@ export function createProjectEngineController(): ProjectEngineController {
       tail = tail.then(async () => {
         if (signal.aborted) return;
         try {
+          if (cleanupFailure) throw cleanupFailure;
           const reason = request ? await request.prepare(signal) : undefined;
           signal.throwIfAborted();
           drop();
           if (!request) return;
           publish({ phase: "initializing", session: null });
           const session = await createProjectEngineSession(request.backend, signal, reason);
+          owned = session;
           if (signal.aborted) {
-            session.dispose();
+            drop();
             return;
           }
-          owned = session;
           publish({ phase: "ready", session });
         } catch (error) {
-          if (!signal.aborted) publish({ phase: "failed", session: null, error });
+          if (error instanceof AggregateError) quarantine(error);
+          if (!signal.aborted) publish({ phase: "failed", session: null,
+            error: cleanupFailure ?? error,
+            ...(cleanupFailure ? { retryable: false } : {}),
+          });
         }
       });
       return tail;

@@ -69,13 +69,19 @@ export async function createBackendEngineSession(
         },
       };
     } catch (error) {
+      const cleanupErrors: unknown[] = [];
       try {
         if (engine && !engine.isDisposed) engine.dispose();
       } catch (cleanupError) {
-        throw new AggregateError([error, cleanupError], "Backend initialization cleanup failed.", { cause: error });
-      } finally {
-        options.releaseCanvas(canvas);
+        cleanupErrors.push(cleanupError);
       }
+      try {
+        options.releaseCanvas(canvas);
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      if (cleanupErrors.length)
+        throw new AggregateError([error, ...cleanupErrors], "Backend initialization cleanup failed.", { cause: error });
       throw error;
     }
   }
@@ -84,9 +90,9 @@ export async function createBackendEngineSession(
     try {
       return await attempt("webgpu");
     } catch (error) {
-      signal?.throwIfAborted();
       // A cleanup failure cannot authorize another allocation with uncertain ownership.
       if (error instanceof AggregateError) throw error;
+      signal?.throwIfAborted();
       fallbackReason = `WebGPU initialization failed: ${error instanceof Error ? error.message : String(error)} Using WebGL2.`;
     }
   }

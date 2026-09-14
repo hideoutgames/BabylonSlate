@@ -98,4 +98,23 @@ describe("backend Engine session", () => {
     expect(h.engine.isDisposed).toBe(true);
     expect(h.released).toEqual(h.canvases);
   });
+
+  it("preserves failed cleanup after cancellation and includes canvas release failures", async () => {
+    const h = host();
+    const controller = new AbortController();
+    const disposeFailure = new Error("Device release failed");
+    const canvasFailure = new Error("Canvas release failed");
+    createGpu.mockImplementation(async () => {
+      controller.abort(new Error("Superseded"));
+      return h.engine;
+    });
+    h.engine.dispose.mockImplementation(() => { throw disposeFailure; });
+    const operation = createBackendEngineSession({
+      ...h.options, signal: controller.signal,
+      releaseCanvas: () => { throw canvasFailure; },
+    });
+    await expect(operation).rejects.toMatchObject({ errors: [controller.signal.reason, disposeFailure, canvasFailure] });
+    expect(createGl).not.toHaveBeenCalled();
+    expect(h.canvases).toHaveLength(1);
+  });
 });

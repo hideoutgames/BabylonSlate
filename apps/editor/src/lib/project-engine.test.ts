@@ -130,4 +130,40 @@ describe("project Engine transitions", () => {
     expect(host.getSnapshot().phase).toBe("ready");
     await host.sync(null);
   });
+
+  it("quarantines failed outgoing cleanup across Retry and project reopen", async () => {
+    const host = createProjectEngineController();
+    await host.sync(request());
+    const outgoing = host.getSnapshot().session!;
+    const dispose = vi.mocked(outgoing.dispose);
+    dispose.mockImplementationOnce(() => { throw new Error("GPU cleanup failed"); });
+    await host.sync(request("webgpu"));
+    expect(host.getSnapshot()).toMatchObject({ phase: "failed", session: null, retryable: false });
+    await host.sync(request("webgpu"), true);
+    await host.sync(null);
+    await host.sync({ ...request(), projectGuid: "another-project" });
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(host.getSnapshot().error).toBeInstanceOf(Error);
+  });
+
+  it("does not allocate after stale initialization cleanup or factory cleanup fails", async () => {
+    const host = createProjectEngineController();
+    const device = deferred<BackendEngineSession>();
+    createSession.mockImplementationOnce(() => device.promise);
+    const old = host.sync(request("webgpu"));
+    await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    const next = host.sync(request());
+    device.resolve({ dispose: () => { throw new Error("Stale Engine cleanup failed"); } } as unknown as BackendEngineSession);
+    await Promise.all([old, next]);
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(host.getSnapshot()).toMatchObject({ phase: "failed", retryable: false });
+
+    const failedFactory = createProjectEngineController();
+    createSession.mockRejectedValueOnce(new AggregateError([new Error("Partial device cleanup failed")]));
+    await failedFactory.sync(request("webgpu"));
+    await failedFactory.sync(request(), true);
+    expect(createSession).toHaveBeenCalledTimes(2);
+    expect(failedFactory.getSnapshot()).toMatchObject({ phase: "failed", retryable: false });
+  });
 });
