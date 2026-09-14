@@ -259,6 +259,10 @@ describe("prewarmSceneMaterials", () => {
       expect(isSceneFrameReady(scene)).toBe(true);
       const previous = mesh.subMeshes[0]!.effect!;
       material.freeze();
+      scene.incrementRenderId();
+      expect(mesh.isReady(true)).toBe(true);
+      const onBind = vi.fn();
+      mesh.onBeforeBindObservable.add(onBind);
       const unrelated = engine.createEffect({
         vertexSource: "attribute vec3 position; void main() { gl_Position = vec4(position, 1.0); }",
         fragmentSource: "precision highp float; void main() { gl_FragColor = vec4(1.0); }",
@@ -281,17 +285,23 @@ describe("prewarmSceneMaterials", () => {
         return effect;
       });
       new SpotLight("new light", new Vector3(0, 3, -2), Vector3.Down(), 1, 1, scene);
-      scene.incrementRenderId();
+      // A settings update can request a new variant within the same scene frame.
       expect(mesh.isReady(true)).toBe(true); // Babylon can still draw the old variant.
       expect(mesh.subMeshes[0]!.effect).toBe(previous);
       expect(isSceneFrameReady(scene)).toBe(false);
       expect(material.allowShaderHotSwapping).toBe(true);
       expect(material.checkReadyOnEveryCall).toBe(false);
       expect(material.isFrozen).toBe(true);
+      // Native callers after our probe must keep waiting, including a real draw.
+      expect(mesh.isReady(true)).toBe(false);
+      scene.render();
+      expect(onBind).not.toHaveBeenCalled();
       compiled = true;
       expect(isSceneFrameReady(scene)).toBe(true);
       expect(mesh.subMeshes[0]!.effect).not.toBe(previous);
       expect(mesh.subMeshes[0]!.effect!.defines).toContain("#define SPOTLIGHT1");
+      scene.render();
+      expect(onBind).toHaveBeenCalled();
       expect(engine.areAllEffectsReady()).toBe(false);
       const failure = new Error("material probe failed");
       vi.spyOn(material, "isReadyForSubMesh").mockImplementationOnce(() => { throw failure; });
