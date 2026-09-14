@@ -234,6 +234,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
       renderer.setRenderTarget(previousTarget);
     }
     progress("compiling");
+    context.flush();
     const parallelCompile = context.getExtension("KHR_parallel_shader_compile");
     for (const program of renderer.info.programs ?? []) {
       const handle = program.program as WebGLProgram;
