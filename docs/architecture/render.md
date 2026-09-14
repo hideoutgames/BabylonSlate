@@ -432,9 +432,10 @@ task services, then the caller-owned graph, then defers the reservation release.
 This helper does not select a production render path or own a scene render loop.
 
 These are conservative policy allowances, not measured VRAM or A16 performance.
-The ledger covers managed shadow attachments and cluster mask/data textures only;
-proxy geometry/UBOs, material caches, effects, reflection targets, transition copies
-and separate authoring GPU contexts remain outside this ledger. Eight fragment
+The ledger covers managed shadow attachments, cluster mask/data textures and
+explicitly leased graph render targets. Proxy geometry/UBOs, material caches,
+effects, unmanaged reflection targets or transition copies, and separate authoring
+GPU contexts remain outside this ledger. Eight fragment
 samplers remain conservative legacy shadow headroom; PCSS costs two shadow
 samplers and other supported filters one. This does not qualify every combined
 material/cluster sampler layout. Enabled native Clear Coat, Anisotropy, Iridescence,
