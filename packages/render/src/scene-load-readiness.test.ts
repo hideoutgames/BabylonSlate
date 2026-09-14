@@ -202,6 +202,43 @@ describe("blocking runtime loading host", () => {
 
 
 describe("independent scene owners", () => {
+  it("acknowledges only the current layer's painted loading state and reports its failure before removal", async () => {
+    const paints = [deferred(), deferred()];
+    const layerPainted = vi.fn();
+    const layerReady = vi.fn();
+    const failure = vi.fn();
+    const release = vi.fn();
+    let paintIndex = 0;
+    const readiness = createSceneLoadReadiness({
+      handle: { whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {},
+        prewarmSceneMaterials: async () => {}, presentFirstFrame: async () => {} },
+      loading: { acquire: () => release, progress: vi.fn(), painted: vi.fn(), layerPainted,
+        paint: () => paints[paintIndex++]!.promise },
+      activate: vi.fn(), onReady: vi.fn(), onLayerReady: layerReady, onFailed: failure,
+    });
+    try {
+      readiness.receive({ type: "sceneLayerLoading", layerId: "layer", layerLoadId: 1, assetGuid: "overlay" });
+      expect(layerPainted).not.toHaveBeenCalled();
+      readiness.receive({ type: "sceneLayerLoading", layerId: "layer", layerLoadId: 2, assetGuid: "overlay" });
+      paints[0]!.resolve();
+      await Promise.resolve();
+      expect(layerPainted).not.toHaveBeenCalled();
+      readiness.receive({ type: "sceneLayerLoadFailed", layerId: "layer", layerLoadId: 1, message: "Old deadline" });
+      expect(failure).not.toHaveBeenCalled();
+      readiness.receive({ type: "sceneLayerLoadFailed", layerId: "layer", layerLoadId: 2, message: "Current deadline" });
+      expect(failure).toHaveBeenCalledWith(expect.objectContaining({ layer: { layerId: "layer", layerLoadId: 2 } }),
+        expect.objectContaining({ message: "Current deadline" }));
+      expect(release).toHaveBeenCalledOnce();
+      readiness.receive({ type: "sceneLayerRemove", layerId: "layer" });
+      expect(release).toHaveBeenCalledTimes(2);
+      paints[1]!.resolve();
+      readiness.receive({ type: "sceneLayerRealized", layerId: "layer", layerLoadId: 2 });
+      await Promise.resolve();
+      expect(layerPainted).not.toHaveBeenCalled();
+      expect(layerReady).not.toHaveBeenCalled();
+    } finally { readiness.dispose(); }
+  });
+
   it("acknowledges a ready layer while the world waits, then waits for the dismissed blocker to paint before world logic", async () => {
     const models = deferred();
     const dismissedPaint = deferred();
