@@ -35,42 +35,6 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
   document.getElementById("root")!.append(canvas);
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { disableWebGL2Support: false });
-  let phase = "setup";
-  const invalidPrograms: unknown[] = [];
-  const programQueries: unknown[] = [];
-  if (backend === "webgl2") {
-    const native = engine as Engine;
-    let activePipeline: unknown;
-    const ready = native._isRenderingStateCompiled;
-    native._isRenderingStateCompiled = function (pipeline) {
-      activePipeline = pipeline;
-      try { return ready.call(this, pipeline); } finally { activePipeline = undefined; }
-    };
-    const gl = (native as unknown as { _gl: WebGL2RenderingContext })._gl;
-    const deleted = new WeakMap<WebGLProgram, { phase: string; stack?: string }>();
-    const deleteProgram = gl.deleteProgram;
-    gl.deleteProgram = function (program) {
-      if (program) deleted.set(program, { phase, stack: new Error().stack });
-      return deleteProgram.call(this, program);
-    };
-    const query = gl.getProgramParameter;
-    gl.getProgramParameter = function (program, parameter) {
-      const result = query.call(this, program, parameter);
-      if (programQueries.length < 64) programQueries.push({
-        phase, parameter, result, deleted: deleted.has(program),
-        pipeline: (activePipeline as { _name?: string } | undefined)?._name,
-      });
-      if (deleted.has(program)) invalidPrograms.push({
-        phase, parameter, stack: new Error().stack,
-        deletion: deleted.get(program),
-        pipeline: activePipeline && {
-          name: (activePipeline as { _name?: string })._name,
-          disposed: (activePipeline as { _isDisposed?: boolean })._isDisposed,
-        },
-      });
-      return result;
-    };
-  }
   const scene = new Scene(engine);
   const library = new MaterialLibrary();
   const owners: Array<{ graph: FrameGraph; stack: ReturnType<typeof addAuthoredPostProcessTasks> }> = [];
@@ -99,7 +63,6 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       return owner;
     };
     const capture = async (action: string, owner: (typeof owners)[number]) => {
-      phase = action;
       await until(() => owner.graph.isReady(), `${action} graph readiness`);
       engine.beginFrame();
       try { owner.graph.execute(); } finally { engine.endFrame(); }
@@ -113,7 +76,6 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     const siblingEffect = engine.postProcesses[0]!.getEffect();
 
     for (const action of ["replace", "dispose"] as const) {
-      phase = `${action}-build`;
       const previousPasses = new Set(engine.postProcesses);
       // Distinct constant shader bodies prevent the ready sibling from warming
       // either retired variant or its replacement through the driver's cache.
@@ -134,7 +96,6 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       if (record.pending) effect.executeWhenCompiled(() => {
         record.compiledAfterRetirement = effect.isDisposed;
       });
-      phase = `${action}-retire`;
       if (action === "replace") {
         await owner.stack.tasks[0]!.replaceDocument(gainDocument(0.25));
         await capture("replacement", owner);
@@ -148,13 +109,12 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
       await capture(`sibling-after-${action}`, sibling);
     }
     return {
-      backend, captures, diagnostics, lifetime, invalidPrograms, programQueries,
+      backend, captures, diagnostics, lifetime,
       engines: EngineStore.Instances.map((candidate, index) => ({ index, proof: candidate === engine })),
       retired: retired.map(({ pending, lateProbes, compiledAfterRetirement }) => ({ pending, lateProbes, compiledAfterRetirement })),
       siblingReady: siblingEffect.isReady(),
     };
   } finally {
-    phase = "final-cleanup";
     for (const owner of owners) { owner.stack.dispose(); owner.graph.dispose(); }
     library.dispose();
     scene.dispose();

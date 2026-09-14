@@ -8,6 +8,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     test.setTimeout(60_000);
     const errors: string[] = [];
     const locations: unknown[] = [];
+    const nativeLogs: unknown[] = [];
+    const logSession = await page.context().newCDPSession(page);
+    await logSession.send("Log.enable");
+    logSession.on("Log.entryAdded", ({ entry }) => {
+      if (["warning", "error"].includes(entry.level) && nativeLogs.length < 64) nativeLogs.push(entry);
+    });
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
       if (["warning", "error"].includes(message.type()) &&
@@ -42,6 +48,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     } finally {
       await testInfo.attach("gpu-errors", { body: JSON.stringify(errors), contentType: "application/json" });
       await testInfo.attach("gpu-error-locations", { body: JSON.stringify(locations), contentType: "application/json" });
+      await testInfo.attach("native-gpu-logs", { body: JSON.stringify(nativeLogs), contentType: "application/json" });
+      await logSession.detach();
     }
     expect(errors).toEqual([]);
   });
