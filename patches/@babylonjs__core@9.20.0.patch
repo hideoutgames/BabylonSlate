@@ -1,14 +1,11 @@
 --- a/Misc/rgbdTextureTools.js
 +++ b/Misc/rgbdTextureTools.js
-@@ -1,6 +1,7 @@
+@@ -1,3 +1,4 @@
++import { Logger } from "./logger.js";
  
  import { PostProcess } from "../PostProcesses/postProcess.pure.js";
  import { ApplyPostProcess } from "./textureTools.js";
-+import { Logger } from "./logger.js";
- /**
-  * Class used to host RGBD texture specific utilities
-  */
-@@ -11,84 +12,156 @@
+@@ -11,84 +12,160 @@
       */
      static ExpandRGBDTexture(texture) {
          const internalTexture = texture._texture;
@@ -51,8 +48,9 @@
 +        let compileObserver = null;
 +        let errorObserver = null;
 +        let loadObserver = null;
-+        const ownsTexture = () => !cancelled && !engine.isDisposed && !scene.isDisposed &&
++        const hasAttachedTexture = () => !engine.isDisposed && !scene.isDisposed &&
 +            texture.getScene() === scene && texture.getInternalTexture() === internalTexture;
++        const ownsTexture = () => !cancelled && hasAttachedTexture();
 +        const cleanup = () => {
 +            cancelled = true;
 +            clearTimeout(deadline);
@@ -75,8 +73,8 @@
 +        const cancel = () => {
 +            try { cleanup(); } catch (error) { Logger.Error(String(error)); }
 +        };
-+        const fail = (error) => {
-+            if (!ownsTexture()) { cancel(); return; }
++        const fail = (error, afterCleanup = false) => {
++            if (!(afterCleanup ? hasAttachedTexture() : ownsTexture())) { cancel(); return; }
              internalTexture.isReady = false;
 -            internalTexture._isRGBD = false;
 -            internalTexture.invertY = false;
@@ -84,11 +82,9 @@
 -        const expandRgbdTextureAsync = async () => {
 -            const isWebGpu = engine.isWebGPU;
 -            const shaderLanguage = isWebGpu ? 1 /* ShaderLanguage.WGSL */ : 0 /* ShaderLanguage.GLSL */;
--            internalTexture.isReady = false;
--            if (isWebGpu) {
 +            texture._loadingError = true;
-+            texture._errorObject = { message: "RGBD texture decode failed.", exception: error };
 +            try { cleanup(); } catch (cleanupError) { error = new AggregateError([error, cleanupError], "RGBD decode and cleanup failed.", { cause: error }); }
++            texture._errorObject = { message: "RGBD texture decode failed.", exception: error };
 +            Logger.Error(`RGBD texture decode failed: ${String(error)}`);
 +            internalTexture.onErrorObservable.notifyObservers({ message: texture._errorObject.message, exception: error });
 +        };
@@ -151,12 +147,16 @@
 +                engine._releaseTexture(internalTexture);
 +                target._swapAndDie(internalTexture);
 +                expandedTexture = null;
-+                internalTexture.isReady = true;
 +                cleanup();
-+            } catch (error) { fail(error); }
++                if (hasAttachedTexture()) internalTexture.isReady = true;
++            } catch (error) { fail(error, cancelled); }
 +        };
 +        const expand = async () => {
 +            if (!ownsTexture()) { cancel(); return; }
++            // A later native image upload marks the internal texture ready
++            // before notifying its load event. Decoding still owns readiness.
+             internalTexture.isReady = false;
+-            if (isWebGpu) {
 +            const shaderLanguage = engine.isWebGPU ? 1 : 0;
 +            if (engine.isWebGPU) {
                  await import("../ShadersWGSL/rgbdDecode.fragment.js");

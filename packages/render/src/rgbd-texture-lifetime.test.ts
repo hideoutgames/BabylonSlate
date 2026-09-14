@@ -38,6 +38,26 @@ function fixture() {
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("pinned native RGBD texture lifecycle", () => {
+  it("keeps a completed image upload unready until its pending RGBD shader and decode finish", async () => {
+    const { engine, scene, texture, internal, compiler, allocation, draw } = fixture();
+    try {
+      internal.isReady = false;
+      draw.mockImplementation(() => {});
+      RGBDTextureTools.ExpandRGBDTexture(texture);
+      expect(allocation).not.toHaveBeenCalled();
+      internal.isReady = true;
+      texture.onLoadObservable.notifyObservers(texture);
+      expect(internal.isReady).toBe(false);
+      await vi.waitFor(() => expect(allocation).toHaveBeenCalledOnce());
+      expect(isSceneTextureWorkReady(scene)).toBe(false);
+      expect(draw).not.toHaveBeenCalled();
+      compiler.resolve();
+      await vi.waitFor(() => expect(internal.isReady).toBe(true));
+      expect(draw).toHaveBeenCalledOnce();
+      expect(isSceneTextureWorkReady(scene)).toBe(true);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("does not allocate or draw when its scene is disposed during shader import", async () => {
     const { engine, scene, texture, compiler, allocation, draw } = fixture();
     try {
@@ -132,6 +152,68 @@ describe("pinned native RGBD texture lifecycle", () => {
     } finally { context._gl = previousGl; context._currentRenderTarget = null; scene.dispose(); target.dispose(); engine.dispose(); }
   });
 
+  it.each(["private canvas", "cube layer"] as const)("restores WebGPU %s state without opening an empty swapchain pass", async (destination) => {
+    const { engine, scene, texture, internal, compiler, allocation, draw } = fixture();
+    const previousTarget = destination === "cube layer" ? engine.createRenderTargetCubeTexture(8, { generateDepthBuffer: false }) : null;
+    const native = engine as unknown as { _currentRenderTarget: unknown; _rttRenderPassWrapper: { colorAttachmentViewDescriptor: { baseArrayLayer: number; baseMipLevel: number } }; _mrtAttachments: number[] };
+    const webgpu = vi.spyOn(engine, "isWebGPU", "get");
+    const restore = vi.spyOn(engine, "restoreDefaultFramebuffer");
+    const bind = vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, face = 0, _width, _height, _fullscreen, mip = 0, layer = 0) => {
+      native._currentRenderTarget = target;
+      native._rttRenderPassWrapper.colorAttachmentViewDescriptor = { baseArrayLayer: layer * 6 + face, baseMipLevel: mip };
+    });
+    try {
+      allocation.mockClear();
+      draw.mockImplementation(() => {
+        native._currentRenderTarget = allocation.mock.results[0]!.value;
+        native._rttRenderPassWrapper.colorAttachmentViewDescriptor = { baseArrayLayer: 0, baseMipLevel: 0 };
+      });
+      RGBDTextureTools.ExpandRGBDTexture(texture);
+      await vi.waitFor(() => expect(allocation).toHaveBeenCalledOnce());
+      const effect = vi.mocked(engine.createEffect).mock.results[0]!.value!;
+      effect.onCompileObservable.add(() => {
+        webgpu.mockReturnValue(true);
+        native._currentRenderTarget = previousTarget;
+        native._rttRenderPassWrapper = { colorAttachmentViewDescriptor: { baseArrayLayer: 10, baseMipLevel: 2 } };
+        native._mrtAttachments = [];
+      }, -1, true);
+      compiler.resolve();
+      await vi.waitFor(() => expect(internal.isReady).toBe(true));
+      if (previousTarget) {
+        expect(native._currentRenderTarget).toBe(previousTarget);
+        expect(native._rttRenderPassWrapper.colorAttachmentViewDescriptor).toEqual({ baseArrayLayer: 10, baseMipLevel: 2 });
+        expect(bind).toHaveBeenCalledWith(previousTarget, 4, undefined, undefined, true, 2, 1);
+        expect(restore).not.toHaveBeenCalled();
+      } else {
+        expect(restore).toHaveBeenCalledExactlyOnceWith(true);
+      }
+      expect(engine.postProcesses).toEqual([]);
+      expect(draw).toHaveBeenCalledOnce();
+    } finally { webgpu.mockRestore(); native._currentRenderTarget = null; previousTarget?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("keeps a live decode failed when owned cleanup throws after texture adoption", async () => {
+    const { engine, scene, texture, internal, compiler, allocation, draw, errors } = fixture();
+    const cleanupFailure = new Error("Decode post-process disposal observer failed");
+    try {
+      draw.mockImplementation(() => {});
+      RGBDTextureTools.ExpandRGBDTexture(texture);
+      await vi.waitFor(() => expect(allocation).toHaveBeenCalledOnce());
+      const target = allocation.mock.results[0]!.value!;
+      const disposeTarget = vi.spyOn(target, "dispose");
+      engine.postProcesses[0]!.onDisposeObservable.addOnce(() => { throw cleanupFailure; });
+      compiler.resolve();
+      await vi.waitFor(() => expect(texture.loadingError).toBe(true));
+      expect(internal.isReady).toBe(false);
+      expect(draw).toHaveBeenCalledOnce();
+      expect(disposeTarget).toHaveBeenCalledOnce();
+      expect(engine.postProcesses).toEqual([]);
+      expect((texture.errorObject?.exception as AggregateError).errors).toContain(cleanupFailure);
+      expect(() => isSceneTextureWorkReady(scene)).toThrow("RGBD texture decode failed");
+      expect(errors).toHaveBeenCalledOnce();
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("keeps a sibling decode alive when another scene releases their shared pending shader", async () => {
     const { engine, scene, texture, compiler, allocation, errors } = fixture();
     const sibling = new Scene(engine);
@@ -178,7 +260,7 @@ describe("pinned native RGBD texture lifecycle", () => {
     vi.spyOn(Logger, "Error").mockImplementation(() => {});
     const shader = vi.spyOn(engine, "createShaderProgram");
     const effect = new Effect({ vertexSource: "void main() { gl_Position = vec4(0.0); }", fragmentSource: "void main() { gl_FragColor = vec4(1.0); }" },
-      { attributes: [], uniformsNames: [], samplers: [], defines: "", extraInitializationsAsync: () => imports }, engine);
+      { attributes: [], uniformsNames: [], samplers: [], defines: "", fallbacks: null, onCompiled: null, onError: null, extraInitializationsAsync: () => imports }, engine);
     effect.onErrorObservable.add(errors);
     try {
       if (disposed) effect.dispose();
