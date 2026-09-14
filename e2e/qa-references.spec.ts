@@ -106,7 +106,9 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
   await page.getByTestId("content-browser-delete-cancel").click();
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByTestId("content-browser-search").fill("Referrer 0");
-  await page.locator('[data-asset-path="assets/referrer-0.scene.babasset"]').click({ button: "right" });
+  const referrerTile = page.locator('[data-asset-path="assets/referrer-0.scene.babasset"]');
+  await referrerTile.click();
+  await referrerTile.click({ button: "right" });
   await page.getByTestId("context-menu-item-show-references").click();
   const selfNode = dialog.getByTestId("asset-reference-node-qa-referrer-0");
   await expect(selfNode).toHaveAttribute("data-selected", "true");
