@@ -31,7 +31,12 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     const owned = systems.get(system);
     if (!owned) return;
     systems.delete(system);
-    for (const { effect, observer } of owned.bindings.values()) effect.onBindObservable.remove(observer);
+    for (const { effect, observer, wrapper } of owned.bindings.values()) {
+      effect.onBindObservable.remove(observer);
+      // Native particle disposal omits custom wrappers. Release only the
+      // concrete wrapper installed by this material's binding.
+      wrapper.dispose();
+    }
     system.onDisposeObservable.remove(owned.disposeObserver);
   };
   const bind: NativeParticleBinder = function(system, blend, onCompiled, onError, effect, defines, joined) {
