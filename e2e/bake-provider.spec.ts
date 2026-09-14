@@ -152,7 +152,7 @@ test("browser bake cancellation releases resources and admits the next job", asy
   const compiling = await bake(page, input(), "compiling");
   expect(compiling.error?.name).toBe("AbortError");
   expect(compiling.disposal?.contextReleased).toBe(true);
-  expect(compiling.progress.at(-1)?.phase).toBe("compiling");
+  expect(compiling.progress.map((value) => value.phase)).toContain("compiling");
   expect(compiling.progress.some((value) => value.phase === "sampling")).toBe(false);
   const cancelled = await bake(page, { ...input(), size: 64, samples: 512 }, "sampling");
   expect(cancelled.error?.name).toBe("AbortError");

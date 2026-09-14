@@ -6,11 +6,12 @@ import {
 import { WebGLPathTracer } from "three-gpu-pathtracer";
 import { rasterizeBakeReceivers, validateBakePrototypeInput, type BakePrototypeInput } from "./bake-prototype-input";
 import { patchBakePrototypeShader } from "./bake-prototype-shader";
+import { readBakePixels, waitForBakeGpu } from "./bake-prototype-gpu";
 
 export type { BakePrototypeInput, BakePrototypeMesh, BakePrototypeColor } from "./bake-prototype-input";
 
 export interface BakePrototypeProgress {
-  phase: "preparing" | "building" | "compiling" | "sampling";
+  phase: "preparing" | "building" | "compiling" | "sampling" | "readback" | "disposing";
   samples: number;
   totalSamples: number;
 }
@@ -251,13 +252,15 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
       if (shaderFailure) throw shaderFailure;
       if (context.isContextLost()) throw new Error("Bake WebGL context was lost");
       tracer.renderSample();
+      await waitForBakeGpu(context, () => checkpoint(true));
       progress("sampling", tracer.samples);
       // Each update is at most one 32x32 tile; never monopolize the authoring loop.
       await checkpoint(true);
     }
     if (shaderFailure) throw shaderFailure;
     const irradiance = new Float32Array(input.size ** 2 * 4);
-    renderer.readRenderTargetPixels(tracer.target, 0, 0, input.size, input.size, irradiance);
+    progress("readback", tracer.samples);
+    await readBakePixels(renderer, tracer.target, irradiance, () => checkpoint(true));
     check();
     if (context.getError() !== context.NO_ERROR || irradiance.some((v) => !Number.isFinite(v))) {
       throw new Error("Bake readback failed or produced non-finite irradiance");
@@ -274,6 +277,9 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     failure = error;
   }
   const cleanupErrors: unknown[] = [];
+  try {
+    options.onProgress?.({ phase: "disposing", samples: result?.samples ?? 0, totalSamples: input.samples });
+  } catch (error) { cleanupErrors.push(error); }
   const released = new Set<OwnedDisposable>();
   const release = (resource: OwnedDisposable) => {
     if (released.has(resource)) return;
