@@ -6,9 +6,9 @@ import {
 } from "lucide-react";
 import {
   CONTENT_BROWSER_ID,
-  assetTypeForDocumentKind,
 } from "@babylonslate/core";
-import { TypeVisualIcon, resolveTypeVisual } from "@babylonslate/editor-kit";
+import { TypeVisualIcon } from "@babylonslate/editor-kit";
+import type { IndexedAsset } from "@babylonslate/assets";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
@@ -23,10 +23,12 @@ import {
 } from "@babylonslate/ui/components/dropdown-menu";
 import { cn } from "@babylonslate/ui/lib/utils";
 import type { OpenDocument } from "../services/document-service";
+import { documentTypeVisual } from "../lib/document-type-visual";
 
 /** The same document list serves compact navigation and overflowing desktop tabs. */
 export function DocumentSwitcher({
   documents,
+  assets = [],
   activeDocumentId,
   onSelect,
   onClose,
@@ -34,6 +36,7 @@ export function DocumentSwitcher({
   compact = false,
 }: {
   documents: OpenDocument[];
+  assets?: readonly IndexedAsset[];
   activeDocumentId: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
@@ -91,9 +94,7 @@ export function DocumentSwitcher({
                   <LayoutGridIcon />
                 ) : (
                   <TypeVisualIcon
-                    visual={resolveTypeVisual({
-                      assetType: assetTypeForDocumentKind(doc.ref.kind),
-                    })}
+                    visual={documentTypeVisual(doc.ref, assets)}
                   />
                 )}
                 <span className="min-w-0 flex-1 truncate">{doc.ref.label}</span>
