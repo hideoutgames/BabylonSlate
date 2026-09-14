@@ -1,10 +1,10 @@
-import { Color4, Engine, FreeCamera, MeshBuilder, PBRMaterial, Scene, Vector3 } from "@babylonjs/core";
+import { Color4, Engine, FreeCamera, MeshBuilder, PBRMaterial, RawTexture, Scene, Texture, Vector3 } from "@babylonjs/core";
 import { MaterialLibrary, createAppWebGpuEngine } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedLightingReservations } from "@babylonslate/render/managed-lighting-resources";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
-function documentFor(kind: "gain" | "depth" | "normal") {
+function documentFor(kind: "gain" | "depth" | "normal" | "mask") {
   const doc = createDefaultMaterialDocument(kind, "postProcess");
   const connect = (source: string, pin: string, target: string, input: string) => doc.edges.push({
     id: `${source}-${pin}-${target}-${input}`, sourceNodeId: source, sourcePinId: pin, targetNodeId: target, targetPinId: input,
@@ -17,6 +17,13 @@ function documentFor(kind: "gain" | "depth" | "normal") {
     );
     connect("gain", "out", "multiply", "b"); connect("sceneColor", "color", "multiply", "a");
     connect("multiply", "out", "output", "color");
+  } else if (kind === "mask") {
+    doc.nodes.push(
+      { id: "mask", type: "texture.sample", properties: { textureGuid: "mask" }, position: { x: 0, y: 0 } },
+      { id: "multiply", type: "math.multiply", properties: {}, position: { x: 0, y: 0 } },
+    );
+    connect("screenUv", "uv", "mask", "uv"); connect("mask", "rgba", "multiply", "b");
+    connect("sceneColor", "color", "multiply", "a"); connect("multiply", "out", "output", "color");
   } else {
     doc.nodes.push(
       { id: "buffer", type: kind === "depth" ? "input.sceneDepth" : "input.sceneNormal", properties: {}, position: { x: 0, y: 0 } },
@@ -40,13 +47,15 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
   document.getElementById("root")!.append(canvas);
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true });
   const scene = new Scene(engine);
-  const library = new MaterialLibrary();
+  const mask = RawTexture.CreateRGBATexture(new Uint8Array([128, 255, 64, 128]), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+  mask.gammaSpace = true;
+  const library = new MaterialLibrary({ resolveTexture: () => mask });
   const renderer = new SceneRenderCoordinator(scene);
   const camera = new FreeCamera("Scene Camera", new Vector3(0, 0, -4), scene);
   camera.minZ = 1; camera.maxZ = 11; camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
   scene.clearColor = new Color4(160 / 255, 80 / 255, 40 / 255, 1);
-  const documents = { gain: documentFor("gain"), depth: documentFor("depth"), normal: documentFor("normal") };
+  const documents = { gain: documentFor("gain"), depth: documentFor("depth"), normal: documentFor("normal"), mask: documentFor("mask") };
   const diagnostics: unknown[] = [];
   const captures: Array<{ name: string; path: string; pixel: number[]; reservedBytes: number }> = [];
   const configure = (stack: Parameters<SceneRenderCoordinator["attachPostProcess"]>[0]["stack"]) => renderer.attachPostProcess({
@@ -67,7 +76,7 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
     const pixel = Array.from(new Uint8Array(bytes.buffer, bytes.byteOffset, 4));
     if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
       [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
-    const expectedCount = name === "empty" ? 0 : name === "depth" ? 1 : 2;
+    const expectedCount = name === "empty" ? 0 : ["depth", "color-mask", "color-mask-native"].includes(name) ? 1 : 2;
     if (renderer.postProcessPassCount() !== expectedCount)
       throw new Error(`${name}: incorrect active post-process count ${renderer.postProcessPassCount()}`);
     captures.push({ name, path: result.path, pixel,
@@ -91,6 +100,11 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
     await capture("native-fallback");
     scene.unfreezeActiveMeshes();
     await capture("graph-return");
+    configure([{ id: "mask", materialGuid: "mask", enabled: true, order: 0 }]);
+    await capture("color-mask");
+    await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
+    await capture("color-mask-native");
+    scene.unfreezeActiveMeshes();
     configure([]);
     if (scene.objectRenderers.length) throw new Error("Disabled stack retained old graph tasks until another frame");
     await capture("empty");

@@ -25,6 +25,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       ["resize-replay", "frameGraph", [60, 30, 15]],
       ["native-fallback", "classic", [60, 30, 15]],
       ["graph-return", "frameGraph", [60, 30, 15]],
+      ["color-mask", "frameGraph", [35, 80, 2]],
+      ["color-mask-native", "classic", [35, 80, 2]],
       ["empty", "frameGraph", [160, 80, 40]],
       ["depth", "frameGraph", [77, 77, 77]],
       ["normal-after-depth", "frameGraph", [128, 128, 0]],
@@ -34,6 +36,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       const capture = result.captures[index]!;
       expect(capture.name).toBe(name); expect(capture.path).toBe(path);
       rgb.forEach((value, channel) => expect(Math.abs(capture.pixel[channel]! - value), `${name}/${channel}`).toBeLessThanOrEqual(1));
+      if (name === "color-mask" || name === "color-mask-native") expect(capture.pixel[3]).toBe(128);
       if (name === "empty") expect(capture.reservedBytes).toBe(0);
       else if (path === "frameGraph") expect(capture.reservedBytes).toBeGreaterThan(0);
     }
