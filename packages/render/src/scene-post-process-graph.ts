@@ -215,11 +215,15 @@ export class ScenePostProcessGraph {
     return this.recipe.estimatedBytes;
   }
 
-  constructor(
-    private readonly options: Options,
-    private readonly recipe: Recipe,
-    private readonly lease: ManagedRenderLease,
-  ) {}
+  private readonly options: Options;
+  private readonly recipe: Recipe;
+  private readonly lease: ManagedRenderLease;
+
+  constructor(options: Options, recipe: Recipe, lease: ManagedRenderLease) {
+    this.options = options;
+    this.recipe = recipe;
+    this.lease = lease;
+  }
 
   /** Factory initialization is separate so allocation failure still returns an
    * owner which the caller can clean before retiring its partial graph. */
