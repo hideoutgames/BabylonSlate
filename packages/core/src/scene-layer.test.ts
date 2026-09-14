@@ -116,7 +116,7 @@ describe("SceneLayer schema", () => {
     expect(scene.settings.physicsWorld).toBe("2d");
     expect(scene.settings.gravity).toEqual([0, -4, 0]);
     expect(scene.settings.postProcessStack).toEqual([
-      { materialGuid: "pp", enabled: true },
+      { id: expect.any(String), materialGuid: "pp", enabled: true },
     ]);
     expect(scene.actors).toHaveLength(1);
     expect(scene.settings.cameraBounds2D).toEqual({ width: 32, height: 18 });
@@ -175,7 +175,7 @@ describe("SceneLayer schema", () => {
     expect(restored.name).toBe("HUD");
     expect(restored.settings.gravity).toEqual([0, -4, 0]);
     expect(restored.settings.postProcessStack).toEqual([
-      { materialGuid: "pp", enabled: true },
+      { id: expect.any(String), materialGuid: "pp", enabled: true },
     ]);
     expect(restored.actors).toHaveLength(1);
   });
