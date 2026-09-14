@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -338,6 +338,28 @@ describe("Play createEngine view", () => {
     Reflect.deleteProperty(engine, "_gl");
   });
 
+  it("waits for the exact RTT canvas copy after engine end-frame", async () => {
+    const engine = sharedEngine();
+    const loops = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, present: "rtt" });
+    handles.push(handle);
+    handle.setPaused(true);
+    let resolve!: (pixels: null) => void;
+    const pixels = new Promise<null>((done) => { resolve = done; });
+    const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockReturnValue(pixels);
+    let ready = false;
+    const presented = handle.presentFirstFrame().then(() => { ready = true; });
+    loops.mock.calls[0]![0]();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    expect(read).toHaveBeenCalledOnce();
+    resolve(null);
+    await presented;
+    expect(ready).toBe(true);
+    read.mockRestore();
+  });
+
   it("does not spend a loading permit on a sibling view or a hidden document", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
@@ -369,6 +391,7 @@ describe("Play createEngine view", () => {
     const { handle } = playHandle(engine);
     handle.setPaused(true);
     const ready = vi.fn(() => false);
+    const draw = vi.spyOn(handle.scene, "render");
     handle.scene.addIsReadyCheck({ isReady: ready });
     let presented = false;
     const frame = handle.presentFirstFrame().then(() => { presented = true; });
@@ -377,6 +400,7 @@ describe("Play createEngine view", () => {
     engine.onEndFrameObservable.notifyObservers(engine);
     await Promise.resolve();
     expect(presented).toBe(false);
+    expect(draw).not.toHaveBeenCalled();
     ready.mockReturnValue(true);
     render();
     engine.onEndFrameObservable.notifyObservers(engine);

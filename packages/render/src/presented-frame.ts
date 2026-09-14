@@ -45,7 +45,7 @@ export function submitPresentedFrame(engine: AbstractEngine, draw: () => void): 
       }
     }
     work = (async () => {
-      const results = await Promise.allSettled([...reports, device.queue.onSubmittedWorkDone()]);
+      const results = await Promise.allSettled([...reports, Promise.resolve().then(() => device.queue.onSubmittedWorkDone())]);
       const errors: unknown[] = [...failures];
       for (const result of results) {
         if (result.status === "rejected") errors.push(result.reason);

@@ -219,15 +219,15 @@ export class SceneLayerCompositor {
       const record = layer as LayerRecord;
       this.bindHudCamera(record);
       draw(layer.layerId, () => {
-      if (record.rtt) {
-        record.scene.autoClear = true;
-        record.scene.render();
-        this.blit(record);
-      } else {
-        record.scene.autoClear = false;
-        record.scene.autoClearDepthAndStencil = true;
-        record.scene.render();
-      }
+        if (record.rtt) {
+          record.scene.autoClear = true;
+          record.scene.render();
+          this.blit(record);
+        } else {
+          record.scene.autoClear = false;
+          record.scene.autoClearDepthAndStencil = true;
+          record.scene.render();
+        }
       });
     }
   }
@@ -463,6 +463,7 @@ export class SceneLayerCompositor {
     layer.scene.autoClear = true;
     layer.attachedPostProcess =
       this.attachLayerPostProcess?.(layer, enabledStack) ?? null;
+    this.prepareBlit(layer);
   }
 
   private releasePostProcess(layer: LayerRecord): void {
@@ -476,7 +477,7 @@ export class SceneLayerCompositor {
     layer.blitMaterial = null;
   }
 
-  private blit(layer: LayerRecord): void {
+  private prepareBlit(layer: LayerRecord): void {
     if (!layer.rtt) return;
     if (!layer.blitScene) {
       const blitScene = new Scene(this.engine);
@@ -517,7 +518,11 @@ export class SceneLayerCompositor {
       layer.blitMaterial.diffuseTexture = layer.rtt;
       layer.blitMaterial.emissiveTexture = layer.rtt;
     }
-    layer.blitScene.render();
+  }
+
+  private blit(layer: LayerRecord): void {
+    this.prepareBlit(layer);
+    layer.blitScene?.render();
   }
 }
 

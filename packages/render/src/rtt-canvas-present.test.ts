@@ -113,7 +113,7 @@ describe("createRttCanvasPresent", () => {
       .mockResolvedValue(
         pixels as unknown as Awaited<ReturnType<RenderTargetTexture["readPixels"]>>,
       );
-    present.blit();
+    await present.blit();
     await vi.waitFor(() => {
       expect(fake.putCalls).toBe(1);
     });
@@ -122,6 +122,26 @@ describe("createRttCanvasPresent", () => {
     readPixels.mockRestore();
     present.dispose();
     globalThis.ImageData = previous;
+  });
+
+  it("rejects a disposed readback and never paints its delayed pixels", async () => {
+    const { scene, camera, canvas, fake } = host();
+    const present = createRttCanvasPresent(scene, canvas);
+    present.bind();
+    let resolve!: (pixels: Uint8Array) => void;
+    const read = new Promise<Uint8Array>((done) => { resolve = done; });
+    vi.spyOn(camera.outputRenderTarget!, "readPixels").mockReturnValue(read);
+    const pending = present.blit();
+    const rejected = expect(pending).rejects.toThrow("disposed");
+    expect(present.isPresenting()).toBe(true);
+    expect(fake.putCalls).toBe(0);
+    present.dispose();
+    await rejected;
+    resolve(new Uint8Array(128 * 64 * 4));
+    await read;
+    await Promise.resolve();
+    expect(fake.putCalls).toBe(0);
+    expect(present.isPresenting()).toBe(false);
   });
 
   it("flips Babylon render-target rows for the 2D canvas", async () => {
@@ -158,7 +178,7 @@ describe("createRttCanvasPresent", () => {
       .mockResolvedValue(
         gpu as unknown as Awaited<ReturnType<RenderTargetTexture["readPixels"]>>,
       );
-    present.blit();
+    await present.blit();
     await vi.waitFor(() => expect(fake.capturedImages.length).toBeGreaterThan(0));
     const image = fake.capturedImages[0]!;
     expect([...image.data.subarray(0, 4)]).toEqual(first);

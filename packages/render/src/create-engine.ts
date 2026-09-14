@@ -819,13 +819,17 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
-  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered && !pending.submission) && scheduler.canPresentLoadingFrame();
+  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered && !pending.submission && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
   const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
-  const shouldRenderFrame = (now: number) => hasLoadingFrame() || (hasReadyContent() &&
-    (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now)));
+  const shouldRenderFrame = (now: number) => !rttPresent?.isPresenting() && (hasLoadingFrame() || (hasReadyContent() &&
+    (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
-    !disposed && !contextLost && shouldRenderFrame(performance.now())) : null;
+    {
+      if (disposed || contextLost) return false;
+      prepareSnapshot();
+      return shouldRenderFrame(performance.now());
+    }) : null;
   onRollback(() => releaseViewAdmission?.());
   if (options.editor) {
     scheduler.setAlwaysRender(true);
@@ -1682,6 +1686,14 @@ function initializeEngine(
     assert();
     return { target: target!, assert };
   };
+  const presentationReady = (pending: PendingPresentation) => {
+    try {
+      return pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : isSceneFrameReady(scene);
+    } catch (error) {
+      cancelPresentation(error instanceof Error ? error : new Error(String(error)), presentationKey(pending.owner));
+      return false;
+    }
+  };
   const finishPresentation = (key: string, pending: PendingPresentation) => {
     if (!pending.rendered || !pending.copied || pending.submission || pendingPresentations.get(key) !== pending) return;
     pendingPresentations.delete(key);
@@ -1693,16 +1705,7 @@ function initializeEngine(
     pending.resolve();
   };
   const tilemapPreviewStart = performance.now();
-  const renderLoop = () => {
-    if (disposed || contextLost || registeredView?.enabled === false) return;
-    // Babylon invokes all render callbacks for each registered view. A loading
-    // permit belongs to this canvas and must not draw into a sibling's blit.
-    if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
-    const frameStart = performance.now();
-    const loadingFrame = hasLoadingFrame();
-    if (!shouldRenderFrame(frameStart)) {
-      return;
-    }
+  function prepareSnapshot() {
     const sampled = interpolator.sample(interpAlpha);
     if (sampled) {
       const previousCamera = scene.activeCamera;
@@ -1710,6 +1713,19 @@ function initializeEngine(
       playViz?.refresh();
       rebuildIfActiveCameraChanged(previousCamera);
       positionsFromSample(sampled, lastPositions);
+    }
+    return sampled;
+  }
+  const renderLoop = () => {
+    if (disposed || contextLost || registeredView?.enabled === false) return;
+    // Babylon invokes all render callbacks for each registered view. A loading
+    // permit belongs to this canvas and must not draw into a sibling's blit.
+    if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
+    const sampled = prepareSnapshot();
+    const frameStart = performance.now();
+    const loadingFrame = hasLoadingFrame();
+    if (!shouldRenderFrame(frameStart)) {
+      return;
     }
     if (audioService) {
       if (audioService.hasSpatialVoices() && sampled) {
@@ -1746,15 +1762,17 @@ function initializeEngine(
       const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
       const drawOwner = (key: string, draw: () => void) => {
         const pending = pendingPresentations.get(key);
-        if (!pending || pending.rendered || pending.submission) { draw(); return; }
-        const ready = () => pending.owner
-          ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true
-          : isSceneFrameReady(scene);
+        if (!pending) { draw(); return; }
+        if (!presentationReady(pending)) {
+          pending.rendered = false;
+          pending.copied = false;
+          return;
+        }
+        if (pending.rendered || pending.submission) { draw(); return; }
         pending.copied = false;
         const submission = submitPresentedFrame(engine, () => {
-          const before = ready();
           draw();
-          pending.rendered = before && ready();
+          pending.rendered = presentationReady(pending);
         });
         pending.submission = submission;
         void submission.completed.then(() => {
@@ -1768,7 +1786,20 @@ function initializeEngine(
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => scene.render());
       else engine.clear(scene.clearColor, true, true, true);
       sceneLayerCompositor?.render(presentingLayers, (layerId, draw) => drawOwner(`layer:${layerId}`, draw));
-      if (rttPresent) rttPresent.blit();
+      if (rttPresent) {
+        const owners = [...pendingPresentations.entries()].filter(([, pending]) => pending.rendered);
+        void rttPresent.blit().then(() => {
+          for (const [key, pending] of owners) {
+            pending.copied = true;
+            finishPresentation(key, pending);
+          }
+        }, (error: unknown) => {
+          if (!owners.length && !disposed) console.warn(`[render] RTT presentation failed: ${String(error)}`);
+          for (const [key, pending] of owners) {
+            if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
+          }
+        });
+      }
     } catch (error) {
       if (!pendingPresentations.size) throw error;
       cancelPresentation(error instanceof Error ? error : new Error(String(error)));
@@ -1781,6 +1812,7 @@ function initializeEngine(
     if (!loadingFrame) scaling.noteFrameTime(lastRenderCpuMs);
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
+    if (rttPresent) return;
     for (const [key, pending] of pendingPresentations) {
       if (!pending.rendered) continue;
       pending.copied = true;

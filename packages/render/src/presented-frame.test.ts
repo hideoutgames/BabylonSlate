@@ -61,6 +61,26 @@ describe("owned scene GPU submission", () => {
     expect(scopes).toHaveLength(0);
   });
 
+  it("drains popped scope reports when the queue completion API throws synchronously", async () => {
+    const native = engine();
+    vi.spyOn(native, "isWebGPU", "get").mockReturnValue(true);
+    const reports = deferred();
+    Object.assign(native, { _device: {
+      pushErrorScope: () => {},
+      popErrorScope: () => reports.promise.then(() => { throw new Error("Deferred validation failure"); }),
+      queue: { onSubmittedWorkDone: () => { throw new Error("Device queue lost"); } },
+    } });
+    let settled = false;
+    const submission = submitPresentedFrame(native, () => {});
+    const rejected = expect(submission.completed).rejects.toThrow("GPU submission failed");
+    void submission.completed.catch(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    reports.resolve();
+    await rejected;
+    expect(settled).toBe(true);
+  });
+
   it("cancels an unsignaled GL fence, releases it once, and accepts a later completed owner", async () => {
     const native = engine();
     let signaled = false;
