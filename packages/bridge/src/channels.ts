@@ -1,4 +1,4 @@
-import type { QualityOverrides, RenderProjectSettings } from "@babylonslate/core";
+import type { QualityOverrides, RenderProjectSettings, ScenePostProcessEntry } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
@@ -632,7 +632,7 @@ export type CommandMessage =
       assetGuid: string;
       zOrder: number;
       ownerSceneGuid: string | null;
-      postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+      postProcessStack: ScenePostProcessEntry[];
       layerBounds?: { width: number; height: number };
     }
   | { type: "sceneLayerRemove"; layerId: string }
@@ -640,7 +640,7 @@ export type CommandMessage =
   | {
       type: "sceneLayerPostProcess";
       layerId: string;
-      postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+      postProcessStack: ScenePostProcessEntry[];
     };
 
 export type BridgeHostMessage =
