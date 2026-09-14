@@ -185,6 +185,7 @@ import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, setRegisteredViewEnabled } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
@@ -691,7 +692,7 @@ function initializeEngine(
     }
     if (failures.length) throw new AggregateError(failures, "Failed to release constructed scenes.");
   });
-  const previousViews = new Map((engine.views ?? []).map((view) => [view, view.enabled]));
+  const previousViews = new Map((engine.views ?? []).map((view) => [view, registeredViewIsEnabled(view)]));
   onRollback(() => {
     const failures: unknown[] = [];
     for (const view of [...(engine.views ?? [])]) {
@@ -699,7 +700,7 @@ function initializeEngine(
         try { engine.unRegisterView(view.target); } catch (error) { failures.push(error); }
       }
     }
-    for (const [view, enabled] of previousViews) view.enabled = enabled;
+    for (const [view, enabled] of previousViews) setRegisteredViewEnabled(view, enabled);
     if (failures.length) throw new AggregateError(failures, "Failed to release constructed views.");
   });
   const previousScaling = engine.getHardwareScalingLevel();
@@ -805,6 +806,10 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
+    !disposed && !contextLost && ((pendingPresentation !== null && !pendingPresentation.rendered && scheduler.canPresentLoadingFrame()) ||
+      scheduler.shouldRender(performance.now()))) : null;
+  onRollback(() => releaseViewAdmission?.());
   if (options.editor) {
     scheduler.setAlwaysRender(true);
   }
@@ -1606,7 +1611,7 @@ function initializeEngine(
   }
 
   const resize = () => {
-    if (registeredView && registeredView.enabled === false) {
+    if (registeredView && !registeredViewIsEnabled(registeredView)) {
       return;
     }
     if (presentRtt) {
@@ -1853,6 +1858,7 @@ function initializeEngine(
       engine.onContextLostObservable.remove(contextLostObserver);
       engine.onContextRestoredObservable.remove(contextRestoredObserver);
       engine.onEndFrameObservable.remove(presentationObserver);
+      releaseViewAdmission?.();
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
@@ -2111,7 +2117,7 @@ function initializeEngine(
       audioService?.setPaused(paused);
     },
     setRegisterViewEnabled: (enabled: boolean) => {
-      if (registeredView) registeredView.enabled = enabled;
+      if (registeredView) setRegisteredViewEnabled(registeredView, enabled);
     },
     liveObjectCounts: () => ({
       meshes: scene.meshes.length,
@@ -2290,7 +2296,7 @@ function initializeEngine(
     },
     presentFirstFrame: () => {
       try { assertCurrent(loadGeneration); } catch (error) { return Promise.reject(error); }
-      if (registeredView?.enabled === false) {
+      if (registeredView && !registeredViewIsEnabled(registeredView)) {
         return Promise.reject(new Error("The loading viewport is not active."));
       }
       if (pendingPresentation) return pendingPresentation.promise;
@@ -2391,7 +2397,7 @@ function setOtherEngineViewsEnabled(
   enabled: boolean,
 ): void {
   for (const view of engine.views ?? []) {
-    if (view.target !== except) view.enabled = enabled;
+    if (view.target !== except) setRegisteredViewEnabled(view, enabled);
   }
 }
 
