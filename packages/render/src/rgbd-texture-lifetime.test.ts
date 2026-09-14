@@ -155,7 +155,7 @@ describe("pinned native RGBD texture lifecycle", () => {
   it.each(["private canvas", "cube layer"] as const)("restores WebGPU %s state without opening an empty swapchain pass", async (destination) => {
     const { engine, scene, texture, internal, compiler, allocation, draw } = fixture();
     const previousTarget = destination === "cube layer" ? engine.createRenderTargetCubeTexture(8, { generateDepthBuffer: false }) : null;
-    const native = engine as unknown as { _currentRenderTarget: unknown; _rttRenderPassWrapper: { colorAttachmentViewDescriptor: { baseArrayLayer: number; baseMipLevel: number } }; _mrtAttachments: number[] };
+    const native = engine as unknown as { _currentRenderTarget: unknown; _rttRenderPassWrapper: { colorAttachmentViewDescriptor: { baseArrayLayer: number; baseMipLevel: number } }; _mrtAttachments?: number[] };
     const webgpu = vi.spyOn(engine, "isWebGPU", "get");
     const restore = vi.spyOn(engine, "restoreDefaultFramebuffer");
     const bind = vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, face = 0, _width, _height, _fullscreen, mip = 0, layer = 0) => {
@@ -175,7 +175,8 @@ describe("pinned native RGBD texture lifecycle", () => {
         webgpu.mockReturnValue(true);
         native._currentRenderTarget = previousTarget;
         native._rttRenderPassWrapper = { colorAttachmentViewDescriptor: { baseArrayLayer: 10, baseMipLevel: 2 } };
-        native._mrtAttachments = [];
+        // Native WebGPU has no MRT attachment state before its first target bind.
+        native._mrtAttachments = previousTarget ? [] : undefined;
       }, -1, true);
       compiler.resolve();
       await vi.waitFor(() => expect(internal.isReady).toBe(true));
@@ -190,6 +191,24 @@ describe("pinned native RGBD texture lifecycle", () => {
       expect(engine.postProcesses).toEqual([]);
       expect(draw).toHaveBeenCalledOnce();
     } finally { webgpu.mockRestore(); native._currentRenderTarget = null; previousTarget?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("reports late native state capture failures and releases the pending decode", async () => {
+    const { engine, scene, texture, internal, compiler, allocation, draw, errors } = fixture();
+    try {
+      RGBDTextureTools.ExpandRGBDTexture(texture);
+      await vi.waitFor(() => expect(allocation).toHaveBeenCalledOnce());
+      const disposeTarget = vi.spyOn(allocation.mock.results[0]!.value!, "dispose");
+      vi.spyOn(engine, "getDepthWrite").mockImplementationOnce(() => { throw new Error("Native state unavailable"); });
+      compiler.resolve();
+      await vi.waitFor(() => expect(texture.loadingError).toBe(true));
+      expect(internal.isReady).toBe(false);
+      expect(texture.errorObject?.exception).toEqual(new Error("Native state unavailable"));
+      expect(draw).not.toHaveBeenCalled();
+      expect(errors).toHaveBeenCalledOnce();
+      expect(disposeTarget).toHaveBeenCalledOnce();
+      expect(engine.postProcesses).toEqual([]);
+    } finally { scene.dispose(); engine.dispose(); }
   });
 
   it("keeps a live decode failed when owned cleanup throws after texture adoption", async () => {

@@ -5,7 +5,7 @@
  
  import { PostProcess } from "../PostProcesses/postProcess.pure.js";
  import { ApplyPostProcess } from "./textureTools.js";
-@@ -11,84 +12,160 @@
+@@ -11,84 +12,161 @@
       */
      static ExpandRGBDTexture(texture) {
          const internalTexture = texture._texture;
@@ -107,7 +107,7 @@
 +            const previousGlViewport = gl ? gl.getParameter(gl.VIEWPORT) : null;
 +            const previousFramebufferCache = engine._currentFramebuffer;
 +            const previousAttachment = engine.isWebGPU ? { ...engine._rttRenderPassWrapper.colorAttachmentViewDescriptor } : null;
-+            const previousMrtAttachments = engine.isWebGPU ? engine._mrtAttachments.slice() : null;
++            const previousMrtAttachments = engine.isWebGPU ? engine._mrtAttachments?.slice() ?? [] : null;
 +            const errors = [];
 +            try {
 +                pass.onApply = (boundEffect) => {
@@ -209,8 +209,9 @@
 +                if (!ownsTexture()) { cancel(); return; }
 +                errorObserver = effect.onErrorObservable.add(() => fail(new Error(effect.getCompilationError())));
 +                if (effect.getCompilationError()) { fail(new Error(effect.getCompilationError())); return; }
-+                if (effect.isReady()) decode();
-+                else compileObserver = effect.onCompileObservable.addOnce(decode);
++                const decodeWhenCompiled = () => { try { decode(); } catch (error) { fail(error); } };
++                if (effect.isReady()) decodeWhenCompiled();
++                else compileObserver = effect.onCompileObservable.addOnce(decodeWhenCompiled);
              });
 +            postProcess.updateEffect();
          };
