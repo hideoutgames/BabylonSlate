@@ -48,7 +48,6 @@ export {
   Actor,
   ActorComponent,
   BObject,
-  ComponentLogic,
   MaterialObject,
   PostProcessMaterialObject,
   getPostProcessMaterialObject,

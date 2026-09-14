@@ -112,3 +112,5 @@ export { isMaterialParameterNode, materialParameterName, validateMaterialParamet
 export { customGlslInterface, customGlslInterfaceError, customGlslFunctionBodyError, newCustomGlslProperties, type CustomGlslPin } from "./custom-glsl";
 export { materialGradientStops, type MaterialGradientStop } from "./gradient";
 export * from "./vector-mask";
+
+export { buildMaterialParameterCatalog } from "./material-parameter-catalog";

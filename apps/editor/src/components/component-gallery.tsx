@@ -499,6 +499,14 @@ function GalleryComposites() {
 
   const rows: PropertyRow[] = [
     {
+      kind: "text",
+      id: "gallery-entry-id",
+      label: "Entry ID",
+      value: "first-tint",
+      readOnly: true,
+      onChange: () => {},
+    },
+    {
       kind: "vector3",
       id: "gallery-position",
       label: "Position",

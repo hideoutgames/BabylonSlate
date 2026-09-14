@@ -1,3 +1,5 @@
+import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
+import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
 import { lightsDebugText } from "@babylonslate/render";
 import type { AbstractEngine } from "@babylonjs/core";
 import { snapshotFloatCount } from "@babylonslate/bridge";
@@ -387,6 +389,8 @@ function initializePlayer(
     sceneLayers,
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
+    materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
+    materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes),
     animClipCatalog: content.animClipCatalog,
     deferSceneModelsReady: true,
     deferSceneLoadingPaint: true,

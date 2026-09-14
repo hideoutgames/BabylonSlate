@@ -35,3 +35,5 @@ export * from "./sorting";
 export * from "./render-quality";
 export * from "./render-path";
 export * from "./environment-lighting";
+
+export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";

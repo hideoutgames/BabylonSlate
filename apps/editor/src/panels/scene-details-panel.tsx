@@ -23,6 +23,7 @@ import {
   humanizePropertyLabel,
   resolveTypeVisual,
   selectedPickerIdentity,
+  walkAncestry,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -80,7 +81,6 @@ import {
   applyPrefabPropertyDefaults,
   componentPropertyRows,
   gameInstanceClassEntries,
-  subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import {
@@ -173,6 +173,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const [sceneLayerPick, setSceneLayerPick] = useState<"add" | number | null>(
     null,
   );
+  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
@@ -620,7 +621,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       "Scene Settings",
     );
     const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
-    const showPostProcess = matches("Post Processing Material Enabled Scalable Resolution");
+    const showPostProcess = matches("Post Processing Material Entry ID Enabled Scalable Resolution");
     const showShadows = !overlay && matches(SHADOW_SETTINGS_SEARCH_TEXT);
     const showEnvironment = !overlay && matches(ENVIRONMENT_LIGHTING_SEARCH_TEXT);
     const showPipeline = !overlay && matches("Rendering Render Path GPU Backend Auto Forward Clustered Forward WebGL2 WebGPU Effective Selection");
@@ -655,14 +656,24 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   },
                 })
               }
-              renderItemHeader={({ item, index }) =>
-                stackAssetPicker(
-                  item.materialGuid,
-                  `scene-post-process-${index}-material`,
-                  `Pass ${index + 1} Material`,
-                  () => setPostProcessPick({ id: item.id }),
-                )
-              }
+              renderItemHeader={({ item, index }) => (
+                <>
+                  {stackAssetPicker(
+                    item.materialGuid,
+                    `scene-post-process-${index}-material`,
+                    `Pass ${index + 1} Material`,
+                    () => setPostProcessPick({ id: item.id }),
+                  )}
+                  <PropertyGrid density="compact" rows={[{
+                    kind: "text",
+                    id: `scene-post-process-${item.id}-entry-id`,
+                    label: "Entry ID",
+                    value: item.id,
+                    readOnly: true,
+                    onChange: () => {},
+                  }]} />
+                </>
+              )}
               renderItem={({ item, index, onChange }) => (
                 <div className="flex items-center justify-between gap-2 px-2 pointer-coarse:flex-wrap">
                 <Field
@@ -1030,10 +1041,6 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
-            logicClasses: subclassClassEntries(
-              "ComponentLogic",
-              assetRegistry?.list() ?? [],
-            ),
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
           },
@@ -1178,7 +1185,13 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     className={expanded ? undefined : "-rotate-90"}
                   />
                   <TypeVisualIcon
-                    visual={resolveTypeVisual({ classId: component.classId })}
+                    visual={resolveTypeVisual({
+                      classId: component.classId,
+                      ancestry: walkAncestry(
+                        component.classId,
+                        parentOf,
+                      ),
+                    })}
                     data-testid={`component-type-icon-${component.id}`}
                   />
                   <span className="truncate">{title}</span>

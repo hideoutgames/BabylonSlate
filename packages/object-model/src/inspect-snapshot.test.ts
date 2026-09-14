@@ -62,6 +62,7 @@ describe("createDebugInspectSnapshot", () => {
       label: "GameInstance",
       classId: "GameInstance",
       parentId: null,
+      ancestry: ["GameInstance", "BObject"],
       variables: { score: 3 },
     });
     expect(snapshot.nodes[1]).toMatchObject({
@@ -69,6 +70,7 @@ describe("createDebugInspectSnapshot", () => {
       label: "Hero",
       classId: "Actor",
       parentId: null,
+      ancestry: ["Actor", "BObject"],
       variables: { health: 10, name: "Hero", parentId: null },
     });
     expect(snapshot.nodes[1]?.transform?.position).toEqual([0, 0, 0]);
@@ -77,6 +79,7 @@ describe("createDebugInspectSnapshot", () => {
       label: "MeshComponent",
       classId: "MeshComponent",
       parentId: "hero",
+      ancestry: ["MeshComponent", "ActorComponent", "BObject"],
       variables: { meshKind: "box" },
     });
     expect(snapshot.nodes[3]).toMatchObject({
@@ -86,7 +89,7 @@ describe("createDebugInspectSnapshot", () => {
     });
   });
 
-  it("stamps variableTypes from ClassRegistry for known class variables", () => {
+  it("stamps inherited class metadata from ClassRegistry", () => {
     const world = createInspectWorld();
     expect(
       world.classRegistry.register({
@@ -102,11 +105,24 @@ describe("createDebugInspectSnapshot", () => {
       classId: "Hero",
       variables: { name: "Hero", health: 10 },
     });
+    world.classRegistry.register({
+      id: "Health", parentClassId: "ActorComponent", kind: "component",
+      variables: [], implementedInterfaces: [],
+    });
+    world.classRegistry.register({
+      id: "RegenHealth", parentClassId: "Health", kind: "component",
+      variables: [], implementedInterfaces: [],
+    });
+    actor.attachComponent(world.createComponent({ guid: "health", classId: "RegenHealth" }));
     world.spawnActorNow(actor);
     const snapshot = createDebugInspectSnapshot(world);
     const node = snapshot.nodes.find((entry) => entry.id === "hero");
     expect(node?.variableTypes?.health).toBe("float");
     expect(node?.variableTypes?.name).toBeUndefined();
+    expect(node?.ancestry).toEqual(["Hero", "Actor", "BObject"]);
+    expect(snapshot.nodes.find((entry) => entry.id === "health")?.ancestry).toEqual([
+      "RegenHealth", "Health", "ActorComponent", "BObject",
+    ]);
   });
 
   it("falls back to classId when an actor has no name", () => {

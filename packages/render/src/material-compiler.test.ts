@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -1331,6 +1331,10 @@ describe("material compiler", () => {
       bytes,
     );
     expect(cached).not.toBeNull();
+    // A real sibling checks TextureBlock dirty notifications. Connected samples
+    // expose their source texture, but do not own the setter's backing texture.
+    const sibling = new ShaderMaterial("sibling", scene, "color", {});
+    sibling.setTexture("shared", cached!);
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(
       {
@@ -1372,7 +1376,8 @@ describe("material compiler", () => {
     if (!result.ok) {
       throw new Error(result.diagnostics.map((row) => row.message).join(", "));
     }
-    result.dispose();
+    expect(() => result.dispose()).not.toThrow();
+    expect(sibling.hasTexture(cached!)).toBe(true);
     expect(isDisposedGpuTexture(cached!)).toBe(false);
   });
 

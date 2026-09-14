@@ -1,3 +1,4 @@
+import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RenderingQualitySession, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -23,12 +24,12 @@ import {
   Actor,
   ActorComponent,
   BObject,
-  ComponentLogic,
   GameInstance,
   MaterialObject,
   PostProcessMaterialObject,
+  getPostProcessMaterialObject,
+  type MaterialInstanceObject,
   Scene,
-  hydrateClassVariableValue,
   SceneLayer,
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
@@ -55,6 +56,8 @@ import {
   sceneLayerRelativeAnchorWorldPosition,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
+  type MaterialParameterCatalog,
+  type MaterialParameterValue,
   type Transform,
   type SerializedActor,
   type SerializedScene,
@@ -192,6 +195,8 @@ export interface RuntimeDriverOptions {
   loopCount?: number;
   /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */
   audioAssetGuids?: readonly string[];
+  materialParameterCatalog?: MaterialParameterCatalog;
+  materialTextureAssetGuids?: readonly string[];
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
   animClipCatalog?: readonly AnimClipCatalogEntry[];
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
@@ -451,6 +456,8 @@ class InProcessRuntime implements RuntimeDriver {
   private sceneLoadingProgress = 1;
   private readonly deferSceneModelsReady: boolean;
   private readonly deferSceneLoadingPaint: boolean;
+  private readonly materialParameters: RuntimeMaterialParameters;
+  private readonly validateLegacyMeshParameters: boolean;
   private sceneLoadId = 0;
   private layerLoadId = 0;
   private readonly layerLoads = new Map<string, { layer: SceneLayer; loadId: number; realized: boolean; presented: boolean; ready: boolean }>();
@@ -534,6 +541,8 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
+    this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
+    this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.renderingQuality = new RenderingQualitySession(options.renderSettings, options.playScene?.settings.shadowOverrides);
     this.frameCap =
       options.frameCap !== undefined && options.frameCap > 0
@@ -711,6 +720,19 @@ class InProcessRuntime implements RuntimeDriver {
       onPhase: (phase) => this.markPhase(phase),
       canTickScene: () => !this.stopped,
       canTickActor: (actor) => this.canTickActor(actor),
+      componentHooksFor: (classId) => {
+        if (!registry.isA(classId, "ActorComponent")) return undefined;
+        return {
+          onCreation: (self) => {
+            this.scriptHost.bindInterfaceHandlers(self);
+            this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
+          },
+          onTick: (self, ctx) =>
+            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
+          onDestroyed: (self) =>
+            this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self)),
+        };
+      },
       onPhysics: (ctx) => {
         if (this.canTickScene()) this.physicsSync.step(ctx.dt, this.world);
         if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
@@ -835,7 +857,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       addComponent: (actor, classId, transform) => {
         const target = actor;
-        if (!target || target.destroyed) return null;
+        if (this.stopped || !target || target.destroyed) return null;
         const id = String(classId ?? "").trim();
         if (!id) return null;
         const overlay = Boolean(target.sceneLayerId);
@@ -846,6 +868,7 @@ class InProcessRuntime implements RuntimeDriver {
           classId: id,
           ...(pose ? { transform: pose } : {}),
         });
+        this.scriptHost.bindInterfaceHandlers(component);
         target.attachComponent(component);
         return component;
       },
@@ -979,28 +1002,19 @@ class InProcessRuntime implements RuntimeDriver {
           height: nextHeight,
         });
       },
-      setMaterialParameter: (material, parameterName, parameter) => {
-        const component = material.component;
-        const owner = component.owner;
-        if (!owner || owner.destroyed || component.destroyed) return;
-        const slotId = this.slotByGuid.get(owner.guid);
-        if (slotId === undefined) return;
-        const skipButtonMesh =
-          overlayButtonHasSiblingVisual(owner) ||
-          overlayButtonHasParentVisual(owner, this.world);
-        const renderables = owner.components.filter((entry) =>
-          isPlayRenderable(entry, skipButtonMesh),
-        );
-        if (!renderables.includes(component)) return;
-        this.emit({
-          type: "setMaterialParameter",
-          slotId,
-          componentId: component.guid,
-          materialAssetGuid: material.materialAssetGuid,
-          parameterName,
-          parameter,
-        });
+      getPostProcessEntry: (owner, entryId) => {
+        if (!this.canRunOwner(owner)) return null;
+        const material = getPostProcessMaterialObject(owner, entryId);
+        return material && this.materialParameters.hasPostProcessDefinition(material) ? material : null;
       },
+      getMaterialParameter: (material, name, kind) => this.canRunOwner(material)
+        ? this.materialParameters.get(material, name, kind) : null,
+      resetMaterialParameter: (material, name, kind) => {
+        if (!this.canRunOwner(material)) return false;
+        const value = this.materialParameters.resetValue(material, name, kind);
+        return value !== null && this.setMaterialParameter(material, name, value);
+      },
+      setMaterialParameter: (material, name, parameter) => { this.setMaterialParameter(material, name, parameter); },
       possessCamera: (target) => {
         this.possessCamera(target);
       },
@@ -1714,18 +1728,45 @@ class InProcessRuntime implements RuntimeDriver {
     return this.layerLoads.get(actor.sceneLayerId)?.ready === true;
   }
 
+  private setMaterialParameter(material: MaterialInstanceObject, parameterName: string, parameter: MaterialParameterValue): boolean {
+    if (!this.canRunOwner(material)) return false;
+    const validated = this.materialParameters.accepts(material, parameterName, parameter);
+    if (!validated && (material instanceof PostProcessMaterialObject || this.validateLegacyMeshParameters)) return false;
+    if (material instanceof PostProcessMaterialObject) {
+      if (!material.entry.id) return false;
+      const owner = material.owner;
+      const target: Extract<CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"] = owner instanceof SceneLayer
+        ? { kind: "sceneLayer", layerId: owner.guid, layerLoadId: this.layerLoads.get(owner.guid)!.loadId }
+        : { kind: "scene", sceneAssetGuid: owner.assetGuid, sceneLoadId: this.sceneLoadId };
+      this.emit({ type: "setPostProcessMaterialParameter", owner: target, entryId: material.entry.id,
+        materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
+    } else {
+      const component = material.component;
+      const owner = component.owner;
+      if (!owner || owner.destroyed || component.destroyed || component.getVariable("materialObject") !== material) return false;
+      const slotId = this.slotByGuid.get(owner.guid);
+      if (slotId === undefined) return false;
+      const skipButtonMesh = overlayButtonHasSiblingVisual(owner) || overlayButtonHasParentVisual(owner, this.world);
+      if (!owner.components.some((entry) => entry === component && isPlayRenderable(entry, skipButtonMesh))) return false;
+      this.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,
+        materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
+    }
+    if (validated) this.materialParameters.set(material, parameterName, parameter);
+    return true;
+  }
+
   private canRunOwner(owner: BObject): boolean {
     if (this.stopped || owner.destroyed) return false;
     if (owner instanceof PostProcessMaterialObject)
       return owner.isCurrent() && this.canRunOwner(owner.owner);
     if (owner === this.world.gameInstance) return true;
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner
-      : owner instanceof ComponentLogic || owner instanceof MaterialObject ? owner.component.owner : null;
+      : owner instanceof MaterialObject ? owner.component.owner : null;
     if (actor) return actor.world === this.world && this.canTickActor(actor);
-    if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.ready === true;
+    if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.layer === owner && this.layerLoads.get(owner.guid)?.ready === true;
     if (owner instanceof Scene) return owner === this.world.currentScene && this.canTickScene();
     // Detached components and superseded GameInstances have no active owner.
-    return !(owner instanceof ActorComponent || owner instanceof ComponentLogic || owner instanceof MaterialObject || owner instanceof GameInstance);
+    return !(owner instanceof ActorComponent || owner instanceof MaterialObject || owner instanceof GameInstance);
   }
 
   private runOwnerAction(owner: BObject, action: () => void): void {
@@ -1823,7 +1864,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) {
       this.pendingOwnerActions.delete(component);
-      if (component.logic) this.pendingOwnerActions.delete(component.logic);
       this.animEvalByComponent.delete(component.guid);
       this.pendingAnimJumpByComponent.delete(component.guid);
       for (const key of this.animInitializedBySlot) {
@@ -3718,22 +3758,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private applyActorDefaults(actor: Actor): void {
     for (const component of actor.components) {
-      if (component.classId !== "LogicComponent" || component.logic) continue;
-      const classId = component.getVariable("logicClass");
-      if (typeof classId !== "string" || !this.world.classRegistry.isA(classId, "ComponentLogic")) continue;
-      const hooks = this.scriptHost.hooksFor(classId);
-      const logic = new ComponentLogic(component, {
-        classId, guid: `${component.guid}:logic`,
-        variables: Object.fromEntries(this.world.classRegistry.inheritedVariables(classId).map((variable) => [variable.name, hydrateClassVariableValue(variable)])),
-        implementedInterfaces: this.world.classRegistry.inheritedInterfaces(classId),
-        hooks: {
-          onCreation: (self) => this.runOwnerCreation(self, () => hooks?.onCreation?.(self)),
-          onTick: (self, ctx) => this.guardScript(() => hooks?.onTick?.(self, ctx)),
-          onDestroyed: (self) => this.runOwnerDestroyed(self, () => hooks?.onDestroyed?.(self)),
-        },
-      });
-      component.logic = logic;
-      this.scriptHost.bindInterfaceHandlers(logic);
+      this.scriptHost.bindInterfaceHandlers(component);
     }
     const script = this.scriptHost.scriptsFor(actor.classId)[0];
     const defaults = script?.actorDefaults;
@@ -4343,10 +4368,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingSceneFinish = null;
     this.finalizeTrace();
     for (const actor of this.world.getActors()) {
-      for (const component of actor.components) {
-        if (component.logic && !component.logic.destroyed) {
-          component.logic.destroyed = true;
-          component.logic.callOnDestroyed();
+      for (const component of [...actor.components]) {
+        if (!component.destroyed) {
+          component.destroyed = true;
+          component.callOnDestroyed();
         }
       }
     }

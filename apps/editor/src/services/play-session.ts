@@ -1,3 +1,4 @@
+import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import {
   parseAnimGraphDocument,
   resolveAnimGraphClips,
@@ -18,7 +19,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { resolveModelAnimationDurations } from "@babylonslate/assets";
+import { materialParameterTextureAssetGuids, resolveModelAnimationDurations } from "@babylonslate/assets";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   printHudCssColor,
@@ -846,6 +847,8 @@ export function startPlaySession(options: {
     inputAssets: options.inputAssets,
     inputMappings: options.inputMappings,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
+    materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
+    materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes),
     animClipCatalog,
   });
 

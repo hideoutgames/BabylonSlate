@@ -21,6 +21,7 @@ import {
   RemapBlock,
   ScaleBlock,
   TransformBlock,
+  TextureBlock,
   VectorMergerBlock,
   Vector3,
   VectorSplitterBlock,
@@ -757,6 +758,10 @@ export function compileMaterialPlan(
 /** Drop ResourceCache textures so NodeMaterial.dispose cannot free engine-owned GPU wrappers. */
 function detachEngineOwnedTextures(material: NodeMaterial): void {
   for (const block of material.attachedBlocks) {
+    // A connected sample's getter forwards its ImageSourceBlock texture, while
+    // its setter addresses separate, possibly uninitialized storage. Clear the
+    // source owner instead so Babylon never scans materials with an undefined texture.
+    if (block instanceof TextureBlock && block.hasImageSource) continue;
     const textured = block as { texture?: Texture | null };
     if (!textured.texture || !isEngineOwnedGpuTexture(textured.texture)) {
       continue;

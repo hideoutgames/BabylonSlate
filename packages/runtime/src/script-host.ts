@@ -25,6 +25,8 @@ import {
   ActorComponent,
   BObject,
   MaterialObject,
+  PostProcessMaterialObject,
+  type MaterialInstanceObject,
   Scene,
   SceneLayer,
   dispatchInterface,
@@ -170,10 +172,13 @@ export interface ScriptHostServices {
   setGlobalVolume?(volume: number): void;
   setRenderResolution?(width: number, height: number): void;
   setMaterialParameter?(
-    material: MaterialObject,
+    material: MaterialInstanceObject,
     parameterName: string,
     parameter: MaterialParameterValue,
   ): void;
+  getPostProcessEntry?(owner: Scene | SceneLayer, entryId: string): PostProcessMaterialObject | null;
+  getMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null;
+  resetMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): boolean;
   possessCamera?(target: unknown): void;
   updateIllumination?(target: unknown): void;
   refreshComponent?(component: ActorComponent): void;
@@ -305,6 +310,9 @@ export interface ScriptContext {
   randomFloat(): number;
   getAllActorsOfClass(classId: string): Actor[];
   getActorOfClass(classId: string): Actor | null;
+  /** Live world components, including SceneLayers, in actor/component order. */
+  getFirstComponentOfType(classId: string): ActorComponent | null;
+  getAllComponentsOfType(classId: string): ActorComponent[];
   attachActor(
     child: BObject | null | undefined,
     parent: BObject | null | undefined,
@@ -478,6 +486,13 @@ export interface ScriptContext {
     name: string,
     value: string | null,
   ): void;
+  getPostProcessEntry(owner: unknown, entryId: string): PostProcessMaterialObject | null;
+  getMaterialFloatParameter(material: unknown, name: string): { found: boolean; value: number };
+  getMaterialColorParameter(material: unknown, name: string): { found: boolean; value: ScriptColor };
+  getMaterialTextureParameter(material: unknown, name: string): { found: boolean; value: string | null };
+  resetMaterialFloatParameter(material: unknown, name: string): boolean;
+  resetMaterialColorParameter(material: unknown, name: string): boolean;
+  resetMaterialTextureParameter(material: unknown, name: string): boolean;
   possessCamera(target: unknown): void;
   getCameraFieldOfView(target: unknown): number;
   setCameraFieldOfView(target: unknown, fov: number): void;
@@ -921,6 +936,26 @@ export class ScriptHost {
           this.applyComponentVariable(object, String(name ?? ""), value);
         }
       },
+      getPostProcessEntry: (owner, entryId) => {
+        if (!(owner instanceof Scene || owner instanceof SceneLayer) || !this.canInvokeOwner(owner) || typeof entryId !== "string" || !entryId.trim()) return null;
+        return services.getPostProcessEntry?.(owner, entryId.trim()) ?? null;
+      },
+      getMaterialFloatParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "float");
+        return { found: result?.kind === "float", value: result?.kind === "float" ? result.value : 0 };
+      },
+      getMaterialColorParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "color");
+        const [x, y, z, w] = result?.kind === "color" ? result.value : [0, 0, 0, 1];
+        return { found: result?.kind === "color", value: { x: x!, y: y!, z: z!, w: w! } };
+      },
+      getMaterialTextureParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "texture");
+        return { found: result?.kind === "texture", value: result?.kind === "texture" ? result.textureAssetGuid : null };
+      },
+      resetMaterialFloatParameter: (material, name) => this.resetMaterialParameter(material, name, "float"),
+      resetMaterialColorParameter: (material, name) => this.resetMaterialParameter(material, name, "color"),
+      resetMaterialTextureParameter: (material, name) => this.resetMaterialParameter(material, name, "texture"),
       setMaterialFloatParameter: (material, name, value) => {
         if (typeof value !== "number" || !Number.isFinite(value)) return;
         this.setMaterialParameter(material, name, { kind: "float", value });
@@ -1109,6 +1144,10 @@ export class ScriptHost {
       getComponent: (actor, classId) =>
         asActor(actor ?? self)?.components.find((c) => c.classId === classId) ??
         null,
+      getFirstComponentOfType: (classId) =>
+        componentsOfType(services, classId).next().value ?? null,
+      getAllComponentsOfType: (classId) =>
+        [...componentsOfType(services, classId)],
       getComponentById: (actor, componentId) =>
         findComponentByIdFromTarget(
           actor ?? self,
@@ -1509,10 +1548,23 @@ export class ScriptHost {
     name: string,
     parameter: MaterialParameterValue,
   ): void {
-    if (!(material instanceof MaterialObject) || material.destroyed) return;
-    if (material.component.getVariable("materialObject") !== material) return;
-    if (typeof name !== "string" || !name.trim()) return;
+    if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return;
     this.services.setMaterialParameter?.(material, name.trim(), parameter);
+  }
+
+  private materialAvailable(material: unknown): material is MaterialInstanceObject {
+    if (!(material instanceof MaterialObject || material instanceof PostProcessMaterialObject) || !this.canInvokeOwner(material)) return false;
+    return material instanceof PostProcessMaterialObject ? material.isCurrent() : material.component.getVariable("materialObject") === material;
+  }
+
+  private getMaterialParameter(material: unknown, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null {
+    if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return null;
+    return this.services.getMaterialParameter?.(material, name.trim(), kind) ?? null;
+  }
+
+  private resetMaterialParameter(material: unknown, name: string, kind: MaterialParameterValue["kind"]): boolean {
+    if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return false;
+    return this.services.resetMaterialParameter?.(material, name.trim(), kind) ?? false;
   }
 
   private applyComponentVariable(
@@ -1608,6 +1660,24 @@ export class ScriptHost {
     const owner = component.owner;
     if (!owner) return;
     this.invokeEvent(owner.classId, event, owner, args, component.guid);
+  }
+}
+
+function* componentsOfType(
+  services: ScriptHostServices,
+  classId: string,
+): Generator<ActorComponent, undefined, unknown> {
+  const target = String(classId ?? "");
+  if (!target) return;
+  for (const actor of services.getActors?.() ?? []) {
+    if (actor.destroyed) continue;
+    for (const component of actor.components) {
+      if (component.destroyed) continue;
+      if (services.classRegistry?.isA(component.classId, target) ??
+        component.classId === target) {
+        yield component;
+      }
+    }
   }
 }
 
