@@ -26,6 +26,7 @@ const applyGraphChange = vi.hoisted(() =>
   ),
 );
 const sceneEditing = vi.hoisted(() => ({ viewportMode: "3d" as "2d" | "3d" }));
+const classState = vi.hoisted(() => ({ parentClass: "Actor" }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
@@ -66,7 +67,7 @@ vi.mock("../context/document-context", () => ({
           header: {
             type: "Class",
             name: "Hero",
-            parentClass: "Actor",
+            parentClass: classState.parentClass,
             guid: "hero-1",
           },
         },
@@ -120,6 +121,7 @@ afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
   sceneEditing.viewportMode = "3d";
+  classState.parentClass = "Actor";
 });
 
 describe("Inspector prefab component details", () => {
@@ -189,10 +191,33 @@ describe("Inspector prefab component details", () => {
     expect(screen.getByTestId("inspector-prefab-origin")).toBeTruthy();
     expect(screen.getByText("Actor Defaults")).toBeTruthy();
     const hit = screen.getByTestId("property-generateHitEvents");
+    expect(hit.hasAttribute("disabled")).toBe(false);
     fireEvent.click(hit);
     expect(applyGraphChange).toHaveBeenCalled();
     const next = applyGraphChange.mock.calls.at(-1)![1];
     expect(next.actorDefaults?.generateHitEvents).toBe(false);
+    const overlap = screen.getByTestId("property-generateOverlapEvents");
+    expect(overlap.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(overlap);
+    expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults?.generateOverlapEvents).toBe(false);
+  });
+
+  it.each(["BObject", "GameInstance", "ComponentLogic"])(
+    "does not show Actor Defaults or Prefab Origin for %s classes",
+    (parentClass) => {
+      classState.parentClass = parentClass;
+      renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+      expect(screen.queryByTestId("inspector-actor-defaults")).toBeNull();
+      expect(screen.queryByTestId("inspector-prefab-origin")).toBeNull();
+      expect(screen.getByTestId("inspector-parent-class").textContent).toContain(parentClass);
+    },
+  );
+
+  it("shows editable Actor Defaults for an engine Actor subclass", () => {
+    classState.parentClass = "SceneLayerActor";
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    fireEvent.click(screen.getByTestId("property-generateOverlapEvents"));
+    expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults?.generateOverlapEvents).toBe(false);
   });
 
   it("titles Inspector with the component count when more than one is selected", () => {

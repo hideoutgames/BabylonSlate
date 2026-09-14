@@ -71,9 +71,10 @@ test("WebGPU prepares directional base irradiance while preserving another targe
   expect(result.captures["graph-before-environment"]).toEqual([0, 0, 0, 255]);
   expect(result.captures["graph-removed-environment"]).toEqual([0, 0, 0, 255]);
   for (const [graph, reference] of [
-    ["graph-late-environment", "supplied-0"],
-    ["graph-reassigned-environment", "supplied-90"],
+    ["graph-late-environment", "graph-preassigned-0"],
+    ["graph-reassigned-environment", "graph-preassigned-90"],
   ]) {
+    expect(Math.max(...result.captures[reference]!.slice(0, 3))).toBeGreaterThan(20);
     result.captures[graph]!.forEach((value, index) =>
       expect(
         Math.abs(value - result.captures[reference]![index]!),

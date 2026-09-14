@@ -16,6 +16,7 @@ import {
   syncSceneActorsFromPrefabs,
 } from "./prefab-instance-sync";
 import { instantiatePrefabComponents } from "./prefab-preview";
+import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
 
 const identity = identitySerializedTransform();
 
@@ -252,6 +253,34 @@ describe("descendantClassIds", () => {
 });
 
 describe("stampUserComponentOverrides", () => {
+  it("keeps explicit model None across prefab material edits and resumes inheritance after reset", () => {
+    const prefab = createMeshComponent("prefab-mesh", "box");
+    prefab.properties.assetGuid = "model";
+    const previous = createDefaultScene();
+    previous.actors = [createActor("hero", "Hero", {
+      classId: "Hero", components: instantiatePrefabComponents([prefab], "hero"),
+    })];
+    const selectedNone = structuredClone(previous);
+    const mesh = selectedNone.actors[0]!.components[0]!;
+    mesh.properties = patchInspectorComponentProperty(mesh, "materialGuid", null);
+    const stamped = stampUserComponentOverrides(previous, selectedNone, { Hero: [prefab] });
+    const changedPrefab = structuredClone(prefab);
+    changedPrefab.properties.materialGuid = "new-default";
+    const afterPrefabEdit = syncSceneActorsFromPrefabs(stamped, { Hero: [changedPrefab] });
+    expect(afterPrefabEdit.actors[0]!.components[0]!.properties).toMatchObject({ materialGuid: null, materialSource: "override" });
+
+    // Restore the Model default, then verify both override keys disappear so
+    // a later prefab None (and then a named material) propagates again.
+    const reset = structuredClone(stamped);
+    const resetMesh = reset.actors[0]!.components[0]!;
+    resetMesh.properties = patchInspectorComponentProperty(resetMesh, "materialGuid", MODEL_MATERIALS_PICKER_VALUE);
+    const inherited = stampUserComponentOverrides(stamped, reset, { Hero: [prefab] });
+    expect(inherited.actors[0]!.components[0]!.overrideKeys).toBeUndefined();
+    const nonePrefab = { ...prefab, properties: patchInspectorComponentProperty(prefab, "materialGuid", null) };
+    expect(syncSceneActorsFromPrefabs(inherited, { Hero: [nonePrefab] }).actors[0]!.components[0]!.properties).toMatchObject({ materialGuid: null, materialSource: "override" });
+    expect(syncSceneActorsFromPrefabs(inherited, { Hero: [changedPrefab] }).actors[0]!.components[0]!.properties.materialGuid).toBe("new-default");
+  });
+
   it("records property, transform, and parent overrides on sourced components", () => {
     const previous = createDefaultScene();
     previous.actors = [

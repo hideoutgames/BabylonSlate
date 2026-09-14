@@ -23,6 +23,7 @@ import { FlagsField } from "./flags-field";
 import { PickerIdentity } from "./picker-identity";
 import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
+import "./styles/property-grid.css";
 
 export type Vector3Value =
   [number, number, number] | [number, number, number, number];
@@ -128,6 +129,8 @@ export interface PropertyGridProps {
   title?: string;
   /** Vertical stacks the label above the control (Details). Horizontal is name left, value right. */
   orientation?: "vertical" | "horizontal";
+  /** Live inspection: disable edits without dimming the displayed values. */
+  readOnly?: boolean;
   /** Screen-reader-only Field labels so the control can fill a list row. */
   hideLabels?: boolean;
   /** Nested list rows: no Field padding or divider. */
@@ -406,11 +409,20 @@ function rowResetButton(row: PropertyRow) {
   );
 }
 
+function readOnlyPropertyRow(row: PropertyRow): PropertyRow {
+  const next = { ...row, disabled: true, onChange: () => {} };
+  if ("onCommit" in next) next.onCommit = undefined;
+  if ("onAxisChange" in next) next.onAxisChange = undefined;
+  if ("onPick" in next) next.onPick = () => {};
+  return next;
+}
+
 /** Typed property rows with per-property reset-to-default (engineplan §7.4). */
 export function PropertyGrid({
   rows,
   title,
   orientation = "vertical",
+  readOnly = false,
   hideLabels = false,
   density = "default",
   "data-testid": testId,
@@ -418,8 +430,10 @@ export function PropertyGrid({
   const compact = density === "compact";
   return (
     <div
-      className="flex flex-col gap-0"
+      className="flex min-w-0 flex-col gap-0"
       data-slot="property-grid"
+      data-readonly={readOnly || undefined}
+      data-hide-labels={hideLabels || undefined}
       data-testid={testId}
     >
       {title ? (
@@ -428,7 +442,8 @@ export function PropertyGrid({
         </h3>
       ) : null}
       <FieldGroup className="gap-0">
-        {rows.map((row) => {
+        {rows.map((source) => {
+          const row = readOnly ? readOnlyPropertyRow(source) : source;
           const label = (
             <FieldLabel
               id={`property-${row.id}-caption`}

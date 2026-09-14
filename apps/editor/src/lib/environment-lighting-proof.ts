@@ -760,6 +760,7 @@ export async function runEnvironmentIrradianceWebGpuProof() {
         if (kind === "supplied") {
           const lateScene = new Scene(engine);
           let graphResult: { dispose(): void } | undefined;
+          let referenceResult: { dispose(): void } | undefined;
           try {
             lateScene.clearColor = new Color4(0, 0, 0, 1);
             const lateCamera = new FreeCamera(
@@ -835,7 +836,31 @@ export async function runEnvironmentIrradianceWebGpuProof() {
               frozen: graph.isFrozen,
               noCubeBefore,
             };
+            // Native PBR defaults to mixing radiance toward SH at high roughness;
+            // Node PBR does not. Compare binding lifecycle against a separate
+            // graph built with the identical environment already assigned.
+            const reference = compileMaterialPlan(plan.plan, {
+              scene: lateScene,
+              name: "preassigned-wgsl-environment",
+            });
+            if (reference.ok === false)
+              throw new Error(JSON.stringify(reference.diagnostics));
+            referenceResult = reference;
+            const referenceDiagnostics = await reference.ready;
+            if (referenceDiagnostics.length)
+              throw new Error(JSON.stringify(referenceDiagnostics));
+            lateMesh.material = reference.material;
+            for (const rotationYDegrees of [0, 90]) {
+              setSceneRenderSettings(lateScene, {
+                environmentLighting: normalizeEnvironmentLightingSettings({
+                  intensity: 0.5,
+                  rotationYDegrees,
+                }),
+              });
+              await capture(`graph-preassigned-${rotationYDegrees}`, lateScene, lateMesh, false);
+            }
           } finally {
+            referenceResult?.dispose();
             graphResult?.dispose();
             lateScene.dispose();
           }
