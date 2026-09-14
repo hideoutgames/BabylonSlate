@@ -190,9 +190,9 @@ test.describe("P17 particles", () => {
       await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 30_000 });
     } catch (error) {
       await testInfo.attach("particle-shader-failure.json", { body: JSON.stringify({
-        shaderErrors, shaderFallbacks, loading: await page.getByTestId("scene-loading-dialog").allTextContents(),
+        shaderErrors, shaderFallbacks,
       }), contentType: "application/json" });
-      await page.getByTestId("scene-loading-dialog").getByRole("button", { name: "Stop", exact: true }).click();
+      await page.getByTestId("scene-loading-dialog").getByRole("button", { name: "Stop", exact: true }).click({ timeout: 5_000 });
       await expect(page.getByTestId("play-overlay")).toHaveCount(0);
       throw error;
     }

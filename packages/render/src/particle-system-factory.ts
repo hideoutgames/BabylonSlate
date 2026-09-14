@@ -12,6 +12,7 @@ import {
 import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import { prewarmMaterial } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
+import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import {
   applyParticleEmitterPayload,
   resolveParticleEmitterCapacity,
@@ -251,6 +252,7 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
   void prewarmMaterial(material, null).then(() => {
     if (pendingParticleMaterials.get(system) !== cancel || scene.isDisposed) return;
     if (isDisposedNodeMaterial(material, scene)) throw new Error("Particle material was disposed before its build completed.");
+    prepareNodeMaterialParticleBindings(material);
     material.createEffectForParticles(system);
     cancel();
   }).catch((error: unknown) => {
