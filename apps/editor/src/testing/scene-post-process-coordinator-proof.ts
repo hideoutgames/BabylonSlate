@@ -1,10 +1,10 @@
-import { Color4, Engine, FreeCamera, MeshBuilder, PBRMaterial, RawTexture, Scene, Texture, Vector3 } from "@babylonjs/core";
+import { Color4, Constants, Engine, FreeCamera, MeshBuilder, PBRMaterial, RawCubeTexture, RawTexture, Scene, Texture, Vector3 } from "@babylonjs/core";
 import { MaterialLibrary, createAppWebGpuEngine } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedLightingReservations } from "@babylonslate/render/managed-lighting-resources";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
-function documentFor(kind: "gain" | "depth" | "normal" | "mask") {
+function documentFor(kind: "gain" | "depth" | "normal" | "mask" | "environment") {
   const doc = createDefaultMaterialDocument(kind, "postProcess");
   const connect = (source: string, pin: string, target: string, input: string) => doc.edges.push({
     id: `${source}-${pin}-${target}-${input}`, sourceNodeId: source, sourcePinId: pin, targetNodeId: target, targetPinId: input,
@@ -24,6 +24,15 @@ function documentFor(kind: "gain" | "depth" | "normal" | "mask") {
     );
     connect("screenUv", "uv", "mask", "uv"); connect("mask", "rgba", "multiply", "b");
     connect("sceneColor", "color", "multiply", "a"); connect("multiply", "out", "output", "color");
+  } else if (kind === "environment") {
+    doc.nodes.push(
+      { id: "environment", type: "input.environmentSample", properties: {}, position: { x: 0, y: 0 } },
+      { id: "split", type: "vector.split", properties: {}, position: { x: 0, y: 0 } },
+      { id: "combine", type: "vector.combine", properties: {}, position: { x: 0, y: 0 } },
+    );
+    connect("environment", "color", "split", "value");
+    for (const channel of ["x", "y", "z"]) connect("split", channel, "combine", channel);
+    connect("combine", "xyzw", "output", "color");
   } else {
     doc.nodes.push(
       { id: "buffer", type: kind === "depth" ? "input.sceneDepth" : "input.sceneNormal", properties: {}, position: { x: 0, y: 0 } },
@@ -55,7 +64,7 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
   camera.minZ = 1; camera.maxZ = 11; camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
   scene.clearColor = new Color4(160 / 255, 80 / 255, 40 / 255, 1);
-  const documents = { gain: documentFor("gain"), depth: documentFor("depth"), normal: documentFor("normal"), mask: documentFor("mask") };
+  const documents = { gain: documentFor("gain"), depth: documentFor("depth"), normal: documentFor("normal"), mask: documentFor("mask"), environment: documentFor("environment") };
   const diagnostics: unknown[] = [];
   const captures: Array<{ name: string; path: string; pixel: number[]; reservedBytes: number }> = [];
   const configure = (stack: Parameters<SceneRenderCoordinator["attachPostProcess"]>[0]["stack"]) => renderer.attachPostProcess({
@@ -76,7 +85,7 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
     const pixel = Array.from(new Uint8Array(bytes.buffer, bytes.byteOffset, 4));
     if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
       [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
-    const expectedCount = name === "empty" ? 0 : ["depth", "color-mask", "color-mask-native"].includes(name) ? 1 : 2;
+    const expectedCount = name === "empty" ? 0 : ["depth", "color-mask", "color-mask-native", "environment-color", "environment-color-native"].includes(name) ? 1 : 2;
     if (renderer.postProcessPassCount() !== expectedCount)
       throw new Error(`${name}: incorrect active post-process count ${renderer.postProcessPassCount()}`);
     captures.push({ name, path: result.path, pixel,
@@ -105,6 +114,16 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
     await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
     await capture("color-mask-native");
     scene.unfreezeActiveMeshes();
+    const environment = new RawCubeTexture(scene, Array.from({ length: 6 }, () => new Uint8Array([128, 255, 64, 255])),
+      1, Constants.TEXTUREFORMAT_RGBA, Constants.TEXTURETYPE_UNSIGNED_BYTE, false, false, Texture.NEAREST_SAMPLINGMODE);
+    environment.gammaSpace = true;
+    scene.environmentTexture = environment;
+    configure([{ id: "environment", materialGuid: "environment", enabled: true, order: 0 }]);
+    await capture("environment-color");
+    await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
+    await capture("environment-color-native");
+    scene.unfreezeActiveMeshes();
+    scene.environmentTexture = null;
     configure([]);
     if (scene.objectRenderers.length) throw new Error("Disabled stack retained old graph tasks until another frame");
     await capture("empty");

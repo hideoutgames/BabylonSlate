@@ -27,6 +27,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       ["graph-return", "frameGraph", [60, 30, 15]],
       ["color-mask", "frameGraph", [35, 80, 2]],
       ["color-mask-native", "classic", [35, 80, 2]],
+      ["environment-color", "frameGraph", [56, 255, 12]],
+      ["environment-color-native", "classic", [56, 255, 12]],
       ["empty", "frameGraph", [160, 80, 40]],
       ["depth", "frameGraph", [77, 77, 77]],
       ["normal-after-depth", "frameGraph", [128, 128, 0]],
