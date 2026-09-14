@@ -51,7 +51,7 @@ function plainVec(v: Vector3): { x: number; y: number; z: number } {
   return { x: v.x, y: v.y, z: v.z };
 }
 
-/** Canvas-space pivot so zoom keeps the world point under the cursor. */
+/** 2D canvas-space pivot; 3D zoom always keeps the camera target fixed. */
 export type EditorZoomPivot = {
   x: number;
   y: number;
@@ -345,7 +345,7 @@ export function createEditorCamera(
     zoom: (factor: number, pivot?: EditorZoomPivot) => {
       if (factor <= 0) return;
       const before =
-        pivot && pivot.width > 0 && pivot.height > 0
+        mode === "2d" && pivot && pivot.width > 0 && pivot.height > 0
           ? worldPositionFromCanvas(
               camera,
               pivot.x,
