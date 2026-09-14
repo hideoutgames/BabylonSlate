@@ -217,7 +217,11 @@ export function diffSceneCommands(
     );
   }
 
-  for (const key of Object.keys(after.settings) as Array<keyof SceneSettings>) {
+  const settingKeys = new Set([
+    ...Object.keys(before.settings),
+    ...Object.keys(after.settings),
+  ] as Array<keyof SceneSettings>);
+  for (const key of settingKeys) {
     if (
       JSON.stringify(before.settings[key]) !==
       JSON.stringify(after.settings[key])

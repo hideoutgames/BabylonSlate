@@ -38,6 +38,8 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["audio", "Reverb Decay Scale", "settings-audio-reverb-decay-scale"],
   ["audio", "Reverb Damping Scale", "settings-audio-reverb-damping-scale"],
   ["rendering", "Render Mode PBR CEL", "setting-render-mode"],
+  ["rendering", "Render Path Auto Forward Clustered Forward", "project-render-path"],
+  ["rendering", "GPU Backend Auto WebGL2 WebGPU", "project-gpu-backend"],
   ["rendering", "Overall Quality", "quality-all"],
   ["rendering", "Shadows Quality", "quality-shadows"],
   ["rendering", "Resolution Quality", "quality-resolution"],
