@@ -138,14 +138,17 @@ export class ShadowMapRefresh {
       state.value(mesh.skeleton);
       state.value(mesh.morphTargetManager);
       state.value(mesh.subMeshes);
-      for (const part of mesh.subMeshes) {
-        state.value(part);
-        state.value(part.indexStart);
-        state.value(part.indexCount);
-        state.value(part.verticesStart);
-        state.value(part.verticesCount);
-        state.value(part.materialIndex);
-      }
+      // Babylon leaves this unset on empty model/tilemap roots until geometry
+      // creates their first SubMesh. Keep tracking the later populated list.
+      if (mesh.subMeshes)
+        for (const part of mesh.subMeshes) {
+          state.value(part);
+          state.value(part.indexStart);
+          state.value(part.indexCount);
+          state.value(part.verticesStart);
+          state.value(part.verticesCount);
+          state.value(part.materialIndex);
+        }
       const material = mesh.material ?? scene.defaultMaterial;
       state.value(material);
       state.value(material.alpha);

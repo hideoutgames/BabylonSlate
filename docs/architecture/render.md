@@ -378,6 +378,8 @@ The policy scans before allocation/projection and again before per-camera target
 after active-mesh evaluation. It uses Babylon render-once counters and explicit resets;
 readiness probes do not count as a completed render. Unready caster shaders retain
 Babylon's automatic retry. Geometry observers preserve and restore existing callbacks.
+Empty model and tilemap roots may have no submesh list yet; they remain valid during
+loading, and later geometry/submesh creation or removal invalidates cached maps.
 
 Only known native opaque materials and compiler-certified opaque surface graphs with
 identity world-position offset can cache local maps. Classification uses the fully
