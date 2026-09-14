@@ -3,6 +3,11 @@ import type { BakePrototypeInput, BakePrototypeMesh } from "../packages/render/s
 
 type MeshInput = Omit<BakePrototypeMesh, "positions" | "uv2"> & { positions: number[]; uv2?: number[] };
 type Input = Omit<BakePrototypeInput, "meshes"> & { meshes: MeshInput[] };
+const journals = new WeakMap<Page, unknown[]>();
+
+test.afterEach(async ({ page }, testInfo) => {
+  await testInfo.attach("bake-progress.json", { body: JSON.stringify(journals.get(page) ?? []), contentType: "application/json" });
+});
 
 function floor(): MeshInput {
   return {
@@ -18,17 +23,27 @@ function input(): Input {
 }
 
 async function openProvider(page: Page) {
+  const journal: unknown[] = [];
+  journals.set(page, journal);
+  page.on("console", (message) => {
+    if (!message.text().startsWith("bake-progress:")) return;
+    const record = JSON.parse(message.text().slice("bake-progress:".length));
+    journal.push(record);
+    console.log("Bake progress", record);
+  });
   await page.goto("/?bake-provider-proof");
   await page.waitForFunction(() => "__bakePrototype" in globalThis);
 }
 
 async function bake(page: Page, job: Input, cancel: false | "sampling" | "compiling" = false) {
-  return page.evaluate(async ({ job, cancel }) => {
+  return test.step(`Bake ${job.mode}, ${job.meshes.length} meshes, ${job.samples} samples${cancel ? `, cancel ${cancel}` : ""}`, () => page.evaluate(async ({ job, cancel }) => {
     const provider = (globalThis as unknown as { __bakePrototype: typeof import("../packages/render/src/bake-provider-prototype") }).__bakePrototype;
     const controller = new AbortController();
     const progress: { phase: string; samples: number }[] = [];
     let disposal: { contextReleased: boolean; texturesBeforeDisposal: number; geometriesBeforeDisposal: number } | undefined;
     let heartbeats = 0;
+    const started = performance.now();
+    let previousPhase = "", sampled = false;
     const timer = setInterval(() => heartbeats++, 1);
     try {
       const result = await provider.bakeLightingPrototype({ ...job, meshes: job.meshes.map((mesh) => ({
@@ -37,6 +52,13 @@ async function bake(page: Page, job: Input, cancel: false | "sampling" | "compil
         signal: controller.signal,
         onProgress(value) {
           progress.push({ phase: value.phase, samples: value.samples });
+          if (value.phase !== previousPhase || (!sampled && value.samples >= 1) || value.samples >= value.totalSamples) {
+            const record = { mode: job.mode, meshes: job.meshes.length, cancel, ...value, elapsedMs: performance.now() - started };
+            Object.assign(globalThis, { __bakeJobProgress: record });
+            console.info(`bake-progress:${JSON.stringify(record)}`);
+            previousPhase = value.phase;
+            sampled ||= value.samples >= 1;
+          }
           if ((cancel === "sampling" && value.samples >= 1) || (cancel === "compiling" && value.phase === "compiling")) controller.abort();
         },
         onDisposed(value) { disposal = value; },
@@ -47,7 +69,7 @@ async function bake(page: Page, job: Input, cancel: false | "sampling" | "compil
     } finally {
       clearInterval(timer);
     }
-  }, { job, cancel });
+  }, { job, cancel }), { timeout: 90_000 });
 }
 
 function meanRGB(pixels: number[]) {

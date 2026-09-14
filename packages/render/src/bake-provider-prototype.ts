@@ -1,5 +1,5 @@
 import {
-  BufferAttribute, BufferGeometry, Color, DataTexture, FloatType, Mesh,
+  BufferAttribute, BufferGeometry, Color, DataTexture, FloatType, LinearSRGBColorSpace, Mesh,
   MeshPhysicalMaterial, NearestFilter, NoToneMapping, OrthographicCamera, PerspectiveCamera, PointLight,
   RGBAFormat, Scene, ShaderMaterial, WebGLRenderer,
 } from "three";
@@ -41,6 +41,7 @@ type OwnedDisposable = { dispose(): void };
 type InternalTracer = OwnedDisposable & {
   material: ShaderMaterial;
   stableNoise: boolean;
+  alpha: boolean;
   isCompiling: boolean;
   _compileFunction: () => void;
 };
@@ -150,6 +151,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     renderer = new WebGLRenderer({ canvas, context, antialias: false, alpha: false });
     renderer.setSize(input.size, input.size, false);
     renderer.toneMapping = NoToneMapping;
+    renderer.outputColorSpace = LinearSRGBColorSpace;
     let shaderFailure: Error | undefined;
     renderer.debug.onShaderError = (gl, program, vertex, fragment) => {
       // @types/three 0.181 types this as its wrapper; Three passes the native handle.
@@ -203,6 +205,10 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     material.defines.FEATURE_DOF = 0;
     material.defines.FEATURE_FOG = 0;
     native._pathTracer.stableNoise = true;
+    // Match the eventual coverage accumulation before the first draw. The upstream
+    // facade otherwise switches this only after a first float-blended tile.
+    native._pathTracer.alpha = true;
+    native._lowResPathTracer.alpha = true;
     tracer.renderDelay = 0;
     tracer.renderToCanvas = false;
     tracer.rasterizeScene = false;
@@ -217,12 +223,19 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     owned.push(compileGeometry);
     compileGeometry.setAttribute("position", new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
     compileGeometry.setAttribute("uv", new BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2));
-    renderer.compile(new Mesh(compileGeometry, material), new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+    const previousTarget = renderer.getRenderTarget();
+    try {
+      // Compile the same linear target variant that sampling actually uses.
+      renderer.setRenderTarget(tracer.target);
+      renderer.compile(new Mesh(compileGeometry, material), new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+    } finally {
+      renderer.setRenderTarget(previousTarget);
+    }
     progress("compiling");
     const parallelCompile = context.getExtension("KHR_parallel_shader_compile");
     for (const program of renderer.info.programs ?? []) {
       const handle = program.program as WebGLProgram;
-      if (!context.isProgram(handle)) throw new Error("Bake shader program allocation failed");
+      if (!handle) throw new Error("Bake shader program allocation failed");
       while (parallelCompile && !context.getProgramParameter(handle, parallelCompile.COMPLETION_STATUS_KHR)) {
         if (context.isContextLost()) throw new Error("Bake context was lost during shader compilation");
         await checkpoint(true);
@@ -232,6 +245,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
       }
     }
     await checkpoint(true);
+    progress("sampling");
     while (tracer.samples < input.samples || native._pathTracer.isCompiling) {
       check();
       if (shaderFailure) throw shaderFailure;
