@@ -111,7 +111,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
 
   constructor(name: string, options: AuthoredPostProcessOptions) {
     super(name, options.frameGraph);
-    this.options = options;
+    this.options = { ...options,
+      logicalBuffers: options.logicalBuffers ? { ...options.logicalBuffers } : undefined };
     this.document = options.document;
     super.disabled = options.enabled === false;
     this.outputTexture =
@@ -240,8 +241,11 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     );
     const pass = this._frameGraph.addRenderPass(this.name);
     pass.addDependencies(this.options.sourceTexture);
-    for (const resource of this.requiredBuffers)
-      pass.addDependencies(this.options.logicalBuffers![resource]!);
+    // The supplied set is stable for this task's lifetime. A hot replacement
+    // or re-enabled entry may start reading any of these already-owned handles
+    // without rebuilding the graph, so retain them before native aliasing runs.
+    for (const handle of Object.values(this.options.logicalBuffers ?? {}))
+      if (handle !== undefined) pass.addDependencies(handle);
     pass.setRenderTarget(this.outputTexture);
     pass.setExecuteFunc((context) => this.executePostProcess(context));
     if (!skipCreationOfDisabledPasses) {
