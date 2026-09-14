@@ -8,7 +8,7 @@ import {
   StandardMaterial,
   UniversalCamera,
   Vector3,
-  type Engine,
+  type AbstractEngine,
 } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
@@ -47,7 +47,7 @@ export interface SceneLayerView {
 }
 
 export interface SceneLayerCompositorOptions {
-  engine: Engine;
+  engine: AbstractEngine;
   postProcessingEnabled?: () => boolean;
   attachLayerPostProcess?: (
     layer: SceneLayerView,
@@ -68,7 +68,7 @@ type LayerRecord = SceneLayerView & {
  * Engine, drawn after the world camera (and its post-process).
  */
 export class SceneLayerCompositor {
-  private readonly engine: Engine;
+  private readonly engine: AbstractEngine;
   private readonly postProcessingEnabled: () => boolean;
   private readonly attachLayerPostProcess?: SceneLayerCompositorOptions["attachLayerPostProcess"];
   private readonly byId = new Map<string, LayerRecord>();

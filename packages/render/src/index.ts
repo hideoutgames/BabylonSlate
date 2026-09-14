@@ -90,4 +90,5 @@ export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
 
 export { lightsDebugText } from "./render-diagnostics";
+export { createAppWebGpuEngine } from "./webgpu-engine";
 export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdentity, type SceneLoadPhase, type SceneLoadProgress } from "./scene-load-readiness";
