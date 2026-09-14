@@ -6,6 +6,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "assignMaterial",
   "attachToBone",
   "setMaterialParameter",
+  "setPostProcessMaterialParameter",
   "possessCamera",
   "spawn",
   "despawn",

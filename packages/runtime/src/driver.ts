@@ -1,3 +1,4 @@
+import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RenderingQualitySession, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -27,6 +28,8 @@ import {
   GameInstance,
   MaterialObject,
   PostProcessMaterialObject,
+  getPostProcessMaterialObject,
+  type MaterialInstanceObject,
   Scene,
   hydrateClassVariableValue,
   SceneLayer,
@@ -55,6 +58,8 @@ import {
   sceneLayerRelativeAnchorWorldPosition,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
+  type MaterialParameterCatalog,
+  type MaterialParameterValue,
   type Transform,
   type SerializedActor,
   type SerializedScene,
@@ -192,6 +197,8 @@ export interface RuntimeDriverOptions {
   loopCount?: number;
   /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */
   audioAssetGuids?: readonly string[];
+  materialParameterCatalog?: MaterialParameterCatalog;
+  materialTextureAssetGuids?: readonly string[];
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
   animClipCatalog?: readonly AnimClipCatalogEntry[];
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
@@ -451,6 +458,8 @@ class InProcessRuntime implements RuntimeDriver {
   private sceneLoadingProgress = 1;
   private readonly deferSceneModelsReady: boolean;
   private readonly deferSceneLoadingPaint: boolean;
+  private readonly materialParameters: RuntimeMaterialParameters;
+  private readonly validateLegacyMeshParameters: boolean;
   private sceneLoadId = 0;
   private layerLoadId = 0;
   private readonly layerLoads = new Map<string, { layer: SceneLayer; loadId: number; realized: boolean; presented: boolean; ready: boolean }>();
@@ -534,6 +543,8 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
+    this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
+    this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.renderingQuality = new RenderingQualitySession(options.renderSettings, options.playScene?.settings.shadowOverrides);
     this.frameCap =
       options.frameCap !== undefined && options.frameCap > 0
@@ -979,28 +990,19 @@ class InProcessRuntime implements RuntimeDriver {
           height: nextHeight,
         });
       },
-      setMaterialParameter: (material, parameterName, parameter) => {
-        const component = material.component;
-        const owner = component.owner;
-        if (!owner || owner.destroyed || component.destroyed) return;
-        const slotId = this.slotByGuid.get(owner.guid);
-        if (slotId === undefined) return;
-        const skipButtonMesh =
-          overlayButtonHasSiblingVisual(owner) ||
-          overlayButtonHasParentVisual(owner, this.world);
-        const renderables = owner.components.filter((entry) =>
-          isPlayRenderable(entry, skipButtonMesh),
-        );
-        if (!renderables.includes(component)) return;
-        this.emit({
-          type: "setMaterialParameter",
-          slotId,
-          componentId: component.guid,
-          materialAssetGuid: material.materialAssetGuid,
-          parameterName,
-          parameter,
-        });
+      getPostProcessEntry: (owner, entryId) => {
+        if (!this.canRunOwner(owner)) return null;
+        const material = getPostProcessMaterialObject(owner, entryId);
+        return material && this.materialParameters.hasPostProcessDefinition(material) ? material : null;
       },
+      getMaterialParameter: (material, name, kind) => this.canRunOwner(material)
+        ? this.materialParameters.get(material, name, kind) : null,
+      resetMaterialParameter: (material, name, kind) => {
+        if (!this.canRunOwner(material)) return false;
+        const value = this.materialParameters.resetValue(material, name, kind);
+        return value !== null && this.setMaterialParameter(material, name, value);
+      },
+      setMaterialParameter: (material, name, parameter) => { this.setMaterialParameter(material, name, parameter); },
       possessCamera: (target) => {
         this.possessCamera(target);
       },
@@ -1714,6 +1716,33 @@ class InProcessRuntime implements RuntimeDriver {
     return this.layerLoads.get(actor.sceneLayerId)?.ready === true;
   }
 
+  private setMaterialParameter(material: MaterialInstanceObject, parameterName: string, parameter: MaterialParameterValue): boolean {
+    if (!this.canRunOwner(material)) return false;
+    const validated = this.materialParameters.accepts(material, parameterName, parameter);
+    if (!validated && (material instanceof PostProcessMaterialObject || this.validateLegacyMeshParameters)) return false;
+    if (material instanceof PostProcessMaterialObject) {
+      if (!material.entry.id) return false;
+      const owner = material.owner;
+      const target: Extract<CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"] = owner instanceof SceneLayer
+        ? { kind: "sceneLayer", layerId: owner.guid, layerLoadId: this.layerLoads.get(owner.guid)!.loadId }
+        : { kind: "scene", sceneAssetGuid: owner.assetGuid, sceneLoadId: this.sceneLoadId };
+      this.emit({ type: "setPostProcessMaterialParameter", owner: target, entryId: material.entry.id,
+        materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
+    } else {
+      const component = material.component;
+      const owner = component.owner;
+      if (!owner || owner.destroyed || component.destroyed || component.getVariable("materialObject") !== material) return false;
+      const slotId = this.slotByGuid.get(owner.guid);
+      if (slotId === undefined) return false;
+      const skipButtonMesh = overlayButtonHasSiblingVisual(owner) || overlayButtonHasParentVisual(owner, this.world);
+      if (!owner.components.some((entry) => entry === component && isPlayRenderable(entry, skipButtonMesh))) return false;
+      this.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,
+        materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
+    }
+    if (validated) this.materialParameters.set(material, parameterName, parameter);
+    return true;
+  }
+
   private canRunOwner(owner: BObject): boolean {
     if (this.stopped || owner.destroyed) return false;
     if (owner instanceof PostProcessMaterialObject)
@@ -1722,7 +1751,7 @@ class InProcessRuntime implements RuntimeDriver {
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner
       : owner instanceof ComponentLogic || owner instanceof MaterialObject ? owner.component.owner : null;
     if (actor) return actor.world === this.world && this.canTickActor(actor);
-    if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.ready === true;
+    if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.layer === owner && this.layerLoads.get(owner.guid)?.ready === true;
     if (owner instanceof Scene) return owner === this.world.currentScene && this.canTickScene();
     // Detached components and superseded GameInstances have no active owner.
     return !(owner instanceof ActorComponent || owner instanceof ComponentLogic || owner instanceof MaterialObject || owner instanceof GameInstance);

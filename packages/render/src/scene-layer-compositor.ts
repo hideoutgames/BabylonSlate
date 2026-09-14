@@ -1,3 +1,5 @@
+import { PostProcessParameterState } from "./post-process-parameter-state";
+import type { AttachedPostProcessStack } from "./post-process-material";
 import {
   Camera,
   Color3,
@@ -18,6 +20,7 @@ import {
   type OverlayPointerHit,
   type SceneLayerHitTest,
   type ScenePostProcessEntry,
+  type MaterialParameterValue,
 } from "@babylonslate/core";
 import { installEngineDefaultMaterial } from "./default-material";
 import { isSceneFrameReady } from "./scene-perf";
@@ -52,7 +55,7 @@ export interface SceneLayerCompositorOptions {
   attachLayerPostProcess?: (
     layer: SceneLayerView,
     stack: SceneLayerPostProcessEntry[],
-  ) => { dispose: () => void } | null;
+  ) => Pick<AttachedPostProcessStack, "dispose"> & Partial<Pick<AttachedPostProcessStack, "setParameter">> | null;
 }
 
 type LayerRecord = SceneLayerView & {
@@ -61,7 +64,8 @@ type LayerRecord = SceneLayerView & {
   rtt: RenderTargetTexture | null;
   blitMaterial: StandardMaterial | null;
   blitScene: Scene | null;
-  attachedPostProcess: { dispose: () => void } | null;
+  parameters: PostProcessParameterState;
+  attachedPostProcess: ReturnType<NonNullable<SceneLayerCompositorOptions["attachLayerPostProcess"]>>;
 };
 
 /**
@@ -115,6 +119,7 @@ export class SceneLayerCompositor {
       blitMaterial: null,
       blitScene: null,
       attachedPostProcess: null,
+      parameters: new PostProcessParameterState(),
     };
     this.bindHudCamera(layer);
     this.byId.set(command.layerId, layer);
@@ -148,6 +153,13 @@ export class SceneLayerCompositor {
     if (!layer) return;
     layer.postProcessStack = stack.map((entry) => ({ ...entry }));
     this.rebuildPostProcess(layer);
+  }
+
+  setPostProcessParameter(layerId: string, entryId: string, materialGuid: string, name: string, value: MaterialParameterValue, validate: () => boolean): boolean {
+    const layer = this.byId.get(layerId);
+    if (!layer || !this.isLayerReady(layerId) || !layer.postProcessStack.some((entry) => entry.id === entryId && entry.materialGuid === materialGuid) || !validate() || !layer.parameters.set(layer.postProcessStack, entryId, materialGuid, name, value)) return false;
+    layer.attachedPostProcess?.setParameter?.(entryId, name, value);
+    return true;
   }
 
   refreshPostProcess(): void {
@@ -459,7 +471,7 @@ export class SceneLayerCompositor {
   private rebuildPostProcess(layer: LayerRecord): void {
     layer.renderer.invalidate();
     this.releasePostProcess(layer);
-    const enabledStack = layer.postProcessStack.filter((entry) => entry.enabled);
+    const enabledStack = layer.parameters.effective(layer.postProcessStack).filter((entry) => entry.enabled);
     if (
       !this.postProcessingEnabled() ||
       enabledStack.length === 0

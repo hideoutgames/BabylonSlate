@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, InputBlock, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -1236,6 +1236,72 @@ describe("Play createEngine view", () => {
     } finally {
       handle.dispose();
     }
+  });
+
+  it("routes current-owner entry writes into independent instances and replays disabled passes after rebuild", async () => {
+    const engine = sharedEngine();
+    const runLoop = vi.spyOn(engine, "runRenderLoop");
+    const document = createDefaultMaterialDocument("Gain", "postProcess");
+    document.nodes.push(
+      { id: "gain", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Gain", value: [0.5] } },
+      { id: "multiply", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+    );
+    document.edges = document.edges.filter((edge) => edge.id !== "e-scene-output");
+    document.edges.push(
+      { id: "color", sourceNodeId: "sceneColor", sourcePinId: "color", targetNodeId: "multiply", targetPinId: "a" },
+      { id: "gain", sourceNodeId: "gain", sourcePinId: "out", targetNodeId: "multiply", targetPinId: "b" },
+      { id: "out", sourceNodeId: "multiply", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+    );
+    const authored = [
+      { id: "first", materialGuid: "gain", enabled: true, parameters: { Gain: { kind: "float" as const, value: 0.25 } } },
+      { id: "second", materialGuid: "gain", enabled: true },
+      { id: "disabled", materialGuid: "gain", enabled: false },
+    ];
+    const before = structuredClone({ document, authored });
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, materialDocuments: new Map([["gain", document]]), postProcessStack: authored,
+    });
+    handles.push(handle);
+    const draw = runLoop.mock.calls[0]![0];
+    const values = (scene: Scene) => scene.materials.filter((material): material is NodeMaterial => material instanceof NodeMaterial && material.name === "material:gain")
+      .map((material) => (material.getBlockByName("gain") as InputBlock).value);
+    const worldOwner = { kind: "scene" as const, sceneAssetGuid: "world", sceneLoadId: 1 };
+    const write = (owner: Extract<import("@babylonslate/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
+      handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 });
+    write(worldOwner, "first", 0.7);
+    expect(values(handle.scene)).toEqual([0.25, 0.5]);
+    const present = async (owner?: { layerId: string; layerLoadId: number }) => {
+      await handle.prewarmSceneMaterials(owner);
+      const frame = handle.presentFirstFrame(owner);
+      draw(); engine.onEndFrameObservable.notifyObservers(engine); await frame;
+    };
+    await present();
+    write(worldOwner, "first", 0.7); write(worldOwner, "disabled", 0.9);
+    expect(values(handle.scene)).toEqual([0.7, 0.5]);
+    handle.setPostProcessStack(authored.map((entry) => ({ ...entry, enabled: true })));
+    expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    handle.setPostProcessingEnabled(false); expect(values(handle.scene)).toEqual([]);
+    handle.setPostProcessingEnabled(true); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    handle.applyCommand({ type: "sceneLayerLoading", layerId: "overlay", layerLoadId: 1, assetGuid: "overlay-asset" });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: authored });
+    const layer = handle.sceneLayerScenes()[0]!.scene;
+    const layerOwner = { kind: "sceneLayer" as const, layerId: "overlay", layerLoadId: 1 };
+    write(layerOwner, "first", 0.6); expect(values(layer)).toEqual([0.25, 0.5]);
+    await present({ layerId: "overlay", layerLoadId: 1 });
+    write(layerOwner, "first", 0.6); write(layerOwner, "disabled", 0.8);
+    handle.applyCommand({ type: "sceneLayerPostProcess", layerId: "overlay", postProcessStack: authored.map((entry) => ({ ...entry, enabled: true })) });
+    expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    write({ ...worldOwner, sceneLoadId: 0 }, "first", 0.1);
+    write({ ...layerOwner, layerLoadId: 0 }, "first", 0.1);
+    expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 2 });
+    const reloaded = createDefaultScene(); reloaded.settings.postProcessStack = authored;
+    handle.loadScene(reloaded); write(worldOwner, "first", 0.1);
+    expect(values(handle.scene)).toEqual([0.25, 0.5]);
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "overlay" }); write(layerOwner, "first", 0.1);
+    expect(handle.sceneLayerScenes()).toEqual([]);
+    expect({ document, authored }).toEqual(before);
   });
 
   it("attaches an authored post-process stack when the local gate is on", () => {

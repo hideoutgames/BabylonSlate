@@ -1,6 +1,7 @@
 import type { ControlMessage } from "@babylonslate/bridge";
 import {
   normalizeScene,
+  type MaterialParameterCatalog,
   type PhysicsWorldKind,
   type ProjectInputSettings,
   type SerializedScene,
@@ -180,6 +181,8 @@ export function playLoadControl(options: {
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   audioAssetGuids?: string[];
+  materialParameterCatalog?: MaterialParameterCatalog;
+  materialTextureAssetGuids?: string[];
   animClipCatalog?: Array<{
     guid: string;
     type: string;
@@ -213,6 +216,8 @@ export function playLoadControl(options: {
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     audioAssetGuids: options.audioAssetGuids,
+    materialParameterCatalog: options.materialParameterCatalog,
+    materialTextureAssetGuids: options.materialTextureAssetGuids,
     animClipCatalog: options.animClipCatalog,
     deferSceneModelsReady: true,
     deferSceneLoadingPaint: true,

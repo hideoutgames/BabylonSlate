@@ -1,3 +1,5 @@
+import { PostProcessParameterState } from "./post-process-parameter-state";
+import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
@@ -751,6 +753,7 @@ function initializeEngine(
   let loadGeneration = 0;
   let worldLoading = false;
   let worldLoadId = 0;
+  let worldSceneAssetGuid: string | null = null;
   const layerLoads = new Map<string, { loadId: number; ready: boolean }>();
   type PendingPresentation = {
     promise: Promise<void>;
@@ -1057,6 +1060,7 @@ function initializeEngine(
   let postProcessStack = normalizePostProcessStack(
     options.postProcessStack ?? [],
   );
+  const postProcessParameters = new PostProcessParameterState();
   let attachedStack: AttachedPostProcessStack | null = null;
   onRollback(() => attachedStack?.dispose());
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
@@ -1072,7 +1076,7 @@ function initializeEngine(
       scene,
       camera,
       library: materialLibrary,
-      stack: postProcessStack,
+      stack: postProcessParameters.effective(postProcessStack),
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale: resolveSceneRenderingQuality(scene).postprocessing.resolutionScale,
       deviceBuffers: probePostProcessDeviceBuffers(scene, camera),
@@ -1305,6 +1309,7 @@ function initializeEngine(
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+    postProcessParameters.clear();
     postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
     await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
     load.signal.throwIfAborted();
@@ -1321,6 +1326,7 @@ function initializeEngine(
     worldRenderer?.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+    postProcessParameters.clear();
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
@@ -2118,6 +2124,8 @@ function initializeEngine(
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
         worldLoadId = command.sceneLoadId;
+        worldSceneAssetGuid = command.sceneAssetGuid;
+        postProcessParameters.clear();
         worldLoading = true;
         worldRenderer?.invalidate();
         cancelPresentation(new Error("Scene loading was superseded."), "world");
@@ -2217,6 +2225,24 @@ function initializeEngine(
       if (command.type === "setMaterialParameter") {
         applySetMaterialParameter(binding, command);
         scheduler.invalidate("asset");
+      }
+      if (command.type === "setPostProcessMaterialParameter") {
+        const validParameter = () => {
+          const document = materialDocuments.get(command.materialAssetGuid);
+          return document?.domain === "postProcess" && materialLibrary.acceptsParameter(document, command.parameterName, command.parameter);
+        };
+        const applied = applyPostProcessParameterCommand(command, {
+          world: { sceneAssetGuid: worldSceneAssetGuid, sceneLoadId: worldLoadId, ready: !worldLoading },
+          layer: (id) => layerLoads.get(id),
+          setWorld: (write) => {
+            if (!postProcessStack.some((entry) => entry.id === write.entryId && entry.materialGuid === write.materialAssetGuid) || !validParameter() ||
+              !postProcessParameters.set(postProcessStack, write.entryId, write.materialAssetGuid, write.parameterName, write.parameter)) return false;
+            attachedStack?.setParameter(write.entryId, write.parameterName, write.parameter);
+            return true;
+          },
+          setLayer: (id, write) => sceneLayerCompositor?.setPostProcessParameter(id, write.entryId, write.materialAssetGuid, write.parameterName, write.parameter, validParameter) ?? false,
+        });
+        if (applied) scheduler.invalidate("asset");
       }
       if (command.type === "possessCamera") {
         const previousCamera = scene.activeCamera;
