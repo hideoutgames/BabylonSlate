@@ -63,6 +63,13 @@ if (
   void import("./testing/webgpu-proof").then(({ runWebGpuProof }) => {
     Object.assign(window, { __babylonslateWebGpuProof: runWebGpuProof });
   });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bake-provider-proof")
+) {
+  void import("@babylonslate/render/bake-provider-prototype").then((provider) => {
+    Object.assign(globalThis, { __bakePrototype: provider });
+  });
 } else {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
