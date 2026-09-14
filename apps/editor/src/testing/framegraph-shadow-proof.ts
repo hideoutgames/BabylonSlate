@@ -13,9 +13,7 @@ import {
   Scene,
   SpotLight,
   Vector3,
-  type Effect,
   type RenderTargetWrapper,
-  type ShadowGenerator,
 } from "@babylonjs/core";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import {
@@ -139,7 +137,6 @@ export async function runFrameGraphShadowProof() {
     const prepared = await graph.prepare(camera);
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
     const map = () => light.getShadowGenerator()?.getShadowMap() ?? null;
-    let captureShaders = false;
     const render = async (path: "graph" | "classic", force = false) => {
       // Graph readiness warms its own ObjectRenderer render-pass variants. The
       // independent classic oracle must also be ready on the camera's pass.
@@ -150,18 +147,6 @@ export async function runFrameGraphShadowProof() {
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
       const target = map();
-      const generator = light.getShadowGenerator() as ShadowGenerator | null;
-      const shaders: unknown[] = [];
-      const shaderObserver = captureShaders
-        ? generator?.onAfterShadowMapRenderObservable.add((effect) => {
-            shaders.push({
-              id: effect.uniqueId,
-              defines: effect.defines,
-              vertex: effect.vertexSourceCode,
-              fragment: effect.fragmentSourceCode,
-            });
-          })
-        : undefined;
       let shadowDraws = 0;
       let shadowBefore = 0;
       const before = target?.onBeforeBindObservable.add(() => {
@@ -177,8 +162,6 @@ export async function runFrameGraphShadowProof() {
       const draws = readEngineDrawCalls(engine);
       if (before) target?.onBeforeBindObservable.remove(before);
       if (after) target?.onAfterUnbindObservable.remove(after);
-      if (shaderObserver)
-        generator?.onAfterShadowMapRenderObservable.remove(shaderObserver);
       const faces = boundTargets.filter(
         (target) => target === map()?.renderTarget,
       ).length;
@@ -188,7 +171,6 @@ export async function runFrameGraphShadowProof() {
         draws,
         faces,
         shadowDraws,
-        shaders,
         classicReadyBefore,
         activeMeshes: active.data
           .slice(0, active.length)
@@ -197,7 +179,6 @@ export async function runFrameGraphShadowProof() {
       };
     };
     const capture = async (pose: string) => {
-      captureShaders = kind === "spot" && pose === "initial";
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
       const prepared = await graph.prepare(camera);
@@ -206,32 +187,6 @@ export async function runFrameGraphShadowProof() {
       const currentMap = map();
       const texture = currentMap?.getInternalTexture();
       const graphFrame = await render("graph");
-      let initialization;
-      if (captureShaders) {
-        const oldPass = engine.currentRenderPassId;
-        engine.currentRenderPassId = camera.renderPassId;
-        const meshReadiness = scene.meshes.map((mesh) => ({
-          name: mesh.name,
-          ready: mesh.isReady(true),
-        }));
-        engine.currentRenderPassId = oldPass;
-        const effects = Reflect.get(engine, "_compiledEffects") as Record<
-          string,
-          Effect
-        >;
-        const pendingEffects = Object.values(effects)
-          .filter((effect) => !effect.isReady())
-          .map((effect) => ({ name: effect.name, defines: effect.defines }));
-        await scene.whenReadyAsync(true);
-        const cachedAfterReady = await render("graph");
-        const forcedAfterReady = await render("graph", true);
-        initialization = {
-          meshReadiness,
-          pendingEffects,
-          cachedAfterReady,
-          forcedAfterReady,
-        };
-      }
       const classic = await render("classic", true);
       const settled = await render("graph");
       const forceGraph = await render("graph", true);
@@ -241,7 +196,6 @@ export async function runFrameGraphShadowProof() {
         readinessDraws,
         readinessFaces,
         graph: graphFrame,
-        initialization,
         classic,
         settled,
         forceGraph,

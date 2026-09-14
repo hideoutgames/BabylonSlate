@@ -11,7 +11,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/shadowGeneratorTask";
 import { findSceneShadowController } from "./shadow-controller";
-import { withSceneReadinessState } from "./scene-perf";
+import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 
 type BorrowedMap = {
   generator: ShadowGenerator;
@@ -28,6 +28,19 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     enabled: boolean;
     shadowEnabled: boolean;
   }> = [];
+
+  override isReady(): boolean {
+    const previous = this._renderer.customIsReadyFunction;
+    try {
+      // Only override the readiness probe. Actual rendering keeps the official
+      // renderer's readiness/cache behavior and any existing custom callback.
+      this._renderer.customIsReadyFunction = (mesh, rate, preWarm) =>
+        (!previous || previous(mesh, rate, preWarm)) && isMeshFrameReady(mesh);
+      return super.isReady();
+    } finally {
+      this._renderer.customIsReadyFunction = previous;
+    }
+  }
 
   bindManagedShadows(
     generators: readonly ShadowGenerator[],
