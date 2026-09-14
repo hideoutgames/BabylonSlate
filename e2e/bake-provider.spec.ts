@@ -39,7 +39,7 @@ async function openProvider(page: Page) {
 }
 
 async function bake(page: Page, job: Input, cancel: false | "sampling" | "compiling" = false) {
-  return test.step(`Bake ${job.mode}, ${job.meshes.length} meshes, ${job.samples} samples${cancel ? `, cancel ${cancel}` : ""}`, () => page.evaluate(async ({ job, cancel }) => {
+  const result = await test.step(`Bake ${job.mode}, ${job.meshes.length} meshes, ${job.samples} samples${cancel ? `, cancel ${cancel}` : ""}`, () => page.evaluate(async ({ job, cancel }) => {
     const provider = (globalThis as unknown as { __bakePrototype: typeof import("../packages/render/src/bake-provider-prototype") }).__bakePrototype;
     const controller = new AbortController();
     const progress: { phase: string; samples: number }[] = [];
@@ -73,6 +73,12 @@ async function bake(page: Page, job: Input, cancel: false | "sampling" | "compil
       clearInterval(timer);
     }
   }, { job, cancel }), { timeout: 90_000 });
+  await test.info().attach(`bake-${job.mode}-${job.meshes.length}-${job.samples}-${cancel || "finished"}.json`, {
+    body: JSON.stringify(result), contentType: "application/json",
+  });
+  console.log("Bake result", { mode: job.mode, meshes: job.meshes.length,
+    mean: result.result && meanRGB(result.result.irradiance), error: result.error });
+  return result;
 }
 
 function meanRGB(pixels: number[]) {

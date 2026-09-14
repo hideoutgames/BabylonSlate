@@ -181,9 +181,11 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
       scene.add(native);
     }
     if (input.environment) {
-      const data = new Float32Array(16 * 8 * 4);
+      // The native inverse-CDF textures approximate a continuous distribution;
+      // tiny maps quantize their row lookup even when radiance is constant.
+      const data = new Float32Array(128 * 64 * 4);
       for (let i = 0; i < data.length; i += 4) data.set([...input.environment, 1], i);
-      const environment = texture(data, 16, 8);
+      const environment = texture(data, 128, 64);
       owned.push(environment);
       scene.environment = environment;
     }
