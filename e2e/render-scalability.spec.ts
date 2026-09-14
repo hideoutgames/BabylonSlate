@@ -27,6 +27,14 @@ async function choose(page: Page, label: string, option: string) {
 }
 const value = (page: Page, label: string) =>
   page.getByLabel(label, { exact: true }).locator('[data-slot="select-value"]');
+async function openEnvironment(page: Page) {
+  const toggle = page.getByRole("button", {
+    name: "Environment Lighting",
+    exact: true,
+  });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true")
+    await toggle.click();
+}
 
 test("scalability updates budgets, persists Custom and preserves independent settings and an admitted Ultra sun", async ({
   page,
@@ -84,9 +92,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
     page.getByText(/Current Auto Budget: 8 local shadow lights/),
   ).toBeVisible();
   await choose(page, "Render Mode", "CEL");
-  await page
-    .getByRole("button", { name: "Environment Lighting", exact: true })
-    .click();
+  await openEnvironment(page);
   await page.getByLabel("Environment Rotation", { exact: true }).fill("45");
   await page.getByLabel("Environment Rotation", { exact: true }).press("Tab");
   await expect(value(page, "Overall Quality")).toHaveText("Ultra");
@@ -117,9 +123,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
   expect(allocation.shadowMapBytes).toBeLessThanOrEqual(384 * 1024 ** 2);
   await openRendering(page);
   await expect(value(page, "Render Mode")).toHaveText("CEL");
-  await page
-    .getByRole("button", { name: "Environment Lighting", exact: true })
-    .click();
+  await openEnvironment(page);
   await expect(
     page.getByLabel("Environment Rotation", { exact: true }),
   ).toHaveValue("45");

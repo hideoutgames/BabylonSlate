@@ -1,4 +1,5 @@
 import type { RenderProjectSettings } from "./project";
+import type { SceneSettings, ScenePostProcessEntry } from "./scene";
 import type { EffectiveRenderingQuality, QualityGroup } from "./render-quality";
 
 /** Every renderer cost field has one owner; provenance and safety-tier metadata are not controls. */
@@ -56,3 +57,37 @@ export const PROJECT_RENDER_SETTING_OWNERS = {
   keyof RenderProjectSettings,
   QualityGroup | "scalability" | "independent"
 >;
+
+/** Scene content owns feature intent; only shadow cost overrides enter scalability. */
+export const SCENE_RENDER_SETTING_OWNERS = {
+  renderPath: "independent",
+  shadowOverrides: "shadows",
+  celShading: "independent",
+  environmentColor: "independent",
+  fogEnabled: "independent",
+  fogColor: "independent",
+  fogStart: "independent",
+  fogEnd: "independent",
+  environmentTextureGuid: "independent",
+  environmentLighting: "independent",
+  mainCameraActorId: "independent",
+  mainCameraComponentId: "independent",
+  postProcessStack: "independent",
+  sceneLayers: "independent",
+  cameraBounds2D: "independent",
+  gravity: "non-rendering",
+  fixedTimestepMs: "non-rendering",
+  gameInstanceClass: "non-rendering",
+  physicsWorld: "non-rendering",
+  grid: "non-rendering",
+  editorJoystickEnabled: "non-rendering",
+  showNavmesh: "non-rendering",
+} as const satisfies Record<
+  keyof SceneSettings,
+  QualityGroup | "independent" | "non-rendering"
+>;
+export const POST_PROCESS_ENTRY_SETTING_OWNERS = {
+  materialGuid: "independent",
+  enabled: "independent",
+  scalable: "independent",
+} as const satisfies Record<keyof ScenePostProcessEntry, "independent">;
