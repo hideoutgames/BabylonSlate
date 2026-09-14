@@ -112,7 +112,8 @@ export class ForwardSceneFrameGraph {
       !this.graph ||
       this.preparedWidth !== output.width ||
       this.preparedHeight !== output.height ||
-      this.outputColor !== output.color || this.outputDepth !== output.depth
+      this.outputColor !== output.color ||
+      this.outputDepth !== output.depth
         ? "FrameGraph preparation is required."
         : undefined);
     this.scene.activeCamera = camera;
@@ -176,9 +177,11 @@ export class ForwardSceneFrameGraph {
       return "FrameGraph coordinator is disposed.";
     if (camera.getScene() !== this.scene || camera.isDisposed())
       return "Camera does not belong to this live scene.";
-    if (camera.outputRenderTarget &&
+    if (
+      camera.outputRenderTarget &&
       (camera.outputRenderTarget.getScene() !== this.scene ||
-        !camera.outputRenderTarget.getInternalTexture()))
+        !camera.outputRenderTarget.getInternalTexture())
+    )
       return "Render target does not belong to this live scene.";
     return undefined;
   }
@@ -207,8 +210,13 @@ export class ForwardSceneFrameGraph {
     if (scene.getEngine()._currentRenderTarget)
       return "A caller-bound render target requires classic rendering.";
     const target = camera.outputRenderTarget;
-    if (target && (target.isCube || target.is2DArray || target.samples !== 1 ||
-      !target.depthStencilTexture))
+    if (
+      target &&
+      (target.isCube ||
+        target.is2DArray ||
+        target.samples !== 1 ||
+        !target.depthStencilTexture)
+    )
       return "FrameGraph output requires a single-sample 2D color/depth texture.";
     if (camera._postProcesses.some(Boolean) || scene.postProcesses.length)
       return "Scene post-processing requires classic rendering.";
@@ -236,8 +244,13 @@ export class ForwardSceneFrameGraph {
     const scene = this.scene;
     try {
       const output = this.output(camera);
-      if (this.shadows?.needsPreparation() || this.clustered?.needsPreparation(camera) ||
-        this.outputColor !== output.color || this.outputDepth !== output.depth) this.releaseGraph();
+      if (
+        this.shadows?.needsPreparation() ||
+        this.clustered?.needsPreparation(camera) ||
+        this.outputColor !== output.color ||
+        this.outputDepth !== output.depth
+      )
+        this.releaseGraph();
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         // Explicit owner: Scene.dispose must not race an asynchronous build.
@@ -259,7 +272,9 @@ export class ForwardSceneFrameGraph {
           // since wrapper.dispose releases both. Scope this to this graph only.
           textures.createRenderTarget = (...args) => {
             const target = createTarget(...args);
-            if (target.renderTargetWrapper?.depthStencilTexture === borrowedDepth)
+            if (
+              target.renderTargetWrapper?.depthStencilTexture === borrowedDepth
+            )
               borrowedDepth.incrementReferences();
             return target;
           };
@@ -270,11 +285,7 @@ export class ForwardSceneFrameGraph {
         );
         this.clear.targetTexture = color;
         this.clear.depthTexture = depth;
-        this.cull = new CameraOutputCullTask(
-          "Forward cull",
-          this.graph,
-          scene,
-        );
+        this.cull = new CameraOutputCullTask("Forward cull", this.graph, scene);
         this.objects = new ManagedShadowObjectRendererTask(
           "Forward objects",
           this.graph,

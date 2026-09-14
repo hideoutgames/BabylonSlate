@@ -1,4 +1,6 @@
 import {
+  resolveRenderingPipeline,
+  type RenderPathOverrides,
   resolveShadowSettings,
   type ShadowOverrides,
   resolveCelShadingSettings,

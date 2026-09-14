@@ -91,4 +91,5 @@ export const POST_PROCESS_ENTRY_SETTING_OWNERS = {
   materialGuid: "independent",
   enabled: "independent",
   scalable: "independent",
+  parameters: "independent",
 } as const satisfies Record<keyof ScenePostProcessEntry, "independent">;
