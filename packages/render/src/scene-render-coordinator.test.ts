@@ -1,5 +1,7 @@
 import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 
 const engines: NullEngine[] = [];
@@ -100,6 +102,28 @@ it("disposes a pending graph without stranding readiness or touching a sibling s
   sibling.activeCamera = new FreeCamera("sibling", Vector3.Zero(), sibling);
   expect(() => sibling.render()).not.toThrow();
   expect(engine.isDisposed).toBe(false);
+});
+
+it("does not resume native task allocation after disposal during asynchronous initialization", async () => {
+  const { scene, renderer } = host();
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => { entered = resolve; });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const initialize = FrameGraph.prototype._whenAsynchronousInitializationDoneAsync;
+  vi.spyOn(FrameGraph.prototype, "_whenAsynchronousInitializationDoneAsync").mockImplementationOnce(async function (this: FrameGraph) {
+    await initialize.call(this);
+    entered();
+    await gate;
+  });
+  const allocate = vi.spyOn(FrameGraphTextureManager.prototype, "_allocateTextures");
+  const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
+  await started;
+  renderer.dispose();
+  release();
+  await pending;
+  expect(allocate).not.toHaveBeenCalled();
+  expect(scene.objectRenderers).toHaveLength(0);
 });
 
 it("replaces a pending backbuffer build with an explicit classic camera-target fallback", async () => {

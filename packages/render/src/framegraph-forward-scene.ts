@@ -1,5 +1,6 @@
 import type { Camera, InternalTexture, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import {
   backbufferColorTextureHandle,
   backbufferDepthStencilTextureHandle,
@@ -313,7 +314,21 @@ export class ForwardSceneFrameGraph {
         // default-backbuffer dimensions. Refresh them through the public API
         // before tasks record their viewport dimensions for the resized frame.
         this.graph.textureManager.resetBackBufferTextures();
-        await this.graph.buildAsync(false);
+        // Native buildAsync awaits imports before recording/allocating. Check
+        // this owner again at that boundary, before it can touch a removed
+        // Scene's borrowed targets or disposed ObjectRenderer.
+        const tasks: FrameGraphTask[] = [this.shadows!, this.clear!, this.cull!, this.objects!];
+        const restore = tasks.map((task) => {
+          const record = task.record;
+          const guarded = () => {
+            if (this.disposed || scene.isDisposed) throw new Error("FrameGraph coordinator is disposed.");
+            assertCurrent(); record.call(task); assertCurrent();
+          };
+          task.record = guarded;
+          return () => { if (task.record === guarded) task.record = record; };
+        });
+        try { await this.graph.buildAsync(false); }
+        finally { for (const action of restore) action(); }
         assertCurrent();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.

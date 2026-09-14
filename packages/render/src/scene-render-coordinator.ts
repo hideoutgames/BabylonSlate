@@ -19,8 +19,10 @@ export class SceneRenderCoordinator {
   private disposed = false;
   private failure: unknown;
   private pending: { generation: number; promise: Promise<ForwardSceneGraphResult> } | undefined;
+  private readonly scene: Scene;
 
-  constructor(private readonly scene: Scene) {
+  constructor(scene: Scene) {
+    this.scene = scene;
     this.graph = new ForwardSceneFrameGraph(scene);
   }
 
