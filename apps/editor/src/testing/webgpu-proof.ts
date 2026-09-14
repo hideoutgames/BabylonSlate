@@ -27,6 +27,8 @@ export async function runWebGpuProof() {
   const initialEngines = EngineStore.Instances.length;
   const captures = [];
   for (const backend of ["webgl2", "webgpu"] as const) {
+    if (backend === "webgpu" && !(await WebGPUEngine.IsSupportedAsync))
+      throw new Error("The local browser did not provide a WebGPU adapter.");
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 64;
     document.getElementById("root")!.append(canvas);

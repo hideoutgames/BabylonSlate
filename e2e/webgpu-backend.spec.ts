@@ -4,7 +4,11 @@ import type { runWebGpuProof } from "../apps/editor/src/testing/webgpu-proof";
 // Explicit software adapter admission for this functional proof, not GPU qualification.
 test.use({
   launchOptions: {
-    args: ["--enable-unsafe-webgpu", "--use-angle=swiftshader"],
+    args: [
+      "--enable-unsafe-webgpu",
+      "--use-angle=swiftshader",
+      "--use-webgpu-adapter=swiftshader",
+    ],
   },
 });
 
@@ -13,6 +17,15 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
 }, testInfo) => {
   test.setTimeout(120_000);
   const errors: string[] = [];
+  const externalRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (
+      url.protocol.startsWith("http") &&
+      !["127.0.0.1", "localhost"].includes(url.hostname)
+    )
+      externalRequests.push(request.url());
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (
@@ -36,6 +49,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     contentType: "application/json",
   });
   expect(errors).toEqual([]);
+  expect(externalRequests).toEqual([]);
   expect(result.retainedEngines).toBe(0);
   expect(result.captures).toHaveLength(4);
   for (const capture of result.captures) {
