@@ -315,12 +315,15 @@ it.each([false, true])(
       });
     vi.useFakeTimers();
     try {
-      const result = expect(runSceneBakeJob(fixture.options)).rejects.toThrow(
-        "two-minute job limit",
+      const result = runSceneBakeJob(fixture.options).then(
+        () => null,
+        (error: unknown) => error,
       );
       await providerStarted;
       await vi.advanceTimersByTimeAsync(120_000);
-      await result;
+      expect(await result).toMatchObject({
+        message: cleanupFailure ? "Bake cleanup failed" : "Bake Lighting exceeded its two-minute job limit.",
+      });
       expect(fixture.reference()).toBe("prior-bake");
       expect(fixture.commit).not.toHaveBeenCalled();
     } finally {
