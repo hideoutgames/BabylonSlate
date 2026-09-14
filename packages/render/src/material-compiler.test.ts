@@ -86,7 +86,7 @@ it("scales only indirect surface lighting with a live Environment Influence para
   expect(scale.input.connectedPoint?.ownerBlock.name).toBe("influence_environmentColor");
   expect(result.setParameter("Environment Weight", { kind: "float", value: 0.6 })).toBe(true);
   expect(result.material.getBlockByName("environmentWeight")).toHaveProperty("value", 0.6);
-  expect(result.material.compiledShaders).toContain("pbrBlockDirectLighting");
+  expect(result.material.compiledShaders).toContain("finalDiffuse=diffuseBase");
   result.dispose();
 });
 

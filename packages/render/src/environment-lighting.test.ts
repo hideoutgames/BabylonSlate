@@ -298,7 +298,8 @@ it("keeps all pending face reads alive after rejection and ignores obsolete work
 
 it("decodes RGBD fallback radiance and exposes readback failures to the owning scene", async () => {
   const { engine, cache, a, b, bytes, assets } = fixture(false);
-  engine.useExactSrgbConversions = true;
+  // NullEngineOptions omits this native Engine constructor option.
+  Object.defineProperty(engine, "useExactSrgbConversions", { value: true });
   const source = cache.getTexture("environment", engine, bytes, {
     isCube: true,
   }) as CubeTexture;
