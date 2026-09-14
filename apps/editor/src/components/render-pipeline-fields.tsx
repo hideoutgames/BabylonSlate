@@ -6,6 +6,7 @@ import {
 import { Button } from "@babylonslate/ui/components/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@babylonslate/ui/components/select";
+import { useProjectRenderingStatus } from "../context/project-rendering-context";
 
 const pathLabels: Record<RenderPath, string> = { auto: "Auto", forward: "Forward", clusteredForward: "Clustered Forward" };
 const backendLabels: Record<GpuBackend, string> = { auto: "Auto", webgl2: "WebGL2", webgpu: "WebGPU" };
@@ -22,7 +23,12 @@ type Props = {
 export function RenderPipelineFields(props: Props) {
   const project = normalizeRenderingPipeline(props.project);
   const scene = props.scope === "scene";
-  const resolved = resolveRenderingPipeline(project, scene ? props.overrides : undefined);
+  const status = useProjectRenderingStatus();
+  const reason = status?.deferredUntilStop ? "Backend changes apply after Stop."
+    : status && status.requestedBackend !== project.gpuBackend ? "Backend changes apply when settings close."
+    : status?.fallbackReason;
+  const resolved = resolveRenderingPipeline(project, scene ? props.overrides : undefined, undefined, undefined,
+    status?.effectiveBackend ? { gpuBackend: status.effectiveBackend, reason } : undefined);
   const overridden = scene && props.overrides.renderPath !== undefined;
   const pathId = `${props.scope}-render-path`;
   return (
@@ -79,7 +85,7 @@ export function RenderPipelineFields(props: Props) {
           <FieldLabel>Effective Selection</FieldLabel>
           <FieldDescription role="status" data-testid={`${props.scope}-render-pipeline-status`}>
             {pathLabels[resolved.effective.renderPath]} · {backendLabels[resolved.effective.gpuBackend]}
-            {resolved.limits.length ? ` — ${resolved.limits.join(" ")} Your preferences are retained.` : ""}
+            {resolved.limits.length ? `. ${resolved.limits.join(" ")} Your preferences are retained.` : ""}
           </FieldDescription>
         </Field>
       </FieldGroup>
