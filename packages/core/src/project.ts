@@ -3,6 +3,7 @@ import { normalizeRenderingPipeline, type RenderPath, type GpuBackend } from "./
 import { lookAtRotation } from "./euler";
 import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode } from "./cel-shading";
 import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
+import { normalizeEnvironmentLightingSettings, type EnvironmentLightingSettings } from "./environment-lighting";
 import type { ProjectAppearance } from "./project-appearance";
 import {
   createActor,
@@ -126,6 +127,7 @@ export interface RenderProjectSettings {
   shadows?: ShadowSettings;
   mode?: RenderMode;
   cel?: CelShadingSettings;
+  environmentLighting?: EnvironmentLightingSettings;
   /**
    * When false or missing, Play fills the overlay / Follow System path.
    * New projects default this on.
@@ -151,6 +153,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
   quality: normalizeRenderingQuality(undefined),
   shadows: normalizeShadowSettings(undefined),
   mode: "pbr",
+  environmentLighting: normalizeEnvironmentLightingSettings(undefined),
   cel: normalizeCelShadingSettings(undefined),
   customResolution: false,
   width: DEFAULT_RENDER_WIDTH,
@@ -164,6 +167,7 @@ export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
   quality: normalizeRenderingQuality(undefined),
   shadows: normalizeShadowSettings(undefined),
   mode: "pbr",
+  environmentLighting: normalizeEnvironmentLightingSettings(undefined),
   cel: normalizeCelShadingSettings(undefined),
   customResolution: true,
   width: DEFAULT_RENDER_WIDTH,
@@ -529,6 +533,7 @@ function normalizeRender(
     ...normalizeRenderingPipeline(value),
     mode: value?.mode === "cel" ? "cel" : "pbr",
     cel: normalizeCelShadingSettings(value?.cel),
+    environmentLighting: normalizeEnvironmentLightingSettings(value?.environmentLighting),
     shadows: normalizeShadowSettings(value?.shadows),
     quality: normalizeRenderingQuality(value?.quality),
     customResolution: value?.customResolution === true,

@@ -217,6 +217,24 @@ Surface opacity reaches fragment alpha. Masked surfaces discard pixels whose
 **Alpha Clip** value is below **Alpha Cutoff**; an unwired Alpha Clip uses
 Opacity. Additive uses additive blending. PBR surfaces include the Scene's
 environment reflection and irradiance, including when emission is connected.
+**Environment Influence** defaults to one and scales only indirect PBR lighting
+or the opt-in CEL environment contribution, leaving direct lights and emission
+unchanged. Graphs retain an optional Scene reflection branch when compiled before
+the environment is loaded, so late assignment, removal and swaps update frozen
+materials without a placeholder cube or graph rebuild.
+
+**Environment Sample** is a Surface/Post Process fragment input, also available
+through Material Functions. It samples the Scene-selected cube using world-space
+Direction and clamped Roughness, using the cube's native normal-incidence PBR
+prefilter mapping and LOD generation metadata. Zero Direction uses world +Z.
+The result is raw
+decoded linear radiance, independent of automatic IBL intensity and Environment
+Influence; a missing cube returns black. An enabled sampler retains the cube even
+when automatic IBL is disabled. Set Environment Influence to zero when using
+sampled radiance as a replacement contribution through emission. Ordinary Texture
+Parameter pins remain 2D. See [environment lighting](render.md) for ownership,
+orientation and irradiance preparation.
+
 Clamp supports connected scalar/vector bounds; comparisons return component-wise
 numeric masks. Refract uses Vector 3 directions and scalar Eta. Split connections
 to components absent from the input vector produce diagnostics. World Tangent
