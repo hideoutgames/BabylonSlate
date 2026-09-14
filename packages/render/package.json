@@ -12,7 +12,8 @@
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts",
     "./bake-uv-atlas": "./src/bake-uv-atlas.ts",
-    "./scene-bake-preparation": "./src/scene-bake-preparation.ts"
+    "./scene-bake-preparation": "./src/scene-bake-preparation.ts",
+    "./scene-bake-job": "./src/scene-bake-job.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

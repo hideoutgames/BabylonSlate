@@ -544,6 +544,7 @@ export async function prepareSceneBake(options: {
       id: "three-gpu-pathtracer",
       version: "0.0.24",
       adapterVersion: "scene-preparation-1",
+      jobAdapterVersion: "scene-job-1",
       uv: "xatlasjs-0.2.0-adapter1",
       quantity: "physical-E",
       transport: "two-sided-diffuse-only",
