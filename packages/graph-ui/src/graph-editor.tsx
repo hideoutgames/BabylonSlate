@@ -436,11 +436,11 @@ function clientPoint(
 }
 
 function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
-  const { getNode, setNodes, setEdges } = useReactFlow();
+  const { setNodes, setEdges } = useReactFlow();
+  const nodeExists = useStore((state) => !!selectedNodeId && state.nodeLookup.has(selectedNodeId));
 
   useEffect(() => {
-    if (!selectedNodeId) return;
-    if (!getNode(selectedNodeId)) return;
+    if (!selectedNodeId || !nodeExists) return;
     setNodes((current) => {
       const already =
         current.some((entry) => entry.id === selectedNodeId && entry.selected) &&
@@ -458,7 +458,7 @@ function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
         ? current.map((edge) => ({ ...edge, selected: false }))
         : current,
     );
-  }, [getNode, selectedNodeId, setEdges, setNodes]);
+  }, [nodeExists, selectedNodeId, setEdges, setNodes]);
 
   return null;
 }
@@ -470,12 +470,15 @@ function FocusedNodeSync({
   focusedNodeId?: string;
   fitViewOptions: GraphViewport["focusedFitViewOptions"];
 }) {
-  const { fitView, getNode, setNodes } = useReactFlow();
+  const { fitView, setNodes } = useReactFlow();
+  const nodeExists = useStore((state) => !!focusedNodeId && state.nodeLookup.has(focusedNodeId));
+  const canFrame = useStore((state) => {
+    const node = focusedNodeId ? state.nodeLookup.get(focusedNodeId) : undefined;
+    return !!(node?.measured.width && node.measured.height && state.panZoom && state.width && state.height);
+  });
 
   useEffect(() => {
-    if (!focusedNodeId) return;
-    const node = getNode(focusedNodeId);
-    if (!node) return;
+    if (!focusedNodeId || !nodeExists) return;
 
     setNodes((current) =>
       current.map((entry) => ({
@@ -484,11 +487,15 @@ function FocusedNodeSync({
       })),
     );
 
+  }, [focusedNodeId, nodeExists, setNodes]);
+
+  useEffect(() => {
+    if (!focusedNodeId || !canFrame) return;
     void fitView({
       nodes: [{ id: focusedNodeId }],
       ...fitViewOptions,
     });
-  }, [fitView, fitViewOptions, focusedNodeId, getNode, setNodes]);
+  }, [canFrame, fitView, fitViewOptions, focusedNodeId]);
 
   return null;
 }

@@ -83,6 +83,7 @@ export function buildAssetReferenceGraph(
         target,
         sourceHandle: "uses",
         targetHandle: "used-by",
+        ...(source === target ? { type: "asset-reference-self" } : {}),
       });
     }
   }

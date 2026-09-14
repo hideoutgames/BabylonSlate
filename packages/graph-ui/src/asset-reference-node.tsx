@@ -1,4 +1,4 @@
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { BaseEdge, Handle, Position, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import {
   TypeVisualIcon,
   resolveTypeVisual,
@@ -65,3 +65,12 @@ export function AssetReferenceNode({
 export const assetReferenceNodeTypes = {
   "asset-reference": AssetReferenceNode,
 };
+
+/** Route a self-reference above its node so the opaque body cannot hide it. */
+function AssetSelfReferenceEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, style }: EdgeProps) {
+  const top = Math.min(sourceY, targetY) - 96;
+  const path = `M ${sourceX} ${sourceY} C ${sourceX + 64} ${sourceY}, ${sourceX + 64} ${top}, ${sourceX} ${top} L ${targetX} ${top} C ${targetX - 64} ${top}, ${targetX - 64} ${targetY}, ${targetX} ${targetY}`;
+  return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />;
+}
+
+export const assetReferenceEdgeTypes = { "asset-reference-self": AssetSelfReferenceEdge };

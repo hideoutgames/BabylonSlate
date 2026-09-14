@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { documentKindForAssetType } from "@babylonslate/core";
 import { SelectableText } from "@babylonslate/editor-kit";
-import { GraphEditor, assetReferenceNodeTypes } from "@babylonslate/graph-ui";
+import { GraphEditor, assetReferenceNodeTypes, assetReferenceEdgeTypes } from "@babylonslate/graph-ui";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -79,6 +79,7 @@ export function AssetReferenceDialog({
             readOnly
             initialGraph={graph}
             nodeTypes={assetReferenceNodeTypes}
+            edgeTypes={assetReferenceEdgeTypes}
             defaultEdgeOptions={referenceEdges}
             defaultZoom={1}
             focusedNodeId={rootGuid}
