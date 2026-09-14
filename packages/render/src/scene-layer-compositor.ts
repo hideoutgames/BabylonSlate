@@ -17,6 +17,7 @@ import {
   walkOverlayPointerHits,
   type OverlayPointerHit,
   type SceneLayerHitTest,
+  type ScenePostProcessEntry,
 } from "@babylonslate/core";
 import { installEngineDefaultMaterial } from "./default-material";
 import { isSceneFrameReady } from "./scene-perf";
@@ -32,10 +33,7 @@ export type SceneLayerCreateCommand = Extract<
   { type: "sceneLayerCreate" }
 >;
 
-export type SceneLayerPostProcessEntry = {
-  materialGuid: string;
-  enabled: boolean;
-};
+export type SceneLayerPostProcessEntry = ScenePostProcessEntry;
 
 export interface SceneLayerView {
   layerId: string;

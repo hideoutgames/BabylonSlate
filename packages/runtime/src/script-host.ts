@@ -305,6 +305,9 @@ export interface ScriptContext {
   randomFloat(): number;
   getAllActorsOfClass(classId: string): Actor[];
   getActorOfClass(classId: string): Actor | null;
+  /** Live world components, including SceneLayers, in actor/component order. */
+  getFirstComponentOfType(classId: string): ActorComponent | null;
+  getAllComponentsOfType(classId: string): ActorComponent[];
   attachActor(
     child: BObject | null | undefined,
     parent: BObject | null | undefined,
@@ -1109,6 +1112,10 @@ export class ScriptHost {
       getComponent: (actor, classId) =>
         asActor(actor ?? self)?.components.find((c) => c.classId === classId) ??
         null,
+      getFirstComponentOfType: (classId) =>
+        componentsOfType(services, classId).next().value ?? null,
+      getAllComponentsOfType: (classId) =>
+        [...componentsOfType(services, classId)],
       getComponentById: (actor, componentId) =>
         findComponentByIdFromTarget(
           actor ?? self,
@@ -1608,6 +1615,24 @@ export class ScriptHost {
     const owner = component.owner;
     if (!owner) return;
     this.invokeEvent(owner.classId, event, owner, args, component.guid);
+  }
+}
+
+function* componentsOfType(
+  services: ScriptHostServices,
+  classId: string,
+): Generator<ActorComponent, undefined, unknown> {
+  const target = String(classId ?? "");
+  if (!target) return;
+  for (const actor of services.getActors?.() ?? []) {
+    if (actor.destroyed) continue;
+    for (const component of actor.components) {
+      if (component.destroyed) continue;
+      if (services.classRegistry?.isA(component.classId, target) ??
+        component.classId === target) {
+        yield component;
+      }
+    }
   }
 }
 

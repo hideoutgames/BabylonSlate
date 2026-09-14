@@ -153,6 +153,8 @@ export interface SceneSettings {
 
 /** One entry of the scene's ordered post-process chain. */
 export interface ScenePostProcessEntry {
+  /** Stable within the owning Scene/SceneLayer; absent only in legacy input. */
+  id?: string;
   scalable?: boolean;
   materialGuid: string;
   enabled: boolean;
@@ -531,14 +533,32 @@ export function normalizeSceneSettings(
 /** Authored order is the array order; entries default to enabled. */
 export function normalizeScenePostProcessStack(
   value: unknown,
-): ScenePostProcessEntry[] {
+): Array<ScenePostProcessEntry & { id: string }> {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
+  const entries = value.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
     const record = entry as Record<string, unknown>;
     const materialGuid = record.materialGuid;
     if (typeof materialGuid !== "string" || materialGuid === "") return [];
-    return [{ materialGuid, enabled: record.enabled !== false, ...(record.scalable === true ? { scalable: true } : {}) }];
+    return [{
+      id: typeof record.id === "string" && record.id.trim() ? record.id : undefined,
+      materialGuid,
+      enabled: record.enabled !== false,
+      ...(record.scalable === true ? { scalable: true } : {}),
+    }];
+  });
+  // Reserve authored IDs before migration so an early legacy entry cannot take
+  // the identity of a later authored one. Persisted IDs survive every reorder.
+  const reserved = new Set(entries.map((entry) => entry.id).filter(Boolean));
+  const used = new Set<string>();
+  let sequence = 0;
+  return entries.map((entry) => {
+    let id = entry.id;
+    if (!id || used.has(id)) {
+      do { id = `legacy-pass-${++sequence}`; } while (reserved.has(id) || used.has(id));
+    }
+    used.add(id);
+    return { ...entry, id };
   });
 }
 

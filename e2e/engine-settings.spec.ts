@@ -61,7 +61,15 @@ test("settings retain visible slider tracks and full switch travel", async ({ pa
   await page.getByTestId("engine-settings").click();
   await page.getByTestId("engine-settings-modal-category-assets").click();
   const toggle = page.getByTestId("setting-editor-texture-lod");
+  const thumb = toggle.locator('[data-slot="switch-thumb"]');
+  const thumbGap = (side: "left" | "right") => thumb.evaluate((element, edge) => {
+    const knob = element.getBoundingClientRect();
+    const track = element.closest('[data-slot="switch"]')!.getBoundingClientRect();
+    return edge === "left" ? knob.left - track.left : track.right - knob.right;
+  }, side);
   if (await toggle.getAttribute("aria-checked") !== "true") await toggle.click();
+  // Wait for the animated thumb to reach the on edge before measuring off travel.
+  await expect.poll(() => thumbGap("right")).toBeLessThanOrEqual(2);
   const control = page.getByTestId("setting-editor-texture-lod-quality");
   const track = control.locator('[data-slot="slider-track"]');
   const trackBounds = await track.boundingBox();
@@ -73,11 +81,9 @@ test("settings retain visible slider tracks and full switch travel", async ({ pa
   await expect(slider).toHaveValue("25");
   await slider.press("ArrowRight");
   await expect(slider).toHaveValue("30");
-  const thumb = toggle.locator('[data-slot="switch-thumb"]');
-  const on = await thumb.boundingBox();
   await toggle.click();
   await expect(slider).toBeDisabled();
-  await expect.poll(async () => (await thumb.boundingBox())?.x ?? 0).toBeLessThan(on!.x);
+  await expect.poll(() => thumbGap("left")).toBeLessThanOrEqual(2);
 });
 
 async function viewportPostProcessPassCount(

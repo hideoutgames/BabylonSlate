@@ -67,7 +67,6 @@ describe("Add Component catalog", () => {
       byCategory.set(entry.category, list);
     }
     expect([...byCategory.keys()]).toEqual([
-      "Logic",
       "Rendering",
       "Animation",
       "AI",

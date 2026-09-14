@@ -194,10 +194,12 @@ function nestedSamplingDocument(buffer: "sceneDepth" | "sceneNormal") {
 describe("post-process stack", () => {
   it("sorts entries by their authored order", () => {
     const stack = normalizePostProcessStack([
-      { materialGuid: "b", order: 2 },
-      { materialGuid: "a", order: 1 },
+      { id: "second", materialGuid: "b", order: 2, scalable: true },
+      { id: "first", materialGuid: "a", order: 1 },
     ]);
     expect(stack.map((entry) => entry.materialGuid)).toEqual(["a", "b"]);
+    expect(stack.map((entry) => entry.id)).toEqual(["first", "second"]);
+    expect(stack[1]!.scalable).toBe(true);
   });
 
   it("defaults an entry to enabled", () => {

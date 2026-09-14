@@ -58,7 +58,7 @@
     "@lezer/highlight": "^1.2.3",
     "@tailwindcss/vite": "^4.0.14",
     "dockview-react": "^8.0.0",
-    "lucide-react": "^0.487.0",
+    "lucide-react": "^0.552.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.0.14",

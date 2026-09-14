@@ -23,11 +23,9 @@ import {
   Actor,
   ActorComponent,
   BObject,
-  ComponentLogic,
   GameInstance,
   MaterialObject,
   Scene,
-  hydrateClassVariableValue,
   SceneLayer,
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
@@ -50,6 +48,7 @@ import {
   parseText2DProperties,
   parseText3DProperties,
   normalizeSceneLayer,
+  newGuid,
   sceneLayerRelativeAnchorWorldPosition,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
@@ -709,6 +708,19 @@ class InProcessRuntime implements RuntimeDriver {
       onPhase: (phase) => this.markPhase(phase),
       canTickScene: () => !this.stopped,
       canTickActor: (actor) => this.canTickActor(actor),
+      componentHooksFor: (classId) => {
+        if (!registry.isA(classId, "ActorComponent")) return undefined;
+        return {
+          onCreation: (self) => {
+            this.scriptHost.bindInterfaceHandlers(self);
+            this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
+          },
+          onTick: (self, ctx) =>
+            this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
+          onDestroyed: (self) =>
+            this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self)),
+        };
+      },
       onPhysics: (ctx) => {
         if (this.canTickScene()) this.physicsSync.step(ctx.dt, this.world);
         if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
@@ -833,7 +845,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       addComponent: (actor, classId, transform) => {
         const target = actor;
-        if (!target || target.destroyed) return null;
+        if (this.stopped || !target || target.destroyed) return null;
         const id = String(classId ?? "").trim();
         if (!id) return null;
         const overlay = Boolean(target.sceneLayerId);
@@ -844,6 +856,7 @@ class InProcessRuntime implements RuntimeDriver {
           classId: id,
           ...(pose ? { transform: pose } : {}),
         });
+        this.scriptHost.bindInterfaceHandlers(component);
         target.attachComponent(component);
         return component;
       },
@@ -1431,7 +1444,7 @@ class InProcessRuntime implements RuntimeDriver {
     const layer = this.world.findSceneLayer(layerGuid);
     const guid = String(materialGuid ?? "").trim();
     if (!layer || !guid) return;
-    layer.postProcessStack.push({ materialGuid: guid, enabled: true });
+    layer.postProcessStack.push({ id: newGuid(), materialGuid: guid, enabled: true });
     this.emitSceneLayerPostProcess(layer);
   }
 
@@ -1716,12 +1729,12 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped || owner.destroyed) return false;
     if (owner === this.world.gameInstance) return true;
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner
-      : owner instanceof ComponentLogic || owner instanceof MaterialObject ? owner.component.owner : null;
+      : owner instanceof MaterialObject ? owner.component.owner : null;
     if (actor) return actor.world === this.world && this.canTickActor(actor);
     if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.ready === true;
     if (owner instanceof Scene) return owner === this.world.currentScene && this.canTickScene();
     // Detached components and superseded GameInstances have no active owner.
-    return !(owner instanceof ActorComponent || owner instanceof ComponentLogic || owner instanceof MaterialObject || owner instanceof GameInstance);
+    return !(owner instanceof ActorComponent || owner instanceof MaterialObject || owner instanceof GameInstance);
   }
 
   private runOwnerAction(owner: BObject, action: () => void): void {
@@ -1819,7 +1832,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) {
       this.pendingOwnerActions.delete(component);
-      if (component.logic) this.pendingOwnerActions.delete(component.logic);
       this.animEvalByComponent.delete(component.guid);
       this.pendingAnimJumpByComponent.delete(component.guid);
       for (const key of this.animInitializedBySlot) {
@@ -3713,22 +3725,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private applyActorDefaults(actor: Actor): void {
     for (const component of actor.components) {
-      if (component.classId !== "LogicComponent" || component.logic) continue;
-      const classId = component.getVariable("logicClass");
-      if (typeof classId !== "string" || !this.world.classRegistry.isA(classId, "ComponentLogic")) continue;
-      const hooks = this.scriptHost.hooksFor(classId);
-      const logic = new ComponentLogic(component, {
-        classId, guid: `${component.guid}:logic`,
-        variables: Object.fromEntries(this.world.classRegistry.inheritedVariables(classId).map((variable) => [variable.name, hydrateClassVariableValue(variable)])),
-        implementedInterfaces: this.world.classRegistry.inheritedInterfaces(classId),
-        hooks: {
-          onCreation: (self) => this.runOwnerCreation(self, () => hooks?.onCreation?.(self)),
-          onTick: (self, ctx) => this.guardScript(() => hooks?.onTick?.(self, ctx)),
-          onDestroyed: (self) => this.runOwnerDestroyed(self, () => hooks?.onDestroyed?.(self)),
-        },
-      });
-      component.logic = logic;
-      this.scriptHost.bindInterfaceHandlers(logic);
+      this.scriptHost.bindInterfaceHandlers(component);
     }
     const script = this.scriptHost.scriptsFor(actor.classId)[0];
     const defaults = script?.actorDefaults;
@@ -4338,10 +4335,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingSceneFinish = null;
     this.finalizeTrace();
     for (const actor of this.world.getActors()) {
-      for (const component of actor.components) {
-        if (component.logic && !component.logic.destroyed) {
-          component.logic.destroyed = true;
-          component.logic.callOnDestroyed();
+      for (const component of [...actor.components]) {
+        if (!component.destroyed) {
+          component.destroyed = true;
+          component.callOnDestroyed();
         }
       }
     }
