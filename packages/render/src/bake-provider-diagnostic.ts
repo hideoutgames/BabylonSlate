@@ -55,9 +55,13 @@ export async function diagnoseNativeBakeTransport(report: (phase: string) => voi
     tracer.tiles.set(1, 1);
     tracer.setScene(scene, camera);
     report("native sampling");
+    let reportedSamples = -1;
     while (tracer.samples < 1) {
       tracer.renderSample();
-      report(`native tile submitted, samples ${tracer.samples}, target ${tracer.target.width}x${tracer.target.height}`);
+      if (tracer.samples !== reportedSamples) {
+        reportedSamples = tracer.samples;
+        report(`native tile submitted, samples ${tracer.samples}, compiling ${tracer.isCompiling}, target ${tracer.target.width}x${tracer.target.height}`);
+      }
       await waitForBakeGpu(gl, checkpoint);
     }
     report(`native completed ${tracer.target.width}x${tracer.target.height}`);

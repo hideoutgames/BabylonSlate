@@ -206,8 +206,9 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     material.defines.FEATURE_DOF = 0;
     material.defines.FEATURE_FOG = 0;
     native._pathTracer.stableNoise = true;
-    // Match the eventual coverage accumulation before the first draw. The upstream
-    // facade otherwise switches this only after a first float-blended tile.
+    // Coverage requires manual alpha accumulation on every tile. The facade derives
+    // alpha from backgroundAlpha after each update, so both must agree before drawing.
+    material.uniforms.backgroundAlpha.value = 0;
     native._pathTracer.alpha = true;
     native._lowResPathTracer.alpha = true;
     tracer.renderDelay = 0;
