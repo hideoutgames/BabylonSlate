@@ -84,7 +84,7 @@ export function PlayOverlayChrome({
         {showStats ? (
           <Toggle
             size="touch"
-            variant="outline"
+            variant="secondary"
             pressed={statsOpen}
             data-testid="play-stats-toggle"
             aria-label="Stats"
@@ -109,7 +109,7 @@ export function PlayOverlayChrome({
         {showInspector ? (
           <Toggle
             size="touch"
-            variant="outline"
+            variant="secondary"
             pressed={inspectorOpen}
             data-testid="play-inspector-toggle"
             aria-label="Inspector"

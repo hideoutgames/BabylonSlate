@@ -1277,8 +1277,8 @@ describe("content-browser-helpers", () => {
     });
     expect(atten.type).toBe("SoundAttenuation");
     expect(atten.payload).toMatchObject({
-      innerRadius: 1,
-      maxRadius: 50,
+      innerRadius: 10,
+      maxRadius: 250,
       distanceModel: "linear",
     });
   });
