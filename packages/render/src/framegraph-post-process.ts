@@ -1,4 +1,4 @@
-import type { Camera, NodeMaterial, Observer } from "@babylonjs/core";
+import type { Camera, Effect, NodeMaterial, Observer } from "@babylonjs/core";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
@@ -19,6 +19,22 @@ import type {
   PostProcessStackDiagnostic,
   PostProcessStackEntry,
 } from "./post-process-material";
+
+const guardedEffects = new WeakSet<Effect>();
+
+function guardDisposedEffectPolling(effect: Effect): void {
+  if (guardedEffects.has(effect)) return;
+  // Pinned Babylon 9.20: _checkIsReady probes _isReadyInternal BEFORE checking
+  // _isDisposed. EffectWrapper.dispose(true) can already have deleted the GPU
+  // program. Keep its native retry exit, receiver, result and live errors; only
+  // the disposed owner's probe must avoid touching that deleted pipeline.
+  const owned = effect as unknown as { _isReadyInternal(): boolean };
+  const ready = owned._isReadyInternal;
+  owned._isReadyInternal = function (this: Effect) {
+    return this.isDisposed ? false : ready.call(this);
+  };
+  guardedEffects.add(effect);
+}
 
 /** Babylon 9.20's public PostProcess binding protocol, without activate()/RTTs. */
 class GraphBoundPostProcess extends PostProcess {
@@ -47,6 +63,7 @@ class GraphBoundPostProcess extends PostProcess {
       if (typeof source === "string") this.shaderSources.set(key, source);
     }
     super.updateEffect(...args);
+    guardDisposedEffectPolling(this.getEffect());
   }
 
   override dispose(camera?: Camera): void {

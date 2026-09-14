@@ -9,6 +9,7 @@ import {
   Effect,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import {
   createDefaultMaterialDocument,
@@ -354,6 +355,57 @@ it("disposal during deferred graph compilation cannot attach a late pass", async
     scene.materials.filter((material) => material instanceof NodeMaterial),
   ).toHaveLength(0);
 });
+
+it.each(["replace", "dispose"] as const)(
+  "%s before GPU compilation completes stops native polling without retiring the ready sibling",
+  async (action) => {
+    vi.useFakeTimers();
+    try {
+      const { engine, graph, tasks, diagnostics } = host([gainDocument(), gainDocument()]);
+      const createPipeline = engine.createPipelineContext.bind(engine);
+      let pendingPipeline: WebGLPipelineContext | undefined;
+      vi.spyOn(engine, "createPipelineContext").mockImplementation((...args) => {
+        const pipeline = createPipeline(...args) as WebGLPipelineContext;
+        if (!pendingPipeline) {
+          pendingPipeline = pipeline;
+          pipeline.isParallelCompiled = true;
+        }
+        return pipeline;
+      });
+      let deletedProgramQueries = 0;
+      // Retain native Effect, pipeline, retry timer and disposal. NullEngine has
+      // no GPU compiler; only its driver's pending-completion query is supplied.
+      vi.spyOn(engine, "_isRenderingStateCompiled").mockImplementation((pipeline) => {
+        if ((pipeline as WebGLPipelineContext)._isDisposed) deletedProgramQueries++;
+        return false;
+      });
+      await graph.buildAsync(false);
+      const retiring = engine.postProcesses[0]!.getEffect();
+      const sibling = engine.postProcesses[1]!;
+      const errors = vi.fn();
+      retiring.onErrorObservable.add(errors);
+      expect(retiring.isReady()).toBe(false);
+      expect(sibling.getEffect().isReady()).toBe(true);
+      const applied = vi.fn();
+      sibling.onApplyObservable.add(applied);
+
+      if (action === "replace") await tasks[0]!.replaceDocument(gainDocument());
+      else tasks[0]!.dispose();
+      expect(retiring.isDisposed).toBe(true);
+      await vi.advanceTimersByTimeAsync(32);
+      expect(deletedProgramQueries).toBe(0);
+      expect(errors).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(graph.isReady()).toBe(true);
+      graph.execute();
+      expect(applied).toHaveBeenCalledOnce();
+      expect(sibling.getEffect().isDisposed).toBe(false);
+      expect(diagnostics).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("waits for an authored texture and copies through a terminal texture failure", async () => {
   const { graph, source, diagnostics, engine } = host([
