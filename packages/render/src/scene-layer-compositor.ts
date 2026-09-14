@@ -68,6 +68,8 @@ type LayerRecord = SceneLayerView & {
   blitScene: Scene | null;
   parameters: PostProcessParameterState;
   retirements: Set<Promise<void>>;
+  presented: boolean;
+  fallback: { scene: Scene; release(): void } | null;
   attachedPostProcess: ReturnType<NonNullable<SceneLayerCompositorOptions["attachLayerPostProcess"]>>;
 };
 
@@ -125,6 +127,8 @@ export class SceneLayerCompositor {
       attachedPostProcess: null,
       parameters: new PostProcessParameterState(),
       retirements: new Set(),
+      presented: false,
+      fallback: null,
     };
     this.bindHudCamera(layer);
     this.byId.set(command.layerId, layer);
@@ -139,6 +143,7 @@ export class SceneLayerCompositor {
       if (id === layerId) this.slotLayer.delete(slotId);
     }
     this.byId.delete(layerId);
+    this.releaseFallback(layer);
     this.releasePostProcess(layer);
     // Scene.dispose also disposes every owned RTT, including previous generations.
     const retired = Promise.all([...layer.retirements]).then(() => { layer.scene.dispose(); });
@@ -258,15 +263,26 @@ export class SceneLayerCompositor {
         if (record.rtt) {
           record.scene.autoClear = true;
           const result = record.renderer.render();
-          if (!result.rendered) return false;
-          readyForPresentation = result.readyForPresentation;
+          if (!result.rendered || !result.readyForPresentation || !record.blitScene || !isSceneFrameReady(record.blitScene)) {
+            this.blitFallback(record);
+            return false;
+          }
           this.blit(record);
+          readyForPresentation = isSceneFrameReady(record.blitScene);
+          if (readyForPresentation) {
+            record.presented = true;
+            this.releaseFallback(record);
+          }
         } else {
           record.scene.autoClear = false;
           record.scene.autoClearDepthAndStencil = true;
           const result = record.renderer.render();
-          if (!result.rendered) return false;
+          if (!result.rendered) {
+            this.blitFallback(record);
+            return false;
+          }
           readyForPresentation = result.readyForPresentation;
+          if (readyForPresentation) this.releaseFallback(record);
         }
         return readyForPresentation;
       });
@@ -487,7 +503,7 @@ export class SceneLayerCompositor {
 
   private rebuildPostProcess(layer: LayerRecord, replaceRenderer = true): void {
     if (replaceRenderer) {
-      this.releasePostProcess(layer);
+      this.releasePostProcess(layer, true);
       layer.renderer = new SceneRenderCoordinator(layer.scene);
     }
     const enabledStack = layer.parameters.effective(layer.postProcessStack).filter((entry) => entry.enabled);
@@ -520,11 +536,19 @@ export class SceneLayerCompositor {
     this.prepareBlit(layer);
   }
 
-  private releasePostProcess(layer: LayerRecord): void {
+  private releasePostProcess(layer: LayerRecord, keepPresented = false): void {
     const attached = layer.attachedPostProcess;
     const renderer = layer.renderer;
     const rtt = layer.rtt;
     const blitScene = layer.blitScene;
+    let outputReleased = Promise.resolve();
+    if (keepPresented && layer.presented && rtt && blitScene) {
+      this.releaseFallback(layer);
+      outputReleased = new Promise<void>((release) => {
+        layer.fallback = { scene: blitScene, release };
+      });
+    }
+    layer.presented = false;
     layer.attachedPostProcess = null;
     layer.camera.outputRenderTarget = null;
     layer.rtt = null;
@@ -537,6 +561,7 @@ export class SceneLayerCompositor {
     const retirement = (async () => {
       try { await pending; } catch (error) { failures.push(error); }
       if (failures.length) throw new AggregateError(failures, "SceneLayer graph retirement failed.");
+      await outputReleased;
       blitScene?.dispose();
       rtt?.dispose();
     })();
@@ -545,6 +570,17 @@ export class SceneLayerCompositor {
       () => { layer.retirements.delete(retirement); },
       (error: unknown) => { console.warn(`[render] SceneLayer ${layer.layerId} target is quarantined: ${String(error)}`); },
     );
+  }
+
+  private releaseFallback(layer: LayerRecord): void {
+    layer.fallback?.release();
+    layer.fallback = null;
+  }
+
+  private blitFallback(layer: LayerRecord): void {
+    const fallback = layer.fallback;
+    if (fallback && !fallback.scene.isDisposed && isSceneFrameReady(fallback.scene))
+      fallback.scene.render();
   }
 
   private prepareBlit(layer: LayerRecord): void {

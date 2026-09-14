@@ -297,6 +297,40 @@ describe("SceneLayerCompositor", () => {
     expect(disposal).not.toHaveBeenCalled();
   });
 
+  it("keeps only the last presented layer image while replacement graphs prepare without acknowledging it", async () => {
+    const { engine } = world();
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
+      renderers.push(renderer); return { dispose() {} };
+    } });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    await compositor.prepare("overlay", () => {});
+    let acknowledged = false;
+    compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
+    expect(acknowledged).toBe(true);
+    const first = layer.camera.outputRenderTarget!;
+    const oldBlit = engine.scenes.find((scene) => scene.getMaterialByName("sceneLayerBlit:overlay"))!;
+    const disposeFirst = vi.spyOn(first, "dispose");
+    const fallbackDraw = vi.spyOn(oldBlit, "render");
+    compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
+    const unrendered = layer.camera.outputRenderTarget!;
+    const disposeUnrendered = vi.spyOn(unrendered, "dispose");
+    vi.spyOn(renderers[1]!, "render").mockReturnValue({ path: "classic", reason: "Waiting for native upload.", rendered: false, readyForPresentation: false });
+    compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
+    expect(acknowledged).toBe(false);
+    expect(fallbackDraw).toHaveBeenCalledOnce();
+    expect(disposeFirst).not.toHaveBeenCalled();
+    compositor.setPostProcess("overlay", [{ materialGuid: "third", enabled: true }]);
+    await vi.waitFor(() => { expect(disposeUnrendered).toHaveBeenCalledOnce(); });
+    expect(disposeFirst).not.toHaveBeenCalled();
+    await compositor.prepare("overlay", () => {});
+    compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
+    expect(acknowledged).toBe(true);
+    await vi.waitFor(() => { expect(disposeFirst).toHaveBeenCalledOnce(); });
+    expect(fallbackDraw).toHaveBeenCalledOnce();
+    await compositor.dispose();
+  });
+
   it("inflates 2DButton picks to touchMinTargetPx without changing the visual", () => {
     const { engine, compositor } = world();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
