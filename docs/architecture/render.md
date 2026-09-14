@@ -731,3 +731,6 @@ The coordinator's Post Process attachment facade owns one normalized entry stack
 
 
 Post-process graph resources reserve declared capacity before construction and reconcile unique allocated native textures before presentation. Empty or fully disabled stacks allocate no auxiliary targets. Geometry uses its own depth attachment so its extra pass cannot change the forward transparency/depth queue. Scene color retains the existing display-encoded RGBA8 contract; linear HDR stage migration is separate. Target resize replaces the immutable allocation, and parameter replay survives resize and explicit native fallback. Graph task cleanup precedes graph texture disposal and deferred ledger release.
+
+
+Replacing or detaching a prepared stack releases its old graph tasks immediately, including while the view is paused. Pending preparation is cancelled at the owning generation boundary before cleanup. A stale attachment facade cannot detach its replacement. Cleanup failures remain recorded so later retirement cannot incorrectly permit host-owned target destruction.

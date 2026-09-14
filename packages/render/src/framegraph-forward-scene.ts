@@ -95,12 +95,13 @@ export class ForwardSceneFrameGraph {
 
   attachPostProcess(options: AttachPostProcessStackOptions, invalidate: () => void): AttachedPostProcessStack {
     if (this.disposed || options.scene !== this.scene) throw new Error("Post-process owner is not a live matching Scene.");
-    this.postProcessOwner?.dispose();
+    this.releasePostProcessOwner();
     const owner = new ScenePostProcessOwner(options);
     this.postProcessOwner = owner;
     this.postProcessRevision += 1;
     this.failure = undefined;
     invalidate();
+    if (!this.pending) this.releaseGraph();
     const current = () => !this.disposed && this.postProcessOwner === owner;
     return {
       get passes() { return current() ? owner.passes : []; },
@@ -109,11 +110,12 @@ export class ForwardSceneFrameGraph {
       resetParameter: (id, name) => current() && owner.resetParameter(id, name),
       dispose: () => {
         if (!current()) return;
-        owner.dispose();
+        this.releasePostProcessOwner();
         this.postProcessOwner = undefined;
         this.postProcessRevision += 1;
         this.failure = undefined;
         invalidate();
+        if (!this.pending) this.releaseGraph();
       },
     };
   }
@@ -255,8 +257,7 @@ export class ForwardSceneFrameGraph {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    try { this.postProcessOwner?.dispose(); }
-    catch (error) { this.cleanupFailure = error; throw error; }
+    this.releasePostProcessOwner();
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.scene.onDisposeObservable.remove(this.onDispose);
     if (!this.pending) this.releaseGraph();
@@ -544,6 +545,11 @@ export class ForwardSceneFrameGraph {
       geometry.objectList = this.cull!.outputObjectList;
       geometry.camera = this.objects!.camera;
     }
+  }
+
+  private releasePostProcessOwner(): void {
+    try { this.postProcessOwner?.dispose(); }
+    catch (error) { this.cleanupFailure = error; throw error; }
   }
 
   private releaseGraph(): void {

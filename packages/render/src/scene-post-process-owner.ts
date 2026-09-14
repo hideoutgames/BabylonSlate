@@ -16,6 +16,7 @@ export class ScenePostProcessOwner {
   private nativeCamera: Camera | undefined;
   private graphParameters: ScenePostProcessParameters | undefined;
   private disposed = false;
+  private cleanupFailure: unknown;
   private readonly replay = new Map<string, Map<string, MaterialParameterValue>>();
 
   constructor(options: AttachPostProcessStackOptions) {
@@ -83,6 +84,7 @@ export class ScenePostProcessOwner {
   clearGraph(): void { this.graphParameters = undefined; }
 
   dispose(): void {
+    if (this.cleanupFailure) throw this.cleanupFailure;
     if (this.disposed) return;
     this.disposed = true;
     this.detachNative();
@@ -95,7 +97,9 @@ export class ScenePostProcessOwner {
   }
 
   private detachNative(): void {
-    this.native?.dispose();
+    if (this.cleanupFailure) throw this.cleanupFailure;
+    try { this.native?.dispose(); }
+    catch (error) { this.cleanupFailure = error; throw error; }
     this.native = undefined;
     this.nativeCamera = undefined;
   }

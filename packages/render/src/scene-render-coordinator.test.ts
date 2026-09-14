@@ -1,3 +1,4 @@
+import { MaterialLibrary } from "./material-library";
 import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -226,4 +227,23 @@ it("reports asynchronous retirement cleanup failure without permitting the borro
   await preparing;
   await retirement;
   dispose.mockRestore();
+});
+
+
+it("releases replaced stack tasks without a frame and rejects stale facade disposal", async () => {
+  const { scene, camera, renderer } = host();
+  const library = new MaterialLibrary();
+  try {
+    const first = renderer.attachPostProcess({ scene, camera, library, stack: [], documentFor: () => null });
+    await renderer.prepare();
+    const old = scene.objectRenderers[0]!;
+    const second = renderer.attachPostProcess({ scene, camera, library, stack: [], documentFor: () => null });
+    expect(scene.objectRenderers).not.toContain(old);
+    await renderer.prepare();
+    const current = scene.objectRenderers[0]!;
+    first.dispose();
+    expect(scene.objectRenderers).toContain(current);
+    second.dispose();
+    expect(scene.objectRenderers).not.toContain(current);
+  } finally { await renderer.retire(); library.dispose(); }
 });

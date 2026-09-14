@@ -88,6 +88,7 @@ export async function runScenePostProcessCoordinatorProof(backend: "webgl2" | "w
     scene.unfreezeActiveMeshes();
     await capture("graph-return");
     configure([]);
+    if (scene.objectRenderers.length) throw new Error("Disabled stack retained old graph tasks until another frame");
     await capture("empty");
     const plane = MeshBuilder.CreatePlane("Depth receiver", { size: 4 }, scene);
     plane.material = new PBRMaterial("Native surface", scene);
