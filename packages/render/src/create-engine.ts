@@ -1,4 +1,4 @@
-import type { BaseTexture } from "@babylonjs/core";
+import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
 import {
@@ -197,7 +197,7 @@ import {
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 
 export interface EngineHandle {
-  engine: Engine;
+  engine: AbstractEngine;
   scene: Scene;
   scheduler: RenderScheduler;
   resourceCache: ResourceCache;
@@ -301,7 +301,7 @@ export interface EngineHandle {
 
 export interface CreateEngineOptions {
   /** Existing app-lifetime engine; when set, this canvas is registerView'd. */
-  sharedEngine?: Engine;
+  sharedEngine?: AbstractEngine;
   /**
    * How a `sharedEngine` canvas is presented.
    * `registerView` (default) is the Play overlay blit of the engine framebuffer.
@@ -2349,7 +2349,7 @@ function isAmbiguousHudMeshKind(meshKind: string | null | undefined): boolean {
 }
 
 function setOtherEngineViewsEnabled(
-  engine: Engine,
+  engine: AbstractEngine,
   except: HTMLCanvasElement,
   enabled: boolean,
 ): void {

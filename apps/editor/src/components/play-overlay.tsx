@@ -18,7 +18,7 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
 import { applyInspectSelectionToConsoleLine } from "@babylonslate/runtime";
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import { createAppSettingsStore } from "@babylonslate/vfs";
 import {
   startPlaySession,
@@ -87,7 +87,7 @@ import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { usePlay } from "../context/play-context";
 
 export interface PlayOverlayProps {
-  sharedEngine: Engine;
+  sharedEngine: AbstractEngine;
   injectFixtureThrow?: boolean;
   scripts?: readonly ScriptBundleEntry[];
   physics?: PlayPhysicsSettings;

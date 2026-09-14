@@ -1,5 +1,5 @@
 import type { ResolutionQuality } from "@babylonslate/core";
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 
 export interface HardwareScalingOptions {
   minLevel?: number;
@@ -14,7 +14,7 @@ export interface HardwareScalingOptions {
  * adaptToDeviceRatio: false.
  */
 export class HardwareScalingController {
-  private readonly engine: Engine;
+  private readonly engine: AbstractEngine;
   private minLevel: number;
   private maxLevel: number;
   private targetFrameMs: number;
@@ -24,7 +24,7 @@ export class HardwareScalingController {
   private dynamic = true;
   private samples: number[] = [];
 
-  constructor(engine: Engine, options: HardwareScalingOptions = {}) {
+  constructor(engine: AbstractEngine, options: HardwareScalingOptions = {}) {
     this.engine = engine;
     this.minLevel = options.minLevel ?? 1;
     this.maxLevel = options.maxLevel ?? 2;

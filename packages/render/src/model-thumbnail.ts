@@ -1,4 +1,4 @@
-import type { AnimationGroup, Engine, Material, Scene } from "@babylonjs/core";
+import type { AnimationGroup, AbstractEngine, Material, Scene } from "@babylonjs/core";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import {
   DEFAULT_THUMBNAIL_MAX_EDGE,
@@ -43,7 +43,7 @@ function rgbaBytesFromReadback(
  * shared Engine context.
  */
 export async function captureModelThumbnailPng(
-  engine: Engine,
+  engine: AbstractEngine,
   bytes: Uint8Array,
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string, scene: Scene) => Material | null,

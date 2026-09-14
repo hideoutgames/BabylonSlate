@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mesh, Quaternion, type Engine } from "@babylonjs/core";
+import { Mesh, Quaternion, type AbstractEngine } from "@babylonjs/core";
 import {
   modelMaterialGuids,
   normalizeModelPayload,
@@ -87,7 +87,7 @@ export function ModelPreviewCanvas({
   const { collectPlayMaterialLibrary, collectPlayTextureBytes, projectDocument, assetRegistry } = useDocuments();
   const { editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
-  const [engine, setEngine] = useState<Engine | null>(null);
+  const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
   const [materialsReady, setMaterialsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);

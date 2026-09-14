@@ -13,6 +13,7 @@ import {
   MeshBuilder,
   ParticleSystem,
   NodeMaterial,
+  ShaderLanguage,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   NodeMaterialSystemValues,
@@ -179,7 +180,11 @@ export function compileMaterialPlan(
   const { scene } = options;
   const cacheableShadowShape = plan.domain === "surface" && plan.blendMode === "opaque" &&
     plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
-  const material = new NodeMaterial(options.name, scene);
+  const material = new NodeMaterial(options.name, scene, {
+    shaderLanguage: scene.getEngine().isWebGPU
+      ? ShaderLanguage.WGSL
+      : ShaderLanguage.GLSL,
+  });
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
     plan.domain === "postProcess"

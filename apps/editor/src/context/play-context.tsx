@@ -6,10 +6,11 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import type { Engine } from "@babylonjs/core";
-import { shouldPackKtx2ForPreviewBuild } from "@babylonslate/render";
+import type { AbstractEngine } from "@babylonjs/core";
+import { shouldPackKtx2ForPreviewBuild, webGpuMaterialCompatibilityReason } from "@babylonslate/render";
 import {
   DEFAULT_INFINITE_LOOP_DETECTION,
   DEFAULT_LOOP_COUNT,
@@ -17,6 +18,7 @@ import {
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   engineCommandBus,
   isErr,
+  normalizeRenderingPipeline,
   resolveGameInstanceClass,
 } from "@babylonslate/core";
 import type { SessionReportEntry } from "@babylonslate/runtime";
@@ -127,6 +129,9 @@ import {
   nextSharedEngineGeneration,
 } from "../lib/shared-engine-generation";
 import { createProjectEngineController } from "../lib/project-engine";
+import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
+import { ProjectRenderingDialog } from "../components/project-rendering-dialog";
+import { ProjectRenderingContext } from "./project-rendering-context";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -161,8 +166,8 @@ interface PlayContextValue {
   resumePlayAfterMigration: () => Promise<void>;
   cancelPlayMigration: () => void;
   stopPlay: () => void;
-  registerSharedEngine: (engine: Engine | null) => void;
-  ensureSharedEngine: () => Engine | null;
+  registerSharedEngine: (engine: AbstractEngine | null) => void;
+  ensureSharedEngine: () => AbstractEngine | null;
   sharedEngineGeneration: number;
   registerScheduler: (scheduler: EditorLoopHandle) => () => void;
   focusedNodeId: string | null;
@@ -180,9 +185,11 @@ const OverlayPlayingContext = createContext(false);
 
 export function PlayProvider({ children }: { children: ReactNode }) {
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
-  const engineRef = useRef<Engine | null>(null);
-  const ownedEngineRef = useRef<Engine | null>(null);
-  const projectEngineRef = useRef(createProjectEngineController());
+  const engineRef = useRef<AbstractEngine | null>(null);
+  const ownedEngineRef = useRef<AbstractEngine | null>(null);
+  const [projectEngine] = useState(createProjectEngineController);
+  const projectEngineState = useSyncExternalStore(projectEngine.subscribe, projectEngine.getSnapshot);
+  const [renderingFailureDismissed, setRenderingFailureDismissed] = useState(false);
   const schedulerRegistryRef = useRef(new EditorSchedulerRegistry());
   const preparingRef = useRef(false);
   const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
@@ -362,6 +369,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     openDocument,
     openRecordedTrace,
     projectDocument,
+    projectGuid,
     dirtyDocuments,
     graphsNeedCompile,
     migrationPending,
@@ -375,6 +383,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     currentGraphSignature,
   } = useDocuments();
   const projectOpen = projectDocument != null;
+  const requestedBackend = normalizeRenderingPipeline(projectDocument?.settings.render).gpuBackend;
   const projectOpenRef = useRef(projectOpen);
   projectOpenRef.current = projectOpen;
   const { setDiagnostics, setFocusDiagnostic } = useValidation();
@@ -509,9 +518,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     });
   }, [appendLog]);
 
-  const registerSharedEngine = useCallback((engine: Engine | null) => {
+  const registerSharedEngine = useCallback((engine: AbstractEngine | null) => {
     const previous = engineRef.current;
-    const next = nextRegisteredSharedEngine({
+    const next = projectOpenRef.current && projectEngine.getSnapshot().phase !== "ready" ? null : nextRegisteredSharedEngine({
       incoming: engine,
       previous,
       owned: ownedEngineRef.current,
@@ -521,7 +530,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     setSharedEngineGeneration((current) =>
       nextSharedEngineGeneration(current, engineRef.current, previous),
     );
-  }, []);
+  }, [projectEngine]);
 
   const registerScheduler = useCallback((scheduler: EditorLoopHandle) => {
     return schedulerRegistryRef.current.register(scheduler);
@@ -547,9 +556,30 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     pendingPlayOptionsRef.current = undefined;
   }, [projectDocument]);
 
+  const renderingRequest = useMemo(() => projectOpen && projectGuid ? {
+    projectGuid,
+    backend: requestedBackend,
+    async prepare(signal: AbortSignal) {
+      await waitForSceneLoadingPaint(signal);
+      if (requestedBackend !== "webgpu") return undefined;
+      const materialGuids = (assetRegistry?.list() ?? [])
+        .filter((asset) => asset.header.type === "Material")
+        .map((asset) => asset.header.guid);
+      const library = await collectPlayMaterialLibrary(null, [], materialGuids);
+      signal.throwIfAborted();
+      return webGpuMaterialCompatibilityReason(library.documents, library.functions);
+    },
+  } : null, [projectOpen, projectGuid, requestedBackend, assetRegistry, collectPlayMaterialLibrary]);
+
   useEffect(() => {
-    const host = projectEngineRef.current;
-    const engine = host.sync(projectOpen);
+    // A running simulation keeps its Engine. Apply the authored change after Stop.
+    if (renderingRequest && (playing || previewOpen)) return;
+    setRenderingFailureDismissed(false);
+    void projectEngine.sync(renderingRequest);
+  }, [projectEngine, renderingRequest, playing, previewOpen]);
+
+  useEffect(() => {
+    const engine = projectEngineState.session?.engine ?? null;
     ownedEngineRef.current = engine;
     const previous = engineRef.current;
     const next = isUsableEngine(engine) ? engine : null;
@@ -557,44 +587,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     setSharedEngineGeneration((current) =>
       nextSharedEngineGeneration(current, next, previous),
     );
-    return () => {
-      if (projectOpen) return;
-      host.sync(false);
-      ownedEngineRef.current = null;
-      if (engineRef.current === engine) engineRef.current = null;
-    };
-  }, [projectOpen]);
+  }, [projectEngineState]);
 
   useEffect(() => {
-    const host = projectEngineRef.current;
     return () => {
-      host.dispose();
+      projectEngine.dispose();
       ownedEngineRef.current = null;
       engineRef.current = null;
     };
-  }, []);
+  }, [projectEngine]);
 
-  const ensureEngine = useCallback((): Engine | null => {
-    if (isUsableEngine(ownedEngineRef.current)) {
-      engineRef.current = ownedEngineRef.current;
-      return ownedEngineRef.current;
-    }
-    if (!projectOpenRef.current) {
-      return isUsableEngine(engineRef.current) ? engineRef.current : null;
-    }
-    const engine = projectEngineRef.current.sync(true);
-    ownedEngineRef.current = engine;
-    if (!isUsableEngine(engine)) {
-      engineRef.current = null;
-      return null;
-    }
-    const previous = engineRef.current;
-    engineRef.current = engine;
-    setSharedEngineGeneration((current) =>
-      nextSharedEngineGeneration(current, engine, previous),
-    );
-    return engine;
-  }, []);
+  const ensureEngine = useCallback((): AbstractEngine | null => {
+    const engine = projectEngine.getSnapshot().session?.engine;
+    return isUsableEngine(engine) ? engine! : null;
+  }, [projectEngine]);
 
   const launchPlay = useCallback(
     (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
@@ -1364,9 +1370,22 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   return (
     <PlayContext.Provider value={value}>
+      <ProjectRenderingContext.Provider value={{
+        phase: projectEngineState.phase,
+        requestedBackend,
+        effectiveBackend: projectEngineState.session?.effectiveBackend ?? null,
+        fallbackReason: projectEngineState.session?.fallbackReason,
+        deferredUntilStop: (playing || previewOpen) && projectEngineState.session?.requestedBackend !== requestedBackend,
+      }}>
       <OverlayPlayingContext.Provider value={playing && !previewOpen}>
       <OutputLogContext.Provider value={{ lines: logLines }}>
         {children}
+        {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
+          (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
+          <ProjectRenderingDialog state={projectEngineState}
+            onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
+            onDismiss={() => setRenderingFailureDismissed(true)} />
+        ) : null}
         {previewPhase ? (
           <PreparingPreviewDialog
             open
@@ -1559,6 +1578,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         ) : null}
       </OutputLogContext.Provider>
       </OverlayPlayingContext.Provider>
+      </ProjectRenderingContext.Provider>
     </PlayContext.Provider>
   );
 }
