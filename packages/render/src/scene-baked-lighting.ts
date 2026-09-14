@@ -536,8 +536,9 @@ export class SceneBakedLighting {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    this.sceneObserver?.remove();
-    this.contextObserver?.remove();
+    // Scene disposal iterates the live observer array; immediate self-removal skips its next owner.
+    this.sceneObserver?.remove(true);
+    this.contextObserver?.remove(true);
     this.invalidate("The baked lighting owner was disposed.");
     this.retained = undefined;
   }
