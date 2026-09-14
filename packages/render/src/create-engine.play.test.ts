@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -24,6 +24,7 @@ import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
 import { prewarmSceneMaterials } from "./scene-perf";
+import * as sceneWork from "./scene-work";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -167,6 +168,49 @@ describe("Play createEngine view", () => {
     expect(created.filter((name) => name === editorMeshName("next"))).toHaveLength(1);
     expect(handle.scene.getMeshByName(editorMeshName("old"))).toBeNull();
     expect(handle.scene.getMeshByName(editorMeshName("next"))?.isDisposed()).toBe(false);
+  });
+
+  it("keeps the loading owner when a surface Material completes between realization chunks", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    handle.loadScene({ ...createDefaultScene(), actors: [] });
+    const material = createDefaultMaterialDocument();
+    material.twoSided = true;
+    const next = { ...createDefaultScene(), actors: Array.from({ length: 80 }, (_, index) => {
+      const mesh = createMeshComponent(`mesh-${index}`, "ground");
+      mesh.properties.materialGuid = "surface";
+      return createActor(`receiver-${index}`, "Receiver", { components: [mesh] });
+    }) };
+    const run = sceneWork.runSceneWork;
+    let completedDuringLoad: NodeMaterial | null = null;
+    let firstRoot: Mesh | null = null;
+    // Control only the cooperative scheduling boundary. The real compiler,
+    // library publication callback and scene realization all remain in use.
+    const scheduling = vi.spyOn(sceneWork, "runSceneWork").mockImplementation((steps, options) => run(steps, {
+      ...options,
+      yieldControl: async () => {
+        const candidate = handle.scene.getMaterialByName("material:surface");
+        if (!(candidate instanceof NodeMaterial) || completedDuringLoad) return;
+        completedDuringLoad = candidate;
+        firstRoot = handle.editor!.sync.meshForActor("receiver-0");
+        expect(handle.editor!.sync.serializedScene()?.actors).toEqual([]);
+        await prewarmMaterial(candidate, null);
+      },
+    }));
+    try {
+      await handle.loadSceneAsync(next, {
+        signal: new AbortController().signal,
+        materialDocuments: new Map([["surface", material]]),
+      });
+      await handle.whenEditorModelsReady();
+      expect(completedDuringLoad).toBeInstanceOf(NodeMaterial);
+      expect(handle.editor!.sync.serializedScene()).toBe(next);
+      expect(handle.editor!.sync.meshForActor("receiver-0")).toBe(firstRoot);
+      expect(handle.editor!.sync.actorCount()).toBe(80);
+      for (const actor of next.actors)
+        expect(handle.editor!.sync.meshForActor(actor.id)?.material).toBe(completedDuringLoad);
+    } finally { scheduling.mockRestore(); }
   });
 
   function sharedEngine(): NullEngine {
