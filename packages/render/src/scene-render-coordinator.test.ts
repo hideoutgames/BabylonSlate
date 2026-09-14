@@ -30,6 +30,20 @@ function host() {
   return { options, engine, scene, camera, renderer };
 }
 
+function holdGraphInitialization() {
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => { entered = resolve; });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const initialize = FrameGraph.prototype._whenAsynchronousInitializationDoneAsync;
+  vi.spyOn(FrameGraph.prototype, "_whenAsynchronousInitializationDoneAsync").mockImplementationOnce(async function (this: FrameGraph) {
+    await initialize.call(this);
+    entered();
+    await gate;
+  });
+  return { started, release };
+}
+
 it("never presents an unready scene or acknowledges a temporary native fallback as a prepared graph frame", async () => {
   const { scene, renderer } = host();
   let assetsReady = false;
@@ -106,16 +120,7 @@ it("disposes a pending graph without stranding readiness or touching a sibling s
 
 it("does not resume native task allocation after disposal during asynchronous initialization", async () => {
   const { scene, renderer } = host();
-  let entered!: () => void;
-  const started = new Promise<void>((resolve) => { entered = resolve; });
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  const initialize = FrameGraph.prototype._whenAsynchronousInitializationDoneAsync;
-  vi.spyOn(FrameGraph.prototype, "_whenAsynchronousInitializationDoneAsync").mockImplementationOnce(async function (this: FrameGraph) {
-    await initialize.call(this);
-    entered();
-    await gate;
-  });
+  const { started, release } = holdGraphInitialization();
   const allocate = vi.spyOn(FrameGraphTextureManager.prototype, "_allocateTextures");
   const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
   await started;
@@ -124,6 +129,31 @@ it("does not resume native task allocation after disposal during asynchronous in
   await pending;
   expect(allocate).not.toHaveBeenCalled();
   expect(scene.objectRenderers).toHaveLength(0);
+});
+
+it("does not acknowledge a native fallback while changed-output preparation is restarting", async () => {
+  const { options, renderer } = host();
+  const { started, release } = holdGraphInitialization();
+  const preparing = renderer.prepare();
+  await started;
+  vi.useFakeTimers();
+  try {
+    options.renderWidth = 96;
+    release();
+    // Drain the failed old build, but hold the cooperative restart boundary.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(renderer.isReady()).toBe(false);
+    expect(renderer.render()).toMatchObject({ path: "classic", rendered: true, readyForPresentation: false });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(await preparing).toEqual({ path: "frameGraph" });
+    expect(renderer.isReady()).toBe(true);
+    expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
+  } finally {
+    renderer.dispose();
+    await vi.runAllTimersAsync();
+    await preparing.catch(() => {});
+    vi.useRealTimers();
+  }
 });
 
 it("replaces a pending backbuffer build with an explicit classic camera-target fallback", async () => {

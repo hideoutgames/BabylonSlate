@@ -91,6 +91,7 @@ export class SceneRenderCoordinator {
   /** Loading owners require the prepared selected path, including after resize. */
   isReady(): boolean {
     if (this.failure) throw this.failure;
+    if (this.pending) return false;
     const camera = this.scene.activeCamera;
     if (this.disposed || this.scene.isDisposed || !camera || !isSceneFrameReady(this.scene)) return false;
     const status = this.graph.readiness(camera);
@@ -108,7 +109,7 @@ export class SceneRenderCoordinator {
     const result = this.graph.render(camera);
     const after = this.graph.readiness(camera);
     return { ...result, rendered: true,
-      readyForPresentation: status.ready && after.ready && result.path === status.path && result.path === after.path };
+      readyForPresentation: !this.pending && status.ready && after.ready && result.path === status.path && result.path === after.path };
   }
 
   dispose(): void {
