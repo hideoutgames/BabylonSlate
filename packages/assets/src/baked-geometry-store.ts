@@ -13,9 +13,11 @@ export async function loadBakedGeometryBindings(
   registry: AssetRegistry,
   manifest: BakedLightingManifest,
 ): Promise<ReadonlyMap<string, DecodedBakedGeometry>> {
+  const sceneGuid = manifest.sceneGuid;
+  const receivers = structuredClone(manifest.receivers);
   const result = new Map<string, DecodedBakedGeometry>();
   let bytes = 0;
-  for (const receiver of manifest.receivers) {
+  for (const receiver of receivers) {
     const reference = receiver.generatedGeometry;
     if (!reference) continue;
     if (result.size >= 64)
@@ -32,7 +34,7 @@ export async function loadBakedGeometryBindings(
     if (
       geometry.guid !== reference.assetGuid ||
       geometry.manifest.contentHash !== reference.contentHash ||
-      geometry.manifest.sceneGuid !== manifest.sceneGuid ||
+      geometry.manifest.sceneGuid !== sceneGuid ||
       geometry.manifest.sourceHash !== receiver.hashes.geometry ||
       bakedReceiverKey(geometry.manifest.receiver) !==
         bakedReceiverKey(receiver.identity)

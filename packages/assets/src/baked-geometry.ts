@@ -347,10 +347,22 @@ export async function applyBakedGeometry(
   source: BakeGeometrySource,
   baked: DecodedBakedGeometry,
 ): Promise<BakeGeometrySource> {
-  // remap snapshots first, before hashing yields; both outputs refer to the same source generation.
-  const remapped = remapBakeGeometry(source, baked.topology);
-  const expected = baked.manifest.sourceHash;
-  if ((await fingerprintBakeGeometry(source)) !== expected)
+  const manifest = parseBakedGeometryManifest(baked.manifest);
+  const topologyBytes = encodeBakeTopology(
+    baked.topology,
+    manifest.sourceVertexCount,
+  );
+  const remapped = remapBakeGeometry(
+    source,
+    decodeTopology(manifest, topologyBytes),
+  );
+  const [contentHash, sourceHash] = await Promise.all([
+    sha256Hex(topologyBytes),
+    fingerprintBakeGeometry(source),
+  ]);
+  if (contentHash !== manifest.contentHash)
+    throw new Error("Generated topology changed after validation.");
+  if (sourceHash !== manifest.sourceHash)
     throw new Error("Baked geometry source is stale.");
   return remapped;
 }

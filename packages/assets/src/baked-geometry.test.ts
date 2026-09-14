@@ -90,6 +90,11 @@ it("roundtrips a bounded generated asset and rejects stale original attributes b
   expect(decoded.topology).toEqual(topology);
   const first = await applyBakedGeometry(source, decoded);
   const second = await applyBakedGeometry(source, decoded);
+  decoded.topology.uv2[0] = 0.9;
+  await expect(applyBakedGeometry(source, decoded)).rejects.toThrow(
+    /changed after validation/,
+  );
+  decoded.topology.uv2[0] = topology.uv2[0]!;
   first.attributes[0]!.data[0] = 255;
   expect(second.attributes[0]!.data[0]).toBe(0);
   source.attributes[1]!.data[0] = 99;

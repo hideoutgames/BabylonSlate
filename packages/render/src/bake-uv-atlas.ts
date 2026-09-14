@@ -64,16 +64,17 @@ export async function unwrapBakeGeometry(
     onProgress?: (progress: BakeUvProgress) => void;
   },
 ): Promise<BakeUvResult> {
+  const { resolution, paddingTexels, signal, onProgress } = options;
   if (active) throw new Error("A UV generation job is already active.");
-  if (options.signal?.aborted) throw abortError();
+  if (signal?.aborted) throw abortError();
   if (
-    !Number.isInteger(options.resolution) ||
-    options.resolution < 16 ||
-    options.resolution > 2048 ||
-    !Number.isInteger(options.paddingTexels) ||
-    options.paddingTexels < 1 ||
-    options.paddingTexels > 16 ||
-    options.paddingTexels * 2 >= options.resolution
+    !Number.isInteger(resolution) ||
+    resolution < 16 ||
+    resolution > 2048 ||
+    !Number.isInteger(paddingTexels) ||
+    paddingTexels < 1 ||
+    paddingTexels > 16 ||
+    paddingTexels * 2 >= resolution
   )
     throw new Error("Unsupported UV resolution or padding.");
   const owned = snapshotBakeGeometry(source);
@@ -115,7 +116,7 @@ export async function unwrapBakeGeometry(
   void failed.catch(() => {});
   const abort = () => fail(abortError());
   const ensureCurrent = () => {
-    if (settled || options.signal?.aborted) throw abortError();
+    if (settled || signal?.aborted) throw abortError();
   };
   const timer = setTimeout(
     () => fail(new Error("UV generation exceeded its two-minute deadline.")),
@@ -123,12 +124,12 @@ export async function unwrapBakeGeometry(
   );
   const progress = (phase: BakeUvProgress["phase"], value: number) => {
     if (!settled)
-      options.onProgress?.({
+      onProgress?.({
         phase,
         progress: Math.max(0, Math.min(1, value)),
       });
   };
-  options.signal?.addEventListener("abort", abort, { once: true });
+  signal?.addEventListener("abort", abort, { once: true });
   try {
     return await Promise.race([
       failed,
@@ -181,8 +182,8 @@ export async function unwrapBakeGeometry(
         const result = await api.generateAtlas(
           { maxIterations: 1 },
           {
-            resolution: options.resolution,
-            padding: options.paddingTexels,
+            resolution: resolution,
+            padding: paddingTexels,
             bilinear: true,
             bruteForce: false,
           },
@@ -198,8 +199,8 @@ export async function unwrapBakeGeometry(
           !Number.isInteger(result.height) ||
           result.width < 1 ||
           result.height < 1 ||
-          result.width > options.resolution ||
-          result.height > options.resolution
+          result.width > resolution ||
+          result.height > resolution
         )
           throw new Error(
             "UV output exceeds the admitted single-atlas resolution.",
@@ -219,7 +220,7 @@ export async function unwrapBakeGeometry(
           topology,
           width: result.width,
           height: result.height,
-          paddingTexels: options.paddingTexels,
+          paddingTexels: paddingTexels,
           provider: {
             id: "xatlasjs" as const,
             version: "0.2.0" as const,
@@ -231,7 +232,7 @@ export async function unwrapBakeGeometry(
   } finally {
     settled = true;
     clearTimeout(timer);
-    options.signal?.removeEventListener("abort", abort);
+    signal?.removeEventListener("abort", abort);
     // Termination also releases synchronous native work and its entire WASM heap on failure/abort.
     resources.api?.[releaseProxy]();
     resources.remote?.[releaseProxy]();
