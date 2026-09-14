@@ -18,10 +18,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await testInfo.attach("geometry-buffer-values", { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.retainedGraphs).toBe(0);
+    expect(result.retainedRenderers).toBe(0);
+    expect(result.legacyPrepass).toBe(false);
     for (const capture of result.captures) {
       // Plane lies four units from a camera with near=1, far=11: depth=.3.
       // Its front-facing world normal is (0,0,-1), encoded into [0,1].
-      const expected = capture.buffer === "depth" ? [77, 0, 0, 255] : [128, 128, 0, 255];
+      const expected = capture.buffer === "depth" ? [77, 0, 0, 255]
+        : capture.buffer === "post-depth" ? [77, 77, 77, 255] : [128, 128, 0, 255];
       expect(Math.max(...capture.pixel.map((value, index) => Math.abs(value - expected[index]!))), JSON.stringify(capture)).toBeLessThanOrEqual(1);
     }
   });

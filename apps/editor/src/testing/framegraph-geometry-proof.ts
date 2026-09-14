@@ -4,6 +4,7 @@ import { LogicalGeometryTask } from "@babylonslate/render/framegraph-logical-buf
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { MaterialLibrary, createAppWebGpuEngine, setSceneRenderSettings } from "@babylonslate/render";
+import { addAuthoredPostProcessTasks } from "@babylonslate/render/framegraph-post-process";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
 /** Numeric geometry oracle, isolated from the editor and its render scheduler. */
@@ -34,7 +35,7 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
       mesh.material = mode === "native" ? native : compiled.material;
       mesh.computeWorldMatrix(true);
       scene.updateTransformMatrix(true);
-      for (const buffer of ["depth", "normal"] as const) {
+      for (const buffer of ["depth", "normal", "post-depth", "post-normal"] as const) {
         const graph = new FrameGraph(scene);
         try {
           const depth = graph.textureManager.createRenderTargetTexture("Geometry Z", {
@@ -59,7 +60,24 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
           ];
           graph.addTask(geometry);
           const copy = new FrameGraphCopyToBackbufferColorTask("Geometry Readback", graph);
-          copy.sourceTexture = buffer === "depth" ? geometry.geometryNormViewDepthTexture : geometry.geometryWorldNormalTexture;
+          copy.sourceTexture = buffer.endsWith("depth") ? geometry.geometryNormViewDepthTexture : geometry.geometryWorldNormalTexture;
+          if (buffer.startsWith("post-")) {
+            const post = createDefaultMaterialDocument("Logical Buffer", "postProcess");
+            const resource = buffer === "post-depth" ? "sceneDepth" : "sceneNormal";
+            post.nodes.push({ id: "buffer", type: `input.${resource}`, properties: {}, position: { x: 0, y: 0 } });
+            post.edges = [
+              { id: "uv-buffer", sourceNodeId: "screenUv", sourcePinId: "uv", targetNodeId: "buffer", targetPinId: "uv" },
+              { id: "buffer-output", sourceNodeId: "buffer", sourcePinId: resource === "sceneDepth" ? "depth" : "normal", targetNodeId: "output", targetPinId: "color" },
+            ];
+            const stack = addAuthoredPostProcessTasks({
+              frameGraph: graph, library, sourceTexture: copy.sourceTexture,
+              logicalBuffers: { sceneDepth: geometry.geometryNormViewDepthTexture, sceneNormal: geometry.geometryWorldNormalTexture },
+              stack: [0, 1].map((order) => ({ id: `entry-${order}`, materialGuid: "logical", order, enabled: true })),
+              documentFor: () => post,
+              onDiagnostic: (diagnostic) => { throw new Error(JSON.stringify(diagnostic)); },
+            });
+            copy.sourceTexture = stack.outputTexture;
+          }
           graph.addTask(copy);
           await graph.buildAsync(false);
           const deadline = performance.now() + 10_000;
@@ -74,10 +92,15 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
           if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
             [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
           captures.push({ material: mode, buffer, pixel });
-        } finally { graph.dispose(); }
+        } finally {
+          // FrameGraph.dispose resets tasks but does not dispose their owned services.
+          for (const task of graph.tasks) task.dispose();
+          graph.dispose();
+        }
       }
     }
-    return { backend, captures, retainedGraphs: scene.frameGraphs.length };
+    return { backend, captures, retainedGraphs: scene.frameGraphs.length,
+      retainedRenderers: scene.objectRenderers.length, legacyPrepass: !!scene.prePassRenderer };
   } finally {
     library.dispose();
     scene.dispose();

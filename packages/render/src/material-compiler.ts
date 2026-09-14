@@ -70,6 +70,8 @@ import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
+  /** Internal FrameGraph variant; shared resources are bound by its render pass. */
+  logicalSceneBuffers?: boolean;
   /** Editor-only single-quad preview; live particle systems retain Particle mode. */
   particlePreview?: boolean;
   scene: Scene;
@@ -206,7 +208,8 @@ export function compileMaterialPlan(
   const pendingTextures: Texture[] = [];
   const diagnostics: MaterialDiagnostic[] = [];
   const realized = new Map<string, BlockRealization>();
-  const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview };
+  const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
+    logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
   if (plan.operations.some((operation) => operation.nodeType === "input.worldPosition" || operation.nodeType === "input.cameraPosition")) {
     const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
     const zero = Vector3.Zero();

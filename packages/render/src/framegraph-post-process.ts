@@ -14,6 +14,7 @@ import type {
 } from "@babylonslate/shader-graph";
 import { materialUnavailable, type MaterialLibrary } from "./material-library";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
+import { LOGICAL_SCENE_SAMPLERS, type LogicalSceneBuffer } from "./logical-scene-texture-block";
 import type {
   PostProcessStackDiagnostic,
   PostProcessStackEntry,
@@ -69,6 +70,8 @@ class GraphBoundPostProcess extends PostProcess {
 }
 
 interface AuthoredPostProcessOptions {
+  /** Caller-owned normalized view depth and encoded world normal, shared across entries. */
+  logicalBuffers?: Partial<Record<LogicalSceneBuffer, FrameGraphTextureHandle>>;
   frameGraph: FrameGraph;
   library: MaterialLibrary;
   materialGuid: string;
@@ -103,6 +106,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   private readonly options: AuthoredPostProcessOptions;
   private readonly parameters = new Map<string, MaterialParameterValue>();
   private readonly authoredParameters: Record<string, MaterialParameterValue>;
+  private readonly requiredBuffers = new Set<LogicalSceneBuffer>();
+  private get acquireOptions() { return { instanceKey: this.instanceKey, logicalSceneBuffers: true }; }
 
   constructor(name: string, options: AuthoredPostProcessOptions) {
     super(name, options.frameGraph);
@@ -161,7 +166,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
         this.options.materialGuid,
         name,
         value,
-        { instanceKey: this.instanceKey },
+        this.acquireOptions,
       )
     )
       return false;
@@ -172,7 +177,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   getParameter(name: string): MaterialParameterValue | null {
     if (this.disposed) return null;
     if (this.acquired) return this.options.library.getParameter(
-      this._frameGraph.scene, this.options.materialGuid, name, { instanceKey: this.instanceKey },
+      this._frameGraph.scene, this.options.materialGuid, name, this.acquireOptions,
     );
     const value = this.parameters.get(name);
     return value ? value.kind === "color" ? { kind: "color", value: [...value.value] } : { ...value } : null;
@@ -185,7 +190,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     const authored = this.authoredParameters[name];
     if (authored && this.setParameter(name, authored)) return true;
     if (this.acquired && !this.options.library.resetParameter(
-      this._frameGraph.scene, this.options.materialGuid, name, { instanceKey: this.instanceKey },
+      this._frameGraph.scene, this.options.materialGuid, name, this.acquireOptions,
     )) return false;
     this.parameters.delete(name);
     return true;
@@ -235,6 +240,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     );
     const pass = this._frameGraph.addRenderPass(this.name);
     pass.addDependencies(this.options.sourceTexture);
+    for (const resource of this.requiredBuffers)
+      pass.addDependencies(this.options.logicalBuffers![resource]!);
     pass.setRenderTarget(this.outputTexture);
     pass.setExecuteFunc((context) => this.executePostProcess(context));
     if (!skipCreationOfDisabledPasses) {
@@ -277,6 +284,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
             "textureSampler",
             this.options.sourceTexture,
           );
+          for (const resource of this.requiredBuffers)
+            context.bindTextureHandle(effect, LOGICAL_SCENE_SAMPLERS[resource], this.options.logicalBuffers![resource]!);
         } catch (error) {
           bindingFailed = true;
           bindingError = error;
@@ -306,8 +315,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
         this.options.materialGuid,
         document,
         {
-          instanceKey: this.instanceKey,
-          validatePlan: unsupportedLogicalBuffers,
+          ...this.acquireOptions,
+          validatePlan: (plan) => unsupportedLogicalBuffers(plan, this.options.logicalBuffers),
         },
       );
       if (materialUnavailable(compiled)) {
@@ -318,6 +327,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
         return;
       }
       this.acquired = true;
+      for (const resource of ["sceneDepth", "sceneNormal"] as const)
+        if (compiled.plan.bufferRequirements[resource]) this.requiredBuffers.add(resource);
       this.material = compiled.material;
       const diagnostics = await compiled.ready;
       if (this.disposed || this.generation !== generation) return;
@@ -365,6 +376,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   }
 
   private releaseMaterial(): void {
+    this.requiredBuffers.clear();
     if (this.buildObserver)
       this.material?.onBuildObservable.remove(this.buildObserver);
     this.buildObserver = null;
@@ -376,7 +388,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       this.options.library.release(
         this._frameGraph.scene,
         this.options.materialGuid,
-        { instanceKey: this.instanceKey },
+        this.acquireOptions,
       );
     }
   }
@@ -392,17 +404,18 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
 
 function unsupportedLogicalBuffers(
   plan: MaterialBuildPlan,
+  buffers?: AuthoredPostProcessOptions["logicalBuffers"],
 ): MaterialDiagnostic | undefined {
-  const resource = plan.bufferRequirements.sceneDepth
+  const resource = plan.bufferRequirements.sceneDepth && buffers?.sceneDepth === undefined
     ? "sceneDepth"
-    : plan.bufferRequirements.sceneNormal
+    : plan.bufferRequirements.sceneNormal && buffers?.sceneNormal === undefined
       ? "sceneNormal"
       : null;
   if (!resource) return undefined;
   return {
     severity: "error",
     code: "material.framegraph.buffer",
-    message: `The authored FrameGraph adapter has no logical ${resource === "sceneDepth" ? "Scene Depth" : "Scene Normal"} injection yet`,
+    message: `The authored FrameGraph adapter requires a shared ${resource === "sceneDepth" ? "Scene Depth" : "Scene Normal"} buffer`,
     nodeId: plan.operations.find(
       (operation) => operation.nodeType === `input.${resource}`,
     )?.id,
@@ -410,6 +423,7 @@ function unsupportedLogicalBuffers(
 }
 
 export function addAuthoredPostProcessTasks(options: {
+  logicalBuffers?: AuthoredPostProcessOptions["logicalBuffers"];
   frameGraph: FrameGraph;
   library: MaterialLibrary;
   sourceTexture: FrameGraphTextureHandle;
