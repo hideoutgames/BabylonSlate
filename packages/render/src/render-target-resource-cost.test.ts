@@ -213,6 +213,12 @@ describe("managed render-target storage", () => {
       Constants.TEXTURETYPE_FLOAT,
     );
     depth.format = Constants.TEXTUREFORMAT_DEPTH32_FLOAT;
+    expect(() => managedRenderTextureResource(texture, "sceneColor")).toThrow(
+      /no ready/,
+    );
+    // NullEngine's raw allocator omits the readiness bit set by native upload.
+    texture.isReady = true;
+    depth.isReady = true;
     const first = beginManagedRenderAllocation(engine, 64)!;
     first.commit([
       managedRenderTextureResource(texture, "sceneColor", { samples: 1 }),
