@@ -158,14 +158,17 @@ export function createSceneLoadReadiness(options: {
         publishProgress();
         return;
       }
-      if (command.type === "sceneLayerLoading" || command.type === "sceneLayerRealized") {
+      if (command.type === "sceneLayerLoading" || command.type === "sceneLayerRealized" || command.type === "sceneLayerLoadFailed") {
         const { layerId, layerLoadId } = command;
         if (typeof layerId !== "string" || typeof layerLoadId !== "number" || !Number.isSafeInteger(layerLoadId) || layerLoadId < 1) return;
         const previous = layers.get(layerId);
         if (command.type === "sceneLayerLoading") {
           if (typeof command.assetGuid !== "string" || (previous && layerLoadId <= previous.sceneLoadId)) return;
           begin({ sceneAssetGuid: command.assetGuid, sceneLoadId: layerLoadId }, true, { layerId, layerLoadId });
-        } else if (previous?.sceneLoadId === layerLoadId) schedule(previous);
+        } else if (previous?.sceneLoadId === layerLoadId) {
+          if (command.type === "sceneLayerLoadFailed") fail(previous, new Error(String(command.message ?? "SceneLayer loading failed.")));
+          else schedule(previous);
+        }
         return;
       }
       if (!["sceneLoading", "activeScene", "sceneRealized", "sceneLoadFailed"].includes(command.type)) return;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent } from "@babylonslate/core";
 import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
@@ -62,6 +62,7 @@ describe("scene owner readiness", () => {
       const logic = actor.components.find((component) => component.guid === "logic")!.logic!;
       const ownedLayer = world.getSceneLayers()[0]!;
       const globalLayer = runtime.createSceneLayer("overlay")!;
+      await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneLayerRealized" && command.layerId === globalLayer.guid)).toBe(true));
       const globalActor = world.getActors().find((candidate) => candidate.sceneLayerId === globalLayer.guid)!;
       expect(commands.filter((command) => command.type === "assignMesh")).toHaveLength(3);
       expect(actor.getVariable("began")).toBeUndefined();

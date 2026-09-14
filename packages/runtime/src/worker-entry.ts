@@ -259,6 +259,9 @@ function handleControl(msg: ControlMessage): void {
     case "sceneModelsReady":
       runtime?.notifySceneModelsReady(msg.sceneAssetGuid, msg.sceneLoadId);
       return;
+    case "sceneLayerLoadingPainted":
+      runtime?.notifySceneLayerLoadingPainted(msg.layerId, msg.layerLoadId);
+      return;
     case "sceneLayerReady":
       runtime?.notifySceneLayerReady(msg.layerId, msg.layerLoadId);
       return;

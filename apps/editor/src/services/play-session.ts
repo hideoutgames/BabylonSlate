@@ -666,6 +666,10 @@ export function startPlaySession(options: {
       acquire: () => handle.scheduler.acquireObstruction(),
       progress: (state) => options.onSceneLoading?.(state),
       paint: waitForSceneLoadingPaint,
+      layerPainted: ({ layerId, layerLoadId }) => {
+        worker?.postControl({ type: "sceneLayerLoadingPainted", layerId, layerLoadId });
+        runtime?.notifySceneLayerLoadingPainted(layerId, layerLoadId);
+      },
       painted: ({ sceneAssetGuid, sceneLoadId }) => {
         worker?.postControl({ type: "sceneLoadingPainted", sceneAssetGuid, sceneLoadId });
         runtime?.notifySceneLoadingPainted(sceneAssetGuid, sceneLoadId);
