@@ -325,6 +325,11 @@ describe("post-process stack", () => {
     expect([first.value, second.value]).toEqual([0.2, 0.8]);
     expect(attached.setParameter("earlier", "Gain", { kind: "float", value: 0.25 })).toBe(true);
     expect(attached.setParameter("later", "Gain", { kind: "float", value: 0.75 })).toBe(true);
+    expect(attached.getParameter("earlier", "Gain")).toEqual({ kind: "float", value: 0.25 });
+    expect(attached.resetParameter("earlier", "Gain")).toBe(true);
+    expect(attached.getParameter("earlier", "Gain")).toEqual({ kind: "float", value: 0.2 });
+    expect(attached.getParameter("later", "Gain")).toEqual({ kind: "float", value: 0.75 });
+    expect(attached.setParameter("earlier", "Gain", { kind: "float", value: 0.25 })).toBe(true);
     expect([first.value, second.value]).toEqual([0.25, 0.75]);
     expect((shared.material.getBlockByName("gain") as InputBlock).value).toBe(0.5);
     expect(attached.setParameter("missing", "Gain", { kind: "float", value: 1 })).toBe(false);
@@ -332,6 +337,8 @@ describe("post-process stack", () => {
     expect(first.value).toBe(0.25);
     attached.dispose();
     expect(attached.setParameter("later", "Gain", { kind: "float", value: 1 })).toBe(false);
+    expect(attached.getParameter("later", "Gain")).toBeNull();
+    expect(attached.resetParameter("later", "Gain")).toBe(false);
     expect(library.materialFor(preview.scene, "gain")).toBe(shared.material);
     expect(preview.scene.materials).not.toContain(instances[0]);
     expect(preview.scene.materials).not.toContain(instances[1]);

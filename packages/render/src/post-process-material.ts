@@ -63,6 +63,8 @@ export interface AttachedPostProcessStack {
   passes: PostProcess[];
   /** Updates only this live entry's instance, without recompiling its asset. */
   setParameter: (entryId: string, name: string, value: MaterialParameterValue) => boolean;
+  getParameter: (entryId: string, name: string) => MaterialParameterValue | null;
+  resetParameter: (entryId: string, name: string) => boolean;
   dispose: () => void;
 }
 
@@ -121,6 +123,8 @@ export function attachPostProcessStack(
 ): AttachedPostProcessStack {
   const passes: PostProcess[] = [];
   const acquired = new Map<string, { materialGuid: string; instanceKey: string }>();
+  const entries = normalizePostProcessStack(options.stack);
+  const authoredParameters = new Map(entries.map((entry) => [entry.id, entry.parameters]));
   const stackInstance = nextStackInstance++;
   let depthHeld = false;
   let prePassHeld = false;
@@ -130,7 +134,7 @@ export function attachPostProcessStack(
   const hadDepth = Boolean(depthRendererFor(options.scene, options.camera));
   const hadPrePass = Boolean(options.scene.prePassRenderer);
 
-  for (const entry of normalizePostProcessStack(options.stack)) {
+  for (const entry of entries) {
     if (!entry.enabled) continue;
     const document = options.documentFor(entry.materialGuid);
     if (!document) {
@@ -229,6 +233,19 @@ export function attachPostProcessStack(
   let disposed = false;
   return {
     passes,
+    getParameter: (entryId, name) => {
+      const instance = acquired.get(entryId);
+      return !disposed && instance ? options.library.getParameter(
+        options.scene, instance.materialGuid, name, instance,
+      ) : null;
+    },
+    resetParameter: (entryId, name) => {
+      const instance = acquired.get(entryId);
+      if (disposed || !instance) return false;
+      const authored = authoredParameters.get(entryId)?.[name];
+      if (authored && options.library.setParameter(options.scene, instance.materialGuid, name, authored, instance)) return true;
+      return options.library.resetParameter(options.scene, instance.materialGuid, name, instance);
+    },
     setParameter: (entryId, name, value) => {
       const instance = acquired.get(entryId);
       return !disposed && !!instance && options.library.setParameter(
@@ -242,6 +259,7 @@ export function attachPostProcessStack(
       for (const instance of acquired.values())
         options.library.release(options.scene, instance.materialGuid, instance);
       acquired.clear();
+      authoredParameters.clear();
       if (depthHeld) options.scene.disableDepthRenderer(options.camera);
       if (prePassHeld) options.scene.disablePrePassRenderer();
       passes.length = 0;
