@@ -11,6 +11,10 @@ import { normalizeEnvironmentLightingSettings } from "@babylonslate/core";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { ResourceCache } from "./resource-cache";
 import { updateSceneRenderingSettings } from "./render-settings";
+import { createDefaultScene } from "@babylonslate/core";
+import { applySceneEnvironment } from "./scene-illumination";
+import { setSceneRenderSettings } from "./scene-render-mode";
+import { isSceneFrameReady } from "./scene-perf";
 import {
   applyEnvironmentLighting,
   isEnvironmentLightingReady,
@@ -172,10 +176,12 @@ it("blocks pending uploads and exposes the current source failure without lettin
   );
   applyEnvironmentLighting(a, "environment", assets);
   expect(isEnvironmentLightingReady(a)).toBe(false);
+  expect(isSceneFrameReady(a)).toBe(false);
   fail!("Invalid environment pixels");
   expect(() => isEnvironmentLightingReady(a)).toThrow(
     "Invalid environment pixels",
   );
+  expect(() => isSceneFrameReady(a)).toThrow("Invalid environment pixels");
   applyEnvironmentLighting(a, "replacement", {
     ...assets,
     textureBytes: new Map([
@@ -184,4 +190,29 @@ it("blocks pending uploads and exposes the current source failure without lettin
   });
   fail!("Obsolete failure");
   expect(isEnvironmentLightingReady(a)).toBe(true);
+});
+
+it("applies serialized Scene overrides and live project updates through the existing renderer entry points", () => {
+  const { a, assets } = fixture();
+  const document = createDefaultScene();
+  document.settings.environmentTextureGuid = "environment";
+  document.settings.environmentLighting = {
+    intensity: 2,
+    rotationYDegrees: -90,
+  };
+  setSceneRenderSettings(a, {
+    environmentLighting: normalizeEnvironmentLightingSettings({ intensity: 3 }),
+  });
+  applySceneEnvironment(a, document, { assets });
+  expect(a.iblIntensity).toBe(2);
+  const view = a.environmentTexture as CubeTexture;
+  expect(view.rotationY).toBeCloseTo(-Math.PI / 2);
+  delete document.settings.environmentLighting.intensity;
+  applySceneEnvironment(a, document, { assets });
+  expect(a.iblIntensity).toBe(3);
+  setSceneRenderSettings(a, {
+    environmentLighting: normalizeEnvironmentLightingSettings({ intensity: 4 }),
+  });
+  expect(a.iblIntensity).toBe(4);
+  expect(a.environmentTexture).toBe(view);
 });
