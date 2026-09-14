@@ -3,11 +3,14 @@ import {
   Color3,
   Color4,
   Engine,
+  EngineStore,
+  Constants,
   FreeCamera,
   MeshBuilder,
   PBRMaterial,
   Scene,
   Vector3,
+  Viewport,
   type Mesh,
   type NodeMaterial,
 } from "@babylonjs/core";
@@ -33,6 +36,7 @@ import {
 } from "../../../../packages/render/src/environment-lighting";
 import { isSceneFrameReady } from "../../../../packages/render/src/scene-perf";
 import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
+import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 
 async function numericEnv(
   options: {
@@ -558,4 +562,191 @@ export async function runEnvironmentLightingProof() {
     engine.dispose();
     canvas.remove();
   }
+}
+
+/** Supplemental native-WGSL irradiance/state proof; no project backend activation. */
+export async function runEnvironmentIrradianceWebGpuProof() {
+  const beforeEngines = EngineStore.Instances.length;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  document.body.append(canvas);
+  const swapChainFormat = (
+    navigator as unknown as {
+      gpu: { getPreferredCanvasFormat(): "rgba8unorm" | "bgra8unorm" };
+    }
+  ).gpu.getPreferredCanvasFormat();
+  const engine = new WebGPUEngine(canvas, {
+    antialias: false,
+    adaptToDeviceRatio: false,
+    enableAllFeatures: false,
+    swapChainFormat,
+  });
+  const cache = new ResourceCache();
+  const captures: Record<string, number[]> = {};
+  const states: Record<string, unknown>[] = [];
+  const polynomials: Record<string, number[]> = {};
+  const started = performance.now();
+  const wait = async (ready: () => boolean) => {
+    while (!ready()) {
+      if (performance.now() - started > 60_000)
+        throw new Error("WebGPU irradiance readiness timed out.");
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    }
+  };
+  const colors = [
+    [1, 0, 0],
+    [0, 0, 0],
+    [0, 1, 0],
+    [0, 0, 0],
+    [0, 0, 1],
+    [0, 0, 0],
+  ];
+  const faces = colors.map((color) => {
+    const pixels = new Float32Array(64 * 64 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([...color, 1], i);
+    return pixels;
+  });
+  const reference =
+    CubeMapToSphericalPolynomialTools.ConvertCubeMapToSphericalPolynomial({
+      size: 64,
+      right: faces[0],
+      left: faces[1],
+      up: faces[2],
+      down: faces[3],
+      front: faces[4],
+      back: faces[5],
+      type: 1,
+      format: 5,
+      gammaSpace: false,
+    });
+  const keys = ["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"] as const;
+  const coefficients = Object.fromEntries(
+    keys.map((key) => [key, reference[key].asArray()]),
+  );
+  let failure: string | undefined;
+  try {
+    await engine.initAsync();
+    for (const [kind, irradiance] of [
+      ["sampled", undefined],
+      ["supplied", coefficients],
+    ] as const) {
+      const scene = new Scene(engine);
+      try {
+        const camera = new FreeCamera("camera", new Vector3(0, 0, -2), scene);
+        camera.setTarget(Vector3.Zero());
+        const mesh = MeshBuilder.CreatePlane("receiver", { size: 2 }, scene);
+        mesh.rotation.x = -Math.PI / 6;
+        const material = new PBRMaterial("native-wgsl", scene);
+        material.metallic = 0;
+        material.roughness = 1;
+        material.albedoColor = Color3.White();
+        mesh.material = material;
+        const bytes = await numericEnv({
+          width: 64,
+          irradiance,
+          color: (level, face) =>
+            level ? [255, 255, 255] : colors[face]!.map((value) => value * 255),
+        });
+        setSceneRenderSettings(scene, {
+          environmentLighting: normalizeEnvironmentLightingSettings({
+            intensity: 0.5,
+          }),
+        });
+        applyEnvironmentLighting(scene, kind, {
+          resourceCache: cache,
+          textureBytes: new Map([[kind, bytes]]),
+        });
+        await wait(() => scene.environmentTexture!.isReady());
+        const previous = engine.createRenderTargetTexture(16, {
+          format: Constants.TEXTUREFORMAT_RGBA,
+          generateDepthBuffer: false,
+          generateMipMaps: false,
+        });
+        const targetsBefore = engine._renderTargetWrapperCache.length;
+        try {
+          engine.bindFramebuffer(previous);
+          engine.clear(new Color4(0.25, 0.5, 0.75, 1), true, false, false);
+          engine.setViewport(new Viewport(0.1, 0.2, 0.6, 0.7));
+          engine.setAlphaMode(Constants.ALPHA_ADD);
+          engine.setColorWrite(false);
+          engine.depthCullingState.cull = false;
+          engine.depthCullingState.zOffset = 3;
+          engine.stencilState.stencilTest = true;
+          await wait(() => isEnvironmentLightingReady(scene));
+          const restored =
+            engine._currentRenderTarget === previous &&
+            engine.currentViewport?.x === 0.1 &&
+            engine.currentViewport?.width === 0.6 &&
+            engine.getAlphaMode() === Constants.ALPHA_ADD &&
+            !engine.getColorWrite() &&
+            engine.depthCullingState.cull === false &&
+            engine.depthCullingState.zOffset === 3 &&
+            engine.stencilState.stencilTest;
+          const pixels = await engine._readTexturePixels(
+            previous.texture!,
+            16,
+            16,
+          );
+          states.push({
+            kind,
+            restored,
+            retainedTargets:
+              engine._renderTargetWrapperCache.length - targetsBefore,
+            previousPixel: Array.from(
+              new Uint8Array(pixels.buffer, pixels.byteOffset, 4),
+            ),
+          });
+        } finally {
+          engine.restoreDefaultFramebuffer();
+          previous.dispose();
+        }
+        polynomials[kind] = keys.flatMap((key) =>
+          scene.environmentTexture!.sphericalPolynomial![key].asArray(),
+        );
+        engine.setViewport(new Viewport(0, 0, 1, 1));
+        engine.setColorWrite(true);
+        engine.stencilState.stencilTest = false;
+        engine.setAlphaMode(Constants.ALPHA_DISABLE);
+        for (const rotationYDegrees of [0, 90]) {
+          setSceneRenderSettings(scene, {
+            environmentLighting: normalizeEnvironmentLightingSettings({
+              intensity: 0.5,
+              rotationYDegrees,
+            }),
+          });
+          await material.forceCompilationAsync(mesh);
+          await wait(() => isSceneFrameReady(scene));
+          engine.beginFrame();
+          scene.render();
+          engine.endFrame();
+          const pixels = await engine.readPixels(32, 32, 1, 1);
+          const pixel = new Uint8Array(
+            pixels.buffer,
+            pixels.byteOffset,
+            pixels.byteLength,
+          );
+          captures[`${kind}-${rotationYDegrees}`] =
+            swapChainFormat === "bgra8unorm"
+              ? [pixel[2], pixel[1], pixel[0], pixel[3]]
+              : Array.from(pixel);
+        }
+      } finally {
+        scene.dispose();
+      }
+    }
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+  } finally {
+    cache.dispose();
+    engine.dispose();
+    canvas.remove();
+  }
+  return {
+    failure,
+    captures,
+    states,
+    polynomials,
+    retainedEngines: EngineStore.Instances.length - beforeEngines,
+    hardware: engine.getInfo(),
+  };
 }
