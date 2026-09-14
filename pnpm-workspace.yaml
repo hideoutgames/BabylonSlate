@@ -1,3 +1,13 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# The isolated bake provider pins a different Three release from editor tooling.
+# These upstream declarations otherwise resolve the hoisted editor typings.
+packageExtensions:
+  three-gpu-pathtracer@0.0.24:
+    dependencies:
+      "@types/three": "0.181.0"
+  three-mesh-bvh@0.9.5:
+    dependencies:
+      "@types/three": "0.181.0"

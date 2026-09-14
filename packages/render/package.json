@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./fbx-import": "./src/convert-fbx-to-glb.ts",
+    "./bake-provider-prototype": "./src/bake-provider-prototype.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },
@@ -25,10 +26,15 @@
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
     "assimpjs": "0.0.10",
-    "earcut": "^3.2.3"
+    "earcut": "^3.2.3",
+    "three": "0.181.1",
+    "three-gpu-pathtracer": "0.0.24",
+    "three-mesh-bvh": "0.9.5",
+    "xatlas-web": "0.1.0"
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",
+    "@types/three": "0.181.0",
     "typescript": "~5.8.2"
   }
 }
