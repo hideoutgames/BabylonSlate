@@ -4,6 +4,7 @@ import {
   Camera,
   Color3,
   Color4,
+  Constants,
   MeshBuilder,
   RenderTargetTexture,
   Scene,
@@ -55,6 +56,7 @@ export interface SceneLayerCompositorOptions {
   attachLayerPostProcess?: (
     layer: SceneLayerView,
     stack: SceneLayerPostProcessEntry[],
+    renderer: SceneRenderCoordinator,
   ) => Pick<AttachedPostProcessStack, "dispose"> & Partial<Pick<AttachedPostProcessStack, "setParameter">> | null;
 }
 
@@ -65,6 +67,7 @@ type LayerRecord = SceneLayerView & {
   blitMaterial: StandardMaterial | null;
   blitScene: Scene | null;
   parameters: PostProcessParameterState;
+  retirements: Set<Promise<void>>;
   attachedPostProcess: ReturnType<NonNullable<SceneLayerCompositorOptions["attachLayerPostProcess"]>>;
 };
 
@@ -80,6 +83,7 @@ export class SceneLayerCompositor {
   private readonly byId = new Map<string, LayerRecord>();
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
+  private readonly retiredLayers = new Set<Promise<void>>();
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
@@ -120,10 +124,11 @@ export class SceneLayerCompositor {
       blitScene: null,
       attachedPostProcess: null,
       parameters: new PostProcessParameterState(),
+      retirements: new Set(),
     };
     this.bindHudCamera(layer);
     this.byId.set(command.layerId, layer);
-    this.rebuildPostProcess(layer);
+    this.rebuildPostProcess(layer, false);
     return layer;
   }
 
@@ -133,10 +138,15 @@ export class SceneLayerCompositor {
     for (const [slotId, id] of [...this.slotLayer]) {
       if (id === layerId) this.slotLayer.delete(slotId);
     }
-    layer.renderer.dispose();
-    this.releasePostProcess(layer);
-    layer.scene.dispose();
     this.byId.delete(layerId);
+    this.releasePostProcess(layer);
+    // Scene.dispose also disposes every owned RTT, including previous generations.
+    const retired = Promise.all([...layer.retirements]).then(() => { layer.scene.dispose(); });
+    this.retiredLayers.add(retired);
+    void retired.then(
+      () => { this.retiredLayers.delete(retired); },
+      (error: unknown) => { console.warn(`[render] SceneLayer ${layer.layerId} cleanup is quarantined: ${String(error)}`); },
+    );
   }
 
   clear(): void {
@@ -222,7 +232,9 @@ export class SceneLayerCompositor {
       if (layer.rtt) {
         const width = Math.max(1, this.engine.getRenderWidth());
         const height = Math.max(1, this.engine.getRenderHeight());
-        layer.rtt.resize({ width, height });
+        const previous = layer.rtt.getSize();
+        if (previous.width !== width || previous.height !== height)
+          this.rebuildPostProcess(layer);
       }
     }
   }
@@ -437,8 +449,13 @@ export class SceneLayerCompositor {
     };
   }
 
-  dispose(): void {
+  dispose(): Promise<void> {
     this.clear();
+    const retired = Promise.all([...this.retiredLayers]).then(() => {});
+    // Callers that own shared resources await this; ignored teardown still has
+    // its failures reported at the individual quarantined owner boundary.
+    void retired.catch(() => {});
+    return retired;
   }
 
   private bindHudCamera(layer: LayerRecord): void {
@@ -468,9 +485,11 @@ export class SceneLayerCompositor {
     layer.camera.orthoRight = halfW;
   }
 
-  private rebuildPostProcess(layer: LayerRecord): void {
-    layer.renderer.invalidate();
-    this.releasePostProcess(layer);
+  private rebuildPostProcess(layer: LayerRecord, replaceRenderer = true): void {
+    if (replaceRenderer) {
+      this.releasePostProcess(layer);
+      layer.renderer = new SceneRenderCoordinator(layer.scene);
+    }
     const enabledStack = layer.parameters.effective(layer.postProcessStack).filter((entry) => entry.enabled);
     if (
       !this.postProcessingEnabled() ||
@@ -490,22 +509,42 @@ export class SceneLayerCompositor {
       false,
       true,
     );
+    // The graph borrows both native attachments; the host retains their owner.
+    // Unsupported devices keep the coordinator's classic fallback available.
+    if (this.engine.getCaps().depthTextureExtension)
+      layer.rtt.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
     layer.camera.outputRenderTarget = layer.rtt;
     layer.scene.autoClear = true;
     layer.attachedPostProcess =
-      this.attachLayerPostProcess?.(layer, enabledStack) ?? null;
+      this.attachLayerPostProcess?.(layer, enabledStack, layer.renderer) ?? null;
     this.prepareBlit(layer);
   }
 
   private releasePostProcess(layer: LayerRecord): void {
-    layer.attachedPostProcess?.dispose();
+    const attached = layer.attachedPostProcess;
+    const renderer = layer.renderer;
+    const rtt = layer.rtt;
+    const blitScene = layer.blitScene;
     layer.attachedPostProcess = null;
     layer.camera.outputRenderTarget = null;
-    layer.rtt?.dispose();
     layer.rtt = null;
-    layer.blitScene?.dispose();
     layer.blitScene = null;
     layer.blitMaterial = null;
+    const failures: unknown[] = [];
+    try { attached?.dispose(); } catch (error) { failures.push(error); }
+    let pending: Promise<void>;
+    try { pending = renderer.retire(); } catch (error) { failures.push(error); pending = Promise.resolve(); }
+    const retirement = (async () => {
+      try { await pending; } catch (error) { failures.push(error); }
+      if (failures.length) throw new AggregateError(failures, "SceneLayer graph retirement failed.");
+      blitScene?.dispose();
+      rtt?.dispose();
+    })();
+    layer.retirements.add(retirement);
+    void retirement.then(
+      () => { layer.retirements.delete(retirement); },
+      (error: unknown) => { console.warn(`[render] SceneLayer ${layer.layerId} target is quarantined: ${String(error)}`); },
+    );
   }
 
   private prepareBlit(layer: LayerRecord): void {

@@ -1080,14 +1080,17 @@ function initializeEngine(
     if (!postProcessingEnabled) return;
     const camera = scene.activeCamera;
     if (!camera) return;
-    attachedStack = attachPostProcessStack({
+    const attach = worldRenderer
+      ? worldRenderer.attachPostProcess.bind(worldRenderer)
+      : attachPostProcessStack;
+    attachedStack = attach({
       scene,
       camera,
       library: materialLibrary,
       stack: postProcessParameters.effective(postProcessStack),
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale: resolveSceneRenderingQuality(scene).postprocessing.resolutionScale,
-      deviceBuffers: probePostProcessDeviceBuffers(scene, camera),
+      ...(worldRenderer ? {} : { deviceBuffers: probePostProcessDeviceBuffers(scene, camera) }),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
         options.onPostProcessDiagnostic?.(diagnostic);
@@ -1133,18 +1136,14 @@ function initializeEngine(
         engine,
         postProcessingEnabled: () => postProcessingEnabled,
         isLayerReady: (layerId) => layerLoads.get(layerId)?.ready !== false,
-        attachLayerPostProcess: (layer, stack) => {
-          return attachPostProcessStack({
+        attachLayerPostProcess: (layer, stack, renderer) => {
+          return renderer.attachPostProcess({
             scene: layer.scene,
             camera: layer.camera,
             library: materialLibrary,
             stack: normalizePostProcessStack(stack),
             resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
-            deviceBuffers: probePostProcessDeviceBuffers(
-              layer.scene,
-              layer.camera,
-            ),
             onDiagnostic: (diagnostic) => {
               lastPostProcessDiagnostics.push(diagnostic);
               options.onPostProcessDiagnostic?.(diagnostic);
@@ -2003,19 +2002,30 @@ function initializeEngine(
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
-      worldRenderer?.dispose();
+      const retirements: Promise<void>[] = [];
+      try {
+        attachedStack?.dispose();
+      } catch (error) {
+        retirements.push(Promise.reject(error));
+      }
+      attachedStack = null;
+      try {
+        if (worldRenderer) retirements.push(worldRenderer.retire());
+      } catch (error) {
+        retirements.push(Promise.reject(error));
+      }
+      try {
+        if (sceneLayerCompositor) retirements.push(sceneLayerCompositor.dispose());
+      } catch (error) {
+        retirements.push(Promise.reject(error));
+      }
+      const retired = Promise.all(retirements);
       playFreeCamInput?.dispose();
-      playFreeCam?.dispose();
-      playViz?.dispose();
-      playDebugDraw?.dispose();
-      playCursor?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
       editor?.selection.dispose();
       editor?.sync.dispose();
-      debugOverlay?.dispose();
-      debugOverlay = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
@@ -2025,17 +2035,33 @@ function initializeEngine(
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
-      disposeSnapshotBinding(binding);
-      attachedStack?.dispose();
-      attachedStack = null;
-      materialLibrary.dispose();
-      resourceCache.clearClientTextures(scene.uid);
       audioService?.dispose();
-      particleService?.dispose();
-      sceneLayerCompositor?.dispose();
-      scene.dispose();
-      rttPresent?.dispose();
-      cacheBinding.releaseHandleRetains();
+      const releaseSceneResources = () => {
+        playFreeCam?.dispose();
+        playViz?.dispose();
+        playDebugDraw?.dispose();
+        playCursor?.dispose();
+        debugOverlay?.dispose();
+        debugOverlay = null;
+        disposeSnapshotBinding(binding);
+        materialLibrary.dispose();
+        resourceCache.clearClientTextures(scene.uid);
+        particleService?.dispose();
+        scene.dispose();
+        rttPresent?.dispose();
+        cacheBinding.releaseHandleRetains();
+      };
+      const reportRetirementFailure = (error: unknown) => {
+        console.warn(`[render] Scene resource cleanup is quarantined: ${String(error)}`);
+      };
+      if (!ownsEngine && (worldRenderer || sceneLayerCompositor)) {
+        // Pending graph work may still borrow Scene, library and cache resources.
+        // Stop the view immediately, but release these owners only after it settles.
+        void retired.then(releaseSceneResources).catch(reportRetirementFailure);
+      } else {
+        void retired.catch(reportRetirementFailure);
+        releaseSceneResources();
+      }
       if (registeredView) {
         engine.unRegisterView(canvas);
         if (options.playMode) {

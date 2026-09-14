@@ -24,6 +24,7 @@ import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
 import { prewarmSceneMaterials } from "./scene-perf";
+import { SceneRenderCoordinator } from "./scene-render-coordinator";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -1219,6 +1220,7 @@ describe("Play createEngine view", () => {
         { materialGuid: "pp", enabled: true },
         { materialGuid: "pp", enabled: true },
       ]);
+      if (playMode) await handle.prewarmSceneMaterials();
       const material = handle.scene.getMaterialByName("material:pp");
       expect(material).toBeInstanceOf(NodeMaterial);
       const camera = handle.scene.activeCamera!;
@@ -1236,6 +1238,44 @@ describe("Play createEngine view", () => {
     } finally {
       handle.dispose();
     }
+  });
+
+  it("routes Play and layer post effects through their coordinator while editor previews remain native", () => {
+    const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
+    const options = { sharedEngine: sharedEngine(), materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]), postProcessStack: [{ materialGuid: "pp", enabled: true }] };
+    const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, editor: true });
+    handles.push(editor);
+    expect(attach).not.toHaveBeenCalled();
+    expect(editor.postProcessPassCount()).toBe(1);
+    const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, playMode: true });
+    handles.push(play);
+    expect(attach.mock.calls.some(([value]) => value.scene === play.scene && value.camera === play.scene.activeCamera && value.deviceBuffers === undefined)).toBe(true);
+    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: options.postProcessStack });
+    const layer = play.sceneLayerScenes()[0]!.scene;
+    expect(attach.mock.calls.some(([value]) => value.scene === layer && value.camera === layer.activeCamera && value.deviceBuffers === undefined)).toBe(true);
+  });
+
+  it("keeps shared Scene and cache resources alive until graph retirement settles after Stop", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const retire = SceneRenderCoordinator.prototype.retire;
+    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(function (this: SceneRenderCoordinator) {
+      return retire.call(this).then(() => held);
+    });
+    const clearTextures = vi.spyOn(handle.resourceCache, "clearClientTextures");
+    const stopped = vi.spyOn(engine, "stopRenderLoop");
+    handle.dispose();
+    expect(stopped).toHaveBeenCalled();
+    expect(handle.scene.isDisposed).toBe(false);
+    expect(engine.isDisposed).toBe(false);
+    expect(clearTextures).not.toHaveBeenCalled();
+    release();
+    await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
+    expect(clearTextures).toHaveBeenCalledWith(handle.scene.uid);
+    expect(engine.isDisposed).toBe(false);
   });
 
   it("routes current-owner entry writes into independent instances and replays disabled passes after rebuild", async () => {

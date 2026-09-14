@@ -1,6 +1,7 @@
-import { Camera, MeshBuilder, Matrix, NullEngine, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
+import { SceneRenderCoordinator } from "./scene-render-coordinator";
 
 describe("SceneLayerCompositor", () => {
   const engines: NullEngine[] = [];
@@ -9,6 +10,7 @@ describe("SceneLayerCompositor", () => {
     while (engines.length > 0) {
       engines.pop()?.dispose();
     }
+    vi.restoreAllMocks();
   });
 
   function world(): { engine: NullEngine; scene: Scene; compositor: SceneLayerCompositor } {
@@ -218,6 +220,81 @@ describe("SceneLayerCompositor", () => {
     compositor.setPostProcess("hud", []);
     expect(layer.camera.outputRenderTarget).toBeNull();
     expect(layer.scene.autoClear).toBe(false);
+  });
+
+  it("replaces layer targets with owned sampleable depth and waits for every retired graph before Scene disposal", async () => {
+    const { engine } = world();
+    engine.getCaps().depthTextureExtension = true;
+    // NullEngine has no native depth attachment driver. Keep the real RTT owner
+    // and complete only that boundary, as in the shadow allocation fixtures.
+    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
+      const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
+      const dimensions = typeof size === "number" ? { width: size, height: size } : size;
+      texture.width = texture.baseWidth = dimensions.width;
+      texture.height = texture.baseHeight = dimensions.height;
+      texture.format = options.depthTextureFormat ?? Constants.TEXTUREFORMAT_DEPTH24;
+      texture.isReady = true;
+      engine.getLoadedTexturesCache().push(texture);
+      return texture;
+    });
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({
+      engine,
+      attachLayerPostProcess: (_layer, _stack, renderer) => {
+        renderers.push(renderer);
+        return { dispose() {} };
+      },
+    });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const first = layer.camera.outputRenderTarget!;
+    expect(first.depthStencilTexture?.format).toBe(Constants.TEXTUREFORMAT_DEPTH24);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const retire = SceneRenderCoordinator.prototype.retire;
+    // Preserve native cancellation/disposal, holding only completion of one owner.
+    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(function () {
+      const retired = retire.call(this);
+      return this === renderers[0] ? retired.then(() => held) : retired;
+    });
+    const disposeFirst = vi.spyOn(first, "dispose");
+    const draw = vi.spyOn(layer.scene, "render");
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(first.getSize().width + 16);
+    compositor.resize();
+    const next = layer.camera.outputRenderTarget!;
+    expect(next).not.toBe(first);
+    expect(next.depthStencilTexture).not.toBe(first.depthStencilTexture);
+    expect(renderers[1]).not.toBe(renderers[0]);
+    expect(draw).not.toHaveBeenCalled();
+    expect(disposeFirst).not.toHaveBeenCalled();
+    compositor.remove("overlay");
+    const completed = compositor.dispose();
+    expect(compositor.layers()).toEqual([]);
+    expect(layer.scene.isDisposed).toBe(false);
+    await Promise.resolve();
+    expect(disposeFirst).not.toHaveBeenCalled();
+    release();
+    await completed;
+    expect(disposeFirst).toHaveBeenCalledOnce();
+    expect(layer.scene.isDisposed).toBe(true);
+  });
+
+  it("quarantines a removed layer's target and Scene when graph cleanup is uncertain", async () => {
+    const { engine } = world();
+    const compositor = new SceneLayerCompositor({ engine });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const target = layer.camera.outputRenderTarget!;
+    const disposal = vi.spyOn(target, "dispose");
+    const retire = SceneRenderCoordinator.prototype.retire;
+    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(async function () {
+      await retire.call(this);
+      throw new Error("Native task cleanup failed.");
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    compositor.remove("overlay");
+    await expect(compositor.dispose()).rejects.toThrow(/retirement failed/);
+    expect(compositor.layers()).toEqual([]);
+    expect(layer.scene.isDisposed).toBe(false);
+    expect(disposal).not.toHaveBeenCalled();
   });
 
   it("inflates 2DButton picks to touchMinTargetPx without changing the visual", () => {
