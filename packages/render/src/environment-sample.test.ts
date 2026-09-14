@@ -94,6 +94,7 @@ it("leases the scene cube only for a compiled raw consumer, preserves bindings a
   const mesh = MeshBuilder.CreateBox("consumer", {}, scene);
   mesh.material = compiled.material;
   await compiled.material.forceCompilationAsync(mesh);
+  expect(compiled.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
   const effect = mesh.subMeshes[0]!.effect!;
   const textures = vi.spyOn(effect, "setTexture");
   compiled.material.bindForSubMesh(
@@ -124,6 +125,7 @@ it("rejects unsupported explicit mip sampling before acquiring any cube", () => 
     name: "unsupported",
   });
   expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("Unsupported sampler compiled");
   expect(result.diagnostics).toContainEqual(
     expect.objectContaining({ code: "material.capability", nodeId: "sample" }),
   );
