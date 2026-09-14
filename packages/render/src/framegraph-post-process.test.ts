@@ -414,7 +414,7 @@ it.each(["replace", "dispose", "deadline", "engine-dispose", "shared"] as const)
           attributes: retiring.getAttributesNames(), uniformsNames: retiring.getUniformNames(),
           samplers: retiring.getSamplers(), defines: retiring.defines,
           fallbacks: null, onCompiled: null, onError: null,
-        }, null);
+        }, engine);
         expect(shared).toBe(retiring);
         expect(shared._refCount).toBe(2);
       }
