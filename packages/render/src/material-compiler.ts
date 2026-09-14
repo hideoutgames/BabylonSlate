@@ -86,6 +86,8 @@ export interface CompiledMaterial {
   ready: Promise<readonly MaterialDiagnostic[]>;
   readonly buildState: "pending" | "ready" | "failed";
   setParameter: (name: string, parameter: MaterialParameterValue) => boolean;
+  getParameter: (name: string) => MaterialParameterValue | null;
+  resetParameter: (name: string) => boolean;
   /** Idempotent: disposes the material and every block it created. */
   dispose: () => void;
 }
@@ -728,6 +730,8 @@ export function compileMaterialPlan(
     ready,
     get buildState() { return buildState; },
     setParameter: parameters.setParameter,
+    getParameter: parameters.getParameter,
+    resetParameter: parameters.resetParameter,
     dispose: () => {
       if (disposed) return;
       disposed = true;

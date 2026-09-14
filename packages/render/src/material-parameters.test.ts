@@ -121,6 +121,12 @@ describe("material parameter bindings", () => {
     ).toBe(true);
     const input = compiled.material.getBlockByName("baseColor") as InputBlock;
     expect(input.value.asArray()).toEqual([0.1, 0.2, 0.3, 0.6]);
+    const value = compiled.getParameter("Tint");
+    expect(value).toEqual({ kind: "color", value: [0.1, 0.2, 0.3, 0.6] });
+    if (value?.kind === "color") value.value[0] = 9;
+    expect(compiled.getParameter("Tint")).toEqual({ kind: "color", value: [0.1, 0.2, 0.3, 0.6] });
+    expect(compiled.resetParameter("Tint")).toBe(true);
+    expect(input.value.asArray()).toEqual([1, 0, 0, 0.4]);
   });
   it("updates a named float uniform and rejects missing names and mismatched types", () => {
     const scene = host();
@@ -151,6 +157,8 @@ describe("material parameter bindings", () => {
     ).toBe(false);
     expect(input.value).toBe(0.8);
     compiled.dispose();
+    expect(compiled.getParameter("Roughness")).toBeNull();
+    expect(compiled.resetParameter("Roughness")).toBe(false);
     expect(
       compiled.setParameter("Roughness", { kind: "float", value: 0.1 }),
     ).toBe(false);
@@ -187,6 +195,10 @@ describe("material parameter bindings", () => {
     expect(
       (shared.material.getBlockByName("roughness") as InputBlock).value,
     ).toBe(0.5);
+    expect(library.getParameter(scene, "mat", "Roughness", { instanceKey: "1|body" })).toEqual({ kind: "float", value: 0.9 });
+    expect(library.resetParameter(scene, "mat", "Roughness", { instanceKey: "1|body" })).toBe(true);
+    expect((first.material.getBlockByName("roughness") as InputBlock).value).toBe(0.5);
+    expect(library.resetParameter(scene, "mat", "Missing", { instanceKey: "1|body" })).toBe(false);
     library.releaseInstance("1|body");
     expect(
       library.materialFor(scene, "mat", { instanceKey: "1|body" }),
@@ -248,6 +260,10 @@ describe("material parameter bindings", () => {
     ).toBe(true);
     const sample = compiled.material.getBlockByName("sample") as TextureBlock;
     expect(sample.texture).toBe(second);
+    expect(compiled.getParameter("Albedo")).toEqual({ kind: "texture", textureAssetGuid: "second" });
+    expect(compiled.resetParameter("Albedo")).toBe(true);
+    expect(sample.texture).toBe(first);
+    expect(compiled.setParameter("Albedo", { kind: "texture", textureAssetGuid: "second" })).toBe(true);
     expect(
       compiled.setParameter("Albedo", {
         kind: "texture",
