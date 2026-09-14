@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CascadedShadowGenerator,
+  InternalTexture,
+  InternalTextureSource,
   DirectionalLight,
   MeshBuilder,
   NullEngine,
@@ -69,12 +71,28 @@ function fixture() {
 describe("shared shadow lifecycle", () => {
   it("downsizes an oversized Ultra sun within conservative memory admission while retaining requested settings", () => {
     const { scene, controller } = fixture();
-    scene.getEngine()._features.supportCSM = true;
+    const engine = scene.getEngine();
+    engine._features.supportCSM = true;
+    // NullEngine supplies ordinary RTT color storage but has no depth-array GPU
+    // implementation. Complete that I/O boundary while retaining the real CSM
+    // constructor, admission, dimensions, native ownership and disposal.
+    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
+      const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
+      const dimensions = typeof size === "number" ? { width: size, height: size } : size;
+      texture.width = texture.baseWidth = dimensions.width;
+      texture.height = texture.baseHeight = dimensions.height;
+      texture.depth = texture.baseDepth = dimensions.layers ?? 0;
+      texture.is2DArray = texture.depth > 0;
+      texture.format = options.depthTextureFormat ?? 14;
+      texture.isReady = true;
+      engine.getLoadedTexturesCache().push(texture);
+      return texture;
+    });
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings(qualityPresetPatch("ultra").shadows) });
     const sun = new DirectionalLight("sun", Vector3.Down(), scene);
     controller.register(sun, true);
     controller.sync();
-    expect(controller.generator(sun)).not.toBeNull();
+    expect(controller.generator(sun), JSON.stringify(controller.diagnostics())).not.toBeNull();
     expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: 2048 });
     expect(controller.metrics().bytes).toBeLessThanOrEqual(384 * 1024 ** 2);
     expect(sceneRenderingSettings(scene).shadows).toMatchObject({ profile: "ultra", preset: "ultra", mapSize: 4096, cascades: 4, maxLocalLights: 8 });
