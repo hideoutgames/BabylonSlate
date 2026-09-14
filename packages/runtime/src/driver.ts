@@ -4207,7 +4207,7 @@ class InProcessRuntime implements RuntimeDriver {
           },
           onGameEnd: (self) => {
             this.guardScript(() =>
-              this.scriptHost.invokeGameEnd(classId, self),
+              this.scriptHost.invokeGameShutdownEvent(classId, "onEnd", self),
             );
           },
           onSceneStartLoading: (self, sceneName) => {
@@ -4241,11 +4241,13 @@ class InProcessRuntime implements RuntimeDriver {
             );
           },
           onSceneExit: (self, sceneName) => {
-            this.guardScript(() =>
-              this.scriptHost.invokeEvent(classId, "onSceneExit", self, {
-                sceneName,
-              }),
-            );
+            this.guardScript(() => {
+              if (this.stopped) {
+                this.scriptHost.invokeGameShutdownEvent(classId, "onSceneExit", self, { sceneName });
+              } else {
+                this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName });
+              }
+            });
           },
         },
       }),

@@ -620,16 +620,16 @@ export class ScriptHost {
   }
 
   /** The driver calls this only for the actual GameInstance shutdown lifecycle. */
-  invokeGameEnd(classId: string, self: BObject): void {
+  invokeGameShutdownEvent(classId: string, event: "onEnd" | "onSceneExit", self: BObject, args: Record<string, unknown> = {}): void {
     const loaded = this.byClassId.get(classId);
-    if (loaded) this.dispatchFinalEvent(loaded, "onEnd", self);
+    if (loaded) this.dispatchFinalEvent(loaded, event, self, args);
   }
 
-  private dispatchFinalEvent(loaded: readonly LoadedScript[], event: string, self: BObject): void {
+  private dispatchFinalEvent(loaded: readonly LoadedScript[], event: string, self: BObject, args: Record<string, unknown> = {}): void {
     const previous = this.finalizingOwner;
     this.finalizingOwner = self;
     try {
-      this.dispatchEvent(loaded, event, self, 0, 0);
+      this.dispatchEvent(loaded, event, self, 0, 0, args);
     } finally {
       this.finalizingOwner = previous;
     }

@@ -147,12 +147,17 @@ describe("scene owner readiness", () => {
           ctx.setVariableOn(ctx.self.getVariable("text"), "text", "Prepared");
           ctx.callComponentFunction(ctx.self.getVariable("text"), "setText", { text: "Prepared Again" });
         }
+        export function exit(ctx) {
+          ctx.self.setVariable("exitResult", ctx.invokeFunction(ctx.self, "touch", {}));
+          ctx.self.setVariable("exitScene", ctx.args.sceneName);
+        }
         export function end(ctx) {
           ctx.self.setVariable("endResult", ctx.invokeFunction(ctx.self, "touch", {}));
           ctx.self.setVariable("endTarget", ctx.invokeFunction(ctx.self.getVariable("targets")[0], "touch", {}));
         }`,
       entryPoints: [{ name: "probe", event: "onTick", isAsync: false },
-        { name: "probe", event: "probe", isAsync: false }, { name: "end", event: "onEnd", isAsync: false }],
+        { name: "probe", event: "probe", isAsync: false }, { name: "exit", event: "onSceneExit", isAsync: false },
+        { name: "end", event: "onEnd", isAsync: false }],
     };
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
@@ -212,6 +217,8 @@ describe("scene owner readiness", () => {
       expect(ownedActor.getVariable("calls")).toBe(3);
       expect(actor.getVariable("textEvents")).toBe(2);
       runtime.stop();
+      expect(gi.getVariable("exitResult")).toEqual({ value: 13 });
+      expect(gi.getVariable("exitScene")).toBe("World");
       expect(gi.getVariable("endResult")).toEqual({ value: 13 });
       expect(gi.getVariable("endTarget")).toEqual({});
       const resultsAtStop = gi.getVariable("results");
