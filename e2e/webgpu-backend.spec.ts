@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { runWebGpuProof } from "../apps/editor/src/testing/webgpu-proof";
+import { openMinimalTestProject } from "./minimal-project";
+import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 // Explicit software adapter admission for this functional proof, not GPU qualification.
 test.use({
@@ -25,6 +28,67 @@ test.use({
   },
 });
 
+test("project backend changes rebuild one Engine while preserving scene edits and Play", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  const externalShaderRequests: string[] = [];
+  await page.route(/https:\/\/cdn\.babylonjs\.com\/.*(?:glslang|twgsl)/, async (route) => {
+    externalShaderRequests.push(route.request().url());
+    await route.abort();
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (isGpuFailure(message.type(), message.text())) errors.push(message.text());
+  });
+  await openMinimalTestProject(page);
+  await openMainScene(page);
+  await page.getByTestId("outliner-add-actor").click();
+  await page.getByTestId("place-actors-item-shape-box").click();
+  expect(await page.evaluate(() => (window as unknown as {
+    __babylonslateViewportTest: { commitGizmoNudge(): Promise<boolean> };
+  }).__babylonslateViewportTest.commitGizmoNudge())).toBe(true);
+  const position = () => page.evaluate(() => (window as unknown as {
+    __babylonslateTest: { activeSceneActorPosition(): number[] };
+  }).__babylonslateTest.activeSceneActorPosition());
+  const moved = await position();
+  const baseline = () => page.evaluate(() => (window as unknown as {
+    __babylonslateViewportTest: { renderingBaseline(): { backend: string; engineCount: number; frameCount: number; drawCalls: number } | null };
+  }).__babylonslateViewportTest.renderingBaseline());
+  const captures = [];
+  for (const backend of ["WebGPU", "WebGL2", "WebGPU"]) {
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-rendering").click();
+    await page.getByTestId("project-gpu-backend").click();
+    await page.getByRole("option", { name: backend, exact: true }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await expect.poll(async () => (await baseline())?.backend, { timeout: 30_000 }).toBe(backend.toLowerCase());
+    await waitForSceneViewportReady(page);
+    await expect(page.getByTestId("project-rendering-dialog")).toHaveCount(0);
+    await expect.poll(async () => (await baseline())?.frameCount).toBeGreaterThan(0);
+    expect(await position()).toEqual(moved);
+    expect((await baseline())?.engineCount).toBe(1);
+    await expect(page.getByTestId("undo-document")).toBeEnabled();
+    captures.push(await baseline());
+    await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${backend}-${captures.length}.png`) });
+  }
+  await page.getByTestId("undo-document").click();
+  await expect.poll(async () => (await position())[0]).toBeCloseTo(moved[0] - 1.5, 5);
+  await page.getByTestId("redo-document").click();
+  await expect.poll(position).toEqual(moved);
+  await clickPlayAndWaitForOverlay(page);
+  await expect.poll(() => page.evaluate(() => (window as unknown as {
+    __babylonslatePlayTest?: { tickIndex(): number };
+  }).__babylonslatePlayTest?.tickIndex() ?? 0), { timeout: 30_000 }).toBeGreaterThan(3);
+  await page.getByTestId("play-overlay-close").click();
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  await waitForSceneViewportReady(page);
+  expect((await baseline())?.engineCount).toBe(1);
+  await testInfo.attach("project-backend-transitions", { body: JSON.stringify(captures), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  expect(externalShaderRequests).toEqual([]);
+});
+
 test("WebGPU renders native and graph PBR and CEL using native shaders", async ({
   page,
 }, testInfo) => {
@@ -42,9 +106,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (
-      /WebGPU uncaptured error|shader.*error|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(
-        message.text(),
-      )
+      isGpuFailure(message.type(), message.text())
     )
       errors.push(message.text());
   });
@@ -64,7 +126,27 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   expect(errors).toEqual([]);
   expect(externalRequests).toEqual([]);
   expect(result.retainedEngines).toBe(0);
+  expect(result.cancelledEngineReleased).toBe(true);
   expect(result.captures).toHaveLength(4);
+  expect(result.previews).toHaveLength(4);
+  expect(result.helpers).toHaveLength(6);
+  expect(result.shadows).toHaveLength(4);
+  for (const capture of result.shadows) {
+    expect(capture.shadowed).toHaveLength(96 * 72 * 4);
+    expect(capture.unshadowed).toHaveLength(96 * 72 * 4);
+    for (const half of [0, 1]) {
+      let shadowPixels = 0;
+      for (let y = 0; y < 72; y++)
+        for (let x = half * 48; x < half * 48 + 48; x++) {
+          const index = (y * 96 + x) * 4;
+          const green = capture.unshadowed[index + 1];
+          if (green > 30 && green > capture.unshadowed[index] * 1.4 &&
+              green > capture.unshadowed[index + 2] * 1.2 &&
+              green - capture.shadowed[index + 1] > 8) shadowPixels++;
+        }
+      expect(shadowPixels, `${capture.backend}/${capture.mode}/${half} visible sun shadows`).toBeGreaterThan(10);
+    }
+  }
   for (const capture of result.captures) {
     expect(capture.shaderLanguage).toBe(capture.backend === "webgpu" ? 1 : 0);
     expect(capture.maxTextureSize).toBeGreaterThanOrEqual(64);
@@ -87,7 +169,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   }
   // Native readback follows each API's origin and swap-chain channel order.
   // Compare the same displayed pixels without hiding texture orientation errors.
-  const rgbaTopLeft = (capture: (typeof result.captures)[number]) => {
+  const rgbaTopLeft = (capture: { pixels: number[]; pixelFormat: string; pixelOrigin: string }) => {
     const pixels: number[] = [];
     expect(["rgba8unorm", "bgra8unorm"]).toContain(capture.pixelFormat);
     const channels =
@@ -100,6 +182,22 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     }
     return pixels;
   };
+  for (const kind of ["grid", "bounds", "msdf"]) {
+    const reference = result.helpers.find((capture) => capture.backend === "webgl2" && capture.kind === kind)!;
+    const actual = result.helpers.find((capture) => capture.backend === "webgpu" && capture.kind === kind)!;
+    expect(reference.shaderLanguages.length).toBeGreaterThan(0);
+    expect(actual.shaderLanguages.every((language) => language === 1)).toBe(true);
+    const expected = rgbaTopLeft(reference);
+    const observed = rgbaTopLeft(actual);
+    let lit = 0;
+    let maxDifference = 0;
+    for (let i = 0; i < observed.length; i++) {
+      maxDifference = Math.max(maxDifference, Math.abs(observed[i] - expected[i]));
+      if (i % 4 === 1 && observed[i] > 20) lit++;
+    }
+    expect(lit, `${kind} visible helper`).toBeGreaterThan(40);
+    expect(maxDifference, `${kind} backend parity`).toBeLessThanOrEqual(2);
+  }
   for (const mode of ["pbr", "cel"]) {
     const reference = rgbaTopLeft(
       result.captures.find(
@@ -128,5 +226,33 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
       Math.abs(upperGreen - lowerGreen),
       `${mode} texture rows`,
     ).toBeGreaterThan(40);
+    const previewReference = result.previews.find(
+      (capture) => capture.backend === "webgl2" && capture.mode === mode,
+    )!.pixels;
+    const previewActual = result.previews.find(
+      (capture) => capture.backend === "webgpu" && capture.mode === mode,
+    )!.pixels;
+    let previewDifference = 0;
+    for (let i = 0; i < previewReference.length; i++)
+      previewDifference = Math.max(
+        previewDifference,
+        Math.abs(previewReference[i] - previewActual[i]),
+      );
+    expect(
+      previewDifference,
+      `${mode} actual preview canvas parity`,
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        previewActual[(24 * 64 + 32) * 4 + 1] -
+          previewActual[(40 * 64 + 32) * 4 + 1],
+      ),
+      `${mode} preview texture rows`,
+    ).toBeGreaterThan(40);
   }
 });
+
+function isGpuFailure(type: string, message: string): boolean {
+  return ["error", "warning"].includes(type) &&
+    /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message);
+}

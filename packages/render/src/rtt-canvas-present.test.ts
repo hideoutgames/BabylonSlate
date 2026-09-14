@@ -124,8 +124,10 @@ describe("createRttCanvasPresent", () => {
     globalThis.ImageData = previous;
   });
 
-  it("flips WebGL readPixels so the 2D canvas is not upside down", async () => {
+  it("flips Babylon render-target rows for the 2D canvas", async () => {
     const { scene, camera, canvas } = host();
+    const first = [0, 0, 255, 255];
+    const last = [255, 0, 0, 255];
     const width = 128;
     const height = 64;
     const row = width * 4;
@@ -159,10 +161,10 @@ describe("createRttCanvasPresent", () => {
     present.blit();
     await vi.waitFor(() => expect(fake.capturedImages.length).toBeGreaterThan(0));
     const image = fake.capturedImages[0]!;
-    expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
+    expect([...image.data.subarray(0, 4)]).toEqual(first);
     expect([
       ...image.data.subarray((height - 1) * row, (height - 1) * row + 4),
-    ]).toEqual([255, 0, 0, 255]);
+    ]).toEqual(last);
     readPixels.mockRestore();
     present.dispose();
     globalThis.ImageData = previous;

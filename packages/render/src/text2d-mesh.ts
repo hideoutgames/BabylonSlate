@@ -7,7 +7,9 @@ import {
   Observer,
   RawTexture,
   Scene,
+  ShaderLanguage,
   ShaderMaterial,
+  ShaderStore,
   StandardMaterial,
   Texture,
   VertexBuffer,
@@ -237,6 +239,40 @@ function unlitMaterial(
 }
 
 function ensureMsdfShaders(): void {
+  ShaderStore.ShadersStoreWGSL[`${MSDF_SHADER}VertexShader`] = `
+attribute position: vec3f;
+attribute uv: vec2f;
+uniform worldViewProjection: mat4x4f;
+varying vUV: vec2f;
+@vertex
+fn main(input: VertexInputs) -> FragmentInputs {
+  vertexOutputs.vUV = vertexInputs.uv;
+  vertexOutputs.position = uniforms.worldViewProjection * vec4f(vertexInputs.position, 1.0);
+}
+`;
+  ShaderStore.ShadersStoreWGSL[`${MSDF_SHADER}FragmentShader`] = `
+varying vUV: vec2f;
+var atlasSampler: sampler;
+var atlas: texture_2d<f32>;
+uniform fillColor: vec3f;
+uniform strokeColor: vec3f;
+uniform strokeWidth: f32;
+fn median(r: f32, g: f32, b: f32) -> f32 {
+  return max(min(r, g), min(max(r, g), b));
+}
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let msd = textureSample(atlas, atlasSampler, fragmentInputs.vUV).rgb;
+  let sd = median(msd.r, msd.g, msd.b);
+  let screenPxDistance = fwidth(sd) * 0.5;
+  let fill = clamp((sd - 0.5) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0);
+  let outline = select(fill, clamp((sd - 0.5 + uniforms.strokeWidth) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0), uniforms.strokeWidth > 0.0);
+  let color = mix(uniforms.strokeColor, uniforms.fillColor, fill);
+  let alpha = max(fill, outline);
+  if (alpha < 0.01) { discard; }
+  fragmentOutputs.color = vec4f(color, alpha);
+}
+`;
   Effect.ShadersStore[`${MSDF_SHADER}VertexShader`] = `
 attribute vec3 position;
 attribute vec2 uv;
@@ -307,6 +343,7 @@ function msdfGlyphMaterial(
       scene,
       { vertex: MSDF_SHADER, fragment: MSDF_SHADER },
       {
+        shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
         attributes: ["position", "uv"],
         uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth"],
         samplers: ["atlas"],

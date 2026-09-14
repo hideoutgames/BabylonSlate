@@ -17,7 +17,6 @@ import {
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   NodeMaterialSystemValues,
-  PBRMetallicRoughnessBlock,
   ReflectionBlock,
   RemapBlock,
   TransformBlock,
@@ -60,6 +59,7 @@ import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
 import { FlatNormalBlock } from "./flat-normal-block";
+import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
@@ -1142,7 +1142,7 @@ function attachSurfaceShading(
     return fragment;
   }
 
-  const pbr = new PBRMetallicRoughnessBlock(`${options.name}_pbr`);
+  const pbr = new ScenePbrLightingBlock(`${options.name}_pbr`);
   pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
   pbr.alpha.connectTo(fragment.a);
   const reflection = new ReflectionBlock(`${options.name}_reflection`);

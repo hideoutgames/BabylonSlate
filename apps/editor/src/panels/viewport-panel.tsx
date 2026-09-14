@@ -1,4 +1,5 @@
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
+import { EngineStore } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
@@ -129,7 +130,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     ensureSharedEngine,
     sharedEngineGeneration,
   } = usePlay();
-  const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
+  const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
   const [reloadVersion, setReloadVersion] = useState(0);
   const navBake = useOptionalNavBake();
@@ -999,9 +1000,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const caps = handle.engine.getCaps();
         return {
           userAgent: navigator.userAgent,
-          backend: "webgl2",
-          webGLVersion: handle.engine.webGLVersion,
-          glInfo: handle.engine.getGlInfo(),
+          backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
+          engineCount: EngineStore.Instances.length,
+          webGLVersion: "webGLVersion" in handle.engine ? handle.engine.webGLVersion : null,
+          glInfo: "getGlInfo" in handle.engine && typeof handle.engine.getGlInfo === "function" ? handle.engine.getGlInfo() : null,
+          gpuInfo: "getInfo" in handle.engine && typeof handle.engine.getInfo === "function" ? handle.engine.getInfo() : null,
           render: handle.renderDiagnostics(),
           frameCount: handle.scheduler.stats().renderedFrames,
           viewportFrameCap,

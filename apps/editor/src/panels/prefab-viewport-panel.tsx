@@ -1,4 +1,4 @@
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { requestEditorDrop } from "@babylonslate/core";
@@ -138,7 +138,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     ensureSharedEngine,
     sharedEngineGeneration,
   } = usePlay();
-  const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
+  const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
   useEffect(() => {
     engineRef.current?.setRenderSettings(projectDocument?.settings.render ?? {});

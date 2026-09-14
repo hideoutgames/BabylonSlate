@@ -2146,6 +2146,36 @@ describe("GraphEditor", () => {
     ).toBe("Stats");
   });
 
+  it("refreshes the read-only enum preview when Inspector changes its default", async () => {
+    const graph: GraphDocument = {
+      nodes: [{
+        id: "enum",
+        type: "enum.equals",
+        position: { x: 0, y: 0 },
+        data: {
+          "default:a": "Walk",
+          __pins: [{ id: "a", name: "A", kind: "data", direction: "in", type: { kind: "enumRef", guid: "mode" } }],
+        },
+      }],
+      edges: [],
+    };
+    const onChange = vi.fn();
+    const { container, rerender } = render(
+      <GraphEditor initialGraph={graph} pinTypeNames={{ mode: "Movement Mode" }} onChange={onChange} />,
+    );
+    const preview = () => container.querySelector('[data-pin-default="enumRef"]');
+    expect(preview()?.textContent).toBe("Walk");
+    rerender(
+      <GraphEditor
+        initialGraph={{ ...graph, nodes: [{ ...graph.nodes[0]!, data: { ...graph.nodes[0]!.data, "default:a": "runFast" } }] }}
+        pinTypeNames={{ mode: "Movement Mode" }}
+        onChange={onChange}
+      />,
+    );
+    await waitFor(() => expect(preview()?.textContent).toBe("Run Fast"));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("hides the bool default when that pin is wired", () => {
     const graph: GraphDocument = {
       nodes: [
