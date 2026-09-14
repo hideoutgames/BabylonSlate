@@ -606,7 +606,7 @@ describe("syncAuthoredIllumination", () => {
         shadows: normalizeShadowSettings({ filterQuality }),
       });
       syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
-      expect(key.getShadowGenerator()?.filteringQuality).toBe(expected);
+      expect((key.getShadowGenerator() as ShadowGenerator).filteringQuality).toBe(expected);
     }
   });
 
