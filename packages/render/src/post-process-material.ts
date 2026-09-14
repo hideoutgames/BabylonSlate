@@ -2,6 +2,7 @@ import type { Camera, NodeMaterial, PostProcess, Scene } from "@babylonjs/core";
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
 import { normalizeScenePostProcessStack } from "@babylonslate/core";
+import type { MaterialParameterValue } from "@babylonslate/bridge";
 import type {
   MaterialBuildPlan,
   MaterialDiagnostic,
@@ -57,8 +58,12 @@ export function normalizePostProcessStack(
 
 export interface AttachedPostProcessStack {
   passes: PostProcess[];
+  /** Updates only this live entry's instance, without recompiling its asset. */
+  setParameter: (entryId: string, name: string, value: MaterialParameterValue) => boolean;
   dispose: () => void;
 }
+
+let nextStackInstance = 0;
 
 export interface PostProcessDeviceBuffers {
   sceneDepth: boolean;
@@ -112,7 +117,8 @@ export function attachPostProcessStack(
   options: AttachPostProcessStackOptions,
 ): AttachedPostProcessStack {
   const passes: PostProcess[] = [];
-  const acquired: string[] = [];
+  const acquired = new Map<string, { materialGuid: string; instanceKey: string }>();
+  const stackInstance = nextStackInstance++;
   let depthHeld = false;
   let prePassHeld = false;
   const deviceBuffers =
@@ -121,7 +127,7 @@ export function attachPostProcessStack(
   const hadDepth = Boolean(depthRendererFor(options.scene, options.camera));
   const hadPrePass = Boolean(options.scene.prePassRenderer);
 
-  for (const entry of [...options.stack].sort((a, b) => a.order - b.order)) {
+  for (const entry of normalizePostProcessStack(options.stack)) {
     if (!entry.enabled) continue;
     const document = options.documentFor(entry.materialGuid);
     if (!document) {
@@ -138,11 +144,16 @@ export function attachPostProcessStack(
       });
       continue;
     }
+    const instance = {
+      materialGuid: entry.materialGuid,
+      instanceKey: `post-process:${stackInstance}:${entry.id}`,
+    };
     const compiled = options.library.acquire(
       options.scene,
       entry.materialGuid,
       document,
       {
+        instanceKey: instance.instanceKey,
         validatePlan: (plan) => bufferDiagnostic(plan, deviceBuffers),
       },
     );
@@ -176,7 +187,7 @@ export function attachPostProcessStack(
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
-        options.library.release(options.scene, entry.materialGuid);
+        options.library.release(options.scene, entry.materialGuid, instance);
         continue;
       }
     }
@@ -189,28 +200,40 @@ export function attachPostProcessStack(
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
-        options.library.release(options.scene, entry.materialGuid);
+        options.library.release(options.scene, entry.materialGuid, instance);
         continue;
       }
       if (!hadPrePass) prePassHeld = true;
     }
-    acquired.push(entry.materialGuid);
     const pass = createPostProcessPass(
       compiled.material,
       options.camera,
       entry.scalable ? (options.resolutionScale ?? 1) : 1,
     );
-    if (pass) passes.push(pass);
+    if (pass) {
+      passes.push(pass);
+      acquired.set(entry.id!, instance);
+    } else {
+      options.library.release(options.scene, entry.materialGuid, instance);
+    }
   }
 
   let disposed = false;
   return {
     passes,
+    setParameter: (entryId, name, value) => {
+      const instance = acquired.get(entryId);
+      return !disposed && !!instance && options.library.setParameter(
+        options.scene, instance.materialGuid, name, value, instance,
+      );
+    },
     dispose: () => {
       if (disposed) return;
       disposed = true;
       for (const pass of passes) pass.dispose(options.camera);
-      for (const guid of acquired) options.library.release(options.scene, guid);
+      for (const instance of acquired.values())
+        options.library.release(options.scene, instance.materialGuid, instance);
+      acquired.clear();
       if (depthHeld) options.scene.disableDepthRenderer(options.camera);
       if (prePassHeld) options.scene.disablePrePassRenderer();
       passes.length = 0;

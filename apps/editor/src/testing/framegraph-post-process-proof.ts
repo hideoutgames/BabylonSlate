@@ -215,6 +215,7 @@ export async function runFrameGraphPostProcessProof() {
       source.getInternalTexture()!,
     );
     const entries = documents.map((_, order) => ({
+      id: `entry-${order}`,
       materialGuid: `proof-${order}`,
       order,
       enabled: !disabled.includes(order),
@@ -295,7 +296,7 @@ export async function runFrameGraphPostProcessProof() {
     await capture("color");
     if (
       !stack!.tasks[0]!.setParameter("Gain", { kind: "float", value: 0.75 }) ||
-      !library.setParameter(scene, "proof-0", "Gain", {
+      !legacy!.setParameter("entry-0", "Gain", {
         kind: "float",
         value: 0.75,
       })
@@ -357,7 +358,7 @@ export async function runFrameGraphPostProcessProof() {
       rememberGraphShaders(before);
       await updateLegacy([]);
       if (
-        !library.setParameter(scene, "proof-1", "Gain", {
+        !legacy!.setParameter("entry-1", "Gain", {
           kind: "float",
           value: 0.75,
         })
