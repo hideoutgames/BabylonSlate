@@ -32,7 +32,7 @@ describe("scene owner readiness", () => {
   it("cleans a partial layer when structural assignment fails before its ready marker", () => {
     const { layer } = documents();
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-      playScene: createDefaultScene(), sceneLayerLibrary: { overlay: layer }, deferSceneModelsReady: true,
+      playScene: { ...createDefaultScene(), actors: [] }, sceneLayerLibrary: { overlay: layer }, deferSceneModelsReady: true,
       onCommand: (command) => { if (command.type === "assignMesh") throw new Error("Layer assignment failed"); } });
     try {
       runtime.realizePlayWorld();
