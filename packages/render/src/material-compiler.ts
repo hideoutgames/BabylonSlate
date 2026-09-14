@@ -60,6 +60,8 @@ import {
 import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
+import { retainEnvironmentSample } from "./environment-lighting";
+import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { FlatNormalBlock } from "./flat-normal-block";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
@@ -118,6 +120,7 @@ export function nodeMaterialTexturesSampleReady(
   material: NodeMaterial,
 ): boolean {
   for (const block of material.attachedBlocks) {
+    if (block instanceof EnvironmentSampleBlock && !block.isReady()) return false;
     const textured = block as { texture?: Texture | null };
     if (!textured.texture) continue;
     if (!isGpuTextureSampleReady(textured.texture)) return false;
@@ -323,6 +326,10 @@ export function compileMaterialPlan(
         severity: "error",
         nodeId: anchorNodeId(operation),
       });
+      return false;
+    }
+    if (operation.nodeType === "input.environmentSample" && !scene.getEngine().isWebGPU && !scene.getEngine().getCaps().textureLOD) {
+      diagnostics.push({ code: "material.capability", message: "Environment Sample requires explicit cube mip sampling (WebGL2 or WebGPU).", severity: "error", nodeId: anchorNodeId(operation) });
       return false;
     }
 
@@ -619,6 +626,10 @@ export function compileMaterialPlan(
     });
   }
   try {
+    if (plan.operations.some((operation) => operation.nodeType === "input.environmentSample")) {
+      const release = retainEnvironmentSample(scene, material);
+      material.onDisposeObservable.addOnce(release);
+    }
     material.build();
   } catch (error) {
     buildError =
