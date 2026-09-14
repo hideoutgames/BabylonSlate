@@ -1,3 +1,4 @@
+import { normalizeCelShadingSettings } from "@babylonslate/core";
 /** Real GPU contribution oracle; this hook is available only in test builds. */
 import {
   Color3,
@@ -45,7 +46,7 @@ export async function runClusteredLightProof() {
   };
   try {
     const capabilities = clusteredLightCapabilities(engine);
-    if (!capabilities.supported) throw new Error(capabilities.reason);
+    if (capabilities.supported === false) throw new Error(capabilities.reason);
     for (const mixing of ["pbr", "strongest", "additive", "blend"] as const) {
       const mode = mixing === "pbr" ? "pbr" : "cel";
       const scene = new Scene(engine);
@@ -61,11 +62,11 @@ export async function runClusteredLightProof() {
       native.roughness = 1;
       setSceneRenderSettings(scene, {
         mode,
-        cel: {
+        cel: normalizeCelShadingSettings({
           lightMixing: mixing === "pbr" ? "strongest" : mixing,
           lightColorInfluence: 1,
           specularEnabled: false,
-        },
+        }),
       });
       const document = createDefaultMaterialDocument("graph");
       document.nodes.find((node) => node.id === "baseColor")!.properties.value =

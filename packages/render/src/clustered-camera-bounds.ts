@@ -37,7 +37,10 @@ export class ClusteredCameraBounds {
   private unbounded = false;
   private readonly native: PinnedBounds;
 
-  constructor(private readonly container: ClusteredLightContainer) {
+  private readonly container: ClusteredLightContainer;
+
+  constructor(container: ClusteredLightContainer) {
+    this.container = container;
     const native = container as unknown as PinnedBounds;
     if (
       !(native._proxyMaterial instanceof ShaderMaterial) ||

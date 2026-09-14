@@ -15,12 +15,17 @@ export class FrameGraphClusteredLightsTask extends FrameGraphTask {
   private target: RenderTargetTexture | undefined;
   private texture: InternalTexture | null = null;
 
+  private readonly scene: Scene;
+  private readonly objects: ManagedShadowObjectRendererTask;
+
   constructor(
     graph: FrameGraph,
-    private readonly scene: Scene,
-    private readonly objects: ManagedShadowObjectRendererTask,
+    scene: Scene,
+    objects: ManagedShadowObjectRendererTask,
   ) {
     super("Clustered light mask", graph);
+    this.scene = scene;
+    this.objects = objects;
   }
 
   needsPreparation(camera: Camera): boolean {

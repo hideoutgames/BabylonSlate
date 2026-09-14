@@ -61,10 +61,10 @@ export class ClusteredSceneLights {
   private readonly onDispose: Observer<Scene>;
   private readonly restored: Observer<AbstractEngine>;
 
-  constructor(
-    private readonly scene: Scene,
-    lights: readonly Light[],
-  ) {
+  private readonly scene: Scene;
+
+  constructor(scene: Scene, lights: readonly Light[]) {
+    this.scene = scene;
     this.registry = this.validateRegistry(lights);
     this.unregister = registerClusteredLightPolicy(scene, this);
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
@@ -325,7 +325,7 @@ export class ClusteredSceneLights {
     camera: Camera | null,
     caps: ClusteredLightCapabilities,
   ): string | undefined {
-    if (!caps.supported) return caps.reason;
+    if (caps.supported === false) return caps.reason;
     if (this.allocationFailure) return this.allocationFailure;
     // The cluster itself requires one ordinary light UBO. Global sun/fill keep
     // their conventional priority; do not borrow children if no slot remains.
