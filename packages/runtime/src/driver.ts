@@ -46,6 +46,7 @@ import {
   parseText2DProperties,
   parseText3DProperties,
   normalizeSceneLayer,
+  newGuid,
   sceneLayerRelativeAnchorWorldPosition,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
@@ -1332,7 +1333,7 @@ class InProcessRuntime implements RuntimeDriver {
     const layer = this.world.findSceneLayer(layerGuid);
     const guid = String(materialGuid ?? "").trim();
     if (!layer || !guid) return;
-    layer.postProcessStack.push({ materialGuid: guid, enabled: true });
+    layer.postProcessStack.push({ id: newGuid(), materialGuid: guid, enabled: true });
     this.emitSceneLayerPostProcess(layer);
   }
 

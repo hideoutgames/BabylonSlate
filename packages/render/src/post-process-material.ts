@@ -1,6 +1,7 @@
 import type { Camera, NodeMaterial, PostProcess, Scene } from "@babylonjs/core";
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
+import { normalizeScenePostProcessStack } from "@babylonslate/core";
 import type {
   MaterialBuildPlan,
   MaterialDiagnostic,
@@ -10,6 +11,7 @@ import { materialUnavailable, type MaterialLibrary } from "./material-library";
 
 /** One authored entry of a scene's ordered post-process chain. */
 export interface PostProcessStackEntry {
+  id?: string;
   materialGuid: string;
   enabled: boolean;
   order: number;
@@ -18,6 +20,7 @@ export interface PostProcessStackEntry {
 
 /** Scene documents omit `order`; normalize fills it from array index. */
 export type PostProcessStackInput = {
+  id?: string;
   materialGuid: string;
   enabled?: boolean;
   order?: number;
@@ -28,7 +31,7 @@ export function normalizePostProcessStack(
   value: unknown,
 ): PostProcessStackEntry[] {
   if (!Array.isArray(value)) return [];
-  return value
+  const entries = value
     .flatMap((entry, index) => {
       if (!entry || typeof entry !== "object") return [];
       const record = entry as Record<string, unknown>;
@@ -36,6 +39,7 @@ export function normalizePostProcessStack(
       if (typeof materialGuid !== "string" || materialGuid === "") return [];
       return [
         {
+          id: record.id,
           materialGuid,
           ...(record.scalable === true ? { scalable: true } : {}),
           enabled: record.enabled !== false,
@@ -45,7 +49,9 @@ export function normalizePostProcessStack(
               : index,
         },
       ];
-    })
+    });
+  const identities = normalizeScenePostProcessStack(entries);
+  return entries.map((entry, index) => ({ ...entry, id: identities[index]!.id }))
     .sort((a, b) => a.order - b.order);
 }
 

@@ -2,12 +2,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { EntryListEditor } from "./entry-list-editor";
 import { Button } from "@babylonslate/ui/components/button";
+import { useState } from "react";
 
 afterEach(() => {
   cleanup();
 });
 
 describe("EntryListEditor", () => {
+  it("keeps row-local state with its identity after reordering", () => {
+    function Row({ name }: { name: string }) {
+      const [count, setCount] = useState(0);
+      return <Button onClick={() => setCount(count + 1)}>{name}: {count}</Button>;
+    }
+    const props = {
+      getItemKey: (item: string) => item,
+      onAdd: () => {},
+      onChange: () => {},
+      renderItem: ({ item }: { item: string }) => <Row name={item} />,
+    };
+    const { rerender } = render(<EntryListEditor {...props} items={["a", "b"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "b: 0" }));
+    rerender(<EntryListEditor {...props} items={["b", "a"]} />);
+    expect(screen.getByRole("button", { name: "b: 1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "a: 0" })).toBeTruthy();
+  });
   it("delegates Add to a picker and lets its header edit the complete entry", () => {
     const onAdd = vi.fn();
     const onChange = vi.fn();

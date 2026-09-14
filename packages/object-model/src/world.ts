@@ -3,6 +3,7 @@ import {
   type Guid,
   type GuidFactory,
   type Rng,
+  type ScenePostProcessEntry,
 } from "@babylonslate/core";
 import { ClassRegistry, hydrateClassVariableValue } from "./class-registry";
 import { InterfaceRegistry } from "./interfaces";
@@ -202,7 +203,7 @@ export class World {
     assetGuid: string;
     zOrder: number;
     ownerSceneGuid?: string | null;
-    postProcessStack?: Array<{ materialGuid: string; enabled: boolean }>;
+    postProcessStack?: ScenePostProcessEntry[];
     layerBounds?: { width: number; height: number };
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
