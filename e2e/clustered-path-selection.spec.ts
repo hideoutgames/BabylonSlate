@@ -117,8 +117,21 @@ async function choosePath(page: Page, label: string) {
 }
 function errorsFor(page: Page) {
   const errors: string[] = [];
+  const externalDiagnostics: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
+    // Existing Dockview community setup emits this unrelated enterprise notice.
+    // Keep it in evidence; every other console error and all page errors still fail.
+    if (
+      message
+        .text()
+        .startsWith(
+          'dockview: `createContextMenuItemComponent` requires the "ContextMenu" module, which ships in dockview-enterprise.',
+        )
+    ) {
+      externalDiagnostics.push(message.text());
+      return;
+    }
     if (
       message.type() === "error" ||
       (message.type() === "warning" &&
@@ -126,14 +139,14 @@ function errorsFor(page: Page) {
     )
       errors.push(message.text());
   });
-  return errors;
+  return { errors, externalDiagnostics };
 }
 
 test("editor path selection and Play use one admitted cluster and retain the requested Auto path", async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
-  const errors = errorsFor(page);
+  const { errors, externalDiagnostics } = errorsFor(page);
   const files = await minimalProjectFiles();
   const project = JSON.parse(
     new TextDecoder().decode(files.get(PROJECT_FILE)!),
@@ -205,7 +218,7 @@ test("editor path selection and Play use one admitted cluster and retain the req
   const played = await rendering(play, "play");
   expect(played?.pipeline.requested.renderPath).toBe("auto");
   await testInfo.attach("clustered-selection", {
-    body: JSON.stringify({ explicit, auto, played }),
+    body: JSON.stringify({ explicit, auto, played, externalDiagnostics }),
     contentType: "application/json",
   });
   await testInfo.attach("clustered-play", {
@@ -226,7 +239,7 @@ test("packed player resolves saved Auto to real WebGL2 clustering before present
   baseURL,
 }, testInfo) => {
   test.setTimeout(120_000);
-  const errors = errorsFor(page);
+  const { errors, externalDiagnostics } = errorsFor(page);
   const packed = await exportGame({
     bundleDebugger: false,
     startupSceneGuid: GUID,
@@ -278,7 +291,7 @@ test("packed player resolves saved Auto to real WebGL2 clustering before present
       effective: { renderPath: "clusteredForward", gpuBackend: "webgl2" },
     });
     await testInfo.attach("clustered-player", {
-      body: JSON.stringify(result),
+      body: JSON.stringify({ result, externalDiagnostics }),
       contentType: "application/json",
     });
     await testInfo.attach("clustered-player-canvas", {
