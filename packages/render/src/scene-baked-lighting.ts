@@ -161,7 +161,7 @@ async function prepareGeometry(
       geometry.getIndexBuffer()!,
       ...Object.values(geometry.getVertexBuffers() ?? {}).flatMap((buffer) => [
         buffer.getBuffer()!,
-        buffer.effectiveBuffer,
+        buffer.effectiveBuffer!,
       ]),
     ]);
     reservation.reconcile(
