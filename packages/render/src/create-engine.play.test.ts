@@ -179,6 +179,13 @@ describe("Play createEngine view", () => {
       texture.isReady = true;
       return texture;
     });
+    // Keep production FrameGraph ownership, replacing only absent NullEngine
+    // MRT driver calls.
+    vi.spyOn(engine, "buildTextureLayout").mockImplementation((enabled, backbuffer) =>
+      backbuffer ? [0x0405] : enabled.map((value, index) => value ? 0x8ce0 + index : 0));
+    vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(() => {});
     engines.push(engine);
     return engine;
   }
@@ -295,10 +302,12 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     handle.scheduler.setObstructed(true);
     let frames = 0;
+    handle.scene.onBeforeRenderObservable.add(() => { expect(handle.scene.frameGraph).not.toBeNull(); });
     handle.scene.onAfterRenderObservable.add(() => { frames += 1; });
     let ready = false;
     const presented = handle.presentFirstFrame().then(() => { ready = true; });
@@ -316,6 +325,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const loop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     let signaled = false;
     const gl = {
       NO_ERROR: 0, CONTEXT_LOST_WEBGL: 37442, SYNC_GPU_COMMANDS_COMPLETE: 37143,
@@ -379,6 +389,7 @@ describe("Play createEngine view", () => {
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle, canvas } = playHandle(engine);
     const { canvas: sibling } = editorHandle(engine);
+    await handle.prewarmSceneMaterials();
     const render = runLoop.mock.calls[0]![0];
     handle.setPaused(true);
     let frames = 0;
@@ -403,6 +414,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     handle.setPaused(true);
     const ready = vi.fn(() => false);
     const draw = vi.spyOn(handle.scene, "render");
@@ -444,6 +456,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
     handle.setPaused(true);
     vi.spyOn(handle.scene, "render").mockImplementation(() => { throw new Error("allocation failed"); });
     const frame = expect(handle.presentFirstFrame()).rejects.toThrow("allocation failed");
@@ -464,9 +477,11 @@ describe("Play createEngine view", () => {
       return engine.scenes.at(-1)!;
     };
     const global = addLayer("global", 1);
+    await handle.prewarmSceneMaterials({ layerId: "global", layerLoadId: 1 });
     const frames: string[] = [];
     handle.scene.onAfterRenderObservable.add(() => { frames.push("world"); });
     global.onAfterRenderObservable.add(() => { frames.push("global"); });
+    global.onBeforeRenderObservable.add(() => { expect(global.frameGraph).not.toBeNull(); });
     const release = handle.scheduler.acquireObstruction();
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
     const first = handle.presentFirstFrame({ layerId: "global", layerLoadId: 1 });
@@ -2597,6 +2612,7 @@ describe("Play createEngine view", () => {
       expect(canvas.pixel).toBe(color);
       expect([canvas.width, canvas.height]).toEqual([256, 256]);
       color = 0x40a0ff;
+      await handle.prewarmSceneMaterials();
       const presented = handle.presentFirstFrame();
       frame();
       await presented;

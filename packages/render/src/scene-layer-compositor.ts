@@ -20,6 +20,7 @@ import {
 } from "@babylonslate/core";
 import { installEngineDefaultMaterial } from "./default-material";
 import { isSceneFrameReady } from "./scene-perf";
+import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { configureCutoutSorting } from "./sorting";
 import {
   overlayCanvasToWorld,
@@ -57,6 +58,7 @@ export interface SceneLayerCompositorOptions {
 }
 
 type LayerRecord = SceneLayerView & {
+  renderer: SceneRenderCoordinator;
   postProcessStack: SceneLayerPostProcessEntry[];
   rtt: RenderTargetTexture | null;
   blitMaterial: StandardMaterial | null;
@@ -108,6 +110,7 @@ export class SceneLayerCompositor {
       zOrder: command.zOrder,
       scene,
       camera,
+      renderer: new SceneRenderCoordinator(scene),
       layerBounds: sceneLayerOrthoBounds(command.layerBounds),
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
       rtt: null,
@@ -127,6 +130,7 @@ export class SceneLayerCompositor {
     for (const [slotId, id] of [...this.slotLayer]) {
       if (id === layerId) this.slotLayer.delete(slotId);
     }
+    layer.renderer.dispose();
     this.releasePostProcess(layer);
     layer.scene.dispose();
     this.byId.delete(layerId);
@@ -213,21 +217,36 @@ export class SceneLayerCompositor {
     }
   }
 
-  render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => void) => void = (_id, render) => render()): void {
+  async prepare(layerId: string, assertCurrent: () => void): Promise<void> {
+    const layer = this.byId.get(layerId);
+    if (!layer) throw new Error("SceneLayer was removed before rendering preparation.");
+    this.bindHudCamera(layer);
+    await layer.renderer.prepare(assertCurrent);
+    assertCurrent();
+    if (this.byId.get(layerId) !== layer) throw new Error("SceneLayer rendering preparation was superseded.");
+  }
+
+  render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean) => void = (_id, render) => render()): void {
     for (const layer of this.sortedLayers()) {
       if (!this.isLayerReady(layer.layerId) && !presentingLayers.has(layer.layerId)) continue;
       const record = layer as LayerRecord;
       this.bindHudCamera(record);
       draw(layer.layerId, () => {
+        let readyForPresentation: boolean;
         if (record.rtt) {
           record.scene.autoClear = true;
-          record.scene.render();
+          const result = record.renderer.render();
+          if (!result.rendered) return false;
+          readyForPresentation = result.readyForPresentation;
           this.blit(record);
         } else {
           record.scene.autoClear = false;
           record.scene.autoClearDepthAndStencil = true;
-          record.scene.render();
+          const result = record.renderer.render();
+          if (!result.rendered) return false;
+          readyForPresentation = result.readyForPresentation;
         }
+        return readyForPresentation;
       });
     }
   }
@@ -236,6 +255,7 @@ export class SceneLayerCompositor {
     if (layerId && !this.byId.has(layerId)) return false;
     for (const record of this.byId.values()) {
       if (layerId ? record.layerId !== layerId : !this.isLayerReady(record.layerId)) continue;
+      if (!record.renderer.isReady()) return false;
       if (!isSceneFrameReady(record.scene, record.rtt ? [record.rtt] : [])) return false;
       if (record.rtt && (!record.blitScene || !isSceneFrameReady(record.blitScene))) return false;
     }
@@ -439,6 +459,7 @@ export class SceneLayerCompositor {
   }
 
   private rebuildPostProcess(layer: LayerRecord): void {
+    layer.renderer.invalidate();
     this.releasePostProcess(layer);
     const enabledStack = layer.postProcessStack.filter((entry) => entry.enabled);
     if (
