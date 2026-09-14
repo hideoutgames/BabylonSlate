@@ -1,4 +1,4 @@
-import { Constants, Engine, FreeCamera, MeshBuilder, PBRMaterial, Scene, Vector3 } from "@babylonjs/core";
+import { Color4, Constants, Engine, FreeCamera, MeshBuilder, PBRMaterial, Scene, Vector3 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { LogicalGeometryTask } from "@babylonslate/render/framegraph-logical-buffers";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
@@ -129,6 +129,60 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
           graph.dispose();
         }
       }
+    }
+    const mutationGraph = new FrameGraph(scene);
+    try {
+      const errors: unknown[] = [];
+      const colorTarget = (name: string, red: number) => {
+        const texture = mutationGraph.textureManager.createRenderTargetTexture(name, {
+          size: { width: 32, height: 32 }, sizeIsPercentage: false,
+          options: { types: [Constants.TEXTURETYPE_UNSIGNED_BYTE], formats: [Constants.TEXTUREFORMAT_RGBA], samples: 1 },
+        });
+        const clear = new FrameGraphClearTextureTask(name, mutationGraph);
+        clear.targetTexture = texture;
+        clear.clearDepth = false;
+        clear.color = new Color4(red, 0, 0, 1);
+        mutationGraph.addTask(clear);
+        return clear.outputTexture;
+      };
+      const depth = colorTarget("Logical Depth Lifetime", 0.25);
+      const color = colorTarget("Scene Color Lifetime", 0.75);
+      const post = createDefaultMaterialDocument("Mutable Depth Consumer", "postProcess");
+      post.nodes.push(
+        { id: "depth", type: "input.sceneDepth", properties: {}, position: { x: 0, y: 0 } },
+        { id: "gray", type: "vector.combine", properties: {}, position: { x: 0, y: 0 } },
+      );
+      post.edges = [
+        { id: "uv-depth", sourceNodeId: "screenUv", sourcePinId: "uv", targetNodeId: "depth", targetPinId: "uv" },
+        ...["x", "y", "z"].map((channel) => ({ id: `depth-${channel}`, sourceNodeId: "depth", sourcePinId: "depth", targetNodeId: "gray", targetPinId: channel })),
+        { id: "gray-output", sourceNodeId: "gray", sourcePinId: "xyzw", targetNodeId: "output", targetPinId: "color" },
+      ];
+      const stack = addAuthoredPostProcessTasks({ frameGraph: mutationGraph, library, sourceTexture: color,
+        logicalBuffers: { sceneDepth: depth },
+        stack: [{ id: "mutable", materialGuid: "mutable", order: 0, enabled: false }],
+        documentFor: () => post, onDiagnostic: (error) => { errors.push(error); } });
+      const copy = new FrameGraphCopyToBackbufferColorTask("Lifetime Readback", mutationGraph);
+      copy.sourceTexture = stack.outputTexture;
+      mutationGraph.addTask(copy);
+      await mutationGraph.buildAsync();
+      for (const enabled of [false, true]) {
+        if (enabled) {
+          stack.tasks[0]!.disabled = false;
+          await stack.tasks[0]!.initAsync();
+          await mutationGraph.whenReadyAsync();
+        }
+        engine.beginFrame();
+        try { mutationGraph.execute(); } finally { engine.endFrame(); }
+        const pixels = await engine.readPixels(16, 16, 1, 1);
+        const pixel = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, 4));
+        if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
+          [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
+        captures.push({ material: "mutation", buffer: enabled ? "enabled-depth" : "disabled-depth", pixel });
+      }
+      if (errors.length) throw new Error(JSON.stringify(errors));
+    } finally {
+      for (const task of mutationGraph.tasks) task.dispose();
+      mutationGraph.dispose();
     }
     return { backend, captures, retainedGraphs: scene.frameGraphs.length,
       retainedRenderers: scene.objectRenderers.length, legacyPrepass: !!scene.prePassRenderer };

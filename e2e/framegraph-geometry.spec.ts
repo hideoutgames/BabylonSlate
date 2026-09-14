@@ -23,7 +23,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     for (const capture of result.captures) {
       // Plane lies four units from a camera with near=1, far=11: depth=.3.
       // Its front-facing world normal is (0,0,-1), encoded into [0,1].
-      const expected = capture.buffer === "depth" ? [77, 0, 0, 255]
+      const expected = capture.buffer === "disabled-depth" ? [191, 0, 0, 255]
+        : capture.buffer === "enabled-depth" ? [64, 64, 64, 255]
+        : capture.buffer === "depth" ? [77, 0, 0, 255]
         : capture.buffer === "post-depth" ? [77, 77, 77, 255] : [128, 128, 0, 255];
       expect(Math.max(...capture.pixel.map((value, index) => Math.abs(value - expected[index]!))), JSON.stringify(capture)).toBeLessThanOrEqual(1);
     }
