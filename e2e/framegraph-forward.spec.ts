@@ -82,6 +82,9 @@ test(`opt-in Forward FrameGraph preserves surface pixels and scene ownership on 
     expect(entry.retainedGraphs, entry.mode).toBe(0);
     expect(entry.siblingAfter, entry.mode).toEqual(entry.siblingBefore);
     if (output === "texture") {
+      const expectedSibling = [153, 51, 179, 255];
+      for (let channel = 0; channel < 4; channel++)
+        expect(Math.abs(entry.siblingBefore[channel]! - expectedSibling[channel]!)).toBeLessThanOrEqual(1);
       expect(entry.siblingPreservedDuringTarget, entry.mode).toEqual(entry.siblingBefore);
       expect(entry.targetReferencesAfter, entry.mode).toEqual([1, 1]);
       expect(entry.classicAfterDispose, entry.mode).toEqual(entry.targetAfterDispose);

@@ -177,11 +177,14 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       });
       const existingRenderers = scene.objectRenderers.length;
       const coordinator = new ForwardSceneFrameGraph(scene);
-      const capture = async (name: string) => {
+      const capture = async (name: string, beforeTarget?: () => void) => {
         scene.activeCamera = expectedCamera;
         await scene.whenReadyAsync();
         beginEngineDrawCallFrame(engine);
-        draw(() => scene.render(false));
+        draw(() => {
+          beforeTarget?.();
+          scene.render(false);
+        });
         const classicDraws = readEngineDrawCalls(engine);
         const classic = await read(target);
         engine.restoreDefaultFramebuffer(true);
@@ -192,8 +195,15 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         const readinessDraws = readEngineDrawCalls(engine);
         if (before !== previousBefore || after !== previousAfter)
           throw new Error("Graph readiness consumed a scene frame");
-        const result = draw(() => coordinator.render(expectedCamera, false));
+        const result = draw(() => {
+          beforeTarget?.();
+          return coordinator.render(expectedCamera, false);
+        });
         const graphDraws = readEngineDrawCalls(engine);
+        // A registered view copies this bitmap synchronously at the end of its
+        // admitted frame. WebGPU's private constructor canvas is not persistent
+        // storage across later presentation frames.
+        const visibleSibling = beforeTarget ? readCanvas() : null;
         const graph = await read(target);
         engine.restoreDefaultFramebuffer(true);
         captures.push({
@@ -212,6 +222,7 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
             (mesh) => mesh.isWorldMatrixFrozen && mesh.material?.isFrozen,
           ),
         });
+        return visibleSibling;
       };
       await capture("surface");
       for (const mesh of scene.meshes) {
@@ -240,8 +251,10 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       );
       draw(() => sibling.render(false));
       const siblingBefore = target ? readCanvas() : await read();
-      await capture("after-sibling");
-      const siblingPreservedDuringTarget = target ? readCanvas() : null;
+      const siblingPreservedDuringTarget = await capture(
+        "after-sibling",
+        target ? () => sibling.render(false) : undefined,
+      );
       const color = target?.getInternalTexture();
       const depth = target?.depthStencilTexture;
       coordinator.dispose();
