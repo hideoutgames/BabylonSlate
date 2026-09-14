@@ -312,6 +312,32 @@ describe("Play createEngine view", () => {
     expect(handle.scheduler.shouldRender(performance.now() + 1000)).toBe(false);
   });
 
+  it("does not acknowledge a copied first frame until its owning GPU fence completes", async () => {
+    const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    let signaled = false;
+    const gl = {
+      NO_ERROR: 0, CONTEXT_LOST_WEBGL: 37442, SYNC_GPU_COMMANDS_COMPLETE: 37143,
+      WAIT_FAILED: 37149, ALREADY_SIGNALED: 37146, CONDITION_SATISFIED: 37148,
+      getError: () => 0, isContextLost: () => false, fenceSync: () => ({}),
+      clientWaitSync: () => signaled ? 37148 : 37147, deleteSync: vi.fn(), flush: () => {},
+    };
+    Object.assign(engine, { _gl: gl });
+    handle.setPaused(true);
+    let ready = false;
+    const presented = handle.presentFirstFrame().then(() => { ready = true; });
+    loop.mock.calls[0]![0]();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    signaled = true;
+    await presented;
+    expect(ready).toBe(true);
+    expect(gl.deleteSync).toHaveBeenCalledOnce();
+    Reflect.deleteProperty(engine, "_gl");
+  });
+
   it("does not spend a loading permit on a sibling view or a hidden document", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");

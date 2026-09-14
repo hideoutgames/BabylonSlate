@@ -1,3 +1,4 @@
+import { submitPresentedFrame } from "./presented-frame";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
@@ -737,6 +738,7 @@ function initializeEngine(
   let contextLost = false;
   let loadGeneration = 0;
   let worldLoading = false;
+  let worldLoadId = 0;
   const layerLoads = new Map<string, { loadId: number; ready: boolean }>();
   type PendingPresentation = {
     promise: Promise<void>;
@@ -745,6 +747,8 @@ function initializeEngine(
     timer: ReturnType<typeof setTimeout>;
     rendered: boolean;
     owner?: SceneLayerLoadIdentity;
+    submission: ReturnType<typeof submitPresentedFrame> | null;
+    copied: boolean;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
   const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
@@ -753,6 +757,7 @@ function initializeEngine(
       if (key !== undefined && id !== key) continue;
       pendingPresentations.delete(id);
       clearTimeout(pending.timer);
+      pending.submission?.cancel();
       pending.reject(error);
     }
   };
@@ -814,7 +819,7 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
-  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered) && scheduler.canPresentLoadingFrame();
+  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered && !pending.submission) && scheduler.canPresentLoadingFrame();
   const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
   const shouldRenderFrame = (now: number) => hasLoadingFrame() || (hasReadyContent() &&
@@ -1677,6 +1682,16 @@ function initializeEngine(
     assert();
     return { target: target!, assert };
   };
+  const finishPresentation = (key: string, pending: PendingPresentation) => {
+    if (!pending.rendered || !pending.copied || pending.submission || pendingPresentations.get(key) !== pending) return;
+    pendingPresentations.delete(key);
+    clearTimeout(pending.timer);
+    if (pending.owner) {
+      const layer = layerLoads.get(pending.owner.layerId);
+      if (layer?.loadId === pending.owner.layerLoadId) layer.ready = true;
+    } else worldLoading = false;
+    pending.resolve();
+  };
   const tilemapPreviewStart = performance.now();
   const renderLoop = () => {
     if (disposed || contextLost || registeredView?.enabled === false) return;
@@ -1728,19 +1743,32 @@ function initializeEngine(
       updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
     }
     try {
-      const candidates = [...pendingPresentations.values()].filter((pending) => !pending.rendered);
-      const presentingLayers = new Set(candidates.flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
-      const ready = (pending: PendingPresentation) => pending.owner
-        ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true
-        : isSceneFrameReady(scene) && (sceneLayerCompositor?.isReady() ?? true);
-      const readyBefore = new Map(candidates.map((pending) => [pending, ready(pending)]));
-      if (!worldLoading || candidates.some((pending) => !pending.owner)) scene.render();
+      const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
+      const drawOwner = (key: string, draw: () => void) => {
+        const pending = pendingPresentations.get(key);
+        if (!pending || pending.rendered || pending.submission) { draw(); return; }
+        const ready = () => pending.owner
+          ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true
+          : isSceneFrameReady(scene);
+        pending.copied = false;
+        const submission = submitPresentedFrame(engine, () => {
+          const before = ready();
+          draw();
+          pending.rendered = before && ready();
+        });
+        pending.submission = submission;
+        void submission.completed.then(() => {
+          if (pending.submission !== submission) return;
+          pending.submission = null;
+          finishPresentation(key, pending);
+        }, (error: unknown) => {
+          if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
+        });
+      };
+      if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => scene.render());
       else engine.clear(scene.clearColor, true, true, true);
-      sceneLayerCompositor?.render(presentingLayers);
+      sceneLayerCompositor?.render(presentingLayers, (layerId, draw) => drawOwner(`layer:${layerId}`, draw));
       if (rttPresent) rttPresent.blit();
-      // A draw can create effects. Both checks belong to the same owner; another
-      // pending layer neither draws nor delays the ready owner's acknowledgement.
-      for (const pending of candidates) pending.rendered = readyBefore.get(pending) === true && ready(pending);
     } catch (error) {
       if (!pendingPresentations.size) throw error;
       cancelPresentation(error instanceof Error ? error : new Error(String(error)));
@@ -1755,13 +1783,8 @@ function initializeEngine(
   const presentationObserver = engine.onEndFrameObservable.add(() => {
     for (const [key, pending] of pendingPresentations) {
       if (!pending.rendered) continue;
-      pendingPresentations.delete(key);
-      clearTimeout(pending.timer);
-      if (pending.owner) {
-        const layer = layerLoads.get(pending.owner.layerId);
-        if (layer?.loadId === pending.owner.layerLoadId) layer.ready = true;
-      } else worldLoading = false;
-      pending.resolve();
+      pending.copied = true;
+      finishPresentation(key, pending);
     }
   });
   onRollback(() => engine.onEndFrameObservable.remove(presentationObserver));
@@ -2012,7 +2035,11 @@ function initializeEngine(
         refreshPlayActiveCamera(scene, binding);
         rebuildIfActiveCameraChanged(previousCamera);
       }
-      if (command.type === "sceneLoading" || command.type === "activeScene") worldLoading = true;
+      if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        worldLoadId = command.sceneLoadId;
+        worldLoading = true;
+        cancelPresentation(new Error("Scene loading was superseded."), "world");
+      }
       if (command.type === "sceneLayerLoading") {
         const previous = layerLoads.get(command.layerId);
         if (!previous || previous.loadId < command.layerLoadId) {
@@ -2351,7 +2378,7 @@ function initializeEngine(
       const timer = setTimeout(() => {
         cancelPresentation(new Error("The scene did not present a frame before the loading deadline."), key);
       }, SCENE_SHADER_WARM_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, rendered: false, owner });
+      pendingPresentations.set(key, { promise, resolve, reject, timer, rendered: false, owner, submission: null, copied: false });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),

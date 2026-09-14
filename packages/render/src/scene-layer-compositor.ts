@@ -213,11 +213,12 @@ export class SceneLayerCompositor {
     }
   }
 
-  render(presentingLayers: ReadonlySet<string> = new Set()): void {
+  render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => void) => void = (_id, render) => render()): void {
     for (const layer of this.sortedLayers()) {
       if (!this.isLayerReady(layer.layerId) && !presentingLayers.has(layer.layerId)) continue;
       const record = layer as LayerRecord;
       this.bindHudCamera(record);
+      draw(layer.layerId, () => {
       if (record.rtt) {
         record.scene.autoClear = true;
         record.scene.render();
@@ -227,6 +228,7 @@ export class SceneLayerCompositor {
         record.scene.autoClearDepthAndStencil = true;
         record.scene.render();
       }
+      });
     }
   }
 
