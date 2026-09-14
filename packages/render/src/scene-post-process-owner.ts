@@ -1,3 +1,4 @@
+import { PostProcessRetirement } from "./post-process-retirement";
 import { materialParameterDefaults } from "@babylonslate/shader-graph";
 import type { Camera } from "@babylonjs/core";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
@@ -18,6 +19,9 @@ export class ScenePostProcessOwner {
   private graphParameters: ScenePostProcessParameters | undefined;
   private disposed = false;
   private cleanupFailure: unknown;
+  private readonly retirement = new PostProcessRetirement();
+  private resolveDisposed!: () => void;
+  private readonly disposedSignal = new Promise<void>((resolve) => { this.resolveDisposed = resolve; });
   private readonly replay = new Map<string, Map<string, MaterialParameterValue>>();
 
   constructor(options: AttachPostProcessStackOptions) {
@@ -100,8 +104,20 @@ export class ScenePostProcessOwner {
     if (this.cleanupFailure) throw this.cleanupFailure;
     if (this.disposed) return;
     this.disposed = true;
-    this.detachNative();
-    this.graphParameters = undefined;
+    try { this.detachNative(); }
+    finally { this.graphParameters = undefined; this.resolveDisposed(); }
+  }
+
+  async whenDisposed(): Promise<void> {
+    await this.disposedSignal;
+    if (this.cleanupFailure) throw this.cleanupFailure;
+    await this.retirement.whenDisposed();
+  }
+
+  async whenReleased(): Promise<void> {
+    await this.disposedSignal;
+    if (this.cleanupFailure) throw this.cleanupFailure;
+    await this.retirement.whenReleased();
   }
 
   private applyReplay(target: ScenePostProcessParameters): void {
@@ -111,7 +127,12 @@ export class ScenePostProcessOwner {
 
   private detachNative(): void {
     if (this.cleanupFailure) throw this.cleanupFailure;
-    try { this.native?.dispose(); }
+    try {
+      if (this.native) {
+        this.native.dispose();
+        this.retirement.add(this.native);
+      }
+    }
     catch (error) { this.cleanupFailure = error; throw error; }
     this.native = undefined;
     this.nativeCamera = undefined;
