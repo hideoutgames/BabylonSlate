@@ -1,6 +1,6 @@
 import { Constants, Engine, FreeCamera, MeshBuilder, PBRMaterial, Scene, Vector3 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
-import { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
+import { LogicalGeometryTask } from "@babylonslate/render/framegraph-logical-buffers";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { MaterialLibrary, createAppWebGpuEngine, setSceneRenderSettings } from "@babylonslate/render";
@@ -47,7 +47,7 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
           clear.clearColor = false;
           clear.clearDepth = true;
           graph.addTask(clear);
-          const geometry = new FrameGraphGeometryRendererTask("Shared Geometry", graph, scene);
+          const geometry = new LogicalGeometryTask("Shared Geometry", graph, scene);
           geometry.camera = camera;
           geometry.objectList = { meshes: [mesh], particleSystems: [] };
           geometry.depthTexture = clear.outputDepthTexture;
@@ -69,8 +69,8 @@ export async function runFrameGraphGeometryProof(backend: "webgl2" | "webgpu") {
           }
           engine.beginFrame();
           try { graph.execute(); } finally { engine.endFrame(); }
-          const pixels = new Uint8Array((await engine.readPixels(16, 16, 1, 1)).buffer);
-          const pixel = Array.from(pixels);
+          const pixels = await engine.readPixels(16, 16, 1, 1);
+          const pixel = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, 4));
           if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
             [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
           captures.push({ material: mode, buffer, pixel });

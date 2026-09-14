@@ -9,6 +9,7 @@
     "./render-scheduler": "./src/render-scheduler.ts",
     "./scene-perf": "./src/scene-perf.ts",
     "./framegraph-post-process": "./src/framegraph-post-process.ts",
+    "./framegraph-logical-buffers": "./src/framegraph-logical-buffers.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },
