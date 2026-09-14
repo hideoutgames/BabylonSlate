@@ -14,7 +14,7 @@ type SaveAllDiagnostics = {
   } | null;
 };
 
-async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
+export async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
   return page.evaluate(() => {
     const host = globalThis as {
       __babylonslateTest?: {

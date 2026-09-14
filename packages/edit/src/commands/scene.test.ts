@@ -316,6 +316,29 @@ describe("scene commands", () => {
 });
 
 describe("diffSceneCommands", () => {
+  it("resets an optional setting without losing undo, redo, or unrelated settings", () => {
+    const before = baseScene();
+    before.settings.renderPath = "forward";
+    const after = structuredClone(before);
+    delete after.settings.renderPath;
+
+    const commands = diffSceneCommands(before, after);
+    expect(commands).toHaveLength(1);
+    const reset = commands[0]!;
+    const applied = reset.apply(before);
+    expect(applied).toStrictEqual(after);
+    expect(Object.hasOwn(applied.settings, "renderPath")).toBe(false);
+    const restored = reset.invert().apply(applied);
+    expect(restored).toStrictEqual(before);
+    expect(reset.apply(restored)).toStrictEqual(after);
+    expect(before.settings.renderPath).toBe("forward");
+
+    const add = diffSceneCommands(after, before);
+    expect(add).toHaveLength(1);
+    expect(add[0]!.apply(after)).toStrictEqual(before);
+    expect(add[0]!.invert().apply(before)).toStrictEqual(after);
+  });
+
   it("derives no commands for an unchanged scene", () => {
     const scene = baseScene();
     expect(diffSceneCommands(scene, structuredClone(scene))).toEqual([]);

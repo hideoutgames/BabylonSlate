@@ -1,12 +1,12 @@
 # Scene editing (P6)
 
-Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 3`). **One world scene document tab at a time** — opening a scene closes the previous (Unsaved: Save / Discard / Cancel). Graphs, Content Browser, and **SceneLayer** overlay tabs stay. An **open** Scene tab stays mounted (`p18-inactive-documents`); idle-unmount does **not** close it. Closing or replacing the Scene tab disposes that viewport `Scene` (and cache retains), not the project Engine. Overlay Play uses `ensureSharedEngine` whether or not a Scene tab is open.
+Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 4`). **One world scene document tab at a time** — opening a scene closes the previous (Unsaved: Save / Discard / Cancel). Graphs, Content Browser, and **SceneLayer** overlay tabs stay. An **open** Scene tab stays mounted (`p18-inactive-documents`); idle-unmount does **not** close it. Closing or replacing the Scene tab disposes that viewport `Scene` (and cache retains), not the project Engine. Overlay Play uses `ensureSharedEngine` whether or not a Scene tab is open.
 
 SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world scene. See [scene-layers.md](scene-layers.md).
 
 Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loading Document** before storage access. A replacement keeps the current scene and its edit session until the read succeeds; read failures offer Retry / Close. Each request has an abort signal: a superseded read may finish in storage, but cannot replace the newer document. The viewport then owns asset, shader, and first-frame readiness.
 
-## SerializedScene v3
+## SerializedScene v4
 
 Scene Defaults lists Post Process passes and Scene Layers as compact two-line entries: a single-line asset picker with Open Asset, followed by Enabled, layer Z-Order, and reorder/remove controls. Names truncate with full names and paths available on hover. Desktop controls are 28px; coarse-pointer controls expand and wrap without overlapping. Counts appear beside Add. Reordering moves the complete entry, preserving independent Enabled and Z-Order values even when an asset appears more than once.
 
@@ -42,7 +42,7 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 - Search matches folder names and shows the folder path for actor hits (`Lighting / Spots / Lamp`).
 - Create / rename / reparent / delete and actor moves are `scene.addFolder`, `scene.renameFolder`, `scene.reparentFolder`, `scene.removeFolder`, and `scene.setActorFolder` — reversible commands on the existing undo stack.
 
-**Load always runs `normalizeScene`.** `ProjectService.loadDocument("scene")` coerces the file payload through `normalizeScene` so additive `SceneSettings` fields (`grid`, `environmentColor`, `cameraBounds2D`, …) exist in memory even when a current-version (v3) asset omitted them. Do not bump `SCENE_SCHEMA_VERSION` for additive keys. Files are not rewritten on load (migrate-on-save still requires approval). Play already normalized; the editor document tab now does too. Opening an old scene without this step threw in Details (`settings.grid` / `environmentColor`) and unmounted the editor.
+**Load always runs `normalizeScene`.** `ProjectService.loadDocument("scene")` coerces the file payload through `normalizeScene` so additive `SceneSettings` fields (`grid`, `environmentColor`, `cameraBounds2D`, …) exist in memory even when a current-version (v4) asset omitted them. Do not bump `SCENE_SCHEMA_VERSION` for additive keys. Files are not rewritten on load (migrate-on-save still requires approval). Play already normalized; the editor document tab now does too. Opening an old scene without this step threw in Details (`settings.grid` / `environmentColor`) and unmounted the editor.
 
 ## Actor Prefab instance sync
 
@@ -79,6 +79,10 @@ Panels never mutate selection independently — they consume `useSceneEditing()`
 ## Command layer
 
 Every scene Details / outliner / viewport mutation routes through `applySceneChange` → `diffSceneCommands` → the undo stack. Notable command types:
+
+Optional Scene settings, such as the Render Path override, reset by removing their key. The diff records removals as well as additions so Reset, Undo, Redo, and journal recovery preserve inheritance without changing unrelated settings.
+
+Notable command types:
 
 | Command                    | Diff trigger                                                                                |
 | -------------------------- | ------------------------------------------------------------------------------------------- |

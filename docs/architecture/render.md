@@ -4,7 +4,9 @@ The public rendering contract separates project `settings.render.renderPath` (`a
 
 Optional `scene.settings.renderPath` inherits from the project. `resolveRenderingPipeline` applies project → scene → local preview → session path precedence; deleting an override resumes live inheritance. Backend selection remains project-wide because all live views share one Engine. Save/reopen and project ZIP export retain authored requests, including unsupported requests.
 
-This contract slice exposes no new renderer. Its pure resolver reports effective Forward/WebGL2 with explicit limits for Auto/ClusteredForward or Auto/WebGPU requests; it preserves the authored values. It describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation, controls and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
+Project Settings → Rendering exposes independent Render Path and GPU Backend preferences alongside PBR/CEL. Scene Defaults → Rendering starts closed and supports a per-field path override; Reset To Project removes that key without changing other Scene settings. Property search temporarily expands the matching category. SceneLayer documents cannot author project Engine or normal Scene paths.
+
+The effective-selection feedback currently resolves Auto to Forward/WebGL2. Explicit Clustered Forward or WebGPU requests show their unavailable fallback while preserving the preference through Save/reopen and export. Settings commit on Done/close; changing a preference without changing its effective renderer does not rebuild the viewport. This policy describes implementation availability, not device capability: Engine creation must verify WebGL2 support. FrameGraph, ClusteredForward execution, WebGPU Engine creation and backend transition coordination remain separate work. No Deferred or real-time GI path is defined.
 
 Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
 
@@ -21,6 +23,8 @@ Readiness probes enter and restore their scene's floating-origin context, so a n
 Model readiness retains real GLB loader and instantiation failures, including loads started during fire-and-forget Play command delivery. A failed assigned model cannot advance scene loading to warming or presentation. Replacing/despawning the assignment clears its retained failure; late failures from superseded or disposed actors do not fail the current load.
 
 ## Project PBR / CEL rendering
+
+The Mannequin browser regression keeps its 1% illumination-change limit on unoccluded surfaces under frontal light. A separate oblique-light phase requires visible self-shadows from the head/torso and requires live Cast Shadows removal to restore the matching unshadowed frame within the same limit. Expected geometric occlusion therefore cannot masquerade as an illumination regression or conceal a missing shadow.
 
 The Basic 3D template recalculates the bundled Mannequin's normals from its existing faces before import, separating shared triangle corners. The supplied unlit model has smoothed corner normals on flat cuboid faces; under lit materials these produced diagonal CEL bands even with cast shadows disabled. Shape, UVs, hierarchy, animation, and triangle count remain unchanged. General imports preserve their authored normals; existing project copies are not rewritten. Preparation runs only when creating the template, with no per-frame preparation or extra draws.
 
