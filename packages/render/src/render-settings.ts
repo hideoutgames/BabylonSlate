@@ -10,10 +10,14 @@ import {
   type CelShadingSettings,
   type RenderMode,
   type RenderProjectSettings,
+  normalizeEnvironmentLightingSettings,
+  resolveEnvironmentLightingSettings,
+  type EnvironmentLightingSettings,
+  type EnvironmentLightingOverrides,
 } from "@babylonslate/core";
 
 export type RenderShadingSettings = Partial<
-  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality">
+  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting">
 >;
 type SceneRendering = {
   mode: RenderMode;
@@ -27,6 +31,8 @@ type SceneRendering = {
   overrides: CelShadingOverrides;
   shadows: ShadowSettings;
   shadowOverrides: ShadowOverrides;
+  environmentLighting: EnvironmentLightingSettings;
+  environmentOverrides: EnvironmentLightingOverrides;
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
@@ -46,6 +52,8 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       overrides: {},
       shadows: resolveRenderingQuality().shadows,
       shadowOverrides: {},
+      environmentLighting: normalizeEnvironmentLightingSettings(undefined),
+      environmentOverrides: {},
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -63,11 +71,14 @@ export function updateSceneRenderingSettings(
   project?: RenderShadingSettings,
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
+  environmentOverrides?: EnvironmentLightingOverrides,
 ): void {
   const state = sceneRenderingSettings(scene);
   if (project !== undefined) state.project = project;
   if (overrides !== undefined) state.overrides = overrides;
   if (shadowOverrides !== undefined) state.shadowOverrides = shadowOverrides;
+  if (environmentOverrides !== undefined) state.environmentOverrides = environmentOverrides;
+  state.environmentLighting = resolveEnvironmentLightingSettings(state.project.environmentLighting, state.environmentOverrides);
   const quality = resolveSceneRenderingQuality(scene);
   state.shadows = quality.shadows;
   state.textureLodBias = quality.textures.lodBias;

@@ -1,6 +1,7 @@
 import { normalizeCelShadingOverrides } from "./cel-shading";
 import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
+import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 import { normalizeRenderPathOverrides, type RenderPath } from "./render-path";
 
 /**
@@ -116,6 +117,8 @@ export interface SceneSettings {
   fogEnd: number;
   /** Optional IBL cube texture asset guid. */
   environmentTextureGuid: string | null;
+  /** Absent fields inherit the project's Environment Lighting settings. */
+  environmentLighting?: EnvironmentLightingOverrides;
   /** Default Camera actor id; both ids required to resolve. */
   mainCameraActorId: string | null;
   mainCameraComponentId: string | null;
@@ -203,6 +206,7 @@ export function createDefaultSceneSettings(
     fogStart: 0,
     fogEnd: 100,
     environmentTextureGuid: null,
+    environmentLighting: {},
     mainCameraActorId: null,
     mainCameraComponentId: null,
     gravity: [0, -9.81, 0],
@@ -474,6 +478,7 @@ export function normalizeSceneSettings(
       typeof source.fogStart === "number" ? source.fogStart : defaults.fogStart,
     fogEnd: typeof source.fogEnd === "number" ? source.fogEnd : defaults.fogEnd,
     environmentTextureGuid: asNullableString(source.environmentTextureGuid),
+    environmentLighting: normalizeEnvironmentLightingOverrides(source.environmentLighting),
     ...normalizeMainCamera(
       source.mainCameraActorId,
       source.mainCameraComponentId,
