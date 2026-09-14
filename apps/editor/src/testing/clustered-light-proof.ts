@@ -1,4 +1,7 @@
-import { normalizeCelShadingSettings } from "@babylonslate/core";
+import {
+  normalizeCelShadingSettings,
+  normalizeShadowSettings,
+} from "@babylonslate/core";
 /** Real GPU contribution oracle; this hook is available only in test builds. */
 import {
   Color3,
@@ -370,6 +373,7 @@ export async function runClusteredLightProof() {
               centerHit,
               referenceDefines,
               positionProbePixel,
+              clusteredCount: owner.status().clustered,
               clustered: await read(),
               prepared,
               result,
@@ -380,9 +384,83 @@ export async function runClusteredLightProof() {
             owner.dispose();
           }
         }
-        tieGraph.dispose();
         positionProbe.dispose();
         for (const light of tieLights) light.dispose();
+        // Epsilon comparison is sequential: each small increase is a tie, while
+        // reducing the last two lights first would spuriously replace the red
+        // conventional prefix. The point map is real, with an unoccluded floor.
+        setSceneRenderSettings(scene, {
+          shadows: normalizeShadowSettings({
+            localLightMode: "manual",
+            maxLocalLights: 1,
+            localMapSize: 256,
+            mapSize: 256,
+            autoBias: false,
+            normalBias: 0.02,
+            depthBias: 0.001,
+          }),
+        });
+        const mixedLights = [0, 1, 2].map((index) => {
+          const light = new PointLight(
+            `mixed-${index}`,
+            new Vector3(0, 3, 0),
+            scene,
+          );
+          applyAuthoredLightProperties(light, {
+            enabled: true,
+            castShadows: index === 0,
+            range: 12,
+            intensity: 1.2 + index * 0.000014,
+            color:
+              index === 0
+                ? [0.8, 0, 0]
+                : index === 1
+                  ? [0, 0.8, 0]
+                  : [0, 0, 0.8],
+          });
+          return light;
+        });
+        for (const [kind, material] of [
+          ["native", native],
+          ["graph", compiled.material],
+        ] as const) {
+          surface.material = material;
+          setSceneRenderSettings(scene);
+          for (const x of [-3, 3]) {
+            engine.setSize(97, 73);
+            scene.activeCamera = camera;
+            camera.position.set(x, 3, -6);
+            camera.setTarget(Vector3.Zero());
+            const ready = await tieGraph.prepare(camera);
+            if (ready.path !== "frameGraph") throw new Error(ready.reason);
+            scene.render(false);
+            const reference = await read();
+            const referenceOrder = surface.lightSources.map(
+              (light) => light.name,
+            );
+            const owner = new ClusteredSceneLights(scene, mixedLights);
+            beginEngineDrawCallFrame(engine);
+            const prepared = await tieGraph.prepare(camera);
+            const readinessDraws = readEngineDrawCalls(engine);
+            const result = tieGraph.render(camera, false);
+            ties.push({
+              name: `${kind}-mixed-camera-${x}`,
+              reference,
+              referenceOrder,
+              positionProbePixel: null,
+              clusteredCount: owner.status().clustered,
+              clustered: await read(),
+              prepared,
+              result,
+              readinessDraws,
+              width: canvas.width,
+              height: canvas.height,
+            });
+            owner.dispose();
+          }
+        }
+        for (const light of mixedLights) light.dispose();
+        tieGraph.dispose();
         surface.dispose();
       }
       lifecycle.push({

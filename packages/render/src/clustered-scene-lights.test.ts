@@ -332,6 +332,40 @@ describe("explicit clustered light ownership", () => {
     expect(mesh.lightSources).toEqual([lights[0]]);
   });
 
+  it("uploads stable authored light rows when camera depth reverses, and honors explicit priority changes", () => {
+    const { engine, scene, lights } = fixture();
+    for (const light of lights.slice(2)) light.dispose();
+    lights[0]!.position.set(-2, 3, 0);
+    lights[1]!.position.set(2, 3, 0);
+    const owner = new ClusteredSceneLights(scene, lights.slice(0, 2));
+    const camera = scene.activeCamera as FreeCamera;
+    const target = owner.target(camera)!;
+    const uploads = vi.spyOn(engine, "updateRawTexture");
+    const rows = () => {
+      const upload = uploads.mock.calls
+        .filter(
+          (call) => call[1] instanceof Float32Array && call[1].length >= 40,
+        )
+        .at(-1);
+      const data = upload![1] as Float32Array;
+      return [data[0], data[20]];
+    };
+    for (const x of [-3, 3]) {
+      camera.position.set(x, 3, -6);
+      camera.setTarget(Vector3.Zero());
+      scene.incrementRenderId();
+      target.render(false);
+      expect(rows()).toEqual([-2, 2]);
+      expect(owner.target(camera)).toBe(target);
+    }
+    lights[1]!.renderPriority = 1;
+    scene.incrementRenderId();
+    target.render(false);
+    expect(rows()).toEqual([2, -2]);
+    owner.dispose();
+    expect(lights.slice(0, 2).every((light) => !light.isDisposed())).toBe(true);
+  });
+
   it("returns conventional lighting for orthographic cameras pending a compatible mask projection", () => {
     const { scene, lights } = fixture();
     scene.activeCamera!.mode = Camera.ORTHOGRAPHIC_CAMERA;

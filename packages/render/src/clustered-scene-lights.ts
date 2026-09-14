@@ -27,6 +27,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { beginClusteredAllocation } from "./clustered-allocation";
 import { ClusteredCameraBounds } from "./clustered-camera-bounds";
+import { ClusteredLightOrder } from "./clustered-light-order";
 import { sceneRenderingSettings } from "./render-settings";
 import { forwardLightBudget } from "./forward-light-budget";
 import { ManagedClusteredLightContainer } from "./clustered-light-container";
@@ -54,6 +55,7 @@ export class ClusteredSceneLights {
   private allocationFailure: string | undefined;
   private allocatedBatches = 0;
   private cameraBounds: ClusteredCameraBounds | undefined;
+  private lightOrder: ClusteredLightOrder | undefined;
   private statusValue: ClusteredSceneLightStatus = {
     clustered: 0,
     conventional: 0,
@@ -229,6 +231,11 @@ export class ClusteredSceneLights {
           container._updateBatches(this.scene.activeCamera),
           this.usesUnboundedPhysicalLighting(),
         );
+        this.lightOrder ??= new ClusteredLightOrder(container);
+        this.lightOrder.sync(
+          container._updateBatches(this.scene.activeCamera),
+          this.registry,
+        );
       }
       const clustered = this.container?.lights.length ?? 0;
       // Babylon retains its high-water allocation when membership shrinks.
@@ -318,6 +325,8 @@ export class ClusteredSceneLights {
     for (const light of this.container.lights.slice()) this.returnLight(light);
     // The container owns its proxy material/textures, but its child lights are
     // borrowed and must be removed before Babylon's recursively owning dispose.
+    this.lightOrder?.dispose();
+    this.lightOrder = undefined;
     this.cameraBounds?.dispose();
     this.cameraBounds = undefined;
     this.container.dispose(false, true);
