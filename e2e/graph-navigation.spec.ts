@@ -8,7 +8,7 @@ async function zoom(editor: Locator): Promise<number> {
   );
 }
 
-test("graph navigation zooms and fits above overlapping nodes @ipad", async ({ page, isMobile }) => {
+test("graph navigation zooms and fits above overlapping nodes @ipad", async ({ page, isMobile }, testInfo) => {
   await openTestProject(page);
   expect(await page.evaluate(async () => {
     const host = globalThis as unknown as {
@@ -47,17 +47,27 @@ test("graph navigation zooms and fits above overlapping nodes @ipad", async ({ p
   expect(boxes[1]!.y).toBeGreaterThanOrEqual(boxes[0]!.y + boxes[0]!.height);
   expect(boxes[2]!.y).toBeGreaterThanOrEqual(boxes[1]!.y + boxes[1]!.height);
 
-  // Drag the real node over Zoom In, reproducing elevated selected-node stacking.
+  // Select, then place the real node beneath the island through the document host.
+  // Dragging to the canvas edge can auto-pan, making the final overlap timing-dependent.
   const node = editor.locator('.react-flow__node[data-id="log"]');
   const title = node.getByText("Log", { exact: true });
-  const nodeBox = (await node.boundingBox())!;
-  const titleBox = (await title.boundingBox())!;
-  const target = boxes[0]!;
-  const start = { x: titleBox.x + titleBox.width / 2, y: titleBox.y + titleBox.height / 2 };
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(start.x + target.x - nodeBox.x, start.y + target.y - nodeBox.y, { steps: 12 });
-  await page.mouse.up();
+  await press(title);
+  await expect(node).toHaveClass(/selected/);
+  const position = await editor.evaluate((element) => {
+    const canvas = element.querySelector('.react-flow')!.getBoundingClientRect();
+    const button = element.querySelector('[aria-label="Zoom In"]')!.getBoundingClientRect();
+    const transform = new DOMMatrixReadOnly(getComputedStyle(element.querySelector('.react-flow__viewport')!).transform);
+    const point = transform.inverse().transformPoint(new DOMPoint(button.x - canvas.x, button.y - canvas.y - 10));
+    return { x: point.x, y: point.y };
+  });
+  expect(await page.evaluate(async (position) => {
+    const host = globalThis as unknown as {
+      __babylonslateTest: { setMainGraphContent: (graph: SerializedGraph) => Promise<boolean> };
+    };
+    return host.__babylonslateTest.setMainGraphContent({
+      nodes: [{ id: "log", type: "debug.log", position, data: {} }], edges: [],
+    });
+  }, position)).toBe(true);
   await expect.poll(() => zoomIn.evaluate((button) => {
     const rect = button.getBoundingClientRect();
     const stack = document.elementsFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
@@ -66,6 +76,7 @@ test("graph navigation zooms and fits above overlapping nodes @ipad", async ({ p
       nodeUnderneath: stack.some((element) => element.closest('.react-flow__node[data-id="log"]')),
     };
   })).toEqual({ buttonOnTop: true, nodeUnderneath: true });
+  await editor.screenshot({ path: testInfo.outputPath("graph-navigation.png") });
   await press(zoomIn);
   await expect.poll(() => zoom(editor)).toBeGreaterThan(initialZoom);
   await press(fit);
