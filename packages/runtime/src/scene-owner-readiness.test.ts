@@ -19,12 +19,13 @@ function documents() {
   scene.name = "World";
   scene.actors = [createActor("world-actor", "World", { classId: "WorldActor",
     components: [createMeshComponent("world-mesh", "box"),
-      { id: "logic", classId: "LogicComponent", properties: { logicClass: "OwnedLogic" } }] })];
+      { id: "logic", classId: "OwnedComponent", properties: {} }] })];
   scene.settings.sceneLayers = [{ assetGuid: "overlay", enabled: true, zOrder: 1 }];
   const layer = createDefaultSceneLayer();
   layer.settings.gravity = [0, 0, 0];
   layer.actors = [createActor("layer-actor", "Overlay", { classId: "LayerActor",
     components: [createMeshComponent("layer-mesh", "box"),
+      { id: "layer-component", classId: "OwnedComponent", properties: {} },
       { id: "body", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 0 } }] })];
   return { scene, layer };
 }
@@ -50,7 +51,7 @@ describe("scene owner readiness", () => {
       playScene: scene, playSceneGuid: "world", sceneLayerLibrary: { overlay: layer },
       cooperativeSceneLoading: true, deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
     try {
-      await runtime.loadScripts([script("WorldActor", "Actor"), script("LayerActor", "SceneLayerActor"), script("OwnedLogic", "ComponentLogic")]);
+      await runtime.loadScripts([script("WorldActor", "Actor"), script("LayerActor", "SceneLayerActor"), script("OwnedComponent", "ActorComponent")]);
       const finished: string[] = [];
       const world = runtime.getWorld();
       world.setGameInstance(world.createGameInstance({ classId: "GameInstance", variables: { ticks: 0 }, hooks: {
@@ -60,7 +61,7 @@ describe("scene owner readiness", () => {
       runtime.beginPlayLoading();
       await runtime.realizePlayWorld();
       const actor = world.findActor("world-actor")!;
-      const logic = actor.components.find((component) => component.guid === "logic")!.logic!;
+      const logic = actor.components.find((component) => component.guid === "logic")!;
       const ownedLayer = world.getSceneLayers()[0]!;
       const globalLayer = runtime.createSceneLayer("overlay")!;
       await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneLayerRealized" && command.layerId === globalLayer.guid)).toBe(true));
@@ -72,6 +73,8 @@ describe("scene owner readiness", () => {
       expect(globalActor.getVariable("began")).toBeUndefined();
       runtime.finishPlayLoading();
       expect(globalActor.getVariable("began")).toBe(true);
+      const globalComponent = globalActor.components.find((component) => component.classId === "OwnedComponent")!;
+      expect(globalComponent.getVariable("began")).toBe(true);
       runtime.notifySceneModelsReady("world", 1);
       expect(actor.getVariable("began")).toBeUndefined();
       expect(finished).toEqual([]);
@@ -80,6 +83,7 @@ describe("scene owner readiness", () => {
       runtime.tick();
       runtime.tick();
       expect(globalActor.getVariable("ticks")).toBe(2);
+      expect(globalComponent.getVariable("ticks")).toBe(2);
       expect(world.gameInstance!.getVariable("ticks")).toBe(2);
       expect(actor.getVariable("ticks")).toBeUndefined();
       expect(logic.getVariable("ticks")).toBeUndefined();
@@ -165,12 +169,12 @@ describe("scene owner readiness", () => {
       cooperativeSceneLoading: true, deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([callable("WorldActor", "Actor"), callable("LayerActor", "SceneLayerActor"),
-        callable("OwnedLogic", "ComponentLogic"), callable("Utility", "BObject"), giScript]);
+        callable("OwnedComponent", "ActorComponent"), callable("Utility", "BObject"), giScript]);
       runtime.beginPlayLoading();
       await runtime.realizePlayWorld();
       const world = runtime.getWorld();
       const actor = world.findActor("world-actor")!;
-      const logic = actor.components.find((component) => component.guid === "logic")!.logic!;
+      const logic = actor.components.find((component) => component.guid === "logic")!;
       const text = actor.components.find((component) => component.guid === "text")!;
       const ownedLayer = world.getSceneLayers()[0]!;
       const ownedActor = world.getActors().find((candidate) => candidate.sceneLayerId === ownedLayer.guid)!;
@@ -235,7 +239,7 @@ describe("scene owner readiness", () => {
       playScene: scene, playSceneGuid: "world", sceneLayerLibrary: { overlay: layer },
       deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
     try {
-      await runtime.loadScripts([script("WorldActor", "Actor"), script("LayerActor", "SceneLayerActor"), script("OwnedLogic", "ComponentLogic")]);
+      await runtime.loadScripts([script("WorldActor", "Actor"), script("LayerActor", "SceneLayerActor"), script("OwnedComponent", "ActorComponent")]);
       runtime.realizePlayWorld();
       const oldLayer = runtime.getWorld().getSceneLayers()[0]!;
       const oldActor = runtime.getWorld().getActors().find((actor) => actor.sceneLayerId === oldLayer.guid)!;
