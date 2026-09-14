@@ -23,6 +23,7 @@ import {
   humanizePropertyLabel,
   resolveTypeVisual,
   selectedPickerIdentity,
+  walkAncestry,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -80,7 +81,6 @@ import {
   applyPrefabPropertyDefaults,
   componentPropertyRows,
   gameInstanceClassEntries,
-  subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import {
@@ -173,6 +173,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const [sceneLayerPick, setSceneLayerPick] = useState<"add" | number | null>(
     null,
   );
+  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
@@ -622,8 +623,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
     const showPostProcess = matches("Post Processing Material Enabled Scalable Resolution");
     const showShadows = !overlay && matches(SHADOW_SETTINGS_SEARCH_TEXT);
-    const showEnvironment = !overlay && matches(ENVIRONMENT_LIGHTING_SEARCH_TEXT);
     const showPipeline = !overlay && matches("Rendering Render Path GPU Backend Auto Forward Clustered Forward WebGL2 WebGPU Effective Selection");
+    const showEnvironment = !overlay && matches(ENVIRONMENT_LIGHTING_SEARCH_TEXT);
     const showCel = celEnabled && matches("Post Processing CEL Shading Shadow Bands Threshold Strength Softness Specular Light Color Influence Mixing Strongest Additive Blend");
     const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
     return (
@@ -1030,10 +1031,6 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
-            logicClasses: subclassClassEntries(
-              "ComponentLogic",
-              assetRegistry?.list() ?? [],
-            ),
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
           },
@@ -1178,7 +1175,13 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     className={expanded ? undefined : "-rotate-90"}
                   />
                   <TypeVisualIcon
-                    visual={resolveTypeVisual({ classId: component.classId })}
+                    visual={resolveTypeVisual({
+                      classId: component.classId,
+                      ancestry: walkAncestry(
+                        component.classId,
+                        parentOf,
+                      ),
+                    })}
                     data-testid={`component-type-icon-${component.id}`}
                   />
                   <span className="truncate">{title}</span>

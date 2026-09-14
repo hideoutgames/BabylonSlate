@@ -140,25 +140,18 @@ export class Actor extends BObject {
     }
     component.owner = this;
     this.components.push(component);
-    component.callOnCreation();
+    if (this.world) component.callOnCreation();
   }
 }
 
 export class ActorComponent extends BObject {
   private materialObject: MaterialObject | null = null;
-  logic: ComponentLogic | null = null;
+  private creationCalled = false;
 
-  override callOnTick(ctx: TickContext): void {
-    super.callOnTick(ctx);
-    if (!this.destroyed) this.logic?.callOnTick(ctx);
-  }
-
-  override callOnDestroyed(): void {
-    if (this.logic && !this.logic.destroyed) {
-      this.logic.destroyed = true;
-      this.logic.callOnDestroyed();
-    }
-    super.callOnDestroyed();
+  override callOnCreation(): void {
+    if (this.creationCalled || this.destroyed || !this.owner?.world) return;
+    this.creationCalled = true;
+    super.callOnCreation();
   }
   private materialRevision = 0;
   owner: Actor | null = null;
@@ -241,21 +234,6 @@ export class ActorComponent extends BObject {
       }
     }
     super.setVariable(name, value);
-  }
-}
-
-/** One authored logic instance owned by a Logic Component. */
-export class ComponentLogic extends BObject {
-  readonly component: ActorComponent;
-  constructor(component: ActorComponent, options: ConstructorParameters<typeof BObject>[0]) {
-    super(options);
-    this.component = component;
-  }
-  override getVariable(name: string): unknown {
-    return name === "component" ? this.component : super.getVariable(name);
-  }
-  override setVariable(name: string, value: unknown): void {
-    if (name !== "component") super.setVariable(name, value);
   }
 }
 

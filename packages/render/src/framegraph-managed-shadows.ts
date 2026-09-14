@@ -224,9 +224,16 @@ export class ManagedShadowsTask extends FrameGraphTask {
           // only for this draw so classic rendering retains its original state.
           map._disableEngineStages = true;
           context.setDepthStates(true, true);
-          withSceneReadinessState(this.scene, () =>
-            context.renderUnmanaged(map),
-          );
+          withSceneReadinessState(this.scene, () => {
+            const output = this.objects.camera.outputRenderTarget?.renderTarget;
+            if (output) {
+              // CSM's before-bind hook reads the camera's cached projection.
+              // Match Scene.render's output binding before computing cascades.
+              engine.bindFramebuffer(output);
+              this.scene.updateTransformMatrix(true);
+            }
+            context.renderUnmanaged(map);
+          });
         } catch (error) {
           failed = true;
           failure = error;

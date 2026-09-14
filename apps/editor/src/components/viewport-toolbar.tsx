@@ -403,7 +403,8 @@ export function ViewportToolbar({
           {viewportMode.toUpperCase()}
         </Button>
       ) : null}
-      {viewportShadingMode !== "pbr" ? (
+      {viewportShadingMode === "wireframe" ||
+      (viewportShadingMode === "unlit" && showViewportModeToggle) ? (
         <Badge variant="secondary">
           {viewportShadingMode === "wireframe" ? "Wireframe" : "Unlit"}
         </Badge>

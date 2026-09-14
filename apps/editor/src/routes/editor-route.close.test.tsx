@@ -17,6 +17,9 @@ import EditorRoute from "./editor-route";
 
 const state = vi.hoisted(() => ({
   documents: [] as OpenDocument[],
+  projectDirty: false,
+  closeProject: vi.fn(async (): Promise<{ blocked: boolean; projectDirty: boolean; dirty: OpenDocument[] }> => ({ blocked: state.projectDirty, projectDirty: state.projectDirty, dirty: [] })),
+  forceCloseProject: vi.fn(async () => {}),
   saveAll: vi.fn(async () => true),
   closeDocument: vi.fn((id: string) => {
     state.documents = state.documents.filter((doc) => doc.id !== id);
@@ -27,6 +30,9 @@ vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     openDocuments: state.documents,
     dirtyDocuments: state.documents.filter((doc) => doc.dirty),
+    projectDirty: state.projectDirty,
+    closeProject: state.closeProject,
+    forceCloseProject: state.forceCloseProject,
     migrationPending: [],
     pendingExclusiveScene: null,
     externalChangePrompt: null,
@@ -43,10 +49,14 @@ vi.mock("../components/editor-chrome-bar", async () => {
     EditorChromeBar: ({
       onCloseDocument,
       onCloseAllDocuments,
+      onCloseProject,
     }: {
       onCloseDocument: (id: string) => void;
       onCloseAllDocuments: () => void;
+      onCloseProject: () => void;
     }) => (
+      <>
+      <button onClick={onCloseProject}>Close Project</button>
       <DocumentSwitcher
         documents={state.documents}
         activeDocumentId="scene"
@@ -54,6 +64,7 @@ vi.mock("../components/editor-chrome-bar", async () => {
         onClose={onCloseDocument}
         onCloseAll={onCloseAllDocuments}
       />
+      </>
     ),
   };
 });
@@ -98,6 +109,9 @@ vi.mock("../lib/test-particle-host-stats", () => ({
 }));
 
 beforeEach(() => {
+  state.projectDirty = false;
+  state.closeProject.mockClear();
+  state.forceCloseProject.mockClear();
   state.documents = [
     {
       id: CONTENT_BROWSER_ID,
@@ -139,6 +153,41 @@ function requestBulkClose() {
 }
 
 describe("document tab close requests", () => {
+  it.each([true, false])("includes project-only settings in close and unload protection (save result: %s)", async (saved) => {
+    state.documents.forEach((doc) => { doc.dirty = false; });
+    state.projectDirty = true;
+    state.saveAll.mockImplementation(async () => {
+      if (saved) state.projectDirty = false;
+      return saved;
+    });
+    render(<EditorRoute />);
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+    await screen.findByTestId("dirty-close-dialog");
+    expect(screen.getByRole("listitem").textContent).toBe("Project Settings");
+    fireEvent.click(screen.getByTestId("dirty-save"));
+    await waitFor(() => expect(state.saveAll).toHaveBeenCalledOnce());
+    await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(saved ? 2 : 1));
+    if (saved) await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+    else expect(screen.getByTestId("dirty-close-dialog")).toBeTruthy();
+    expect(state.forceCloseProject).not.toHaveBeenCalled();
+  });
+
+  it("rechecks settings changed during a save before closing the project", async () => {
+    state.documents.forEach((doc) => { doc.dirty = false; });
+    state.projectDirty = true;
+    render(<EditorRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+    await screen.findByTestId("dirty-close-dialog");
+    // The write succeeded, but newer project settings are still dirty.
+    fireEvent.click(screen.getByTestId("dirty-save"));
+    await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("dirty-close-dialog")).toBeTruthy();
+    expect(state.forceCloseProject).not.toHaveBeenCalled();
+  });
+
   it("closes all clean document tabs and leaves Content Browser open", () => {
     state.documents.forEach((doc) => {
       doc.dirty = false;

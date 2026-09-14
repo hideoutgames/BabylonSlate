@@ -2,6 +2,8 @@ import type { Scene } from "@babylonjs/core";
 import {
   normalizeCelShadingSettings,
   resolveRenderingQuality,
+  resolveLocalLightBudget,
+  mergeRenderingQualityOverrides,
   type QualityOverrides,
   type ShadowSettings,
   type ShadowOverrides,
@@ -26,6 +28,7 @@ type SceneRendering = {
   lightsDebug: boolean;
   textureLodBias: number;
   textureAnisotropy: number;
+  localLightBudget: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
   overrides: CelShadingOverrides;
@@ -47,6 +50,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       lightsDebug: false,
       textureLodBias: 0,
       textureAnisotropy: 4,
+      localLightBudget: resolveLocalLightBudget(resolveRenderingQuality().lighting),
       cel: normalizeCelShadingSettings(undefined),
       project: {},
       overrides: {},
@@ -81,6 +85,7 @@ export function updateSceneRenderingSettings(
   state.environmentLighting = resolveEnvironmentLightingSettings(state.project.environmentLighting, state.environmentOverrides);
   const quality = resolveSceneRenderingQuality(scene);
   state.shadows = quality.shadows;
+  state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   for (const texture of scene.textures) texture.anisotropicFilteringLevel = state.textureAnisotropy;
@@ -96,10 +101,5 @@ export function resolveSceneRenderingQuality(scene: Scene) {
   const state = sceneRenderingSettings(scene);
   const local = state.localQualityOverrides;
   const session = state.qualityOverrides;
-  return resolveRenderingQuality(state.project, state.shadowOverrides, {
-    shadows: { ...local.shadows, ...session.shadows },
-    resolution: { ...local.resolution, ...session.resolution },
-    textures: { ...local.textures, ...session.textures },
-    postprocessing: { ...local.postprocessing, ...session.postprocessing },
-  });
+  return resolveRenderingQuality(state.project, state.shadowOverrides, mergeRenderingQualityOverrides(local, session));
 }

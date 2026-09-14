@@ -328,6 +328,20 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
+  it("dispatches complete presets after manual lighting edits and reports Custom without resetting simulation", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, includeDebugCommands: false, onCommand: (command) => commands.push(command) });
+    runtime.executeConsoleCommand("quality ultra");
+    runtime.executeConsoleCommand("quality shadows budget 16");
+    expect(runtime.executeConsoleCommand("quality shadows").output).toContain("shadows custom");
+    expect(runtime.executeConsoleCommand("quality lighting budget 3").success).toBe(true);
+    expect(commands.at(-1)).toMatchObject({ type: "setRenderingQuality", overrides: { lighting: { preset: "custom", maxLocalLights: 3 }, shadows: { maxLocalLights: 16 } } });
+    runtime.executeConsoleCommand("quality shadows low");
+    expect(commands.at(-1)).toMatchObject({ type: "setRenderingQuality", overrides: { shadows: { preset: "low", profile: "low", maxLocalLights: 1, localLightMode: "auto" }, lighting: { maxLocalLights: 3 } } });
+    expect(runtime.executeConsoleCommand("quality shadows").output).toContain("shadows low");
+    runtime.stop();
+  });
+
   it("scales script and physics tick dt by slomo and clamps the rate", () => {
     const dts: number[] = [];
     const runtime = createInProcessRuntime({
