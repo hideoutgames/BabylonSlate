@@ -24,6 +24,9 @@ import {
   ActorComponent,
   BObject,
   ComponentLogic,
+  GameInstance,
+  MaterialObject,
+  Scene,
   hydrateClassVariableValue,
   SceneLayer,
   isSceneLayerExclusiveComponent,
@@ -32,7 +35,6 @@ import {
   type DebugInspectSnapshot,
   type TickPhase,
   type SceneActorHooks,
-  type Scene,
 } from "@babylonslate/object-model";
 import {
   createDefaultSceneSettings,
@@ -747,6 +749,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      canRunOwner: (owner) => this.canRunOwner(owner),
       inputBindings: this.resolver.bindings,
       getInputState: (input) => this.resolver.getInputState(input),
       interfaceRegistry: this.world.interfaceRegistry,
@@ -1713,10 +1716,12 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped || owner.destroyed) return false;
     if (owner === this.world.gameInstance) return true;
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner
-      : owner instanceof ComponentLogic ? owner.component.owner : null;
+      : owner instanceof ComponentLogic || owner instanceof MaterialObject ? owner.component.owner : null;
     if (actor) return actor.world === this.world && this.canTickActor(actor);
     if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.ready === true;
-    return owner === this.world.currentScene && this.canTickScene();
+    if (owner instanceof Scene) return owner === this.world.currentScene && this.canTickScene();
+    // Detached components and superseded GameInstances have no active owner.
+    return !(owner instanceof ActorComponent || owner instanceof ComponentLogic || owner instanceof MaterialObject || owner instanceof GameInstance);
   }
 
   private runOwnerAction(owner: BObject, action: () => void): void {
@@ -4202,7 +4207,7 @@ class InProcessRuntime implements RuntimeDriver {
           },
           onGameEnd: (self) => {
             this.guardScript(() =>
-              this.scriptHost.invokeEvent(classId, "onEnd", self),
+              this.scriptHost.invokeGameEnd(classId, self),
             );
           },
           onSceneStartLoading: (self, sceneName) => {
