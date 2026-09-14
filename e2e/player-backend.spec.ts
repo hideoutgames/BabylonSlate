@@ -52,6 +52,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         const host = window as typeof window & { __babylonslatePlayerTest?: { visuals(): Array<{ visible: boolean; position: [number, number, number] }> } };
         return host.__babylonslatePlayerTest?.visuals().filter((visual) => visual.visible).map((visual) => visual.position).sort((a, b) => a[0] - b[0]);
       })).toEqual(EXPECTED_PREVIEW_ACTOR_POSITIONS);
+      // GameInstance ticks and structural visuals exist while shaders still load.
+      await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 30_000 });
       const pixels = () => page.getByTestId("player-canvas").evaluate((node) => {
         const canvas = node as HTMLCanvasElement;
         const copy = document.createElement("canvas");
@@ -79,7 +81,26 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(await root.getAttribute("data-ticks")).toBe(ticks);
       expect(errors).toEqual([]);
       expect(external).toEqual([]);
-    } finally { await server.close(); }
+    } finally {
+      const canvas = page.getByTestId("player-canvas");
+      if (await canvas.count()) {
+        const state = await canvas.evaluate((node: HTMLCanvasElement) => {
+          const copy = document.createElement("canvas");
+          copy.width = node.width; copy.height = node.height;
+          const context = copy.getContext("2d")!;
+          context.drawImage(node, 0, 0);
+          const data = context.getImageData(0, 0, copy.width, copy.height).data;
+          const colors = new Set<number>();
+          for (let i = 0; i < data.length; i += 4) colors.add((data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!);
+          return { width: node.width, height: node.height, colors: [...colors].slice(0, 32), colorCount: colors.size,
+            root: { ...document.querySelector<HTMLElement>('[data-testid="player-root"]')?.dataset },
+            loading: document.querySelector('[data-testid="scene-loading-dialog"]')?.textContent ?? null };
+        });
+        await testInfo.attach("player-final-state", { body: JSON.stringify({ backend, state, errors, external }), contentType: "application/json" });
+        await testInfo.attach("player-final-canvas", { body: await canvas.screenshot(), contentType: "image/png" });
+      }
+      await server.close();
+    }
   });
 }
 

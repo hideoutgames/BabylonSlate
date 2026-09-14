@@ -62,7 +62,7 @@ async function filesForContinuity() {
   return files;
 }
 
-type Sample = { phase: string; lit: number; hud: number; center: number; hudX: number | null; width: number; height: number };
+type Sample = { atMs: number; phase: string; lit: number; hud: number; center: number; hudX: number | null; width: number; height: number };
 type Observation = { samples: Sample[]; phases: string[]; resizing: boolean; stop: () => void };
 
 async function observeCanvas(canvas: Locator) {
@@ -99,7 +99,7 @@ async function observeCanvas(canvas: Locator) {
       }
       const visual = (host.__babylonslatePlayTest ?? host.__babylonslatePlayerTest)?.visuals()
         .find((value) => value.visible && value.position[0]! < -6 && Math.abs(value.position[1]! - 3) < .01);
-      observation.samples.push({ phase, lit, hud, center: hud ? sumX / hud : 0, hudX: visual?.position[0] ?? null, width: node.width, height: node.height });
+      observation.samples.push({ atMs: performance.now(), phase, lit, hud, center: hud ? sumX / hud : 0, hudX: visual?.position[0] ?? null, width: node.width, height: node.height });
       if (observation.samples.length < 3000 && node.isConnected) frame = requestAnimationFrame(sample);
     };
     host.continuity = observation;
@@ -184,6 +184,7 @@ for (const mode of ["Play", "Preview Build"] as const) {
       await expect(dialog).toBeHidden({ timeout: 30_000 });
       await expect.poll(async () => (await samples(canvas)).filter((sample) => sample.phase === "").length).toBeGreaterThan(2);
       const result = await samples(canvas);
+      await testInfo.attach(`continuity-${reload}.json`, { body: JSON.stringify(result), contentType: "application/json" });
       expect(result.some((sample) => sample.phase === "Presenting First Frame")).toBe(true);
       expect(Math.min(...result.map((sample) => sample.lit))).toBeGreaterThan(5);
       expect(Math.min(...result.map((sample) => sample.hud))).toBeGreaterThan(5);
@@ -191,7 +192,6 @@ for (const mode of ["Play", "Preview Build"] as const) {
       expect(new Set(loading.map((sample) => sample.hudX)).size).toBeGreaterThan(1);
       expect(new Set(loading.map((sample) => sample.center)).size).toBeGreaterThan(1);
       expect(new Set(result.map((sample) => `${sample.width}x${sample.height}`)).size).toBeGreaterThan(1);
-      await testInfo.attach(`continuity-${reload}.json`, { body: JSON.stringify(result), contentType: "application/json" });
     }
     await canvas.evaluate(() => (globalThis as unknown as { continuity: Observation }).continuity.stop());
     await canvas.screenshot({ path: testInfo.outputPath("retained-global-layer.png") });
