@@ -174,9 +174,9 @@ export async function readEnvironmentBaseRadiance(
         1 / 32,
       );
       for (const [x, y, z] of axes) {
-        effect.effect.setFloat3("axisX", ...x);
-        effect.effect.setFloat3("axisY", ...y);
-        effect.effect.setFloat3("axisZ", ...z);
+        effect.effect.setFloat3("axisX", x[0], x[1], x[2]);
+        effect.effect.setFloat3("axisY", y[0], y[1], y[2]);
+        effect.effect.setFloat3("axisZ", z[0], z[1], z[2]);
         renderer.draw();
         // Pinned BaseTexture.readPixels primitive: captures a 2D target and
         // restores its framebuffer synchronously before a WebGPU read resolves.
