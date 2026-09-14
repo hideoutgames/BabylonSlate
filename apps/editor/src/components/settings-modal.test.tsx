@@ -416,6 +416,29 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
   });
 
+  it("stages independent pipeline preferences until Done and displays their effective fallback", async () => {
+    const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    const select = async (id: string, name: string) => {
+      fireEvent.click(screen.getByTestId(id));
+      const option = await screen.findByRole("option", { name });
+      fireEvent.pointerDown(option);
+      fireEvent.click(option);
+      await waitFor(() => expect(screen.getByTestId(id).textContent).toContain(name));
+    };
+    await select("project-render-path", "Clustered Forward");
+    await select("project-gpu-backend", "WebGPU");
+    await select("setting-render-mode", "CEL");
+    expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Forward · WebGL2");
+    expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Your preferences are retained.");
+    expect(lastProjectRender.current).toBeNull();
+    // Unrelated provider rerenders must not commit or discard the active draft.
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    expect(screen.getByTestId("project-render-path").textContent).toContain("Clustered Forward");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(lastProjectRender.current).toMatchObject({ renderPath: "clusteredForward", gpuBackend: "webgpu", mode: "cel" });
+  });
+
   it("shows CEL controls only in CEL and retains their values when returning from PBR", async () => {
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     const selectMode = async (name: "CEL" | "PBR") => {

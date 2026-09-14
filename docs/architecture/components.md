@@ -141,6 +141,7 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **TraceCopyButton / TraceEmptyState** | Compact clipboard feedback and catalog Empty states for read-only trace inspection. | Trace Snapshot, Changes, Log and Timeline. |
+| **RenderPipelineFields** | Compact Render Path/GPU Backend preferences with effective-selection feedback and sparse path override/reset; backend stays project-only. | Project Settings and the initially closed Scene Defaults Rendering category. |
 | **AnimEditorModeBar** ([`anim-editor-mode-bar.tsx`](../../apps/editor/src/components/anim-editor-mode-bar.tsx)) | Chrome `ToolbarStrip` + **State Machine \| Animation Object** `ToggleGroup` `size="sm"`. `data-testid="anim-editor-mode-bar"`. Not a DockView tab. | Animation Graph document shell, above the stacked State Machine and Animation Object DockView surfaces. |
 | **HomepageProfileMenu** | Compact avatar DropdownMenu with identity, optional sign-in/sign-out, and Manage Subscription; image failures fall back to the existing account icon. | Guest/web sign-in entry and native launcher accounts; signed-in web accounts use Clerk UserButton. |
 | **DebugConsole** | Flat bottom Sheet with selectable live log/print/error transcript, command history, and a scrollable keyboard-accessible completion list with argument hints. | Play overlay and Preview Build. |
