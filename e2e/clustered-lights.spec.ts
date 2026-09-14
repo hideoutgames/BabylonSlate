@@ -11,7 +11,9 @@ test("clustered point and spot contributions preserve native and graph PBR and C
     if (
       message.type() === "error" ||
       (message.type() === "warning" &&
-        /shader|GL_INVALID|GL_OUT_OF_MEMORY|invalid|context lost/i.test(message.text()))
+        /shader|GL_INVALID|GL_OUT_OF_MEMORY|invalid|context lost/i.test(
+          message.text(),
+        ))
     )
       errors.push(message.text());
   });
@@ -35,7 +37,7 @@ test("clustered point and spot contributions preserve native and graph PBR and C
   });
   expect(errors).toEqual([]);
   expect(result.capabilities.supported).toBe(true);
-  expect(result.captures).toHaveLength(16);
+  expect(result.captures).toHaveLength(36);
   for (const capture of result.captures) {
     expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
     expect(capture.result, capture.name).toEqual({ path: "frameGraph" });
@@ -58,7 +60,41 @@ test("clustered point and spot contributions preserve native and graph PBR and C
     expect(litPixels, capture.name).toBeGreaterThan(100);
     expect(difference, capture.name).toBeLessThanOrEqual(2);
   }
+  expect(result.ties).toHaveLength(4);
+  for (const capture of result.ties) {
+    expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
+    expect(capture.result, capture.name).toEqual({ path: "frameGraph" });
+    expect(capture.readinessDraws, capture.name).toBe(0);
+    const center =
+      (Math.floor(capture.height / 2) * capture.width +
+        Math.floor(capture.width / 2)) *
+      4;
+    expect(
+      capture.reference[center]! - capture.reference[center + 1]!,
+      capture.name,
+    ).toBeGreaterThan(20);
+    expect(
+      Math.max(
+        ...capture.clustered.map((value, index) =>
+          Math.abs(value - capture.reference[index]!),
+        ),
+      ),
+      capture.name,
+    ).toBeLessThanOrEqual(2);
+  }
+  for (const mixing of ["pbr", "strongest", "additive", "blend"]) {
+    const pixels = (pose: string) =>
+      result.captures.find((capture) => capture.name === `${mixing}-${pose}`)!
+        .clustered;
+    expect(pixels("camera-moved")).not.toEqual(pixels("camera-switched"));
+    expect(pixels("lights-moved")).not.toEqual(pixels("camera-moved"));
+    expect(pixels("after-sibling")).toEqual(pixels("resized"));
+  }
   for (const lifecycle of result.lifecycle) {
+    expect(lifecycle.sameMask, lifecycle.mixing).toBe(true);
+    expect(lifecycle.siblingAfter, lifecycle.mixing).toEqual(
+      lifecycle.siblingBefore,
+    );
     expect(lifecycle.liveLights, lifecycle.mixing).toBe(48);
     expect(lifecycle.clusteredTextures, lifecycle.mixing).toBe(0);
     expect(lifecycle.renderers, lifecycle.mixing).toBe(0);

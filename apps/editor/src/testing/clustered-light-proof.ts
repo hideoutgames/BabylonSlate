@@ -37,6 +37,7 @@ export async function runClusteredLightProof() {
     stencil: true,
   });
   const captures = [];
+  const ties = [];
   const lifecycle = [];
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
@@ -48,7 +49,11 @@ export async function runClusteredLightProof() {
     const capabilities = clusteredLightCapabilities(engine);
     if (capabilities.supported === false) throw new Error(capabilities.reason);
     for (const mixing of ["pbr", "strongest", "additive", "blend"] as const) {
+      engine.setSize(96, 72);
       const mode = mixing === "pbr" ? "pbr" : "cel";
+      let sameMask = true;
+      let siblingBefore: number[] = [];
+      let siblingAfter: number[] = [];
       const scene = new Scene(engine);
       scene.clearColor = new Color4(0.01, 0.02, 0.04, 1);
       const camera = new FreeCamera("camera", new Vector3(0, 4, -7), scene);
@@ -175,11 +180,174 @@ export async function runClusteredLightProof() {
           width: canvas.width,
           height: canvas.height,
         });
+        if (count === 48) {
+          const target = owner.target(camera)!;
+          const texture = target.getInternalTexture();
+          const alternate = new FreeCamera(
+            "alternate",
+            new Vector3(2, 4, -7),
+            scene,
+          );
+          alternate.minZ = camera.minZ;
+          alternate.maxZ = camera.maxZ;
+          for (const mesh of scene.meshes) {
+            mesh.freezeWorldMatrix();
+            mesh.material?.freeze();
+          }
+          const poses = [
+            "camera-switched",
+            "camera-moved",
+            "lights-moved",
+            "resized",
+            "after-sibling",
+          ];
+          const applyPose = (pose: number) => {
+            scene.activeCamera = alternate;
+            alternate.position.set(pose === 0 ? 2 : -2, 4, -7);
+            alternate.setTarget(new Vector3(0, 0.3, 0));
+            for (const [index, light] of lights.entries()) {
+              light.position.copyFrom(positions[index % 2]!);
+              if (pose >= 2) light.position.x += 1.5;
+              if (light instanceof SpotLight)
+                light.direction.copyFrom(light.position.negate().normalize());
+            }
+            engine.setSize(pose >= 3 ? 112 : 96, pose >= 3 ? 80 : 72);
+          };
+          const records: typeof captures = [];
+          let sibling: Scene | undefined;
+          for (let pose = 0; pose < poses.length; pose++) {
+            if (pose === 4) {
+              sibling = new Scene(engine);
+              sibling.clearColor = new Color4(0.6, 0.2, 0.7, 1);
+              sibling.activeCamera = new FreeCamera(
+                "sibling",
+                new Vector3(0, 0, -3),
+                sibling,
+              );
+              sibling.render(false);
+              siblingBefore = await read();
+            }
+            applyPose(pose);
+            beginEngineDrawCallFrame(engine);
+            const prepared = await graph.prepare(alternate);
+            const readinessDraws = readEngineDrawCalls(engine);
+            const result = graph.render(alternate, false);
+            const draws = readEngineDrawCalls(engine);
+            sameMask &&=
+              owner.target(alternate) === target &&
+              target.getInternalTexture() === texture;
+            records.push({
+              name: `${mixing}-${poses[pose]}`,
+              count,
+              reference: [],
+              clustered: await read(),
+              prepared,
+              result,
+              readinessDraws,
+              draws,
+              status: owner.status(),
+              width: canvas.width,
+              height: canvas.height,
+            });
+          }
+          // Replay the same camera/light poses with the independent two-light
+          // reference only after proving all clustered frames retained one map.
+          owner.dispose();
+          for (let index = 0; index < lights.length; index++)
+            setLight(
+              index,
+              index < 2,
+              perChild *
+                (index ? 0.8 : 1) *
+                (mixing === "pbr" || mixing === "additive" ? 24 : 1),
+            );
+          for (let pose = 0; pose < poses.length; pose++) {
+            applyPose(pose);
+            const prepared = await graph.prepare(alternate);
+            if (prepared.path !== "frameGraph")
+              throw new Error(prepared.reason);
+            scene.render(false);
+            records[pose]!.reference = await read();
+          }
+          captures.push(...records);
+          graph.dispose();
+          sibling!.render(false);
+          siblingAfter = await read();
+          sibling!.dispose();
+        }
         owner.dispose();
       }
       graph.dispose();
+      if (mixing === "strongest") {
+        // A center ray hits a surface equidistant from red/green point lights.
+        // Camera depth reverses their native cluster sort; authored first-light
+        // tie behavior must stay red for both native and compiled CEL surfaces.
+        for (let index = 0; index < lights.length; index++)
+          setLight(index, false, 1);
+        for (const mesh of scene.meshes) mesh.setEnabled(false);
+        const surface = MeshBuilder.CreateGround(
+          "tie receiver",
+          { width: 8, height: 8 },
+          scene,
+        );
+        const tieLights = [-2, 2].map((x, index) => {
+          const light = new PointLight(
+            `tie-${index}`,
+            new Vector3(x, 3, 0),
+            scene,
+          );
+          applyAuthoredLightProperties(light, {
+            enabled: true,
+            castShadows: false,
+            range: 12,
+            intensity: 1.2,
+            color: index ? [0, 0.8, 0] : [0.8, 0, 0],
+          });
+          return light;
+        });
+        const tieGraph = new ForwardSceneFrameGraph(scene);
+        for (const [kind, material] of [
+          ["native", native],
+          ["graph", compiled.material],
+        ] as const) {
+          surface.material = material;
+          setSceneRenderSettings(scene);
+          for (const x of [-3, 3]) {
+            engine.setSize(97, 73);
+            scene.activeCamera = camera;
+            camera.position.set(x, 3, -6);
+            camera.setTarget(Vector3.Zero());
+            const ready = await tieGraph.prepare(camera);
+            if (ready.path !== "frameGraph") throw new Error(ready.reason);
+            scene.render(false);
+            const reference = await read();
+            const owner = new ClusteredSceneLights(scene, tieLights);
+            beginEngineDrawCallFrame(engine);
+            const prepared = await tieGraph.prepare(camera);
+            const readinessDraws = readEngineDrawCalls(engine);
+            const result = tieGraph.render(camera, false);
+            ties.push({
+              name: `${kind}-camera-${x}`,
+              reference,
+              clustered: await read(),
+              prepared,
+              result,
+              readinessDraws,
+              width: canvas.width,
+              height: canvas.height,
+            });
+            owner.dispose();
+          }
+        }
+        tieGraph.dispose();
+        for (const light of tieLights) light.dispose();
+        surface.dispose();
+      }
       lifecycle.push({
         mixing,
+        sameMask,
+        siblingBefore,
+        siblingAfter,
         liveLights: lights.filter((light) => !light.isDisposed()).length,
         clusteredTextures: scene.textures.filter(
           (texture) =>
@@ -190,7 +358,7 @@ export async function runClusteredLightProof() {
       });
       scene.dispose();
     }
-    return { capabilities, captures, lifecycle };
+    return { capabilities, captures, ties, lifecycle };
   } finally {
     engine.dispose();
     canvas.remove();
