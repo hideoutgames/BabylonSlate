@@ -222,6 +222,18 @@ it("retains binding observers on settled frames and refreshes them for camera an
   graph.dispose();
 });
 
+it("settles the material shadow layout before readiness instead of invalidating the first presented frame", async () => {
+  const { scene, camera, mesh, graph } = await fixture("spot");
+  const dirty = vi.spyOn(mesh.material!, "markDirty");
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(dirty).toHaveBeenCalled();
+  dirty.mockClear();
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(dirty).not.toHaveBeenCalled();
+  expect(scene.activeCamera).toBe(camera);
+  graph.dispose();
+});
+
 it("skips a later borrowed map revoked by an earlier shadow draw", async () => {
   const { engine, scene, camera, controller, map, graph, framebuffer } =
     await fixture("spot");

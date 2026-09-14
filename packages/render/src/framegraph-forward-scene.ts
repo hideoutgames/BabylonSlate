@@ -8,6 +8,7 @@ import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { withSceneReadinessState } from "./scene-perf";
 import { findSceneShadowController } from "./shadow-controller";
+import { syncSceneLighting } from "./scene-lighting";
 import {
   ManagedShadowObjectRendererTask,
   ManagedShadowsTask,
@@ -183,6 +184,10 @@ export class ForwardSceneFrameGraph {
     withSceneReadinessState(this.scene, () => {
       this.scene.activeCamera = camera;
       controller.sync();
+      // Allocation/participation changes alter the material shadow layout.
+      // Commit that layout before probing effects, so onBeforeRender cannot
+      // invalidate the variants we just declared ready for the first frame.
+      syncSceneLighting(this.scene);
     });
   }
 
