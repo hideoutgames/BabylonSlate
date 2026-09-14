@@ -724,6 +724,21 @@ describe("SceneDetailsPanel authoring", () => {
     ]);
   });
 
+  it("targets the picked pass by ID if its owner reorders while the picker is open", async () => {
+    const a = { id: "a", materialGuid: "pp-old", enabled: true };
+    const b = { id: "b", materialGuid: "pp-other", enabled: false };
+    scene().settings.postProcessStack = [a, b];
+    const { rerender } = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("scene-post-process-0-material"));
+    await screen.findByTestId("search-item-pp-blur");
+    scene().settings.postProcessStack = [b, a];
+    rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("search-item-pp-blur"));
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].settings.postProcessStack).toEqual([
+      b, { ...a, materialGuid: "pp-blur" },
+    ]);
+  });
+
   it("keeps repeated layers' Z-Order and enabled state when moving and editing them", () => {
     scene().settings.sceneLayers = [
       { assetGuid: "layer-hud", zOrder: 2, enabled: true },

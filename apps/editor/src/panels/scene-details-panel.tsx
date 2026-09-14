@@ -166,7 +166,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [envTexturePickOpen, setEnvTexturePickOpen] = useState(false);
-  const [postProcessPick, setPostProcessPick] = useState<"add" | number | null>(
+  const [postProcessPick, setPostProcessPick] = useState<"add" | { id: string } | null>(
     null,
   );
   const [sceneLayerPick, setSceneLayerPick] = useState<"add" | number | null>(
@@ -268,6 +268,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     ? (doc.content as SerializedScene)
     : null;
   const overlay = doc?.ref.kind === "scene-layer";
+  const postProcessEntries = normalizeScenePostProcessStack(scene?.settings.postProcessStack);
   const actorId = selectedActorIds[0] ?? null;
   const actor = scene && actorId ? (findActor(scene, actorId) ?? null) : null;
   const prefabTemplates = useMemo(() => {
@@ -638,8 +639,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             <EntryListEditor
               title="Post Processing"
               data-testid="scene-post-process-stack"
-              items={scene.settings.postProcessStack}
-              getItemKey={(item, index) => item.id ?? index}
+              items={postProcessEntries}
+              getItemKey={(item) => item.id}
               addLabel="Add Pass"
               countNoun={{ one: "pass", other: "passes" }}
               onAdd={() => setPostProcessPick("add")}
@@ -657,7 +658,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   item.materialGuid,
                   `scene-post-process-${index}-material`,
                   `Pass ${index + 1} Material`,
-                  () => setPostProcessPick(index),
+                  () => setPostProcessPick({ id: item.id }),
                 )
               }
               renderItem={({ item, index, onChange }) => (
@@ -860,17 +861,22 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           title="Pick Post-Process Material"
           allowNone={postProcessPick !== "add"}
           onPick={(materialGuid) => {
-            const stack = [...scene.settings.postProcessStack];
+            const stack = [...postProcessEntries];
             if (postProcessPick === "add") {
               if (materialGuid) {
                 stack.push({ id: newGuid(), materialGuid, enabled: true });
               }
-            } else if (typeof postProcessPick === "number") {
+            } else if (postProcessPick) {
+              const index = stack.findIndex((entry) => entry.id === postProcessPick.id);
+              if (index < 0) {
+                setPostProcessPick(null);
+                return;
+              }
               if (!materialGuid) {
-                stack.splice(postProcessPick, 1);
+                stack.splice(index, 1);
               } else {
-                const current = stack[postProcessPick];
-                stack[postProcessPick] = {
+                const current = stack[index]!;
+                stack[index] = {
                   ...current,
                   materialGuid,
                   enabled: current?.enabled !== false,
