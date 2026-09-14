@@ -7,7 +7,6 @@
     ".": "./src/index.ts",
     "./fbx-import": "./src/convert-fbx-to-glb.ts",
     "./bake-provider-prototype": "./src/bake-provider-prototype.ts",
-    "./bake-provider-diagnostic": "./src/bake-provider-diagnostic.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },

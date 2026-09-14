@@ -18,6 +18,8 @@ export interface BakePrototypeProgress {
 
 export interface BakePrototypeDisposal {
   contextReleased: boolean;
+  /** Driver identity from the owning context; masked when the debug extension is unavailable. */
+  renderer: string | null;
   texturesBeforeDisposal: number;
   geometriesBeforeDisposal: number;
 }
@@ -126,6 +128,8 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
   let failure: unknown;
   let failed = false;
   let result: BakePrototypeResult | undefined;
+  let completedSamples = 0;
+  let contextRenderer: string | null = null;
   try {
     check();
     validateBakePrototypeInput(input);
@@ -149,6 +153,8 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
     if (!context || !context.getExtension("EXT_color_buffer_float") || !context.getExtension("WEBGL_lose_context")) {
       throw new Error("Prototype baking requires WebGL2 float render targets and an owned releasable context");
     }
+    const debugRenderer = context.getExtension("WEBGL_debug_renderer_info");
+    contextRenderer = String(context.getParameter(debugRenderer?.UNMASKED_RENDERER_WEBGL ?? context.RENDERER));
     renderer = new WebGLRenderer({ canvas, context, antialias: false, alpha: false });
     renderer.setSize(input.size, input.size, false);
     renderer.toneMapping = NoToneMapping;
@@ -257,7 +263,8 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
       if (context.isContextLost()) throw new Error("Bake WebGL context was lost");
       tracer.renderSample();
       await waitForBakeGpu(context, () => checkpoint(true));
-      progress("sampling", tracer.samples);
+      completedSamples = tracer.samples;
+      progress("sampling", completedSamples);
       // Each update is at most one 32x32 tile; never monopolize the authoring loop.
       await checkpoint(true);
     }
@@ -282,7 +289,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
   }
   const cleanupErrors: unknown[] = [];
   try {
-    options.onProgress?.({ phase: "disposing", samples: result?.samples ?? 0, totalSamples: input.samples });
+    options.onProgress?.({ phase: "disposing", samples: completedSamples, totalSamples: input.samples });
   } catch (error) { cleanupErrors.push(error); }
   const released = new Set<OwnedDisposable>();
   const release = (resource: OwnedDisposable) => {
@@ -292,6 +299,7 @@ export async function bakeLightingPrototype(input: BakePrototypeInput, options: 
   };
   const disposal: BakePrototypeDisposal = {
     contextReleased: context === null,
+    renderer: contextRenderer,
     texturesBeforeDisposal: renderer?.info.memory.textures ?? 0,
     geometriesBeforeDisposal: renderer?.info.memory.geometries ?? 0,
   };

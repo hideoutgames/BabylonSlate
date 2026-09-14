@@ -15,9 +15,6 @@ if (bakeProof) {
   void import("@babylonslate/render/bake-provider-prototype").then((provider) => {
     Object.assign(globalThis, { __bakePrototype: provider });
   });
-  void import("@babylonslate/render/bake-provider-diagnostic").then((provider) => {
-    Object.assign(globalThis, { __bakeNativeDiagnostic: provider });
-  });
 } else {
   initializeCapacitorLifecycle();
   initializeCapacitorAudioLifecycle();

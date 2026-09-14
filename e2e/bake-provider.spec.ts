@@ -43,7 +43,7 @@ async function bake(page: Page, job: Input, cancel: false | "sampling" | "compil
     const provider = (globalThis as unknown as { __bakePrototype: typeof import("../packages/render/src/bake-provider-prototype") }).__bakePrototype;
     const controller = new AbortController();
     const progress: { phase: string; samples: number }[] = [];
-    let disposal: { contextReleased: boolean; texturesBeforeDisposal: number; geometriesBeforeDisposal: number } | undefined;
+    let disposal: import("../packages/render/src/bake-provider-prototype").BakePrototypeDisposal | undefined;
     let heartbeats = 0;
     const started = performance.now();
     let previousPhase = "", sampled = false;
@@ -77,7 +77,7 @@ async function bake(page: Page, job: Input, cancel: false | "sampling" | "compil
     body: JSON.stringify(result), contentType: "application/json",
   });
   console.log("Bake result", { mode: job.mode, meshes: job.meshes.length,
-    mean: result.result && meanRGB(result.result.irradiance), error: result.error });
+    mean: result.result && meanRGB(result.result.irradiance), renderer: result.disposal?.renderer, error: result.error });
   return result;
 }
 
@@ -86,19 +86,6 @@ function meanRGB(pixels: number[]) {
   for (let i = 0; i < pixels.length; i += 4) for (let c = 0; c < 3; c++) result[c] += pixels[i + c] / (pixels.length / 4);
   return result;
 }
-
-test("native upstream camera transport completes the tiny provider control", async ({ page }, testInfo) => {
-  test.setTimeout(60_000);
-  await openProvider(page);
-  await page.waitForFunction(() => "__bakeNativeDiagnostic" in globalThis);
-  const result = await page.evaluate(async () => {
-    const provider = (globalThis as unknown as { __bakeNativeDiagnostic: typeof import("../packages/render/src/bake-provider-diagnostic") }).__bakeNativeDiagnostic;
-    return provider.diagnoseNativeBakeTransport((phase) => console.info(`bake-progress:${JSON.stringify({ phase })}`));
-  });
-  expect(result.pixels.every(Number.isFinite)).toBe(true);
-  expect(meanRGB(result.pixels)[0]).toBeGreaterThan(0.01);
-  await testInfo.attach("native-transport-control.json", { body: JSON.stringify(result), contentType: "application/json" });
-});
 
 test("browser bake solves receiver irradiance, occlusion and separated colored bounce", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
@@ -181,6 +168,8 @@ test("browser bake cancellation releases resources and admits the next job", asy
   expect(cancelled.result).toBeNull();
   expect(cancelled.disposal?.contextReleased).toBe(true);
   expect(cancelled.disposal!.texturesBeforeDisposal).toBeGreaterThan(0);
+  expect(cancelled.progress.at(-1)?.samples).toBeGreaterThanOrEqual(1);
+  expect(cancelled.progress.at(-1)?.samples).toBe(cancelled.progress.filter((value) => value.phase === "sampling").at(-1)?.samples);
   expect(cancelled.progress.at(-1)?.samples).toBeLessThan(512);
   const next = await bake(page, input());
   expect(next.error).toBeNull();
