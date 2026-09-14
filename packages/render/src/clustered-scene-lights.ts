@@ -14,6 +14,7 @@ import {
   type RenderTargetTexture,
 } from "@babylonjs/core";
 import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
+import { LightConstants } from "@babylonjs/core/Lights/lightConstants";
 import {
   clusteredLightCapabilities,
   type ClusteredLightCapabilities,
@@ -51,6 +52,12 @@ export class ClusteredSceneLights {
   private readonly materialBindings = new Map<NodeMaterial, () => void>();
   private registry: readonly Light[];
   private registryMembership = new Set<Light>();
+  private authoredOrder: readonly Light[];
+  private readonly authoredIndices = new Map<Light, number>();
+  private orderDirty = true;
+  private celConfiguration = "";
+  private celCandidates: ReadonlySet<Light> | undefined;
+  private celOrderFailure: string | undefined;
   private localSelection: Set<Light> | undefined;
   private readonly childDisposals = new Map<Light, Observer<Node>>();
   private disposed = false;
@@ -75,6 +82,8 @@ export class ClusteredSceneLights {
     this.scene = scene;
     this.registry = this.validateRegistry(lights);
     this.registryMembership = new Set(this.registry);
+    this.authoredOrder = [...scene.lights];
+    this.updateAuthoredOrder();
     this.unregister = registerClusteredLightPolicy(scene, this);
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
     this.restored = scene.getEngine().onContextRestoredObservable.add(() => {
@@ -89,6 +98,7 @@ export class ClusteredSceneLights {
     if (this.disposed) return;
     this.registry = this.validateRegistry(lights);
     this.registryMembership = new Set(this.registry);
+    this.celConfiguration = "";
     this.watchLights();
     syncSceneLighting(this.scene);
   }
@@ -213,6 +223,22 @@ export class ClusteredSceneLights {
         Math.floor(capability.maxTextureSize / capability.batchSize) *
           capability.batchSize,
       );
+      this.configureCelOrder(limit);
+      if (this.celOrderFailure) {
+        this.localSelection = undefined;
+        this.releaseContainer();
+        this.statusValue = {
+          clustered: 0,
+          conventional: this.registry.length,
+          estimatedBytes: 0,
+          reasons: [this.celOrderFailure],
+        };
+        return;
+      }
+      if (this.celCandidates)
+        for (let index = eligible.length - 1; index >= 0; index--)
+          if (!this.celCandidates.has(eligible[index]!))
+            eligible.splice(index, 1);
       if (eligible.length > limit)
         eligible.sort(
           compareLightAdmission(
@@ -246,7 +272,11 @@ export class ClusteredSceneLights {
           throw new Error("Clustered allocation did not return an owner.");
         this.cameraBounds ??= new ClusteredCameraBounds(container);
         container.doNotSerialize = true;
-        container.renderPriority = Number.MAX_SAFE_INTEGER;
+        // A tail remains last, without enabling native sorting for an authored
+        // Scene that previously used insertion order.
+        const priority = this.scene.requireLightSorting ? -Number.MAX_VALUE : 0;
+        if (container.renderPriority !== priority) this.orderDirty = true;
+        container.renderPriority = priority;
         container.shadowEnabled = false;
         // Never use Babylon's default maxRange clamp to change attenuation.
         container.maxRange = Math.max(
@@ -254,6 +284,7 @@ export class ClusteredSceneLights {
         );
         for (const light of selected) {
           if (container.lights.includes(light)) continue;
+          this.orderDirty = true;
           setClusteredLightMember(light, true);
           const shadowEnabled = light.shadowEnabled;
           try {
@@ -286,8 +317,9 @@ export class ClusteredSceneLights {
         this.lightOrder ??= new ClusteredLightOrder(container);
         this.lightOrder.sync(
           container._updateBatches(this.scene.activeCamera),
-          this.registry,
+          this.authoredOrder,
         );
+        if (this.orderDirty) this.restoreAuthoredOrder(container);
       }
       const clustered = this.container?.lights.length ?? 0;
       // Babylon retains its high-water allocation when membership shrinks.
@@ -376,11 +408,15 @@ export class ClusteredSceneLights {
   private returnLight(light: Light): void {
     this.container?.removeLight(light);
     setClusteredLightMember(light, false);
+    this.orderDirty = true;
   }
 
   private releaseContainer(): void {
     if (!this.container) return;
-    for (const light of this.container.lights.slice()) this.returnLight(light);
+    for (const light of this.container.lights
+      .slice()
+      .sort(this.compareAuthored))
+      this.returnLight(light);
     // The container owns its proxy material/textures, but its child lights are
     // borrowed and must be removed before Babylon's recursively owning dispose.
     this.lightOrder?.dispose();
@@ -390,6 +426,105 @@ export class ClusteredSceneLights {
     this.container.dispose(false, true);
     this.container = undefined;
     this.allocatedBatches = 0;
+    // Native removeLight appends borrowed children. Restore their original
+    // sequence for classic fallback/disposal, including per-mesh filtered lists.
+    this.restoreAuthoredOrder();
+  }
+
+  private restoreAuthoredOrder(container?: Light): void {
+    const compare = container
+      ? (a: Light, b: Light) =>
+          Number(a === container) - Number(b === container) ||
+          this.compareAuthored(a, b)
+      : this.compareAuthored;
+    this.scene.lights.sort(compare);
+    for (const mesh of this.scene.meshes) mesh.lightSources.sort(compare);
+    this.orderDirty = false;
+  }
+
+  private readonly compareAuthored = (a: Light, b: Light): number =>
+    (this.scene.requireLightSorting
+      ? LightConstants.CompareLightsPriority(a, b)
+      : 0) ||
+    (this.authoredIndices.get(a) ?? a.uniqueId) -
+      (this.authoredIndices.get(b) ?? b.uniqueId);
+
+  private updateAuthoredOrder(): void {
+    if (this.authoredOrder.some((light) => light.isDisposed())) {
+      this.authoredOrder = this.authoredOrder.filter(
+        (light) => !light.isDisposed(),
+      );
+      this.authoredIndices.clear();
+    }
+    if (!this.authoredIndices.size)
+      this.authoredOrder.forEach((light, index) =>
+        this.authoredIndices.set(light, index),
+      );
+    const added = [...this.scene.lights, ...this.registry].filter((light) => {
+      if (
+        light.isDisposed() ||
+        light === this.container ||
+        this.authoredIndices.has(light)
+      )
+        return false;
+      this.authoredIndices.set(light, this.authoredIndices.size);
+      return true;
+    });
+    if (added.length) {
+      this.authoredOrder = [...this.authoredOrder, ...added];
+      this.orderDirty = true;
+    }
+  }
+
+  /** Resolve only on authored topology/style/quality changes, never camera/map admission. */
+  private configureCelOrder(limit: number): void {
+    this.updateAuthoredOrder();
+    const state = sceneRenderingSettings(this.scene);
+    const strongest =
+      state.mode === "cel" && state.cel.lightMixing === "strongest";
+    if (!strongest) {
+      this.celConfiguration = "unrestricted";
+      this.celCandidates = undefined;
+      this.celOrderFailure = undefined;
+      return;
+    }
+    const controller = findSceneShadowController(this.scene);
+    const order = this.authoredOrder.filter((light) => !light.isDisposed());
+    const candidates = new Set(
+      order.filter(
+        (light) =>
+          this.registryMembership.has(light) &&
+          this.structurallyEligible(light) &&
+          !controller?.requestsShadow(light) &&
+          !light.getShadowGenerators()?.size,
+      ),
+    );
+    const configuration =
+      `${state.localLightBudget}:${limit}:${this.scene.requireLightSorting}:` +
+      order
+        .map(
+          (light) =>
+            `${light.uniqueId},${light.renderPriority},${light.shadowEnabled},${candidates.has(light)}`,
+        )
+        .join(";");
+    if (configuration === this.celConfiguration) return;
+    this.orderDirty = true;
+    this.celConfiguration = configuration;
+    this.celCandidates = candidates;
+    this.celOrderFailure = undefined;
+    order.sort(this.compareAuthored);
+    let tail = false;
+    for (const light of order) {
+      if (candidates.has(light)) tail = true;
+      else if (tail) {
+        this.celOrderFailure =
+          "CEL Strongest requires one stable clustered tail after conventional lights; authored interleaving uses conventional fallback.";
+        return;
+      }
+    }
+    if (candidates.size > limit && state.localLightBudget > limit)
+      this.celOrderFailure =
+        "CEL Strongest clustered tail exceeds storage capacity; conventional fallback preserves authored tie order.";
   }
 
   private eligible(light: Light): boolean {
@@ -399,6 +534,14 @@ export class ClusteredSceneLights {
       isAuthoredLightEnabled(light) &&
       light.intensity > 0 &&
       (!light.parent || light.parent.isEnabled()) &&
+      this.structurallyEligible(light) &&
+      !light.getShadowGenerators()?.size
+    );
+  }
+
+  private structurallyEligible(light: Light): boolean {
+    return (
+      (light instanceof PointLight || light instanceof SpotLight) &&
       light.falloffType === Light.FALLOFF_DEFAULT &&
       Number.isFinite(light.range) &&
       light.range > 0 &&
@@ -408,7 +551,6 @@ export class ClusteredSceneLights {
       !light.includeOnlyWithLayerMask &&
       !light.excludeWithLayerMask &&
       light.lightmapMode === Light.LIGHTMAP_DEFAULT &&
-      !light.getShadowGenerators()?.size &&
       (!(light instanceof SpotLight) ||
         (!light.projectionTexture && !light.iesProfileTexture))
     );

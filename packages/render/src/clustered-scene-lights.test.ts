@@ -101,6 +101,98 @@ function fixture() {
 }
 
 describe("explicit clustered light ownership", () => {
+  it("keeps CEL Strongest interleaving conventional until an authored priority change creates a contiguous tail", () => {
+    const { scene, mesh, lights } = fixture();
+    for (const light of lights.slice(3)) light.dispose();
+    const authored = lights.slice(0, 3);
+    updateSceneRenderingSettings(scene, { mode: "cel" });
+    authored[1]!.falloffType = PointLight.FALLOFF_GLTF;
+    const owner = new ClusteredSceneLights(scene, authored);
+    expect(owner.status().clustered).toBe(0);
+    expect(owner.limits().join()).toContain("authored interleaving");
+    expect(scene.requireLightSorting).toBe(false);
+    expect(mesh.lightSources).toEqual(authored);
+    for (const x of [-20, 20]) {
+      (scene.activeCamera as FreeCamera).position.x = x;
+      syncSceneLighting(scene);
+      expect(owner.target(scene.activeCamera!)).toBeUndefined();
+      expect(mesh.lightSources).toEqual(authored);
+    }
+    // Explicit priority is a controlled layout reconfiguration. The unsupported
+    // middle light becomes the conventional prefix; the two children follow.
+    authored[1]!.renderPriority = 1;
+    syncSceneLighting(scene);
+    expect(owner.status().clustered).toBe(2);
+    expect(owner.limits()).toEqual([]);
+    expect(mesh.lightSources[0]).toBe(authored[1]);
+    expect(mesh.lightSources[1]).toBeInstanceOf(ClusteredLightContainer);
+    owner.dispose();
+    expect(mesh.lightSources).toEqual([authored[1], authored[0], authored[2]]);
+    expect(authored.every(isAuthoredLightEnabled)).toBe(true);
+  });
+
+  it("keeps requested shadows conventional through map admission changes without rebuilding the CEL tail", () => {
+    const { scene, mesh, lights } = fixture();
+    for (const light of lights.slice(3)) light.dispose();
+    const authored = lights.slice(0, 3);
+    applyAuthoredLightProperties(authored[0]!, {
+      enabled: true,
+      castShadows: true,
+      range: 12,
+    });
+    const settings = (enabled: boolean, count: number) =>
+      updateSceneRenderingSettings(scene, {
+        mode: "cel",
+        shadows: normalizeShadowSettings({
+          enabled,
+          localLightMode: "manual",
+          maxLocalLights: count,
+          localMapSize: 64,
+        }),
+      });
+    settings(true, 0);
+    const controller = sceneShadowController(scene);
+    const owner = new ClusteredSceneLights(scene, authored);
+    const map = owner.target(scene.activeCamera!)!;
+    expect(owner.status().clustered).toBe(2);
+    expect(controller.requestsShadow(authored[0]!)).toBe(true);
+    expect(controller.generator(authored[0]!)).toBeNull();
+    expect(scene.requireLightSorting).toBe(false);
+    for (const [enabled, count] of [
+      [true, 1],
+      [false, 1],
+      [true, 0],
+    ] as const) {
+      settings(enabled, count);
+      (scene.activeCamera as FreeCamera).position.x += 1;
+      syncSceneLighting(scene);
+      expect(Boolean(controller.generator(authored[0]!))).toBe(
+        enabled && count > 0,
+      );
+      expect(controller.requestsShadow(authored[0]!)).toBe(true);
+      expect(owner.status().clustered).toBe(2);
+      expect(owner.target(scene.activeCamera!)).toBe(map);
+      expect(mesh.lightSources[0]).toBe(authored[0]);
+      expect(
+        mesh.lightSources.filter((light) => light === authored[0]),
+      ).toHaveLength(1);
+    }
+    // Turning off the authored request, unlike changing admission, reconfigures
+    // the tail and still contributes this light exactly once.
+    applyAuthoredLightProperties(authored[0]!, {
+      enabled: true,
+      castShadows: false,
+      range: 12,
+    });
+    syncSceneLighting(scene);
+    expect(controller.requestsShadow(authored[0]!)).toBe(false);
+    expect(owner.status().clustered).toBe(3);
+    expect(mesh.lightSources).toHaveLength(1);
+    owner.dispose();
+    expect(mesh.lightSources).toEqual(authored);
+    expect(scene.requireLightSorting).toBe(false);
+  });
+
   it("borrows 48 enabled children once and returns disabled children without changing authored light values", () => {
     const { scene, mesh, lights } = fixture();
     const owner = new ClusteredSceneLights(scene, lights);

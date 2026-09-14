@@ -87,7 +87,9 @@ export class ClusteredLightOrder {
     for (let i = 0; i < source.length; i++) this.ordered[i] = source[i]!;
     this.ordered.sort(
       (a, b) =>
-        LightConstants.CompareLightsPriority(a, b) ||
+        (this.container.getScene().requireLightSorting
+          ? LightConstants.CompareLightsPriority(a, b)
+          : 0) ||
         (this.authored.get(a) ?? a.uniqueId) -
           (this.authored.get(b) ?? b.uniqueId),
     );

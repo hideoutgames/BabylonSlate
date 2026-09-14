@@ -252,6 +252,10 @@ export class SceneShadowController {
   status(light: Light): ShadowLightStatus | undefined {
     return this.entries.get(light)?.status;
   }
+  /** Authored request, independent of admission, visibility and global shadow enablement. */
+  requestsShadow(light: Light): boolean {
+    return this.entries.get(light)?.requested ?? false;
+  }
   limits(): string[] {
     const limits = new Set<string>();
     for (const entry of this.entries.values()) {
