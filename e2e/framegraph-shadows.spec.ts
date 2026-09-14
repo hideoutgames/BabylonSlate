@@ -1,16 +1,25 @@
 import { expect, test } from "@playwright/test";
 import type { runFrameGraphShadowProof } from "../apps/editor/src/testing/framegraph-shadow-proof";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-test("Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity", async ({
+test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+
+for (const backend of ["webgl2", "webgpu"] as const) {
+test(`Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on ${backend}`, async ({
   page,
 }, testInfo) => {
   test.setTimeout(150_000);
   const errors: string[] = [];
+  const externalRequests: string[] = [];
+  await page.route(/https:\/\/cdn\.babylonjs\.com\/.*(?:glslang|twgsl)/, async (route) => {
+    externalRequests.push(route.request().url());
+    await route.abort();
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (
-      message.type() === "error" &&
-      /shader|ERROR: 0:|VALIDATE_STATUS|context lost/i.test(message.text())
+      ["warning", "error"].includes(message.type()) &&
+      /shader|ERROR: 0:|VALIDATE_STATUS|context lost|WebGPU uncaptured/i.test(message.text())
     )
       errors.push(message.text());
   });
@@ -21,19 +30,21 @@ test("Forward FrameGraph borrows admitted shadows with pixel, refresh and scene 
         window as unknown as { __babylonslateFrameGraphShadowProof?: unknown }
       ).__babylonslateFrameGraphShadowProof === "function",
   );
-  const result = await page.evaluate(() =>
+  const result = await page.evaluate((backend) =>
     (
       window as unknown as {
         __babylonslateFrameGraphShadowProof: typeof runFrameGraphShadowProof;
       }
-    ).__babylonslateFrameGraphShadowProof(),
+    ).__babylonslateFrameGraphShadowProof(backend), backend,
   );
   await testInfo.attach("framegraph-managed-shadow-proof", {
     body: JSON.stringify(result),
     contentType: "application/json",
   });
   expect(errors).toEqual([]);
-  expect(result.webGLVersion).toBe(2);
+  expect(externalRequests).toEqual([]);
+  expect(result.backend).toBe(backend);
+  expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
   expect(result.captures).toHaveLength(54);
   const difference = (a: number[], b: number[]) => {
     expect(a.length).toBe(b.length);
@@ -118,3 +129,4 @@ test("Forward FrameGraph borrows admitted shadows with pixel, refresh and scene 
     expect(pose("light-moved"), entry.name).not.toEqual(pose("caster-moved"));
   }
 });
+}

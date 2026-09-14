@@ -20,26 +20,34 @@ import {
   applyAuthoredLightProperties,
   beginEngineDrawCallFrame,
   compileMaterialPlan,
+  createAppWebGpuEngine,
   readEngineDrawCalls,
   setSceneRenderSettings,
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+import { isSceneFrameReady, withSceneReadinessState } from "@babylonslate/render/scene-perf";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
-export async function runFrameGraphShadowProof() {
+export async function runFrameGraphShadowProof(backend: "webgl2" | "webgpu" = "webgl2") {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 72;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, {
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
     preserveDrawingBuffer: true,
     stencil: true,
     disableWebGL2Support: false,
   });
   const boundTargets: RenderTargetWrapper[] = [];
+  let readinessDrawStacks: string[] | undefined;
+  const drawElements = engine.drawElementsType.bind(engine);
+  engine.drawElementsType = (...args) => {
+    readinessDrawStacks?.push(new Error("Readiness draw").stack ?? "Unknown draw");
+    drawElements(...args);
+  };
   const bind = engine.bindFramebuffer.bind(engine);
   engine.bindFramebuffer = (target, ...args) => {
     boundTargets.push(target);
@@ -133,6 +141,14 @@ export async function runFrameGraphShadowProof() {
       casters.push(caster);
     }
     setSceneRenderSettings(scene);
+    // Native PBR construction queues an RGBD BRDF decode even when CEL will
+    // not sample the LUT. Finish fixture asset upload before measuring graph
+    // preparation; this decode legitimately draws to its own texture target.
+    const textureDeadline = performance.now() + 10_000;
+    while (scene.environmentBRDFTexture && !scene.environmentBRDFTexture.isReady()) {
+      if (performance.now() >= textureDeadline) throw new Error("BRDF upload timed out");
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
     const graph = new ForwardSceneFrameGraph(scene);
     const prepared = await graph.prepare(camera);
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
@@ -140,8 +156,11 @@ export async function runFrameGraphShadowProof() {
     const render = async (path: "graph" | "classic", force = false) => {
       // Graph readiness warms its own ObjectRenderer render-pass variants. The
       // independent classic oracle must also be ready on the camera's pass.
-      const classicReadyBefore =
-        path === "classic" ? scene.isReady(true) : null;
+      const classicReadyBefore = path === "classic" ? withSceneReadinessState(scene, () => {
+        scene.activeCamera = camera;
+        engine.currentRenderPassId = camera.renderPassId;
+        return isSceneFrameReady(scene);
+      }) : null;
       if (path === "classic") await scene.whenReadyAsync(true);
       if (force) map()?.resetRefreshCounter();
       boundTargets.length = 0;
@@ -155,10 +174,15 @@ export async function runFrameGraphShadowProof() {
       const after = target?.onAfterUnbindObservable.add(() => {
         shadowDraws += readEngineDrawCalls(engine) - shadowBefore;
       });
-      const result =
-        path === "graph"
+      engine.beginFrame();
+      let result;
+      try {
+        result = path === "graph"
           ? graph.render(camera, false)
           : (scene.render(false), { path: "classic" });
+      } finally {
+        engine.endFrame();
+      }
       const draws = readEngineDrawCalls(engine);
       if (before) target?.onBeforeBindObservable.remove(before);
       if (after) target?.onAfterUnbindObservable.remove(after);
@@ -181,7 +205,10 @@ export async function runFrameGraphShadowProof() {
     const capture = async (pose: string) => {
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
+      readinessDrawStacks = [];
       const prepared = await graph.prepare(camera);
+      const readinessStacks = readinessDrawStacks;
+      readinessDrawStacks = undefined;
       const readinessDraws = readEngineDrawCalls(engine);
       const readinessFaces = boundTargets.length;
       const currentMap = map();
@@ -194,6 +221,7 @@ export async function runFrameGraphShadowProof() {
         name: `${mode}-${kind}-${pose}`,
         prepared,
         readinessDraws,
+        readinessStacks,
         readinessFaces,
         graph: graphFrame,
         classic,
@@ -288,7 +316,7 @@ export async function runFrameGraphShadowProof() {
           remainingScenes: engine.scenes.length,
         });
       }
-    return { webGLVersion: engine.webGLVersion, captures, lifecycle };
+    return { backend, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null, captures, lifecycle };
   } finally {
     engine.dispose();
     canvas.remove();

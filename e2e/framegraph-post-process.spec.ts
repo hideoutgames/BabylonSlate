@@ -1,50 +1,45 @@
 import { expect, test } from "@playwright/test";
+import type { runFrameGraphPostProcessProof } from "../apps/editor/src/testing/framegraph-post-process-proof";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-test("authored Post Process bindings preserve pixels through the opt-in FrameGraph adapter", async ({
+test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+
+for (const backend of ["webgl2", "webgpu"] as const) {
+
+test(`authored Post Process bindings preserve pixels through the opt-in FrameGraph adapter on ${backend}`, async ({
   page,
 }, testInfo) => {
   test.setTimeout(60_000);
+  const errors: string[] = [];
+  const externalRequests: string[] = [];
+  await page.route(/https:\/\/cdn\.babylonjs\.com\/.*(?:glslang|twgsl)/, async (route) => {
+    externalRequests.push(route.request().url());
+    await route.abort();
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type()) &&
+      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
+  });
   await page.goto("/?test=1&framegraphProof=1");
   await page.waitForFunction(
     () =>
       typeof (window as unknown as { __babylonslateFrameGraphProof?: unknown })
         .__babylonslateFrameGraphProof === "function",
   );
-  const result = await page.evaluate(() =>
-    (
-      window as unknown as {
-        __babylonslateFrameGraphProof: () => Promise<{
-          captures: Array<{
-            name: string;
-            legacy: number[];
-            graph: number[];
-            width: number;
-            height: number;
-            passWidth: number;
-            passHeight: number;
-          }>;
-          retainedPasses: number;
-          retainedMaterials: number;
-          ownedShaderSources: number;
-          retainedShaderSources: number;
-          disabledResources: Array<{
-            phase: string;
-            materials: number;
-            passes: number;
-            shaderSources: number;
-          }>;
-          diagnostics: Array<{ materialGuid?: string; message: string }>;
-          webGLVersion: number;
-          glInfo: unknown;
-        }>;
-      }
-    ).__babylonslateFrameGraphProof(),
+  const result = await page.evaluate((backend) =>
+    (window as unknown as {
+      __babylonslateFrameGraphProof: typeof runFrameGraphPostProcessProof;
+    }).__babylonslateFrameGraphProof(backend), backend,
   );
   await testInfo.attach("framegraph-post-process-proof", {
     body: JSON.stringify(result),
     contentType: "application/json",
   });
-  expect(result.webGLVersion).toBe(2);
+  expect(errors).toEqual([]);
+  expect(externalRequests).toEqual([]);
+  expect(result.backend).toBe(backend);
+  if (backend === "webgl2") expect(result.webGLVersion).toBe(2);
   for (const capture of result.captures) {
     expect(capture.graph.length, capture.name).toBe(
       capture.width * capture.height * 4,
@@ -98,3 +93,5 @@ test("authored Post Process bindings preserve pixels through the opt-in FrameGra
     }),
   ]);
 });
+
+}
