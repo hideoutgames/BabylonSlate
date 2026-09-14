@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { normalizeCelShadingSettings, normalizeShadowSettings } from "@babylonslate/core";
+import { normalizeCelShadingSettings, normalizeShadowSettings, normalizeEnvironmentLightingSettings } from "@babylonslate/core";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
   sceneViewportRenderSettingsKey,
+  sceneViewportRenderSettings,
 } from "./scene-viewport-load";
 
-it("keeps the viewport when only a pipeline preference changes without changing its effective renderer", () => {
+it("retains requested scene paths through the loading key and resets to project inheritance", () => {
   const original = sceneViewportRenderSettingsKey({});
-  expect(sceneViewportRenderSettingsKey({ renderPath: "auto", gpuBackend: "auto" })).toBe(original);
-  expect(sceneViewportRenderSettingsKey({ renderPath: "clusteredForward", gpuBackend: "webgpu" })).toBe(original);
-  expect(sceneViewportRenderSettingsKey({}, undefined, undefined, { renderPath: "clusteredForward" })).toBe(original);
+  for (const renderPath of ["auto", "clusteredForward"] as const) {
+    const key = sceneViewportRenderSettingsKey({ renderPath });
+    expect(key).not.toBe(original);
+    expect(sceneViewportRenderSettings(key).renderPath).toBe(renderPath);
+    const overridden = sceneViewportRenderSettingsKey({ renderPath }, undefined, undefined, { renderPath: "forward" });
+    expect(sceneViewportRenderSettings(overridden).renderPath).toBe("forward");
+    expect(sceneViewportRenderSettingsKey({ renderPath }, undefined, undefined, {})).toBe(key);
+  }
 });
 
 it("reloads effective CEL changes while ignoring inactive and inherited-equivalent edits", () => {
@@ -21,6 +27,19 @@ it("reloads effective CEL changes while ignoring inactive and inherited-equivale
   expect(sceneViewportRenderSettingsKey({ ...project, mode: "pbr" })).not.toBe(initial);
   expect(sceneViewportRenderSettingsKey({ mode: "pbr", cel: project.cel }, { shadowBands: 6 }))
     .toBe(sceneViewportRenderSettingsKey({ mode: "pbr" }));
+});
+
+it("keeps environment scalar edits live while loading newly admitted resources before presentation", () => {
+  const environmentLighting = normalizeEnvironmentLightingSettings({ intensity: 3, rotationYDegrees: 90 });
+  const project = { environmentLighting };
+  const initial = sceneViewportRenderSettingsKey(project, {}, {}, {}, {}, "cube-a");
+  const latest = { ...environmentLighting, intensity: 4, rotationYDegrees: -90, celStrength: 0.5 };
+  expect(sceneViewportRenderSettingsKey({ environmentLighting: latest }, {}, {}, {}, { intensity: 2 }, "cube-a")).toBe(initial);
+  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, { enabled: false }, "cube-a")).not.toBe(initial);
+  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, {}, "cube-b")).not.toBe(initial);
+  const settings = sceneViewportRenderSettings(initial, latest);
+  expect(settings.environmentLighting).toEqual(latest);
+  expect(settings).not.toHaveProperty("environmentSource");
 });
 
 it("reloads effective shadow changes in PBR and CEL and restores inherited values", () => {

@@ -2,6 +2,7 @@ import {
   normalizeShadowSettings,
   resolveShadowSettings,
   SHADOW_LIMITS,
+  SHADOW_CAPACITY_PROFILES,
   type ShadowOverrides,
   type ShadowSettings,
 } from "@babylonslate/core";
@@ -30,10 +31,16 @@ const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
   filter: { pcf: "PCF", pcss: "Contact Hardening (PCSS)" },
   filterQuality: { low: "Low", medium: "Medium", high: "High" },
   mapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096" },
-  localMapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096" },
+  localMapSize: {
+    256: "256",
+    512: "512",
+    1024: "1024",
+    2048: "2048",
+    4096: "4096",
+  },
 };
 const fields: {
-  key: keyof ShadowSettings;
+  key: Exclude<keyof ShadowSettings, "profile" | "preset">;
   label: string;
   description: string;
 }[] = [
@@ -145,112 +152,119 @@ export function ShadowSettingsFields({
       ...(scene ? overrides : defaults),
       [key]: value,
       ...(selectManual ? { localLightMode: "manual" as const } : {}),
+      ...(!scene ? { preset: "custom" as const } : {}),
     });
   };
   return (
     <FieldSet
       data-testid={scene ? "scene-shadow-settings" : "project-shadow-settings"}
     >
-      <FieldLegend className={hideTitle ? "sr-only" : undefined}>Shadows</FieldLegend>
+      <FieldLegend className={hideTitle ? "sr-only" : undefined}>
+        Shadows
+      </FieldLegend>
       <FieldGroup className="gap-2">
         {fields.map(({ key, label, description }) => {
-            if (key !== "enabled" && !effective.enabled) return null;
-            if (key === "maxLocalLights" && effective.localLightMode !== "manual") return null;
-            const id = `${scene ? "scene" : "project"}-shadow-${key}`;
-            const overridden = scene && Object.hasOwn(overrides, key);
-            const choices = options[key];
-            const limits =
-              key in SHADOW_LIMITS
-                ? SHADOW_LIMITS[key as keyof typeof SHADOW_LIMITS]
-                : [0, 2048];
-            return (
-              <Field key={key} className="settings-field">
-                <div className="flex items-center justify-between gap-2">
-                  <FieldLabel htmlFor={id}>{label}</FieldLabel>
-                  {scene ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`${overridden ? "Reset" : "Override"} ${label}`}
-                      onClick={() => {
-                        if (!overridden) {
-                          patch(key, effective[key]);
-                          return;
-                        }
-                        const next = { ...overrides };
-                        delete next[key];
-                        onChange(next);
-                      }}
-                    >
-                      {overridden ? "Reset To Project" : "Override"}
-                    </Button>
-                  ) : null}
-                </div>
-                {key === "enabled" || key === "autoBias" ? (
-                  <Switch
-                    id={id}
-                    aria-describedby={`${id}-description`}
-                    checked={effective[key]}
-                    disabled={scene && !overridden}
-                    onCheckedChange={(value) => patch(key, value)}
-                  />
-                ) : choices ? (
-                  <Select
-                    value={String(effective[key])}
-                    disabled={scene && !overridden}
-                    onValueChange={(value) => {
-                      if (value)
-                        patch(
-                          key,
-                          typeof effective[key] === "number"
-                            ? Number(value)
-                            : value,
-                        );
+          if (key !== "enabled" && !effective.enabled) return null;
+          if (key === "maxLocalLights" && effective.localLightMode !== "manual")
+            return null;
+          const id = `${scene ? "scene" : "project"}-shadow-${key}`;
+          const overridden = scene && Object.hasOwn(overrides, key);
+          const choices = options[key];
+          const limits =
+            key in SHADOW_LIMITS
+              ? SHADOW_LIMITS[key as keyof typeof SHADOW_LIMITS]
+              : [0, 2048];
+          return (
+            <Field key={key} className="settings-field">
+              <div className="flex items-center justify-between gap-2">
+                <FieldLabel htmlFor={id}>{label}</FieldLabel>
+                {scene ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`${overridden ? "Reset" : "Override"} ${label}`}
+                    onClick={() => {
+                      if (!overridden) {
+                        patch(key, effective[key]);
+                        return;
+                      }
+                      const next = { ...overrides };
+                      delete next[key];
+                      onChange(next);
                     }}
                   >
-                    <SelectTrigger id={id} aria-describedby={`${id}-description`}>
-                      <SelectValue>
-                        {choices[String(effective[key])]}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {Object.entries(choices).map(([value, name]) => (
-                          <SelectItem key={value} value={value}>
-                            {name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <NumberField
-                    id={id}
-                    aria-describedby={`${id}-description`}
-                    value={Number(effective[key])}
-                    min={limits[0]}
-                    max={limits[1]}
-                    step={
-                      key === "distance" ||
-                      key === "cascades" ||
-                      key === "maxLocalLights"
-                        ? 1
-                        : 0.0001
-                    }
-                    disabled={scene && !overridden}
-                    onChange={(value) => patch(key, value, key === "maxLocalLights")}
-                  />
-                )}
-                <FieldDescription id={`${id}-description`}>
-                  {scene
-                    ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}. `
-                    : ""}
-                  {description}
-                </FieldDescription>
-              </Field>
-            );
-          })}
+                    {overridden ? "Reset To Project" : "Override"}
+                  </Button>
+                ) : null}
+              </div>
+              {key === "enabled" || key === "autoBias" ? (
+                <Switch
+                  id={id}
+                  aria-describedby={`${id}-description`}
+                  checked={effective[key]}
+                  disabled={scene && !overridden}
+                  onCheckedChange={(value) => patch(key, value)}
+                />
+              ) : choices ? (
+                <Select
+                  value={String(effective[key])}
+                  disabled={scene && !overridden}
+                  onValueChange={(value) => {
+                    if (value)
+                      patch(
+                        key,
+                        typeof effective[key] === "number"
+                          ? Number(value)
+                          : value,
+                      );
+                  }}
+                >
+                  <SelectTrigger id={id} aria-describedby={`${id}-description`}>
+                    <SelectValue>{choices[String(effective[key])]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {Object.entries(choices).map(([value, name]) => (
+                        <SelectItem key={value} value={value}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <NumberField
+                  id={id}
+                  aria-describedby={`${id}-description`}
+                  value={Number(effective[key])}
+                  min={limits[0]}
+                  max={limits[1]}
+                  step={
+                    key === "distance" ||
+                    key === "cascades" ||
+                    key === "maxLocalLights"
+                      ? 1
+                      : 0.0001
+                  }
+                  disabled={scene && !overridden}
+                  onChange={(value) =>
+                    patch(key, value, key === "maxLocalLights")
+                  }
+                />
+              )}
+              <FieldDescription id={`${id}-description`}>
+                {scene
+                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}. `
+                  : ""}
+                {description}
+                {key === "localLightMode" && effective.localLightMode === "auto"
+                  ? ` Current Auto Budget: ${SHADOW_CAPACITY_PROFILES[effective.profile].autoLocalLights} local shadow lights. Applying a quality preset resets the saved Manual count to that tier.`
+                  : ""}
+              </FieldDescription>
+            </Field>
+          );
+        })}
       </FieldGroup>
     </FieldSet>
   );

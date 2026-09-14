@@ -16,6 +16,7 @@ import { prewarmMaterial } from "./material-compiler";
 import { isEngineDefaultMaterial } from "./default-material";
 import { actorVisualFingerprint } from "./scene-loader";
 import { syncSceneLighting } from "./scene-lighting";
+import { isEnvironmentLightingReady } from "./environment-lighting";
 
 /** Fast large-scene lookups (§2.4). Babylon 9 defaults these on; pass them explicitly. */
 export const SCENE_LOOKUP_MAPS: SceneOptions = {
@@ -299,6 +300,17 @@ export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   return result;
 }
 
+/** Native texture decoding may render asynchronously after its load observable. */
+export function isSceneTextureWorkReady(scene: Scene): boolean {
+  if (scene.isDisposed) return false;
+  for (const texture of scene.textures) {
+    if (texture.loadingError) throw new Error(texture.errorObject?.message ?? `Texture ${texture.name} failed to load.`,
+      { cause: texture.errorObject?.exception });
+    if (!texture.isRenderTarget && !texture.isReady()) return false;
+  }
+  return true;
+}
+
 /**
  * Babylon 9.20 Scene.isReady also waits for every cached Engine effect. Mirror
  * its scene-owned checks so an unrelated preview cannot block this viewport.
@@ -307,7 +319,7 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
   if (scene.isDisposed) return false;
   return withSceneReadinessState(scene, () => {
     const engine = scene.getEngine();
-    let ready = scene.getWaitingItemsCount() === 0;
+    let ready = scene.getWaitingItemsCount() === 0 && isEnvironmentLightingReady(scene) && isSceneTextureWorkReady(scene);
     scene.prePassRenderer?.update();
     if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer && !scene.depthPeelingRenderer.isReady()) ready = false;
     const renderTargets = new Set([...scene.customRenderTargets, ...targets]);

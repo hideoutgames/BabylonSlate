@@ -1,7 +1,10 @@
 import type { Scene } from "@babylonjs/core";
 import {
   normalizeCelShadingSettings,
+  type RenderPathOverrides,
   resolveRenderingQuality,
+  resolveLocalLightBudget,
+  mergeRenderingQualityOverrides,
   type QualityOverrides,
   type ShadowSettings,
   type ShadowOverrides,
@@ -10,10 +13,14 @@ import {
   type CelShadingSettings,
   type RenderMode,
   type RenderProjectSettings,
+  normalizeEnvironmentLightingSettings,
+  resolveEnvironmentLightingSettings,
+  type EnvironmentLightingSettings,
+  type EnvironmentLightingOverrides,
 } from "@babylonslate/core";
 
 export type RenderShadingSettings = Partial<
-  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality">
+  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "renderPath" | "gpuBackend">
 >;
 type SceneRendering = {
   mode: RenderMode;
@@ -22,11 +29,15 @@ type SceneRendering = {
   lightsDebug: boolean;
   textureLodBias: number;
   textureAnisotropy: number;
+  localLightBudget: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
+  pathOverrides: RenderPathOverrides;
   overrides: CelShadingOverrides;
   shadows: ShadowSettings;
   shadowOverrides: ShadowOverrides;
+  environmentLighting: EnvironmentLightingSettings;
+  environmentOverrides: EnvironmentLightingOverrides;
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
@@ -41,11 +52,15 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       lightsDebug: false,
       textureLodBias: 0,
       textureAnisotropy: 4,
+      localLightBudget: resolveLocalLightBudget(resolveRenderingQuality().lighting),
       cel: normalizeCelShadingSettings(undefined),
       project: {},
+      pathOverrides: {},
       overrides: {},
       shadows: resolveRenderingQuality().shadows,
       shadowOverrides: {},
+      environmentLighting: normalizeEnvironmentLightingSettings(undefined),
+      environmentOverrides: {},
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -63,13 +78,17 @@ export function updateSceneRenderingSettings(
   project?: RenderShadingSettings,
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
+  environmentOverrides?: EnvironmentLightingOverrides,
 ): void {
   const state = sceneRenderingSettings(scene);
   if (project !== undefined) state.project = project;
   if (overrides !== undefined) state.overrides = overrides;
   if (shadowOverrides !== undefined) state.shadowOverrides = shadowOverrides;
+  if (environmentOverrides !== undefined) state.environmentOverrides = environmentOverrides;
+  state.environmentLighting = resolveEnvironmentLightingSettings(state.project.environmentLighting, state.environmentOverrides);
   const quality = resolveSceneRenderingQuality(scene);
   state.shadows = quality.shadows;
+  state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   for (const texture of scene.textures) texture.anisotropicFilteringLevel = state.textureAnisotropy;
@@ -85,10 +104,5 @@ export function resolveSceneRenderingQuality(scene: Scene) {
   const state = sceneRenderingSettings(scene);
   const local = state.localQualityOverrides;
   const session = state.qualityOverrides;
-  return resolveRenderingQuality(state.project, state.shadowOverrides, {
-    shadows: { ...local.shadows, ...session.shadows },
-    resolution: { ...local.resolution, ...session.resolution },
-    textures: { ...local.textures, ...session.textures },
-    postprocessing: { ...local.postprocessing, ...session.postprocessing },
-  });
+  return resolveRenderingQuality(state.project, state.shadowOverrides, mergeRenderingQualityOverrides(local, session));
 }

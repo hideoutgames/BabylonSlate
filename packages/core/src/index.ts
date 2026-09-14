@@ -32,4 +32,6 @@ export * from "./default-input-assets";
 export * from "./sorting";
 
 export * from "./render-quality";
+export * from "./render-setting-ownership";
 export * from "./render-path";
+export * from "./environment-lighting";

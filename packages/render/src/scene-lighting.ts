@@ -1,6 +1,13 @@
+import { syncSceneRenderPath, publishSceneRenderPath } from "./scene-render-path";
 import "./texture-quality";
 import { syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import {
+  clusteredLightingLimits,
+  clusteredLocalContributionCount,
+  syncClusteredLightPolicy,
+} from "./clustered-light-policy";
+import { sceneRenderingSettings } from "./render-settings";
 import {
   Material,
   NodeMaterial,
@@ -48,7 +55,10 @@ export function syncSceneLighting(scene: Scene): void {
 }
 
 export function sceneLightingLimits(scene: Scene): string[] {
-  return lightingByScene.get(scene)?.limits() ?? [];
+  return [
+    ...clusteredLightingLimits(scene),
+    ...(lightingByScene.get(scene)?.limits() ?? []),
+  ];
 }
 
 function installSceneLighting(scene: Scene): SceneLighting {
@@ -70,17 +80,31 @@ function installSceneLighting(scene: Scene): SceneLighting {
 
   const sync = (): void => {
     if (scene.isDisposed) return;
+    syncSceneRenderPath(scene);
+    syncClusteredLightPolicy(scene);
+    publishSceneRenderPath(scene);
     budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
-    admission = syncForwardLightPolicy(scene, budget.slots);
+    admission = syncForwardLightPolicy(
+      scene,
+      budget.slots,
+      Math.max(
+        0,
+        sceneRenderingSettings(scene).localLightBudget -
+          clusteredLocalContributionCount(scene),
+      ),
+    );
     nextEnabled.length = 0;
     nextShadowLayout.length = 0;
     for (const light of scene.lights) {
       if (!light.isEnabled()) continue;
       nextEnabled.push(light);
-      nextShadowLayout.push(light.shadowEnabled,
-        light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator());
+      nextShadowLayout.push(
+        light.shadowEnabled,
+        light.getShadowGenerator(scene.activeCamera) ??
+          light.getShadowGenerator(),
+      );
     }
     const changed =
       sceneLightsEnabled !== scene.lightsEnabled ||
@@ -167,7 +191,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     limits: () =>
       admission.limited.length
         ? [
-            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved). Limited: ${admission.limited
+            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${sceneRenderingSettings(scene).localLightBudget} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved). Limited: ${admission.limited
               .slice(0, 16)
               .map((light) => light.name)
               .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`,

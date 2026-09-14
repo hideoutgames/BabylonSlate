@@ -1,3 +1,5 @@
+import { readScenePipelineStatus, registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
+import { resolveRenderingPipeline } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
@@ -82,6 +84,7 @@ vi.mock("../context/document-context", async () => {
       return {
       projectDocument,
       projectGuid: "test-project",
+      activeDocumentId: "active-scene",
       exportProject,
       exportGameArtifact,
       zipExportedGame: vi.fn(),
@@ -236,6 +239,17 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByRole("button", { name: /Reverb Decay Scale/ }));
     const field = await screen.findByTestId("settings-audio-reverb-decay-scale");
     await waitFor(() => expect(document.activeElement).toBe(field));
+  });
+  it("starts environment lighting closed and reveals the matching control from search", async () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByLabelText("Environment Rotation")).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "environment rotation" } });
+    fireEvent.click(screen.getByRole("button", { name: /Environment Rotation/ }));
+    const field = await screen.findByLabelText("Environment Rotation");
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("true");
   });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
@@ -414,6 +428,23 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-width")).toBeTruthy();
     expect(screen.getByTestId("setting-render-height")).toBeTruthy();
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
+  });
+
+  it("shows the active scene's actual clustered selection and concrete fallback", () => {
+    const owner = registerScenePipelineStatus(scenePipelineKey("test-project", "active-scene"));
+    try {
+      owner.publish(resolveRenderingPipeline({ renderPath: "auto" }, undefined, undefined, undefined,
+        { gpuBackend: "webgl2" }, { supported: true, autoEligible: true }));
+      expect(readScenePipelineStatus(scenePipelineKey("test-project", "active-scene"))?.effective.renderPath).toBe("clusteredForward");
+      render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+      fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Clustered Forward \u00b7 WebGL2");
+      act(() => owner.publish(resolveRenderingPipeline({ renderPath: "auto" }, undefined, undefined, undefined,
+        { gpuBackend: "webgl2" }, { supported: false, reason: "The active material requires Forward." })));
+      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Forward \u00b7 WebGL2");
+      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("active material requires Forward");
+      expect(updateProjectSettings).not.toHaveBeenCalled();
+    } finally { act(() => owner.dispose()); }
   });
 
   it("stages independent pipeline preferences until Done and displays their effective fallback", async () => {

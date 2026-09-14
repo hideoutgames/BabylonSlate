@@ -1,4 +1,4 @@
-import { ShaderStore, type Effect, type Scene } from "@babylonjs/core";
+import { Constants, ShaderStore, type Effect, type Scene } from "@babylonjs/core";
 import { lightFragment } from "@babylonjs/core/Shaders/ShadersInclude/lightFragment";
 import { lightFragmentWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/lightFragment";
 import { lightsFragmentFunctions } from "@babylonjs/core/Shaders/ShadersInclude/lightsFragmentFunctions";
@@ -6,12 +6,32 @@ import { lightsFragmentFunctionsWGSL } from "@babylonjs/core/ShadersWGSL/Shaders
 import { sceneRenderingSettings } from "./render-settings";
 import { checkedShader } from "./checked-shader";
 import { withShadowDistanceFade } from "./shadow-shader";
+import { celClusteredLighting } from "./clustered-cel-shader";
 
 export const CEL_UNIFORMS = [
   "slateCelBands",
   "slateCelSpecular",
   "slateCelLight",
+  "slateCelEnvironment",
+  "slateCelEnvironmentRotation0",
+  "slateCelEnvironmentRotation1",
+  "slateCelEnvironmentRotation2",
+  ...["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"].map((key) => `slateCelIrradiance_${key}`),
 ];
+
+/** One diffuse environmental contribution enters the same final CEL ramp. */
+export function celEnvironmentAccumulation(wgsl: boolean, influence = "1.0"): string {
+  return `${wgsl ? "var slateEnvironmentColor: vec3f" : "vec3 slateEnvironmentColor"}=slateCelEnvironmentLight(normalW)*clamp(${influence},0.0,1.0);
+${wgsl ? "var slateEnvironmentStrength: f32" : "float slateEnvironmentStrength"}=slateCelStrength(slateEnvironmentColor);
+slateCelWins=0.0;
+if (slateEnvironmentStrength>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }
+slateCelPeak=max(slateCelPeak,slateEnvironmentStrength);
+slateCelTotal+=slateEnvironmentStrength;
+diffuseBase=slateCelAccumulate(diffuseBase,slateEnvironmentColor,slateCelWins);
+#ifdef SPECULARTERM
+specularBase=slateCelAccumulate(specularBase,${wgsl ? "vec3f" : "vec3"}(0.0),slateCelWins);
+#endif`;
+}
 
 export function celLightAccumulators(wgsl: boolean): string {
   return ["slateCelPeak", "slateCelTotal", "slateCelWins"]
@@ -24,6 +44,13 @@ export function celFunctions(wgsl: boolean): string {
   const source = `
 vec3 slateCelTextureToDisplay(vec3 color) {
   return mix(12.92 * color, 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - vec3(0.055), step(vec3(0.0031308), color));
+}
+vec3 slateCelEnvironmentLight(vec3 normal) {
+  vec3 n = vec3(dot(slateCelEnvironmentRotation0.xyz,normal),dot(slateCelEnvironmentRotation1.xyz,normal),dot(slateCelEnvironmentRotation2.xyz,normal));
+  vec3 color = slateCelIrradiance_x.xyz*n.x+slateCelIrradiance_y.xyz*n.y+slateCelIrradiance_z.xyz*n.z+
+    slateCelIrradiance_xx.xyz*n.x*n.x+slateCelIrradiance_yy.xyz*n.y*n.y+slateCelIrradiance_zz.xyz*n.z*n.z+
+    slateCelIrradiance_xy.xyz*n.x*n.y+slateCelIrradiance_yz.xyz*n.y*n.z+slateCelIrradiance_zx.xyz*n.z*n.x;
+  return max(color,vec3(0.0))*slateCelEnvironment.x;
 }
 // Resolve round-off at exact hard thresholds consistently; no edge blending.
 float slateCelBand(float value) {
@@ -80,15 +107,17 @@ vec3 slateCelSurfaceLight(vec3 color, float peak) {
         `fn ${name}(${args.replace(/(float|vec3) (\w+)/g, (_arg, t: string, n: string) => `${n}: ${t === "float" ? "f32" : "vec3f"}`)}) -> ${type === "float" ? "f32" : "vec3f"}`,
     )
     .replace(/float (\w+) =/g, "var $1: f32 =")
+    .replace(/vec3 (\w+) =/g, "var $1: vec3f =")
     .replace(/vec3\(/g, "vec3f(")
     .replace(
-      /\b(slateCelBands|slateCelSpecular|slateCelLight)\b/g,
+      /\b(slateCelBands|slateCelSpecular|slateCelLight|slateCelEnvironment(?:Rotation[012])?|slateCelIrradiance_(?:xx|yy|zz|xy|yz|zx|x|y|z))\b/g,
       "uniforms.$1",
     );
 }
 
 /** Retain Babylon's light transforms, colors, ranges, cones and shadow bindings. */
 export function celLightingFunctions(source: string, wgsl: boolean): string {
+  if (!wgsl) source = celClusteredLighting(source);
   return (
     checkedShader(source, wgsl ? "lighting WGSL" : "lighting GLSL")
       // Colored sky/ground fills must not reintroduce a smooth hue gradient.
@@ -113,16 +142,25 @@ export function celLightingFunctions(source: string, wgsl: boolean): string {
         "specComp*specularColor;",
         "specComp*slateCelSpecularTint(specularColor,diffuseColor);",
         1,
-      )
-      .value
+      ).value
   );
 }
 
 for (const wgsl of [false, true]) {
   const store = ShaderStore.GetIncludesShadersStore(wgsl ? 1 : 0);
-  store.slateCelLightFragment = checkedShader(withShadowDistanceFade((
-    wgsl ? lightFragmentWGSL : lightFragment
-  ).shader, wgsl), wgsl ? "light fragment WGSL" : "light fragment GLSL")
+  const fragment = (wgsl ? lightFragmentWGSL : lightFragment).shader;
+  store.slateCelLightFragment = checkedShader(
+    withShadowDistanceFade(
+      wgsl
+        ? fragment
+        : checkedShader(fragment, "clustered CEL sequential call").replace(
+            "ivec2(light{X}.vSliceRanges[sliceIndex]),glossiness);}",
+            "ivec2(light{X}.vSliceRanges[sliceIndex]),glossiness,slateCelPeak);}",
+          ).value,
+      wgsl,
+    ),
+    wgsl ? "light fragment WGSL" : "light fragment GLSL",
+  )
     .replace(
       /diffuseBase\+=info\.diffuse\*(shadow(?:Debug\{X\})?);/g,
       (
@@ -131,8 +169,20 @@ for (const wgsl of [false, true]) {
       ) => `${wgsl ? "var slateCelIncoming{X}: f32" : "float slateCelIncoming{X}"}=slateCelStrength(info.diffuse*${shadow === "shadow" ? "slateCelShadowVisibility(shadow)" : shadow});
 slateCelWins=0.0;
 if (slateCelIncoming{X}>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }
+${
+  wgsl
+    ? "slateCelPeak=max(slateCelPeak,slateCelIncoming{X});slateCelTotal+=slateCelIncoming{X};"
+    : `#ifdef CLUSTLIGHT{X}
+// The children already compared against the conventional prefix in sequence.
+// Comparing their final maximum again would break epsilon ties.
+slateCelWins=info.slateCelWins;
+slateCelPeak=info.slateCelPeak;
+slateCelTotal+=info.slateCelTotal;
+#else
 slateCelPeak=max(slateCelPeak,slateCelIncoming{X});
 slateCelTotal+=slateCelIncoming{X};
+#endif`
+}
 diffuseBase=slateCelAccumulate(diffuseBase,info.diffuse*${shadow === "shadow" ? "slateCelShadowVisibility(shadow)" : shadow},slateCelWins);`,
       2,
     )
@@ -152,6 +202,7 @@ export function bindCelSettings(
   effect: Effect,
   scene: Scene,
   unlit = false,
+  environmentInfluence = 1,
 ): void {
   const { cel } = sceneRenderingSettings(scene);
   effect.setFloat4(
@@ -179,4 +230,22 @@ export function bindCelSettings(
     unlit || !scene.lightsEnabled ? 1 : 0,
     0,
   );
+  const { environmentLighting } = sceneRenderingSettings(scene);
+  const environment = scene.environmentTexture;
+  const polynomial = environment?.sphericalPolynomial;
+  const strength = !unlit && scene.lightsEnabled && environmentLighting.enabled && polynomial
+    ? scene.iblIntensity * environmentLighting.celStrength * environmentInfluence
+    : 0;
+  effect.setFloat4("slateCelEnvironment", strength, 0, 0, 0);
+  const matrix = environment?.getReflectionTextureMatrix().m;
+  const invertZ = environment && (scene.useRightHandedSystem ? !environment.invertZ : environment.invertZ) ? -1 : 1;
+  const invertY = environment?.coordinatesMode === Constants.TEXTURE_INVCUBIC_MODE ? -1 : 1;
+  for (let row = 0; row < 3; row++) {
+    const sign = row === 2 ? invertZ : row === 1 ? invertY : 1;
+    effect.setFloat4(`slateCelEnvironmentRotation${row}`, (matrix?.[row] ?? (row === 0 ? 1 : 0)) * sign, (matrix?.[row + 4] ?? (row === 1 ? 1 : 0)) * sign, (matrix?.[row + 8] ?? (row === 2 ? 1 : 0)) * sign, 0);
+  }
+  for (const key of ["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"] as const) {
+    const value = polynomial?.[key];
+    effect.setFloat4(`slateCelIrradiance_${key}`, value?.x ?? 0, value?.y ?? 0, value?.z ?? 0, 0);
+  }
 }

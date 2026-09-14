@@ -371,6 +371,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     projectDocument,
     projectGuid,
     dirtyDocuments,
+    projectDirty,
     graphsNeedCompile,
     migrationPending,
     saveAll,
@@ -730,7 +731,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     setPreviewCanCancel(true);
     setPreviewPhase("Saving");
     try {
-      if (dirtyDocuments.length > 0) {
+      if (dirtyDocuments.length > 0 || projectDirty) {
         const saved = await saveAll();
         if (!saved) return;
       }
@@ -783,6 +784,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     appendLog,
     assetRegistry,
     dirtyDocuments.length,
+    projectDirty,
     exportGameArtifact,
     openPlaySceneGuid,
     playFromScene,
@@ -810,7 +812,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       pendingPlayOptionsRef.current = options;
       const inject = Boolean(options?.injectFixtureThrow);
       const plan = planPlayPreviewPrepare({
-        dirtyDocuments: dirtyDocuments.map((doc) => ({ label: doc.ref.label })),
+        dirtyDocuments: [
+          ...dirtyDocuments.map((doc) => ({ label: doc.ref.label })),
+          ...(projectDirty ? [{ label: "Project Settings" }] : []),
+        ],
         scriptsStale: graphsNeedCompile,
         migrationPending: migrationPending.length > 0,
       });
@@ -1232,6 +1237,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlaySceneLibrary,
       collectPlaySceneLayers,
       dirtyDocuments,
+      projectDirty,
       launchPlay,
       migrationPending.length,
       playing,

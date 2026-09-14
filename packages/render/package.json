@@ -8,6 +8,8 @@
     "./fbx-import": "./src/convert-fbx-to-glb.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
     "./framegraph-post-process": "./src/framegraph-post-process.ts",
+    "./clustered-scene-lights": "./src/clustered-scene-lights.ts",
+    "./clustered-light-capabilities": "./src/clustered-light-capabilities.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },
