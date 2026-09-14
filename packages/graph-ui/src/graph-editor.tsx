@@ -2,7 +2,6 @@ import {
   Background,
   BackgroundVariant,
   ConnectionMode,
-  Controls,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -26,6 +25,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./graph-editor.css";
+import { GraphViewportControls } from "./graph-viewport-controls";
 import { GraphInteractionSettingsContext, NodeShakeTracker } from "./graph-interaction-settings";
 import {
   useCallback,
@@ -2265,7 +2265,7 @@ function GraphEditorCanvas({
         </div>
         )}
         <ReactFlow
-          className="graph-editor-canvas"
+          className="graph-editor-canvas isolate z-0"
           colorMode={colorMode}
           nodes={virtualize ? visibleGraph.nodes : nodes}
           edges={virtualize ? visibleGraph.edges : styledEdges}
@@ -2336,16 +2336,13 @@ function GraphEditorCanvas({
             color="var(--border)"
             bgColor="var(--graph-canvas)"
           />
-          <Controls
-            showInteractive={false}
-            fitViewOptions={graphViewport.fitViewOptions}
-          />
           <SelectedNodeSync selectedNodeId={selectedNodeId} />
           <FocusedNodeSync
             focusedNodeId={focusedNodeId}
             fitViewOptions={graphViewport.focusedFitViewOptions}
           />
         </ReactFlow>
+        <GraphViewportControls fitViewOptions={graphViewport.fitViewOptions} />
         {marqueeScreen ? (
           <div
             data-testid="graph-marquee"
