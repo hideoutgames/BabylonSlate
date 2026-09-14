@@ -27,6 +27,13 @@ if (
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("postProcessLifetimeProof")
+) {
+  void import("./testing/framegraph-post-process-lifetime-proof").then(({ runPostProcessLifetimeProof }) => {
+    Object.assign(window, { __babylonslatePostProcessLifetimeProof: runPostProcessLifetimeProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("framegraphGeometryProof")
 ) {
   void import("./testing/framegraph-geometry-proof").then(({ runFrameGraphGeometryProof }) => {
