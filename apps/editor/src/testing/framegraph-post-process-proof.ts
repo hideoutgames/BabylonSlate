@@ -211,6 +211,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     documents: Array<MaterialDocument | null>,
     disabled: number[] = [],
     resolutionScale = 1,
+    sharedMaterial = false,
   ) => {
     legacy?.dispose();
     legacy = undefined;
@@ -222,10 +223,12 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
       source.getInternalTexture()!,
     );
     const entries = documents.map((_, order) => ({
-      materialGuid: `proof-${order}`,
+      id: `entry-${order}`,
+      materialGuid: `proof-${sharedMaterial ? 0 : order}`,
       order,
       enabled: !disabled.includes(order),
       scalable: resolutionScale < 1,
+      ...(sharedMaterial ? { parameters: { Gain: { kind: "float" as const, value: order === 0 ? 0.2 : 0.8 } } } : {}),
     }));
     const documentFor = (guid: string) =>
       documents[Number(guid.slice(6))] ?? null;
@@ -313,7 +316,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     await capture("color");
     if (
       !stack!.tasks[0]!.setParameter("Gain", { kind: "float", value: 0.75 }) ||
-      !library.setParameter(scene, "proof-0", "Gain", {
+      !legacy!.setParameter("entry-0", "Gain", {
         kind: "float",
         value: 0.75,
       })
@@ -375,7 +378,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
       rememberGraphShaders(before);
       await updateLegacy([]);
       if (
-        !library.setParameter(scene, "proof-1", "Gain", {
+        !legacy!.setParameter("entry-1", "Gain", {
           kind: "float",
           value: 0.75,
         })
@@ -408,6 +411,15 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     await capture("resized");
     await rebuild([gain], [], 0.5);
     await capture("half-resolution");
+    await rebuild([gain, gain], [], 1, true);
+    await capture("duplicate-entry-authored");
+    for (const [index, value] of [0.25, 0.75].entries()) {
+      const parameter = { kind: "float" as const, value };
+      if (!stack!.tasks[index]!.setParameter("Gain", parameter) ||
+        !legacy!.setParameter(`entry-${index}`, "Gain", parameter))
+        throw new Error("Duplicate pass parameter was not independently bound");
+    }
+    await capture("duplicate-entry-parameters");
     stack!.dispose();
     legacy!.dispose();
     graph!.dispose();
