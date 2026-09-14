@@ -149,7 +149,7 @@ export async function runPostProcessLifetimeProof(backend: "webgl2" | "webgpu") 
     }
     return {
       backend, captures, diagnostics, lifetime, invalidPrograms, programQueries,
-      engines: EngineStore.Instances.map((candidate) => ({ id: candidate.uniqueId, proof: candidate === engine })),
+      engines: EngineStore.Instances.map((candidate, index) => ({ index, proof: candidate === engine })),
       retired: retired.map(({ pending, lateProbes, compiledAfterRetirement }) => ({ pending, lateProbes, compiledAfterRetirement })),
       siblingReady: siblingEffect.isReady(),
     };
