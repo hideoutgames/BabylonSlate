@@ -9,6 +9,7 @@ import {
   Effect,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import {
   createDefaultMaterialDocument,
@@ -354,6 +355,124 @@ it("disposal during deferred graph compilation cannot attach a late pass", async
     scene.materials.filter((material) => material instanceof NodeMaterial),
   ).toHaveLength(0);
 });
+
+it.each(["replace", "update", "dispose", "deadline", "compile-error", "engine-dispose", "shared"] as const)(
+  "%s while GPU compilation is pending retains native ownership until its release boundary",
+  async (action) => {
+    vi.useFakeTimers();
+    try {
+      const { engine, graph, tasks, diagnostics } = host([gainDocument(), gainDocument()]);
+      const preparePipeline = engine._preparePipelineContextAsync.bind(engine);
+      let pendingPipeline: WebGLPipelineContext | undefined;
+      vi.spyOn(engine, "_preparePipelineContextAsync").mockImplementation((...args) => {
+        const pipeline = args[0] as WebGLPipelineContext;
+        // The graph also compiles its own copy Effect. Delay an authored pass,
+        // identified by its actual native key, instead of whichever compiles first.
+        if (!pendingPipeline && engine.postProcesses.some((pass) =>
+          pass.getEffect()?.key.replace(/\r/g, "").replace(/\n/g, "|") ===
+            (pipeline as WebGLPipelineContext & { _name: string })._name)) {
+          pendingPipeline = pipeline;
+          pipeline.isParallelCompiled = true;
+        }
+        return preparePipeline(...args);
+      });
+      let deletedProgramQueries = 0;
+      const deletedPipelines = new Set<unknown>();
+      let compiled = false;
+      const deletePipeline = engine._deletePipelineContext.bind(engine);
+      vi.spyOn(engine, "_deletePipelineContext").mockImplementation((pipeline) => {
+        deletePipeline(pipeline);
+        deletedPipelines.add(pipeline);
+      });
+      // Retain native Effect, pipeline, retry timer and disposal. NullEngine has
+      // no GPU compiler; only its driver's pending-completion query is supplied.
+      vi.spyOn(engine, "_isRenderingStateCompiled").mockImplementation((pipeline) => {
+        if (deletedPipelines.has(pipeline)) deletedProgramQueries++;
+        if (compiled) {
+          if (action === "compile-error") throw new Error("Native driver compilation failed");
+          const native = pipeline as WebGLPipelineContext;
+          native.onCompiled?.();
+          native.onCompiled = undefined;
+          return true;
+        }
+        return false;
+      });
+      await graph.buildAsync(false);
+      await vi.waitFor(() => expect(pendingPipeline).toBeDefined());
+      const retiringPass = engine.postProcesses.find((pass) => pass.getEffect().getPipelineContext() === pendingPipeline)!;
+      const retiring = retiringPass.getEffect();
+      const sibling = engine.postProcesses.find((pass) => pass !== retiringPass)!;
+      const task = tasks.find((candidate) => candidate.name === retiringPass.name)!;
+      const errors = vi.fn();
+      retiring.onErrorObservable.add(errors);
+      await vi.waitFor(() => expect(sibling.getEffect().isReady()).toBe(true));
+      expect(retiring.isReady()).toBe(false);
+      const applied = vi.fn();
+      sibling.onApplyObservable.add(applied);
+      let shared: Effect | undefined;
+      if (action === "shared") {
+        shared = engine.createEffect(retiring.name, {
+          attributes: retiring.getAttributesNames(), uniformsNames: retiring.getUniformNames(),
+          samplers: retiring.getSamplers(), defines: retiring.defines,
+          fallbacks: null, onCompiled: null, onError: null,
+        }, engine);
+        expect(shared).toBe(retiring);
+        expect(shared._refCount).toBe(2);
+      }
+
+      if (action === "replace") await task.replaceDocument(gainDocument());
+      else if (action === "update") {
+        const name = retiring.name as { vertex: string; fragment: string };
+        retiringPass.updateEffect(`${retiring.defines}\n#define OWNED_REPLACEMENT`, retiring.getUniformNames(),
+          retiring.getSamplers(), undefined, undefined, undefined, name.vertex, name.fragment);
+      }
+      else task.dispose();
+      expect(retiring.isDisposed).toBe(false);
+      expect(retiring._refCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(32);
+      expect(deletedProgramQueries).toBe(0);
+      expect(errors).not.toHaveBeenCalled();
+      expect(graph.isReady()).toBe(true);
+      graph.execute();
+      expect(applied).toHaveBeenCalledOnce();
+      expect(sibling.getEffect().isDisposed).toBe(false);
+      expect(diagnostics).toEqual([]);
+      if (action === "deadline") {
+        let released = false;
+        void task.whenReleased().then(() => { released = true; });
+        const result = task.whenDisposed().catch((error: AggregateError) => error);
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(await result).toMatchObject({ errors: [expect.objectContaining({
+          errors: [expect.objectContaining({ message: expect.stringContaining("uncertain") })],
+        })] });
+        expect(retiring.isDisposed).toBe(false);
+        expect(deletedPipelines.has(pendingPipeline)).toBe(false);
+        expect(released).toBe(false);
+      }
+      if (action === "engine-dispose") {
+        engine.dispose();
+        await task.whenDisposed();
+      } else {
+        compiled = true;
+        await vi.advanceTimersByTimeAsync(32);
+        if (shared) {
+          await task.whenDisposed();
+          expect(shared.isDisposed).toBe(false);
+          expect(shared.isReady()).toBe(true);
+          shared.dispose();
+        } else if (action === "dispose") await task.whenDisposed();
+      }
+      expect(retiring.isDisposed).toBe(true);
+      if (action === "compile-error") expect(errors).toHaveBeenCalledOnce();
+      if (action === "deadline") await task.whenReleased();
+      await vi.advanceTimersByTimeAsync(32);
+      expect(deletedProgramQueries).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("waits for an authored texture and copies through a terminal texture failure", async () => {
   const { graph, source, diagnostics, engine } = host([
