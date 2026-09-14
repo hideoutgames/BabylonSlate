@@ -54,6 +54,8 @@ Show References and Delete combine persisted header dependencies with typed refe
 
 ## Importers
 
+`BakedLighting` V1 uses the existing document chunk for its manifest and separate physical linear irradiance atlas chunks. Import validates representation, source/receiver identities and atlas contents before admission. Scene headers and open-document references include `bakedLightingAssetGuid`; bake headers retain source dependencies. Explicit publication creates a fresh immutable candidate and changes the Scene reference only after ownership checks. Refused publication can leave an unreferenced candidate, while the prior reference remains intact. Export preserves the whole validated container rather than selecting its first binary chunk. See the [bake data contract](render.md#baked-lighting-data-contract) for validity, import restrictions and the remaining provider/runtime integration.
+
 Pure functions keyed by extension: `(bytes, options) → ImportResult[]`.
 
 | Inputs | Produces |

@@ -116,6 +116,8 @@ export interface SceneSettings {
   fogEnd: number;
   /** Optional IBL cube texture asset guid. */
   environmentTextureGuid: string | null;
+  /** Last explicitly published bake; validity is checked against its manifest. */
+  bakedLightingAssetGuid?: string | null;
   /** Absent fields inherit the project's Environment Lighting settings. */
   environmentLighting?: EnvironmentLightingOverrides;
   /** Default Camera actor id; both ids required to resolve. */
@@ -474,6 +476,9 @@ export function normalizeSceneSettings(
       typeof source.fogStart === "number" ? source.fogStart : defaults.fogStart,
     fogEnd: typeof source.fogEnd === "number" ? source.fogEnd : defaults.fogEnd,
     environmentTextureGuid: asNullableString(source.environmentTextureGuid),
+    ...(source.bakedLightingAssetGuid !== undefined
+      ? { bakedLightingAssetGuid: asNullableString(source.bakedLightingAssetGuid) }
+      : {}),
     environmentLighting: normalizeEnvironmentLightingOverrides(source.environmentLighting),
     ...normalizeMainCamera(
       source.mainCameraActorId,

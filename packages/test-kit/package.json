@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./style-audit": "./src/style-audit.ts",
-    "./environment-fixtures": "./src/environment-fixtures.ts"
+    "./environment-fixtures": "./src/environment-fixtures.ts",
+    "./baked-lighting-fixtures": "./src/baked-lighting-fixtures.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

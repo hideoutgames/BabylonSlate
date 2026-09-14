@@ -1,6 +1,9 @@
+import { createBakedLightingFixture } from "@babylonslate/test-kit/baked-lighting-fixtures";
 import { expect, it } from "vitest";
 import type { BakeInputHashes, BakedLightingManifest } from "@babylonslate/core";
 import { sha256Hex } from "./bytes";
+import { encodeBabasset } from "./babasset";
+import { importBabasset } from "./importers/babasset";
 import {
   bakedLightingImportResult, bakedLightingValidity, bakedReceiverKey,
   decodeBakedLightingAsset, encodeBakedLightingAsset, fingerprintBakeInputs,
@@ -8,39 +11,8 @@ import {
 } from "./baked-lighting";
 
 async function fixture() {
-  const values = [2, 1, 0.5, 1, 0, 3, 0, 0];
-  const bytes = new Uint8Array(values.length * 4);
-  const view = new DataView(bytes.buffer);
-  values.forEach((value, index) => view.setFloat32(index * 4, value, true));
-  const inputs = await fingerprintBakeInputs({
-    geometry: ["model-content", "mesh:0/primitive:1"], uv: [0, 0, 1, 1],
-    transforms: [1, 0, 0, 1], materials: { albedo: [0.5, 0.25, 0.1], emission: 0 },
-    lights: { static: [1, 2, 3], stationary: [0.1, 0.2, 0.3] },
-    environment: { guid: "cube", rotation: 90, intensity: 2 },
-    settings: { version: "1", samples: 64, bounces: 2, clamp: 10 },
-    provider: { id: "test-provider", version: "1", adapterVersion: "1" },
-  });
-  const manifest: BakedLightingManifest = {
-    version: 1, sceneGuid: "scene", inputs,
-    provider: { id: "test-provider", version: "1", adapterVersion: "1" }, settingsVersion: "1",
-    dependencies: ["model", "cube"],
-    sources: [
-      { id: "sun", kind: "light", actorId: "light-a", componentId: "light", mobility: "static", inputHash: inputs.lights },
-      { id: "lamp", kind: "light", actorId: "light-b", componentId: "light", mobility: "stationary", inputHash: inputs.lights },
-      { id: "sky", kind: "environment", assetGuid: "cube", inputHash: inputs.environment },
-    ],
-    receivers: [{
-      identity: { actorId: "receiver", componentId: "mesh", primitive: { kind: "model", assetGuid: "model", nodeIndex: 2, meshIndex: 0, primitiveIndex: 1 } },
-      hashes: { geometry: inputs.geometry, uv: inputs.uv, transforms: inputs.transforms, materials: inputs.materials },
-      atlasGuid: "atlas", scale: [1, 1], offset: [0, 0],
-      contributions: [{ sourceId: "sun", term: "directAndIndirect" }, { sourceId: "lamp", term: "indirectOnly" }, { sourceId: "sky", term: "environmentDiffuse" }],
-    }],
-    atlases: [{ guid: "atlas", chunkId: "atlas:atlas", width: 1, height: 2,
-      sha256: await sha256Hex(bytes), encoding: "rgba32float-le", colorSpace: "linear",
-      quantity: "diffuseIrradiance", convention: "physical-E", alpha: "coverage", rowOrder: "bottomFirst",
-      uvSet: 1, mipLevels: 1, gutterTexels: 0 }],
-  };
-  const result = await bakedLightingImportResult({ guid: "bake", name: "Bake", manifest, atlases: new Map([["atlas", bytes]]) });
+  const { manifest, bytes, atlases } = await createBakedLightingFixture();
+  const result = await bakedLightingImportResult({ guid: "bake", name: "Bake", manifest, atlases });
   return { manifest, bytes, result };
 }
 
@@ -108,4 +80,38 @@ it("rejects missing, corrupt and nonfinite atlas contents before they can become
   new DataView(bytes.buffer).setFloat32(0, Infinity, true);
   manifest.atlases[0]!.sha256 = await sha256Hex(bytes);
   await expect(bakedLightingImportResult({ guid: "bad", name: "Bad", manifest, atlases: new Map([["atlas", bytes]]) })).rejects.toThrow("invalid radiance or coverage");
+});
+
+it("owns atlas and header inputs across asynchronous validation and later caller mutation", async () => {
+  const { manifest, bytes, result } = await fixture();
+  const validating = validateBakedLightingChunks(result, result.chunks);
+  result.guid = "mutated";
+  result.chunks[1]!.data.fill(0);
+  const owned = await validating;
+  expect(owned.guid).toBe("bake");
+  expect(owned.atlases.get("atlas")).toEqual(bytes);
+  const preparing = bakedLightingImportResult({ guid: "next", name: "Next", manifest, atlases: new Map([["atlas", bytes]]) });
+  bytes.fill(0);
+  manifest.receivers[0]!.identity.actorId = "mutated";
+  const prepared = await preparing;
+  const decoded = await decodeBakedLightingAsset(await encodeBakedLightingAsset(prepared));
+  expect(decoded.manifest.receivers[0]!.identity.actorId).toBe("receiver");
+  expect(decoded.atlases.get("atlas")).toEqual(owned.atlases.get("atlas"));
+});
+
+it("validates imports before admission and refuses source GUID rebinding while allowing a new bake asset GUID", async () => {
+  const { result } = await fixture();
+  const bytes = await encodeBakedLightingAsset(result);
+  const [imported] = await importBabasset(bytes, { fileName: "Bake.babasset", existingGuids: new Set(["bake"]) });
+  expect(imported!.guid).not.toBe("bake");
+  expect((await validateBakedLightingChunks(imported!, imported!.chunks)).manifest.sceneGuid).toBe("scene");
+  const corrupt = result.chunks.map((chunk) => ({ ...chunk, data: chunk.data.slice() }));
+  corrupt[1]!.data[0] = 1;
+  await expect(importBabasset(await encodeBabasset({ header: { ...result, engineVersion: "0", mode: "bundled" }, chunks: corrupt }),
+    { fileName: "Bad.babasset", existingGuids: new Set() })).rejects.toThrow("hash mismatch");
+  const source = await encodeBabasset({ header: { guid: "model", name: "Model", type: "Model", version: 1,
+    dependencies: [], payload: {}, engineVersion: "0", mode: "bundled" }, chunks: [] });
+  const bundled = await encodeBabasset({ header: { ...result, engineVersion: "0", mode: "bundled" }, chunks: result.chunks,
+    nestedAssets: [{ guid: "model", bytes: source }] });
+  await expect(importBabasset(bundled, { fileName: "Bundle.babasset", existingGuids: new Set(["model"]) })).rejects.toThrow("source GUID remapping requires a new bake");
 });

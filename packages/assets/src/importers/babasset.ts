@@ -1,4 +1,5 @@
 import { decodeBabasset } from "../babasset";
+import { BAKED_LIGHTING_ASSET_TYPE, validateBakedLightingChunks } from "../baked-lighting";
 import { remapImportResultGuids } from "./guid-remap";
 import type { ImportOptions, ImportResult } from "./types";
 
@@ -15,7 +16,16 @@ export async function importBabasset(
 ): Promise<ImportResult[]> {
   const results: ImportResult[] = [];
   await collect(bytes, results);
-  return remapImportResultGuids(results, options.existingGuids);
+  const remapped = remapImportResultGuids(results, options.existingGuids);
+  for (const [index, result] of remapped.entries()) {
+    if (result.type !== BAKED_LIGHTING_ASSET_TYPE) continue;
+    // V1 source identities/hashes cannot be silently rewritten by generic import.
+    const original = results[index]!;
+    if (original.dependencies.some((guid, dependencyIndex) => guid !== result.dependencies[dependencyIndex]))
+      throw new Error("Baked lighting source GUID remapping requires a new bake; import sources without collisions.");
+    await validateBakedLightingChunks(result, result.chunks);
+  }
+  return remapped;
 }
 
 async function collect(bytes: Uint8Array, out: ImportResult[]): Promise<void> {
@@ -28,6 +38,9 @@ async function collect(bytes: Uint8Array, out: ImportResult[]): Promise<void> {
       mime: entry.mime,
       data: decoded.chunks.get(entry.id) ?? new Uint8Array(0),
     }));
+
+  if (decoded.header.type === BAKED_LIGHTING_ASSET_TYPE)
+    await validateBakedLightingChunks(decoded.header, chunks);
 
   out.push({
     type: decoded.header.type,

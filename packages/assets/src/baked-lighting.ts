@@ -9,7 +9,7 @@ export const BAKED_LIGHTING_MANIFEST_CHUNK = "document";
 /** Authoring/import bounds, independent of viewport quality and GPU admission. */
 export const BAKED_LIGHTING_MAX_BYTES = 64 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
-const id = z.string().trim().min(1).max(512);
+const id = z.string().min(1).max(512).refine((value) => value.trim() === value, "Identifiers must not contain surrounding whitespace.");
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const integer = z.number().int().nonnegative();
 const hashFields = {
@@ -157,9 +157,10 @@ export async function validateBakedLightingChunks(
 ): Promise<DecodedBakedLighting> {
   if (header.type !== BAKED_LIGHTING_ASSET_TYPE || header.version !== 1)
     throw new Error("Unsupported baked lighting asset type or version.");
+  const guid = id.parse(header.guid);
   unique(chunks.map((chunk) => chunk.id), "asset chunk");
   const document = chunks.find((chunk) => chunk.id === BAKED_LIGHTING_MANIFEST_CHUNK);
-  if (!document || document.data.byteLength > MAX_MANIFEST_BYTES)
+  if (!document || document.kind !== "document" || document.mime !== "application/json" || document.data.byteLength > MAX_MANIFEST_BYTES)
     throw new Error("Baked lighting manifest is missing or exceeds its size limit.");
   const manifest = parseBakedLightingManifest(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(document.data)));
   if (stableStringify([...header.dependencies].sort()) !== stableStringify([...manifest.dependencies].sort()))
@@ -171,16 +172,27 @@ export async function validateBakedLightingChunks(
     if (!chunk || chunk.kind !== "diffuseIrradiance" || chunk.mime !== "application/octet-stream" ||
       chunk.data.byteLength !== atlas.width * atlas.height * 16)
       throw new Error(`Missing or malformed irradiance atlas ${atlas.guid}.`);
-    if (await sha256Hex(chunk.data) !== atlas.sha256) throw new Error(`Irradiance atlas ${atlas.guid} hash mismatch.`);
-    const view = new DataView(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength);
+    // Snapshot every bounded input before the first asynchronous hash operation.
+    atlases.set(atlas.guid, chunk.data.slice());
+  }
+  for (const atlas of manifest.atlases) {
+    const data = atlases.get(atlas.guid)!;
+    if (await sha256Hex(data) !== atlas.sha256) throw new Error(`Irradiance atlas ${atlas.guid} hash mismatch.`);
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     for (let offset = 0; offset < view.byteLength; offset += 4) {
       const value = view.getFloat32(offset, true);
       if (!Number.isFinite(value) || value < 0 || (offset % 16 === 12 && value > 1))
         throw new Error(`Irradiance atlas ${atlas.guid} contains invalid radiance or coverage.`);
     }
-    atlases.set(atlas.guid, chunk.data);
   }
-  return { guid: header.guid, manifest, atlases };
+  return { guid, manifest, atlases };
+}
+
+function ownedChunks(decoded: DecodedBakedLighting): ChunkInput[] {
+  return [{ id: BAKED_LIGHTING_MANIFEST_CHUNK, kind: "document", mime: "application/json",
+    data: new TextEncoder().encode(stableStringify(decoded.manifest)) },
+  ...decoded.manifest.atlases.map((atlas) => ({ id: atlas.chunkId, kind: "diffuseIrradiance",
+    mime: "application/octet-stream", data: decoded.atlases.get(atlas.guid)! }))];
 }
 
 export async function bakedLightingImportResult(options: {
@@ -197,14 +209,18 @@ export async function bakedLightingImportResult(options: {
   const result: ImportResult = { type: BAKED_LIGHTING_ASSET_TYPE, version: 1,
     guid: id.parse(options.guid), name: id.parse(options.name), dependencies: manifest.dependencies,
     payload: {}, chunks };
-  await validateBakedLightingChunks(result, chunks);
+  const decoded = await validateBakedLightingChunks(result, chunks);
+  result.chunks = ownedChunks(decoded);
   return result;
 }
 
 /** Runtime/export uses the same complete container, without a baker or external blob files. */
 export async function encodeBakedLightingAsset(result: ImportResult): Promise<Uint8Array> {
-  await validateBakedLightingChunks(result, result.chunks);
-  return encodeBabasset({ header: { ...result, mode: "bundled", engineVersion: "0.0.0" }, chunks: result.chunks });
+  const name = id.parse(result.name);
+  const decoded = await validateBakedLightingChunks(result, result.chunks);
+  return encodeBabasset({ header: { guid: decoded.guid, name, type: BAKED_LIGHTING_ASSET_TYPE,
+    version: 1, dependencies: decoded.manifest.dependencies, payload: {},
+    mode: "bundled", engineVersion: "0.0.0" }, chunks: ownedChunks(decoded) });
 }
 
 export async function decodeBakedLightingAsset(
