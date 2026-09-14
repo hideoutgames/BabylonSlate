@@ -26,7 +26,7 @@ export function validMaterialParameterValue(
       if (!parameter.textureAssetGuid) return true;
       const texture = resolveTexture?.(parameter.textureAssetGuid);
       return (
-        !!texture && !isDisposedGpuTexture(texture) && !texture.loadingError
+        !!texture && !texture.isCube && !isDisposedGpuTexture(texture) && !texture.loadingError
       );
     }
   }

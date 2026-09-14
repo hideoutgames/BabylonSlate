@@ -25,6 +25,7 @@ export class RenderScheduler {
   private documentVisible = true;
   private visible = true;
   private obstructed = false;
+  private obstructionLeases = 0;
   private resizing = false;
   private frameCap = Number.POSITIVE_INFINITY;
   private lastRenderAt: number | null = null;
@@ -87,6 +88,17 @@ export class RenderScheduler {
     return this.documentVisible && this.visible && !this.resizing;
   }
 
+  /** Loading owns a blocker independently of other modal observers. */
+  acquireObstruction(): () => void {
+    this.obstructionLeases++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.obstructionLeases--;
+    };
+  }
+
   setObstructed(value: boolean): void {
     this.obstructed = value;
   }
@@ -106,7 +118,7 @@ export class RenderScheduler {
 
   shouldRender(now: number = nowMs()): boolean {
     if (this.paused && !this.pausedFrameRequested) return false;
-    if (!this.documentVisible || !this.visible || this.obstructed || this.resizing) return false;
+    if (!this.documentVisible || !this.visible || this.obstructed || this.obstructionLeases > 0 || this.resizing) return false;
     const wants =
       this.alwaysRender || this.continuous > 0 || this.dirty;
     if (!wants) return false;

@@ -100,6 +100,7 @@ import {
   overlayTextureGuidsFromScenes,
   playPrefabDependencyScene,
   skyboxFaceGuidsFromScene,
+  environmentTextureGuidsFromScenes,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import {
@@ -915,6 +916,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         const resourceScenes = [...overlayScenes, ...prefabScenes];
         const skyboxTextureGuids = [resolvedScene.scene, ...resourceScenes]
           .flatMap(skyboxFaceGuidsFromScene);
+        const environmentTextureGuids = environmentTextureGuidsFromScenes([
+          resolvedScene.scene, ...playLibrary.map((entry) => entry.scene), ...resourceScenes,
+        ]);
         let playGraphs: typeof playAnimGraphs = [];
         try {
           playGraphs = await collectPlayAnimGraphs(
@@ -1046,6 +1050,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...materials.textureGuids,
               ...particleTextureGuidsFromLibrary(particles),
               ...skyboxTextureGuids,
+              ...environmentTextureGuids,
               ...overlayTextureGuidsFromScenes(resourceScenes),
             ],
             spriteAnimations,
@@ -1058,6 +1063,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...materials.textureGuids,
               ...particleTextureGuidsFromLibrary(particles),
               ...skyboxTextureGuids,
+              ...environmentTextureGuids,
               ...overlayTextureGuidsFromScenes(resourceScenes),
             ],
             spriteAnimations,
@@ -1077,6 +1083,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               tilesets,
               [
                 ...skyboxTextureGuids,
+                ...environmentTextureGuids,
                 ...overlayTextureGuidsFromScenes(resourceScenes),
               ],
               spriteAnimations,
@@ -1087,6 +1094,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               tilesets,
               [
                 ...skyboxTextureGuids,
+                ...environmentTextureGuids,
                 ...overlayTextureGuidsFromScenes(resourceScenes),
               ],
               spriteAnimations,

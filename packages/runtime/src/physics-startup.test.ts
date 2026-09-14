@@ -1,3 +1,4 @@
+import type { CommandMessage } from "@babylonslate/bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   HavokPhysicsBackend,
@@ -49,6 +50,31 @@ describe("Play physics startup", () => {
     }
   });
 
+  it("never announces scene readiness when native cooperative boot fails", async () => {
+    vi.spyOn(HavokPhysicsBackend, "create").mockRejectedValue(new Error("Havok download failed"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      cooperativeSceneLoading: true, deferSceneModelsReady: true,
+      playScene: { ...createDefaultScene(), actors: [createActor("box", "Box")] },
+      onCommand: (command) => {
+        commands.push(command);
+        if (command.type === "sceneRealized") runtime.notifySceneModelsReady(command.sceneAssetGuid, command.sceneLoadId);
+      },
+    });
+    let finished = false;
+    const world = runtime.getWorld();
+    world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onSceneFinishLoading: () => { finished = true; } } }));
+    await expect(createPlayBootCoordinator().play(runtime)).rejects.toThrow("Havok download failed");
+    expect(commands.some((command) => command.type === "activeScene")).toBe(true);
+    expect(commands.some((command) => command.type === "sceneRealized")).toBe(false);
+    expect(finished).toBe(false);
+    runtime.resume();
+    runtime.tick();
+    expect(world.clock.tickIndex).toBe(0);
+    runtime.stop();
+  });
+
   it("releases a newly loaded world backend if overlay physics cannot load", async () => {
     const havok = await HavokPhysicsBackend.create({
       kind: "3d",
@@ -75,6 +101,26 @@ describe("Play physics startup", () => {
     } finally {
       runtime.stop();
     }
+  });
+
+  it("disposes a native backend that finishes loading after Stop without installing or restarting it", async () => {
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+    const disposed = vi.spyOn(backend, "dispose");
+    let resolve!: (backend: HavokPhysicsBackend) => void;
+    vi.spyOn(HavokPhysicsBackend, "create").mockReturnValue(new Promise((done) => { resolve = done; }));
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const initial = runtime.getPhysicsSync()!.getBackend();
+    const loading = runtime.loadPhysics();
+    const rejected = expect(loading).rejects.toMatchObject({ name: "AbortError" });
+    runtime.stop();
+    resolve(backend);
+    await rejected;
+    expect(disposed).toHaveBeenCalledOnce();
+    expect(runtime.getPhysicsSync()!.getBackend()).toBe(initial);
+    runtime.start();
+    runtime.resume();
+    runtime.tick();
+    expect(runtime.getWorld().clock.tickIndex).toBe(0);
   });
 
   it("releases both new engines and preserves the prior world when body creation fails", async () => {

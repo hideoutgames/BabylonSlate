@@ -1,5 +1,5 @@
-import { Color4, Mesh, MeshBuilder, NodeMaterialModes, ParticleSystem, RawTexture, Scene } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { Color4, Mesh, MeshBuilder, NodeMaterial, NodeMaterialModes, ParticleSystem, RawTexture, Scene } from "@babylonjs/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PARTICLE_BLENDMODE_ONEONE,
   PARTICLE_BILLBOARDMODE_ALL,
@@ -534,15 +534,12 @@ describe("ParticleService", () => {
     service.dispose();
   });
 
-  it("applies a particle-domain material with createEffectForParticles", () => {
+  it("applies a particle-domain material with createEffectForParticles", async () => {
     const { scene, service, texture } = host();
     const attached: unknown[] = [];
-    const material = {
-      mode: NodeMaterialModes.Particle,
-      createEffectForParticles: (system: unknown) => {
-        attached.push(system);
-      },
-    };
+    const material = new NodeMaterial("particle", scene);
+    material.mode = NodeMaterialModes.Particle;
+    material.createEffectForParticles = (system) => { attached.push(system); };
     const withMaterial = new ParticleService({
       scene,
       gpuSupported: false,
@@ -576,7 +573,7 @@ describe("ParticleService", () => {
       particleSystemGuid: "sys-1",
       play: true,
     });
-    expect(attached).toHaveLength(1);
+    await vi.waitFor(() => expect(attached).toHaveLength(1));
     expect(attached[0]).toBe(scene.particleSystems[0]);
     withMaterial.dispose();
     service.dispose();

@@ -1076,6 +1076,19 @@ describe("EditorSceneSync", () => {
     expect(afterFirst!.isDisposed()).toBe(false);
   });
 
+  it("restores default sprite ordering when collected sorting layers are explicitly empty", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("sprite", "Sprite", {
+      components: [{ id: "visual", classId: "SpriteComponent", properties: { sortingLayer: "Default" } }],
+    })]));
+    const originalOrder = sync.meshForActor("sprite")!.alphaIndex;
+    sync.setMeshAssets({ sortingLayers: ["Default", "Front"] });
+    expect(sync.meshForActor("sprite")!.alphaIndex).not.toBe(originalOrder);
+    sync.setMeshAssets({ sortingLayers: [] });
+    expect(sync.meshForActor("sprite")!.alphaIndex).toBe(originalOrder);
+  });
+
   it("rebuilds meshes when setMeshAssets payloads actually change", () => {
     const { scene } = createHandle();
     const sync = new EditorSceneSync(scene);

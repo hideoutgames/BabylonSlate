@@ -11,6 +11,7 @@ import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import type { ContentRoot } from "./content-root";
 import type { EncodeJobResult, EncodeQueue } from "./encode-queue";
 import { newAssetGuid } from "./guid";
+import { isEnvironmentTexturePayload } from "./environment-texture";
 import {
   importByExtension,
   remapImportResultGuids,
@@ -794,7 +795,7 @@ export class AssetRegistry {
       return false;
     }
     const usage = String(asset.header.payload.usage ?? "albedo");
-    if (!shouldCompressTexture(usage)) return false;
+    if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return false;
     if (state !== "pending") {
       await this.setCompressionState(guid, "pending");
     }
@@ -862,7 +863,7 @@ export class AssetRegistry {
   private async maybeEnqueueTextureEncode(asset: IndexedAsset): Promise<void> {
     if (asset.header.type !== "Texture" || !this.encodeQueue) return;
     const usage = String(asset.header.payload.usage ?? "albedo");
-    if (!shouldCompressTexture(usage)) return;
+    if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return;
     if (asset.header.payload.compressionState !== "pending") return;
     const source = await this.loadSourcePixels(asset);
     if (!source) return;
