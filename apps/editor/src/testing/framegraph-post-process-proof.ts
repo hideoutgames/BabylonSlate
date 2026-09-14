@@ -105,7 +105,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     disableWebGL2Support: false,
   });
   const shaderStore = ShaderStore.GetShadersStore(backend === "webgpu" ? ShaderLanguage.WGSL : ShaderLanguage.GLSL);
-  const pixelFormat = backend === "webgpu" ? navigator.gpu.getPreferredCanvasFormat() : "rgba8unorm";
+  const pixelFormat = backend === "webgpu" ? (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() : "rgba8unorm";
   const draw = (render: () => void) => {
     engine.beginFrame();
     try { render(); } finally { engine.endFrame(); }
