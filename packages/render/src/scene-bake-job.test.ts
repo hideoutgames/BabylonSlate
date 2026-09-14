@@ -284,43 +284,50 @@ it("serializes different owners through cleanup and rejects unsupported budgets 
   expect(second.adapter.unwrap).not.toHaveBeenCalled();
 });
 
-it("reports the authoring deadline after provider cancellation cleanup and retains the previous bake", async () => {
-  const fixture = await setup();
-  let started!: () => void;
-  const providerStarted = new Promise<void>((resolve) => {
-    started = resolve;
-  });
-  fixture.adapter.bake = (_input, options) =>
-    new Promise((_resolve, reject) => {
-      options!.signal!.addEventListener(
-        "abort",
-        () => {
-          options!.onDisposed!({
-            contextReleased: true,
-            renderer: null,
-            texturesBeforeDisposal: 0,
-            geometriesBeforeDisposal: 0,
-          });
-          reject(new DOMException("Provider cancelled", "AbortError"));
-        },
-        { once: true },
-      );
-      started();
+it.each([false, true])(
+  "retains deadline or cleanup failure after provider cancellation (cleanup failure=%s)",
+  async (cleanupFailure) => {
+    const fixture = await setup();
+    let started!: () => void;
+    const providerStarted = new Promise<void>((resolve) => {
+      started = resolve;
     });
-  vi.useFakeTimers();
-  try {
-    const result = expect(runSceneBakeJob(fixture.options)).rejects.toThrow(
-      "two-minute job limit",
-    );
-    await providerStarted;
-    await vi.advanceTimersByTimeAsync(120_000);
-    await result;
-    expect(fixture.reference()).toBe("prior-bake");
-    expect(fixture.commit).not.toHaveBeenCalled();
-  } finally {
-    vi.useRealTimers();
-  }
-});
+    fixture.adapter.bake = (_input, options) =>
+      new Promise((_resolve, reject) => {
+        options!.signal!.addEventListener(
+          "abort",
+          () => {
+            options!.onDisposed!({
+              contextReleased: true,
+              renderer: null,
+              texturesBeforeDisposal: 0,
+              geometriesBeforeDisposal: 0,
+            });
+            reject(
+              cleanupFailure
+                ? new AggregateError([], "Bake cleanup failed")
+                : new DOMException("Provider cancelled", "AbortError"),
+            );
+          },
+          { once: true },
+        );
+        started();
+      });
+    vi.useFakeTimers();
+    try {
+      const result = expect(runSceneBakeJob(fixture.options)).rejects.toThrow(
+        "two-minute job limit",
+      );
+      await providerStarted;
+      await vi.advanceTimersByTimeAsync(120_000);
+      await result;
+      expect(fixture.reference()).toBe("prior-bake");
+      expect(fixture.commit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("quarantines uncertain context disposal without publishing or admitting another context", async () => {
   const fixture = await setup();

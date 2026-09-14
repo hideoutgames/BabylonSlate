@@ -458,7 +458,12 @@ export async function runSceneBakeJob(options: {
   } catch (error) {
     // Providers may report generic AbortError; retain the authoring deadline's
     // actionable reason once cleanup has completed.
-    if (abort.signal.aborted) throw abort.signal.reason;
+    if (
+      abort.signal.aborted &&
+      error instanceof Error &&
+      error.name === "AbortError"
+    )
+      throw abort.signal.reason;
     throw error;
   } finally {
     clearTimeout(deadline);
