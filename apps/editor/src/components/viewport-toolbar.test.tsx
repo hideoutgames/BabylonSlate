@@ -596,9 +596,13 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-settings")).toBeTruthy();
   });
 
-  it("hides the 3D / 2D toggle on SceneLayer viewports", () => {
+  it("hides the 3D / 2D toggle and fixed Unlit badge on SceneLayer viewports", () => {
+    harness.documentKind = "scene-layer";
+    harness.viewportMode = "2d";
+    harness.viewportShadingMode = "unlit";
     renderToolbar({ showViewportModeToggle: false });
     expect(screen.queryByTestId("viewport-mode-toggle")).toBeNull();
+    expect(screen.queryByText("Unlit")).toBeNull();
     expect(screen.getByTestId("viewport-settings")).toBeTruthy();
   });
 
@@ -634,4 +638,13 @@ describe("ViewportToolbar", () => {
     expect(harness.setViewportShadingMode).toHaveBeenCalledWith("unlit");
     expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
+
+  it.each(["unlit", "wireframe"] as const)(
+    "keeps the %s shading badge on world viewports",
+    (mode) => {
+      harness.viewportShadingMode = mode;
+      renderToolbar();
+      expect(screen.getByText(mode === "unlit" ? "Unlit" : "Wireframe")).toBeTruthy();
+    },
+  );
 });

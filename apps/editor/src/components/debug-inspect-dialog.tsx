@@ -53,10 +53,15 @@ function inspectTypeVisual(
     );
     return resolveActorTypeVisual({
       classId: node.classId,
+      ancestry: node.ancestry,
       components,
     });
   }
-  return resolveTypeVisual({ classId: node.classId, family: "class" });
+  return resolveTypeVisual({
+    classId: node.classId,
+    ancestry: node.ancestry,
+    family: "class",
+  });
 }
 
 /** Play inspector: live values and session-only actor debug actions. */

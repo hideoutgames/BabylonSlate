@@ -1,19 +1,44 @@
 import { expect, test } from "@playwright/test";
 import type { runFrameGraphShadowProof } from "../apps/editor/src/testing/framegraph-shadow-proof";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-for (const clustered of [false, true])
+test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+
+const configurations = [
+  ...(["webgl2", "webgpu"] as const).flatMap((backend) =>
+    (["backbuffer", "texture"] as const).map((output) => ({
+      backend,
+      output,
+      clustered: false,
+    })),
+  ),
+  {
+    backend: "webgl2" as const,
+    output: "backbuffer" as const,
+    clustered: true,
+  },
+];
+for (const { backend, output, clustered } of configurations) {
   test(
     clustered
       ? "Clustered FrameGraph keeps one contribution through managed shadow promotion and demotion"
-      : "Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity",
+      : `Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on ${backend} ${output}`,
     async ({ page }, testInfo) => {
       test.setTimeout(150_000);
       const errors: string[] = [];
+      const externalRequests: string[] = [];
+      await page.route(
+        /https:\/\/cdn\.babylonjs\.com\/.*(?:glslang|twgsl)/,
+        async (route) => {
+          externalRequests.push(route.request().url());
+          await route.abort();
+        },
+      );
       page.on("pageerror", (error) => errors.push(error.message));
       page.on("console", (message) => {
         if (
-          (message.type() === "error" || message.type() === "warning") &&
-          /shader|ERROR: 0:|VALIDATE_STATUS|GL_INVALID|GL_OUT_OF_MEMORY|context lost/i.test(
+          ["warning", "error"].includes(message.type()) &&
+          /shader|ERROR: 0:|VALIDATE_STATUS|GL_INVALID|GL_OUT_OF_MEMORY|context lost|WebGPU uncaptured/i.test(
             message.text(),
           )
         )
@@ -29,20 +54,23 @@ for (const clustered of [false, true])
           ).__babylonslateFrameGraphShadowProof === "function",
       );
       const result = await page.evaluate(
-        (clustered) =>
+        ({ backend, output, clustered }) =>
           (
             window as unknown as {
               __babylonslateFrameGraphShadowProof: typeof runFrameGraphShadowProof;
             }
-          ).__babylonslateFrameGraphShadowProof({ clustered }),
-        clustered,
+          ).__babylonslateFrameGraphShadowProof(backend, output, { clustered }),
+        { backend, output, clustered },
       );
       await testInfo.attach("framegraph-managed-shadow-proof", {
         body: JSON.stringify(result),
         contentType: "application/json",
       });
       expect(errors).toEqual([]);
-      expect(result.webGLVersion).toBe(2);
+      expect(externalRequests).toEqual([]);
+      expect(result.backend).toBe(backend);
+      expect(result.output).toBe(output);
+      expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
       expect(result.captures).toHaveLength(54);
       const difference = (a: number[], b: number[]) => {
         expect(a.length).toBe(b.length);
@@ -125,6 +153,10 @@ for (const clustered of [false, true])
         );
         expect(entry.remainingClusterMaps, entry.name).toBe(0);
         expect(entry.ownedAfterGraphDispose, entry.name).toBe(true);
+        expect(entry.outputReferences, entry.name).toEqual(
+          output === "texture" ? [1, 1] : null,
+        );
+        expect(entry.outputUsable, entry.name).toBe(true);
         expect(entry.retainedGraphObjects, entry.name).toBe(0);
         expect(entry.siblingPreserved, entry.name).toBe(true);
         expect(entry.remainingScenes, entry.name).toBe(0);
@@ -162,3 +194,4 @@ for (const clustered of [false, true])
       }
     },
   );
+}

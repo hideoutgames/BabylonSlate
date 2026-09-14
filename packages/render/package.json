@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./fbx-import": "./src/convert-fbx-to-glb.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
+    "./scene-perf": "./src/scene-perf.ts",
     "./framegraph-post-process": "./src/framegraph-post-process.ts",
     "./clustered-scene-lights": "./src/clustered-scene-lights.ts",
     "./clustered-light-capabilities": "./src/clustered-light-capabilities.ts",

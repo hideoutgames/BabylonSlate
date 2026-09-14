@@ -11,7 +11,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `Scene` | Live Play scene `BObject` (`classId` `Scene:{assetGuid}`). `variables.sceneName` is the authored display name; `variables.assetGuid` is the document guid (Get-only); `variables.gravity` is the live world gravity `{ x, y, z }` (Get/Set). Not spawnable. |
 | `SceneLayer` | Session overlay instance (`BObject`); not an Actor. Stores `layerBounds` (orange design canvas, default 32×18). |
 | `SceneLayerActor` | Overlay actor tagged `sceneLayerId`; same World tick as world actors |
-| `ActorComponent` | Attached to an Actor; own tick |
+| `ActorComponent` | Attached script instance with independent variables/interfaces; Begin Play after owner spawn, own Tick, Destroyed on owner destruction or Play stop. |
 | `GameInstance` | Session singleton. Application: `onCreation` (script `onInit`), `onTick`, `onGameEnd` (script `onEnd`). Scene: `onSceneStartLoading` / `onSceneFinishLoading` / `onFirstSceneLoaded` / `onSceneExit`. `onSceneLoaded` still aliases finish. |
 | `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot, `currentScene`. `beginSceneLoad` / `finishSceneLoad` / `exitActiveScene` / `createScene`. `beginSceneLoad` remembers the loading display name so `exitActiveScene` still fires **OnSceneExit** if finish never ran (Play stop while models-ready is deferred). `end()` exits the active or in-flight scene then `onGameEnd`. `loadScene` / scene swap never fire `onGameEnd`. `createActor` / `createComponent` / `createGameInstance` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). |
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components. `ensure` merges session class metadata; `inheritedInterfaces` walks ancestry. `MAX_CLASS_INHERITANCE_DEPTH` (16, including self) blocks `register` / `reparent` past the limit. |
@@ -37,6 +37,8 @@ Order is fixed and named from the first commit:
 5. `postPhysics` — Post-physics fixups
 
 Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable arrays.
+
+`WorldOptions.componentHooksFor` binds script lifecycle hooks to both serialized and dynamically created components. Component creation is deferred until its owner enters the world, runs once, and is skipped for cancelled preparation. Adding a component to a live Actor begins it immediately. ActorComponent subclasses expose Begin Play, Tick, and Destroyed in Class graphs; Self is the attached component itself.
 
 `WorldOptions.canTickScene` can suspend actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance continues ticking. It is rechecked after Game Instance and between actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` exposes the same unspawned single-actor construction used by the synchronous scene helpers.
 

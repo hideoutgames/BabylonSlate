@@ -47,6 +47,8 @@ export interface WorldOptions {
   input?: WorldInputProvider;
   /** Rechecked after Game Instance and between scene objects during loading. */
   canTickScene?: () => boolean;
+  /** Script lifecycle binding shared by authored and dynamically added components. */
+  componentHooksFor?: (classId: string) => LifecycleHooks<ActorComponent> | undefined;
 }
 
 export class World {
@@ -60,6 +62,7 @@ export class World {
   private readonly onPostPhysics?: (ctx: TickContext) => void;
   private inputProvider: WorldInputProvider | null;
   private readonly canTickScene: () => boolean;
+  private readonly componentHooksFor?: WorldOptions["componentHooksFor"];
 
   gameInstance: GameInstance | null = null;
   currentScene: Scene | null = null;
@@ -86,6 +89,7 @@ export class World {
     this.onPostPhysics = options.onPostPhysics;
     this.inputProvider = options.input ?? null;
     this.canTickScene = options.canTickScene ?? (() => true);
+    this.componentHooksFor = options.componentHooksFor;
   }
 
   setInputProvider(provider: WorldInputProvider | null): void {
@@ -263,7 +267,7 @@ export class World {
     actor.spawnIndex = this.actors.length;
     this.actors.push(actor);
     actor.callOnCreation();
-    for (const component of actor.components) component.logic?.callOnCreation();
+    for (const component of actor.components) component.callOnCreation();
   }
 
   private flushDeferred(): void {
@@ -288,8 +292,10 @@ export class World {
     this.actors.splice(index, 1);
     actor.destroyed = true;
     for (const component of [...actor.components].reverse()) {
-      component.destroyed = true;
-      component.callOnDestroyed();
+      if (!component.destroyed) {
+        component.destroyed = true;
+        component.callOnDestroyed();
+      }
       component.owner = null;
     }
     actor.components.length = 0;
@@ -399,6 +405,7 @@ export class World {
     const defaults = this.classDefaults(options.classId, options);
     return new ActorComponent({
       ...options,
+      hooks: options.hooks ?? this.componentHooksFor?.(options.classId),
       variables: defaults.variables,
       implementedInterfaces: defaults.implementedInterfaces,
       guidFactory: this.guidFactory,

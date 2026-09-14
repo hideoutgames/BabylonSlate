@@ -576,17 +576,14 @@ describe("syncAuthoredIllumination", () => {
 
   it("uses PCF, bias, frustum falloff, and auto Z bounds on directional shadows", () => {
     const { scene } = createHandle();
-    syncAuthoredIllumination(
-      scene,
-      sceneWith([
+    const data = sceneWith([
         lightActor("key", {
           lightKind: "directional",
           intensity: 1,
           castShadows: true,
         }),
-      ]),
-      { stealActiveCamera: false },
-    );
+      ]);
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
     const key = scene.getLightByName(
       `${AUTHORED_LIGHT_PREFIX}key`,
     ) as DirectionalLight;
@@ -595,12 +592,22 @@ describe("syncAuthoredIllumination", () => {
     expect(
       generator.usePercentageCloserFiltering || generator.usePoissonSampling,
     ).toBe(true);
-    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_HIGH);
+    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_MEDIUM);
     expect(generator.bias).toBeCloseTo(0.0001);
     expect(generator.normalBias).toBeCloseTo(0.005);
     expect(generator.frustumEdgeFalloff).toBe(0);
     expect(key.autoCalcShadowZBounds).toBe(false);
     expect(key.customProjectionMatrixBuilder).toBeTypeOf("function");
+    for (const [filterQuality, expected] of [
+      ["low", ShadowGenerator.QUALITY_LOW],
+      ["high", ShadowGenerator.QUALITY_HIGH],
+    ] as const) {
+      setSceneRenderSettings(scene, {
+        shadows: normalizeShadowSettings({ filterQuality }),
+      });
+      syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
+      expect((key.getShadowGenerator() as ShadowGenerator).filteringQuality).toBe(expected);
+    }
   });
 
   it("disables the shadow map when authored shadows are off", () => {

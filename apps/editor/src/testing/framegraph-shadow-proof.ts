@@ -10,6 +10,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   PointLight,
+  RenderTargetTexture,
   Scene,
   SpotLight,
   Vector3,
@@ -25,35 +26,56 @@ import {
   applyAuthoredLightProperties,
   beginEngineDrawCallFrame,
   compileMaterialPlan,
+  createAppWebGpuEngine,
   readEngineDrawCalls,
   setSceneRenderSettings,
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+import {
+  isSceneFrameReady,
+  withSceneReadinessState,
+} from "@babylonslate/render/scene-perf";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 
 export async function runFrameGraphShadowProof(
+  backend: "webgl2" | "webgpu" = "webgl2",
+  output: "backbuffer" | "texture" = "backbuffer",
   options: { clustered?: boolean } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 72;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, {
-    preserveDrawingBuffer: true,
-    stencil: true,
-    disableWebGL2Support: false,
-  });
+  const engine =
+    backend === "webgpu"
+      ? await createAppWebGpuEngine(canvas)
+      : new Engine(canvas, false, {
+          preserveDrawingBuffer: true,
+          stencil: true,
+          disableWebGL2Support: false,
+        });
   const boundTargets: RenderTargetWrapper[] = [];
+  let readinessDrawStacks: string[] | undefined;
+  const drawElements = engine.drawElementsType.bind(engine);
+  engine.drawElementsType = (...args) => {
+    readinessDrawStacks?.push(
+      new Error("Readiness draw").stack ?? "Unknown draw",
+    );
+    drawElements(...args);
+  };
   const bind = engine.bindFramebuffer.bind(engine);
   engine.bindFramebuffer = (target, ...args) => {
     boundTargets.push(target);
     bind(target, ...args);
   };
-  const read = async () => {
-    const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
+  const read = async (target: RenderTargetTexture | null) => {
+    const pixels = target
+      ? await target.readPixels()
+      : await engine.readPixels(0, 0, canvas.width, canvas.height);
+    if (!pixels) throw new Error("Missing rendered shadow pixels");
     return Array.from(
       new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
     );
@@ -69,6 +91,17 @@ export async function runFrameGraphShadowProof(
     camera.minZ = 0.1;
     camera.maxZ = 30;
     scene.activeCamera = camera;
+    const outputTarget =
+      output === "texture"
+        ? new RenderTargetTexture(
+            "owned shadow output",
+            { width: 80, height: 64 },
+            scene,
+            false,
+          )
+        : null;
+    outputTarget?.createDepthStencilTexture();
+    camera.outputRenderTarget = outputTarget;
     new HemisphericLight("fill", Vector3.Up(), scene).intensity = 0.12;
     const origin = new Vector3(-2, 4, -2);
     const direction = origin.negate().normalize();
@@ -178,6 +211,18 @@ export async function runFrameGraphShadowProof(
       ? new ClusteredSceneLights(scene, [light, ...extraLights])
       : undefined;
     const mask = () => owner?.target(camera);
+    // Native PBR construction queues an RGBD BRDF decode even when CEL will
+    // not sample the LUT. Finish fixture asset upload before measuring graph
+    // preparation; this decode legitimately draws to its own texture target.
+    const textureDeadline = performance.now() + 10_000;
+    while (
+      scene.environmentBRDFTexture &&
+      !scene.environmentBRDFTexture.isReady()
+    ) {
+      if (performance.now() >= textureDeadline)
+        throw new Error("BRDF upload timed out");
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
     const graph = new ForwardSceneFrameGraph(scene);
     const prepared = await graph.prepare(camera);
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
@@ -186,7 +231,14 @@ export async function runFrameGraphShadowProof(
       // Graph readiness warms its own ObjectRenderer render-pass variants. The
       // independent classic oracle must also be ready on the camera's pass.
       const classicReadyBefore =
-        path === "classic" ? scene.isReady(true) : null;
+        path === "classic"
+          ? withSceneReadinessState(scene, () => {
+              scene.activeCamera = camera;
+              engine.currentRenderPassId =
+                outputTarget?.renderPassId ?? camera.renderPassId;
+              return isSceneFrameReady(scene);
+            })
+          : null;
       if (path === "classic") await scene.whenReadyAsync(true);
       if (force) map()?.resetRefreshCounter();
       boundTargets.length = 0;
@@ -201,10 +253,16 @@ export async function runFrameGraphShadowProof(
       const after = target?.onAfterUnbindObservable.add(() => {
         shadowDraws += readEngineDrawCalls(engine) - shadowBefore;
       });
-      const result =
-        path === "graph"
-          ? graph.render(camera, false)
-          : (scene.render(false), { path: "classic" });
+      engine.beginFrame();
+      let result;
+      try {
+        result =
+          path === "graph"
+            ? graph.render(camera, false)
+            : (scene.render(false), { path: "classic" });
+      } finally {
+        engine.endFrame();
+      }
       const draws = readEngineDrawCalls(engine);
       if (before) target?.onBeforeBindObservable.remove(before);
       if (after) target?.onAfterUnbindObservable.remove(after);
@@ -213,7 +271,7 @@ export async function runFrameGraphShadowProof(
       ).length;
       const active = scene.getActiveMeshes();
       return {
-        pixels: await read(),
+        pixels: await read(outputTarget),
         draws,
         faces,
         shadowDraws,
@@ -229,7 +287,10 @@ export async function runFrameGraphShadowProof(
     const capture = async (pose: string) => {
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
+      readinessDrawStacks = [];
       const prepared = await graph.prepare(camera);
+      const readinessStacks = readinessDrawStacks;
+      readinessDrawStacks = undefined;
       const readinessDraws = readEngineDrawCalls(engine);
       const readinessFaces = boundTargets.length;
       const currentMask = mask();
@@ -244,13 +305,14 @@ export async function runFrameGraphShadowProof(
         name: `${mode}-${kind}-${pose}`,
         prepared,
         readinessDraws,
+        readinessStacks,
         readinessFaces,
         graph: graphFrame,
         classic,
         settled,
         forceGraph,
-        width: canvas.width,
-        height: canvas.height,
+        width: outputTarget?.getSize().width ?? canvas.width,
+        height: outputTarget?.getSize().height ?? canvas.height,
         clusterCount: owner?.status().clustered ?? 0,
         keyContributions:
           Number(scene.lights.includes(light) && light.isEnabled()) +
@@ -264,8 +326,9 @@ export async function runFrameGraphShadowProof(
           maskTexture === mask()?.getInternalTexture(),
         sameMap:
           currentMap === map() && texture === map()?.getInternalTexture(),
-        allocations: scene.textures.filter((texture) => texture.isRenderTarget)
-          .length,
+        allocations: scene.textures.filter(
+          (texture) => texture.isRenderTarget && texture !== outputTarget,
+        ).length,
         generatorEntries: light.getShadowGenerators()?.size ?? 0,
         cascades:
           light.getShadowGenerator() instanceof CascadedShadowGenerator
@@ -286,6 +349,7 @@ export async function runFrameGraphShadowProof(
       casters,
       map,
       setShadows,
+      outputTarget,
       capture,
       render,
     };
@@ -310,6 +374,10 @@ export async function runFrameGraphShadowProof(
         host.camera.setTarget(new Vector3(0, 0.3, 0));
         await host.capture("camera-moved");
         engine.setSize(112, 80);
+        // Keep enough receiver pixels for the positive spot-shadow oracle.
+        host.outputTarget?.resize({ width: 128, height: 96 });
+        // Explicit sampleable depth is owned separately from RTT resize options.
+        host.outputTarget?.createDepthStencilTexture();
         const shadowed = await host.capture("resized");
         const stableAllocation =
           host.map() === initialMap &&
@@ -329,6 +397,16 @@ export async function runFrameGraphShadowProof(
         const siblingBefore = await sibling.render("classic", true);
         await host.capture("after-sibling");
         host.graph.dispose();
+        const outputReferences = host.outputTarget
+          ? [
+              host.outputTarget.getInternalTexture()!._references,
+              host.outputTarget.depthStencilTexture!._references,
+            ]
+          : null;
+        const outputUsable = host.outputTarget
+          ? host.outputTarget.getInternalTexture()!.isReady &&
+            host.outputTarget.depthStencilTexture!.isReady
+          : true;
         const ownedAfterGraphDispose = host.map() !== null;
         const maskOwnedAfterGraphDispose = host.mask() === initialMask;
         host.owner?.dispose();
@@ -364,6 +442,8 @@ export async function runFrameGraphShadowProof(
           initial,
           reload,
           ownedAfterGraphDispose,
+          outputReferences,
+          outputUsable,
           retainedGraphObjects,
           siblingPreserved,
           siblingBefore,
@@ -371,7 +451,14 @@ export async function runFrameGraphShadowProof(
           remainingScenes: engine.scenes.length,
         });
       }
-    return { webGLVersion: engine.webGLVersion, captures, lifecycle };
+    return {
+      backend,
+      output,
+      info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(),
+      webGLVersion: engine instanceof Engine ? engine.webGLVersion : null,
+      captures,
+      lifecycle,
+    };
   } finally {
     engine.dispose();
     canvas.remove();

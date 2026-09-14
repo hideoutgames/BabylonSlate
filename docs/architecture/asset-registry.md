@@ -118,7 +118,7 @@ The converter is exposed through `@babylonslate/render/fbx-import`, keeping its 
 
 ## Content Browser (P2)
 
-Show References constrains its dialog to the viewport and scrolls long reference text independently, keeping the heading and Close action visible.
+Show References opens a large, viewport-bounded read-only graph dialog. It selects and frames the clicked asset; Focus Asset returns to it. Distinct asset nodes show a centered type icon above their name. Arrows point from each asset to its dependency. The graph includes the entire connected component across mounted roots, including other users of shared dependencies, cycles, and explicitly marked missing assets. It unions saved headers with already-loaded unsaved references without loading closed payloads. Pan, zoom, Fit View and selection remain available; dragging nodes, editing links and deleting are disabled. Double-click a node or use Open Asset to open its editor. The selected path and total asset/reference counts remain outside the canvas; long names have full hover text. Closing and reopening resets focus to the requested asset.
 
 `apps/editor/src/components/content-browser-workspace.tsx` is the registry-backed project asset UI:
 

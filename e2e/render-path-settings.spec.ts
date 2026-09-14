@@ -10,8 +10,12 @@ async function openRendering(page: Page) {
 }
 
 async function choose(page: Page, id: string, name: string) {
-  await page.getByTestId(id).click();
+  const trigger = page.getByTestId(id);
+  await trigger.click();
   await page.getByRole("option", { name, exact: true }).click();
+  // A closing menu can still expose an identically named option to the next click.
+  await expect(page.getByRole("listbox")).toBeHidden();
+  await expect(trigger.locator('[data-slot="select-value"]')).toHaveText(name);
 }
 
 test("pipeline preferences preserve the effective viewport and Scene path inheritance through history and reopen", async ({ page }, testInfo) => {
