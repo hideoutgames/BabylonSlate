@@ -47,6 +47,15 @@ export class QualityTextureBlock extends TextureBlock {
   ): this | undefined {
     const start = state.compilationString.length;
     const result = super._buildBlock(state);
+    // Babylon 9.20 selects the scalar WGSL helper for Color4 outputs. Keep
+    // conversion local to this block and preserve alpha with its vec4 helper.
+    if (state.shaderLanguage === 1) {
+      const generated = state.compilationString.slice(start).replaceAll(
+        `toLinearSpace(${this.rgba.associatedVariableName})`,
+        `toLinearSpaceVec4(${this.rgba.associatedVariableName})`,
+      );
+      state.compilationString = state.compilationString.slice(0, start) + generated;
+    }
     if (state.target !== NodeMaterialBlockTargets.Fragment) return result;
     state._emitUniformFromString(
       "slateTextureLodBias",
