@@ -100,6 +100,26 @@ export async function unwrapBakeGeometry(
     positions.some((value) => !Number.isFinite(value) || Math.abs(value) > 1e6)
   )
     throw new Error("UV source positions are invalid.");
+  let surfaceArea = 0;
+  for (let corner = 0; corner < owned.indices.length; corner += 3) {
+    const a = owned.indices[corner] * 3;
+    const b = owned.indices[corner + 1] * 3;
+    const c = owned.indices[corner + 2] * 3;
+    const abX = positions[b] - positions[a];
+    const abY = positions[b + 1] - positions[a + 1];
+    const abZ = positions[b + 2] - positions[a + 2];
+    const acX = positions[c] - positions[a];
+    const acY = positions[c + 1] - positions[a + 1];
+    const acZ = positions[c + 2] - positions[a + 2];
+    surfaceArea +=
+      Math.hypot(
+        abY * acZ - abZ * acY,
+        abZ * acX - abX * acZ,
+        abX * acY - abY * acX,
+      ) / 2;
+  }
+  if (surfaceArea <= 1e-12)
+    throw new Error("UV source has no usable triangle area.");
   active = true;
   const resources: {
     worker?: Worker;
@@ -179,16 +199,31 @@ export async function unwrapBakeGeometry(
           throw new Error("xatlas rejected the source geometry.");
         ensureCurrent();
         progress("unwrapping", 0);
-        const result = await api.generateAtlas(
-          { maxIterations: 1 },
-          {
-            resolution: resolution,
-            padding: paddingTexels,
-            bilinear: true,
-            bruteForce: false,
-          },
-        );
-        ensureCurrent();
+        // Native resolution is only an estimate unless density is explicit. Lower
+        // source-space density to admit one fixed-size atlas; never reduce padding.
+        let texelsPerUnit =
+          Math.max(1, resolution - 2 * paddingTexels - 2) / Math.sqrt(surfaceArea);
+        let result!: AtlasOutput;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          result = await api.generateAtlas(
+            { maxIterations: 1 },
+            {
+              resolution,
+              texelsPerUnit,
+              padding: paddingTexels,
+              bilinear: true,
+              bruteForce: false,
+            },
+          );
+          ensureCurrent();
+          if (
+            result.atlasCount === 1 &&
+            result.width <= resolution &&
+            result.height <= resolution
+          )
+            break;
+          texelsPerUnit /= 2;
+        }
         progress("validating", 0);
         const mesh = result.meshes[0];
         if (
@@ -203,7 +238,7 @@ export async function unwrapBakeGeometry(
           result.height > resolution
         )
           throw new Error(
-            "UV output exceeds the admitted single-atlas resolution.",
+            `UV output ${result.width}×${result.height} (${result.atlasCount} atlases) exceeds the admitted single ${resolution}×${resolution} atlas.`,
           );
         const topology = {
           indices: new Uint32Array(mesh.index),
