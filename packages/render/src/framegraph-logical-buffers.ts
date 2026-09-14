@@ -1,8 +1,20 @@
 import { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 
 /** Pinned native task adapters; the caller's FrameGraph owns the attachments. */
 export class LogicalGeometryTask extends FrameGraphGeometryRendererTask {
+  override isReady(): boolean {
+    const ready = this.objectRenderer.customIsReadyFunction;
+    // Native default refreshRate=1 probes only geometry, not its material.
+    // Probe the actual MRT variant before the graph can acknowledge readiness.
+    this.objectRenderer.customIsReadyFunction = (mesh, _rate, prewarm) =>
+      this.dontRenderWhenMaterialDepthWriteIsDisabled && mesh.material?.disableDepthWrite
+        ? !!prewarm : isMeshFrameReady(mesh);
+    try { return withSceneReadinessState(this._frameGraph.scene, () => super.isReady()); }
+    finally { this.objectRenderer.customIsReadyFunction = ready; }
+  }
+
   protected override _checkTextureCompatibility(targets: FrameGraphTextureHandle[]): boolean {
     const depthEnabled = super._checkTextureCompatibility(targets);
     // Babylon 9.20 short-circuits its base compatibility method when explicit
