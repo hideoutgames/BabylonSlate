@@ -417,6 +417,20 @@ microtask so disposal from an end-frame observer cannot release in that same
 notification after the drain has already run. Paused engines retain the charge;
 the helper never forces a shared frame. Uncertain cleanup keeps the lease.
 
+`scene-post-process-graph` prepares one immutable owner allocation from the fully
+resolved enabled Material plans. Empty stacks declare no textures or task services;
+unsupported depth/MRT capabilities and exhausted reservations return a visible
+fallback reason before construction. SceneColor and pass outputs preserve legacy
+RGBA8 encoding; normalized depth uses a renderable float/half-float target and
+world normals use RGBA8. Only demanded channels share one geometry task, with its
+own Z attachment independent of the surface pass. The caller orders geometry
+after culling and before surfaces, then the authored pass chain and final copy.
+Actual graph-owned InternalTextures reconcile the declared replacement peak after
+build, including every scaled pass output and aliased attachment. Entry-ID setters,
+getters and resets address only that owner's Material instances. Teardown disposes
+task services, then the caller-owned graph, then defers the reservation release.
+This helper does not select a production render path or own a scene render loop.
+
 These are conservative policy allowances, not measured VRAM or A16 performance.
 The ledger covers managed shadow attachments and cluster mask/data textures only;
 proxy geometry/UBOs, material caches, effects, reflection targets, transition copies
