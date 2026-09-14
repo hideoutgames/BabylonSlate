@@ -64,7 +64,9 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   expect(errors).toEqual([]);
   expect(externalRequests).toEqual([]);
   expect(result.retainedEngines).toBe(0);
+  expect(result.cancelledEngineReleased).toBe(true);
   expect(result.captures).toHaveLength(4);
+  expect(result.previews).toHaveLength(4);
   for (const capture of result.captures) {
     expect(capture.shaderLanguage).toBe(capture.backend === "webgpu" ? 1 : 0);
     expect(capture.maxTextureSize).toBeGreaterThanOrEqual(64);
@@ -127,6 +129,29 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     expect(
       Math.abs(upperGreen - lowerGreen),
       `${mode} texture rows`,
+    ).toBeGreaterThan(40);
+    const previewReference = result.previews.find(
+      (capture) => capture.backend === "webgl2" && capture.mode === mode,
+    )!.pixels;
+    const previewActual = result.previews.find(
+      (capture) => capture.backend === "webgpu" && capture.mode === mode,
+    )!.pixels;
+    let previewDifference = 0;
+    for (let i = 0; i < previewReference.length; i++)
+      previewDifference = Math.max(
+        previewDifference,
+        Math.abs(previewReference[i] - previewActual[i]),
+      );
+    expect(
+      previewDifference,
+      `${mode} actual preview canvas parity`,
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        previewActual[(24 * 64 + 32) * 4 + 1] -
+          previewActual[(40 * 64 + 32) * 4 + 1],
+      ),
+      `${mode} preview texture rows`,
     ).toBeGreaterThan(40);
   }
 });
