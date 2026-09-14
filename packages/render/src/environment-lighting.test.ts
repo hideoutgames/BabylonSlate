@@ -270,6 +270,7 @@ it("binds, removes and swaps a late Scene environment on a frozen PBR graph with
     true,
   );
   const absentBindings = vi.spyOn(mesh.subMeshes[0]!.effect!, "setTexture");
+  absentBindings.mockClear(); // NullEngine may reuse the previously observed Effect.
   result.material.bindForSubMesh(
     mesh.computeWorldMatrix(),
     mesh,
@@ -302,6 +303,7 @@ it("binds, removes and swaps a late Scene environment on a frozen PBR graph with
     mesh.subMeshes[0]!.effect!,
     "setTexture",
   );
+  replacementBindings.mockClear();
   result.material.bindForSubMesh(
     mesh.computeWorldMatrix(),
     mesh,
