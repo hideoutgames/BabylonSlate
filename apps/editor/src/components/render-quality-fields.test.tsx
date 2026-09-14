@@ -53,7 +53,7 @@ function Fields() {
 }
 async function select(label: string, option: string) {
   fireEvent.click(screen.getByLabelText(label));
-  const item = await screen.findByRole("option", { name: option, exact: true });
+  const item = await screen.findByRole("option", { name: option });
   fireEvent.pointerDown(item);
   fireEvent.click(item);
   await waitFor(() => expect(selected(label)).toBe(option));

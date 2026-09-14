@@ -9,6 +9,7 @@ import {
   qualitySettingPatch,
   applyProjectQualityPatch,
   resolveLocalLightBudget,
+  normalizeRenderingQuality,
 } from "./render-quality";
 import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -203,6 +204,20 @@ describe("rendering quality sessions", () => {
           level,
         );
     }
+  });
+  it("does not display a low preset when malformed saved provenance still requests Ultra admission", () => {
+    const patch = qualityPresetPatch("low");
+    const quality = normalizeRenderingQuality(patch);
+    const requested = resolveRenderingQuality({
+      shadows: { ...patch.shadows, profile: "ultra" },
+      quality: {
+        ...quality,
+        lighting: { ...quality.lighting, profile: "ultra" },
+      },
+    });
+    expect(qualityGroupLabel(requested, "shadows")).toBe("custom");
+    expect(qualityGroupLabel(requested, "lighting")).toBe("custom");
+    expect(resolveLocalLightBudget(requested.lighting)).toBe(256);
   });
   it("bounds local illumination independently from shadow requests and preserves requested values", () => {
     const session = new RenderingQualitySession();

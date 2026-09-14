@@ -275,6 +275,13 @@ function qualityValueLabel(
     ? [preferred, ...QUALITY_LEVELS.filter((level) => level !== preferred)]
     : QUALITY_LEVELS;
   for (const level of levels) {
+    // These categories derive Auto capacity and admission from profile, so a
+    // mismatched saved label cannot claim a lower tier while requesting more.
+    if (
+      (group === "lighting" || group === "shadows") &&
+      (value.profile ?? "medium") !== level
+    )
+      continue;
     const preset =
       group === "shadows"
         ? SHADOW_PROFILES[level]

@@ -67,7 +67,10 @@ export const SHADOW_PROFILES = {
     localMapSize: 2048,
     maxLocalLights: 8,
   },
-} as const;
+} as const satisfies Record<
+  ShadowProfile,
+  Omit<ShadowSettings, "profile" | "preset">
+>;
 export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
   profile: "medium",
   ...SHADOW_PROFILES.medium,
@@ -168,6 +171,7 @@ export function normalizeShadowSettings(value: unknown): ShadowSettings {
       : (levels.find(
           (level) =>
             level &&
+            level === settings.profile &&
             Object.entries(SHADOW_PROFILES[level]).every(
               ([key, expected]) =>
                 settings[key as keyof ShadowSettings] === expected,
