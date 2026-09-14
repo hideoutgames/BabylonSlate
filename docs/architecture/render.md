@@ -737,3 +737,5 @@ Replacing or detaching a prepared stack releases its old graph tasks immediately
 
 
 Entry reads and resets resolve owned authored overrides and reachable root defaults from the same function-aware lowered plan as gameplay metadata, including disabled entries and the gap between GPU instances. They allocate no Material for an inactive pass. Graph admission/build failure remains on its native fallback while native shaders warm; retry requires explicit invalidation or a changed camera/output, rather than repeatedly discarding the warming fallback.
+
+Coordinator post-process diagnostics count compiled, enabled graph effects individually and native fallback passes on the selected path. Unacquired, failed, disabled, and disposed graph tasks contribute zero; the camera attachment list remains native-only. A cancelled build never latches a fallback failure onto its replacement loading owner.

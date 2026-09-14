@@ -197,6 +197,11 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     return true;
   }
 
+  /** Compiled, enabled effect currently eligible to process scene color. */
+  get isActive(): boolean {
+    return !this.disposed && !this.disabled && !this.failed && this.isReady() && !this.failed;
+  }
+
   override isReady(): boolean {
     if (this.disposed || this.disabled || this.failed) return true;
     for (const block of this.material?.getTextureBlocks() ?? []) {

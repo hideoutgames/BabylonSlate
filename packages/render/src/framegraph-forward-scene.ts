@@ -121,6 +121,13 @@ export class ForwardSceneFrameGraph {
     };
   }
 
+  postProcessPassCount(): number {
+    if (this.disposed) return 0;
+    return this.postProcessGraph
+      ? this.postProcessGraph.postProcessTasks.filter((task) => task.isActive).length
+      : this.postProcessOwner?.passes.length ?? 0;
+  }
+
   /** Settle CPU ownership before a host releases a borrowed output target. */
   retire(): Promise<void> {
     if (this.retirement) return this.retirement;
