@@ -595,12 +595,21 @@ describe("syncAuthoredIllumination", () => {
     expect(
       generator.usePercentageCloserFiltering || generator.usePoissonSampling,
     ).toBe(true);
-    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_HIGH);
+    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_MEDIUM);
     expect(generator.bias).toBeCloseTo(0.0001);
     expect(generator.normalBias).toBeCloseTo(0.005);
     expect(generator.frustumEdgeFalloff).toBe(0);
     expect(key.autoCalcShadowZBounds).toBe(false);
     expect(key.customProjectionMatrixBuilder).toBeTypeOf("function");
+    for (const [filterQuality, expected] of [
+      ["low", ShadowGenerator.QUALITY_LOW],
+      ["high", ShadowGenerator.QUALITY_HIGH],
+    ] as const) {
+      setSceneRenderSettings(scene, {
+        shadows: normalizeShadowSettings({ filterQuality }),
+      });
+      expect(key.getShadowGenerator()?.filteringQuality).toBe(expected);
+    }
   });
 
   it("disables the shadow map when authored shadows are off", () => {
