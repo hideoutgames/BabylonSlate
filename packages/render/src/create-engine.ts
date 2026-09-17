@@ -2040,6 +2040,7 @@ function initializeEngine(
         }
       };
       track(bounded, () => retireAttachedStack());
+      track(bounded, () => nativeRetirement.whenDisposed());
       track(bounded, () => worldRenderer?.retire());
       track(bounded, () => sceneLayerCompositor?.dispose());
       track(actual, () => nativeRetirement.whenReleased());

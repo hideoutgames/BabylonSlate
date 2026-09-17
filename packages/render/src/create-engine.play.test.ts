@@ -1476,6 +1476,32 @@ describe("Play createEngine view", () => {
     expect(engine.isDisposed).toBe(false);
   });
 
+  it("disposes shared Scene owners after actual release when the bounded report is uncertain", async () => {
+    const engine = sharedEngine();
+    const document = createDefaultMaterialDocument("Blur", "postProcess");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      materialDocuments: new Map([["pp", document]]),
+    });
+    handles.push(handle);
+    handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
+    expect(pass).toBeInstanceOf(OwnedPostProcess);
+    // An uncertain bounded report warns but never authorizes or blocks
+    // disposal: the confirmed actual release still permits it.
+    vi.spyOn(pass, "whenDisposed").mockRejectedValue(new Error("Bounded cleanup report timed out."));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    handle.dispose();
+    expect(handle.scene.isDisposed).toBe(false);
+    await handle.whenReleased();
+    await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
+    expect(
+      warn.mock.calls.filter(([message]) => String(message).includes("uncertain")),
+    ).toHaveLength(1);
+    expect(engine.isDisposed).toBe(false);
+  });
+
   it("routes current-owner entry writes into independent instances and replays disabled passes after rebuild", async () => {
     const engine = postProcessGraphEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
