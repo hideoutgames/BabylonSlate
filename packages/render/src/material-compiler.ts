@@ -29,7 +29,6 @@ import {
   VertexOutputBlock,
   ViewDirectionBlock,
   type Effect,
-  type PostProcess,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
   type NodeMaterialDefines,
@@ -56,8 +55,11 @@ import {
 } from "./material-block-registry";
 import {
   isDisposedGpuTexture,
+  isDisposedNodeMaterial,
   isEngineOwnedGpuTexture,
 } from "./gpu-resource-live";
+import { OwnedPostProcess } from "./owned-post-process";
+import { PostProcessRetirement } from "./post-process-retirement";
 import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
@@ -95,6 +97,12 @@ export interface CompiledMaterial {
   resetParameter: (name: string) => boolean;
   /** Idempotent: disposes the material and every block it created. */
   dispose: () => void;
+  /**
+   * Confirmed native release of the material's owned compile-time passes.
+   * Disposes the material if needed, then resolves once the underlying
+   * NodeMaterial is actually released; rejects if release never confirmed.
+   */
+  whenReleased: () => Promise<void>;
 }
 
 export interface FailedMaterial {
@@ -546,15 +554,25 @@ export function compileMaterialPlan(
   let shaderProbe: Mesh | null = null;
   let failedShaderEffect: Effect | null = null;
   material.onError = (effect) => { failedShaderEffect = effect; };
-  let shaderPostProcess: PostProcess | null = null;
+  let shaderPostProcess: OwnedPostProcess | null = null;
   let shaderParticles: ParticleSystem | null = null;
+  const shaderRetirement = new PostProcessRetirement();
   const finishShaderCheck = () => {
     if (shaderTimer !== undefined) clearTimeout(shaderTimer);
     shaderProbe?.dispose();
-    shaderPostProcess?.dispose();
+    if (shaderPostProcess) {
+      const pass = shaderPostProcess;
+      shaderPostProcess = null;
+      try {
+        pass.dispose();
+      } finally {
+        // An already-released pass confirms itself; only pending or failed
+        // releases keep the material quarantined until actual release.
+        if (!pass.isReleased) shaderRetirement.add(pass);
+      }
+    }
     shaderParticles?.dispose();
     shaderProbe = null;
-    shaderPostProcess = null;
     shaderParticles = null;
   };
   let settleBuild!: (errors: readonly MaterialDiagnostic[]) => void;
@@ -583,7 +601,17 @@ export function compileMaterialPlan(
           shaderProbe.setEnabled(false);
           shaderProbe.material = material;
         } else if (plan.domain === "postProcess") {
-          shaderPostProcess = material.createPostProcess(null, 1, undefined, scene.getEngine());
+          const pass = new OwnedPostProcess(`${options.name}PostProcess`, "postprocess", {
+            camera: null,
+            engine: scene.getEngine(),
+            size: 1,
+            samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+            blockCompilation: true,
+            shaderLanguage: material.shaderLanguage,
+          });
+          // Assign before effect creation so a throw still retires the pass.
+          shaderPostProcess = pass;
+          material.createEffectForPostProcess(pass);
         } else {
           shaderParticles = new ParticleSystem(`${options.name}_compileProbe`, 1, scene);
           material.createEffectForParticles(shaderParticles);
@@ -731,6 +759,34 @@ export function compileMaterialPlan(
     material,
     options.resolveTexture,
   );
+  // The NodeMaterial stays quarantined until every owned compile-time pass
+  // confirms actual native release; a release failure keeps it alive.
+  let released: Promise<void> | null = null;
+  const disposeCompiled = () => {
+    if (disposed) return;
+    disposed = true;
+    finishShaderCheck();
+    if (buildState === "pending") {
+      buildState = "failed";
+      settleBuild([{ code: "material.compile.cancelled", message: "Material build was cancelled", severity: "error" }]);
+    }
+    material.onBuildErrorObservable.remove(errorObserver);
+    material.onBuildObservable.remove(buildObserver);
+    parameters.dispose();
+    for (const unsubscribe of loadObservers) unsubscribe();
+    detachEngineOwnedTextures(material);
+    if (shaderRetirement.releasedConfirmed) {
+      material.dispose(false, false);
+      released = Promise.resolve();
+    } else {
+      released = shaderRetirement.whenReleased().then(() => {
+        if (!isDisposedNodeMaterial(material, scene)) material.dispose(false, false);
+      });
+      void released.catch((error: unknown) => {
+        console.warn(`[render] Material "${options.name}" is quarantined until actual release: ${String(error)}`);
+      });
+    }
+  };
   return {
     ok: true,
     material,
@@ -739,20 +795,10 @@ export function compileMaterialPlan(
     setParameter: parameters.setParameter,
     getParameter: parameters.getParameter,
     resetParameter: parameters.resetParameter,
-    dispose: () => {
-      if (disposed) return;
-      disposed = true;
-      finishShaderCheck();
-      if (buildState === "pending") {
-        buildState = "failed";
-        settleBuild([{ code: "material.compile.cancelled", message: "Material build was cancelled", severity: "error" }]);
-      }
-      material.onBuildErrorObservable.remove(errorObserver);
-      material.onBuildObservable.remove(buildObserver);
-      parameters.dispose();
-      for (const unsubscribe of loadObservers) unsubscribe();
-      detachEngineOwnedTextures(material);
-      material.dispose(false, false);
+    dispose: disposeCompiled,
+    whenReleased: () => {
+      disposeCompiled();
+      return released ?? Promise.resolve();
     },
   };
 }

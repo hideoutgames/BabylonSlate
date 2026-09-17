@@ -10,8 +10,10 @@ import {
   Vector3,
   VertexBuffer,
 } from "@babylonjs/core";
-import { MATERIAL_PREVIEW_MESHES } from "@babylonslate/shader-graph";
+import { MATERIAL_PREVIEW_MESHES, createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { isEngineDefaultMaterial } from "./default-material";
+import { MaterialLibrary } from "./material-library";
+import { OwnedPostProcess } from "./owned-post-process";
 import {
   MATERIAL_PREVIEW_MESH_NAME,
   aimPreviewCameraAtMesh,
@@ -325,6 +327,35 @@ describe("material preview scene", () => {
     const host = createMaterialPreviewScene(created as never);
     const scene = host.scene;
     host.dispose();
+    expect(scene.isDisposed).toBe(true);
+  });
+
+  it("defers preview Scene disposal until a retired post-process pass confirms release", async () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const acquired = library.acquire(
+      host.scene,
+      "pp",
+      createDefaultMaterialDocument("Blur", "postProcess"),
+    );
+    if (!acquired.ok) throw new Error("Invalid post-process fixture");
+    host.applyPostProcess(acquired.material);
+    const pass = host.camera._postProcesses.filter(Boolean).at(-1);
+    expect(pass).toBeInstanceOf(OwnedPostProcess);
+    // Hold only the actual-release boundary; the pass detaches immediately.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(pass as OwnedPostProcess, "isReleased", "get").mockReturnValue(false);
+    vi.spyOn(pass as OwnedPostProcess, "whenReleased").mockReturnValue(held);
+    const scene = host.scene;
+    host.applyPostProcess(null);
+    expect(host.camera._postProcesses.filter(Boolean)).toEqual([]);
+    host.dispose();
+    await Promise.resolve();
+    expect(scene.isDisposed).toBe(false);
+    release();
+    await host.whenReleased();
     expect(scene.isDisposed).toBe(true);
   });
 });

@@ -8,7 +8,8 @@ import {
   type MaterialDocument,
 } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
-import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
+import { OwnedPostProcess } from "./owned-post-process";
 import { getMaterialTexture, ResourceCache } from "./resource-cache";
 
 const disposers: Array<() => void> = [];
@@ -434,6 +435,57 @@ describe("material compiler", () => {
         (block) => block.getClassName() === "CurrentScreenBlock",
       ),
     ).toBe(true);
+  });
+
+  it("gates compiled material disposal on the owned shader prewarm pass release", async () => {
+    const scene = host();
+    // The custom-shader prewarm check is skipped on NullEngine; model the real
+    // engine class so the pass is created while keeping NullEngine ownership.
+    vi.spyOn(scene.getEngine(), "getClassName").mockReturnValue("WebGL2Engine");
+    const doc = createDefaultMaterialDocument("Glow", "postProcess");
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a" },
+    });
+    doc.edges = doc.edges.map((edge) =>
+      edge.id === "e-scene-output"
+        ? { ...edge, sourceNodeId: "glsl", sourcePinId: "out" }
+        : edge,
+    );
+    doc.edges.push({
+      id: "e-color-glsl",
+      sourceNodeId: "sceneColor",
+      sourcePinId: "color",
+      targetNodeId: "glsl",
+      targetPinId: "a",
+    });
+    // A ready-on-NullEngine effect retires the probe inside the build tick, so
+    // capture the pass as it is handed to the material and hold its release.
+    let pass: OwnedPostProcess | undefined;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const createEffect = NodeMaterial.prototype.createEffectForPostProcess;
+    vi.spyOn(NodeMaterial.prototype, "createEffectForPostProcess").mockImplementation(function (this: NodeMaterial, probe) {
+      pass = probe as OwnedPostProcess;
+      vi.spyOn(pass, "isReleased", "get").mockReturnValue(false);
+      vi.spyOn(pass, "whenReleased").mockReturnValue(held);
+      return createEffect.call(this, probe);
+    });
+    const plan = planFor(doc);
+    const result = compileMaterialPlan(plan, { scene, name: "glow" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The pass is created inside the build observer, which may settle after
+    // compileMaterialPlan returns; awaiting ready guarantees it ran.
+    await result.ready;
+    expect(pass).toBeInstanceOf(OwnedPostProcess);
+    result.dispose();
+    expect(isDisposedNodeMaterial(result.material, scene)).toBe(false);
+    release();
+    await result.whenReleased();
+    expect(isDisposedNodeMaterial(result.material, scene)).toBe(true);
   });
 
   it("samples linearized scene depth instead of fragment coordinates", () => {
