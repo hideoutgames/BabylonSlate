@@ -396,6 +396,29 @@ describe("attachViewportGestures", () => {
     expect(controller.orthoHalfHeight()).toBeLessThan(halfHeightBefore);
   });
 
+  it.each([false, true])("pinch-zooms 3D along the view center with pivot-around-center %s", (pivotAroundCenter) => {
+    const { controller } = attach("3d");
+    controller.setPivotAroundCenter(pivotAroundCenter);
+    controller.camera.target.set(3, 4, 5);
+    controller.camera.getViewMatrix();
+    const { alpha, beta, radius } = controller.camera;
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 200, 100));
+    canvas.emit("pointermove", pointer(1, 50, 100));
+    canvas.emit("pointermove", pointer(2, 250, 100));
+
+    expect(controller.camera.radius).toBeCloseTo(radius / 2, 6);
+    expect(controller.camera.target.asArray()).toEqual([3, 4, 5]);
+    expect(controller.camera.alpha).toBeCloseTo(alpha, 6);
+    expect(controller.camera.beta).toBeCloseTo(beta, 6);
+
+    canvas.emit("pointermove", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(2, 200, 100));
+    expect(controller.camera.radius).toBeCloseTo(radius, 6);
+    expect(controller.camera.target.asArray()).toEqual([3, 4, 5]);
+  });
+
   it("pinch-zooms 2D about the finger midpoint", () => {
     const { controller } = attach("2d");
     controller.updateOrthoBounds(800 / 600);
@@ -493,6 +516,20 @@ describe("attachViewportGestures", () => {
 
     handle.dispose();
     expect(canvas.listenerCount()).toBe(0);
+  });
+
+  it.each([-100, 100])("3D wheel zoom keeps the camera target fixed for delta %s", (deltaY) => {
+    const { controller } = attach("3d");
+    controller.camera.target.set(3, 4, 5);
+    controller.camera.getViewMatrix();
+    const { alpha, beta, radius } = controller.camera;
+
+    canvas.emit("wheel", { deltaY, clientX: 200, clientY: 150 });
+
+    expect(controller.camera.radius).toBeCloseTo(deltaY < 0 ? radius / 1.1 : radius * 1.1, 6);
+    expect(controller.camera.target.asArray()).toEqual([3, 4, 5]);
+    expect(controller.camera.alpha).toBeCloseTo(alpha, 6);
+    expect(controller.camera.beta).toBeCloseTo(beta, 6);
   });
 
   it("2D wheel zoom keeps the world point under the cursor", () => {

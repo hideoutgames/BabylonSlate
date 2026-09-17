@@ -34,9 +34,21 @@ test(
     await expect(divider).toBeVisible();
     const before = await paneWidths(page);
     const box = await bounds(divider);
-    const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const folders = await bounds(page.getByTestId("content-browser-sidebar"));
+    const assets = await bounds(page.getByTestId("content-browser-assets"));
+    expect(assets.x - (folders.x + folders.width)).toBeCloseTo(1, 1);
+    const style = await divider.evaluate((element) => ({
+      padding: getComputedStyle(element).padding,
+      background: getComputedStyle(element).backgroundColor,
+      lineWidth: getComputedStyle(element, "::after").width,
+    }));
+    expect(style).toEqual({ padding: "0px", background: "rgba(0, 0, 0, 0)", lineWidth: "1px" });
+    const touch = await page.evaluate(() => navigator.maxTouchPoints > 0);
+    expect(box.width).toBeGreaterThanOrEqual(touch ? 44 : 6);
+    // Start within the invisible hit area, away from the visible 1px rule.
+    const start = { x: box.x + box.width / 2 + (touch ? 15 : 2), y: box.y + box.height / 2 };
 
-    if (await page.evaluate(() => navigator.maxTouchPoints > 0)) {
+    if (touch) {
       const session = await page.context().newCDPSession(page);
       await session.send("Input.dispatchTouchEvent", {
         type: "touchStart",

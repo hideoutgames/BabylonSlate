@@ -33,14 +33,12 @@ import {
 import { useEffect, useState } from "react";
 import {
   CONTENT_BROWSER_ID,
-  assetTypeForDocumentKind,
-  type DocumentKind,
+  type DocumentRef,
   type SerializedGraph,
 } from "@babylonslate/core";
 import {
   TypeVisualIcon,
   documentHistoryHotkey,
-  resolveTypeVisual,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -103,15 +101,15 @@ import {
   playChromeLaunchLabel,
 } from "../lib/play-chrome-label";
 import { canFocusLayout } from "../shell/layout-ops";
+import type { IndexedAsset } from "@babylonslate/assets";
+import { documentTypeVisual } from "../lib/document-type-visual";
 import "../shell/editor-chrome.css";
 
-function kindIcon(kind: DocumentKind, assetType?: string) {
-  if (kind === "content-browser") {
+function kindIcon(ref: DocumentRef, assets: readonly IndexedAsset[]) {
+  if (ref.kind === "content-browser") {
     return <LayoutGridIcon className="size-4 shrink-0" />;
   }
-  const visual = resolveTypeVisual({
-    assetType: assetType ?? assetTypeForDocumentKind(kind),
-  });
+  const visual = documentTypeVisual(ref, assets);
   return <TypeVisualIcon visual={visual} className="size-4 shrink-0" />;
 }
 
@@ -129,9 +127,6 @@ function SortableDocumentTab({
   onClose,
 }: SortableTabProps) {
   const { assetRegistry } = useDocuments();
-  const indexed = assetRegistry
-    ?.list()
-    .find((asset) => asset.path === doc.ref.path);
   const {
     attributes,
     listeners,
@@ -171,7 +166,7 @@ function SortableDocumentTab({
         aria-current={active ? "page" : undefined}
         onClick={onSelect}
       >
-        {kindIcon(doc.ref.kind, indexed?.header.type)}
+        {kindIcon(doc.ref, assetRegistry?.list() ?? [])}
         <span>
           {doc.ref.label}
           {doc.dirty ? " *" : ""}
@@ -204,9 +199,6 @@ function PinnedDocumentTab({
   onClose?: () => void;
 }) {
   const { assetRegistry } = useDocuments();
-  const indexed = assetRegistry
-    ?.list()
-    .find((asset) => asset.path === doc.ref.path);
 
   return (
     <div
@@ -227,7 +219,7 @@ function PinnedDocumentTab({
         aria-current={active ? "page" : undefined}
         onClick={onSelect}
       >
-        {kindIcon(doc.ref.kind, indexed?.header.type)}
+        {kindIcon(doc.ref, assetRegistry?.list() ?? [])}
         <span>
           {doc.ref.label}
           {doc.dirty ? " *" : ""}
@@ -541,6 +533,7 @@ export function EditorChromeBar({
             </Button>
             <DocumentSwitcher
               documents={openDocuments}
+              assets={assetRegistry?.list()}
               activeDocumentId={activeDocumentId}
               onSelect={setActiveDocument}
               onClose={onCloseDocument ?? closeDocument}
@@ -606,6 +599,7 @@ export function EditorChromeBar({
             </div>
             <DocumentSwitcher
               documents={openDocuments}
+              assets={assetRegistry?.list()}
               activeDocumentId={activeDocumentId}
               onSelect={setActiveDocument}
               onClose={onCloseDocument ?? closeDocument}

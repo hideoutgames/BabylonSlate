@@ -1176,7 +1176,6 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           <Button
             variant="outline"
             size="sm"
-            className="pointer-coarse:min-h-11"
             aria-label={multiSelection ? `Add Component To ${actor.name}` : "Add Component"}
             onClick={() => setAddComponentOpen(true)}
             data-testid="details-add-component"

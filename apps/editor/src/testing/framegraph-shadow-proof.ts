@@ -46,15 +46,10 @@ import {
 } from "@babylonslate/render/managed-lighting-resources";
 
 export async function runFrameGraphShadowProof(
-  backendOrOptions:
-    | "webgl2"
-    | "webgpu"
-    | { clustered?: boolean; constrainedResources?: boolean } = "webgl2",
+  backend: "webgl2" | "webgpu" = "webgl2",
   output: "backbuffer" | "texture" = "backbuffer",
+  options: { clustered?: boolean; constrainedResources?: boolean } = {},
 ) {
-  const backend =
-    typeof backendOrOptions === "string" ? backendOrOptions : "webgl2";
-  const options = typeof backendOrOptions === "object" ? backendOrOptions : {};
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 72;

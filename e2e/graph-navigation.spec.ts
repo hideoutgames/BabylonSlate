@@ -40,8 +40,8 @@ test("graph navigation zooms and fits above overlapping nodes @ipad", async ({ p
   expect(boxes).toHaveLength(3);
   for (const box of boxes) {
     expect(box.text).toBe("");
-    expect(box.width).toBe(isMobile ? 44 : 28);
-    expect(box.height).toBe(isMobile ? 44 : 28);
+    expect(box.width).toBe(28);
+    expect(box.height).toBe(28);
     expect(box.x).toBe(boxes[0]!.x);
   }
   expect(boxes[1]!.y).toBeGreaterThanOrEqual(boxes[0]!.y + boxes[0]!.height);
