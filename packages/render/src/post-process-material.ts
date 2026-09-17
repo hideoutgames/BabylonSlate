@@ -1,4 +1,4 @@
-import type { Camera, NodeMaterial, PostProcess, Scene } from "@babylonjs/core";
+import { Constants, type Camera, type PostProcess, type Scene } from "@babylonjs/core";
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
 import { normalizeScenePostProcessStack } from "@babylonslate/core";
@@ -9,6 +9,7 @@ import type {
   MaterialDocument,
 } from "@babylonslate/shader-graph";
 import { materialUnavailable, type MaterialLibrary } from "./material-library";
+import { OwnedPostProcess } from "./owned-post-process";
 
 /** One authored entry of a scene's ordered post-process chain. */
 export interface PostProcessStackEntry {
@@ -66,6 +67,10 @@ export interface AttachedPostProcessStack {
   getParameter: (entryId: string, name: string) => MaterialParameterValue | null;
   resetParameter: (entryId: string, name: string) => boolean;
   dispose: () => void;
+  /** Bounded cleanup/reporting; rejection never grants permission to release sources. */
+  whenDisposed: () => Promise<void>;
+  /** Actual CPU/native reference release, independent of a GPU drain boundary. */
+  whenReleased: () => Promise<void>;
 }
 
 let nextStackInstance = 0;
@@ -123,6 +128,30 @@ export function attachPostProcessStack(
 ): AttachedPostProcessStack {
   const passes: PostProcess[] = [];
   const acquired = new Map<string, { materialGuid: string; instanceKey: string }>();
+  const owned: Array<{ pass: OwnedPostProcess; instance: { materialGuid: string; instanceKey: string } }> = [];
+  const retirements: Array<{ bounded: Promise<void>; released: Promise<void> }> = [];
+  let signalDisposed!: () => void;
+  const disposedSignal = new Promise<void>((resolve) => { signalDisposed = resolve; });
+  const whenDisposed = disposedSignal.then(() => settleRetirements(retirements.map((entry) => entry.bounded)));
+  const whenReleased = disposedSignal.then(() => settleRetirements(retirements.map((entry) => entry.released)));
+  // Owners can opt into the reporting promise; retained references remain safe
+  // even when a synchronous consumer only detaches the stack.
+  void whenDisposed.catch(() => {});
+  void whenReleased.catch(() => {});
+  const retirePass = ({ pass, instance }: (typeof owned)[number]) => {
+    let failure: unknown;
+    try { pass.dispose(options.camera); } catch (error) { failure = error; }
+    const bounded = failure === undefined ? pass.whenDisposed() : Promise.reject(failure);
+    const release = () => options.library.release(options.scene, instance.materialGuid, instance);
+    let released: Promise<void>;
+    try {
+      if (pass.isReleased) { release(); released = Promise.resolve(); }
+      else released = pass.whenReleased().then(release);
+    } catch (error) { released = Promise.reject(error); }
+    void bounded.catch(() => {});
+    void released.catch(() => {});
+    retirements.push({ bounded, released });
+  };
   const entries = normalizePostProcessStack(options.stack);
   const authoredParameters = new Map(entries.map((entry) => [entry.id, entry.parameters]));
   const stackInstance = nextStackInstance++;
@@ -133,7 +162,11 @@ export function attachPostProcessStack(
     probePostProcessDeviceBuffers(options.scene, options.camera);
   const hadDepth = Boolean(depthRendererFor(options.scene, options.camera));
   const hadPrePass = Boolean(options.scene.prePassRenderer);
+  // Acquired instances that no pass owns yet; a thrown constructor must return
+  // every one so the library does not keep a live material for a dead stack.
+  const pendingAcquired = new Set<{ materialGuid: string; instanceKey: string }>();
 
+  try {
   for (const entry of entries) {
     if (!entry.enabled) continue;
     const document = options.documentFor(entry.materialGuid);
@@ -175,6 +208,7 @@ export function attachPostProcessStack(
       });
       continue;
     }
+    pendingAcquired.add(instance);
     const needsDepth = compiled.plan.bufferRequirements.sceneDepth;
     for (const [name, value] of Object.entries(entry.parameters ?? {})) {
       if (!options.library.setParameter(options.scene, entry.materialGuid, name, value, instance))
@@ -199,6 +233,7 @@ export function attachPostProcessStack(
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
+        pendingAcquired.delete(instance);
         options.library.release(options.scene, entry.materialGuid, instance);
         continue;
       }
@@ -212,27 +247,63 @@ export function attachPostProcessStack(
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
+        pendingAcquired.delete(instance);
         options.library.release(options.scene, entry.materialGuid, instance);
         continue;
       }
       if (!hadPrePass) prePassHeld = true;
     }
-    const pass = createPostProcessPass(
-      compiled.material,
-      options.camera,
-      entry.scalable ? (options.resolutionScale ?? 1) : 1,
-    );
-    if (pass) {
+    let pass: OwnedPostProcess | undefined;
+    try {
+      pass = new OwnedPostProcess(`${compiled.material.name}PostProcess`, "postprocess", {
+        camera: options.camera,
+        engine: options.scene.getEngine(),
+        size: entry.scalable ? (options.resolutionScale ?? 1) : 1,
+        samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+        blockCompilation: true,
+        shaderLanguage: compiled.material.shaderLanguage,
+      });
+      // The deferred-build path of createEffectForPostProcess only writes this
+      // once the build finishes; owners need the source synchronously.
+      pass.nodeMaterialSource = compiled.material;
+      compiled.material.createEffectForPostProcess(pass);
+      pendingAcquired.delete(instance);
       passes.push(pass);
+      owned.push({ pass, instance });
       acquired.set(entry.id!, instance);
-    } else {
-      options.library.release(options.scene, entry.materialGuid, instance);
+    } catch (error) {
+      pendingAcquired.delete(instance);
+      if (pass) retirePass({ pass, instance });
+      else options.library.release(options.scene, entry.materialGuid, instance);
+      report(options, { materialGuid: entry.materialGuid, code: "material.postProcess",
+        message: `Post-process material "${document.name}" could not create its pass: ${String(error)}` });
     }
+  }
+  } catch (error) {
+    // Roll back the partially built stack: retire every created pass, return
+    // every acquired reference no pass owns, and drop renderers this call held.
+    for (const record of owned.splice(0)) {
+      try { retirePass(record); } catch { /* keep unwinding the rest */ }
+    }
+    for (const instance of pendingAcquired) {
+      try { options.library.release(options.scene, instance.materialGuid, instance); } catch { /* keep unwinding */ }
+    }
+    pendingAcquired.clear();
+    acquired.clear();
+    passes.length = 0;
+    try {
+      if (depthHeld) options.scene.disableDepthRenderer(options.camera);
+      if (prePassHeld) options.scene.disablePrePassRenderer();
+    } catch { /* the original error still propagates */ }
+    signalDisposed();
+    throw error;
   }
 
   let disposed = false;
   return {
     passes,
+    whenDisposed: () => whenDisposed,
+    whenReleased: () => whenReleased,
     getParameter: (entryId, name) => {
       const instance = acquired.get(entryId);
       return !disposed && instance ? options.library.getParameter(
@@ -255,14 +326,21 @@ export function attachPostProcessStack(
     dispose: () => {
       if (disposed) return;
       disposed = true;
-      for (const pass of passes) pass.dispose(options.camera);
-      for (const instance of acquired.values())
-        options.library.release(options.scene, instance.materialGuid, instance);
+      for (const record of owned.splice(0)) retirePass(record);
       acquired.clear();
       authoredParameters.clear();
-      if (depthHeld) options.scene.disableDepthRenderer(options.camera);
-      if (prePassHeld) options.scene.disablePrePassRenderer();
       passes.length = 0;
+      try {
+        // Passes cannot draw or bind again after logical detach. Release the
+        // owned native renderer now so a replacement can acquire its own one.
+        if (depthHeld) options.scene.disableDepthRenderer(options.camera);
+        if (prePassHeld) options.scene.disablePrePassRenderer();
+      } catch (error) {
+        const failed = Promise.reject(error);
+        void failed.catch(() => {});
+        retirements.push({ bounded: failed, released: failed });
+      }
+      signalDisposed();
     },
   };
 }
@@ -337,10 +415,8 @@ function bufferDiagnostic(
   return undefined;
 }
 
-function createPostProcessPass(
-  material: NodeMaterial,
-  camera: Camera,
-  ratio: number,
-): PostProcess | null {
-  return material.createPostProcess(camera, ratio) ?? null;
+async function settleRetirements(pending: readonly Promise<void>[]): Promise<void> {
+  const results = await Promise.allSettled(pending);
+  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : []);
+  if (failures.length) throw new AggregateError(failures, "Post-process stack cleanup failed.");
 }

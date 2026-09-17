@@ -14,7 +14,7 @@
     "ios:archive": "node scripts/ios-archive.mjs"
   },
   "dependencies": {
-    "@babylonjs/core": "^9.20.0",
+    "@babylonjs/core": "9.20.0",
     "@babylonslate/anim-graph": "workspace:*",
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/behaviour-tree": "workspace:*",

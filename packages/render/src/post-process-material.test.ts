@@ -8,6 +8,7 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import { MaterialLibrary } from "./material-library";
+import { OwnedPostProcess } from "./owned-post-process";
 import { createMaterialPreviewScene } from "./material-preview";
 import {
   attachPostProcessStack,
@@ -295,6 +296,67 @@ describe("post-process stack", () => {
     expect(preview.scene.materials.filter((material) => material.name === "material:pp")).toHaveLength(1);
     attached.dispose();
     expect(preview.scene.materials.filter((material) => material.name === "material:pp")).toHaveLength(0);
+  });
+
+  it("detaches immediately but retains only the pending stack instance through reported cleanup uncertainty", async () => {
+    const { preview, library } = host();
+    const document = createDefaultMaterialDocument("Blur", "postProcess");
+    const attach = () => attachPostProcessStack({ scene: preview.scene, camera: preview.camera, library,
+      stack: [{ id: "held", materialGuid: "pp", enabled: true, order: 0 },
+        { id: "ready", materialGuid: "pp", enabled: true, order: 1 }],
+      documentFor: () => document, deviceBuffers: { sceneDepth: false, sceneNormal: false } });
+    const old = attach();
+    const heldPass = old.passes[0] as OwnedPostProcess;
+    const heldMaterial = heldPass.nodeMaterialSource!;
+    const readyMaterial = old.passes[1]!.nodeMaterialSource!;
+    let release!: () => void;
+    const fence = new Promise<void>((resolve) => { release = resolve; });
+    // Keep real compilation, native detachment and library ownership. Only the
+    // native completion boundary is held; a timeout is not release permission.
+    vi.spyOn(heldPass, "isReleased", "get").mockReturnValue(false);
+    vi.spyOn(heldPass, "whenReleased").mockReturnValue(fence);
+    vi.spyOn(heldPass, "whenDisposed").mockRejectedValue(new Error("Native completion is uncertain."));
+    old.dispose();
+    old.dispose();
+    expect(old.passes).toEqual([]);
+    expect(preview.camera._postProcesses.filter(Boolean)).toEqual([]);
+    expect(old.setParameter("held", "Missing", { kind: "float", value: 1 })).toBe(false);
+    await expect(old.whenDisposed()).rejects.toThrow("Post-process stack cleanup failed");
+    expect(preview.scene.materials).toContain(heldMaterial);
+    expect(preview.scene.materials).not.toContain(readyMaterial);
+    let released = false;
+    void old.whenReleased().then(() => { released = true; });
+    const replacement = attach();
+    const replacementMaterials = replacement.passes.map((pass) => pass.nodeMaterialSource);
+    await Promise.resolve();
+    expect(released).toBe(false);
+    release();
+    await old.whenReleased();
+    expect(preview.scene.materials).not.toContain(heldMaterial);
+    for (const material of replacementMaterials) expect(preview.scene.materials).toContain(material);
+    expect(replacement.passes).toHaveLength(2);
+    replacement.dispose();
+    await replacement.whenReleased();
+    for (const material of replacementMaterials) expect(preview.scene.materials).not.toContain(material);
+  });
+
+  it("isolates native effect creation failure and releases the failed instance", async () => {
+    const { preview, library } = host();
+    const createEffect = NodeMaterial.prototype.createEffectForPostProcess;
+    vi.spyOn(NodeMaterial.prototype, "createEffectForPostProcess").mockImplementation(function (this: NodeMaterial, pass) {
+      if (this.name === "material:bad") throw new Error("Native effect creation failed.");
+      return createEffect.call(this, pass);
+    });
+    const diagnostics: PostProcessStackDiagnostic[] = [];
+    const attached = attachPostProcessStack({ scene: preview.scene, camera: preview.camera, library,
+      stack: ["first", "bad", "last"].map((materialGuid, order) => ({ materialGuid, enabled: true, order })),
+      documentFor: (guid) => createDefaultMaterialDocument(guid, "postProcess"),
+      deviceBuffers: { sceneDepth: false, sceneNormal: false }, onDiagnostic: (diagnostic) => diagnostics.push(diagnostic) });
+    expect(attached.passes.map((pass) => pass.nodeMaterialSource?.name)).toEqual(["material:first", "material:last"]);
+    expect(preview.scene.materials.some((material) => material.name === "material:bad")).toBe(false);
+    expect(diagnostics).toEqual([expect.objectContaining({ materialGuid: "bad", code: "material.postProcess" })]);
+    attached.dispose();
+    await attached.whenReleased();
   });
 
   it("isolates duplicate pass parameters by entry ID and releases only its own instances", () => {
@@ -639,5 +701,52 @@ describe("post-process stack", () => {
     expect(attached.passes).toHaveLength(0);
     expect(diagnostics[0]?.nodeId).toBe("n");
     expect(diagnostics[0]?.message).toContain("Scene Normal");
+  });
+
+  it("rolls back every acquired pass and held renderer when construction throws mid-stack", () => {
+    const { preview, library } = host();
+    const failure = new Error("Injected acquisition failure");
+    const realAcquire = library.acquire.bind(library);
+    let acquisitions = 0;
+    vi.spyOn(library, "acquire").mockImplementation((...args) => {
+      acquisitions += 1;
+      if (acquisitions === 2) throw failure;
+      return realAcquire(...args);
+    });
+    const release = vi.spyOn(library, "release");
+    const disableDepth = vi.spyOn(preview.scene, "disableDepthRenderer");
+    expect(() =>
+      attachPostProcessStack({
+        scene: preview.scene,
+        camera: preview.camera,
+        library,
+        stack: [
+          { id: "depth", materialGuid: "depth", enabled: true, order: 0 },
+          { id: "boom", materialGuid: "boom", enabled: true, order: 1 },
+        ],
+        documentFor: (guid) =>
+          guid === "depth"
+            ? depthSamplingDocument()
+            : createDefaultMaterialDocument("Boom", "postProcess"),
+        deviceBuffers: { sceneDepth: true, sceneNormal: false },
+      }),
+    ).toThrow(failure);
+    expect(preview.camera._postProcesses.filter(Boolean)).toEqual([]);
+    expect(preview.scene.getEngine().postProcesses).toEqual([]);
+    // The first entry's pass was retired and its library instance released.
+    expect(
+      preview.scene.materials.filter((material) => material.name === "material:depth"),
+    ).toHaveLength(0);
+    expect(release).toHaveBeenCalledWith(
+      preview.scene,
+      "depth",
+      expect.objectContaining({ materialGuid: "depth" }),
+    );
+    // The depth renderer this stack enabled is not leaked.
+    expect(disableDepth).toHaveBeenCalledWith(preview.camera);
+    const depthMap = (
+      preview.scene as { _depthRenderer?: Record<number, unknown> }
+    )._depthRenderer;
+    expect(depthMap?.[preview.camera.uniqueId]).toBeUndefined();
   });
 });

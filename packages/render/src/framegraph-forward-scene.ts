@@ -1,3 +1,9 @@
+import { PostProcessRetirement } from "./post-process-retirement";
+import { createScenePostProcessGraph, type ScenePostProcessGraph } from "./scene-post-process-graph";
+import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
+import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
+import { ScenePostProcessOwner } from "./scene-post-process-owner";
+import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import type { Camera, InternalTexture, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
@@ -50,6 +56,15 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
  */
 export class ForwardSceneFrameGraph {
   private graph: FrameGraph | undefined;
+  private postProcessOwner: ScenePostProcessOwner | undefined;
+  private postProcessGraph: ScenePostProcessGraph | undefined;
+  private outputCopy: FrameGraphTask | undefined;
+  private postProcessRevision = 0;
+  private preparedPostProcessRevision = -1;
+  private retirement: Promise<void> | undefined;
+  private released: Promise<void> | undefined;
+  private readonly postProcessRetirement = new PostProcessRetirement();
+  private cleanupFailure: unknown;
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
   private clustered: FrameGraphClusteredLightsTask | undefined;
@@ -62,6 +77,7 @@ export class ForwardSceneFrameGraph {
   private pending: Promise<ForwardSceneGraphResult> | undefined;
   private disposed = false;
   private failure: string | undefined;
+  private failedOutput: ReturnType<ForwardSceneFrameGraph["output"]> & { camera: Camera } | undefined;
   private renderingCamera: Camera | undefined;
   private readonly beforeRender: Observer<Scene>;
   private readonly onDispose: Observer<Scene>;
@@ -81,18 +97,105 @@ export class ForwardSceneFrameGraph {
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
   }
 
+  attachPostProcess(options: AttachPostProcessStackOptions, invalidate: () => void): AttachedPostProcessStack {
+    if (this.disposed || options.scene !== this.scene) throw new Error("Post-process owner is not a live matching Scene.");
+    this.releasePostProcessOwner();
+    const owner = new ScenePostProcessOwner(options);
+    this.postProcessOwner = owner;
+    this.postProcessRevision += 1;
+    this.failure = undefined;
+    invalidate();
+    if (!this.pending) this.releaseGraph();
+    const current = () => !this.disposed && this.postProcessOwner === owner;
+    return {
+      get passes() { return current() ? owner.passes : []; },
+      whenDisposed: () => owner.whenDisposed(),
+      whenReleased: () => owner.whenReleased(),
+      setParameter: (id, name, value) => current() && owner.setParameter(id, name, value),
+      getParameter: (id, name) => current() ? owner.getParameter(id, name) : null,
+      resetParameter: (id, name) => current() && owner.resetParameter(id, name),
+      dispose: () => {
+        if (!current()) return;
+        this.releasePostProcessOwner();
+        this.postProcessOwner = undefined;
+        this.postProcessRevision += 1;
+        this.failure = undefined;
+        invalidate();
+        if (!this.pending) this.releaseGraph();
+      },
+    };
+  }
+
+  postProcessPassCount(): number {
+    if (this.disposed) return 0;
+    return this.postProcessGraph
+      ? this.postProcessGraph.postProcessTasks.filter((task) => task.isActive).length
+      : this.postProcessOwner?.passes.length ?? 0;
+  }
+
+  /** Settle CPU ownership before a host releases a borrowed output target. */
+  retire(): Promise<void> {
+    if (this.retirement) return this.retirement;
+    try { this.dispose(); }
+    catch (error) { this.retirement = Promise.reject(error); return this.retirement; }
+    this.retirement = (async () => {
+      // Cancellation rejects preparation; its cleanup still runs before this continuation.
+      try { await this.pending; } catch { /* preparation failure is not cleanup failure */ }
+      if (this.cleanupFailure) throw this.cleanupFailure;
+      this.releaseGraph();
+      await this.postProcessRetirement.whenDisposed();
+    })();
+    return this.retirement;
+  }
+
+  /** Confirm actual CPU/native release even after a bounded cleanup timeout. */
+  whenReleased(): Promise<void> {
+    if (this.released) return this.released;
+    try { this.dispose(); }
+    catch (error) { this.released = Promise.reject(error); return this.released; }
+    this.released = (async () => {
+      try { await this.pending; } catch { /* cancellation still finishes owned cleanup */ }
+      if (this.cleanupFailure) throw this.cleanupFailure;
+      this.releaseGraph();
+      await this.postProcessRetirement.whenReleased();
+      if (this.cleanupFailure) throw this.cleanupFailure;
+    })();
+    return this.released;
+  }
+
+  invalidate(): void {
+    this.failure = undefined;
+    this.failedOutput = undefined;
+  }
+
+  private refreshFailure(camera: Camera): void {
+    if (!this.failedOutput) return;
+    const output = this.output(camera);
+    if (this.failedOutput.camera !== camera ||
+      output.width !== this.failedOutput.width || output.height !== this.failedOutput.height ||
+      output.color !== this.failedOutput.color || output.depth !== this.failedOutput.depth) this.invalidate();
+  }
+
   /** Build or resize the persistent tasks and await actual object/effect readiness. */
   prepare(camera: Camera, assertCurrent: () => void = () => {}): Promise<ForwardSceneGraphResult> {
     assertCurrent();
     if (this.pending) return this.pending.then((result) => { assertCurrent(); return result; });
     if (!this.unavailable(camera)) this.syncShadowAdmission(camera);
-    const reason = this.unsupported(camera);
-    if (reason) return Promise.resolve({ path: "classic", reason });
+    this.refreshFailure(camera);
+    const reason = this.unsupported(camera) ?? this.failure;
+    if (reason) {
+      this.releaseGraph();
+      this.postProcessOwner?.useNative(camera);
+      return Promise.resolve({ path: "classic", reason });
+    }
     const work = this.prepareGraph(camera, assertCurrent);
     this.pending = work;
     const settled = () => {
       this.pending = undefined;
-      if (this.disposed) this.releaseGraph();
+      if (this.disposed) {
+        try { this.releaseGraph(); }
+        catch (error) { this.cleanupFailure = error; }
+      }
     };
     void work.then(settled, settled);
     return work;
@@ -103,10 +206,15 @@ export class ForwardSceneFrameGraph {
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable, ready: false };
     this.syncShadowAdmission(camera);
+    this.refreshFailure(camera);
     const reason = this.unsupported(camera) ?? this.failure;
-    if (reason) return { path: "classic", reason, ready: true };
+    if (reason) {
+      // Native stack creation belongs to preparation, never a readiness probe.
+      return { path: "classic", reason, ready: !this.postProcessOwner?.hasEnabledEntries ||
+        this.postProcessOwner.nativeReadyFor(camera) && isSceneFrameReady(this.scene) };
+    }
     const output = this.output(camera);
-    if (this.pending || !this.graph || this.shadows?.needsPreparation() ||
+    if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision || this.shadows?.needsPreparation() ||
       this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
       this.outputColor !== output.color || this.outputDepth !== output.depth)
       return { path: "frameGraph", ready: false };
@@ -117,11 +225,12 @@ export class ForwardSceneFrameGraph {
   }
 
   /** Render one scene frame, with an explicit, observable classic fallback. */
-  render(camera: Camera, updateCameras = true): ForwardSceneGraphResult {
+  render(camera: Camera, updateCameras = true): ForwardSceneGraphResult & { rendered?: boolean } {
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable };
     this.syncShadowAdmission(camera);
     const engine = this.scene.getEngine();
+    this.refreshFailure(camera);
     const output = this.output(camera);
     const reason =
       this.unsupported(camera) ??
@@ -131,7 +240,7 @@ export class ForwardSceneFrameGraph {
         ? "Lighting allocation changes require FrameGraph preparation."
         : undefined) ??
       (this.pending ||
-      !this.graph ||
+      !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedWidth !== output.width ||
       this.preparedHeight !== output.height ||
       this.outputColor !== output.color ||
@@ -140,6 +249,9 @@ export class ForwardSceneFrameGraph {
         : undefined);
     this.scene.activeCamera = camera;
     if (reason) {
+      if (this.postProcessOwner?.hasEnabledEntries &&
+        (this.pending || !this.postProcessOwner.nativeReadyFor(camera) || !isSceneFrameReady(this.scene)))
+        return { path: "classic", reason, rendered: false };
       if (!this.disposed && !this.scene.isDisposed)
         this.scene.render(updateCameras);
       return { path: "classic", reason };
@@ -150,6 +262,8 @@ export class ForwardSceneFrameGraph {
     this.cull!.camera = camera;
     this.syncSceneInputs();
     if (!this.isReady()) {
+      if (this.postProcessOwner?.hasEnabledEntries)
+        return { path: "classic", reason: "FrameGraph effects are not ready.", rendered: false };
       this.scene.render(updateCameras);
       return { path: "classic", reason: "FrameGraph effects are not ready." };
     }
@@ -189,6 +303,7 @@ export class ForwardSceneFrameGraph {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.releasePostProcessOwner();
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.scene.onDisposeObservable.remove(this.onDispose);
     if (!this.pending) this.releaseGraph();
@@ -241,7 +356,9 @@ export class ForwardSceneFrameGraph {
         !target.depthStencilTexture)
     )
       return "FrameGraph output requires a single-sample 2D color/depth texture.";
-    if (camera._postProcesses.some(Boolean) || scene.postProcesses.length)
+    const ownedPasses = this.postProcessOwner?.passes ?? [];
+    if (camera._postProcesses.some((pass) => pass && !ownedPasses.includes(pass)) ||
+      scene.postProcesses.some((pass) => !ownedPasses.includes(pass)))
       return "Scene post-processing requires classic rendering.";
     if (
       scene.customRenderTargets.length ||
@@ -268,12 +385,10 @@ export class ForwardSceneFrameGraph {
     try {
       assertCurrent();
       const output = this.output(camera);
-      if (
-        this.shadows?.needsPreparation() ||
-        this.clustered?.needsPreparation(camera) ||
-        this.outputColor !== output.color ||
-        this.outputDepth !== output.depth
-      )
+      if (this.preparedPostProcessRevision !== this.postProcessRevision ||
+        this.shadows?.needsPreparation() || this.clustered?.needsPreparation(camera) ||
+        this.outputColor !== output.color || this.outputDepth !== output.depth ||
+        this.postProcessGraph && (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
         this.releaseGraph();
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
@@ -303,13 +418,32 @@ export class ForwardSceneFrameGraph {
             return target;
           };
         }
+        const postProcessOwner = this.postProcessOwner;
+        if (postProcessOwner) {
+          postProcessOwner.useGraph();
+          const plan = postProcessOwner.plan();
+          for (const diagnostic of plan.diagnostics) postProcessOwner.options.onDiagnostic?.(diagnostic);
+          const result = createScenePostProcessGraph({
+            frameGraph: this.graph, plan, library: postProcessOwner.options.library,
+            camera, width: output.width, height: output.height,
+            resolutionScale: postProcessOwner.options.resolutionScale,
+            onDiagnostic: postProcessOwner.options.onDiagnostic,
+          });
+          this.postProcessGraph = result.owner ?? undefined;
+          if (result.ok === false) throw new Error(result.reason);
+          if (this.postProcessGraph) postProcessOwner.useGraph(this.postProcessGraph);
+        }
         this.clear = new FrameGraphClearTextureTask(
           "Forward clear",
           this.graph,
         );
-        this.clear.targetTexture = color;
-        this.clear.depthTexture = depth;
-        this.cull = new CameraOutputCullTask("Forward cull", this.graph, scene);
+        this.clear.targetTexture = this.postProcessGraph?.sceneColorTexture ?? color;
+        this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? depth;
+        this.cull = new CameraOutputCullTask(
+          "Forward cull",
+          this.graph,
+          scene,
+        );
         this.objects = new ManagedShadowObjectRendererTask(
           "Forward objects",
           this.graph,
@@ -331,7 +465,22 @@ export class ForwardSceneFrameGraph {
         this.graph.addTask(this.clustered);
         this.graph.addTask(this.clear);
         this.graph.addTask(this.cull);
+        for (const task of this.postProcessGraph?.geometryTasks ?? []) this.graph.addTask(task);
         this.graph.addTask(this.objects);
+        if (this.postProcessGraph) {
+          for (const task of this.postProcessGraph.postProcessTasks) this.graph.addTask(task);
+          if (output.color) {
+            const copy = new FrameGraphCopyToTextureTask("Scene post-process output", this.graph);
+            copy.sourceTexture = this.postProcessGraph.outputTexture;
+            copy.targetTexture = color;
+            this.outputCopy = copy;
+          } else {
+            const copy = new FrameGraphCopyToBackbufferColorTask("Scene post-process output", this.graph);
+            copy.sourceTexture = this.postProcessGraph.outputTexture;
+            this.outputCopy = copy;
+          }
+          this.graph.addTask(this.outputCopy);
+        }
       }
       this.objects!.camera = camera;
       this.cull!.camera = camera;
@@ -345,7 +494,7 @@ export class ForwardSceneFrameGraph {
         // Native buildAsync awaits imports before recording/allocating. Check
         // this owner again at that boundary, before it can touch a removed
         // Scene's borrowed targets or disposed ObjectRenderer.
-        const tasks: FrameGraphTask[] = [this.shadows!, this.clear!, this.cull!, this.objects!];
+        const tasks = this.graph.tasks;
         const restore = tasks.map((task) => {
           const record = task.record;
           const guarded = () => {
@@ -358,6 +507,7 @@ export class ForwardSceneFrameGraph {
         try { await this.graph.buildAsync(false); }
         finally { for (const action of restore) action(); }
         assertCurrent();
+        this.postProcessGraph?.reconcile();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       const deadline = performance.now() + 10_000;
@@ -373,16 +523,19 @@ export class ForwardSceneFrameGraph {
           reason: "FrameGraph coordinator is disposed.",
         };
       assertCurrent();
+      this.preparedPostProcessRevision = this.postProcessRevision;
       this.preparedWidth = width;
       this.preparedHeight = height;
       this.failure = undefined;
       return { path: "frameGraph" };
     } catch (error) {
-      this.failure = error instanceof Error ? error.message : String(error);
       this.releaseGraph();
-      // Cancellation must reach the loading owner, never become a successful
-      // classic fallback for a superseded scene/camera/output generation.
+      // Cancellation belongs to the old loading owner. Validate before latching
+      // a fallback so a superseded build cannot poison its replacement.
       assertCurrent();
+      this.failure = error instanceof Error ? error.message : String(error);
+      this.failedOutput = { ...this.output(camera), camera };
+      if (!this.disposed && !scene.isDisposed) this.postProcessOwner?.useNative(camera);
       return { path: "classic", reason: this.failure };
     }
   }
@@ -405,10 +558,13 @@ export class ForwardSceneFrameGraph {
       (light) => [light, light.shadowEnabled] as const,
     );
     const objectList = this.objects!.objectList;
+    const geometry = this.postProcessGraph?.geometryTask;
+    const geometryObjects = geometry?.objectList;
     try {
       // The previous frame's culled list may omit a newly visible mesh. Probe
       // all current candidates before presenting; culling itself never draws.
       this.objects!.objectList = this.cull!.objectList;
+      if (geometry) geometry.objectList = this.cull!.objectList;
       return withSceneReadinessState(this.scene, () => {
         const camera = this.objects!.camera;
         // Keep scene-owned camera/material/pass readiness alongside the task's
@@ -421,6 +577,7 @@ export class ForwardSceneFrameGraph {
       });
     } finally {
       this.objects!.objectList = objectList;
+      if (geometry && geometryObjects) geometry.objectList = geometryObjects;
       // ObjectRenderer's shadow toggles also lack finally around readiness
       // hooks. The common guard owns camera/matrices/UBO/Engine state.
       this.scene.activeCameras = cameras;
@@ -439,17 +596,47 @@ export class ForwardSceneFrameGraph {
       particleSystems: this.scene.particleSystems,
     };
     this.objects!.objectList = this.cull!.outputObjectList;
+    const geometry = this.postProcessGraph?.geometryTask;
+    if (geometry) {
+      geometry.objectList = this.cull!.outputObjectList;
+      geometry.camera = this.objects!.camera;
+    }
+  }
+
+  private releasePostProcessOwner(): void {
+    try {
+      if (this.postProcessOwner) {
+        this.postProcessOwner.dispose();
+        this.postProcessRetirement.add(this.postProcessOwner);
+        this.postProcessOwner = undefined;
+      }
+    }
+    catch (error) { this.cleanupFailure = error; throw error; }
   }
 
   private releaseGraph(): void {
+    try { this.releaseGraphResources(); }
+    catch (error) { this.cleanupFailure = error; throw error; }
+  }
+
+  private releaseGraphResources(): void {
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
+    this.postProcessOwner?.clearGraph();
+    this.postProcessGraph?.disposeTasks();
+    this.outputCopy?.dispose();
     this.objects?.dispose();
     this.shadows?.dispose();
     this.clustered?.dispose();
     this.clear?.dispose();
     this.cull?.dispose();
     this.graph?.dispose();
+    if (this.postProcessGraph) this.postProcessRetirement.add(this.postProcessGraph);
+    void this.postProcessGraph?.releaseAfterGraphDisposal().catch((error: unknown) => {
+      this.cleanupFailure = error;
+    });
+    this.postProcessGraph = undefined;
+    this.outputCopy = undefined;
     this.objects = undefined;
     this.shadows = undefined;
     this.clustered = undefined;

@@ -327,6 +327,7 @@ it("keeps admitted maps alive when the graph build fails", async () => {
   });
   expect(controller.generator(light)).toBe(generator);
   expect(scene.textures).toContain(map);
+  graph.invalidate();
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
   expect(scene.textures).toContain(map);

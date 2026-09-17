@@ -1,3 +1,7 @@
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
+import { limitManagedRenderBytes } from "./managed-render-resources";
+import { MaterialLibrary } from "./material-library";
 import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -176,4 +180,99 @@ it("admits the native frozen queue as an explicit ready fallback", async () => {
   expect(renderer.render()).toMatchObject({ path: "classic", rendered: true, readyForPresentation: true });
   expect(drawn).toHaveBeenCalledTimes(1);
   renderer.dispose();
+});
+
+
+it("retires pending allocation before the host releases a borrowed target", async () => {
+  const { scene, camera, renderer } = host();
+  const target = new RenderTargetTexture("borrowed output", 32, scene);
+  // NullEngine has no depth-texture driver; this cancellation case never builds
+  // or draws attachments. Supply the supported-target boundary only.
+  vi.spyOn(target, "depthStencilTexture", "get").mockReturnValue(target.getInternalTexture());
+  camera.outputRenderTarget = target;
+  const borrowedRenderers = [...scene.objectRenderers];
+  const { started, release } = holdGraphInitialization();
+  const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
+  await started;
+  let retired = false;
+  const retirement = renderer.retire().then(() => { retired = true; });
+  await Promise.resolve();
+  expect(retired).toBe(false);
+  expect(target.getInternalTexture()).not.toBeNull();
+  release();
+  await pending;
+  await retirement;
+  expect(scene.objectRenderers).toEqual(borrowedRenderers);
+  expect(target.getInternalTexture()).not.toBeNull();
+  target.dispose();
+});
+
+
+it("rejects retirement when owned task cleanup fails instead of permitting target destruction", async () => {
+  const { scene, renderer } = host();
+  await renderer.prepare();
+  const taskRenderer = scene.objectRenderers[0]!;
+  const dispose = vi.spyOn(taskRenderer, "dispose").mockImplementationOnce(() => { throw new Error("native cleanup failed"); });
+  await expect(renderer.retire()).rejects.toThrow("native cleanup failed");
+  dispose.mockRestore();
+});
+
+
+it("reports asynchronous retirement cleanup failure without permitting the borrowed owner to release", async () => {
+  const { scene, renderer } = host();
+  const { started, release } = holdGraphInitialization();
+  const preparing = expect(renderer.prepare()).rejects.toThrow();
+  await started;
+  const taskRenderer = scene.objectRenderers[0]!;
+  const dispose = vi.spyOn(taskRenderer, "dispose").mockImplementation(() => { throw new Error("pending cleanup failed"); });
+  const retirement = expect(renderer.retire()).rejects.toThrow("pending cleanup failed");
+  release();
+  await preparing;
+  await retirement;
+  dispose.mockRestore();
+});
+
+
+it("releases replaced stack tasks without a frame and rejects stale facade disposal", async () => {
+  const { scene, camera, renderer } = host();
+  const library = new MaterialLibrary();
+  try {
+    const first = renderer.attachPostProcess({ scene, camera, library, stack: [], documentFor: () => null });
+    await renderer.prepare();
+    const old = scene.objectRenderers[0]!;
+    const second = renderer.attachPostProcess({ scene, camera, library, stack: [], documentFor: () => null });
+    expect(scene.objectRenderers).not.toContain(old);
+    await renderer.prepare();
+    const current = scene.objectRenderers[0]!;
+    first.dispose();
+    expect(scene.objectRenderers).toContain(current);
+    second.dispose();
+    expect(scene.objectRenderers).not.toContain(current);
+  } finally { await renderer.retire(); library.dispose(); }
+});
+
+
+it("keeps the native fallback alive while its shader warms after graph allocation is rejected", async () => {
+  const { scene, camera, engine, renderer } = host();
+  engine.getCaps().depthTextureExtension = true;
+  limitManagedRenderBytes(engine, 1);
+  const library = new MaterialLibrary();
+  const document = createDefaultMaterialDocument("Scene Color", "postProcess");
+  const probe = vi.spyOn(PostProcess.prototype, "isReady").mockReturnValue(false);
+  try {
+    renderer.attachPostProcess({ scene, camera, library, documentFor: () => document,
+      deviceBuffers: { sceneDepth: false, sceneNormal: false },
+      stack: [{ id: "pass", materialGuid: "color", enabled: true, order: 0 }] });
+    const preparing = renderer.prepare();
+    await vi.waitFor(() => expect(camera._postProcesses.filter(Boolean)).toHaveLength(1));
+    const warming = camera._postProcesses.find(Boolean);
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(camera._postProcesses.find(Boolean)).toBe(warming);
+    expect(renderer.isReady()).toBe(false);
+    probe.mockRestore();
+    await expect(preparing).resolves.toMatchObject({ path: "classic", reason: expect.stringContaining("reservation") });
+    renderer.invalidate();
+    await renderer.prepare();
+    expect(camera._postProcesses.find(Boolean)).not.toBe(warming);
+  } finally { probe.mockRestore(); await renderer.retire(); library.dispose(); }
 });

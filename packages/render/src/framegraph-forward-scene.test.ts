@@ -318,6 +318,7 @@ it("disposes task resources after a build failure and can prepare a new graph", 
   expect(scene.frameGraphs).toHaveLength(0);
   expect(scene.activeCamera).toBe(camera);
   record.mockRestore();
+  graph.invalidate();
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();

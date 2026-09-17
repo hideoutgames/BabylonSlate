@@ -2,7 +2,9 @@ import "./gltf-loader";
 import {
   ArcRotateCamera,
   Color4,
+  Constants,
   MeshBuilder,
+  NodeMaterialModes,
   RenderTargetTexture,
   Scene,
   Vector3,
@@ -11,7 +13,6 @@ import {
   type Material,
   type Mesh,
   type NodeMaterial,
-  type PostProcess,
 } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { MaterialPreviewMesh } from "@babylonslate/shader-graph";
@@ -27,6 +28,8 @@ import {
   visualHierarchyBoundingVectors,
 } from "./visual-meshes";
 import { installEngineDefaultMaterial } from "./default-material";
+import { OwnedPostProcess } from "./owned-post-process";
+import { PostProcessRetirement } from "./post-process-retirement";
 import { createPreviewLighting } from "./preview-lighting";
 import { previewMeshesReady } from "./preview-readiness";
 import { resolveSceneRenderingQuality } from "./render-settings";
@@ -104,6 +107,8 @@ export interface MaterialPreviewScene {
   applyPostProcess: (material: NodeMaterial | null) => void;
   applyParticleMaterial: (material: NodeMaterial | null) => void;
   dispose: () => void;
+  /** Confirmed native release of retired preview passes; rejects if release failed. */
+  whenReleased: () => Promise<void>;
 }
 
 /**
@@ -147,7 +152,8 @@ export function createMaterialPreviewScene(
 
   let mesh = createMaterialPreviewMesh(scene, options.mesh ?? "cube");
   aimPreviewCameraAtMesh(camera, mesh);
-  let postProcess: PostProcess | null = null;
+  let postProcess: OwnedPostProcess | null = null;
+  const postProcessRetirement = new PostProcessRetirement();
   let currentMaterial: Material | null = mesh.material;
   let particlePlane: Mesh | null = null;
   const disposeParticles = () => { particlePlane?.dispose(); particlePlane = null; mesh.setEnabled(true); };
@@ -156,13 +162,28 @@ export function createMaterialPreviewScene(
 
   const disposePostProcess = () => {
     if (!postProcess) return;
-    postProcess.dispose(camera);
+    const pass = postProcess;
     postProcess = null;
+    try {
+      pass.dispose(camera);
+    } finally {
+      // A fully released pass needs no tracking; a pending or failed release
+      // keeps the Scene quarantined until actual release is confirmed.
+      if (!pass.isReleased) postProcessRetirement.add(pass);
+    }
   };
 
   const disposeCustomContainer = () => {
     customContainer?.dispose();
     customContainer = null;
+  };
+
+  let released: Promise<void> | null = null;
+  const releasePreview = () => {
+    released ??= postProcessRetirement.whenReleased().then(() => {
+      if (!scene.isDisposed) scene.dispose();
+    });
+    return released;
   };
 
   const host: MaterialPreviewScene = {
@@ -216,7 +237,33 @@ export function createMaterialPreviewScene(
       disposePostProcess();
       if (!material) return;
       disposeParticles();
-      postProcess = material.createPostProcess(camera) ?? null;
+      // Same guard as NodeMaterial.createPostProcess: only post-process and
+      // SFE materials can author a camera pass.
+      if (
+        material.mode !== NodeMaterialModes.PostProcess &&
+        material.mode !== NodeMaterialModes.SFE
+      ) {
+        return;
+      }
+      const pass = new OwnedPostProcess(`${material.name}PostProcess`, "postprocess", {
+        camera,
+        engine: scene.getEngine(),
+        size: 1,
+        samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+        blockCompilation: true,
+        shaderLanguage: material.shaderLanguage,
+      });
+      try {
+        material.createEffectForPostProcess(pass);
+      } catch (error) {
+        try {
+          pass.dispose(camera);
+        } finally {
+          if (!pass.isReleased) postProcessRetirement.add(pass);
+        }
+        throw error;
+      }
+      postProcess = pass;
     },
     applyParticleMaterial: (material) => {
       disposeParticles();
@@ -233,7 +280,20 @@ export function createMaterialPreviewScene(
       disposeParticles();
       disposePostProcess();
       disposeCustomContainer();
-      scene.dispose();
+      // The preview Scene lives on the shared Engine: release it only after
+      // retired post-process passes confirm actual native release.
+      if (postProcessRetirement.releasedConfirmed) {
+        released = Promise.resolve();
+        scene.dispose();
+      } else {
+        void releasePreview().catch((error: unknown) => {
+          console.warn(`[render] Material preview scene is quarantined until actual release: ${String(error)}`);
+        });
+      }
+    },
+    whenReleased: () => {
+      host.dispose();
+      return releasePreview();
     },
   };
   if (

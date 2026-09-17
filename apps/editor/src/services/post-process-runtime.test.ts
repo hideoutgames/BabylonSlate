@@ -229,6 +229,9 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
         enabled: true,
       })),
     );
+    // The coordinator materializes the replaced stack's native passes on the
+    // next preparation, not synchronously inside setPostProcessStack.
+    await handle.prewarmSceneMaterials();
     expect(values()).toEqual([0.25, 0.8, 0.3]);
     expect({ scene, material }).toEqual(before);
   } finally {

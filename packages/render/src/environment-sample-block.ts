@@ -152,7 +152,7 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
     state.compilationString += `${lod}=clamp(${lod}*${prefilter}.y+${prefilter}.z,0.0,${params}.x);\n`;
     state.compilationString += `${state._declareLocalVar(sampled, NodeMaterialBlockConnectionPointTypes.Vector4)} = ${sample};\n`;
     state.compilationString += `${this.color.associatedVariableName} = ${sampled}.rgb;\n`;
-    state.compilationString += `if (${params}.y > 0.5) { ${this.color.associatedVariableName} = fromRGBD(${sampled}); } else if (${params}.z > 0.5) { ${this.color.associatedVariableName} = toLinearSpace(${sampled}.rgb); }\n#endif\n`;
+    state.compilationString += `if (${params}.y > 0.5) { ${this.color.associatedVariableName} = fromRGBD(${sampled}); } else if (${params}.z > 0.5) { ${this.color.associatedVariableName} = ${wgsl ? "toLinearSpaceVec3" : "toLinearSpace"}(${sampled}.rgb); }\n#endif\n`;
     return this;
   }
 }

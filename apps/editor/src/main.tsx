@@ -13,6 +13,34 @@ initializeCapacitorAudioLifecycle();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("scenePostProcessHostProof")
+) {
+  void import("./testing/scene-post-process-host-proof").then(({ createScenePostProcessHostProof }) => {
+    Object.assign(window, { __babylonslateScenePostProcessHostProof: createScenePostProcessHostProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("scenePostProcessCoordinatorProof")
+) {
+  void import("./testing/scene-post-process-coordinator-proof").then(({ runScenePostProcessCoordinatorProof }) => {
+    Object.assign(window, { __babylonslateScenePostProcessCoordinatorProof: runScenePostProcessCoordinatorProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("postProcessLifetimeProof")
+) {
+  void import("./testing/framegraph-post-process-lifetime-proof").then(({ runPostProcessLifetimeProof }) => {
+    Object.assign(window, { __babylonslatePostProcessLifetimeProof: runPostProcessLifetimeProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("framegraphGeometryProof")
+) {
+  void import("./testing/framegraph-geometry-proof").then(({ runFrameGraphGeometryProof }) => {
+    Object.assign(window, { __babylonslateFrameGraphGeometryProof: runFrameGraphGeometryProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("clusteredLightProof")
 ) {
   void import("./testing/clustered-light-proof").then(

@@ -1,5 +1,7 @@
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
+import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
+import type { ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
@@ -183,6 +185,7 @@ import {
   type PostProcessStackDiagnostic,
   type PostProcessStackInput,
 } from "./post-process-material";
+import { PostProcessRetirement } from "./post-process-retirement";
 import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
@@ -219,6 +222,13 @@ export interface EngineHandle {
   resourceCache: ResourceCache;
   scaling: HardwareScalingController;
   dispose: () => void;
+  /**
+   * Confirmed native release of every retired owner (native stack generations,
+   * world renderer, layer compositor). Resolves after `dispose()` once actual
+   * release is confirmed; rejects when release never confirmed and the shared
+   * owners are quarantined.
+   */
+  whenReleased: () => Promise<void>;
   resize: () => void;
   setSize: (width: number, height: number) => void;
   loadScene: (sceneData: SerializedScene) => void;
@@ -236,6 +246,7 @@ export interface EngineHandle {
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
   drawCalls: () => number;
   renderDiagnostics: () => RenderDiagnostics;
+  renderPathStatus: () => ResolvedRenderingPipeline;
   /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
   accountedGeometryBytes: () => number;
   /** Explicit tap pick (hover picking is disabled). */
@@ -374,6 +385,8 @@ export interface CreateEngineOptions {
   /** Optional fps cap. Play sessions pass project `playFrameCap` (default 60). */
   frameCap?: number;
   renderSettings?: RenderShadingSettings;
+  /** Plain scene-owned requested/effective selection, emitted only when it changes. */
+  onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
@@ -751,6 +764,7 @@ function initializeEngine(
   const worldRenderer = options.playMode && !presentRtt ? new SceneRenderCoordinator(scene) : null;
   onRollback(() => worldRenderer?.dispose());
   let disposed = false;
+  let releasedHandle: Promise<void> | null = null;
   let contextLost = false;
   let loadGeneration = 0;
   let worldLoading = false;
@@ -790,6 +804,9 @@ function initializeEngine(
     cancelPresentation(new Error("Scene construction failed."));
   });
   setSceneRenderSettings(scene, options.renderSettings ?? {});
+  const unsubscribeRenderPath = options.onRenderPathChanged
+    ? subscribeSceneRenderPath(scene, options.onRenderPathChanged) : () => {};
+  onRollback(unsubscribeRenderPath);
   configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
@@ -1063,24 +1080,39 @@ function initializeEngine(
   );
   const postProcessParameters = new PostProcessParameterState();
   let attachedStack: AttachedPostProcessStack | null = null;
-  onRollback(() => attachedStack?.dispose());
+  // Every retired native stack generation stays tracked until actual release,
+  // not just the one current at teardown.
+  const nativeRetirement = new PostProcessRetirement();
+  const retireAttachedStack = () => {
+    const stack = attachedStack;
+    attachedStack = null;
+    if (!stack) return;
+    try {
+      stack.dispose();
+    } finally {
+      nativeRetirement.add(stack);
+    }
+  };
+  onRollback(retireAttachedStack);
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
-    attachedStack?.dispose();
-    attachedStack = null;
+    retireAttachedStack();
     lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled) return;
     const camera = scene.activeCamera;
     if (!camera) return;
-    attachedStack = attachPostProcessStack({
+    const attach = worldRenderer
+      ? worldRenderer.attachPostProcess.bind(worldRenderer)
+      : attachPostProcessStack;
+    attachedStack = attach({
       scene,
       camera,
       library: materialLibrary,
       stack: postProcessParameters.effective(postProcessStack),
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale: resolveSceneRenderingQuality(scene).postprocessing.resolutionScale,
-      deviceBuffers: probePostProcessDeviceBuffers(scene, camera),
+      ...(worldRenderer ? {} : { deviceBuffers: probePostProcessDeviceBuffers(scene, camera) }),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
         options.onPostProcessDiagnostic?.(diagnostic);
@@ -1126,18 +1158,14 @@ function initializeEngine(
         engine,
         postProcessingEnabled: () => postProcessingEnabled,
         isLayerReady: (layerId) => layerLoads.get(layerId)?.ready !== false,
-        attachLayerPostProcess: (layer, stack) => {
-          return attachPostProcessStack({
+        attachLayerPostProcess: (layer, stack, renderer) => {
+          return renderer.attachPostProcess({
             scene: layer.scene,
             camera: layer.camera,
             library: materialLibrary,
             stack: normalizePostProcessStack(stack),
             resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
-            deviceBuffers: probePostProcessDeviceBuffers(
-              layer.scene,
-              layer.camera,
-            ),
             onDiagnostic: (diagnostic) => {
               lastPostProcessDiagnostics.push(diagnostic);
               options.onPostProcessDiagnostic?.(diagnostic);
@@ -1309,7 +1337,7 @@ function initializeEngine(
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
-    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
     postProcessParameters.clear();
     postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
     await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
@@ -1326,7 +1354,7 @@ function initializeEngine(
     loadGeneration += 1;
     worldRenderer?.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
-    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
     postProcessParameters.clear();
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -1801,12 +1829,13 @@ function initializeEngine(
     }
     try {
       const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
-      const drawOwner = (key: string, draw: () => boolean) => {
+      const drawOwner = (key: string, draw: () => boolean, fallback?: () => void) => {
         const pending = pendingPresentations.get(key);
         if (!pending) { draw(); return; }
         if (!presentationReady(pending)) {
           pending.rendered = false;
           pending.copied = false;
+          fallback?.();
           return;
         }
         if (pending.rendered || pending.submission) { draw(); return; }
@@ -1830,7 +1859,7 @@ function initializeEngine(
         return true;
       });
       else engine.clear(scene.clearColor, true, true, true);
-      sceneLayerCompositor?.render(presentingLayers, (layerId, draw) => drawOwner(`layer:${layerId}`, draw));
+      sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
       if (rttPresent) {
         const owners = [...pendingPresentations.entries()].filter(([, pending]) => pending.rendered);
         void rttPresent.blit().then(() => {
@@ -1986,6 +2015,7 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      unsubscribeRenderPath();
       loadGeneration += 1;
       cancelPresentation(new Error("Scene loading was disposed."));
       engine.onContextLostObservable.remove(contextLostObserver);
@@ -1996,19 +2026,35 @@ function initializeEngine(
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
-      worldRenderer?.dispose();
+      // Bounded cleanup reporting (`bounded`) stays separate from confirmed
+      // actual native release (`actual`): an uncertain report never proves a
+      // shared owner stopped being used.
+      const bounded: Promise<void>[] = [];
+      const actual: Promise<void>[] = [];
+      const track = (list: Promise<void>[], report: () => Promise<void> | void) => {
+        try {
+          const result = report();
+          if (result) list.push(result);
+        } catch (error) {
+          list.push(Promise.reject(error));
+        }
+      };
+      track(bounded, () => retireAttachedStack());
+      track(bounded, () => nativeRetirement.whenDisposed());
+      track(bounded, () => worldRenderer?.retire());
+      track(bounded, () => sceneLayerCompositor?.dispose());
+      track(actual, () => nativeRetirement.whenReleased());
+      track(actual, () => worldRenderer?.whenReleased());
+      track(actual, () => sceneLayerCompositor?.whenReleased());
+      const retired = Promise.all(bounded);
+      const released = Promise.all(actual).then(() => {});
+      releasedHandle = released;
       playFreeCamInput?.dispose();
-      playFreeCam?.dispose();
-      playViz?.dispose();
-      playDebugDraw?.dispose();
-      playCursor?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
       editor?.selection.dispose();
       editor?.sync.dispose();
-      debugOverlay?.dispose();
-      debugOverlay = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
@@ -2018,17 +2064,39 @@ function initializeEngine(
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
-      disposeSnapshotBinding(binding);
-      attachedStack?.dispose();
-      attachedStack = null;
-      materialLibrary.dispose();
-      resourceCache.clearClientTextures(scene.uid);
       audioService?.dispose();
-      particleService?.dispose();
-      sceneLayerCompositor?.dispose();
-      scene.dispose();
-      rttPresent?.dispose();
-      cacheBinding.releaseHandleRetains();
+      const releaseSceneResources = () => {
+        playFreeCam?.dispose();
+        playViz?.dispose();
+        playDebugDraw?.dispose();
+        playCursor?.dispose();
+        debugOverlay?.dispose();
+        debugOverlay = null;
+        disposeSnapshotBinding(binding);
+        materialLibrary.dispose();
+        resourceCache.clearClientTextures(scene.uid);
+        particleService?.dispose();
+        scene.dispose();
+        rttPresent?.dispose();
+        cacheBinding.releaseHandleRetains();
+      };
+      const reportRetirementFailure = (error: unknown) => {
+        console.warn(`[render] Scene resource cleanup report is uncertain: ${String(error)}`);
+      };
+      const reportReleaseFailure = (error: unknown) => {
+        console.warn(`[render] Scene resource cleanup is quarantined: ${String(error)}`);
+      };
+      if (!ownsEngine && (worldRenderer || sceneLayerCompositor || !nativeRetirement.releasedConfirmed)) {
+        // Pending native work may still borrow Scene, library and cache
+        // resources. Stop the view immediately, but release these owners only
+        // after actual release confirms; a rejected release quarantines them.
+        void retired.catch(reportRetirementFailure);
+        void released.then(releaseSceneResources).catch(reportReleaseFailure);
+      } else {
+        void retired.catch(reportRetirementFailure);
+        void released.catch(reportReleaseFailure);
+        releaseSceneResources();
+      }
       if (registeredView) {
         engine.unRegisterView(canvas);
         if (options.playMode) {
@@ -2040,6 +2108,7 @@ function initializeEngine(
         engine.dispose();
       }
     },
+    whenReleased: () => releasedHandle ?? Promise.resolve(),
     resize,
     setSize: (width: number, height: number) => {
       const nextWidth = Math.max(1, Math.floor(width));
@@ -2307,6 +2376,7 @@ function initializeEngine(
     }),
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
+    renderPathStatus: () => sceneRenderPathStatus(scene),
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
@@ -2387,7 +2457,7 @@ function initializeEngine(
       }
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
-      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
       applySerializedSceneEnvironment(scene, sceneData, {
         applyClearColor: true,
         assets: binding,
@@ -2402,7 +2472,7 @@ function initializeEngine(
         freezeEditorActiveMeshes(scene);
       scheduler.invalidate("asset");
     },
-    postProcessPassCount: () => attachedStack?.passes.length ?? 0,
+    postProcessPassCount: () => worldRenderer?.postProcessPassCount() ?? attachedStack?.passes.length ?? 0,
     sceneLayerScenes: () =>
       (sceneLayerCompositor?.sortedLayers() ?? []).map((layer) => ({
         layerId: layer.layerId,

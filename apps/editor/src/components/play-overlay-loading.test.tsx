@@ -32,7 +32,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function openPendingPlay() {
   const result: PlaySessionResult = {
     diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
-    textureCountAfter: 0, textureLeak: false, runtimeMode: "worker", lastTrace: null,
+    released: Promise.resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false }),
+    runtimeMode: "worker", lastTrace: null,
   };
   const stop = vi.fn(() => result);
   vi.mocked(startPlaySession).mockReturnValue({

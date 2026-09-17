@@ -1,6 +1,7 @@
-import { Camera, MeshBuilder, Matrix, NullEngine, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
+import { SceneRenderCoordinator } from "./scene-render-coordinator";
 
 describe("SceneLayerCompositor", () => {
   const engines: NullEngine[] = [];
@@ -9,6 +10,7 @@ describe("SceneLayerCompositor", () => {
     while (engines.length > 0) {
       engines.pop()?.dispose();
     }
+    vi.restoreAllMocks();
   });
 
   function world(): { engine: NullEngine; scene: Scene; compositor: SceneLayerCompositor } {
@@ -218,6 +220,195 @@ describe("SceneLayerCompositor", () => {
     compositor.setPostProcess("hud", []);
     expect(layer.camera.outputRenderTarget).toBeNull();
     expect(layer.scene.autoClear).toBe(false);
+  });
+
+  it("replaces layer targets with owned sampleable depth and waits for every retired graph before Scene disposal", async () => {
+    const { engine } = world();
+    engine.getCaps().depthTextureExtension = true;
+    // NullEngine has no native depth attachment driver. Keep the real RTT owner
+    // and complete only that boundary, as in the shadow allocation fixtures.
+    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
+      const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
+      const dimensions = typeof size === "number" ? { width: size, height: size } : size;
+      texture.width = texture.baseWidth = dimensions.width;
+      texture.height = texture.baseHeight = dimensions.height;
+      texture.format = options.depthTextureFormat ?? Constants.TEXTUREFORMAT_DEPTH24;
+      texture.isReady = true;
+      engine.getLoadedTexturesCache().push(texture);
+      return texture;
+    });
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({
+      engine,
+      attachLayerPostProcess: (_layer, _stack, renderer) => {
+        renderers.push(renderer);
+        return { dispose() {} };
+      },
+    });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const first = layer.camera.outputRenderTarget!;
+    expect(first.depthStencilTexture?.format).toBe(Constants.TEXTUREFORMAT_DEPTH24);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const retire = SceneRenderCoordinator.prototype.retire;
+    // Preserve native cancellation/disposal, holding only completion of one owner.
+    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(function (this: SceneRenderCoordinator) {
+      const retired = retire.call(this);
+      return this === renderers[0] ? retired.then(() => held) : retired;
+    });
+    const disposeFirst = vi.spyOn(first, "dispose");
+    const draw = vi.spyOn(layer.scene, "render");
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(first.getSize().width + 16);
+    compositor.resize();
+    const next = layer.camera.outputRenderTarget!;
+    expect(next).not.toBe(first);
+    expect(next.depthStencilTexture).not.toBe(first.depthStencilTexture);
+    expect(renderers[1]).not.toBe(renderers[0]);
+    expect(draw).not.toHaveBeenCalled();
+    expect(disposeFirst).not.toHaveBeenCalled();
+    compositor.remove("overlay");
+    const completed = compositor.dispose();
+    expect(compositor.layers()).toEqual([]);
+    expect(layer.scene.isDisposed).toBe(false);
+    await Promise.resolve();
+    expect(disposeFirst).not.toHaveBeenCalled();
+    release();
+    await completed;
+    expect(disposeFirst).toHaveBeenCalledOnce();
+    expect(layer.scene.isDisposed).toBe(true);
+  });
+
+  it("keeps the removed layer's Scene and target until actual release confirms", async () => {
+    const { engine } = world();
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({
+      engine,
+      attachLayerPostProcess: (_layer, _stack, renderer) => {
+        renderers.push(renderer);
+        return { dispose() {} };
+      },
+    });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const target = layer.camera.outputRenderTarget!;
+    const disposal = vi.spyOn(target, "dispose");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const whenReleased = SceneRenderCoordinator.prototype.whenReleased;
+    // Hold only the actual-release boundary; bounded cleanup still completes.
+    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockImplementation(function (this: SceneRenderCoordinator) {
+      return this === renderers[0] ? held : whenReleased.call(this);
+    });
+    compositor.remove("overlay");
+    await compositor.dispose();
+    await Promise.resolve();
+    expect(compositor.layers()).toEqual([]);
+    expect(layer.scene.isDisposed).toBe(false);
+    expect(disposal).not.toHaveBeenCalled();
+    release();
+    await compositor.whenReleased();
+    expect(disposal).toHaveBeenCalledOnce();
+    expect(layer.scene.isDisposed).toBe(true);
+  });
+
+  it("disposes the removed layer after actual release even when the bounded report is uncertain", async () => {
+    const { engine } = world();
+    const compositor = new SceneLayerCompositor({ engine });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const target = layer.camera.outputRenderTarget!;
+    const disposal = vi.spyOn(target, "dispose");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const retire = SceneRenderCoordinator.prototype.retire;
+    // Bounded reporting rejects as uncertain, but actual release still confirms.
+    vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(async function (this: SceneRenderCoordinator) {
+      await retire.call(this);
+      throw new Error("Native task cleanup failed.");
+    });
+    // Hold actual release so an uncertain bounded report cannot free the layer.
+    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockReturnValue(held);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    compositor.remove("overlay");
+    await expect(compositor.dispose()).rejects.toThrow(/retirement failed/);
+    expect(layer.scene.isDisposed).toBe(false);
+    release();
+    await compositor.whenReleased();
+    expect(disposal).toHaveBeenCalledOnce();
+    expect(layer.scene.isDisposed).toBe(true);
+  });
+
+  it("quarantines a removed layer's target and Scene when actual release never confirms", async () => {
+    const { engine } = world();
+    const compositor = new SceneLayerCompositor({ engine });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const target = layer.camera.outputRenderTarget!;
+    const disposal = vi.spyOn(target, "dispose");
+    const whenReleased = SceneRenderCoordinator.prototype.whenReleased;
+    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockImplementation(async function (this: SceneRenderCoordinator) {
+      await whenReleased.call(this);
+      throw new Error("Native release never confirmed.");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    compositor.remove("overlay");
+    // Bounded cleanup still completes; only the release boundary quarantines.
+    await compositor.dispose();
+    await expect(compositor.whenReleased()).rejects.toThrow();
+    expect(compositor.layers()).toEqual([]);
+    expect(layer.scene.isDisposed).toBe(false);
+    expect(disposal).not.toHaveBeenCalled();
+    expect(
+      warn.mock.calls.filter(([message]) => String(message).includes("quarantined")).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps only the last presented layer image while replacement graphs prepare without acknowledging it", async () => {
+    const { engine } = world();
+    // NullEngine omits the raw upload-ready flag that the real backends set.
+    // Preserve actual texture ownership and the production readiness checks.
+    const upload = engine.createRawTexture.bind(engine);
+    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+      const texture = upload(...args); texture.isReady = true; return texture;
+    });
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
+      renderers.push(renderer); return { dispose() {} };
+    } });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    await compositor.prepare("overlay", () => {});
+    await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
+    let acknowledged = false;
+    compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
+    expect(acknowledged).toBe(true);
+    const first = layer.camera.outputRenderTarget!;
+    const oldBlit = engine.scenes.find((scene) => scene.getMaterialByName("sceneLayerBlit:overlay"))!;
+    expect(oldBlit.getMaterialByName("sceneLayerBlit:overlay")!.needAlphaBlending()).toBe(true);
+    const disposeFirst = vi.spyOn(first, "dispose");
+    const fallbackDraw = vi.spyOn(oldBlit, "render");
+    compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
+    const unrendered = layer.camera.outputRenderTarget!;
+    const disposeUnrendered = vi.spyOn(unrendered, "dispose");
+    vi.spyOn(renderers[1]!, "render").mockReturnValue({ path: "classic", reason: "Waiting for native upload.", rendered: false, readyForPresentation: false });
+    compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
+    expect(acknowledged).toBe(false);
+    expect(fallbackDraw).toHaveBeenCalledOnce();
+    expect(disposeFirst).not.toHaveBeenCalled();
+    // A host pending-presentation gate may reject the new render before the
+    // draw closure runs. It must still be able to compose the retained image.
+    compositor.render(new Set(["overlay"]), (_id, _draw, fallback) => {
+      acknowledged = false;
+      fallback();
+    });
+    expect(acknowledged).toBe(false);
+    expect(fallbackDraw).toHaveBeenCalledTimes(2);
+    compositor.setPostProcess("overlay", [{ materialGuid: "third", enabled: true }]);
+    await vi.waitFor(() => { expect(disposeUnrendered).toHaveBeenCalledOnce(); });
+    expect(disposeFirst).not.toHaveBeenCalled();
+    await compositor.prepare("overlay", () => {});
+    await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
+    compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
+    expect(acknowledged).toBe(true);
+    await vi.waitFor(() => { expect(disposeFirst).toHaveBeenCalledOnce(); });
+    expect(fallbackDraw).toHaveBeenCalledTimes(2);
+    await compositor.dispose();
   });
 
   it("inflates 2DButton picks to touchMinTargetPx without changing the visual", () => {

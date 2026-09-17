@@ -56,6 +56,7 @@ describe("packed player backend lifetime", () => {
     };
     player = {
       ticks: () => 0,
+      rendering: () => null,
       visuals: () => [],
       meshMaterialNames: () => [],
       executeConsoleCommand: async () => ({ success: true, output: "" }),

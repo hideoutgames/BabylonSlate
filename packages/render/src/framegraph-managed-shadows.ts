@@ -58,6 +58,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     this.textureDependencies.set(owner, [...handles]);
     this.dependencies = new Set([...this.textureDependencies.values()].flat());
   }
+
   private boundCamera: Camera | undefined;
   private boundShadows: Array<{
     generator: ShadowGenerator;

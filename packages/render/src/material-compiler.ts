@@ -1,3 +1,4 @@
+import { registerClusteredSurfaceMaterial } from "./clustered-material-policy";
 import {
   AddBlock,
   BonesBlock,
@@ -28,7 +29,6 @@ import {
   VertexOutputBlock,
   ViewDirectionBlock,
   type Effect,
-  type PostProcess,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
   type NodeMaterialDefines,
@@ -55,8 +55,11 @@ import {
 } from "./material-block-registry";
 import {
   isDisposedGpuTexture,
+  isDisposedNodeMaterial,
   isEngineOwnedGpuTexture,
 } from "./gpu-resource-live";
+import { OwnedPostProcess } from "./owned-post-process";
+import { PostProcessRetirement } from "./post-process-retirement";
 import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
 import { installCelSurface } from "./cel-surface";
@@ -64,12 +67,15 @@ import { retainEnvironmentSample } from "./environment-lighting";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { SceneReflectionBlock } from "./scene-reflection-block";
 import { FlatNormalBlock } from "./flat-normal-block";
+import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 
 export interface CompileMaterialOptions {
+  /** Internal FrameGraph variant; shared resources are bound by its render pass. */
+  logicalSceneBuffers?: boolean;
   /** Editor-only single-quad preview; live particle systems retain Particle mode. */
   particlePreview?: boolean;
   scene: Scene;
@@ -91,6 +97,12 @@ export interface CompiledMaterial {
   resetParameter: (name: string) => boolean;
   /** Idempotent: disposes the material and every block it created. */
   dispose: () => void;
+  /**
+   * Confirmed native release of the material's owned compile-time passes.
+   * Disposes the material if needed, then resolves once the underlying
+   * NodeMaterial is actually released; rejects if release never confirmed.
+   */
+  whenReleased: () => Promise<void>;
 }
 
 export interface FailedMaterial {
@@ -206,7 +218,8 @@ export function compileMaterialPlan(
   const pendingTextures: Texture[] = [];
   const diagnostics: MaterialDiagnostic[] = [];
   const realized = new Map<string, BlockRealization>();
-  const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview };
+  const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
+    logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
   if (plan.operations.some((operation) => operation.nodeType === "input.worldPosition" || operation.nodeType === "input.cameraPosition")) {
     const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
     const zero = Vector3.Zero();
@@ -541,15 +554,25 @@ export function compileMaterialPlan(
   let shaderProbe: Mesh | null = null;
   let failedShaderEffect: Effect | null = null;
   material.onError = (effect) => { failedShaderEffect = effect; };
-  let shaderPostProcess: PostProcess | null = null;
+  let shaderPostProcess: OwnedPostProcess | null = null;
   let shaderParticles: ParticleSystem | null = null;
+  const shaderRetirement = new PostProcessRetirement();
   const finishShaderCheck = () => {
     if (shaderTimer !== undefined) clearTimeout(shaderTimer);
     shaderProbe?.dispose();
-    shaderPostProcess?.dispose();
+    if (shaderPostProcess) {
+      const pass = shaderPostProcess;
+      shaderPostProcess = null;
+      try {
+        pass.dispose();
+      } finally {
+        // An already-released pass confirms itself; only pending or failed
+        // releases keep the material quarantined until actual release.
+        if (!pass.isReleased) shaderRetirement.add(pass);
+      }
+    }
     shaderParticles?.dispose();
     shaderProbe = null;
-    shaderPostProcess = null;
     shaderParticles = null;
   };
   let settleBuild!: (errors: readonly MaterialDiagnostic[]) => void;
@@ -578,7 +601,17 @@ export function compileMaterialPlan(
           shaderProbe.setEnabled(false);
           shaderProbe.material = material;
         } else if (plan.domain === "postProcess") {
-          shaderPostProcess = material.createPostProcess(null, 1, undefined, scene.getEngine());
+          const pass = new OwnedPostProcess(`${options.name}PostProcess`, "postprocess", {
+            camera: null,
+            engine: scene.getEngine(),
+            size: 1,
+            samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+            blockCompilation: true,
+            shaderLanguage: material.shaderLanguage,
+          });
+          // Assign before effect creation so a throw still retires the pass.
+          shaderPostProcess = pass;
+          material.createEffectForPostProcess(pass);
         } else {
           shaderParticles = new ParticleSystem(`${options.name}_compileProbe`, 1, scene);
           material.createEffectForParticles(shaderParticles);
@@ -621,6 +654,7 @@ export function compileMaterialPlan(
       }
       buildState = "ready";
       if (cacheableShadowShape) registerCacheableShadowMaterial(material);
+      if (plan.domain === "surface" && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
       settleBuild([]);
     }
   });
@@ -725,6 +759,34 @@ export function compileMaterialPlan(
     material,
     options.resolveTexture,
   );
+  // The NodeMaterial stays quarantined until every owned compile-time pass
+  // confirms actual native release; a release failure keeps it alive.
+  let released: Promise<void> | null = null;
+  const disposeCompiled = () => {
+    if (disposed) return;
+    disposed = true;
+    finishShaderCheck();
+    if (buildState === "pending") {
+      buildState = "failed";
+      settleBuild([{ code: "material.compile.cancelled", message: "Material build was cancelled", severity: "error" }]);
+    }
+    material.onBuildErrorObservable.remove(errorObserver);
+    material.onBuildObservable.remove(buildObserver);
+    parameters.dispose();
+    for (const unsubscribe of loadObservers) unsubscribe();
+    detachEngineOwnedTextures(material);
+    if (shaderRetirement.releasedConfirmed) {
+      material.dispose(false, false);
+      released = Promise.resolve();
+    } else {
+      released = shaderRetirement.whenReleased().then(() => {
+        if (!isDisposedNodeMaterial(material, scene)) material.dispose(false, false);
+      });
+      void released.catch((error: unknown) => {
+        console.warn(`[render] Material "${options.name}" is quarantined until actual release: ${String(error)}`);
+      });
+    }
+  };
   return {
     ok: true,
     material,
@@ -733,20 +795,10 @@ export function compileMaterialPlan(
     setParameter: parameters.setParameter,
     getParameter: parameters.getParameter,
     resetParameter: parameters.resetParameter,
-    dispose: () => {
-      if (disposed) return;
-      disposed = true;
-      finishShaderCheck();
-      if (buildState === "pending") {
-        buildState = "failed";
-        settleBuild([{ code: "material.compile.cancelled", message: "Material build was cancelled", severity: "error" }]);
-      }
-      material.onBuildErrorObservable.remove(errorObserver);
-      material.onBuildObservable.remove(buildObserver);
-      parameters.dispose();
-      for (const unsubscribe of loadObservers) unsubscribe();
-      detachEngineOwnedTextures(material);
-      material.dispose(false, false);
+    dispose: disposeCompiled,
+    whenReleased: () => {
+      disposeCompiled();
+      return released ?? Promise.resolve();
     },
   };
 }
@@ -1126,7 +1178,8 @@ function attachSurfaceShading(
     asColor: boolean,
   ) => NodeMaterialConnectionPoint | null,
 ): NodeMaterialBlock {
-  const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
+  const fragment = new GeometrySurfaceOutputBlock(`${options.name}_fragment`);
+  connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${options.name}_geometryNormal`, false), created);
   created.push(fragment);
 
   const baseColor = outputPoint("baseColor", `${options.name}_baseColor`, true);

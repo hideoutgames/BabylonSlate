@@ -1,3 +1,4 @@
+import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import type { Camera, Scene } from "@babylonjs/core";
 import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
 import { isSceneFrameReady } from "./scene-perf";
@@ -26,9 +27,27 @@ export class SceneRenderCoordinator {
     this.graph = new ForwardSceneFrameGraph(scene);
   }
 
+  attachPostProcess(options: AttachPostProcessStackOptions): AttachedPostProcessStack {
+    return this.graph.attachPostProcess(options, () => this.invalidate());
+  }
+
+  postProcessPassCount(): number { return this.graph.postProcessPassCount(); }
+
+  async retire(): Promise<void> {
+    this.dispose();
+    await this.graph.retire();
+  }
+
+  /** Actual CPU/native release; never waits for an Engine presentation frame. */
+  async whenReleased(): Promise<void> {
+    this.dispose();
+    await this.graph.whenReleased();
+  }
+
   invalidate(): void {
     this.generation += 1;
     this.failure = undefined;
+    this.graph.invalidate();
   }
 
   /** No drawing: a resize or camera change restarts preparation within one deadline. */
@@ -108,8 +127,8 @@ export class SceneRenderCoordinator {
     if (!status.ready) this.requestPreparation();
     const result = this.graph.render(camera);
     const after = this.graph.readiness(camera);
-    return { ...result, rendered: true,
-      readyForPresentation: !this.pending && status.ready && after.ready && result.path === status.path && result.path === after.path };
+    return { ...result, rendered: result.rendered !== false,
+      readyForPresentation: result.rendered !== false && !this.pending && status.ready && after.ready && result.path === status.path && result.path === after.path };
   }
 
   dispose(): void {

@@ -4,6 +4,7 @@ import {
   Camera,
   Color3,
   Color4,
+  Constants,
   MeshBuilder,
   RenderTargetTexture,
   Scene,
@@ -25,6 +26,7 @@ import {
 import { installEngineDefaultMaterial } from "./default-material";
 import { isSceneFrameReady } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import {
   overlayCanvasToWorld,
@@ -55,6 +57,7 @@ export interface SceneLayerCompositorOptions {
   attachLayerPostProcess?: (
     layer: SceneLayerView,
     stack: SceneLayerPostProcessEntry[],
+    renderer: SceneRenderCoordinator,
   ) => Pick<AttachedPostProcessStack, "dispose"> & Partial<Pick<AttachedPostProcessStack, "setParameter">> | null;
 }
 
@@ -65,6 +68,9 @@ type LayerRecord = SceneLayerView & {
   blitMaterial: StandardMaterial | null;
   blitScene: Scene | null;
   parameters: PostProcessParameterState;
+  retirements: PostProcessRetirement;
+  presented: boolean;
+  fallback: { scene: Scene; release(): void } | null;
   attachedPostProcess: ReturnType<NonNullable<SceneLayerCompositorOptions["attachLayerPostProcess"]>>;
 };
 
@@ -80,6 +86,7 @@ export class SceneLayerCompositor {
   private readonly byId = new Map<string, LayerRecord>();
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
+  private readonly retiredLayers = new PostProcessRetirement();
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
@@ -120,10 +127,13 @@ export class SceneLayerCompositor {
       blitScene: null,
       attachedPostProcess: null,
       parameters: new PostProcessParameterState(),
+      retirements: new PostProcessRetirement(),
+      presented: false,
+      fallback: null,
     };
     this.bindHudCamera(layer);
     this.byId.set(command.layerId, layer);
-    this.rebuildPostProcess(layer);
+    this.rebuildPostProcess(layer, false);
     return layer;
   }
 
@@ -133,10 +143,20 @@ export class SceneLayerCompositor {
     for (const [slotId, id] of [...this.slotLayer]) {
       if (id === layerId) this.slotLayer.delete(slotId);
     }
-    layer.renderer.dispose();
-    this.releasePostProcess(layer);
-    layer.scene.dispose();
     this.byId.delete(layerId);
+    this.releaseFallback(layer);
+    this.releasePostProcess(layer);
+    // Bounded cleanup reports stay separate from actual release: the Scene is
+    // disposed only after every retired generation confirmed native release.
+    const reported = layer.retirements.whenDisposed();
+    const released = layer.retirements.whenReleased().then(() => { layer.scene.dispose(); });
+    this.retiredLayers.add({ whenDisposed: () => reported, whenReleased: () => released });
+    void reported.catch((error: unknown) => {
+      console.warn(`[render] SceneLayer ${layer.layerId} cleanup report is uncertain: ${String(error)}`);
+    });
+    void released.catch((error: unknown) => {
+      console.warn(`[render] SceneLayer ${layer.layerId} is quarantined until actual release: ${String(error)}`);
+    });
   }
 
   clear(): void {
@@ -222,7 +242,9 @@ export class SceneLayerCompositor {
       if (layer.rtt) {
         const width = Math.max(1, this.engine.getRenderWidth());
         const height = Math.max(1, this.engine.getRenderHeight());
-        layer.rtt.resize({ width, height });
+        const previous = layer.rtt.getSize();
+        if (previous.width !== width || previous.height !== height)
+          this.rebuildPostProcess(layer);
       }
     }
   }
@@ -236,7 +258,7 @@ export class SceneLayerCompositor {
     if (this.byId.get(layerId) !== layer) throw new Error("SceneLayer rendering preparation was superseded.");
   }
 
-  render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean) => void = (_id, render) => render()): void {
+  render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
     for (const layer of this.sortedLayers()) {
       if (!this.isLayerReady(layer.layerId) && !presentingLayers.has(layer.layerId)) continue;
       const record = layer as LayerRecord;
@@ -246,18 +268,29 @@ export class SceneLayerCompositor {
         if (record.rtt) {
           record.scene.autoClear = true;
           const result = record.renderer.render();
-          if (!result.rendered) return false;
-          readyForPresentation = result.readyForPresentation;
+          if (!result.rendered || !result.readyForPresentation || !record.blitScene || !isSceneFrameReady(record.blitScene)) {
+            this.blitFallback(record);
+            return false;
+          }
           this.blit(record);
+          readyForPresentation = isSceneFrameReady(record.blitScene);
+          if (readyForPresentation) {
+            record.presented = true;
+            this.releaseFallback(record);
+          }
         } else {
           record.scene.autoClear = false;
           record.scene.autoClearDepthAndStencil = true;
           const result = record.renderer.render();
-          if (!result.rendered) return false;
+          if (!result.rendered) {
+            this.blitFallback(record);
+            return false;
+          }
           readyForPresentation = result.readyForPresentation;
+          if (readyForPresentation) this.releaseFallback(record);
         }
         return readyForPresentation;
-      });
+      }, () => { this.blitFallback(record); });
     }
   }
 
@@ -437,9 +470,17 @@ export class SceneLayerCompositor {
     };
   }
 
-  dispose(): void {
+  dispose(): Promise<void> {
     this.clear();
+    const retired = this.retiredLayers.whenDisposed();
+    // Callers that own shared resources await this; ignored teardown still has
+    // its failures reported at the individual quarantined owner boundary.
+    void retired.catch(() => {});
+    return retired;
   }
+
+  /** Actual Scene/target release, including generations whose bounded wait failed. */
+  whenReleased(): Promise<void> { return this.retiredLayers.whenReleased(); }
 
   private bindHudCamera(layer: LayerRecord): void {
     layer.camera.parent = null;
@@ -468,9 +509,11 @@ export class SceneLayerCompositor {
     layer.camera.orthoRight = halfW;
   }
 
-  private rebuildPostProcess(layer: LayerRecord): void {
-    layer.renderer.invalidate();
-    this.releasePostProcess(layer);
+  private rebuildPostProcess(layer: LayerRecord, replaceRenderer = true): void {
+    if (replaceRenderer) {
+      this.releasePostProcess(layer, true);
+      layer.renderer = new SceneRenderCoordinator(layer.scene);
+    }
     const enabledStack = layer.parameters.effective(layer.postProcessStack).filter((entry) => entry.enabled);
     if (
       !this.postProcessingEnabled() ||
@@ -490,22 +533,73 @@ export class SceneLayerCompositor {
       false,
       true,
     );
+    // StandardMaterial only blends sampled alpha when the source advertises it.
+    // The layer clear is transparent; preserve world pixels outside its content.
+    layer.rtt.hasAlpha = true;
+    // The graph borrows both native attachments; the host retains their owner.
+    // Unsupported devices keep the coordinator's classic fallback available.
+    if (this.engine.getCaps().depthTextureExtension)
+      layer.rtt.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
     layer.camera.outputRenderTarget = layer.rtt;
     layer.scene.autoClear = true;
     layer.attachedPostProcess =
-      this.attachLayerPostProcess?.(layer, enabledStack) ?? null;
+      this.attachLayerPostProcess?.(layer, enabledStack, layer.renderer) ?? null;
     this.prepareBlit(layer);
   }
 
-  private releasePostProcess(layer: LayerRecord): void {
-    layer.attachedPostProcess?.dispose();
+  private releasePostProcess(layer: LayerRecord, keepPresented = false): void {
+    const attached = layer.attachedPostProcess;
+    const renderer = layer.renderer;
+    const rtt = layer.rtt;
+    const blitScene = layer.blitScene;
+    let outputReleased = Promise.resolve();
+    if (keepPresented && layer.presented && rtt && blitScene) {
+      this.releaseFallback(layer);
+      outputReleased = new Promise<void>((release) => {
+        layer.fallback = { scene: blitScene, release };
+      });
+    }
+    layer.presented = false;
     layer.attachedPostProcess = null;
     layer.camera.outputRenderTarget = null;
-    layer.rtt?.dispose();
     layer.rtt = null;
-    layer.blitScene?.dispose();
     layer.blitScene = null;
     layer.blitMaterial = null;
+    const reports: Promise<void>[] = [];
+    try { attached?.dispose(); } catch (error) { reports.push(Promise.reject(error)); }
+    try { reports.push(renderer.retire()); } catch (error) { reports.push(Promise.reject(error)); }
+    // Bounded cleanup reporting stays separate from confirmed actual release:
+    // an uncertain report never proves the target stopped being used.
+    const reported = Promise.all(reports).then(
+      () => {},
+      (error: unknown) => {
+        throw new Error(`SceneLayer ${layer.layerId} retirement failed`, { cause: error });
+      },
+    );
+    const released = (async () => {
+      await renderer.whenReleased();
+      await outputReleased;
+      blitScene?.dispose();
+      rtt?.dispose();
+    })();
+    layer.retirements.add({ whenDisposed: () => reported, whenReleased: () => released });
+    void reported.catch((error: unknown) => {
+      console.warn(`[render] SceneLayer ${layer.layerId} cleanup report is uncertain: ${String(error)}`);
+    });
+    void released.catch((error: unknown) => {
+      console.warn(`[render] SceneLayer ${layer.layerId} target is quarantined until actual release: ${String(error)}`);
+    });
+  }
+
+  private releaseFallback(layer: LayerRecord): void {
+    layer.fallback?.release();
+    layer.fallback = null;
+  }
+
+  private blitFallback(layer: LayerRecord): void {
+    const fallback = layer.fallback;
+    if (fallback && !fallback.scene.isDisposed && isSceneFrameReady(fallback.scene))
+      fallback.scene.render();
   }
 
   private prepareBlit(layer: LayerRecord): void {

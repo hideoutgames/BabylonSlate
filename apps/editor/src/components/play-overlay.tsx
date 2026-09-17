@@ -164,8 +164,11 @@ function emptyPlayResult(): PlaySessionResult {
     diagnostics: [],
     droppedDiagnostics: 0,
     textureCountBefore: 0,
-    textureCountAfter: 0,
-    textureLeak: false,
+    released: Promise.resolve({
+      textureCountAfter: 0,
+      textureLeak: false,
+      quarantined: false,
+    }),
     runtimeMode: "in-process",
     lastTrace: null,
   };
@@ -674,10 +677,12 @@ export function PlayOverlay({
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
         tickIndex: () => number;
+        rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
       };
     };
     host.__babylonslatePlayTest = {
       actorPositions: () => sessionRef.current?.lastActorPositions() ?? [],
+      rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
       whenModelsReady: () =>
