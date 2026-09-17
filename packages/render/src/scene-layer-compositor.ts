@@ -146,12 +146,16 @@ export class SceneLayerCompositor {
     this.byId.delete(layerId);
     this.releaseFallback(layer);
     this.releasePostProcess(layer);
-    // Scene.dispose also disposes every owned RTT, including previous generations.
+    // Bounded cleanup reports stay separate from actual release: the Scene is
+    // disposed only after every retired generation confirmed native release.
+    const reported = layer.retirements.whenDisposed();
     const released = layer.retirements.whenReleased().then(() => { layer.scene.dispose(); });
-    const reported = Promise.all([layer.retirements.whenDisposed(), released]).then(() => {});
     this.retiredLayers.add({ whenDisposed: () => reported, whenReleased: () => released });
     void reported.catch((error: unknown) => {
-      console.warn(`[render] SceneLayer ${layer.layerId} cleanup is quarantined until actual release: ${String(error)}`);
+      console.warn(`[render] SceneLayer ${layer.layerId} cleanup report is uncertain: ${String(error)}`);
+    });
+    void released.catch((error: unknown) => {
+      console.warn(`[render] SceneLayer ${layer.layerId} is quarantined until actual release: ${String(error)}`);
     });
   }
 
@@ -564,15 +568,25 @@ export class SceneLayerCompositor {
     const reports: Promise<void>[] = [];
     try { attached?.dispose(); } catch (error) { reports.push(Promise.reject(error)); }
     try { reports.push(renderer.retire()); } catch (error) { reports.push(Promise.reject(error)); }
+    // Bounded cleanup reporting stays separate from confirmed actual release:
+    // an uncertain report never proves the target stopped being used.
+    const reported = Promise.all(reports).then(
+      () => {},
+      (error: unknown) => {
+        throw new Error(`SceneLayer ${layer.layerId} retirement failed`, { cause: error });
+      },
+    );
     const released = (async () => {
       await renderer.whenReleased();
       await outputReleased;
       blitScene?.dispose();
       rtt?.dispose();
     })();
-    const reported = Promise.all([...reports, released]).then(() => {});
     layer.retirements.add({ whenDisposed: () => reported, whenReleased: () => released });
     void reported.catch((error: unknown) => {
+      console.warn(`[render] SceneLayer ${layer.layerId} cleanup report is uncertain: ${String(error)}`);
+    });
+    void released.catch((error: unknown) => {
       console.warn(`[render] SceneLayer ${layer.layerId} target is quarantined until actual release: ${String(error)}`);
     });
   }

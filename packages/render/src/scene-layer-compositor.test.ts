@@ -278,23 +278,86 @@ describe("SceneLayerCompositor", () => {
     expect(layer.scene.isDisposed).toBe(true);
   });
 
-  it("quarantines a removed layer's target and Scene when graph cleanup is uncertain", async () => {
+  it("keeps the removed layer's Scene and target until actual release confirms", async () => {
+    const { engine } = world();
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({
+      engine,
+      attachLayerPostProcess: (_layer, _stack, renderer) => {
+        renderers.push(renderer);
+        return { dispose() {} };
+      },
+    });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const target = layer.camera.outputRenderTarget!;
+    const disposal = vi.spyOn(target, "dispose");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const whenReleased = SceneRenderCoordinator.prototype.whenReleased;
+    // Hold only the actual-release boundary; bounded cleanup still completes.
+    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockImplementation(function (this: SceneRenderCoordinator) {
+      return this === renderers[0] ? held : whenReleased.call(this);
+    });
+    compositor.remove("overlay");
+    await compositor.dispose();
+    await Promise.resolve();
+    expect(compositor.layers()).toEqual([]);
+    expect(layer.scene.isDisposed).toBe(false);
+    expect(disposal).not.toHaveBeenCalled();
+    release();
+    await compositor.whenReleased();
+    expect(disposal).toHaveBeenCalledOnce();
+    expect(layer.scene.isDisposed).toBe(true);
+  });
+
+  it("disposes the removed layer after actual release even when the bounded report is uncertain", async () => {
     const { engine } = world();
     const compositor = new SceneLayerCompositor({ engine });
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
     const target = layer.camera.outputRenderTarget!;
     const disposal = vi.spyOn(target, "dispose");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
     const retire = SceneRenderCoordinator.prototype.retire;
+    // Bounded reporting rejects as uncertain, but actual release still confirms.
     vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(async function (this: SceneRenderCoordinator) {
       await retire.call(this);
       throw new Error("Native task cleanup failed.");
     });
+    // Hold actual release so an uncertain bounded report cannot free the layer.
+    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockReturnValue(held);
     vi.spyOn(console, "warn").mockImplementation(() => {});
     compositor.remove("overlay");
     await expect(compositor.dispose()).rejects.toThrow(/retirement failed/);
+    expect(layer.scene.isDisposed).toBe(false);
+    release();
+    await compositor.whenReleased();
+    expect(disposal).toHaveBeenCalledOnce();
+    expect(layer.scene.isDisposed).toBe(true);
+  });
+
+  it("quarantines a removed layer's target and Scene when actual release never confirms", async () => {
+    const { engine } = world();
+    const compositor = new SceneLayerCompositor({ engine });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const target = layer.camera.outputRenderTarget!;
+    const disposal = vi.spyOn(target, "dispose");
+    const whenReleased = SceneRenderCoordinator.prototype.whenReleased;
+    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockImplementation(async function (this: SceneRenderCoordinator) {
+      await whenReleased.call(this);
+      throw new Error("Native release never confirmed.");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    compositor.remove("overlay");
+    // Bounded cleanup still completes; only the release boundary quarantines.
+    await compositor.dispose();
+    await expect(compositor.whenReleased()).rejects.toThrow();
     expect(compositor.layers()).toEqual([]);
     expect(layer.scene.isDisposed).toBe(false);
     expect(disposal).not.toHaveBeenCalled();
+    expect(
+      warn.mock.calls.filter(([message]) => String(message).includes("quarantined")).length,
+    ).toBeGreaterThan(0);
   });
 
   it("keeps only the last presented layer image while replacement graphs prepare without acknowledging it", async () => {
