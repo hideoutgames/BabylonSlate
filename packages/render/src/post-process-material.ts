@@ -162,7 +162,11 @@ export function attachPostProcessStack(
     probePostProcessDeviceBuffers(options.scene, options.camera);
   const hadDepth = Boolean(depthRendererFor(options.scene, options.camera));
   const hadPrePass = Boolean(options.scene.prePassRenderer);
+  // Acquired instances that no pass owns yet; a thrown constructor must return
+  // every one so the library does not keep a live material for a dead stack.
+  const pendingAcquired = new Set<{ materialGuid: string; instanceKey: string }>();
 
+  try {
   for (const entry of entries) {
     if (!entry.enabled) continue;
     const document = options.documentFor(entry.materialGuid);
@@ -204,6 +208,7 @@ export function attachPostProcessStack(
       });
       continue;
     }
+    pendingAcquired.add(instance);
     const needsDepth = compiled.plan.bufferRequirements.sceneDepth;
     for (const [name, value] of Object.entries(entry.parameters ?? {})) {
       if (!options.library.setParameter(options.scene, entry.materialGuid, name, value, instance))
@@ -228,6 +233,7 @@ export function attachPostProcessStack(
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
+        pendingAcquired.delete(instance);
         options.library.release(options.scene, entry.materialGuid, instance);
         continue;
       }
@@ -241,6 +247,7 @@ export function attachPostProcessStack(
           materialGuid: entry.materialGuid,
           code: "material.capability",
         });
+        pendingAcquired.delete(instance);
         options.library.release(options.scene, entry.materialGuid, instance);
         continue;
       }
@@ -256,16 +263,40 @@ export function attachPostProcessStack(
         blockCompilation: true,
         shaderLanguage: compiled.material.shaderLanguage,
       });
+      // The deferred-build path of createEffectForPostProcess only writes this
+      // once the build finishes; owners need the source synchronously.
+      pass.nodeMaterialSource = compiled.material;
       compiled.material.createEffectForPostProcess(pass);
+      pendingAcquired.delete(instance);
       passes.push(pass);
       owned.push({ pass, instance });
       acquired.set(entry.id!, instance);
     } catch (error) {
+      pendingAcquired.delete(instance);
       if (pass) retirePass({ pass, instance });
       else options.library.release(options.scene, entry.materialGuid, instance);
       report(options, { materialGuid: entry.materialGuid, code: "material.postProcess",
         message: `Post-process material "${document.name}" could not create its pass: ${String(error)}` });
     }
+  }
+  } catch (error) {
+    // Roll back the partially built stack: retire every created pass, return
+    // every acquired reference no pass owns, and drop renderers this call held.
+    for (const record of owned.splice(0)) {
+      try { retirePass(record); } catch { /* keep unwinding the rest */ }
+    }
+    for (const instance of pendingAcquired) {
+      try { options.library.release(options.scene, instance.materialGuid, instance); } catch { /* keep unwinding */ }
+    }
+    pendingAcquired.clear();
+    acquired.clear();
+    passes.length = 0;
+    try {
+      if (depthHeld) options.scene.disableDepthRenderer(options.camera);
+      if (prePassHeld) options.scene.disablePrePassRenderer();
+    } catch { /* the original error still propagates */ }
+    signalDisposed();
+    throw error;
   }
 
   let disposed = false;

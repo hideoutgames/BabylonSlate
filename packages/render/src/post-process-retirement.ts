@@ -34,6 +34,15 @@ export class PostProcessRetirement {
     if (this.releaseFailed) throw this.releaseError;
   }
 
+  /**
+   * Synchronous check: every tracked actual release has confirmed. False while
+   * a release is pending or after a release failure, so dependents can decide
+   * between immediate cleanup and quarantine without awaiting.
+   */
+  get releasedConfirmed(): boolean {
+    return this.released.size === 0 && !this.releaseFailed;
+  }
+
   private track(work: Promise<void>, pending: Set<Promise<void>>, fail: (error: unknown) => void): void {
     pending.add(work);
     void work.then(

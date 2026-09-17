@@ -702,4 +702,51 @@ describe("post-process stack", () => {
     expect(diagnostics[0]?.nodeId).toBe("n");
     expect(diagnostics[0]?.message).toContain("Scene Normal");
   });
+
+  it("rolls back every acquired pass and held renderer when construction throws mid-stack", () => {
+    const { preview, library } = host();
+    const failure = new Error("Injected acquisition failure");
+    const realAcquire = library.acquire.bind(library);
+    let acquisitions = 0;
+    vi.spyOn(library, "acquire").mockImplementation((...args) => {
+      acquisitions += 1;
+      if (acquisitions === 2) throw failure;
+      return realAcquire(...args);
+    });
+    const release = vi.spyOn(library, "release");
+    const disableDepth = vi.spyOn(preview.scene, "disableDepthRenderer");
+    expect(() =>
+      attachPostProcessStack({
+        scene: preview.scene,
+        camera: preview.camera,
+        library,
+        stack: [
+          { id: "depth", materialGuid: "depth", enabled: true, order: 0 },
+          { id: "boom", materialGuid: "boom", enabled: true, order: 1 },
+        ],
+        documentFor: (guid) =>
+          guid === "depth"
+            ? depthSamplingDocument()
+            : createDefaultMaterialDocument("Boom", "postProcess"),
+        deviceBuffers: { sceneDepth: true, sceneNormal: false },
+      }),
+    ).toThrow(failure);
+    expect(preview.camera._postProcesses.filter(Boolean)).toEqual([]);
+    expect(preview.scene.getEngine().postProcesses).toEqual([]);
+    // The first entry's pass was retired and its library instance released.
+    expect(
+      preview.scene.materials.filter((material) => material.name === "material:depth"),
+    ).toHaveLength(0);
+    expect(release).toHaveBeenCalledWith(
+      preview.scene,
+      "depth",
+      expect.objectContaining({ materialGuid: "depth" }),
+    );
+    // The depth renderer this stack enabled is not leaked.
+    expect(disableDepth).toHaveBeenCalledWith(preview.camera);
+    const depthMap = (
+      preview.scene as { _depthRenderer?: Record<number, unknown> }
+    )._depthRenderer;
+    expect(depthMap?.[preview.camera.uniqueId]).toBeUndefined();
+  });
 });
