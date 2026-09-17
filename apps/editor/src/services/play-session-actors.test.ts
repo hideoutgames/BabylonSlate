@@ -74,6 +74,7 @@ describe.each(["worker", "in-process"] as const)(
         prewarmSceneMaterials: () => Promise.resolve(),
         presentFirstFrame: options.presentFirstFrame ?? (() => Promise.resolve()),
         dispose() {},
+        whenReleased: () => Promise.resolve(),
       } as unknown as ReturnType<typeof createEngine>);
 
       let runtime!: RuntimeDriver;
