@@ -432,13 +432,20 @@ after culling and before surfaces, then the authored pass chain and final copy.
 Actual graph-owned InternalTextures reconcile the declared replacement peak after
 build, including every scaled pass output and aliased attachment. Entry-ID setters,
 getters and resets address only that owner's Material instances. Teardown disposes
-task services, then the caller-owned graph, then defers the reservation release.
+task services and the caller-owned graph. The owner's `whenDisposed()` reports
+bounded task-owned Effect/Material cleanup; `whenReleased()` confirms actual native
+release, including completion after a reported deadline. The caller retains its
+host Scene, library and output target until actual release. Neither signal waits
+for a GPU frame, so a paused Engine can retire the host. `releaseAfterGraphDisposal()`
+waits for actual task release and then the managed GPU destruction drain. Uncertain
+native cleanup keeps the reservation held until release is confirmed.
 This helper does not select a production render path or own a scene render loop.
 
 These are conservative policy allowances, not measured VRAM or A16 performance.
-The ledger covers managed shadow attachments and cluster mask/data textures only;
-proxy geometry/UBOs, material caches, effects, reflection targets, transition copies
-and separate authoring GPU contexts remain outside this ledger. Eight fragment
+The ledger covers managed shadow attachments, cluster mask/data textures and
+explicitly leased graph render targets. Proxy geometry/UBOs, material caches,
+effects, unmanaged reflection targets or transition copies, and separate authoring
+GPU contexts remain outside this ledger. Eight fragment
 samplers remain conservative legacy shadow headroom; PCSS costs two shadow
 samplers and other supported filters one. This does not qualify every combined
 material/cluster sampler layout. Enabled native Clear Coat, Anisotropy, Iridescence,

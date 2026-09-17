@@ -210,6 +210,8 @@ export class ScenePostProcessGraph {
   private committed: ManagedRenderResource[] | null = null;
   private initialized = false;
   private tasksDisposed = false;
+  private retirement: Promise<void> | null = null;
+  private taskRelease: Promise<void> | null = null;
   private released: Promise<void> | null = null;
   get estimatedBytes(): number {
     return this.recipe.estimatedBytes;
@@ -421,6 +423,31 @@ export class ScenePostProcessGraph {
     this.tasksDisposed = true;
     this.entries.clear();
   }
+  /** Bounded CPU/native cleanup result. A rejection is not proof of release. */
+  whenDisposed(): Promise<void> {
+    if (!this.tasksDisposed)
+      return Promise.reject(
+        new Error(
+          "Dispose post-process tasks before awaiting their retirement.",
+        ),
+      );
+    this.retirement ??= Promise.all(
+      this.postProcessTasks.map((task) => task.whenDisposed()),
+    ).then(() => {});
+    return this.retirement;
+  }
+  /** Confirmed CPU/native release, including cleanup after a reported deadline.
+   * A paused Engine need not drain GPU work before the caller retires its host. */
+  whenReleased(): Promise<void> {
+    if (!this.tasksDisposed)
+      return Promise.reject(
+        new Error("Dispose post-process tasks before awaiting their release."),
+      );
+    this.taskRelease ??= Promise.all(
+      this.postProcessTasks.map((task) => task.whenReleased()),
+    ).then(() => {});
+    return this.taskRelease;
+  }
   /** Caller must dispose its FrameGraph after disposeTasks and before this call.
    * Uncertain graph cleanup must retain the lease by not calling this method. */
   releaseAfterGraphDisposal(): Promise<void> {
@@ -428,9 +455,11 @@ export class ScenePostProcessGraph {
       throw new Error(
         "Dispose post-process tasks before releasing their graph lease.",
       );
-    this.released ??= releaseManagedRenderLeaseAfterDisposal(
-      this.options.frameGraph.scene.getEngine(),
-      this.lease,
+    this.released ??= this.whenReleased().then(() =>
+      releaseManagedRenderLeaseAfterDisposal(
+        this.options.frameGraph.scene.getEngine(),
+        this.lease,
+      ),
     );
     return this.released;
   }

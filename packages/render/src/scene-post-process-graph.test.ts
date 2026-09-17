@@ -23,9 +23,9 @@ import {
   limitManagedRenderBytes,
   managedRenderReservations,
 } from "./managed-render-resources";
-const cleanup: Array<() => void> = [];
-afterEach(() => {
-  while (cleanup.length) cleanup.pop()!();
+const cleanup: Array<() => void | Promise<void>> = [];
+afterEach(async () => {
+  while (cleanup.length) await cleanup.pop()!();
   vi.restoreAllMocks();
 });
 
@@ -172,14 +172,20 @@ function host(bytes?: number) {
   const graph = new FrameGraph(scene);
   let owned: ScenePostProcessGraph | null = null;
   const callerTasks: FrameGraphTask[] = [];
-  const retire = async () => {
+  const disposeGraph = () => {
     owned?.disposeTasks();
     for (const task of callerTasks.splice(0)) task.dispose();
     graph.dispose();
-    if (owned) await owned.releaseAfterGraphDisposal();
   };
-  cleanup.push(() => {
-    void retire();
+  const retire = async () => {
+    disposeGraph();
+    if (owned) {
+      await owned.whenDisposed();
+      await owned.releaseAfterGraphDisposal();
+    }
+  };
+  cleanup.push(async () => {
+    if (!engine.isDisposed) await retire();
     library.dispose();
     scene.dispose();
     engine.dispose();
@@ -224,7 +230,17 @@ function host(bytes?: number) {
     graph.addTask(present);
     callerTasks.push(present);
   };
-  return { engine, scene, camera, graph, library, create, connect, retire };
+  return {
+    engine,
+    scene,
+    camera,
+    graph,
+    library,
+    create,
+    connect,
+    retire,
+    disposeGraph,
+  };
 }
 function successful(
   result: ReturnType<typeof createScenePostProcessGraph>,
@@ -445,3 +461,79 @@ it("retains a partial construction owner and refuses a stale plan without alloca
   });
   expect(changed).not.toHaveBeenCalled();
 });
+
+it.each(["released", "uncertain"] as const)(
+  "retains the graph reservation through %s task retirement independently of GPU frame drain",
+  async (outcome) => {
+    const h = host(2048);
+    const plan = prepareScenePostProcessPlan(
+      h.library,
+      [{ id: "one", materialGuid: "one", enabled: true, order: 0 }],
+      () => document(),
+    );
+    const owner = successful(h.create(plan));
+    h.connect(owner);
+    await h.graph.buildAsync();
+    owner.reconcile();
+    const task = owner.postProcessTasks[0]!;
+    const nativeRetirement = task.whenDisposed.bind(task);
+    const nativeRelease = task.whenReleased.bind(task);
+    let resolveNative!: () => void;
+    let rejectNative!: (error: Error) => void;
+    const native = new Promise<void>((resolve, reject) => {
+      resolveNative = resolve;
+      rejectNative = reject;
+    });
+    let confirmRelease!: () => void;
+    const confirmed = new Promise<void>((resolve) => {
+      confirmRelease = resolve;
+    });
+    // Keep the real task disposal, but control its asynchronous native boundary.
+    vi.spyOn(task, "whenDisposed").mockImplementation(() =>
+      nativeRetirement().then(() => native),
+    );
+    vi.spyOn(task, "whenReleased").mockImplementation(() =>
+      nativeRelease().then(() => confirmed),
+    );
+    Object.defineProperty(h.engine, "isWebGPU", { get: () => true });
+    h.disposeGraph();
+    const cpu = owner.whenDisposed();
+    const actual = owner.whenReleased();
+    const gpu = owner.releaseAfterGraphDisposal();
+    void cpu.catch(() => {});
+    void gpu.catch(() => {});
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      h.engine.endFrame();
+      expect(managedRenderReservations(h.engine).reservedBytes).toBeGreaterThan(
+        0,
+      );
+      expect(beginManagedRenderAllocation(h.engine, 2048)).toBeUndefined();
+      if (outcome === "uncertain") {
+        rejectNative(new Error("Native retirement deadline"));
+        await expect(cpu).rejects.toThrow("Native retirement deadline");
+        h.engine.endFrame();
+        expect(
+          managedRenderReservations(h.engine).reservedBytes,
+        ).toBeGreaterThan(0);
+        expect(beginManagedRenderAllocation(h.engine, 2048)).toBeUndefined();
+      } else {
+        resolveNative();
+        await cpu;
+      }
+      confirmRelease();
+      await actual;
+      expect(managedRenderReservations(h.engine).reservedBytes).toBeGreaterThan(
+        0,
+      );
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      h.engine.endFrame();
+      await gpu;
+      expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
+    } finally {
+      resolveNative();
+      confirmRelease();
+      h.engine.dispose();
+    }
+  },
+);
