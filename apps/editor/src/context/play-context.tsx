@@ -1291,15 +1291,19 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       if (result.diagnostics.length > 0) {
         setReportOpen(true);
       }
-      const leakNote = result.textureLeak ? " LEAK" : "";
       appendLog(
-        `Play ended (${result.runtimeMode}; textures ${result.textureCountBefore}→${result.textureCountAfter}${leakNote})`,
+        `Play ended (${result.runtimeMode}; textures ${result.textureCountBefore}→pending)`,
       );
-      if (result.textureLeak) {
+      void result.released.then(({ textureCountAfter, textureLeak }) => {
         appendLog(
-          `Texture leak detected: ${result.textureCountBefore} → ${result.textureCountAfter}`,
+          `Play textures ${result.textureCountBefore}→${textureCountAfter}`,
         );
-      }
+        if (textureLeak) {
+          appendLog(
+            `Texture leak detected: ${result.textureCountBefore} → ${textureCountAfter}`,
+          );
+        }
+      });
       if (result.lastTrace) {
         void openRecordedTrace(result.lastTrace);
       }

@@ -284,9 +284,17 @@ export interface PlaySessionResult {
   diagnostics: SessionReportEntry[];
   droppedDiagnostics: number;
   textureCountBefore: number;
-  textureCountAfter: number;
-  /** True when Play left more GPU textures than it started with. */
-  textureLeak: boolean;
+  /**
+   * Settles after the shared-Engine teardown confirms actual release, then
+   * measures the texture cache. `quarantined` is true when release never
+   * confirmed; the promise never rejects.
+   */
+  released: Promise<{
+    textureCountAfter: number;
+    /** True when Play left more GPU textures than it started with. */
+    textureLeak: boolean;
+    quarantined: boolean;
+  }>;
   /** Which runtime host was used. */
   runtimeMode: "worker" | "in-process";
   liveObjectCounts?: { meshes: number; textures: number };
@@ -1164,19 +1172,32 @@ export function startPlaySession(options: {
       worker?.terminate();
       const liveAfter = handle.liveObjectCounts();
       handle.dispose();
-      const textureCountAfter = sharedEngine.getLoadedTexturesCache().length;
-      const textureLeak = textureCountAfter > textureCountBefore;
-      if (textureLeak) {
-        console.error(
-          `[play] texture cache grew ${textureCountBefore} → ${textureCountAfter}`,
-        );
-      }
+      // Shared-Engine teardown defers Scene/library release until actual
+      // native release confirms; measure the texture cache only then. A
+      // rejected release quarantines the owners — retained textures are not a
+      // leak, and the render layer already warns.
+      const released = handle
+        .whenReleased()
+        .then(
+          () => false,
+          () => true,
+        )
+        .then((quarantined) => {
+          const textureCountAfter =
+            sharedEngine.getLoadedTexturesCache().length;
+          const textureLeak = textureCountAfter > textureCountBefore;
+          if (textureLeak && !quarantined) {
+            console.error(
+              `[play] texture cache grew ${textureCountBefore} → ${textureCountAfter}`,
+            );
+          }
+          return { textureCountAfter, textureLeak, quarantined };
+        });
       stopResult = {
         diagnostics: sessionDiagnostics,
         droppedDiagnostics,
         textureCountBefore,
-        textureCountAfter,
-        textureLeak,
+        released,
         runtimeMode,
         liveObjectCounts: liveAfter,
         lastTrace: recordedTrace ?? runtime?.stopTrace() ?? null,

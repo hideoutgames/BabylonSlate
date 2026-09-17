@@ -164,8 +164,11 @@ function emptyPlayResult(): PlaySessionResult {
     diagnostics: [],
     droppedDiagnostics: 0,
     textureCountBefore: 0,
-    textureCountAfter: 0,
-    textureLeak: false,
+    released: Promise.resolve({
+      textureCountAfter: 0,
+      textureLeak: false,
+      quarantined: false,
+    }),
     runtimeMode: "in-process",
     lastTrace: null,
   };
