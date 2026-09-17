@@ -23,6 +23,8 @@ import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
+import { MaterialLibrary } from "./material-library";
+import { OwnedPostProcess } from "./owned-post-process";
 import { prewarmSceneMaterials } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import * as sceneWork from "./scene-work";
@@ -555,7 +557,9 @@ describe("Play createEngine view", () => {
     vi.spyOn(handle.scene.defaultMaterial, "forceCompilationAsync").mockReturnValue(
       new Promise((resolve) => { finishCompile = resolve; }),
     );
-    const warming = expect(handle.prewarmSceneMaterials()).rejects.toThrow("cancelled");
+    // Shared-engine teardown defers scene disposal, so warming aborts through
+    // the handle's loading-generation check instead of scene.isDisposed.
+    const warming = expect(handle.prewarmSceneMaterials()).rejects.toThrow("superseded or disposed");
     const frame = expect(handle.presentFirstFrame()).rejects.toThrow("disposed");
     handle.dispose();
     finishCompile();
@@ -1388,6 +1392,90 @@ describe("Play createEngine view", () => {
     expect(engine.isDisposed).toBe(false);
   });
 
+  it("keeps shared Scene and MaterialLibrary owners until a held native release confirms", async () => {
+    const engine = sharedEngine();
+    const document = createDefaultMaterialDocument("Blur", "postProcess");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      materialDocuments: new Map([["pp", document]]),
+    });
+    handles.push(handle);
+    // Editor handles seed the default scene, which owns the post-process stack.
+    handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
+    expect(pass).toBeInstanceOf(OwnedPostProcess);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(pass, "isReleased", "get").mockReturnValue(false);
+    vi.spyOn(pass, "whenReleased").mockReturnValue(held);
+    const disposeLibrary = vi.spyOn(MaterialLibrary.prototype, "dispose");
+    const stopped = vi.spyOn(engine, "stopRenderLoop");
+    handle.dispose();
+    expect(stopped).toHaveBeenCalled();
+    expect(handle.scene.isDisposed).toBe(false);
+    expect(disposeLibrary).not.toHaveBeenCalled();
+    release();
+    await handle.whenReleased();
+    await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
+    expect(disposeLibrary).toHaveBeenCalled();
+    expect(engine.isDisposed).toBe(false);
+  });
+
+  it("awaits a rendering-quality replaced post-process generation at shared teardown", async () => {
+    const engine = sharedEngine();
+    const document = createDefaultMaterialDocument("Blur", "postProcess");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      materialDocuments: new Map([["pp", document]]),
+    });
+    handles.push(handle);
+    handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    const retired = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
+    expect(retired).toBeInstanceOf(OwnedPostProcess);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(retired, "isReleased", "get").mockReturnValue(false);
+    vi.spyOn(retired, "whenReleased").mockReturnValue(held);
+    // A postprocessing resolutionScale change rebuilds the stack generation;
+    // the first override only establishes the quality baseline.
+    handle.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.5 } });
+    handle.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.25 } });
+    expect(handle.postProcessPassCount()).toBe(1);
+    expect(handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1)).not.toBe(retired);
+    handle.dispose();
+    expect(handle.scene.isDisposed).toBe(false);
+    release();
+    await handle.whenReleased();
+    await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
+    expect(engine.isDisposed).toBe(false);
+  });
+
+  it("quarantines shared Scene owners when actual release never confirms", async () => {
+    const engine = sharedEngine();
+    const document = createDefaultMaterialDocument("Blur", "postProcess");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      materialDocuments: new Map([["pp", document]]),
+    });
+    handles.push(handle);
+    handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
+    expect(pass).toBeInstanceOf(OwnedPostProcess);
+    vi.spyOn(pass, "isReleased", "get").mockReturnValue(false);
+    vi.spyOn(pass, "whenReleased").mockRejectedValue(new Error("Native release never confirmed."));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    handle.dispose();
+    await expect(handle.whenReleased()).rejects.toThrow();
+    expect(handle.scene.isDisposed).toBe(false);
+    expect(
+      warn.mock.calls.filter(([message]) => String(message).includes("quarantined")),
+    ).toHaveLength(1);
+    expect(engine.isDisposed).toBe(false);
+  });
+
   it("routes current-owner entry writes into independent instances and replays disabled passes after rebuild", async () => {
     const engine = postProcessGraphEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
@@ -1924,7 +2012,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 
-  it("attaches the authored stack when postProcessingEnabled is omitted", () => {
+  it("attaches the authored stack when postProcessingEnabled is omitted", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
@@ -1935,10 +2023,13 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
+    // Play routes the stack through the render coordinator; passes/tasks are
+    // instantiated once preparation selects the graph or native path.
+    await handle.prewarmSceneMaterials();
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
-  it("skips the authored stack when the local gate is off, then restores it", () => {
+  it("skips the authored stack when the local gate is off, then restores it", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
@@ -1950,8 +2041,10 @@ describe("Play createEngine view", () => {
       ]),
     });
     handles.push(handle);
+    await handle.prewarmSceneMaterials();
     expect(handle.postProcessPassCount()).toBe(0);
     handle.setPostProcessingEnabled(true);
+    await handle.prewarmSceneMaterials();
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
     handle.setPostProcessingEnabled(false);
     expect(handle.postProcessPassCount()).toBe(0);

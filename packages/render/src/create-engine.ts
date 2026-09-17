@@ -185,6 +185,7 @@ import {
   type PostProcessStackDiagnostic,
   type PostProcessStackInput,
 } from "./post-process-material";
+import { PostProcessRetirement } from "./post-process-retirement";
 import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
@@ -221,6 +222,13 @@ export interface EngineHandle {
   resourceCache: ResourceCache;
   scaling: HardwareScalingController;
   dispose: () => void;
+  /**
+   * Confirmed native release of every retired owner (native stack generations,
+   * world renderer, layer compositor). Resolves after `dispose()` once actual
+   * release is confirmed; rejects when release never confirmed and the shared
+   * owners are quarantined.
+   */
+  whenReleased: () => Promise<void>;
   resize: () => void;
   setSize: (width: number, height: number) => void;
   loadScene: (sceneData: SerializedScene) => void;
@@ -756,6 +764,7 @@ function initializeEngine(
   const worldRenderer = options.playMode && !presentRtt ? new SceneRenderCoordinator(scene) : null;
   onRollback(() => worldRenderer?.dispose());
   let disposed = false;
+  let releasedHandle: Promise<void> | null = null;
   let contextLost = false;
   let loadGeneration = 0;
   let worldLoading = false;
@@ -1071,12 +1080,24 @@ function initializeEngine(
   );
   const postProcessParameters = new PostProcessParameterState();
   let attachedStack: AttachedPostProcessStack | null = null;
-  onRollback(() => attachedStack?.dispose());
+  // Every retired native stack generation stays tracked until actual release,
+  // not just the one current at teardown.
+  const nativeRetirement = new PostProcessRetirement();
+  const retireAttachedStack = () => {
+    const stack = attachedStack;
+    attachedStack = null;
+    if (!stack) return;
+    try {
+      stack.dispose();
+    } finally {
+      nativeRetirement.add(stack);
+    }
+  };
+  onRollback(retireAttachedStack);
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
-    attachedStack?.dispose();
-    attachedStack = null;
+    retireAttachedStack();
     lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled) return;
     const camera = scene.activeCamera;
@@ -2005,24 +2026,28 @@ function initializeEngine(
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
-      const retirements: Promise<void>[] = [];
-      try {
-        attachedStack?.dispose();
-      } catch (error) {
-        retirements.push(Promise.reject(error));
-      }
-      attachedStack = null;
-      try {
-        if (worldRenderer) retirements.push(worldRenderer.retire());
-      } catch (error) {
-        retirements.push(Promise.reject(error));
-      }
-      try {
-        if (sceneLayerCompositor) retirements.push(sceneLayerCompositor.dispose());
-      } catch (error) {
-        retirements.push(Promise.reject(error));
-      }
-      const retired = Promise.all(retirements);
+      // Bounded cleanup reporting (`bounded`) stays separate from confirmed
+      // actual native release (`actual`): an uncertain report never proves a
+      // shared owner stopped being used.
+      const bounded: Promise<void>[] = [];
+      const actual: Promise<void>[] = [];
+      const track = (list: Promise<void>[], report: () => Promise<void> | void) => {
+        try {
+          const result = report();
+          if (result) list.push(result);
+        } catch (error) {
+          list.push(Promise.reject(error));
+        }
+      };
+      track(bounded, () => retireAttachedStack());
+      track(bounded, () => worldRenderer?.retire());
+      track(bounded, () => sceneLayerCompositor?.dispose());
+      track(actual, () => nativeRetirement.whenReleased());
+      track(actual, () => worldRenderer?.whenReleased());
+      track(actual, () => sceneLayerCompositor?.whenReleased());
+      const retired = Promise.all(bounded);
+      const released = Promise.all(actual).then(() => {});
+      releasedHandle = released;
       playFreeCamInput?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
@@ -2055,14 +2080,20 @@ function initializeEngine(
         cacheBinding.releaseHandleRetains();
       };
       const reportRetirementFailure = (error: unknown) => {
+        console.warn(`[render] Scene resource cleanup report is uncertain: ${String(error)}`);
+      };
+      const reportReleaseFailure = (error: unknown) => {
         console.warn(`[render] Scene resource cleanup is quarantined: ${String(error)}`);
       };
-      if (!ownsEngine && (worldRenderer || sceneLayerCompositor)) {
-        // Pending graph work may still borrow Scene, library and cache resources.
-        // Stop the view immediately, but release these owners only after it settles.
-        void retired.then(releaseSceneResources).catch(reportRetirementFailure);
+      if (!ownsEngine && (worldRenderer || sceneLayerCompositor || !nativeRetirement.releasedConfirmed)) {
+        // Pending native work may still borrow Scene, library and cache
+        // resources. Stop the view immediately, but release these owners only
+        // after actual release confirms; a rejected release quarantines them.
+        void retired.catch(reportRetirementFailure);
+        void released.then(releaseSceneResources).catch(reportReleaseFailure);
       } else {
         void retired.catch(reportRetirementFailure);
+        void released.catch(reportReleaseFailure);
         releaseSceneResources();
       }
       if (registeredView) {
@@ -2076,6 +2107,7 @@ function initializeEngine(
         engine.dispose();
       }
     },
+    whenReleased: () => releasedHandle ?? Promise.resolve(),
     resize,
     setSize: (width: number, height: number) => {
       const nextWidth = Math.max(1, Math.floor(width));
