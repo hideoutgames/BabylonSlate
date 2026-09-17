@@ -26,6 +26,7 @@ import {
 import { installEngineDefaultMaterial } from "./default-material";
 import { isSceneFrameReady } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import {
   overlayCanvasToWorld,
@@ -67,7 +68,7 @@ type LayerRecord = SceneLayerView & {
   blitMaterial: StandardMaterial | null;
   blitScene: Scene | null;
   parameters: PostProcessParameterState;
-  retirements: Set<Promise<void>>;
+  retirements: PostProcessRetirement;
   presented: boolean;
   fallback: { scene: Scene; release(): void } | null;
   attachedPostProcess: ReturnType<NonNullable<SceneLayerCompositorOptions["attachLayerPostProcess"]>>;
@@ -85,7 +86,7 @@ export class SceneLayerCompositor {
   private readonly byId = new Map<string, LayerRecord>();
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
-  private readonly retiredLayers = new Set<Promise<void>>();
+  private readonly retiredLayers = new PostProcessRetirement();
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
@@ -126,7 +127,7 @@ export class SceneLayerCompositor {
       blitScene: null,
       attachedPostProcess: null,
       parameters: new PostProcessParameterState(),
-      retirements: new Set(),
+      retirements: new PostProcessRetirement(),
       presented: false,
       fallback: null,
     };
@@ -146,12 +147,12 @@ export class SceneLayerCompositor {
     this.releaseFallback(layer);
     this.releasePostProcess(layer);
     // Scene.dispose also disposes every owned RTT, including previous generations.
-    const retired = Promise.all([...layer.retirements]).then(() => { layer.scene.dispose(); });
-    this.retiredLayers.add(retired);
-    void retired.then(
-      () => { this.retiredLayers.delete(retired); },
-      (error: unknown) => { console.warn(`[render] SceneLayer ${layer.layerId} cleanup is quarantined: ${String(error)}`); },
-    );
+    const released = layer.retirements.whenReleased().then(() => { layer.scene.dispose(); });
+    const reported = Promise.all([layer.retirements.whenDisposed(), released]).then(() => {});
+    this.retiredLayers.add({ whenDisposed: () => reported, whenReleased: () => released });
+    void reported.catch((error: unknown) => {
+      console.warn(`[render] SceneLayer ${layer.layerId} cleanup is quarantined until actual release: ${String(error)}`);
+    });
   }
 
   clear(): void {
@@ -467,12 +468,15 @@ export class SceneLayerCompositor {
 
   dispose(): Promise<void> {
     this.clear();
-    const retired = Promise.all([...this.retiredLayers]).then(() => {});
+    const retired = this.retiredLayers.whenDisposed();
     // Callers that own shared resources await this; ignored teardown still has
     // its failures reported at the individual quarantined owner boundary.
     void retired.catch(() => {});
     return retired;
   }
+
+  /** Actual Scene/target release, including generations whose bounded wait failed. */
+  whenReleased(): Promise<void> { return this.retiredLayers.whenReleased(); }
 
   private bindHudCamera(layer: LayerRecord): void {
     layer.camera.parent = null;
@@ -557,22 +561,20 @@ export class SceneLayerCompositor {
     layer.rtt = null;
     layer.blitScene = null;
     layer.blitMaterial = null;
-    const failures: unknown[] = [];
-    try { attached?.dispose(); } catch (error) { failures.push(error); }
-    let pending: Promise<void>;
-    try { pending = renderer.retire(); } catch (error) { failures.push(error); pending = Promise.resolve(); }
-    const retirement = (async () => {
-      try { await pending; } catch (error) { failures.push(error); }
-      if (failures.length) throw new AggregateError(failures, "SceneLayer graph retirement failed.");
+    const reports: Promise<void>[] = [];
+    try { attached?.dispose(); } catch (error) { reports.push(Promise.reject(error)); }
+    try { reports.push(renderer.retire()); } catch (error) { reports.push(Promise.reject(error)); }
+    const released = (async () => {
+      await renderer.whenReleased();
       await outputReleased;
       blitScene?.dispose();
       rtt?.dispose();
     })();
-    layer.retirements.add(retirement);
-    void retirement.then(
-      () => { layer.retirements.delete(retirement); },
-      (error: unknown) => { console.warn(`[render] SceneLayer ${layer.layerId} target is quarantined: ${String(error)}`); },
-    );
+    const reported = Promise.all([...reports, released]).then(() => {});
+    layer.retirements.add({ whenDisposed: () => reported, whenReleased: () => released });
+    void reported.catch((error: unknown) => {
+      console.warn(`[render] SceneLayer ${layer.layerId} target is quarantined until actual release: ${String(error)}`);
+    });
   }
 
   private releaseFallback(layer: LayerRecord): void {
