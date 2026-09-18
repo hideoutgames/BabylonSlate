@@ -10,10 +10,18 @@ export interface RenderingPipelineSettings {
   gpuBackend: GpuBackend;
 }
 
-/** Scenes and temporary view/session preferences cannot replace the project Engine. */
+/** A non-persistent game-wide session request; it cannot replace the project Engine. */
 export type RenderPathOverrides = Partial<
   Pick<RenderingPipelineSettings, "renderPath">
 >;
+
+/** Last engine-reported render path status, broadcast to the session runtime. */
+export interface RenderPathStatus {
+  requested: RenderPath;
+  effective: "forward" | "clusteredForward";
+  gpuBackend: "webgl2" | "webgpu";
+  limits: string[];
+}
 
 export function isRenderPath(value: unknown): value is RenderPath {
   return RENDER_PATHS.includes(value as RenderPath);
@@ -69,16 +77,12 @@ export type ClusteredRenderingAvailability =
  */
 export function resolveRenderingPipeline(
   project?: Partial<RenderingPipelineSettings>,
-  scene?: RenderPathOverrides,
-  local?: RenderPathOverrides,
   session?: RenderPathOverrides,
   backend?: { gpuBackend: "webgl2" | "webgpu"; reason?: string },
   clustered?: ClusteredRenderingAvailability,
 ): ResolvedRenderingPipeline {
   const requested = {
     ...normalizeRenderingPipeline(project),
-    ...normalizeRenderPathOverrides(scene),
-    ...normalizeRenderPathOverrides(local),
     ...normalizeRenderPathOverrides(session),
   };
   const limits: string[] = [];
