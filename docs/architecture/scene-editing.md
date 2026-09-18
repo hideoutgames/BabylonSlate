@@ -80,7 +80,7 @@ Panels never mutate selection independently — they consume `useSceneEditing()`
 
 Every scene Details / outliner / viewport mutation routes through `applySceneChange` → `diffSceneCommands` → the undo stack. Notable command types:
 
-Optional Scene settings, such as the Render Path override, reset by removing their key. The diff records removals as well as additions so Reset, Undo, Redo, and journal recovery preserve inheritance without changing unrelated settings.
+Optional Scene settings, such as the sparse shadow overrides, reset by removing their key. The diff records removals as well as additions so Reset, Undo, Redo, and journal recovery preserve inheritance without changing unrelated settings.
 
 Notable command types:
 

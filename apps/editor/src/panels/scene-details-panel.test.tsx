@@ -977,35 +977,13 @@ it("hides scene CEL overrides in PBR and persists only explicitly overridden fie
 });
 
 
-it("starts Rendering closed and resets only the Scene path to live project inheritance", () => {
+it("exposes no Scene Render Path control; the path is project-wide only", () => {
   harness.render.renderPath = "auto";
-  scene().settings.shadowOverrides = { distance: 80 };
-  const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-  const disclosure = screen.getByRole("button", { name: "Rendering" });
-  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-  expect(harness.applySceneChange).not.toHaveBeenCalled();
-  fireEvent.click(disclosure);
-  expect((screen.getByTestId("scene-render-path") as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByTestId("scene-render-path").textContent).toContain("Auto");
-  expect(screen.queryByTestId("project-gpu-backend")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Override Render Path" }));
-  harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
-  expect(scene().settings.renderPath).toBe("auto");
-  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-  harness.render.renderPath = "clusteredForward";
-  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-  expect(screen.getByTestId("scene-render-path").textContent).toContain("Auto");
-  fireEvent.click(screen.getByRole("button", { name: "Reset Render Path To Project Settings" }));
-  harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
-  expect(scene().settings).not.toHaveProperty("renderPath");
-  expect(scene().settings.shadowOverrides).toEqual({ distance: 80 });
-  view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-  expect(screen.getByTestId("scene-render-path").textContent).toContain("Clustered Forward");
-  fireEvent.click(disclosure);
-  harness.applySceneChange.mockClear();
+  render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  expect(screen.queryByRole("button", { name: "Rendering" })).toBeNull();
+  expect(screen.queryByTestId("scene-render-path")).toBeNull();
+  expect(screen.queryByTestId("project-render-path")).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "Render Path" } });
-  expect(screen.getByRole("button", { name: "Rendering" }).getAttribute("aria-expanded")).toBe("true");
-  fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "" } });
-  expect(screen.getByRole("button", { name: "Rendering" }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByTestId("scene-render-path")).toBeNull();
   expect(harness.applySceneChange).not.toHaveBeenCalled();
 });

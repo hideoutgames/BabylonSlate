@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultScene, DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
+import { createDefaultScene, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline } from "@babylonslate/core";
 import { exportGame } from "@babylonslate/exporter";
 import * as rendering from "@babylonslate/render";
 import * as runtimes from "@babylonslate/runtime";
@@ -61,6 +61,7 @@ async function fixture() {
     applySceneEnvironment: vi.fn(), resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
     playVisualStates: () => [], playMeshMaterialNames: () => [], isFreeCamEnabled: () => false,
+    renderPathStatus: () => resolveRenderingPipeline(game.manifest.render),
     unlockAudio: async () => {},
     scheduler: { invalidate: vi.fn(), acquireObstruction: () => () => {}, stats: () => ({ renderedFps: 0 }) },
   };
@@ -89,6 +90,10 @@ describe("player startup and Stop ownership", () => {
     const onStopped = vi.fn();
     const session = await startPlayerWithBackend({ game, canvas, onStopped });
     sessions.push(session);
+    expect(rendering.createEngine).toHaveBeenCalledWith(
+      canvas,
+      expect.objectContaining({ renderSettings: game.manifest.render }),
+    );
     const worker = TestWorker.instances[0]!;
     const staleMessage = worker.onmessage!;
     input().ring.drain();

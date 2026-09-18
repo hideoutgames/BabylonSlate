@@ -2,7 +2,7 @@ import { normalizeCelShadingOverrides } from "./cel-shading";
 import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
-import { normalizeRenderPathOverrides, type RenderPath } from "./render-path";
+
 
 /**
  * Scene document schema (v4): actors, components and scene settings.
@@ -103,8 +103,6 @@ export interface SceneCameraBounds2D {
 }
 
 export interface SceneSettings {
-  /** Missing fields inherit the project path; the GPU backend is project-wide. */
-  renderPath?: RenderPath;
   shadowOverrides?: import("./shadows").ShadowOverrides;
   /** Absent CEL fields inherit from Project Settings. Inactive in PBR mode. */
   celShading?: import("./cel-shading").CelShadingOverrides;
@@ -465,7 +463,6 @@ export function normalizeSceneSettings(
       ? source.physicsWorld
       : defaults.physicsWorld;
   return {
-    ...normalizeRenderPathOverrides(source),
     celShading: normalizeCelShadingOverrides(source.celShading),
     shadowOverrides: normalizeShadowOverrides(source.shadowOverrides),
     environmentColor: asNumberTuple3(

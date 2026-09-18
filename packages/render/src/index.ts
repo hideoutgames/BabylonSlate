@@ -96,3 +96,4 @@ export { createBackendEngineSession, type BackendEngineSession, type BackendEngi
 export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";
 
 export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
+export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";

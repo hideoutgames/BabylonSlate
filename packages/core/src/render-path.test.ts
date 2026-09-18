@@ -82,42 +82,38 @@ describe("rendering pipeline contract", () => {
     });
   });
 
-  it("preserves sparse scene paths on reopen and restores precedence after reset", () => {
+  it("drops a stored legacy Scene renderPath key on normalize and round-trip", () => {
+    const scene = normalizeScene({
+      settings: { renderPath: "forward", environmentColor: [0.2, 0.3, 0.4] },
+    });
+    expect(scene.settings).not.toHaveProperty("renderPath");
+    expect(scene.settings.environmentColor).toEqual([0.2, 0.3, 0.4]);
+    const reopened = normalizeScene(JSON.parse(JSON.stringify(scene)));
+    expect(reopened.settings).not.toHaveProperty("renderPath");
+    expect(
+      normalizeScene({ settings: { renderPath: "invalid" } }).settings,
+    ).not.toHaveProperty("renderPath");
+  });
+
+  it("lets a session request override the project and resumes it when cleared", () => {
     const project: RenderingPipelineSettings = {
       renderPath: "clusteredForward",
       gpuBackend: "webgl2",
     };
-    const scene = normalizeScene({
-      settings: { renderPath: "forward", environmentColor: [0.2, 0.3, 0.4] },
-    });
-    const reopened = normalizeScene(JSON.parse(JSON.stringify(scene)));
-    expect(reopened.settings.renderPath).toBe("forward");
-    expect(reopened.settings.environmentColor).toEqual([0.2, 0.3, 0.4]);
     expect(
-      resolveRenderingPipeline(project, reopened.settings).requested.renderPath,
+      resolveRenderingPipeline(project, { renderPath: "forward" }).requested
+        .renderPath,
     ).toBe("forward");
-    const local = { renderPath: "auto" as const };
-    const session = { renderPath: "clusteredForward" as const };
     expect(
-      resolveRenderingPipeline(project, reopened.settings, local, session)
-        .requested.renderPath,
-    ).toBe("clusteredForward");
-    expect(
-      resolveRenderingPipeline(project, reopened.settings, local).requested
+      resolveRenderingPipeline(project, { renderPath: "auto" }).requested
         .renderPath,
     ).toBe("auto");
-    delete reopened.settings.renderPath;
     expect(
-      resolveRenderingPipeline(project, reopened.settings).requested.renderPath,
+      resolveRenderingPipeline(project, {}).requested.renderPath,
     ).toBe("clusteredForward");
-    project.renderPath = "auto";
     expect(
-      resolveRenderingPipeline(project, reopened.settings).requested.renderPath,
-    ).toBe("auto");
-    expect(
-      normalizeScene({ settings: { renderPath: "invalid" } }).settings,
-    ).not.toHaveProperty("renderPath");
-    expect(normalizeScene({}).settings).not.toHaveProperty("renderPath");
+      resolveRenderingPipeline(project).requested.renderPath,
+    ).toBe("clusteredForward");
   });
 
   it("resolves Auto deterministically without treating Auto itself as unavailable", () => {
@@ -162,16 +158,12 @@ describe("rendering pipeline contract", () => {
     const active = resolveRenderingPipeline(
       requested,
       undefined,
-      undefined,
-      undefined,
       { gpuBackend: "webgpu" },
     );
     expect(active.effective.gpuBackend).toBe("webgpu");
     expect(active.limits).toEqual([]);
     const fallback = resolveRenderingPipeline(
       requested,
-      undefined,
-      undefined,
       undefined,
       { gpuBackend: "webgl2", reason: "Material uses Custom GLSL." },
     );
@@ -185,8 +177,6 @@ describe("rendering pipeline contract", () => {
       const result = resolveRenderingPipeline(
         { renderPath },
         undefined,
-        undefined,
-        undefined,
         { gpuBackend: "webgl2" },
         available,
       );
@@ -198,8 +188,6 @@ describe("rendering pipeline contract", () => {
       resolveRenderingPipeline(
         { renderPath: "auto" },
         undefined,
-        undefined,
-        undefined,
         { gpuBackend: "webgl2" },
         { supported: true, autoEligible: false },
       ).effective.renderPath,
@@ -207,8 +195,6 @@ describe("rendering pipeline contract", () => {
     expect(
       resolveRenderingPipeline(
         { renderPath: "clusteredForward" },
-        undefined,
-        undefined,
         undefined,
         { gpuBackend: "webgl2" },
         { supported: true, autoEligible: false },
@@ -221,8 +207,6 @@ describe("rendering pipeline contract", () => {
       const result = resolveRenderingPipeline(
         { renderPath },
         undefined,
-        undefined,
-        undefined,
         { gpuBackend: "webgl2" },
         { supported: false, reason: "CEL light order is interleaved." },
       );
@@ -233,8 +217,6 @@ describe("rendering pipeline contract", () => {
     expect(
       resolveRenderingPipeline(
         { renderPath: "clusteredForward" },
-        undefined,
-        undefined,
         undefined,
         { gpuBackend: "webgpu" },
         { supported: true, autoEligible: true },

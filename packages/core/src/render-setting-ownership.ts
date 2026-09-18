@@ -60,7 +60,6 @@ export const PROJECT_RENDER_SETTING_OWNERS = {
 
 /** Scene content owns feature intent; only shadow cost overrides enter scalability. */
 export const SCENE_RENDER_SETTING_OWNERS = {
-  renderPath: "independent",
   shadowOverrides: "shadows",
   celShading: "independent",
   environmentColor: "independent",

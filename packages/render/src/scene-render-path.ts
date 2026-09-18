@@ -18,6 +18,7 @@ import { clusteredLightCapabilities } from "./clustered-light-capabilities";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { clusteredSceneMaterialReason } from "./clustered-material-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import { renderPathSession } from "./render-path-session";
 import { sceneRenderingSettings } from "./render-settings";
 import { findSceneShadowController } from "./shadow-controller";
 
@@ -30,9 +31,7 @@ function requested(
   const state = sceneRenderingSettings(scene);
   return resolveRenderingPipeline(
     state.project,
-    state.pathOverrides,
-    undefined,
-    undefined,
+    renderPathSession(scene.getEngine()),
     { gpuBackend: scene.getEngine().isWebGPU ? "webgpu" : "webgl2" },
     availability,
   );
@@ -59,7 +58,7 @@ export function syncSceneRenderPath(scene: Scene): void {
   const state = sceneRenderingSettings(scene);
   if (
     !owners.has(scene) &&
-    (state.pathOverrides.renderPath ??
+    (renderPathSession(scene.getEngine()).renderPath ??
       state.project.renderPath ??
       "forward") === "forward"
   )

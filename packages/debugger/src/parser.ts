@@ -93,13 +93,14 @@ function coerce(
     case "enum": {
       const allowed = param.enumValues ?? [];
       const value = raw.trim().toLowerCase();
-      if (!allowed.includes(value)) {
+      const canonical = allowed.find((entry) => entry.toLowerCase() === value);
+      if (canonical === undefined) {
         return {
           ok: false,
           output: `parameter "${param.name}" expects one of ${allowed.join(", ")}, got "${raw}"`,
         };
       }
-      return { ok: true, value };
+      return { ok: true, value: canonical };
     }
     default:
       return { ok: true, value: raw };

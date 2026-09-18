@@ -7,15 +7,12 @@ import {
   sceneViewportRenderSettings,
 } from "./scene-viewport-load";
 
-it("retains requested scene paths through the loading key and resets to project inheritance", () => {
+it("retains the requested project path through the loading key", () => {
   const original = sceneViewportRenderSettingsKey({});
   for (const renderPath of ["auto", "clusteredForward"] as const) {
     const key = sceneViewportRenderSettingsKey({ renderPath });
     expect(key).not.toBe(original);
     expect(sceneViewportRenderSettings(key).renderPath).toBe(renderPath);
-    const overridden = sceneViewportRenderSettingsKey({ renderPath }, undefined, undefined, { renderPath: "forward" });
-    expect(sceneViewportRenderSettings(overridden).renderPath).toBe("forward");
-    expect(sceneViewportRenderSettingsKey({ renderPath }, undefined, undefined, {})).toBe(key);
   }
 });
 
@@ -32,11 +29,11 @@ it("reloads effective CEL changes while ignoring inactive and inherited-equivale
 it("keeps environment scalar edits live while loading newly admitted resources before presentation", () => {
   const environmentLighting = normalizeEnvironmentLightingSettings({ intensity: 3, rotationYDegrees: 90 });
   const project = { environmentLighting };
-  const initial = sceneViewportRenderSettingsKey(project, {}, {}, {}, {}, "cube-a");
+  const initial = sceneViewportRenderSettingsKey(project, {}, {}, {}, "cube-a");
   const latest = { ...environmentLighting, intensity: 4, rotationYDegrees: -90, celStrength: 0.5 };
-  expect(sceneViewportRenderSettingsKey({ environmentLighting: latest }, {}, {}, {}, { intensity: 2 }, "cube-a")).toBe(initial);
-  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, { enabled: false }, "cube-a")).not.toBe(initial);
-  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, {}, "cube-b")).not.toBe(initial);
+  expect(sceneViewportRenderSettingsKey({ environmentLighting: latest }, {}, {}, { intensity: 2 }, "cube-a")).toBe(initial);
+  expect(sceneViewportRenderSettingsKey(project, {}, {}, { enabled: false }, "cube-a")).not.toBe(initial);
+  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, "cube-b")).not.toBe(initial);
   const settings = sceneViewportRenderSettings(initial, latest);
   expect(settings.environmentLighting).toEqual(latest);
   expect(settings).not.toHaveProperty("environmentSource");

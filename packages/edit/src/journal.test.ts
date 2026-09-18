@@ -42,8 +42,8 @@ import {
 describe("journal", () => {
   it("replays and undoes an optional scene setting reset after JSON serialization", () => {
     const scene = createDefaultScene();
-    scene.settings.renderPath = "forward";
-    const reset = new SetSceneSettingCommand("renderPath", "forward", undefined);
+    scene.settings.celShading = { shadowBands: 3 };
+    const reset = new SetSceneSettingCommand("celShading", { shadowBands: 3 }, undefined);
     const serialized = serializeJournalLine({
       v: 1,
       docId: "scene:assets/main.scene.babasset",
@@ -52,7 +52,7 @@ describe("journal", () => {
     });
     const revived = reviveCommand(parseJournalLine(serialized).command)!;
     const applied = revived.apply(scene) as typeof scene;
-    expect(Object.hasOwn(applied.settings, "renderPath")).toBe(false);
+    expect(Object.hasOwn(applied.settings, "celShading")).toBe(false);
     expect(revived.invert().apply(applied)).toStrictEqual(scene);
   });
 

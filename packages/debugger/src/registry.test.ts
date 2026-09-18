@@ -19,6 +19,10 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
       if (choice) calls.push(`quality:${group ?? "all"}:${choice}${value ? `:${value}` : ""}`);
       return quality.execute(group, choice, value);
     },
+    setRenderPath: (path) => {
+      calls.push(`renderpath:${path ?? "reset"}`);
+    },
+    getRenderPath: () => null,
     setFrameCap: (fps) => {
       calls.push(`framecap:${fps}`);
     },
@@ -134,6 +138,48 @@ describe("createCommandRegistry", () => {
       "volume:0.5",
       "quit",
     ]);
+  });
+
+  it("requests, resets, and reports the session render path", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: false });
+    expect(registry.execute("renderpath clusteredForward", host)).toEqual({
+      success: true,
+      output: "renderpath clusteredForward",
+    });
+    expect(registry.execute("renderpath auto", host)).toEqual({
+      success: true,
+      output: "renderpath auto",
+    });
+    expect(registry.execute("renderpath reset", host)).toEqual({
+      success: true,
+      output: "renderpath reset",
+    });
+    expect(registry.execute("renderpath nonsense", host).success).toBe(false);
+    expect(registry.execute("renderpath", host)).toEqual({
+      success: true,
+      output: "render path not reported yet",
+    });
+    expect(host.calls).toEqual([
+      "renderpath:clusteredForward",
+      "renderpath:auto",
+      "renderpath:reset",
+    ]);
+  });
+
+  it("prints the last reported render path status", () => {
+    const host = recordingHost();
+    host.getRenderPath = () => ({
+      requested: "forward",
+      effective: "forward",
+      gpuBackend: "webgl2",
+      limits: [],
+    });
+    const registry = createCommandRegistry();
+    expect(registry.execute("renderpath", host)).toEqual({
+      success: true,
+      output: "renderpath forward (effective forward, webgl2)",
+    });
   });
 
   it("accepts name=value arguments and quoted strings", () => {

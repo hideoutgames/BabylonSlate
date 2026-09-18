@@ -318,20 +318,20 @@ describe("scene commands", () => {
 describe("diffSceneCommands", () => {
   it("resets an optional setting without losing undo, redo, or unrelated settings", () => {
     const before = baseScene();
-    before.settings.renderPath = "forward";
+    before.settings.celShading = { shadowBands: 3 };
     const after = structuredClone(before);
-    delete after.settings.renderPath;
+    delete after.settings.celShading;
 
     const commands = diffSceneCommands(before, after);
     expect(commands).toHaveLength(1);
     const reset = commands[0]!;
     const applied = reset.apply(before);
     expect(applied).toStrictEqual(after);
-    expect(Object.hasOwn(applied.settings, "renderPath")).toBe(false);
+    expect(Object.hasOwn(applied.settings, "celShading")).toBe(false);
     const restored = reset.invert().apply(applied);
     expect(restored).toStrictEqual(before);
     expect(reset.apply(restored)).toStrictEqual(after);
-    expect(before.settings.renderPath).toBe("forward");
+    expect(before.settings.celShading).toEqual({ shadowBands: 3 });
 
     const add = diffSceneCommands(after, before);
     expect(add).toHaveLength(1);

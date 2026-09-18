@@ -7,6 +7,8 @@ function host(): ConsoleCommandHost {
   return {
     changeScene: () => {},
     quality: () => ({ success: true, output: "quality" }),
+    setRenderPath: () => {},
+    getRenderPath: () => null,
     setFrameCap: () => {},
     setVolume: () => {},
     quit: () => {},

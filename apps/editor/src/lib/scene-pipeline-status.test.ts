@@ -16,8 +16,6 @@ describe("scene pipeline feedback ownership", () => {
     const clustered = resolveRenderingPipeline(
       { renderPath: "clusteredForward" },
       undefined,
-      undefined,
-      undefined,
       { gpuBackend: "webgl2" },
       { supported: true, autoEligible: true },
     );

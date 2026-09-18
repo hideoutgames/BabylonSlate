@@ -69,6 +69,11 @@ describe.each(["worker", "in-process"] as const)(
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
         applyCommand() {},
         pushSnapshot() {},
+        renderPathStatus: () => ({
+          requested: { renderPath: "forward", gpuBackend: "webgl2" },
+          effective: { renderPath: "forward", gpuBackend: "webgl2" },
+          limits: [],
+        }),
         whenEditorModelsReady: () => Promise.resolve(),
         whenMaterialTexturesReady: () => Promise.resolve(),
         prewarmSceneMaterials: () => Promise.resolve(),

@@ -1,4 +1,4 @@
-import type { QualityGroup } from "@babylonslate/core";
+import type { QualityGroup, RenderPath, RenderPathStatus } from "@babylonslate/core";
 export type CommandTier = "core" | "debug";
 
 export type CommandParamType = "string" | "float" | "int" | "bool" | "enum";
@@ -28,6 +28,10 @@ export type CommandResult = {
 export type ConsoleCommandHost = {
   changeScene(sceneAssetGuid: string): void;
   quality(group?: QualityGroup, choice?: string, value?: string): CommandResult;
+  /** Request a non-persistent game-wide session render path; null resets. */
+  setRenderPath(path: RenderPath | null): void;
+  /** Last render path status the engine reported, or null before the first report. */
+  getRenderPath(): RenderPathStatus | null;
   setFrameCap(fps: number): void;
   setVolume(volume: number): void;
   getFrameCap?(): number;

@@ -241,7 +241,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     projectDocument?.settings.render,
     scene?.settings.celShading,
     scene?.settings.shadowOverrides,
-    scene?.settings,
     scene?.settings.environmentLighting,
     scene?.settings.environmentTextureGuid,
   );

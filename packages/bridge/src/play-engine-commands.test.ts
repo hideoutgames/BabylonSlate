@@ -10,6 +10,9 @@ describe("isPlayEngineCommandType", () => {
   it("forwards runtime material parameter writes to the renderer", () => {
     expect(isPlayEngineCommandType("setMaterialParameter")).toBe(true);
   });
+  it("forwards session render path requests to the Play engine", () => {
+    expect(isPlayEngineCommandType("setRenderPath")).toBe(true);
+  });
   it("forwards SceneLayer compositor commands and despawn onto the Play engine", () => {
     expect(isPlayEngineCommandType("sceneLoading")).toBe(true);
     expect(isPlayEngineCommandType("activeScene")).toBe(true);

@@ -18,9 +18,14 @@ import {
 } from "../packages/exporter/src/index.ts";
 import { serveExportFiles } from "./export-static-server";
 import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
+import {
+  openMainScene,
+  openTestProject,
+  waitForSceneViewportReady,
+} from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { expectGreenIllumination } from "./preview-parity";
+import { saveAllIfEnabled } from "./save-all";
 
 const GUID = "00000000-0000-4000-8000-000000000001";
 const quality = normalizeRenderingQuality({
@@ -310,4 +315,134 @@ test("packed player resolves saved Auto to real WebGL2 clustering before present
   } finally {
     await server.close();
   }
+});
+
+test("a session renderpath request is global and non-persistent while scenes store no path", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const { errors, externalDiagnostics } = errorsFor(page);
+  const files = await minimalProjectFiles();
+  const project = JSON.parse(
+    new TextDecoder().decode(files.get(PROJECT_FILE)!),
+  );
+  project.settings.render.quality = quality;
+  project.settings.render.renderPath = "clusteredForward";
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  files.set(
+    MAIN_SCENE_FILE,
+    await encodeAssetDocument({
+      guid: GUID,
+      type: "Scene",
+      name: "Main",
+      version: createDefaultMigrationRegistry().currentVersion("Scene"),
+      payload: fixtureScene() as unknown as Record<string, unknown>,
+    }),
+  );
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  const canvas = page.getByTestId("viewport-panel").locator("canvas").first();
+  await expect
+    .poll(async () => (await rendering(canvas, "editor"))?.clusteredLights, {
+      timeout: 30_000,
+    })
+    .toBe(24);
+  await saveAllIfEnabled(page);
+  await page.reload();
+  await openTestProject(page);
+  await openMainScene(page);
+  await expect
+    .poll(async () => (await rendering(canvas, "editor"))?.clusteredLights, {
+      timeout: 30_000,
+    })
+    .toBe(24);
+  const details = page.getByTestId("scene-details-panel");
+  await expect(details).toBeVisible();
+  await expect(
+    details.getByRole("button", { name: "Rendering", exact: true }),
+  ).toHaveCount(0);
+  await expect(details.locator('[data-testid$="-render-path"]')).toHaveCount(0);
+  const savedScene = await page.evaluate(async () => {
+    const host = globalThis as {
+      __babylonslateTest?: {
+        readAssetChunk?: (
+          path: string,
+          chunk: string,
+        ) => Promise<Uint8Array | null>;
+      };
+    };
+    const bytes = await host.__babylonslateTest?.readAssetChunk?.(
+      "assets/main.scene.babasset",
+      "document",
+    );
+    return bytes
+      ? (JSON.parse(new TextDecoder().decode(bytes)) as {
+          settings?: Record<string, unknown>;
+        })
+      : null;
+  });
+  expect(savedScene?.settings).toBeDefined();
+  expect(savedScene!.settings).not.toHaveProperty("renderPath");
+  await clickPlayAndWaitForOverlay(page);
+  const play = page.getByTestId("play-overlay").locator("canvas").first();
+  await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({
+    timeout: 30_000,
+  });
+  await expect
+    .poll(async () => (await rendering(play, "play"))?.clusteredLights, {
+      timeout: 30_000,
+    })
+    .toBe(24);
+  await page.getByTestId("play-console-open").click();
+  const input = page.getByTestId("debug-console-input");
+  const submit = page.getByTestId("debug-console-submit");
+  const transcript = page.getByTestId("debug-console-transcript");
+  await input.fill("renderpath forward");
+  await submit.click();
+  await expect(transcript).toContainText("renderpath forward");
+  await expect
+    .poll(
+      async () =>
+        (await rendering(play, "play"))?.pipeline.effective.renderPath,
+      { timeout: 30_000 },
+    )
+    .toBe("forward");
+  await expect
+    .poll(async () => (await rendering(play, "play"))?.clusteredLights)
+    .toBe(0);
+  await input.fill("renderpath");
+  await submit.click();
+  await expect(transcript).toContainText("effective forward");
+  await input.fill("renderpath reset");
+  await submit.click();
+  await expect(transcript).toContainText("renderpath reset");
+  await expect
+    .poll(
+      async () =>
+        (await rendering(play, "play"))?.pipeline.effective.renderPath,
+      { timeout: 30_000 },
+    )
+    .toBe("clusteredForward");
+  await expect
+    .poll(async () => (await rendering(play, "play"))?.clusteredLights, {
+      timeout: 30_000,
+    })
+    .toBe(24);
+  await input.fill("renderpath");
+  await submit.click();
+  await expect(transcript).toContainText("effective clusteredForward");
+  const sessionStatus = await rendering(play, "play");
+  await testInfo.attach("session-renderpath", {
+    body: JSON.stringify({ sessionStatus, externalDiagnostics }),
+    contentType: "application/json",
+  });
+  await page.getByTestId("play-overlay-close").click();
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  await waitForSceneViewportReady(page);
+  await expect
+    .poll(async () => (await rendering(canvas, "editor"))?.clusteredLights, {
+      timeout: 30_000,
+    })
+    .toBe(24);
+  expect(errors).toEqual([]);
 });
