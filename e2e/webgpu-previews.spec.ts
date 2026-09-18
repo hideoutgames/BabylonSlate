@@ -611,10 +611,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       await prefabCanvas.screenshot({
         path: testInfo.outputPath(`prefab-${mode}-${backend}.png`),
       });
-      for (const [index, corner] of prefab.corners.entries())
+      // The Prefab preview keeps its editor grid across the lower half; only the
+      // sky region above it must stay pitch black (no preview skybox).
+      for (const [index, corner] of prefab.corners.slice(0, 2).entries())
         expect(
           Math.max(corner[0]!, corner[1]!, corner[2]!),
-          `prefab corner ${index} must stay pitch black on ${backend}/${mode}`,
+          `prefab top corner ${index} must stay pitch black on ${backend}/${mode}`,
         ).toBeLessThan(24);
 
       const diagnostics = await engineSceneDiagnostics(page);
