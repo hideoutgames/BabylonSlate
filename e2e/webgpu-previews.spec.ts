@@ -619,7 +619,44 @@ for (const backend of ["webgl2", "webgpu"] as const) {
           `prefab top corner ${index} must stay pitch black on ${backend}/${mode}`,
         ).toBeLessThan(24);
 
-      const diagnostics = await engineSceneDiagnostics(page);
+      // A render-mode switch rebuilds the viewport handle; while the new scene
+      // is still loading the diagnostics API has no handle and returns null.
+      // Preview scenes persist on the shared Engine across that rebuild, so
+      // re-query until the API reports a preview scene instead of racing the
+      // reload (or a mid-recreation preview Scene).
+      let diagnostics: {
+        scenes: {
+          kind: string;
+          skyboxMesh: boolean;
+          shadowGeneratorCount: number;
+          lights: { name: string }[];
+          materials: { className: string }[];
+        }[];
+      } | null = null;
+      let previewScenes: {
+        kind: string;
+        skyboxMesh: boolean;
+        shadowGeneratorCount: number;
+        lights: { name: string }[];
+        materials: { className: string }[];
+      }[] = [];
+      await expect
+        .poll(
+          async () => {
+            diagnostics = (await engineSceneDiagnostics(page)) as
+              | typeof diagnostics
+              | null;
+            previewScenes = (diagnostics?.scenes ?? []).filter(
+              (scene) => scene.kind === "preview",
+            );
+            return previewScenes.length;
+          },
+          {
+            timeout: 60_000,
+            message: `no preview scene found on ${backend}/${mode}`,
+          },
+        )
+        .toBeGreaterThan(0);
       await testInfo.attach(`preview-scenes-${mode}-${backend}`, {
         body: JSON.stringify({
           material,
@@ -629,22 +666,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         }),
         contentType: "application/json",
       });
-      const scenes = (
-        diagnostics as {
-          scenes: {
-            kind: string;
-            skyboxMesh: boolean;
-            shadowGeneratorCount: number;
-            lights: { name: string }[];
-            materials: { className: string }[];
-          }[];
-        } | null
-      )?.scenes ?? [];
-      const previewScenes = scenes.filter((scene) => scene.kind === "preview");
-      expect(
-        previewScenes.length,
-        `no preview scene found on ${backend}/${mode}`,
-      ).toBeGreaterThan(0);
+      const scenes = diagnostics?.scenes ?? [];
       for (const scene of previewScenes) {
         // Interactive previews share the engine default skybox.
         expect(
