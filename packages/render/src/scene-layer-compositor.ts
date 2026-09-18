@@ -70,6 +70,9 @@ type LayerRecord = SceneLayerView & {
   parameters: PostProcessParameterState;
   retirements: PostProcessRetirement;
   presented: boolean;
+  /** Cached strict layer readiness; invalidated by renderer dirtiness/rebuild. */
+  probedReady: boolean;
+  blitReady: boolean;
   fallback: { scene: Scene; release(): void } | null;
   attachedPostProcess: ReturnType<NonNullable<SceneLayerCompositorOptions["attachLayerPostProcess"]>>;
 };
@@ -129,6 +132,8 @@ export class SceneLayerCompositor {
       parameters: new PostProcessParameterState(),
       retirements: new PostProcessRetirement(),
       presented: false,
+      probedReady: false,
+      blitReady: false,
       fallback: null,
     };
     this.bindHudCamera(layer);
@@ -268,12 +273,14 @@ export class SceneLayerCompositor {
         if (record.rtt) {
           record.scene.autoClear = true;
           const result = record.renderer.render();
-          if (!result.rendered || !result.readyForPresentation || !record.blitScene || !isSceneFrameReady(record.blitScene)) {
+          if (!record.blitReady && record.blitScene)
+            record.blitReady = isSceneFrameReady(record.blitScene);
+          if (!result.rendered || !result.readyForPresentation || !record.blitScene || !record.blitReady) {
             this.blitFallback(record);
             return false;
           }
           this.blit(record);
-          readyForPresentation = isSceneFrameReady(record.blitScene);
+          readyForPresentation = record.blitReady;
           if (readyForPresentation) {
             record.presented = true;
             this.releaseFallback(record);
@@ -298,9 +305,18 @@ export class SceneLayerCompositor {
     if (layerId && !this.byId.has(layerId)) return false;
     for (const record of this.byId.values()) {
       if (layerId ? record.layerId !== layerId : !this.isLayerReady(record.layerId)) continue;
-      if (!record.renderer.isReady()) return false;
-      if (!isSceneFrameReady(record.scene, record.rtt ? [record.rtt] : [])) return false;
-      if (record.rtt && (!record.blitScene || !isSceneFrameReady(record.blitScene))) return false;
+      // Strict probes are cached per layer; the renderer's dirty flag re-opens
+      // them after scene or rendering-definition changes. The coordinator's
+      // probe already covers the layer's output target via customRenderTargets.
+      if (record.probedReady && !record.renderer.readinessDirty) continue;
+      const ready =
+        record.renderer.isReady() &&
+        (!record.rtt ||
+          (!!record.blitScene &&
+            (record.blitReady ||
+              (record.blitReady = isSceneFrameReady(record.blitScene)))));
+      record.probedReady = ready;
+      if (!ready) return false;
     }
     return true;
   }
@@ -560,6 +576,8 @@ export class SceneLayerCompositor {
       });
     }
     layer.presented = false;
+    layer.probedReady = false;
+    layer.blitReady = false;
     layer.attachedPostProcess = null;
     layer.camera.outputRenderTarget = null;
     layer.rtt = null;

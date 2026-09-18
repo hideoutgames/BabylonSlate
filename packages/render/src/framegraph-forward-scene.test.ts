@@ -362,3 +362,80 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
 });
+
+it("skips strict readiness probes on unchanged frames after admission", async () => {
+  const { scene, camera } = host();
+  MeshBuilder.CreateBox("box", {}, scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  const checks = graph.strictReadinessChecks;
+  for (let frame = 0; frame < 20; frame += 1)
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.strictReadinessChecks).toBe(checks);
+  graph.dispose();
+});
+
+it("re-probes strict readiness exactly once after each invalidating change", async () => {
+  const { scene, camera } = host();
+  const mesh = MeshBuilder.CreateBox("box", {}, scene);
+  const light = new PointLight("light", Vector3.Up(), scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  const expectOneCheck = async (mutate: () => void) => {
+    const before = graph.strictReadinessChecks;
+    mutate();
+    // A changed material/light variant may compile asynchronously. While the
+    // strict probe reports unready each render runs exactly one probe and
+    // falls back; the first ready frame re-admits and caches again.
+    let frames = 0;
+    let probes = 0;
+    await vi.waitFor(() => {
+      const checks = graph.strictReadinessChecks;
+      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      probes += graph.strictReadinessChecks - checks;
+      frames += 1;
+    });
+    expect(probes).toBe(frames);
+    expect(probes).toBeGreaterThan(0);
+    expect(graph.strictReadinessChecks).toBeGreaterThan(before);
+    const admitted = graph.strictReadinessChecks;
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.strictReadinessChecks).toBe(admitted);
+  };
+  await expectOneCheck(() => {
+    MeshBuilder.CreateBox("added", {}, scene);
+  });
+  await expectOneCheck(() => {
+    mesh.material = new StandardMaterial("replacement", scene);
+  });
+  await expectOneCheck(() => light.setEnabled(false));
+  await expectOneCheck(() => graph.invalidate());
+  graph.dispose();
+});
+
+it("keeps probing every frame while unready, then caches once admitted", async () => {
+  const { scene, camera } = host();
+  const mesh = MeshBuilder.CreateBox("box", {}, scene);
+  const material = new StandardMaterial("stubbed", scene);
+  mesh.material = material;
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  const probe = vi.spyOn(material, "isReadyForSubMesh").mockReturnValue(false);
+  graph.invalidate();
+  const before = graph.strictReadinessChecks;
+  for (let frame = 0; frame < 3; frame += 1)
+    expect(graph.render(camera)).toMatchObject({ path: "classic" });
+  expect(graph.strictReadinessChecks).toBe(before + 3);
+  probe.mockRestore();
+  // The restored probe may compile asynchronously; fall back until it passes.
+  await vi.waitFor(() => {
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  });
+  const admitted = graph.strictReadinessChecks;
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.strictReadinessChecks).toBe(admitted);
+  graph.dispose();
+});

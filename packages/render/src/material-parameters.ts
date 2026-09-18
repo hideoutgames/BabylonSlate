@@ -10,6 +10,7 @@ import type { MaterialParameterValue } from "@babylonslate/bridge";
 import type { MaterialBuildPlan } from "@babylonslate/shader-graph";
 import type { BlockRealization } from "./material-block-registry";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { markSceneReadinessDirty } from "./scene-perf";
 
 /** Reject invalid writes before replacing a component's replayable value. */
 export function validMaterialParameterValue(
@@ -89,6 +90,9 @@ export function createMaterialParameterBindings(
   const dirty = (textures = false): void => {
     if (disposed) return;
     const scene = material.getScene();
+    // A new texture assignment or its deferred load changes material defines
+    // and readiness; reopen the cached strict probe.
+    if (textures) markSceneReadinessDirty(scene);
     const blocked = scene.blockMaterialDirtyMechanism;
     scene.blockMaterialDirtyMechanism = false;
     try {

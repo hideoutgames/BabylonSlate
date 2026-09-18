@@ -14,6 +14,7 @@ import {
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { syncSceneLighting } from "./scene-lighting";
 import { syncEnvironmentLighting } from "./environment-lighting";
+import { markSceneReadinessDirty } from "./scene-perf";
 
 const controllers = new WeakMap<Scene, () => void>();
 
@@ -78,6 +79,8 @@ export function setSceneRenderSettings(
       const useCel = settings.mode === "cel";
       if (!useCel && !appliedCel) return;
       appliedCel = useCel;
+      // Replacing default or assigned materials rebuilds their defines.
+      markSceneReadinessDirty(scene);
       resolved.clear();
       const fallback = resolve(scene.defaultMaterial)!;
       if (fallback !== scene.defaultMaterial) {
@@ -116,4 +119,5 @@ export function setSceneRenderSettings(
   }
   sync();
   syncSceneLighting(scene);
+  markSceneReadinessDirty(scene);
 }

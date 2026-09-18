@@ -25,7 +25,7 @@ import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
-import { prewarmSceneMaterials } from "./scene-perf";
+import { markSceneReadinessDirty, prewarmSceneMaterials } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import * as sceneWork from "./scene-work";
 
@@ -532,6 +532,9 @@ describe("Play createEngine view", () => {
     const ready = vi.fn(() => false);
     const draw = vi.spyOn(handle.scene, "render");
     handle.scene.addIsReadyCheck({ isReady: ready });
+    // Custom checks join strict readiness without a Scene observable; the
+    // production registration path marks the cached readiness result dirty.
+    markSceneReadinessDirty(handle.scene);
     let presented = false;
     const frame = handle.presentFirstFrame().then(() => { presented = true; });
     const render = runLoop.mock.calls[0]![0];

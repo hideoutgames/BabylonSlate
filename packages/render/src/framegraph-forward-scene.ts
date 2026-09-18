@@ -4,7 +4,7 @@ import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Te
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
-import type { Camera, InternalTexture, Observer, Scene } from "@babylonjs/core";
+import type { AbstractMesh, Camera, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import {
@@ -79,12 +79,46 @@ export class ForwardSceneFrameGraph {
   private failure: string | undefined;
   private failedOutput: ReturnType<ForwardSceneFrameGraph["output"]> & { camera: Camera } | undefined;
   private renderingCamera: Camera | undefined;
+  private suppressCameraMark = 0;
+  private readinessDirtyFlag = true;
+  private membership: number[] | undefined;
+  private strictChecks = 0;
+  private readonly readinessDetach: (() => void)[] = [];
+  private readonly meshMaterialObservers = new Map<AbstractMesh, Observer<AbstractMesh>>();
+  private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
   private readonly beforeRender: Observer<Scene>;
   private readonly onDispose: Observer<Scene>;
   private readonly scene: Scene;
 
   constructor(scene: Scene) {
     this.scene = scene;
+    // Strict readiness probes rebuild every light/material variant. Cache the
+    // result and re-probe only after scene or rendering-definition changes.
+    const mark = () => this.markReadinessDirty();
+    const watch = <T>(observable: Observable<T>, notify: (event: T) => void) => {
+      const observer = observable.add(notify);
+      this.readinessDetach.push(() => observable.remove(observer));
+    };
+    watch(scene.onNewMeshAddedObservable, (mesh) => { this.watchMesh(mesh); mark(); });
+    watch(scene.onMeshRemovedObservable, (mesh) => { this.unwatchMesh(mesh); mark(); });
+    watch(scene.onNewMaterialAddedObservable, mark);
+    watch(scene.onMaterialRemovedObservable, mark);
+    watch(scene.onNewLightAddedObservable, (light) => { this.watchLight(light); mark(); });
+    watch(scene.onLightRemovedObservable, (light) => { this.unwatchLight(light); mark(); });
+    watch(scene.onNewTextureAddedObservable, mark);
+    watch(scene.onTextureRemovedObservable, mark);
+    watch(scene.onNewCameraAddedObservable, mark);
+    watch(scene.onCameraRemovedObservable, mark);
+    // Babylon clears and restores activeCamera inside its own graph render;
+    // the coordinator also pins it per frame. Only authored changes count.
+    watch(scene.onActiveCameraChanged, () => {
+      if (this.renderingCamera === undefined && this.suppressCameraMark === 0)
+        mark();
+    });
+    watch(scene.onNewSkeletonAddedObservable, mark);
+    watch(scene.onSkeletonRemovedObservable, mark);
+    for (const mesh of scene.meshes) this.watchMesh(mesh);
+    for (const light of scene.lights) this.watchLight(light);
     // Babylon 9.20 clears activeCamera at the start of its graph render method.
     // Restore it before existing lighting/floating-origin/lifecycle observers.
     this.beforeRender = scene.onBeforeRenderObservable.add(
@@ -166,6 +200,124 @@ export class ForwardSceneFrameGraph {
   invalidate(): void {
     this.failure = undefined;
     this.failedOutput = undefined;
+    this.markReadinessDirty();
+  }
+
+  /** Steady-state frames skip the strict probe until a change marks it dirty. */
+  get readinessDirty(): boolean {
+    // Deferred entity observables may not have fired yet; membership diffs are
+    // the synchronous backstop for mesh/material/light/texture changes.
+    this.syncMembership();
+    return this.readinessDirtyFlag;
+  }
+
+  markReadinessDirty(): void {
+    this.readinessDirtyFlag = true;
+  }
+
+  /** Strict scene/graph probe invocations; steady-state frames add none. */
+  get strictReadinessChecks(): number {
+    return this.strictChecks;
+  }
+
+  /**
+   * Babylon defers its entity add/remove observables to a later task. Compare
+   * the readiness-relevant collection sizes each frame so a membership change
+   * still invalidates the cache before the very next render.
+   */
+  private syncMembership(): void {
+    const scene = this.scene;
+    const counts = [
+      scene.meshes.length,
+      scene.materials.length,
+      scene.lights.length,
+      scene.textures.length,
+      scene.cameras.length,
+      scene.skeletons.length,
+      scene.particleSystems.length,
+      scene.customRenderTargets.length,
+      scene.layers.length,
+      scene.effectLayers?.length ?? 0,
+      scene.proceduralTextures?.length ?? 0,
+      // Custom readiness checks register without any observable.
+      (scene as unknown as { _isReadyChecks?: { length: number }[] })
+        ._isReadyChecks?.length ?? 0,
+    ];
+    const previous = this.membership;
+    this.membership = counts;
+    if (!previous) return;
+    for (let index = 0; index < counts.length; index += 1) {
+      if (counts[index] !== previous[index]) {
+        this.markReadinessDirty();
+        return;
+      }
+    }
+  }
+
+  /** Assign activeCamera without tripping the readiness-dirty subscription. */
+  private setActiveCamera(camera: Camera | null): void {
+    this.suppressCameraMark += 1;
+    try {
+      this.scene.activeCamera = camera;
+    } finally {
+      this.suppressCameraMark -= 1;
+    }
+  }
+
+  /**
+   * Strict scene probe gated by the dirty flag: a clean cache reports the last
+   * admitted result; a dirty one re-probes and re-arms only on success. A
+   * current prepared graph re-runs the full task probe; otherwise the
+   * scene-level probe covers classic-path hosts.
+   */
+  sceneStrictlyReady(camera: Camera): boolean {
+    if (this.unavailable(camera)) return false;
+    this.syncMembership();
+    if (!this.readinessDirtyFlag) return true;
+    if (
+      this.graph && !this.pending &&
+      this.preparedPostProcessRevision === this.postProcessRevision
+    ) {
+      this.objects!.camera = camera;
+      this.cull!.camera = camera;
+      this.syncSceneInputs();
+      if (!this.isReady()) return false;
+    } else {
+      this.strictChecks += 1;
+      if (!isSceneFrameReady(this.scene)) return false;
+    }
+    this.readinessDirtyFlag = false;
+    return true;
+  }
+
+  private watchMesh(mesh: AbstractMesh): void {
+    if (this.meshMaterialObservers.has(mesh)) return;
+    this.meshMaterialObservers.set(
+      mesh,
+      mesh.onMaterialChangedObservable.add(() => this.markReadinessDirty()),
+    );
+  }
+
+  private unwatchMesh(mesh: AbstractMesh): void {
+    const observer = this.meshMaterialObservers.get(mesh);
+    if (!observer) return;
+    mesh.onMaterialChangedObservable.remove(observer);
+    this.meshMaterialObservers.delete(mesh);
+  }
+
+  private watchLight(light: Light): void {
+    if (this.lightEnabledObservers.has(light)) return;
+    this.lightEnabledObservers.set(
+      light,
+      light.onEnabledStateChangedObservable.add(() => this.markReadinessDirty()),
+    );
+  }
+
+  private unwatchLight(light: Light): void {
+    const observer = this.lightEnabledObservers.get(light);
+    if (!observer) return;
+    light.onEnabledStateChangedObservable.remove(observer);
+    this.lightEnabledObservers.delete(light);
   }
 
   private refreshFailure(camera: Camera): void {
@@ -179,6 +331,7 @@ export class ForwardSceneFrameGraph {
   /** Build or resize the persistent tasks and await actual object/effect readiness. */
   prepare(camera: Camera, assertCurrent: () => void = () => {}): Promise<ForwardSceneGraphResult> {
     assertCurrent();
+    this.readinessDirtyFlag = true;
     if (this.pending) return this.pending.then((result) => { assertCurrent(); return result; });
     if (!this.unavailable(camera)) this.syncShadowAdmission(camera);
     this.refreshFailure(camera);
@@ -205,15 +358,20 @@ export class ForwardSceneFrameGraph {
   readiness(camera: Camera): ForwardSceneGraphReadiness {
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable, ready: false };
+    this.syncMembership();
     this.syncShadowAdmission(camera);
     this.refreshFailure(camera);
     const reason = this.unsupported(camera) ?? this.failure;
     if (reason) {
       // Native stack creation belongs to preparation, never a readiness probe.
       return { path: "classic", reason, ready: !this.postProcessOwner?.hasEnabledEntries ||
-        this.postProcessOwner.nativeReadyFor(camera) && isSceneFrameReady(this.scene) };
+        this.postProcessOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera) };
     }
     const output = this.output(camera);
+    if (this.graph &&
+      (this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
+        this.outputColor !== output.color || this.outputDepth !== output.depth))
+      this.markReadinessDirty();
     if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision || this.shadows?.needsPreparation() ||
       this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
       this.outputColor !== output.color || this.outputDepth !== output.depth)
@@ -221,13 +379,18 @@ export class ForwardSceneFrameGraph {
     this.objects!.camera = camera;
     this.cull!.camera = camera;
     this.syncSceneInputs();
-    return { path: "frameGraph", ready: this.isReady() };
+    if (this.readinessDirty) {
+      if (!this.isReady()) return { path: "frameGraph", ready: false };
+      this.readinessDirtyFlag = false;
+    }
+    return { path: "frameGraph", ready: true };
   }
 
   /** Render one scene frame, with an explicit, observable classic fallback. */
   render(camera: Camera, updateCameras = true): ForwardSceneGraphResult & { rendered?: boolean } {
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable };
+    this.syncMembership();
     this.syncShadowAdmission(camera);
     const engine = this.scene.getEngine();
     this.refreshFailure(camera);
@@ -247,10 +410,14 @@ export class ForwardSceneFrameGraph {
       this.outputDepth !== output.depth
         ? "FrameGraph preparation is required."
         : undefined);
-    this.scene.activeCamera = camera;
+    if (this.graph &&
+      (this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
+        this.outputColor !== output.color || this.outputDepth !== output.depth))
+      this.markReadinessDirty();
+    this.setActiveCamera(camera);
     if (reason) {
       if (this.postProcessOwner?.hasEnabledEntries &&
-        (this.pending || !this.postProcessOwner.nativeReadyFor(camera) || !isSceneFrameReady(this.scene)))
+        (this.pending || !this.postProcessOwner.nativeReadyFor(camera) || !this.sceneStrictlyReady(camera)))
         return { path: "classic", reason, rendered: false };
       if (!this.disposed && !this.scene.isDisposed)
         this.scene.render(updateCameras);
@@ -261,11 +428,14 @@ export class ForwardSceneFrameGraph {
     this.objects!.camera = camera;
     this.cull!.camera = camera;
     this.syncSceneInputs();
-    if (!this.isReady()) {
-      if (this.postProcessOwner?.hasEnabledEntries)
-        return { path: "classic", reason: "FrameGraph effects are not ready.", rendered: false };
-      this.scene.render(updateCameras);
-      return { path: "classic", reason: "FrameGraph effects are not ready." };
+    if (this.readinessDirty) {
+      if (!this.isReady()) {
+        if (this.postProcessOwner?.hasEnabledEntries)
+          return { path: "classic", reason: "FrameGraph effects are not ready.", rendered: false };
+        this.scene.render(updateCameras);
+        return { path: "classic", reason: "FrameGraph effects are not ready." };
+      }
+      this.readinessDirtyFlag = false;
     }
     const cameras = this.scene.activeCameras;
     const ubo = this.scene.getSceneUniformBuffer();
@@ -304,6 +474,14 @@ export class ForwardSceneFrameGraph {
     if (this.disposed) return;
     this.disposed = true;
     this.releasePostProcessOwner();
+    for (const detach of this.readinessDetach) detach();
+    this.readinessDetach.length = 0;
+    for (const [mesh, observer] of this.meshMaterialObservers)
+      mesh.onMaterialChangedObservable.remove(observer);
+    this.meshMaterialObservers.clear();
+    for (const [light, observer] of this.lightEnabledObservers)
+      light.onEnabledStateChangedObservable.remove(observer);
+    this.lightEnabledObservers.clear();
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.scene.onDisposeObservable.remove(this.onDispose);
     if (!this.pending) this.releaseGraph();
@@ -371,7 +549,7 @@ export class ForwardSceneFrameGraph {
   private syncShadowAdmission(camera: Camera): void {
     const controller = findSceneShadowController(this.scene);
     withSceneReadinessState(this.scene, () => {
-      this.scene.activeCamera = camera;
+      this.setActiveCamera(camera);
       controller?.sync();
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
@@ -522,6 +700,7 @@ export class ForwardSceneFrameGraph {
           path: "classic",
           reason: "FrameGraph coordinator is disposed.",
         };
+      this.readinessDirtyFlag = false;
       assertCurrent();
       this.preparedPostProcessRevision = this.postProcessRevision;
       this.preparedWidth = width;
@@ -553,6 +732,7 @@ export class ForwardSceneFrameGraph {
   }
 
   private isReady(): boolean {
+    this.strictChecks += 1;
     const cameras = this.scene.activeCameras;
     const shadowFlags = this.scene.lights.map(
       (light) => [light, light.shadowEnabled] as const,

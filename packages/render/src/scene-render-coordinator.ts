@@ -1,7 +1,7 @@
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import type { Camera, Scene } from "@babylonjs/core";
 import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
-import { isSceneFrameReady } from "./scene-perf";
+import { onSceneReadinessDirty } from "./scene-perf";
 
 class PreparationChanged extends Error {}
 
@@ -21,10 +21,14 @@ export class SceneRenderCoordinator {
   private failure: unknown;
   private pending: { generation: number; promise: Promise<ForwardSceneGraphResult> } | undefined;
   private readonly scene: Scene;
+  private readonly detachReadinessDirty: () => void;
 
   constructor(scene: Scene) {
     this.scene = scene;
     this.graph = new ForwardSceneFrameGraph(scene);
+    this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
+      this.graph.markReadinessDirty(),
+    );
   }
 
   attachPostProcess(options: AttachPostProcessStackOptions): AttachedPostProcessStack {
@@ -107,12 +111,25 @@ export class SceneRenderCoordinator {
     return promise;
   }
 
+  /** True while strict readiness must be re-probed after an invalidation. */
+  get readinessDirty(): boolean {
+    return this.graph.readinessDirty;
+  }
+
+  /** Strict readiness probes the graph ran; unchanged frames add none. */
+  get strictReadinessChecks(): number {
+    return this.graph.strictReadinessChecks;
+  }
+
   /** Loading owners require the prepared selected path, including after resize. */
   isReady(): boolean {
     if (this.failure) throw this.failure;
     if (this.pending) return false;
     const camera = this.scene.activeCamera;
-    if (this.disposed || this.scene.isDisposed || !camera || !isSceneFrameReady(this.scene)) return false;
+    if (this.disposed || this.scene.isDisposed || !camera ||
+      !this.graph.sceneStrictlyReady(camera)) return false;
+    // The strict scene probe is cached behind the graph's dirty flag; its own
+    // readiness() re-probes only after an invalidation.
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
     return status.ready;
@@ -121,7 +138,8 @@ export class SceneRenderCoordinator {
   /** Ready owners may draw a validated native frame while their graph rebuilds. */
   render(): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean } {
     const camera = this.scene.activeCamera;
-    if (this.disposed || this.scene.isDisposed || !camera || !isSceneFrameReady(this.scene))
+    if (this.disposed || this.scene.isDisposed || !camera ||
+      !this.graph.sceneStrictlyReady(camera))
       return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
@@ -135,6 +153,7 @@ export class SceneRenderCoordinator {
     if (this.disposed) return;
     this.disposed = true;
     this.invalidate();
+    this.detachReadinessDirty();
     this.graph.dispose();
   }
 
