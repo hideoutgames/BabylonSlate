@@ -28,7 +28,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 
 ## Render rules (agents)
 
-- `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`.
+- `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. The dynamic valve reads a per-view `FramePressureSample` — presented-frame interval (null on skipped/hidden/loading frames, never zero), `scene.render()` CPU, and engine GPU time only when the view is the sole rendering view — and scales down on the 15-sample median of the worst signal, up only on proven presentation + CPU/GPU headroom.
 - MSAA off on iPad baseline.
 - `skipPointerMovePicking: true` on all scenes (touch has no hover).
 - Medium requests four 2048 directional cascades and 1024 local maps, with Auto capacity of two local shadow lights. Effective admission can reduce these requests to fit attachment, face/pass, sampler and shared-Engine budgets; see [rendering profiles](../architecture/render.md). Authored post-process stacks default to empty. Engine Settings `postProcessingEnabled` defaults **on** and can skip attaching those stacks in the editor / Play preview without changing the scene or exported games.
@@ -44,7 +44,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Editor idle `freezeActiveMeshes()` / static `freezeWorldMatrix()` / `material.freeze()` / unique-id maps / scene-load `forceCompilationAsync` are **Done** (`p20-editor-scene-freeze`). Visible editor stays at `viewportFrameCap` — do not dirty-skip an on-screen scene. Remount dialog: Collecting Assets → Loading Models → Warming Shaders.
 - Play prepare caches compiled scripts by graph content hash and loads Audio `source` chunks on first `playSound` (`p20-play-compile-audio`, **Done**). Overlay Play and `apps/player` share the lazy audio path.
 - Global Search rebuilds when the dialog is initiated (`p20-search-on-demand`, **Done**), not on project open. Async/chunked; include open-document JSON. No on-disk search cache.
-- No per-actor per-frame allocation in snapshot apply (reuse scratch math objects). `SnapshotInterpolator.push` copies into two owned `Float32Array`s (ping-pong); do not `slice()` a new buffer per snapshot.
+- No per-actor per-frame allocation in snapshot apply (reuse scratch math objects). `SnapshotInterpolator.push` copies into two owned `Float32Array`s (ping-pong); do not `slice()` a new buffer per snapshot. Each sampled snapshot identity (`frameId`, α, layout generation) applies once per frame even though registered-view admission and the render loop both sample; audio pose/listener sync rides the same apply so capped draws still sync once.
 - Play overlay / packaged-player HUD must not `setState` (or rewrite chrome DOM) at 60 Hz. Worker `stats` is ~5 Hz; rAF FPS sampling is 1 Hz. Tick stamp and worker timings also live on the snapshot header.
 
 
