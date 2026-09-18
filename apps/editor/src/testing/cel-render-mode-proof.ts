@@ -29,6 +29,14 @@ const BANDS = 3;
 const MIDPOINT = 0.5;
 const SPECULAR_STRENGTH = 0.2;
 const SPECULAR_SIZE = 0.2;
+const ALBEDO_GREEN = 0.6;
+// The CEL adapter renders in display space: the PBR albedo's linear factor is
+// sRGB-encoded once (toGammaSpaceToRef exact / slateCelTextureToDisplay), so
+// rendered band levels scale from the display green, not the linear value.
+// sRGB(0.6) = 1.055·0.6^(1/2.4) − 0.055 ≈ 0.7978 → 203.
+const DISPLAY_GREEN = Math.round(
+  255 * (1.055 * Math.pow(ALBEDO_GREEN, 1 / 2.4) - 0.055),
+);
 
 export async function runCelRenderModeProof(
   backend: "webgl2" | "webgpu" = "webgl2",
@@ -45,21 +53,26 @@ export async function runCelRenderModeProof(
           stencil: true,
           disableWebGL2Support: false,
         });
-  const draw = (render: () => void) => {
+  // The swapchain texture expires when the browser composites the frame, so a
+  // canvas readback submitted after endFrame can race presentation ("destroyed
+  // texture used in a submit"). Submitting the copy inside the frame that
+  // produced it is always legal: the texture is still current, and in-flight
+  // copies survive its later expiry.
+  const captureFrame = async (render: () => void) => {
     engine.beginFrame();
     try {
       render();
+      const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
+      if (!pixels) throw new Error("Missing rendered pixels");
+      return Array.from(
+        new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+      );
     } finally {
       engine.endFrame();
     }
   };
-  const readRow = async (y: number) => {
-    const pixels = await engine.readPixels(0, y, WIDTH, 1);
-    if (!pixels) throw new Error("Missing rendered pixels");
-    return Array.from(
-      new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
-    );
-  };
+  const frameRow = (frame: number[], y: number) =>
+    frame.slice(y * WIDTH * 4, (y + 1) * WIDTH * 4);
   try {
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0, 0, 0, 1);
@@ -111,8 +124,8 @@ export async function runCelRenderModeProof(
     for (const lightMixing of ["strongest", "additive", "blend"] as const) {
       cel({ lightMixing });
       await scene.whenReadyAsync();
-      draw(() => scene.render(false));
-      mixing[lightMixing] = { row: await readRow(centerRow) };
+      const frame = await captureFrame(() => scene.render(false));
+      mixing[lightMixing] = { row: frameRow(frame, centerRow) };
     }
     // Cast-shadow capture: the sphere's shadow on a lit ground must step
     // between exactly two luminance levels with no filtered ramp.
@@ -123,7 +136,7 @@ export async function runCelRenderModeProof(
     camera.setTarget(new Vector3(0, -0.8, 0));
     cel({ lightMixing: "strongest", specularEnabled: false });
     await scene.whenReadyAsync();
-    draw(() => scene.render(false));
+    const frame = await captureFrame(() => scene.render(false));
     // Find the row crossing the shadow blob: exactly two dominant luminance
     // levels (lit field, shadowed blob) covering nearly every pixel.
     let shadow: {
@@ -136,7 +149,7 @@ export async function runCelRenderModeProof(
       other: number;
     } | null = null;
     for (let y = 0; y < HEIGHT; y++) {
-      const row = await readRow(y);
+      const row = frameRow(frame, y);
       const counts = new Map<number, number>();
       for (let i = 1; i < row.length; i += 4)
         counts.set(row[i]!, (counts.get(row[i]!) ?? 0) + 1);
@@ -168,7 +181,7 @@ export async function runCelRenderModeProof(
         midpoint: MIDPOINT,
         specularStrength: SPECULAR_STRENGTH,
         specularSize: SPECULAR_SIZE,
-        baseGreen: 153,
+        baseGreen: DISPLAY_GREEN,
       },
       width: WIDTH,
       centerRow,
@@ -176,6 +189,18 @@ export async function runCelRenderModeProof(
       shadow,
     };
   } finally {
+    // The last frame's submit can still be in flight; destroying the
+    // swapchain texture before it drains raises "Destroyed texture used in a
+    // submit" validation noise. WebGL2's flush/drain is a no-op.
+    const device = (engine as {
+      _device?: { queue: { onSubmittedWorkDone(): Promise<void> } };
+    })._device;
+    try {
+      engine.flushFramebuffer();
+      await device?.queue.onSubmittedWorkDone();
+    } catch {
+      // A lost device must not mask the captured result.
+    }
     engine.dispose();
     canvas.remove();
   }
