@@ -5,7 +5,6 @@ import {
   Constants,
   MeshBuilder,
   NodeMaterialModes,
-  NullEngine,
   RenderTargetTexture,
   Scene,
   Vector3,
@@ -569,7 +568,7 @@ export function createMaterialPreviewPresenter(
         const { width, height } = texture.getSize();
         if (!buffer || buffer.byteLength < width * height * 4) {
           // NullEngine has no GPU readback; its null result is expected.
-          if (!(host.scene.getEngine() instanceof NullEngine)) {
+          if (host.scene.getEngine().getClassName() !== "NullEngine") {
             reportReadback("The material preview readback returned no pixels.");
           }
           return;
