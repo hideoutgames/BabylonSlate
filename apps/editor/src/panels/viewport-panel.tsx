@@ -897,6 +897,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
         environmentLightingProof: () => Promise<Record<string, unknown>>;
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
+        webgpuPreviewsProof: (
+          options?: import("../testing/webgpu-previews-proof").ViewportProofOptions,
+        ) => Promise<
+          import("../testing/webgpu-previews-proof").ViewportProofResult
+        >;
+        engineSceneDiagnostics: () => Promise<
+          import("../testing/webgpu-previews-proof").EngineSceneDiagnostics | null
+        >;
       };
     };
     const host = globalThis as ViewportTestHost;
@@ -910,6 +918,19 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       environmentLightingProof: async () => {
         if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Environment proof requires a test build.");
         return (await import("../lib/environment-lighting-proof")).runEnvironmentLightingProof();
+      },
+      webgpuPreviewsProof: async (options) => {
+        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Preview proof requires a test build.");
+        const handle = engineRef.current;
+        const canvas = canvasRef.current;
+        if (!handle || !canvas) throw new Error("No active viewport for the preview proof");
+        return (await import("../testing/webgpu-previews-proof")).recordViewportProof(handle, canvas, options);
+      },
+      engineSceneDiagnostics: async () => {
+        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Scene diagnostics require a test build.");
+        const handle = engineRef.current;
+        if (!handle) return null;
+        return (await import("../testing/webgpu-previews-proof")).collectEngineSceneDiagnostics(handle.engine, handle.scene);
       },
       environmentTextureSamples: async () => {
         const handle = engineRef.current;
