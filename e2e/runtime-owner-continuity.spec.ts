@@ -291,7 +291,13 @@ for (const mode of ["Play", "Preview Build"] as const) {
         // stop path and destroys the iframe mid-load.
         await page.getByTestId("preview-build-close").click();
         await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
-      } finally { await releaseLoadingPaint(canvas).catch(() => {}); }
+      } finally {
+        // The gate lives in the iframe; once it is destroyed there is nothing
+        // to release, and evaluating into the dead frame would wait forever.
+        if (await page.getByTestId("preview-build-iframe").count()) {
+          await releaseLoadingPaint(canvas).catch(() => {});
+        }
+      }
     } else {
       await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
       await page.getByTestId("play-overlay-close").click();
