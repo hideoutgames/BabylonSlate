@@ -9,10 +9,10 @@ describe("play console rendering", () => {
     const scaling = new HardwareScalingController(engine);
     scaling.configureQuality({ scale: 0.75, minScale: 0.5, targetFps: 60, dynamic: true });
     expect(scaling.getLevel()).toBeCloseTo(4 / 3);
-    for (let i = 0; i < 100; i++) scaling.noteFrameTime(100);
+    for (let i = 0; i < 100; i++) scaling.noteFramePressure({ presentationMs: null, cpuMs: 100, gpuMs: null });
     expect(scaling.getLevel()).toBe(2);
     scaling.configureQuality({ scale: 1, minScale: 1, targetFps: 60, dynamic: false });
-    for (let i = 0; i < 100; i++) scaling.noteFrameTime(100);
+    for (let i = 0; i < 100; i++) scaling.noteFramePressure({ presentationMs: null, cpuMs: 100, gpuMs: null });
     expect(scaling.getLevel()).toBe(1);
     engine.dispose();
   });

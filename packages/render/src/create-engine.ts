@@ -9,7 +9,7 @@ import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
-import { createRenderDiagnostics, type RenderDiagnostics } from "./render-diagnostics";
+import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
 import {
   Engine,
   KhronosTextureContainer2,
@@ -114,7 +114,7 @@ import {
   resourceCacheForEngine,
   type ResourceCache,
 } from "./resource-cache";
-import { HardwareScalingController } from "./hardware-scaling";
+import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import {
   applyPlayFreeCamCommand,
@@ -1379,6 +1379,7 @@ function initializeEngine(
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
       interpolator.clear();
+      appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
       worldPlaySlots.clear();
@@ -1742,14 +1743,37 @@ function initializeEngine(
   };
 
   let interpAlpha = 1;
+  // Registered-view admission and renderLoop both prepare the same frame; apply
+  // only when the sampled identity changes or a command invalidated it.
+  let appliedSnapshotIdentity: { frameId: number; alpha: number; layoutGeneration: number } | null = null;
   const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
   let lastRenderCpuMs = 0;
+  // Dynamic scaling input: whether this view presented the current and previous
+  // engine frames (non-loading), when the last presentation happened, and the
+  // most recent pressure sample surfaced through diagnostics.
+  let framePresented = false;
+  let previousFramePresented = false;
+  let lastPresentedAt = 0;
+  let lastPressureSample: FramePressureSample | null = null;
+  let gpuFrameCaptureRequested = false;
+  const soleRenderingView = () => {
+    let enabled = 0;
+    for (const view of engine.views ?? []) {
+      if (registeredViewIsEnabled(view)) enabled += 1;
+    }
+    return registeredView ? enabled === 1 : enabled === 0;
+  };
+  const gpuAttribution = (): GpuAttribution => {
+    if (!soleRenderingView()) return "shared-engine";
+    return engine.getGPUFrameTimeCounter().count > 0 ? "view" : "unavailable";
+  };
   // Engine-owned instrumentation is acquired only by a successfully returned handle.
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
   const renderDiagnostics = () => (readDiagnostics ??= createRenderDiagnostics(
     scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
+    () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
   ))();
   const loadingScope = (owner?: SceneLayerLoadIdentity) => {
     const generation = loadGeneration;
@@ -1786,28 +1810,25 @@ function initializeEngine(
   const tilemapPreviewStart = performance.now();
   function prepareSnapshot() {
     const sampled = interpolator.sample(interpAlpha);
-    if (sampled) {
-      const previousCamera = scene.activeCamera;
-      applySnapshotToScene(scene, binding, sampled);
-      playViz?.refresh();
-      rebuildIfActiveCameraChanged(previousCamera);
-      positionsFromSample(sampled, lastPositions);
+    if (!sampled) return null;
+    const layoutGeneration = interpolator.layoutGeneration;
+    if (
+      appliedSnapshotIdentity &&
+      appliedSnapshotIdentity.frameId === sampled.frameId &&
+      appliedSnapshotIdentity.alpha === sampled.alpha &&
+      appliedSnapshotIdentity.layoutGeneration === layoutGeneration
+    ) {
+      return sampled;
     }
-    return sampled;
-  }
-  const renderLoop = () => {
-    if (disposed || contextLost || registeredView?.enabled === false) return;
-    // Babylon invokes all render callbacks for each registered view. A loading
-    // permit belongs to this canvas and must not draw into a sibling's blit.
-    if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
-    const sampled = prepareSnapshot();
-    const frameStart = performance.now();
-    const loadingFrame = hasLoadingFrame();
-    if (!shouldRenderFrame(frameStart)) {
-      return;
-    }
+    const previousCamera = scene.activeCamera;
+    applySnapshotToScene(scene, binding, sampled);
+    playViz?.refresh();
+    rebuildIfActiveCameraChanged(previousCamera);
+    positionsFromSample(sampled, lastPositions);
+    // Pose/listener sync owns the applied snapshot, not render admission: a
+    // capped or held frame must not leave spatial audio stale.
     if (audioService) {
-      if (audioService.hasSpatialVoices() && sampled) {
+      if (audioService.hasSpatialVoices()) {
         writeSampledAudioPoses(sampled, audioPoses);
         applyBoneAttachmentAudioPoses(binding, audioPoses);
         audioService.syncSnapshot(audioPoses);
@@ -1826,6 +1847,24 @@ function initializeEngine(
           qw: rot.w,
         });
       }
+    }
+    appliedSnapshotIdentity = {
+      frameId: sampled.frameId,
+      alpha: sampled.alpha,
+      layoutGeneration,
+    };
+    return sampled;
+  }
+  const renderLoop = () => {
+    if (disposed || contextLost || registeredView?.enabled === false) return;
+    // Babylon invokes all render callbacks for each registered view. A loading
+    // permit belongs to this canvas and must not draw into a sibling's blit.
+    if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
+    const sampled = prepareSnapshot();
+    const frameStart = performance.now();
+    const loadingFrame = hasLoadingFrame();
+    if (!shouldRenderFrame(frameStart)) {
+      return;
     }
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
@@ -1893,9 +1932,29 @@ function initializeEngine(
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     lastRenderCpuMs = performance.now() - renderStart;
-    if (!loadingFrame) scaling.noteFrameTime(lastRenderCpuMs);
+    if (!loadingFrame) framePresented = true;
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
+    if (framePresented) {
+      const presentedAt = performance.now();
+      // GPU timing only means this view when it owns the Engine's render —
+      // siblings would fold their cost into the same counter.
+      const sole = soleRenderingView();
+      if (sole && !gpuFrameCaptureRequested && engine.getCaps().timerQuery) {
+        gpuFrameCaptureRequested = true;
+        engine.captureGPUFrameTime(true);
+      }
+      const counter = sole ? engine.getGPUFrameTimeCounter() : null;
+      lastPressureSample = {
+        presentationMs: previousFramePresented ? presentedAt - lastPresentedAt : null,
+        cpuMs: lastRenderCpuMs,
+        gpuMs: counter && counter.count > 0 ? counter.current / 1_000_000 : null,
+      };
+      lastPresentedAt = presentedAt;
+      scaling.noteFramePressure(lastPressureSample);
+    }
+    previousFramePresented = framePresented;
+    framePresented = false;
     if (rttPresent) return;
     for (const [key, pending] of pendingPresentations) {
       if (!pending.rendered) continue;
@@ -2147,6 +2206,7 @@ function initializeEngine(
     pushSnapshot: (buffer: Float32Array) => {
       interpolator.push(buffer);
       interpAlpha = 1;
+      appliedSnapshotIdentity = null;
       const sampled = interpolator.sample(interpAlpha);
       if (sampled) positionsFromSample(sampled, lastPositions);
       if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
@@ -2158,6 +2218,7 @@ function initializeEngine(
     applyCommand: (command: CommandMessage) => {
       if (command.type === "snapshotLayout") {
         interpolator.installLayout(command.capacity, command.generation);
+        appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
         return;
       }
@@ -2171,6 +2232,7 @@ function initializeEngine(
         playCursor?.setVisible(command.visible);
       }
       if (command.type === "spawn") {
+        appliedSnapshotIdentity = null;
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
         if (command.sceneLayerId) {
           worldPlaySlots.delete(command.slotId);
@@ -2195,6 +2257,7 @@ function initializeEngine(
         }
       }
       if (command.type === "despawn") {
+        appliedSnapshotIdentity = null;
         pendingOverlayAssign.delete(command.slotId);
         worldPlaySlots.delete(command.slotId);
         sceneLayerCompositor?.noteDespawn(command.slotId);
@@ -2204,6 +2267,7 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        appliedSnapshotIdentity = null;
         worldLoadId = command.sceneLoadId;
         worldSceneAssetGuid = command.sceneAssetGuid;
         postProcessParameters.clear();
@@ -2246,6 +2310,7 @@ function initializeEngine(
       audioService?.handleCommand(command);
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
+        appliedSnapshotIdentity = null;
         if (command.sceneLayerId) {
           worldPlaySlots.delete(command.slotId);
           sceneLayerCompositor?.noteSpawn(
@@ -2296,10 +2361,12 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "assignMaterial") {
+        appliedSnapshotIdentity = null;
         applyAssignMaterial(scene, binding, command);
         scheduler.invalidate("asset");
       }
       if (command.type === "attachToBone") {
+        appliedSnapshotIdentity = null;
         applyAttachToBone(binding, command);
         scheduler.invalidate("snapshot");
       }
@@ -2350,6 +2417,7 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "animState") {
+        appliedSnapshotIdentity = null;
         if (!binding.pendingAnimState) binding.pendingAnimState = new Map();
         binding.pendingAnimState.set(command.slotId, command);
         applyAnimStateToScene(
