@@ -18,7 +18,7 @@ async function choose(page: Page, id: string, name: string) {
   await expect(trigger.locator('[data-slot="select-value"]')).toHaveText(name);
 }
 
-test("pipeline preferences preserve the effective viewport and Scene path inheritance through history and reopen", async ({ page }, testInfo) => {
+test("pipeline preferences are project-wide, retained through reopen, and absent from Scene Details", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -34,30 +34,18 @@ test("pipeline preferences preserve the effective viewport and Scene path inheri
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByTestId("settings-modal")).toHaveCount(0);
   await waitForSceneViewportReady(page);
-  const rendering = page.getByRole("button", { name: "Rendering", exact: true });
-  await expect(rendering).toHaveAttribute("aria-expanded", "false");
-  await rendering.click();
-  const path = page.getByTestId("scene-render-path");
-  await expect(path).toBeDisabled();
-  await expect(path.locator('[data-slot="select-value"]')).toHaveText("Clustered Forward");
+  // Render Path is a project setting only: Scene Details has no Rendering
+  // override section and no per-Scene path or backend control.
+  await expect(page.getByRole("button", { name: "Rendering", exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("scene-render-path")).toHaveCount(0);
+  await expect(page.getByTestId("scene-render-pipeline")).toHaveCount(0);
   await expect(page.getByTestId("project-gpu-backend")).toHaveCount(0);
-  await page.getByRole("button", { name: "Override Render Path", exact: true }).click();
-  await choose(page, "scene-render-path", "Forward");
-  await page.getByTestId("undo-document").click();
-  await expect(path.locator('[data-slot="select-value"]')).toHaveText("Clustered Forward");
-  await page.getByTestId("redo-document").click();
-  await expect(path.locator('[data-slot="select-value"]')).toHaveText("Forward");
-  await page.getByRole("button", { name: "Reset Render Path To Project Settings", exact: true }).click();
-  await expect(path).toBeDisabled();
-  await expect(path.locator('[data-slot="select-value"]')).toHaveText("Clustered Forward");
+  await page.screenshot({ path: testInfo.outputPath("scene-details-without-pipeline.png") });
   await saveAllIfEnabled(page, 30_000);
 
   await openTestProject(page);
   await openMainScene(page);
-  await page.getByRole("button", { name: "Rendering", exact: true }).click();
-  await expect(page.getByTestId("scene-render-path")).toBeDisabled();
-  await expect(page.getByTestId("scene-render-path").locator('[data-slot="select-value"]')).toHaveText("Clustered Forward");
-  await page.screenshot({ path: testInfo.outputPath("scene-pipeline-inherited.png") });
+  await expect(page.getByTestId("scene-render-path")).toHaveCount(0);
   await openRendering(page);
   await expect(page.getByTestId("project-render-path").locator('[data-slot="select-value"]')).toHaveText("Clustered Forward");
   await expect(page.getByTestId("project-gpu-backend").locator('[data-slot="select-value"]')).toHaveText("WebGPU");
@@ -68,6 +56,8 @@ test("pipeline preferences preserve the effective viewport and Scene path inheri
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByTestId("settings-modal")).toHaveCount(0);
   await waitForSceneViewportReady(page);
-  await expect(page.getByTestId("scene-render-path").locator('[data-slot="select-value"]')).toHaveText("Auto");
+  await openRendering(page);
+  await expect(page.getByTestId("project-render-path").locator('[data-slot="select-value"]')).toHaveText("Auto");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   expect(errors).toEqual([]);
 });
