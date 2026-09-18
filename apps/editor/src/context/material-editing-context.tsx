@@ -17,6 +17,7 @@ import {
   createMaterialPreviewScene,
   setSceneRenderSettings,
   getMaterialTexture,
+  installPreviewEnvironment,
   materialUnavailable,
   resourceCacheForEngine,
   type MaterialPreviewPresenter,
@@ -234,6 +235,7 @@ export function MaterialEditingProvider({
       host = createMaterialPreviewScene(sharedEngine, {
         mesh: document?.preview.mesh ?? "cube",
       });
+      installPreviewEnvironment(host.scene);
       presenter = createMaterialPreviewPresenter(host, canvas, {
         onError: (message) => {
           dispatch({ type: "previewError", error: message });

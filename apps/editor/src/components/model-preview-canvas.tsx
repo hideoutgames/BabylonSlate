@@ -21,6 +21,7 @@ import {
   createModelPreviewScene,
   setSceneRenderSettings,
   getMaterialTexture,
+  installPreviewEnvironment,
   isColliderVisualMesh,
   loadModelPreviewSource,
   materialUnavailable,
@@ -137,6 +138,7 @@ export function ModelPreviewCanvas({
       try {
         setLoadError(null);
         host = createModelPreviewScene(engine);
+        installPreviewEnvironment(host.scene);
         presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 1, onError: setLoadError });
         const gizmos = createGizmoHost(host.scene, {
           tool: "translate",
