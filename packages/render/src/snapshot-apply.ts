@@ -1195,6 +1195,7 @@ export function applySnapshotToScene(
   binding: SnapshotSceneBinding,
   snapshot: SampledSnapshot,
 ): void {
+  const prevMaterialDirty = scene.blockMaterialDirtyMechanism;
   scene.blockMaterialDirtyMechanism = true;
   const prevBlock = scene.blockfreeActiveMeshesAndRenderingGroups;
   scene.blockfreeActiveMeshesAndRenderingGroups = true;
@@ -1289,7 +1290,7 @@ export function applySnapshotToScene(
       updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
     }
   } finally {
-    scene.blockMaterialDirtyMechanism = false;
+    scene.blockMaterialDirtyMechanism = prevMaterialDirty;
     scene.blockfreeActiveMeshesAndRenderingGroups = prevBlock;
   }
 }
