@@ -328,6 +328,55 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
+  it("emits setRenderPath for renderpath requests and reports the last engine status", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      includeDebugCommands: false,
+      onCommand: (command) => commands.push(command),
+    });
+    expect(runtime.executeConsoleCommand("renderpath")).toEqual({
+      success: true,
+      output: "render path not reported yet",
+    });
+    expect(runtime.executeConsoleCommand("renderpath clusteredForward")).toEqual({
+      success: true,
+      output: "renderpath clusteredForward",
+    });
+    expect(runtime.executeConsoleCommand("renderpath reset")).toEqual({
+      success: true,
+      output: "renderpath reset",
+    });
+    expect(runtime.executeConsoleCommand("renderpath nonsense").success).toBe(false);
+    expect(commands).toEqual([
+      { type: "setRenderPath", renderPath: "clusteredForward" },
+      { type: "setRenderPath", renderPath: null },
+    ]);
+    runtime.applyRenderPathStatus({
+      type: "renderPathStatus",
+      requested: "clusteredForward",
+      effective: "clusteredForward",
+      gpuBackend: "webgl2",
+      limits: [],
+    });
+    expect(runtime.executeConsoleCommand("renderpath").output).toBe(
+      "renderpath clusteredForward (effective clusteredForward, webgl2)",
+    );
+    runtime.applyRenderPathStatus({
+      type: "renderPathStatus",
+      requested: "clusteredForward",
+      effective: "forward",
+      gpuBackend: "webgl2",
+      limits: ["Clustered Forward awaits scene capability checks; using Forward."],
+    });
+    expect(runtime.executeConsoleCommand("renderpath").output).toBe(
+      "renderpath clusteredForward (effective forward, webgl2) — Clustered Forward awaits scene capability checks; using Forward.",
+    );
+    runtime.stop();
+  });
+
   it("dispatches complete presets after manual lighting edits and reports Custom without resetting simulation", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, includeDebugCommands: false, onCommand: (command) => commands.push(command) });

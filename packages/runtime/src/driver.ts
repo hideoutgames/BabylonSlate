@@ -58,6 +58,7 @@ import {
   deprojectCursorRay,
   type MaterialParameterCatalog,
   type MaterialParameterValue,
+  type RenderPathStatus,
   type Transform,
   type SerializedActor,
   type SerializedScene,
@@ -305,6 +306,9 @@ export interface RuntimeDriver {
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,
   ): void;
+  applyRenderPathStatus(
+    message: Extract<ControlMessage, { type: "renderPathStatus" }>,
+  ): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
@@ -420,6 +424,7 @@ class InProcessRuntime implements RuntimeDriver {
   private accumulator = 0;
   private paused = false;
   private readonly renderingQuality: RenderingQualitySession;
+  private lastRenderPathStatus: RenderPathStatus | null = null;
   private frameCap: number;
   private volume = 1;
   private timeDilation = 1;
@@ -1540,6 +1545,17 @@ class InProcessRuntime implements RuntimeDriver {
       );
       return;
     }
+  }
+
+  applyRenderPathStatus(
+    message: Extract<ControlMessage, { type: "renderPathStatus" }>,
+  ): void {
+    this.lastRenderPathStatus = {
+      requested: message.requested,
+      effective: message.effective,
+      gpuBackend: message.gpuBackend,
+      limits: [...message.limits],
+    };
   }
 
   private ensureOverlayDesignPose(actor: Actor): void {
@@ -3378,6 +3394,10 @@ class InProcessRuntime implements RuntimeDriver {
           this.emit({ type: "setRenderingQuality", overrides: this.renderingQuality.overrides });
         return result;
       },
+      setRenderPath: (path) => {
+        this.emit({ type: "setRenderPath", renderPath: path });
+      },
+      getRenderPath: () => this.lastRenderPathStatus,
       setLightsDebug: (enabled) => this.emit({ type: "setLightsDebug", enabled }),
       setFrameCap: (fps) => {
         this.frameCap = fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
