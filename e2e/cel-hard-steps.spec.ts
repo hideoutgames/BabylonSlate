@@ -82,10 +82,15 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       ).toBeGreaterThan(0);
       if (lightMixing === "additive")
         expect(
-          highlights.some((value) =>
-            levels.some(
-              (level) => Math.abs(value - (level + 2 * quantum)) <= 1,
-            ),
+          highlights.some(
+            (value) =>
+              levels.some(
+                (level) => Math.abs(value - (level + 2 * quantum)) <= 1,
+              ) ||
+              // The lights' highlights overlap on the top band: level + 2·q
+              // exceeds 255 and clamps, which a single quantum (≤254) cannot
+              // reach — saturation still proves stacking.
+              value >= 255,
           ),
           "additive did not stack two whole highlight quanta",
         ).toBe(true);
