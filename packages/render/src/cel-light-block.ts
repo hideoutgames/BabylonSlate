@@ -91,7 +91,7 @@ export class CelLightBlock extends LightBlock {
         )
         .replace(
           " = specularBase",
-          " = slateCelSurfaceSpecular(specularBase, slateCelPeak, slateCelTotal)",
+          " = slateCelSurfaceSpecular(specularBase)",
           this.specularOutput.hasEndpoints ? 1 : 0,
         )
         .replace(

@@ -55,15 +55,11 @@ vec3 slateCelEnvironmentLight(vec3 normal) {
 // Resolve round-off at exact hard thresholds consistently; no edge blending.
 float slateCelBand(float value) {
   float levels = slateCelBands.x - 1.0;
-  float shifted = pow(clamp(value, 0.0, 1.0), log(0.5) / log(slateCelBands.z)) * levels;
-  float lower = floor(shifted);
-  if (slateCelBands.y <= 0.0) { return clamp(floor(shifted + 0.5001) / levels, 0.0, 1.0); }
-  float width = slateCelBands.y;
-  return clamp((lower + smoothstep(0.5 - width, 0.5 + width, fract(shifted))) / levels, 0.0, 1.0);
+  float shifted = pow(clamp(value, 0.0, 1.0), log(0.5) / log(slateCelBands.y)) * levels;
+  return clamp(floor(shifted + 0.5001) / levels, 0.0, 1.0);
 }
 float slateCelShadowVisibility(float visibility) {
-  if (slateCelBands.y <= 0.0) { return step(0.49999, visibility); }
-  return smoothstep(0.5 - slateCelBands.y, 0.5 + slateCelBands.y, visibility);
+  return step(0.49999, visibility);
 }
 float slateCelStrength(vec3 color) {
   return max(color.r, max(color.g, color.b));
@@ -72,8 +68,13 @@ vec3 slateCelAccumulate(vec3 previous, vec3 incoming, float wins) {
   if (slateCelLight.y < 0.5) { return mix(previous, incoming, wins); }
   return previous + incoming;
 }
-vec3 slateCelSurfaceSpecular(vec3 color, float peak, float total) {
-  if (slateCelLight.y > 1.5) { return color * peak / max(total, 0.00001); }
+vec3 slateCelSurfaceSpecular(vec3 color) {
+  if (slateCelLight.y > 1.5) {
+    float strength = slateCelStrength(color);
+    // Blend keeps the overlap tint but emits the full-strength highlight or
+    // none; a partial rescale would smear the hard highlight across lights.
+    return color / max(strength, 0.00001) * slateCelSpecular.x * step(0.5, strength / max(slateCelSpecular.x, 0.00001));
+  }
   return color;
 }
 vec3 slateCelTint(vec3 color) {
@@ -86,16 +87,14 @@ vec3 slateCelSpecularTint(vec3 specular, vec3 diffuse) {
 }
 float slateCelHighlight(float ndh, float ndl) {
   float edge = 1.0 - slateCelSpecular.y;
-  if (slateCelSpecular.z <= 0.0) { return step(edge - 0.00001, ndh) * step(0.00001, ndl) * slateCelSpecular.x; }
-  float width = slateCelSpecular.z;
-  return smoothstep(edge - width, edge + width, ndh) * step(0.00001, ndl) * slateCelSpecular.x;
+  return step(edge - 0.00001, ndh) * step(0.00001, ndl) * slateCelSpecular.x;
 }
 vec3 slateCelSurfaceLight(vec3 color, float peak) {
   if (slateCelLight.z > 0.5) { return vec3(1.0); }
   float strength = max(color.r, max(color.g, color.b));
   float brightness = strength;
   if (slateCelLight.y > 1.5) { brightness = peak; }
-  return mix(vec3(1.0 - slateCelBands.w), slateCelTint(color / max(strength, 0.00001)), slateCelBand(brightness));
+  return mix(vec3(1.0 - slateCelBands.z), slateCelTint(color / max(strength, 0.00001)), slateCelBand(brightness));
 }
 `;
   if (!wgsl) return source;
@@ -135,7 +134,7 @@ export function celLightingFunctions(source: string, wgsl: boolean): string {
       )
       .replaceAll(
         "specComp*specularColor*attenuation",
-        "specComp*slateCelSpecularTint(specularColor,diffuseColor)*slateCelBand(attenuation)",
+        "specComp*slateCelSpecularTint(specularColor,diffuseColor)*step(0.00001,attenuation)",
         2,
       )
       .replaceAll(
@@ -208,15 +207,15 @@ export function bindCelSettings(
   effect.setFloat4(
     "slateCelBands",
     cel.shadowBands,
-    cel.bandSoftness,
     cel.shadowThreshold,
     cel.shadowStrength,
+    0,
   );
   effect.setFloat4(
     "slateCelSpecular",
     cel.specularEnabled ? cel.specularStrength : 0,
     cel.specularSize,
-    cel.specularSoftness,
+    0,
     0,
   );
   effect.setFloat4(
