@@ -254,6 +254,24 @@ describe("material preview state machine", () => {
     expect(refreshed.queuedGeneration).toBe(2);
   });
 
+  it("surfaces a render readback failure without failing the compile state", () => {
+    const state = drive(createMaterialPreviewState(), [
+      { type: "edit", cost: "cheap" },
+      { type: "compileStart", generation: 1 },
+      { type: "result", generation: 1, ok: true, durationMs: 5 },
+      { type: "previewError", error: "readback lost" },
+    ]);
+    expect(state.lastError).toBe("readback lost");
+    expect(state.status).toBe("ready");
+    expect(state.readyGeneration).toBe(1);
+    const cleared = materialPreviewReducer(state, {
+      type: "previewError",
+      error: null,
+    });
+    expect(cleared.lastError).toBeNull();
+    expect(cleared.status).toBe("ready");
+  });
+
   it("resets to clean on dispose", () => {
     const state = drive(createMaterialPreviewState(), [
       { type: "edit", cost: "cheap" },

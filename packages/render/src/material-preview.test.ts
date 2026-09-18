@@ -822,4 +822,94 @@ describe("material preview presenter", () => {
     presenter.dispose();
     expect(host.camera.outputRenderTarget).toBeNull();
   });
+
+  it("reports a readback rejection through onError and clears it after a good frame", async () => {
+    const width = 320;
+    const height = 180;
+    const readPixels = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockRejectedValueOnce(new Error("readback lost"))
+      .mockResolvedValue(new Uint8Array(width * height * 4));
+    disposers.push(() => readPixels.mockRestore());
+    const ImageDataStub = class {
+      constructor(
+        public data: Uint8ClampedArray,
+        public width: number,
+        public height: number,
+      ) {}
+    };
+    const previousImageData = (globalThis as { ImageData?: unknown }).ImageData;
+    (globalThis as { ImageData: unknown }).ImageData = ImageDataStub;
+    disposers.push(() => {
+      if (previousImageData) {
+        (globalThis as { ImageData: unknown }).ImageData = previousImageData;
+      } else {
+        delete (globalThis as { ImageData?: unknown }).ImageData;
+      }
+    });
+    const host = await previewHost();
+    const canvas = new FakeCanvas();
+    const onError = vi.fn();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 1000, onError },
+    );
+    disposers.push(() => presenter.dispose());
+
+    presenter.present({ force: true });
+    await vi.waitFor(() =>
+      expect(onError).toHaveBeenLastCalledWith("readback lost"),
+    );
+    expect(canvas.capturedImages).toHaveLength(0);
+
+    presenter.present({ force: true });
+    await vi.waitFor(() =>
+      expect(canvas.capturedImages.length).toBeGreaterThan(0),
+    );
+    expect(onError).toHaveBeenLastCalledWith(null);
+  });
+
+  it("keeps a late-resolving readback from writing after dispose", async () => {
+    let finishRead!: (pixels: Uint8Array) => void;
+    const readPixels = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+      );
+    disposers.push(() => readPixels.mockRestore());
+    const host = await previewHost();
+    const canvas = new FakeCanvas();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 1000 },
+    );
+
+    presenter.present({ force: true });
+    presenter.dispose();
+    finishRead(new Uint8Array(320 * 180 * 4));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(canvas.capturedImages).toHaveLength(0);
+  });
+
+  it("treats a null readback under NullEngine as expected and stays silent", async () => {
+    // Unmocked NullEngine readPixels resolves null — there is no GPU buffer.
+    const host = await previewHost();
+    const canvas = new FakeCanvas();
+    const onError = vi.fn();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 1000, onError },
+    );
+    disposers.push(() => presenter.dispose());
+    presenter.present({ force: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onError).not.toHaveBeenCalled();
+  });
 });

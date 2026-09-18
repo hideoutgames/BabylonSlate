@@ -234,7 +234,14 @@ export function MaterialEditingProvider({
       host = createMaterialPreviewScene(sharedEngine, {
         mesh: document?.preview.mesh ?? "cube",
       });
-      presenter = createMaterialPreviewPresenter(host, canvas);
+      presenter = createMaterialPreviewPresenter(host, canvas, {
+        onError: (message) => {
+          dispatch({ type: "previewError", error: message });
+          if (message) {
+            console.warn(`[render] Material preview presentation failed: ${message}`);
+          }
+        },
+      });
       presenter.setFrozen(frozen);
       gestures = attachMaterialPreviewGestures(canvas, host.camera);
     } catch {
