@@ -21,10 +21,10 @@ import {
   attachLifecyclePause,
   createEngine,
   createSceneLoadReadiness,
-  waitForSceneLoadingPaint,
   navDebugBlockersFromActors,
   particleStats,
   type EngineHandle,
+  type SceneLoadProgress,
 } from "@babylonslate/render";
 import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
@@ -34,7 +34,10 @@ import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
 } from "./engine-commands";
-import { mountPlayerSceneLoading } from "./scene-loading-overlay";
+import {
+  publishPlayerSceneLoading,
+  waitForPlayerLoadingPaint,
+} from "./scene-loading-state";
 import { mountPlayerPrintOverlay } from "./print-overlay";
 import { packedBootControls, packedContentFromGame, type PackedGameContent } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
@@ -439,16 +442,20 @@ function initializePlayer(
     if (!halted) stopPlayer();
   };
 
-  const sceneLoading = mountPlayerSceneLoading(canvas.parentElement ?? document.body, () => stopPlayer());
-  own(() => sceneLoading.dispose());
+  // No loading popup: authored Scene Layers present loading through Game
+  // Instance events. The root attributes expose the transaction to tests and
+  // embedders; the world stays withheld by the load admission, not obstruction.
+  const loadingRoot = document.getElementById("player-root") ?? document.body;
+  const publishSceneLoading = (state: SceneLoadProgress | null) =>
+    publishPlayerSceneLoading(loadingRoot, state);
   let hostSceneGuid: string | null = startup;
   let receivedActiveScene = false;
   const sceneReadiness = createSceneLoadReadiness({
     handle,
     loading: {
-      acquire: () => handle.scheduler.acquireObstruction(),
-      progress: (state) => sceneLoading.update(state),
-      paint: waitForSceneLoadingPaint,
+      acquire: () => () => {},
+      progress: publishSceneLoading,
+      paint: (signal) => waitForPlayerLoadingPaint(handle.engine, signal),
       layerPainted: ({ layerId, layerLoadId }) => {
         worker?.postControl({ type: "sceneLayerLoadingPainted", layerId, layerLoadId });
         runtime?.notifySceneLayerLoadingPainted(layerId, layerLoadId);
