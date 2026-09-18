@@ -45,7 +45,6 @@ async function fixture() {
   scene.settings.grid.showGrid = false;
   scene.settings.celShading = {
     specularEnabled: false,
-    bandSoftness: 0,
     shadowStrength: 1,
   };
   scene.settings.shadowOverrides = {

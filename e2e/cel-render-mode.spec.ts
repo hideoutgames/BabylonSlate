@@ -40,7 +40,7 @@ test("Mannequin illumination stays stable when directional shadows are enabled",
     transform: { position: [0, -1.5, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] },
     components: [mesh],
   }), sun, createDefaultSkyboxActor()];
-  scene.settings.celShading = { specularEnabled: false, bandSoftness: 0 };
+  scene.settings.celShading = { specularEnabled: false };
   await openMainScene(page);
   await projectMode(page, "CEL");
   await setPreviewScene(page, scene);
@@ -301,7 +301,6 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     scene.settings.celShading = {
       shadowStrength: 1,
       shadowBands: 3,
-      bandSoftness: 0,
       lightMixing,
     };
     scene.actors = [
@@ -405,7 +404,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
       .toBeGreaterThan(500);
   }
 
-  scene.settings.celShading = { shadowStrength: 1, bandSoftness: 0 };
+  scene.settings.celShading = { shadowStrength: 1 };
   scene.actors = [
     ...subjects,
     createActor("two-tone-fill", "Two Tone Fill", {
@@ -486,7 +485,6 @@ test("CEL preserves authored and texture colors, supports every light, and resto
         path: testInfo.outputPath("cel-shadow-bands.png"),
       });
       scene.settings.celShading.shadowBands = 2;
-      scene.settings.celShading.bandSoftness = 0;
       await setPreviewScene(page, scene);
       await expect
         .poll(() => pixelsNear(viewport, [26, 77, 39], 3, true))

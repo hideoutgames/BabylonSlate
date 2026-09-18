@@ -52,11 +52,6 @@ const fields: {
     description: "Higher values extend the shaded region.",
   },
   {
-    key: "bandSoftness",
-    label: "Band Softness",
-    description: "Softens transitions between bands. Zero gives hard edges.",
-  },
-  {
     key: "shadowStrength",
     label: "Shadow Strength",
     description: "Darkness of the deepest shade and cast shadows.",
@@ -75,11 +70,6 @@ const fields: {
     key: "specularSize",
     label: "Specular Size",
     description: "Size of the stylized highlight.",
-  },
-  {
-    key: "specularSoftness",
-    label: "Specular Softness",
-    description: "Softness of the highlight edge.",
   },
   {
     key: "lightColorInfluence",

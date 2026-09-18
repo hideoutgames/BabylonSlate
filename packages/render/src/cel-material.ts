@@ -57,7 +57,7 @@ for (const wgsl of [false, true]) {
     )
     .replace(
       "#ifdef EMISSIVEASILLUMINATION",
-      `${celEnvironmentAccumulation(wgsl)}\ndiffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\n#ifdef SPECULARTERM\nspecularBase=slateCelSurfaceSpecular(specularBase,slateCelPeak,slateCelTotal);\n#endif\n#ifdef EMISSIVEASILLUMINATION`,
+      `${celEnvironmentAccumulation(wgsl)}\ndiffuseBase=slateCelSurfaceLight(diffuseBase,slateCelPeak);\n#ifdef SPECULARTERM\nspecularBase=slateCelSurfaceSpecular(specularBase);\n#endif\n#ifdef EMISSIVEASILLUMINATION`,
       2,
     ).value;
 }

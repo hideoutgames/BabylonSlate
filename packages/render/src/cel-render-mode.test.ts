@@ -21,6 +21,7 @@ import {
 } from "@babylonslate/shader-graph";
 import { normalizeCelShadingSettings, normalizeEnvironmentLightingSettings } from "@babylonslate/core";
 import { CelMaterial } from "./cel-material";
+import { celFunctions } from "./cel-shader";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings } from "./render-settings";
 import { setSceneRenderSettings } from "./scene-render-mode";
@@ -85,6 +86,43 @@ describe("native CEL render mode", () => {
     }
     compiled.dispose();
   });
+  it("binds only hard-step uniforms: legacy softness keys normalize away and the CEL functions contain no smoothstep", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const native = new CelMaterial(new PBRMaterial("source", scene), scene);
+    const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
+    mesh.material = native;
+    setSceneRenderSettings(scene, {
+      mode: "cel",
+      cel: normalizeCelShadingSettings({
+        shadowBands: 4,
+        shadowThreshold: 0.4,
+        shadowStrength: 0.7,
+        specularStrength: 0.3,
+        specularSize: 0.25,
+        // Removed softness controls drop silently from legacy documents.
+        bandSoftness: 0.5,
+        specularSoftness: 0.5,
+      }),
+    });
+    const cel = sceneRenderingSettings(scene).cel;
+    expect(cel).not.toHaveProperty("bandSoftness");
+    expect(cel).not.toHaveProperty("specularSoftness");
+    await native.forceCompilationAsync(mesh);
+    const subMesh = mesh.subMeshes[0]!;
+    expect(native.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+    const uniforms = vi.spyOn(subMesh.effect!, "setFloat4");
+    native.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+    expect(
+      uniforms.mock.calls.filter(([name]) => name === "slateCelBands").at(-1),
+    ).toEqual(["slateCelBands", 4, 0.4, 0.7, 0]);
+    expect(
+      uniforms.mock.calls.filter(([name]) => name === "slateCelSpecular").at(-1),
+    ).toEqual(["slateCelSpecular", 0.3, 0.25, 0, 0]);
+    for (const wgsl of [false, true])
+      expect(celFunctions(wgsl)).not.toContain("smoothstep");
+  });
+
   it("adapts imported slots and late meshes, preserving textures, alpha and PBR restoration", () => {
     const scene = host();
     const pbr = new PBRMaterial("imported", scene);

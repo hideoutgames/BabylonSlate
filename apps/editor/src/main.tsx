@@ -92,6 +92,17 @@ if (
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("celRenderModeProof")
+) {
+  void import("./testing/cel-render-mode-proof").then(
+    ({ runCelRenderModeProof }) => {
+      Object.assign(window, {
+        __babylonslateCelRenderModeProof: runCelRenderModeProof,
+      });
+    },
+  );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("environmentWebgpuProof")
 ) {
   void import("./lib/environment-lighting-proof").then(

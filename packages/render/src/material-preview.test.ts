@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ArcRotateCamera,
+  Matrix,
   MeshBuilder,
   NullEngine,
   NodeMaterial,
+  PBRMaterial,
   RenderTargetTexture,
   Scene,
   StandardMaterial,
@@ -11,7 +13,10 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { MATERIAL_PREVIEW_MESHES, createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { normalizeCelShadingSettings } from "@babylonslate/core";
 import { isEngineDefaultMaterial } from "./default-material";
+import { CelMaterial } from "./cel-material";
+import { setSceneRenderSettings } from "./scene-render-mode";
 import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import {
@@ -228,6 +233,39 @@ describe("material preview scene", () => {
     expect(host.mesh.name).toBe(MATERIAL_PREVIEW_MESH_NAME);
     expect(host.mesh.getTotalVertices()).toBe(24);
     expect(isEngineDefaultMaterial(host.scene.defaultMaterial)).toBe(true);
+  });
+
+  it("binds the same hard-step CEL uniforms as world scenes", async () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    setSceneRenderSettings(host.scene, {
+      mode: "cel",
+      cel: normalizeCelShadingSettings({
+        shadowBands: 4,
+        shadowThreshold: 0.4,
+        shadowStrength: 0.7,
+        specularStrength: 0.3,
+        specularSize: 0.25,
+      }),
+    });
+    // The engine default checker texture never reports ready under
+    // NullEngine, so bind an explicit textureless CEL material for the
+    // uniform assertion instead.
+    const material = new CelMaterial(new PBRMaterial("preview-cel", host.scene), host.scene);
+    const mesh = host.mesh;
+    mesh.material = material;
+    host.scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    await material.forceCompilationAsync(mesh);
+    const subMesh = mesh.subMeshes[0]!;
+    expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+    const uniforms = vi.spyOn(subMesh.effect!, "setFloat4");
+    material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+    expect(
+      uniforms.mock.calls.filter(([name]) => name === "slateCelBands").at(-1),
+    ).toEqual(["slateCelBands", 4, 0.4, 0.7, 0]);
+    expect(
+      uniforms.mock.calls.filter(([name]) => name === "slateCelSpecular").at(-1),
+    ).toEqual(["slateCelSpecular", 0.3, 0.25, 0, 0]);
   });
 
   it("swaps the primitive while keeping the applied material", async () => {
