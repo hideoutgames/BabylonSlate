@@ -3,13 +3,11 @@ export type RenderMode = "pbr" | "cel";
 
 export interface CelShadingSettings {
   shadowBands: number;
-  bandSoftness: number;
   shadowThreshold: number;
   shadowStrength: number;
   specularEnabled: boolean;
   specularStrength: number;
   specularSize: number;
-  specularSoftness: number;
   lightColorInfluence: number;
   lightMixing: "strongest" | "additive" | "blend";
 }
@@ -19,25 +17,21 @@ export type CelShadingOverrides = Partial<CelShadingSettings>;
 
 export const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
   shadowBands: 3,
-  bandSoftness: 0,
   shadowThreshold: 0.5,
   shadowStrength: 0.65,
   specularEnabled: true,
   specularStrength: 0.2,
   specularSize: 0.2,
-  specularSoftness: 0,
   lightColorInfluence: 1,
   lightMixing: "strongest",
 };
 
 export const CEL_SHADING_LIMITS = {
   shadowBands: [2, 8],
-  bandSoftness: [0, 0.5],
   shadowThreshold: [0.05, 0.95],
   shadowStrength: [0, 1],
   specularStrength: [0, 1],
   specularSize: [0.01, 1],
-  specularSoftness: [0, 0.5],
   lightColorInfluence: [0, 1],
 } as const;
 
