@@ -1,7 +1,6 @@
 import type { Scene } from "@babylonjs/core";
 import {
   normalizeCelShadingSettings,
-  type RenderPathOverrides,
   resolveRenderingQuality,
   resolveLocalLightBudget,
   mergeRenderingQualityOverrides,
@@ -32,7 +31,6 @@ type SceneRendering = {
   localLightBudget: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
-  pathOverrides: RenderPathOverrides;
   overrides: CelShadingOverrides;
   shadows: ShadowSettings;
   shadowOverrides: ShadowOverrides;
@@ -55,7 +53,6 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       localLightBudget: resolveLocalLightBudget(resolveRenderingQuality().lighting),
       cel: normalizeCelShadingSettings(undefined),
       project: {},
-      pathOverrides: {},
       overrides: {},
       shadows: resolveRenderingQuality().shadows,
       shadowOverrides: {},

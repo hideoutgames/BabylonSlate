@@ -24,6 +24,7 @@ import {
   sceneRenderPathStatus,
   subscribeSceneRenderPath,
 } from "./scene-render-path";
+import { requestRenderPath } from "./render-path-session";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { syncSceneLighting } from "./scene-lighting";
 import { isAuthoredLightEnabled } from "./light-policy";
@@ -252,17 +253,14 @@ describe("scene render path selection", () => {
     copy.dispose();
   });
 
-  it("applies a sparse scene path override and resumes live project inheritance", () => {
-    const { scene } = fixture();
-    setSceneRenderSettings(
-      scene,
-      { renderPath: "clusteredForward" },
-      undefined,
-      undefined,
-      { renderPath: "forward" },
-    );
+  it("applies a game-wide session request and resumes the project path on reset", () => {
+    const { engine, scene } = fixture();
+    setSceneRenderSettings(scene, { renderPath: "clusteredForward" });
+    expect(requestRenderPath(engine, { renderPath: "forward" })).toBe(true);
     expect(container(scene)).toBeUndefined();
-    setSceneRenderSettings(scene, undefined, undefined, undefined, {});
+    expect(sceneRenderPathStatus(scene).requested.renderPath).toBe("forward");
+    expect(requestRenderPath(engine, { renderPath: "forward" })).toBe(false);
+    expect(requestRenderPath(engine, {})).toBe(true);
     expect(container(scene)).toBeDefined();
     expect(sceneRenderPathStatus(scene).requested.renderPath).toBe(
       "clusteredForward",

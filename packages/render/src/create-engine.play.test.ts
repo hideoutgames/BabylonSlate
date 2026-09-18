@@ -3136,6 +3136,38 @@ describe("Play createEngine view", () => {
     expect(events).toContain("onClick");
   });
 
+  it("applies a setRenderPath command game-wide and reports the session status", () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    const { handle: sibling } = playHandle(engine);
+    const statuses: string[] = [];
+    const withStatus = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      playMode: true,
+      onRenderPathChanged: (status) => statuses.push(status.requested.renderPath),
+    });
+    handles.push(withStatus);
+    expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
+    handle.applyCommand({ type: "setRenderPath", renderPath: "clusteredForward" });
+    expect(handle.renderPathStatus().requested.renderPath).toBe("clusteredForward");
+    expect(sibling.renderPathStatus().requested.renderPath).toBe("clusteredForward");
+    expect(statuses).toContain("clusteredForward");
+    sibling.setRenderPath(null);
+    expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
+    expect(statuses.at(-1)).toBe("forward");
+  });
+
+  it("ignores setRenderPath on non-Play handles", () => {
+    const engine = sharedEngine();
+    const { handle } = editorHandle(engine);
+    handle.applyCommand({ type: "setRenderPath", renderPath: "clusteredForward" });
+    expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
+    // The Engine-level API still applies to shared scenes on the same Engine.
+    handle.setRenderPath("clusteredForward");
+    expect(handle.renderPathStatus().requested.renderPath).toBe("clusteredForward");
+    handle.setRenderPath(null);
+  });
+
   it("hides the Play cursor by default and shows it on setCursorVisible", () => {
     const canvas = new FakeCanvas();
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, {

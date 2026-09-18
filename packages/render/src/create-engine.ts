@@ -1,7 +1,8 @@
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
-import type { ResolvedRenderingPipeline } from "@babylonslate/core";
+import { requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
+import type { RenderPath, ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
@@ -247,6 +248,8 @@ export interface EngineHandle {
   drawCalls: () => number;
   renderDiagnostics: () => RenderDiagnostics;
   renderPathStatus: () => ResolvedRenderingPipeline;
+  /** Non-persistent game-wide session render path request; null resumes the project path. */
+  setRenderPath: (renderPath: RenderPath | null) => void;
   /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
   accountedGeometryBytes: () => number;
   /** Explicit tap pick (hover picking is disabled). */
@@ -807,6 +810,13 @@ function initializeEngine(
   const unsubscribeRenderPath = options.onRenderPathChanged
     ? subscribeSceneRenderPath(scene, options.onRenderPathChanged) : () => {};
   onRollback(unsubscribeRenderPath);
+  // A game-wide session render path request re-keys this view's shader and
+  // presentation admission exactly like a project render-settings change.
+  const unsubscribeRenderPathSession = subscribeRenderPathSession(engine, () => {
+    worldRenderer?.invalidate();
+    scheduler.invalidate("asset");
+  });
+  onRollback(unsubscribeRenderPathSession);
   configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
@@ -1337,7 +1347,7 @@ function initializeEngine(
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
-    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessParameters.clear();
     postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
     await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
@@ -1354,7 +1364,7 @@ function initializeEngine(
     loadGeneration += 1;
     worldRenderer?.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
-    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessParameters.clear();
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -2327,6 +2337,12 @@ function initializeEngine(
         applyRenderingQuality();
         scheduler.invalidate("asset");
       }
+      if (command.type === "setRenderPath" && options.playMode) {
+        requestRenderPath(
+          engine,
+          command.renderPath ? { renderPath: command.renderPath } : {},
+        );
+      }
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "tilemapAnimationTime") {
@@ -2377,6 +2393,9 @@ function initializeEngine(
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
     renderPathStatus: () => sceneRenderPathStatus(scene),
+    setRenderPath: (renderPath: RenderPath | null) => {
+      requestRenderPath(engine, renderPath ? { renderPath } : {});
+    },
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
@@ -2457,7 +2476,7 @@ function initializeEngine(
       }
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
-      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {}, sceneData.settings);
+      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       applySerializedSceneEnvironment(scene, sceneData, {
         applyClearColor: true,
         assets: binding,
