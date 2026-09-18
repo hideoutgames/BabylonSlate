@@ -3,12 +3,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   Frustum,
+  Matrix,
   MeshBuilder,
+  PBRMaterial,
   StandardMaterial,
   VertexBuffer,
   Vector3,
 } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { normalizeCelShadingSettings } from "@babylonslate/core";
 import {
   buildBoxGlbFixture,
   cookGeneratedCollisionFromGltf,
@@ -30,6 +33,8 @@ import {
   createLinkedSkeletonFromNodeRig,
 } from "./node-rig";
 import { MATERIAL_PREVIEW_MESH_NAME } from "./material-preview";
+import { CelMaterial } from "./cel-material";
+import { setSceneRenderSettings } from "./scene-render-mode";
 import {
   applyModelMaterialSlots,
   createModelPreviewScene,
@@ -254,6 +259,41 @@ describe("loadModelPreviewSource", () => {
     expect(host.mesh.visibility).toBe(0);
     expect(host.mesh.getChildMeshes().length).toBeGreaterThan(0);
     loaded?.dispose();
+  });
+
+  it("binds the same hard-step CEL uniforms as world scenes", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createModelPreviewScene(handle.engine);
+    setSceneRenderSettings(host.scene, {
+      mode: "cel",
+      cel: normalizeCelShadingSettings({
+        shadowBands: 4,
+        shadowThreshold: 0.4,
+        shadowStrength: 0.7,
+        specularStrength: 0.3,
+        specularSize: 0.25,
+      }),
+    });
+    // The engine default checker texture never reports ready under
+    // NullEngine, so bind an explicit textureless CEL material for the
+    // uniform assertion instead.
+    const material = new CelMaterial(new PBRMaterial("preview-cel", host.scene), host.scene);
+    const mesh = host.mesh;
+    mesh.material = material;
+    host.scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    await material.forceCompilationAsync(mesh);
+    const subMesh = mesh.subMeshes[0]!;
+    expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+    const uniforms = vi.spyOn(subMesh.effect!, "setFloat4");
+    material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+    expect(
+      uniforms.mock.calls.filter(([name]) => name === "slateCelBands").at(-1),
+    ).toEqual(["slateCelBands", 4, 0.4, 0.7, 0]);
+    expect(
+      uniforms.mock.calls.filter(([name]) => name === "slateCelSpecular").at(-1),
+    ).toEqual(["slateCelSpecular", 0.3, 0.25, 0, 0]);
+    host.dispose();
   });
 
   it("aligns generated collision points with a rotated imported model without manual rotation", async () => {
