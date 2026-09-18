@@ -104,6 +104,12 @@ describe("applyPlayerEngineCommand", () => {
       applyPlayerEngineCommand(handle, { type: "setRenderingQuality", overrides: { shadows: { maxLocalLights: 8 } } }),
     ).toBe(true);
     expect(
+      applyPlayerEngineCommand(handle, { type: "setRenderPath", renderPath: "forward" }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setRenderPath", renderPath: null }),
+    ).toBe(true);
+    expect(
       applyPlayerEngineCommand(handle, {
         type: "setLightsDebug",
         enabled: true,
@@ -112,6 +118,8 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual([
       "setFrameCap",
       "setRenderingQuality",
+      "setRenderPath",
+      "setRenderPath",
       "setLightsDebug",
     ]);
   });

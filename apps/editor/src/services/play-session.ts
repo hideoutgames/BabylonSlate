@@ -24,6 +24,7 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   printHudCssColor,
   type AudioProjectSettings,
+  type ResolvedRenderingPipeline,
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@babylonslate/core";
@@ -552,6 +553,18 @@ export function startPlaySession(options: {
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
 
+  const publishRenderPathStatus = (status: ResolvedRenderingPipeline) => {
+    const control: ControlMessage = {
+      type: "renderPathStatus",
+      requested: status.requested.renderPath,
+      effective: status.effective.renderPath,
+      gpuBackend: status.effective.gpuBackend,
+      limits: status.limits,
+    };
+    if (worker) worker.postControl(control);
+    else runtime?.applyRenderPathStatus(control);
+  };
+
   const handle = createEngine(canvas, {
     renderSettings: options.renderSettings,
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
@@ -634,6 +647,7 @@ export function startPlaySession(options: {
       if (worker) worker.postControl(control);
       else runtime?.applyAudioVoiceEnded(control);
     },
+    onRenderPathChanged: publishRenderPathStatus,
   });
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);
@@ -976,6 +990,9 @@ export function startPlaySession(options: {
       "warning",
     );
   }
+  // The subscription fired before the runtime existed; report the current
+  // status now that the worker or in-process runtime can store it.
+  publishRenderPathStatus(handle.renderPathStatus());
 
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),

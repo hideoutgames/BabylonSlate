@@ -1,6 +1,5 @@
 import {
   resolveRenderingPipeline,
-  type RenderPathOverrides,
   resolveShadowSettings,
   type ShadowOverrides,
   resolveCelShadingSettings,
@@ -17,13 +16,12 @@ export function sceneViewportRenderSettingsKey(
   project: Partial<RenderProjectSettings> = {},
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
-  pipelineOverrides?: RenderPathOverrides,
   environmentOverrides?: EnvironmentLightingOverrides,
   environmentSource: string | null = null,
 ): string {
   return JSON.stringify({
     ...project,
-    ...resolveRenderingPipeline(project, pipelineOverrides).requested,
+    ...resolveRenderingPipeline(project).requested,
     mode: project.mode ?? "pbr",
     environmentLighting: {
       enabled: resolveEnvironmentLightingSettings(

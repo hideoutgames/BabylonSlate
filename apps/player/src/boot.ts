@@ -2,7 +2,7 @@ import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
 import { lightsDebugText } from "@babylonslate/render";
 import type { AbstractEngine } from "@babylonjs/core";
-import { snapshotFloatCount } from "@babylonslate/bridge";
+import { snapshotFloatCount, type ControlMessage } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
@@ -26,7 +26,7 @@ import {
   particleStats,
   type EngineHandle,
 } from "@babylonslate/render";
-import { playFramebufferSize, type SerializedScene } from "@babylonslate/core";
+import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
@@ -172,6 +172,17 @@ function initializePlayer(
   });
 
   own(() => consoleHost.dispose());
+  const publishRenderPathStatus = (status: ResolvedRenderingPipeline) => {
+    const control: ControlMessage = {
+      type: "renderPathStatus",
+      requested: status.requested.renderPath,
+      effective: status.effective.renderPath,
+      gpuBackend: status.effective.gpuBackend,
+      limits: status.limits,
+    };
+    if (worker) worker.postControl(control);
+    else runtime?.applyRenderPathStatus(control);
+  };
   const handle: EngineHandle = createEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
@@ -295,6 +306,7 @@ function initializePlayer(
       if (worker) worker.postControl(control);
       else runtime?.applyAudioVoiceEnded(control);
     },
+    onRenderPathChanged: publishRenderPathStatus,
   });
   own(() => handle.dispose());
   handle.applySceneEnvironment(scene);
@@ -611,6 +623,9 @@ function initializePlayer(
         if (!halted) inProcess.reportError(error);
       });
   }
+  // The subscription above fired before the runtime existed; report the
+  // current status now that the worker or in-process runtime can store it.
+  publishRenderPathStatus(handle.renderPathStatus());
 
   if (halted) return playerHandle();
   input = attachInputCapture(canvas, {
