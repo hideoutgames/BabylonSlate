@@ -89,3 +89,18 @@ A later run at `1b575657` uses the same fixture, browser version, software backe
 | Point repeat | 652.6 / 665.4 / 670.8 | 205.3 / 293.9 / 313.8 | 135 | 360 |
 
 Settled captures reported zero shadow draws while keeping 48/11/48 allocated shadow faces and 8/11/8 render targets. Shadow memory did not shrink. CPU medians were 1.16/1.28/1.24 ms; setup including saves took 6.9/10.3/15.0 seconds. Every sample retained one Engine scene and observed zero sampled texture/target churn; texture counts remained 23/30/24. The slower repeated point fixture remains unexplained by these counters. These results do not establish hardware GPU time, leak freedom, iPad performance, or a 60 fps result.
+
+### Play performance route (revision comparison)
+
+`e2e/play-performance-route.spec.ts` is an opt-in local route (`BL_PERF_ROUTE=1`): a deterministic primitive room (floor, three walls, 96 static casters, 16 dynamic spheres, sun plus six shadow-casting point lights and two spots, default skybox) is loaded into the minimal test project with the selected quality profile, overlay Play starts, and after a 10-second warm-up the page's `requestAnimationFrame` cadence, `longtask` entries, runtime tick rate, heap and canvas size are sampled twice for 30 seconds. Run it through the owned server with `playwright.perf.config.ts`: `BL_PERF_ROUTE=1 BL_PERF_QUALITY=low pnpm run test:e2e e2e/play-performance-route.spec.ts --config playwright.perf.config.ts --project perf-gpu` (`perf-gpu` = full Chromium headless on this machine's adapter through ANGLE D3D11; `perf-software` = the ordinary SwiftShader project). `BL_PERF_PROFILE=1` additionally records a V8 CPU profile of steady-state Play. It never asserts a frame rate.
+
+Observation at the pre-overhaul merge `f2fcbdc6` versus `main` `f30f5391`, Windows Chromium 151.0.7922.34, NVIDIA GeForce RTX 2060 (ANGLE D3D11), 1280×720 CSS viewport, headless, same route and profiles (second 30-second sample):
+
+| Revision | Quality | Canvas | Average fps | Interval median / p95 / p99 (ms) | Stalls > 33 ms | Long tasks (count / ms) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `f2fcbdc6` | Low | 1280×720 | 59.4 | 16.7 / 16.8 / 17.0 | 7 | 0 / 0 |
+| `f30f5391` | Low | 960×540 | 7.1 | 133.8 / 150.6 / 167.2 | 214 | 214 / 29687 |
+| `f2fcbdc6` | Medium | 1280×720 | 56.3 | 16.7 / 33.4 / 33.5 | 56 | 0 / 0 |
+| `f30f5391` | Medium | 960×540 | 7.3 | 133.8 / 150.5 / 167.2 | 218 | 218 / 29560 |
+
+The runtime ticked at 60 Hz in every run; the regression is main-thread render admission, not the worker. An 8-second CPU profile of `main` Play spent 74% of sampled time under the coordinator's per-frame strict readiness (`Scene.isReady` → `PBRMaterial.isReadyForSubMesh` → `_prepareEffect` / `MaterialDefines.rebuild`, plus shadow-map `isReadyForRendering` → caster readiness); Babylon's readiness probes toggle `Light.shadowEnabled`, which marks every mesh light-dirty, so each frame re-prepared every material's defines. Dynamic resolution dropped the canvas to 960×540 without recovering because the cost is CPU-bound. This is a local desktop observation, not A16, Safari or thermal qualification; SwiftShader runs of the same route are GPU-bound (1.4 fps pre-overhaul, 3.2 fps main) and do not isolate the CPU cost.

@@ -2,6 +2,7 @@ import { CubeTexture, Material, type Scene } from "@babylonjs/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { sceneRenderingSettings } from "./render-settings";
+import { markSceneReadinessDirty } from "./scene-perf";
 import type { ResourceCache } from "./resource-cache";
 import { ownEnvironmentIrradiance } from "./environment-irradiance";
 
@@ -207,6 +208,7 @@ class EnvironmentLighting {
   }
 
   private invalidateMaterials(): void {
+    markSceneReadinessDirty(this.scene);
     const blocked = this.scene.blockMaterialDirtyMechanism;
     this.scene.blockMaterialDirtyMechanism = false;
     try {

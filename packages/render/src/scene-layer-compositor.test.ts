@@ -2,6 +2,7 @@ import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder,
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import * as scenePerf from "./scene-perf";
 
 describe("SceneLayerCompositor", () => {
   const engines: NullEngine[] = [];
@@ -637,5 +638,40 @@ describe("SceneLayerCompositor", () => {
     expect(layer.camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
     expect(after.x).toBeCloseTo(before.x);
     expect(after.y).toBeCloseTo(before.y);
+  });
+
+  it("does not re-probe strict layer readiness on unchanged frames", async () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    // NullEngine omits the raw upload-ready flag that the real backends set.
+    const upload = engine.createRawTexture.bind(engine);
+    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+      const texture = upload(...args); texture.isReady = true; return texture;
+    });
+    // NullEngine lacks the MRT driver boundary; keep the real graph and tasks.
+    vi.spyOn(engine, "buildTextureLayout").mockImplementation((enabled, backbuffer) =>
+      backbuffer ? [0x0405] : enabled.map((value, index) => (value ? 0x8ce0 + index : 0)));
+    vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
+    vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(() => {});
+    const compositor = new SceneLayerCompositor({ engine });
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    await compositor.prepare("hud", () => {});
+    expect(compositor.isReady("hud")).toBe(true);
+    const probe = vi.spyOn(scenePerf, "isSceneFrameReady");
+    expect(compositor.isReady("hud")).toBe(true);
+    expect(compositor.isReady("hud")).toBe(true);
+    expect(probe).not.toHaveBeenCalled();
+    MeshBuilder.CreateBox("added", {}, compositor.layers()[0]!.scene);
+    compositor.isReady("hud");
+    expect(probe).toHaveBeenCalled();
+    compositor.dispose();
   });
 });

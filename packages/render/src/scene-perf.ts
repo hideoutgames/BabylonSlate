@@ -300,6 +300,33 @@ export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   return result;
 }
 
+const readinessDirtyListeners = new WeakMap<Scene, Set<() => void>>();
+
+/**
+ * Project-owned rendering-definition changes that Babylon observables do not
+ * cover mark the scene's cached strict readiness result stale.
+ */
+export function markSceneReadinessDirty(scene: Scene): void {
+  for (const listener of readinessDirtyListeners.get(scene) ?? []) listener();
+}
+
+/** Subscribe to strict-readiness invalidations; returns an unsubscribe. */
+export function onSceneReadinessDirty(
+  scene: Scene,
+  listener: () => void,
+): () => void {
+  let listeners = readinessDirtyListeners.get(scene);
+  if (!listeners) {
+    listeners = new Set();
+    readinessDirtyListeners.set(scene, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) readinessDirtyListeners.delete(scene);
+  };
+}
+
 /** Native texture decoding may render asynchronously after its load observable. */
 export function isSceneTextureWorkReady(scene: Scene): boolean {
   if (scene.isDisposed) return false;

@@ -28,12 +28,33 @@ import {
   applyEditorMaterialFreeze,
   isStructuralEditorChange,
   isSceneFrameReady,
+  markSceneReadinessDirty,
   materialLibraryAssetGuid,
+  onSceneReadinessDirty,
   prewarmSceneMaterials,
   SCENE_SHADER_WARM_TIMEOUT_MS,
   freezeEditorActiveMeshes,
   unfreezeEditorActiveMeshes,
 } from "./scene-perf";
+
+it("notifies readiness-dirty listeners per scene until unsubscribed", () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const sibling = new Scene(engine);
+  const listener = vi.fn();
+  const off = onSceneReadinessDirty(scene, listener);
+  onSceneReadinessDirty(scene, listener);
+  markSceneReadinessDirty(sibling);
+  expect(listener).not.toHaveBeenCalled();
+  markSceneReadinessDirty(scene);
+  expect(listener).toHaveBeenCalledTimes(1);
+  off();
+  markSceneReadinessDirty(scene);
+  expect(listener).toHaveBeenCalledTimes(1);
+  scene.dispose();
+  sibling.dispose();
+  engine.dispose();
+});
 
 it("freezes ready editor meshes only in their own floating-origin render frame", () => {
   const engine = new NullEngine();

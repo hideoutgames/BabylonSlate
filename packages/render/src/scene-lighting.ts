@@ -8,6 +8,7 @@ import {
   syncClusteredLightPolicy,
 } from "./clustered-light-policy";
 import { sceneRenderingSettings } from "./render-settings";
+import { markSceneReadinessDirty } from "./scene-perf";
 import {
   Material,
   NodeMaterial,
@@ -123,6 +124,9 @@ function installSceneLighting(scene: Scene): SceneLighting {
     )
       return;
     dirty = false;
+    // Light membership/shadow layout changed; the cached strict readiness
+    // result no longer describes the effects these materials will build.
+    markSceneReadinessDirty(scene);
     lightCount = scene.lights.length;
     materialCount = scene.materials.length;
     sceneLightsEnabled = scene.lightsEnabled;

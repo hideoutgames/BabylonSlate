@@ -276,3 +276,29 @@ it("keeps the native fallback alive while its shader warms after graph allocatio
     expect(camera._postProcesses.find(Boolean)).not.toBe(warming);
   } finally { probe.mockRestore(); await renderer.retire(); library.dispose(); }
 });
+
+it("caches strict readiness on unchanged frames and re-probes once after a scene change", async () => {
+  const { scene, renderer } = host();
+  MeshBuilder.CreateBox("box", {}, scene);
+  await renderer.prepare();
+  expect(renderer.isReady()).toBe(true);
+  expect(renderer.render()).toEqual({
+    path: "frameGraph",
+    rendered: true,
+    readyForPresentation: true,
+  });
+  const checks = renderer.strictReadinessChecks;
+  for (let frame = 0; frame < 10; frame += 1) {
+    expect(renderer.isReady()).toBe(true);
+    expect(renderer.render()).toMatchObject({
+      path: "frameGraph",
+      rendered: true,
+      readyForPresentation: true,
+    });
+  }
+  expect(renderer.strictReadinessChecks).toBe(checks);
+  MeshBuilder.CreateBox("added", {}, scene);
+  expect(renderer.isReady()).toBe(true);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  renderer.dispose();
+});

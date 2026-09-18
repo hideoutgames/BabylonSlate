@@ -26,6 +26,7 @@ import {
   type ShadowSettings,
 } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
+import { markSceneReadinessDirty } from "./scene-perf";
 import {
   authoredShadowParticipation,
   hasDeformingShadowBounds,
@@ -220,6 +221,7 @@ export class SceneShadowController {
       light.onDisposeObservable.addOnce(() => {
         this.entries.get(light)?.generator?.dispose();
         this.entries.delete(light);
+        markSceneReadinessDirty(this.scene);
       });
     }
     entry.requested = requested;
@@ -334,6 +336,7 @@ export class SceneShadowController {
     const scene = this.scene;
     if (scene.isDisposed) return;
     syncDirectionalLightPolicy(scene);
+    const hadPending = this.pending.size > 0;
     for (const mesh of this.pending) {
       if (mesh.isDisposed() || !scene.meshes.includes(mesh)) continue;
       if (!participatesInShadows(mesh)) {
@@ -360,6 +363,9 @@ export class SceneShadowController {
         entry.generator?.addShadowCaster(mesh, false);
     }
     this.pending.clear();
+    // Caster participation and receiveShadows changed material defines or map
+    // membership; cached strict readiness no longer applies.
+    if (hadPending) markSceneReadinessDirty(scene);
     this.refresh.syncCasters(scene, this.meshes);
     const casterBounds = this.spatial.bounds();
     const state = sceneRenderingSettings(scene);
@@ -594,7 +600,10 @@ export class SceneShadowController {
         entry.light instanceof DirectionalLight ? settings.cascades : 1,
       ]);
       if (entry.status !== "active" || entry.key !== key) {
-        entry.generator?.dispose();
+        if (entry.generator) {
+          entry.generator.dispose();
+          markSceneReadinessDirty(scene);
+        }
         entry.generator = null;
         entry.key = "";
       }
@@ -608,8 +617,10 @@ export class SceneShadowController {
       entry.settings = settings;
       if (entry.generator) {
         this.applySettings(entry.generator, settings);
-        if (previousSettings?.fadeFraction !== settings.fadeFraction)
+        if (previousSettings?.fadeFraction !== settings.fadeFraction) {
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
+          markSceneReadinessDirty(scene);
+        }
         if (entry.generator instanceof CascadedShadowGenerator)
           entry.generator.shadowMaxZ = settings.distance;
         if (casterBounds && entry.generator instanceof CascadedShadowGenerator)
@@ -765,6 +776,7 @@ export class SceneShadowController {
             return true;
           };
           entry.generator = generator;
+          markSceneReadinessDirty(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
           entry.key = JSON.stringify([

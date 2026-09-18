@@ -13,6 +13,7 @@ import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Part
 import { prewarmMaterial } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
+import { markSceneReadinessDirty } from "./scene-perf";
 import {
   applyParticleEmitterPayload,
   resolveParticleEmitterCapacity,
@@ -247,6 +248,9 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
   const disposeObserver = system.onDisposeObservable.addOnce(cancel);
   pendingParticleMaterials.set(system, cancel);
   scene.addIsReadyCheck(readiness);
+  // Custom checks join strict readiness without a Scene observable; admit the
+  // new check by invalidating the coordinator's cached readiness result.
+  markSceneReadinessDirty(scene);
   // Babylon's first NodeMaterial build can finish asynchronously. Creating the
   // particle effect before then registers no fragment source and fetches a .fx URL.
   void prewarmMaterial(material, null).then(() => {
