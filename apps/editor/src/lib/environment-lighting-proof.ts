@@ -128,7 +128,6 @@ export async function runEnvironmentLightingProof() {
     cel: normalizeCelShadingSettings({
       shadowBands: 3,
       shadowStrength: 1,
-      bandSoftness: 0,
       specularEnabled: false,
     }),
   });
