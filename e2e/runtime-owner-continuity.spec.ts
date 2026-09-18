@@ -216,7 +216,17 @@ for (const mode of ["Play", "Preview Build"] as const) {
     const dialog = mode === "Play" ? page.getByTestId("scene-loading-dialog") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("scene-loading-dialog");
     await expect(dialog).toBeHidden({ timeout: 30_000 });
     await observeCanvas(canvas);
-    await expect.poll(async () => (await samples(canvas)).some((sample) => sample.hud > 5)).toBe(true);
+    try {
+      await expect.poll(async () => (await samples(canvas)).some((sample) => sample.hud > 5), { timeout: 30_000 }).toBe(true);
+    } catch (error) {
+      await testInfo.attach("startup-hud-samples.json", { body: JSON.stringify(await samples(canvas)), contentType: "application/json" });
+      await testInfo.attach("startup-hud-visuals.json", { body: JSON.stringify(await canvas.evaluate(() =>
+        ((globalThis as unknown as { __babylonslatePlayTest?: { visuals?: () => unknown[] }; __babylonslatePlayerTest?: { visuals?: () => unknown[] } })
+          .__babylonslatePlayTest ?? (globalThis as unknown as { __babylonslatePlayerTest?: { visuals?: () => unknown[] } }).__babylonslatePlayerTest)
+          ?.visuals?.())), contentType: "application/json" });
+      await canvas.screenshot({ path: testInfo.outputPath("startup-hud-timeout.png") });
+      throw error;
+    }
     await expect.poll(() => canvas.evaluate(() =>
       (globalThis as unknown as { startupCanvasContinuity: { samples: unknown[] } }).startupCanvasContinuity.samples.length)).toBeGreaterThan(2);
     const startup = await canvas.evaluate(() => {

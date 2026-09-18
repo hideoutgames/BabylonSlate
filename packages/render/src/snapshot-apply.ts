@@ -122,6 +122,9 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   tilemapAnimationScenes?: Set<Scene>;
   /** Reused each apply — no per-frame Set allocation. */
   liveSlots: Set<number>;
+  /** Slot ids observed in an applied snapshot; gates absence-retire so
+   * command-built visuals survive a stale buffer that predates them. */
+  seenSlots: Set<number>;
   /** meshKind from assignMesh, keyed by slotId. */
   meshKinds: Map<number, string | null>;
   /** Sprite / mesh asset guid from assignMesh, keyed by slotId. */
@@ -202,6 +205,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     text2dProps: new Map(),
     overlayPanelProps: new Map(),
     liveSlots: new Set(),
+    seenSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
     meshParts: new Map(),
@@ -839,6 +843,7 @@ export function retirePlaySlot(
   retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
+  binding.seenSlots.delete(slotId);
   binding.meshKinds.delete(slotId);
   binding.meshAssetGuids.delete(slotId);
   binding.meshParts.delete(slotId);
@@ -888,6 +893,11 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   for (const slotId of slots) {
     if (binding.isOverlaySlot?.(slotId)) continue;
     retirePlaySlot(binding, slotId);
+  }
+  // Seen markers for stateless world slots must not survive into the next
+  // load generation, where a reused slot id could look retireable.
+  for (const slotId of [...binding.seenSlots]) {
+    if (!binding.isOverlaySlot?.(slotId)) binding.seenSlots.delete(slotId);
   }
   binding.possessedCameraSlotId = null;
   binding.defaultCameraSlotId = null;
@@ -1191,6 +1201,7 @@ export function applySnapshotToScene(
   try {
     const live = binding.liveSlots;
     live.clear();
+    const seen = binding.seenSlots;
     const animationScenes = binding.tilemapAnimationScenes ??= new Set();
     animationScenes.clear();
     animationScenes.add(scene);
@@ -1198,6 +1209,7 @@ export function applySnapshotToScene(
     for (let i = 0; i < count; i++) {
       const actor = snapshot.actors[i]!;
       live.add(actor.slotId);
+      seen.add(actor.slotId);
       const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
       const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
       if (wantsOverlay && !overlayScene) {
@@ -1250,7 +1262,10 @@ export function applySnapshotToScene(
     }
     snapPlayCameraToPixelGrid(scene, binding);
     for (const slotId of [...binding.meshes.keys()]) {
-      if (!live.has(slotId)) {
+      // Absence retires only slots a previous applied snapshot contained; a
+      // command-built visual never yet seen survives a stale buffer that
+      // predates its assignMesh. Explicit despawn removes unseen slots.
+      if (!live.has(slotId) && seen.has(slotId)) {
         retirePlaySlot(binding, slotId);
       }
     }
@@ -1309,6 +1324,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   for (const light of binding.lights.values()) light.dispose();
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.meshes.clear();
+  binding.liveSlots.clear();
+  binding.seenSlots.clear();
   binding.spriteOverlays?.clear();
   binding.slotAnimationGroups?.clear();
   binding.pendingAnimState?.clear();
