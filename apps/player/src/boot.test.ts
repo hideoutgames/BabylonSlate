@@ -49,27 +49,44 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function flushFrames(count: number) {
+  for (let i = 0; i < count; i++) {
+    const pending = [...frames.values()];
+    frames.clear();
+    for (const callback of pending) callback(performance.now());
+  }
+}
+
 async function fixture() {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
     assets: [{ guid: "world", type: "Scene", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(scene)) }] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
+  const root = document.createElement("div");
+  root.id = "player-root";
   const canvas = document.createElement("canvas");
-  document.body.append(canvas);
+  root.append(canvas);
+  document.body.append(root);
+  const endFrame = new Set<() => void>();
   const handle = {
+    engine: { onEndFrameObservable: { add: (callback: () => void) => (endFrame.add(callback), callback), remove: (callback: () => void) => { endFrame.delete(callback); } } },
+    loadScene: vi.fn(),
     applySceneEnvironment: vi.fn(), resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
     playVisualStates: () => [], playMeshMaterialNames: () => [], isFreeCamEnabled: () => false,
     renderPathStatus: () => resolveRenderingPipeline(game.manifest.render),
+    whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {},
+    prewarmSceneMaterials: async () => {}, presentFirstFrame: vi.fn(async () => {}),
     unlockAudio: async () => {},
-    scheduler: { invalidate: vi.fn(), acquireObstruction: () => () => {}, stats: () => ({ renderedFps: 0 }) },
+    scheduler: { invalidate: vi.fn(), acquireObstruction: vi.fn(() => () => {}), stats: () => ({ renderedFps: 0 }) },
   };
   vi.spyOn(rendering, "createEngine").mockReturnValue(handle as unknown as rendering.EngineHandle);
   const attach = inputs.attachInputCapture;
   let input: inputs.InputCaptureHandle | undefined;
   vi.spyOn(inputs, "attachInputCapture").mockImplementation((...args) => (input = attach(...args)));
-  return { game, canvas, handle, input: () => input! };
+  const fireEndFrame = () => { for (const callback of [...endFrame]) callback(); };
+  return { game, canvas, root, handle, input: () => input!, fireEndFrame };
 }
 
 async function backendFixture() {
@@ -116,17 +133,18 @@ describe("player startup and Stop ownership", () => {
     expect(document.querySelector("dialog")).toBeNull();
   });
 
-  it("releases the backend from loading-dialog Stop even when an inner cleanup fails", async () => {
-    const { game, canvas, handle, input, owner } = await backendFixture();
+  it("releases the backend when host Stop interrupts a held load even when an inner cleanup fails", async () => {
+    const { game, canvas, root, handle, input, owner } = await backendFixture();
     const session = await startPlayerWithBackend({ game, canvas });
     sessions.push(session);
     const releaseInput = input().dispose;
     const failedDispose = vi.spyOn(input(), "dispose").mockImplementation(() => { releaseInput(); throw new Error("Input disposal failed"); });
     TestWorker.instances[0]!.command({ channel: "command", payload: { type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 } });
-    expect(document.querySelector("dialog")?.open).toBe(true);
-    document.querySelector<HTMLButtonElement>("dialog button")!.click();
-    expect(owner.dispose).toHaveBeenCalledOnce();
+    expect(root.dataset.sceneLoading).toBe("true");
+    expect(handle.scheduler.acquireObstruction).not.toHaveBeenCalled();
+    expect(document.querySelector("dialog")).toBeNull();
     const result = session.stop();
+    expect(owner.dispose).toHaveBeenCalledOnce();
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "player.cleanup.failed", message: expect.stringContaining("Input disposal failed") }));
     expect(TestWorker.instances[0]!.terminate).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
@@ -136,6 +154,37 @@ describe("player startup and Stop ownership", () => {
     expect(failedDispose).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
     expect(owner.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("reports loading on the player root without a dialog and clears it when the scene is ready", async () => {
+    const { game, canvas, root, handle } = await backendFixture();
+    const session = await startPlayerWithBackend({ game, canvas });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    worker.command({ channel: "command", payload: { type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 } });
+    expect(root.dataset.sceneLoading).toBe("true");
+    expect(root.dataset.sceneLoadPhase).toBe("Preparing Scene");
+    expect(root.dataset.sceneLoadProgress).toBe("0");
+    expect(root.dataset.sceneLoadId).toBe("1");
+    expect(document.querySelector("dialog")).toBeNull();
+    expect(handle.scheduler.acquireObstruction).not.toHaveBeenCalled();
+    flushFrames(2);
+    await vi.waitFor(() => {
+      expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "sceneLoadingPainted", sceneAssetGuid: "world", sceneLoadId: 1 } });
+    });
+    worker.command({ channel: "command", payload: { type: "activeScene", sceneAssetGuid: "world", sceneLoadId: 1 } });
+    worker.command({ channel: "command", payload: { type: "sceneRealized", sceneAssetGuid: "world", sceneLoadId: 1 } });
+    // Each readiness step awaits a paint that completes on end-frame or after
+    // two animation frames; keep feeding frames while the chain advances.
+    await vi.waitFor(() => {
+      flushFrames(1);
+      expect(handle.presentFirstFrame).toHaveBeenCalled();
+    });
+    await vi.waitFor(() => {
+      flushFrames(1);
+      expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "sceneModelsReady", sceneAssetGuid: "world", sceneLoadId: 1 } });
+    });
+    expect(root.dataset.sceneLoading).toBe("false");
   });
 
   it("terminates a partially initialized worker before starting the real in-process fallback", async () => {
@@ -195,7 +244,7 @@ describe("player startup and Stop ownership", () => {
     sessions.push(session);
     const worker = TestWorker.instances[0]!;
     worker.command({ channel: "command", payload: { type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 } });
-    expect(document.querySelector("dialog")?.open).toBe(true);
+    expect(document.getElementById("player-root")?.dataset.sceneLoading).toBe("true");
     TestWorker.failPost = true;
     worker.command({ channel: "command", payload: { type: "sceneLoadFailed", sceneAssetGuid: "world", sceneLoadId: 1, message: "Owned scene realization failed" } });
     expect(worker.terminate).toHaveBeenCalledOnce();

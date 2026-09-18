@@ -9,27 +9,40 @@ import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 
 const SCENE_GUID = "00000000-0000-4000-8000-000000000001";
 
-async function trackLoading(host: Locator, stop = false) {
-  await host.evaluate((_node, stop) => {
-    const global = globalThis as unknown as { loadingObservation?: { phases: string[]; stopped: boolean; observer: MutationObserver } };
+type LoadingObservation = { phases: string[]; stopped: boolean; dialogSeen: boolean; observer: MutationObserver };
+
+async function trackLoading(host: Locator, mode: "Play" | "Preview Build", stop = false) {
+  await host.evaluate((_node, { mode, stop }) => {
+    const global = globalThis as unknown as { loadingObservation?: LoadingObservation };
     global.loadingObservation?.observer.disconnect();
-    const observation = { phases: [] as string[], stopped: false, observer: new MutationObserver(() => {
+    const observation: LoadingObservation = { phases: [], stopped: false, dialogSeen: false, observer: new MutationObserver(() => {
       const dialog = document.querySelector<HTMLElement>('[data-testid="scene-loading-dialog"]');
-      if (!dialog || dialog.closest('[data-closed]') || (dialog instanceof HTMLDialogElement && !dialog.open)) return;
-      const phase = dialog.querySelector('[data-slot="progress-label"], [role="status"]')?.textContent ?? "";
+      const shown = Boolean(dialog && !dialog.closest('[data-closed]') && (!(dialog instanceof HTMLDialogElement) || dialog.open));
+      if (shown) observation.dialogSeen = true;
+      // Preview Build / player: the authored-layer host only mirrors loading on
+      // the player root. Editor Play keeps its scene-loading dialog.
+      const phase = mode === "Preview Build"
+        ? (document.querySelector<HTMLElement>('[data-testid="player-root"]')?.dataset.sceneLoading === "true"
+            ? document.querySelector<HTMLElement>('[data-testid="player-root"]')?.dataset.sceneLoadPhase ?? ""
+            : "")
+        : shown ? dialog!.querySelector('[data-slot="progress-label"], [role="status"]')?.textContent ?? "" : "";
       if (phase && !observation.phases.includes(phase)) observation.phases.push(phase);
-      if (stop && !observation.stopped && phase === "Preparing Scene") {
-        const button = [...dialog.querySelectorAll("button")].find((button) => button.textContent === "Stop");
+      if (mode === "Play" && stop && !observation.stopped && phase === "Preparing Scene") {
+        const button = [...dialog!.querySelectorAll("button")].find((button) => button.textContent === "Stop");
         if (button) { observation.stopped = true; button.click(); }
       }
     }) };
     observation.observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
     global.loadingObservation = observation;
-  }, stop);
+  }, { mode, stop });
 }
 
 async function observedPhases(host: Locator) {
-  return host.evaluate(() => (globalThis as unknown as { loadingObservation: { phases: string[] } }).loadingObservation.phases);
+  return host.evaluate(() => (globalThis as unknown as { loadingObservation: LoadingObservation }).loadingObservation.phases);
+}
+
+async function observedDialogSeen(host: Locator) {
+  return host.evaluate(() => (globalThis as unknown as { loadingObservation: LoadingObservation }).loadingObservation.dialogSeen);
 }
 
 async function boxes(host: Locator) {
@@ -89,6 +102,7 @@ for (const mode of ["Play", "Preview Build"] as const) {
     const host = mode === "Play" ? page.getByTestId("play-overlay") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root");
     const dialog = mode === "Play" ? page.getByTestId("scene-loading-dialog") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("scene-loading-dialog");
     await expect(dialog).toBeHidden({ timeout: 30_000 });
+    if (mode === "Preview Build") await expect(host).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
     const canvas = mode === "Play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
     await expect.poll(() => renderedPixels(canvas)).toBeGreaterThan(500);
     await expect.poll(() => boxes(host)).toBe(48);
@@ -96,12 +110,16 @@ for (const mode of ["Play", "Preview Build"] as const) {
     if (mode === "Play") await page.getByTestId("play-console-open").click();
     else await page.getByRole("button", { name: "Console", exact: true }).click();
     for (let reload = 0; reload < 2; reload++) {
-      await trackLoading(host);
+      await trackLoading(host, mode);
       await page.getByTestId("debug-console-input").fill(`changescene ${SCENE_GUID}`);
       await page.getByTestId("debug-console-submit").click();
       await expect.poll(() => observedPhases(host)).toContain("Preparing Scene");
       await expect(dialog).toBeHidden({ timeout: 30_000 });
       expect(await observedPhases(host)).toContain("Presenting First Frame");
+      if (mode === "Preview Build") {
+        await expect(host).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
+        expect(await observedDialogSeen(host)).toBe(false);
+      }
       await expect.poll(() => boxes(host)).toBe(48);
       await expect.poll(() => renderedPixels(canvas)).toBeGreaterThan(500);
       if (meshCount !== null) await expect.poll(() => host.evaluate(() => (globalThis as unknown as { __babylonslatePlayTest: { liveObjectCounts: () => { meshes: number } } }).__babylonslatePlayTest.liveObjectCounts().meshes)).toBe(meshCount);
@@ -111,15 +129,17 @@ for (const mode of ["Play", "Preview Build"] as const) {
     await canvas.screenshot({ path: testInfo.outputPath("scene-reloaded.png") });
     if (mode === "Play") await page.getByTestId("play-console-open").click();
     else await page.getByRole("button", { name: "Console", exact: true }).click();
-    await trackLoading(host, true);
+    await trackLoading(host, mode, true);
     await page.getByTestId("debug-console-input").fill(`changescene ${SCENE_GUID}`);
     await page.getByTestId("debug-console-submit").click();
     if (mode === "Play") await expect(host).toHaveCount(0);
     else {
-      await expect.poll(() => host.evaluate(() => (globalThis as unknown as { loadingObservation: { stopped: boolean } }).loadingObservation.stopped)).toBe(true);
-      await expect.poll(() => boxes(host)).toBe(0);
-      await expect(dialog).toHaveCount(0);
+      // The player owns no Stop control; the host chrome is the only stop path.
+      await expect.poll(() => observedPhases(host)).toContain("Preparing Scene");
+      await expect(host).toHaveAttribute("data-scene-loading", "true");
+      expect(await observedDialogSeen(host)).toBe(false);
       await page.getByTestId("preview-build-close").click();
+      await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
     }
     await waitForSceneViewportReady(page);
     expect(errors).toEqual([]);

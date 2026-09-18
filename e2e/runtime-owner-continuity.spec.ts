@@ -63,7 +63,7 @@ async function filesForContinuity() {
 }
 
 type Sample = { atMs: number; paintHeld: boolean; phase: string; lit: number; hud: number; center: number; hudX: number | null; width: number; height: number };
-type Observation = { samples: Sample[]; phases: string[]; resizing: boolean; stop: () => void };
+type Observation = { samples: Sample[]; phases: string[]; resizing: boolean; dialogSeen: boolean; stop: () => void };
 type LoadingPaintGate = { held: boolean; workCommands: string[]; arm: () => void; release: () => void };
 
 async function observeCanvas(canvas: Locator) {
@@ -78,14 +78,26 @@ async function observeCanvas(canvas: Locator) {
     context.imageSmoothingEnabled = false;
     let frame = 0;
     const initialWidth = node.style.width;
-    const observation: Observation = { samples: [], phases: [], resizing: false,
+    const observation: Observation = { samples: [], phases: [], resizing: false, dialogSeen: false,
       stop: () => { cancelAnimationFrame(frame); node.style.width = initialWidth; } };
     const sample = () => {
+      // Preview Build / player expose loading on the player root; editor Play
+      // keeps its scene-loading dialog.
+      const root = document.querySelector<HTMLElement>('[data-testid="player-root"]');
       const dialog = document.querySelector('[data-testid="scene-loading-dialog"]');
-      const shown = dialog && !dialog.closest("[data-closed]") && (!(dialog instanceof HTMLDialogElement) || dialog.open);
-      const phase = shown ? dialog.querySelector('[data-slot="progress-label"], [role="status"]')?.textContent ?? "" : "";
+      const shown = root
+        ? root.dataset.sceneLoading === "true"
+        : Boolean(dialog && !dialog.closest("[data-closed]") && (!(dialog instanceof HTMLDialogElement) || dialog.open));
+      if (dialog) observation.dialogSeen = true;
+      const phase = shown
+        ? root
+          ? root.dataset.sceneLoadPhase ?? ""
+          : dialog!.querySelector('[data-slot="progress-label"], [role="status"]')?.textContent ?? ""
+        : "";
       if (phase && !observation.phases.includes(phase)) observation.phases.push(phase);
-      if (phase === "Preparing Scene" && !observation.resizing) {
+      // Resize once the loading state is visible; Preparing Scene is a single
+      // end-frame window that a per-frame sampler can now miss.
+      if (phase && !observation.resizing) {
         observation.resizing = true;
         node.style.width = "94%";
       }
@@ -155,14 +167,22 @@ for (const mode of ["Play", "Preview Build"] as const) {
       const context = copy.getContext("2d", { willReadFrequently: true })!;
       let frame = 0, released = false, sawPresenting = false;
       const samples: Array<{ phase: string; lit: number }> = [];
-      const state = { samples, stop: () => cancelAnimationFrame(frame) };
+      const state = { samples, stop: () => cancelAnimationFrame(frame), dialogSeen: false };
       (globalThis as unknown as { startupCanvasContinuity: typeof state }).startupCanvasContinuity = state;
       const inspect = () => {
         const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="play-canvas"], [data-testid="player-canvas"]');
         if (canvas) {
+          const root = document.querySelector<HTMLElement>('[data-testid="player-root"]');
           const dialog = document.querySelector('[data-testid="scene-loading-dialog"]');
-          const shown = dialog && !dialog.closest("[data-closed]") && (!(dialog instanceof HTMLDialogElement) || dialog.open);
-          const phase = shown ? dialog.querySelector('[data-slot="progress-label"], [role="status"]')?.textContent ?? "" : "";
+          if (dialog) state.dialogSeen = true;
+          const shown = root
+            ? root.dataset.sceneLoading === "true"
+            : Boolean(dialog && !dialog.closest("[data-closed]") && (!(dialog instanceof HTMLDialogElement) || dialog.open));
+          const phase = shown
+            ? root
+              ? root.dataset.sceneLoadPhase ?? ""
+              : dialog!.querySelector('[data-slot="progress-label"], [role="status"]')?.textContent ?? ""
+            : "";
           if (phase === "Presenting First Frame") sawPresenting = true;
           if (sawPresenting && !shown) released = true;
           if (released) {
@@ -196,14 +216,25 @@ for (const mode of ["Play", "Preview Build"] as const) {
     const dialog = mode === "Play" ? page.getByTestId("scene-loading-dialog") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("scene-loading-dialog");
     await expect(dialog).toBeHidden({ timeout: 30_000 });
     await observeCanvas(canvas);
-    await expect.poll(async () => (await samples(canvas)).some((sample) => sample.hud > 5)).toBe(true);
+    try {
+      await expect.poll(async () => (await samples(canvas)).some((sample) => sample.hud > 5), { timeout: 30_000 }).toBe(true);
+    } catch (error) {
+      await testInfo.attach("startup-hud-samples.json", { body: JSON.stringify(await samples(canvas)), contentType: "application/json" });
+      await testInfo.attach("startup-hud-visuals.json", { body: JSON.stringify(await canvas.evaluate(() =>
+        ((globalThis as unknown as { __babylonslatePlayTest?: { visuals?: () => unknown[] }; __babylonslatePlayerTest?: { visuals?: () => unknown[] } })
+          .__babylonslatePlayTest ?? (globalThis as unknown as { __babylonslatePlayerTest?: { visuals?: () => unknown[] } }).__babylonslatePlayerTest)
+          ?.visuals?.())), contentType: "application/json" });
+      await canvas.screenshot({ path: testInfo.outputPath("startup-hud-timeout.png") });
+      throw error;
+    }
     await expect.poll(() => canvas.evaluate(() =>
       (globalThis as unknown as { startupCanvasContinuity: { samples: unknown[] } }).startupCanvasContinuity.samples.length)).toBeGreaterThan(2);
     const startup = await canvas.evaluate(() => {
-      const state = (globalThis as unknown as { startupCanvasContinuity: { samples: Array<{ phase: string; lit: number }>; stop: () => void } }).startupCanvasContinuity;
-      state.stop(); return state.samples;
+      const state = (globalThis as unknown as { startupCanvasContinuity: { samples: Array<{ phase: string; lit: number }>; dialogSeen: boolean; stop: () => void } }).startupCanvasContinuity;
+      state.stop(); return { samples: state.samples, dialogSeen: state.dialogSeen };
     });
-    expect(Math.min(...startup.map((sample) => sample.lit))).toBeGreaterThan(5);
+    expect(Math.min(...startup.samples.map((sample) => sample.lit))).toBeGreaterThan(5);
+    if (mode === "Preview Build") expect(startup.dialogSeen).toBe(false);
     expect(await canvas.evaluate((node: HTMLCanvasElement) => Boolean(node.getContext("2d")))).toBe(true);
     await testInfo.attach("initial-modal-dismissal.json", { body: JSON.stringify(startup), contentType: "application/json" });
     if (mode === "Play") await page.getByTestId("play-console-open").click();
@@ -240,6 +271,8 @@ for (const mode of ["Play", "Preview Build"] as const) {
       expect(result.some((sample) => sample.phase === "Presenting First Frame")).toBe(true);
       expect(Math.min(...result.map((sample) => sample.lit))).toBeGreaterThan(5);
       expect(Math.min(...result.map((sample) => sample.hud))).toBeGreaterThan(5);
+      if (mode === "Preview Build")
+        expect(await canvas.evaluate(() => (globalThis as unknown as { continuity: Observation }).continuity.dialogSeen)).toBe(false);
       const loading = result.filter((sample) => sample.phase && sample.phase !== "Presenting First Frame");
       expect(new Set(loading.map((sample) => sample.hudX)).size).toBeGreaterThan(1);
       expect(new Set(loading.map((sample) => sample.center)).size).toBeGreaterThan(1);
@@ -254,12 +287,21 @@ for (const mode of ["Play", "Preview Build"] as const) {
         await page.getByTestId("debug-console-submit").click();
         await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
         await expect.poll(() => canvas.evaluate(() => (globalThis as unknown as { loadingPaintGate: LoadingPaintGate }).loadingPaintGate.held)).toBe(true);
-        await dialog.getByRole("button", { name: "Stop", exact: true }).click();
-        await expect(dialog).toBeHidden();
-        await expect(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root")).toHaveAttribute("data-booted", "false");
-      } finally { await releaseLoadingPaint(canvas); }
-    } else await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
-    await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
+        // The player owns no Stop control; the host overlay close is the only
+        // stop path and destroys the iframe mid-load.
+        await page.getByTestId("preview-build-close").click();
+        await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
+      } finally {
+        // The gate lives in the iframe; once it is destroyed there is nothing
+        // to release, and evaluating into the dead frame would wait forever.
+        if (await page.getByTestId("preview-build-iframe").count()) {
+          await releaseLoadingPaint(canvas).catch(() => {});
+        }
+      }
+    } else {
+      await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
+      await page.getByTestId("play-overlay-close").click();
+    }
     await waitForSceneViewportReady(page);
     expect(errors).toEqual([]);
   });

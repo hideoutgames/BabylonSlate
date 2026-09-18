@@ -24,6 +24,7 @@ import {
   createSnapshotSceneBinding,
   disposeWorldOverlayLeftovers,
   isPlayHelperMeshKind,
+  retirePlaySlot,
 } from "./snapshot-apply";
 import { setupDefaultViewport } from "./viewport";
 
@@ -1855,5 +1856,107 @@ describe("createPlayMesh", () => {
     expect(scene.getMeshByName("actor-4")).toBeNull();
     expect(stray.isDisposed()).toBe(true);
     overlay.dispose();
+  });
+
+  it("keeps a command-built visual alive when a stale snapshot omits its slot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const world = (slotIds: number[], frameId: number) => ({
+      frameId,
+      tickIndex: frameId,
+      alpha: 1,
+      actorCount: slotIds.length,
+      actors: slotIds.map((slotId) => ({
+        slotId,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+        flags: 1,
+      })),
+    });
+    applySnapshotToScene(scene, binding, world([0, 1], 1));
+    // The world sceneRealized buffer predates the layer spawn, so slot 2's
+    // assignMesh can land before that stale buffer is sampled.
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+    });
+    const quad = binding.meshes.get(2);
+    expect(quad).toBeDefined();
+    applySnapshotToScene(scene, binding, world([0, 1], 1));
+    expect(binding.meshes.get(2)).toBe(quad);
+    expect(quad!.isDisposed()).toBe(false);
+    expect(quad!.metadata?.playHelperVisual).toBeUndefined();
+    expect(binding.meshKinds.get(2)).toBe("2dtexture");
+    // Once an applied snapshot has contained the slot, later absence retires.
+    applySnapshotToScene(scene, binding, world([0, 1, 2], 2));
+    expect(quad!.isVisible).toBe(true);
+    applySnapshotToScene(scene, binding, world([0, 1], 3));
+    expect(binding.meshes.get(2)).toBeUndefined();
+    expect(quad!.isDisposed()).toBe(true);
+    expect(binding.meshKinds.has(2)).toBe(false);
+  });
+
+  it("disposes a never-seen command-built visual on despawn without leaking seen state", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 5,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+    });
+    const quad = binding.meshes.get(5);
+    retirePlaySlot(binding, 5);
+    expect(quad!.isDisposed()).toBe(true);
+    expect(binding.meshes.get(5)).toBeUndefined();
+    expect(binding.meshKinds.has(5)).toBe(false);
+    // Despawn of a snapshot-seen slot clears its marker, so a reused slot id
+    // cannot be retired by absence alone.
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 5,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 5,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    retirePlaySlot(binding, 5);
+    expect(binding.seenSlots.has(5)).toBe(false);
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 5,
+      meshAssetGuid: null,
+      meshKind: "box",
+    });
+    const box = binding.meshes.get(5);
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 0,
+      actors: [],
+    });
+    expect(binding.meshes.get(5)).toBe(box);
+    expect(box!.isDisposed()).toBe(false);
   });
 });
