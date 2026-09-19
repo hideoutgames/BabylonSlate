@@ -205,9 +205,9 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
         const size = input.size;
         const irradiance = new Float32Array(size * size * 4);
         for (let index = 0; index < irradiance.length; index += 4) {
-          irradiance[index] = 0.25;
-          irradiance[index + 1] = 0.5;
-          irradiance[index + 2] = 0.75;
+          irradiance[index] = 1;
+          irradiance[index + 1] = 1;
+          irradiance[index + 2] = 1;
           irradiance[index + 3] = 1;
         }
         const disposal = {
