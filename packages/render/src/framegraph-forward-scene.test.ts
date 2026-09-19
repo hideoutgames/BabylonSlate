@@ -16,6 +16,7 @@ import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOr
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { setSceneRenderSettings } from "./scene-render-mode";
 import { configureCutoutSorting } from "./sorting";
 
 const engines: NullEngine[] = [];
@@ -369,6 +370,25 @@ it("skips strict readiness probes on unchanged frames after admission", async ()
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  const checks = graph.strictReadinessChecks;
+  for (let frame = 0; frame < 20; frame += 1)
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.strictReadinessChecks).toBe(checks);
+  graph.dispose();
+});
+
+it("skips strict readiness probes on unchanged frames in CEL mode", async () => {
+  const { scene, camera } = host();
+  const mesh = MeshBuilder.CreateBox("box", {}, scene);
+  mesh.material = new StandardMaterial("pbr", scene);
+  setSceneRenderSettings(scene, { mode: "cel" });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // The CEL-wrapped material may need an asynchronous first compile before
+  // the strict probe admits the scene and caches.
+  await vi.waitFor(() => {
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  });
   const checks = graph.strictReadinessChecks;
   for (let frame = 0; frame < 20; frame += 1)
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
