@@ -58,7 +58,7 @@ describe("hardware scaling", () => {
       targetFrameMs: 1000 / 30,
     });
     for (let i = 0; i < 20; i++) {
-      scaling.noteFrameTime(4);
+      scaling.noteFramePressure({ presentationMs: null, cpuMs: 4, gpuMs: null });
     }
     expect(scaling.getLevel()).toBe(1);
   });
@@ -77,7 +77,7 @@ describe("hardware scaling", () => {
     scaling.setSettingsLevel(2);
     expect(scaling.getLevel()).toBe(2);
     for (let i = 0; i < 20; i++) {
-      scaling.noteFrameTime(4);
+      scaling.noteFramePressure({ presentationMs: null, cpuMs: 4, gpuMs: null });
     }
     expect(scaling.getLevel()).toBe(2);
   });
@@ -94,7 +94,7 @@ describe("hardware scaling", () => {
       targetFrameMs: 1000 / 60,
     });
     for (let i = 0; i < 5; i++) {
-      scaling.noteFrameTime(40);
+      scaling.noteFramePressure({ presentationMs: null, cpuMs: 40, gpuMs: null });
     }
     expect(scaling.getLevel()).toBe(1.25);
   });
@@ -115,7 +115,7 @@ describe("hardware scaling", () => {
     scaling.noteRestore();
     expect(scaling.getLevel()).toBe(1);
     for (let i = 0; i < 4; i++) {
-      scaling.noteFrameTime(200);
+      scaling.noteFramePressure({ presentationMs: null, cpuMs: 200, gpuMs: null });
     }
     expect(scaling.getLevel()).toBe(1);
   });

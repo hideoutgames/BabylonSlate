@@ -55,6 +55,10 @@ export class SnapshotInterpolator {
     };
   }
 
+  get layoutGeneration(): number {
+    return this.generation;
+  }
+
   installLayout(capacity: number, generation: number): boolean {
     if (generation <= this.generation || capacity < 1) return false;
     const floats = snapshotFloatCount(capacity);

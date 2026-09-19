@@ -28,6 +28,8 @@ import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import * as sceneWork from "./scene-work";
+import * as snapshotApply from "./snapshot-apply";
+import { SnapshotInterpolator } from "./snapshot-sync";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -1153,6 +1155,205 @@ describe("Play createEngine view", () => {
     expect(pose?.qw).toBeCloseTo(Math.SQRT1_2, 5);
   });
 
+  function actorSnapshot(frameId: number, x: number): Float32Array {
+    const snapshot = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(snapshot, {
+      frameId,
+      tickIndex: frameId,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(snapshot, 0, {
+      slotId: 0,
+      position: { x, y: 1, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: SNAPSHOT_FLAG_VISIBLE,
+    });
+    return snapshot;
+  }
+
+  it("applies each sampled snapshot once per frame for a registered Play view", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    // Babylon's frame: begin-frame admission prepares the view, the view render
+    // loop prepares it again, then end-frame observers restore admission.
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderLoop();
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    const apply = vi.spyOn(snapshotApply, "applySnapshotToScene");
+    try {
+      handle.applyCommand({
+        type: "assignMesh",
+        slotId: 0,
+        meshKind: "box",
+        meshAssetGuid: null,
+      });
+      handle.pushSnapshot(actorSnapshot(1, 0));
+      frame();
+      expect(apply).toHaveBeenCalledTimes(1);
+      frame();
+      expect(apply).toHaveBeenCalledTimes(1);
+
+      handle.pushSnapshot(actorSnapshot(2, 4));
+      frame();
+      expect(apply).toHaveBeenCalledTimes(2);
+      expect(handle.lastActorPositions()[0]?.x).toBe(4);
+
+      // A binding-mutating command invalidates the applied identity even when
+      // the sampled snapshot is unchanged.
+      handle.applyCommand({
+        type: "assignMesh",
+        slotId: 1,
+        meshKind: "sphere",
+        meshAssetGuid: null,
+      });
+      frame();
+      expect(apply).toHaveBeenCalledTimes(3);
+    } finally {
+      apply.mockRestore();
+    }
+  });
+
+  it("re-applies the same snapshot frame when the sampled alpha changes", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderLoop();
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 0,
+      meshKind: "box",
+      meshAssetGuid: null,
+    });
+    handle.pushSnapshot(actorSnapshot(1, 0));
+    handle.pushSnapshot(actorSnapshot(2, 10));
+    const apply = vi.spyOn(snapshotApply, "applySnapshotToScene");
+    // The host samples between the pushed pair; force the interpolation alpha
+    // through the interpolator boundary so the pose really differs.
+    const realSample = SnapshotInterpolator.prototype.sample;
+    let forcedAlpha: number | null = null;
+    const sample = vi
+      .spyOn(SnapshotInterpolator.prototype, "sample")
+      .mockImplementation(function (this: SnapshotInterpolator, alpha: number) {
+        return realSample.call(this, forcedAlpha ?? alpha);
+      });
+    try {
+      forcedAlpha = 0.5;
+      frame();
+      expect(apply).toHaveBeenCalledTimes(1);
+      expect(handle.lastActorPositions()[0]?.x).toBeCloseTo(5);
+      frame();
+      expect(apply).toHaveBeenCalledTimes(1);
+
+      forcedAlpha = 0.75;
+      frame();
+      expect(apply).toHaveBeenCalledTimes(2);
+      expect(handle.lastActorPositions()[0]?.x).toBeCloseTo(7.5);
+    } finally {
+      sample.mockRestore();
+      apply.mockRestore();
+    }
+  });
+
+  it("restores an already-blocked material dirty mechanism after snapshot apply", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    handle.scene.blockMaterialDirtyMechanism = true;
+    handle.pushSnapshot(actorSnapshot(1, 0));
+    engine.onBeginFrameObservable.notifyObservers(engine);
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    expect(handle.scene.blockMaterialDirtyMechanism).toBe(true);
+  });
+
+  it("syncs the audio listener once per applied snapshot even when the frame cap skips the render", async () => {
+    const { AudioService } = await import("./audio-service");
+    const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
+    const listener = vi.spyOn(AudioService.prototype, "syncListener");
+    try {
+      const engine = sharedEngine();
+      const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+      const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+      const handle = createEngine(canvas, {
+        sharedEngine: engine,
+        playMode: true,
+        frameCap: 1,
+        audioBackend: new FakeAudioPlaybackBackend(),
+      });
+      handles.push(handle);
+      const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+      const frame = () => {
+        engine.onBeginFrameObservable.notifyObservers(engine);
+        renderLoop();
+        engine.onEndFrameObservable.notifyObservers(engine);
+      };
+      handle.pushSnapshot(actorSnapshot(1, 0));
+      frame();
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(handle.scheduler.stats().renderedFrames).toBe(1);
+
+      // The 1 fps cap refuses the next draw, but the applied snapshot still
+      // owns audio: one listener sync for the newly pushed snapshot.
+      handle.pushSnapshot(actorSnapshot(2, 4));
+      frame();
+      expect(handle.scheduler.stats().renderedFrames).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      listener.mockRestore();
+    }
+  });
+
+  it("reports shared-engine GPU attribution and null gpuMs with two registered Play views", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const first = playHandle(engine);
+    playHandle(engine);
+    // A Play handle disables sibling views on construction so the overlay owns
+    // the framebuffer; re-enable the first to model two live Play clients.
+    first.handle.setRegisterViewEnabled(true);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    first.handle.pushSnapshot(actorSnapshot(1, 0));
+    engine.onBeginFrameObservable.notifyObservers(engine);
+    renderLoop();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    const diagnostics = first.handle.renderDiagnostics();
+    expect(diagnostics.gpuAttribution).toBe("shared-engine");
+    expect(diagnostics.gpuMs).toBeNull();
+    expect(diagnostics.pressure?.gpuMs).toBeNull();
+    expect(diagnostics.pressure?.cpuMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("feeds cpuMs-only pressure samples for free-running editor views", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = editorHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    engine.onBeginFrameObservable.notifyObservers(engine);
+    renderLoop();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    engine.onBeginFrameObservable.notifyObservers(engine);
+    renderLoop();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    const pressure = handle.renderDiagnostics().pressure;
+    expect(pressure?.cpuMs).toBeGreaterThanOrEqual(0);
+    // Editor viewports are free-running: presented-frame intervals measure
+    // host event-loop contention, not frame cost, and must not feed the valve.
+    expect(pressure?.presentationMs).toBeNull();
+    expect(pressure?.gpuMs).toBeNull();
+  });
+
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -1300,7 +1501,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     for (let i = 0; i < 40; i++) {
-      handle.scaling.noteFrameTime(4);
+      handle.scaling.noteFramePressure({ presentationMs: null, cpuMs: 4, gpuMs: null });
     }
     expect(handle.scaling.getLevel()).toBe(1);
   });
@@ -1317,7 +1518,7 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     // 20ms is slow vs 60fps (16.7ms) but cheap vs a 30fps cap (33ms).
     for (let i = 0; i < 40; i++) {
-      handle.scaling.noteFrameTime(20);
+      handle.scaling.noteFramePressure({ presentationMs: null, cpuMs: 20, gpuMs: null });
     }
     expect(handle.scaling.getLevel()).toBe(1);
   });
