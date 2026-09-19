@@ -21,7 +21,11 @@ import {
   type BakeRuntimeAssetReader,
   type LoadedRuntimeBake,
 } from "@babylonslate/assets";
-import { snapshotBakeMesh } from "./bake-mesh-snapshot";
+import {
+  registerBakeSourceMesh,
+  snapshotBakeSourceMesh,
+  unregisterBakeSourceMesh,
+} from "./bake-mesh-snapshot";
 import {
   acquireBakedAtlas,
   beginBakedUpload,
@@ -289,7 +293,7 @@ export class SceneBakedLighting {
           !receiver.mesh.geometry
         )
           throw new Error("A baked receiver is not owned by the target Scene.");
-        const source = snapshotBakeMesh(sourceMesh);
+        const source = snapshotBakeSourceMesh(sourceMesh);
         sourceBytes +=
           source.indices.byteLength +
           source.attributes.reduce(
@@ -416,7 +420,7 @@ export class SceneBakedLighting {
         );
         if (
           !sameSource(
-            snapshotBakeMesh(active?.holder ?? target.mesh),
+            snapshotBakeSourceMesh(active?.holder ?? target.mesh),
             target.source,
           )
         )
@@ -439,6 +443,7 @@ export class SceneBakedLighting {
         if (candidate.geometry) {
           candidate.holder = hiddenMesh(this.scene, "Baked source retention");
           candidate.original.applyToMesh(candidate.holder);
+          registerBakeSourceMesh(candidate.mesh, candidate.holder);
         }
       check();
       try {
@@ -540,6 +545,8 @@ export class SceneBakedLighting {
       } catch (error) {
         failures.push(error);
       }
+      if (candidate.holder)
+        unregisterBakeSourceMesh(candidate.mesh, candidate.holder);
       for (const release of [
         candidate.releaseGeometry,
         () => candidate.holder?.dispose(),
