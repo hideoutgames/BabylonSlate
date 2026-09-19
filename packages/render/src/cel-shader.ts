@@ -26,9 +26,12 @@ export const CEL_UNIFORMS = [
 /**
  * One diffuse environmental contribution enters the same final CEL ramp.
  * Under `SLATE_BAKED` a second baked-irradiance contribution joins it — same
- * wins/peak/total update, no smooth lobes. Under `SLATE_BAKED_ENV` the atlas
- * also carries environment irradiance, so the baked sample replaces the
- * spherical-polynomial environment instead of double-counting it.
+ * wins/peak/total update, no smooth lobes — at the atlas's raw `E` scale so
+ * it lands in the same unnormalized units as realtime `I * cos * attenuation`
+ * light terms. Under `SLATE_BAKED_ENV` the atlas also carries environment
+ * irradiance, so the baked sample replaces the spherical-polynomial
+ * environment instead of double-counting it; the polynomial it substitutes
+ * for is already `E / PI`-scaled, so that branch keeps the division.
  */
 export function celEnvironmentAccumulation(wgsl: boolean, influence = "1.0"): string {
   const texel = wgsl
@@ -51,7 +54,7 @@ specularBase=slateCelAccumulate(specularBase,${wgsl ? "vec3f" : "vec3"}(0.0),sla
 #endif
 #if defined(SLATE_BAKED) && !defined(SLATE_BAKED_ENV)
 ${texel}
-${wgsl ? "var slateBakedColor: vec3f" : "vec3 slateBakedColor"}=slateBakedTexel.rgb*slateBakedTexel.a*${BAKED_IRRADIANCE_INV_PI};
+${wgsl ? "var slateBakedColor: vec3f" : "vec3 slateBakedColor"}=slateBakedTexel.rgb*slateBakedTexel.a;
 ${wgsl ? "var slateBakedStrength: f32" : "float slateBakedStrength"}=slateCelStrength(slateBakedColor);
 slateCelWins=0.0;
 if (slateBakedStrength>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }

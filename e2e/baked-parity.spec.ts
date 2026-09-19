@@ -55,7 +55,8 @@ test("baked irradiance receiver matches realtime point-light shading within 3/25
         expected.forEach((channel, c) =>
           expect(
             Math.abs(baked[index]![c]! - channel),
-            `${entry.backend} ${label} pixel ${index} channel ${c}`,
+            `${entry.backend} ${label} pixel ${index} channel ${c}: ` +
+              `baked ${baked[index]![c]} realtime ${channel}`,
           ).toBeLessThanOrEqual(3),
         ),
       );

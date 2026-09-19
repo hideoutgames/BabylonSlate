@@ -1,5 +1,6 @@
 import {
   MaterialPluginBase,
+  PBRBaseMaterial,
   ShaderLanguage,
   type BaseTexture,
   type Material,
@@ -8,6 +9,7 @@ import {
   type UniformBuffer,
 } from "@babylonjs/core";
 import {
+  BAKED_IRRADIANCE_INV_PI_GLSL,
   bakedIrradianceFragmentDeclarations,
   bakedIrradianceVertexDeclarations,
   bakedIrradianceVertexMain,
@@ -19,9 +21,11 @@ import { CelMaterial } from "./cel-material";
  * Adds the receiver's baked diffuse irradiance to one material clone's
  * diffuse accumulation. PBR and Standard surfaces pick the term up through
  * the material's own `diffuseBase`, so the authored albedo still composes the
- * outgoing color exactly as realtime diffuse does (`albedo * E * coverage /
- * PI`). CEL adapters receive only declarations; their `SLATE_BAKED` sample
- * lives inside the shared environment accumulation and enters the same ramp.
+ * outgoing color exactly as realtime diffuse does — `albedo * E * coverage /
+ * PI` for PBR's normalized diffuse and `albedo * E * coverage` for Standard's
+ * unnormalized light convention. CEL adapters receive only declarations;
+ * their `SLATE_BAKED` sample lives inside the shared environment accumulation
+ * and enters the same ramp.
  */
 export class BakedIrradiancePlugin extends MaterialPluginBase {
   readonly sampling: BakedIrradianceSampling;
@@ -119,8 +123,14 @@ export class BakedIrradiancePlugin extends MaterialPluginBase {
       // baked term flows through the material's own diffuse/albedo multiply:
       // `vec3 finalDiffuse=diffuseBase` covers PBR and the three clamped
       // `vec3 finalDiffuse=clamp(diffuseBase*...)` variants cover Standard.
-      // `UNLIT` materials keep their authored flat color.
-      const add = `#if defined(SLATE_BAKED) && !defined(UNLIT)\ndiffuseBase+=slateBakedIrradianceSample();\n#endif\n`;
+      // PBR's diffuse term is energy-normalized (`/ PI`); Standard's realtime
+      // contribution `lightColor * cos * attenuation` is not, so only PBR
+      // divides the stored irradiance. `UNLIT` materials keep their authored
+      // flat color.
+      const scale = this._material instanceof PBRBaseMaterial
+        ? `*${BAKED_IRRADIANCE_INV_PI_GLSL}`
+        : "";
+      const add = `#if defined(SLATE_BAKED) && !defined(UNLIT)\ndiffuseBase+=slateBakedIrradianceSample()${scale};\n#endif\n`;
       code[wgsl ? "!(var finalDiffuse: vec3f=)" : "!(vec3 finalDiffuse=)"] =
         `${add}$1`;
     }
