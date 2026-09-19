@@ -115,12 +115,19 @@ export class HardwareScalingController {
     // Quality only climbs back when every signal proves headroom: real
     // presentation intervals at the target cadence for the whole window plus
     // CPU (and GPU when it is attributable) inside the headroom margin. An
-    // unknown GPU is never read as free time.
-    const presentationAtTarget = this.samples.every(
-      (entry) =>
-        entry.presentationMs != null &&
-        entry.presentationMs <= this.targetFrameMs * 1.05,
+    // unknown GPU is never read as free time. Views that never report
+    // presentation intervals (free-running editor viewports) fall back to the
+    // cost-only headroom rule; a partially unknown window still blocks.
+    const noPresentationEvidence = this.samples.every(
+      (entry) => entry.presentationMs == null,
     );
+    const presentationAtTarget =
+      noPresentationEvidence ||
+      this.samples.every(
+        (entry) =>
+          entry.presentationMs != null &&
+          entry.presentationMs <= this.targetFrameMs * 1.05,
+      );
     if (!presentationAtTarget) return;
     const gpuSamples = this.samples.flatMap((entry) =>
       entry.gpuMs != null ? [entry.gpuMs] : [],

@@ -1335,6 +1335,25 @@ describe("Play createEngine view", () => {
     expect(diagnostics.pressure?.cpuMs).toBeGreaterThanOrEqual(0);
   });
 
+  it("feeds cpuMs-only pressure samples for free-running editor views", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = editorHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    engine.onBeginFrameObservable.notifyObservers(engine);
+    renderLoop();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    engine.onBeginFrameObservable.notifyObservers(engine);
+    renderLoop();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    const pressure = handle.renderDiagnostics().pressure;
+    expect(pressure?.cpuMs).toBeGreaterThanOrEqual(0);
+    // Editor viewports are free-running: presented-frame intervals measure
+    // host event-loop contention, not frame cost, and must not feed the valve.
+    expect(pressure?.presentationMs).toBeNull();
+    expect(pressure?.gpuMs).toBeNull();
+  });
+
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

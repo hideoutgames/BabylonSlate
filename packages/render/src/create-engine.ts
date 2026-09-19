@@ -1937,16 +1937,24 @@ function initializeEngine(
   const presentationObserver = engine.onEndFrameObservable.add(() => {
     if (framePresented) {
       const presentedAt = performance.now();
+      // Only Play handles pace frames: their presented-frame interval measures
+      // sustainable frame cost. Editor/prefab viewports are free-running, so
+      // the same interval mostly measures host event-loop contention and must
+      // not drive resolution scaling — they keep the cpuMs-only input.
+      const presentationSignals = options.playMode === true;
       // GPU timing only means this view when it owns the Engine's render —
       // siblings would fold their cost into the same counter.
       const sole = soleRenderingView();
-      if (sole && !gpuFrameCaptureRequested && engine.getCaps().timerQuery) {
+      if (sole && presentationSignals && !gpuFrameCaptureRequested && engine.getCaps().timerQuery) {
         gpuFrameCaptureRequested = true;
         engine.captureGPUFrameTime(true);
       }
-      const counter = sole ? engine.getGPUFrameTimeCounter() : null;
+      const counter = presentationSignals && sole ? engine.getGPUFrameTimeCounter() : null;
       lastPressureSample = {
-        presentationMs: previousFramePresented ? presentedAt - lastPresentedAt : null,
+        presentationMs:
+          presentationSignals && previousFramePresented
+            ? presentedAt - lastPresentedAt
+            : null,
         cpuMs: lastRenderCpuMs,
         gpuMs: counter && counter.count > 0 ? counter.current / 1_000_000 : null,
       };
