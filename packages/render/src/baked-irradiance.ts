@@ -1,8 +1,10 @@
 import type { BaseTexture } from "@babylonjs/core";
 
 /**
- * The atlas stores linear rgba32float diffuse irradiance in the "physical-E"
- * convention: outgoing Lambertian diffuse is `albedo * E * coverage / PI`.
+ * The atlas asset stores linear rgba32float diffuse irradiance (the GPU
+ * upload narrows it to rgba16float for universal filtering) in the
+ * "physical-E" convention: outgoing Lambertian diffuse is
+ * `albedo * E * coverage / PI`.
  * Dividing by PI inside the sample keeps the stored quantity a true
  * irradiance — before diffuse albedo, CEL bands, or output conversion — and
  * matches the provider calibration (`unit-albedo radiance = E / PI`).
@@ -16,7 +18,7 @@ import type { BaseTexture } from "@babylonjs/core";
 export const BAKED_IRRADIANCE_INV_PI = 0.3183098861837907;
 
 export interface BakedIrradianceSampling {
-  /** Shared rgba32float atlas texture; alpha is receiver coverage. */
+  /** Shared rgba16float atlas texture; alpha is receiver coverage. */
   readonly texture: BaseTexture;
   /** Normalized atlas rect: `uv2 * scale + offset` lands inside the gutters. */
   readonly scale: readonly [number, number];

@@ -32,8 +32,8 @@ afterEach(() => {
 
 function engineScene() {
   const { engine, scene } = createTestEngine();
-  engine.getCaps().textureFloat = true;
-  engine.getCaps().textureFloatLinearFiltering = true;
+  engine.getCaps().textureHalfFloat = true;
+  engine.getCaps().textureHalfFloatLinearFiltering = true;
   // Pinned NullEngine omits the upload completion flag set by both real backends.
   const createRawTexture = engine.createRawTexture.bind(engine);
   vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {

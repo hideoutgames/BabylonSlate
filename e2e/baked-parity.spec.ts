@@ -42,8 +42,22 @@ test("baked irradiance receiver matches realtime point-light shading within 3/25
       body: Buffer.from(entry.png.split(",")[1]!, "base64"),
       contentType: "image/png",
     });
-    expect(entry.caps.float, `${entry.backend} float atlas`).toBe(true);
-    expect(entry.caps.linear, `${entry.backend} float filtering`).toBe(true);
+    expect(entry.caps.halfFloat, `${entry.backend} half-float atlas`).toBe(
+      true,
+    );
+    expect(
+      entry.caps.halfLinear,
+      `${entry.backend} half-float filtering`,
+    ).toBe(true);
+    expect(entry.atlas.ready, `${entry.backend} atlas upload ready`).toBe(
+      true,
+    );
+    expect(entry.atlas.halfFloat, `${entry.backend} atlas format`).toBe(true);
+    for (const label of ["pbrBaked", "celBaked"] as const)
+      expect(
+        entry.diagnostics[label].slateBaked,
+        `${entry.backend} ${label} compiled without SLATE_BAKED`,
+      ).toBe(true);
     for (const [realtime, baked, label] of [
       [entry.rows.pbrRealtime, entry.rows.pbrBaked, "PBR"],
       [entry.rows.celRealtime, entry.rows.celBaked, "CEL"],

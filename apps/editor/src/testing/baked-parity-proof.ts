@@ -9,18 +9,19 @@ import {
   MeshBuilder,
   PBRMaterial,
   PointLight,
-  RawTexture,
   Scene,
   Vector3,
   type AbstractEngine,
   type BaseTexture,
 } from "@babylonjs/core";
+import type { BakedIrradianceAtlas } from "@babylonslate/core";
 import { createAppEngine, createAppWebGpuEngine } from "@babylonslate/render";
 import {
   analyticDirectionalIrradiance,
   analyticPointIrradiance,
 } from "../../../../packages/render/src/baked-irradiance";
 import { BakedIrradiancePlugin } from "../../../../packages/render/src/baked-irradiance-plugin";
+import { acquireBakedAtlas } from "../../../../packages/render/src/baked-lighting-resources";
 import { CelMaterial } from "../../../../packages/render/src/cel-material";
 
 const SIZE = 96;
@@ -50,11 +51,16 @@ function receiver(scene: Scene, normal: readonly [number, number, number]) {
   return { mesh, camera };
 }
 
-/** rgba32float atlas: texel (i,j) holds the analytic E at the surface point mapping to its center. */
-function analyticAtlas(
-  scene: Scene,
+/**
+ * rgba32float-le source bytes uploaded through the real `acquireBakedAtlas`
+ * path (which narrows to RGBA16F); texel (i,j) holds the analytic E at the
+ * surface point mapping to its center.
+ */
+async function analyticAtlas(
+  engine: AbstractEngine,
+  name: string,
   irradiance: (point: [number, number, number]) => [number, number, number],
-): BaseTexture {
+): Promise<{ texture: BaseTexture; release(): void }> {
   const bytes = new Uint8Array(ATLAS * ATLAS * 16);
   const view = new DataView(bytes.buffer);
   for (let y = 0; y < ATLAS; y++)
@@ -70,19 +76,12 @@ function analyticAtlas(
       view.setFloat32(offset + 8, e[2], true);
       view.setFloat32(offset + 12, 1, true);
     }
-  const texture = new RawTexture(
-    bytes,
-    ATLAS,
-    ATLAS,
-    Constants.TEXTUREFORMAT_RGBA,
-    scene,
-    false,
-    false,
-    Constants.TEXTURE_CLAMP_ADDRESSMODE,
-    Constants.TEXTURETYPE_FLOAT,
-  );
-  texture.updateSamplingMode(Constants.TEXTURE_BILINEAR_SAMPLINGMODE);
-  return texture;
+  const atlas = {
+    sha256: `baked-parity-${name}`,
+    width: ATLAS,
+    height: ATLAS,
+  } as BakedIrradianceAtlas;
+  return acquireBakedAtlas(engine, atlas, bytes);
 }
 
 function pbr(name: string, scene: Scene): PBRMaterial {
@@ -187,8 +186,9 @@ export async function runBakedParityProof() {
       fillLight.intensity = DIR_INTENSITY;
       fillLight.diffuse = new Color3(1, 1, 1);
       fillLight.specular = new Color3(0, 0, 0);
-      const pointSampling = {
-        texture: analyticAtlas(scene, (point) =>
+      const atlasLeases: Array<{ release(): void }> = [];
+      try {
+        const pointAtlas = await analyticAtlas(engine, "point", (point) =>
           analyticPointIrradiance(
             point,
             normal,
@@ -196,56 +196,93 @@ export async function runBakedParityProof() {
             [1, 1, 1],
             LIGHT_INTENSITY,
           ),
-        ),
-        scale: [1, 1] as const,
-        offset: [0, 0] as const,
-        includesEnvironment: false,
-      };
-      const directionalSampling = {
-        texture: analyticAtlas(scene, () =>
-          analyticDirectionalIrradiance(
-            normal,
-            directionToLight,
-            [1, 1, 1],
-            DIR_INTENSITY,
+        );
+        atlasLeases.push(pointAtlas);
+        const directionalAtlas = await analyticAtlas(
+          engine,
+          "directional",
+          () =>
+            analyticDirectionalIrradiance(
+              normal,
+              directionToLight,
+              [1, 1, 1],
+              DIR_INTENSITY,
+            ),
+        );
+        atlasLeases.push(directionalAtlas);
+        const pointSampling = {
+          texture: pointAtlas.texture,
+          scale: [1, 1] as const,
+          offset: [0, 0] as const,
+          includesEnvironment: false,
+        };
+        const directionalSampling = {
+          texture: directionalAtlas.texture,
+          scale: [1, 1] as const,
+          offset: [0, 0] as const,
+          includesEnvironment: false,
+        };
+        const realtimePbr = pbr("Realtime PBR", scene);
+        const bakedPbr = pbr("Baked PBR", scene);
+        new BakedIrradiancePlugin(bakedPbr, pointSampling);
+        const realtimeCel = cel("Realtime CEL", scene);
+        const bakedCel = cel("Baked CEL", scene);
+        new BakedIrradiancePlugin(bakedCel, directionalSampling);
+        const captures = [] as Array<{
+          label: string;
+          pixels: number[][];
+          slateBaked: boolean;
+        }>;
+        for (const [label, material, point, fill] of [
+          ["pbrRealtime", realtimePbr, true, false],
+          ["pbrBaked", bakedPbr, false, false],
+          ["celRealtime", realtimeCel, false, true],
+          ["celBaked", bakedCel, false, false],
+        ] as const) {
+          pointLight.excludedMeshes.length = 0;
+          if (!point) pointLight.excludedMeshes.push(mesh);
+          fillLight.excludedMeshes.length = 0;
+          if (!fill) fillLight.excludedMeshes.push(mesh);
+          mesh.material = material;
+          const pixels = await row(engine, scene);
+          const defines = mesh.subMeshes[0]?.effect?.defines ?? "";
+          captures.push({
+            label,
+            pixels,
+            slateBaked: defines.split("\n").includes("#define SLATE_BAKED"),
+          });
+        }
+        result.push({
+          backend,
+          driver: "getGlInfo" in engine ? engine.getGlInfo() : engine.getInfo(),
+          caps: {
+            halfFloat: engine.getCaps().textureHalfFloat,
+            halfLinear: engine.getCaps().textureHalfFloatLinearFiltering,
+          },
+          atlas: {
+            ready:
+              pointSampling.texture.isReady() &&
+              directionalSampling.texture.isReady(),
+            halfFloat:
+              pointSampling.texture.getInternalTexture()?.type ===
+                Constants.TEXTURETYPE_HALF_FLOAT &&
+              directionalSampling.texture.getInternalTexture()?.type ===
+                Constants.TEXTURETYPE_HALF_FLOAT,
+          },
+          rows: Object.fromEntries(
+            captures.map((entry) => [entry.label, entry.pixels]),
           ),
-        ),
-        scale: [1, 1] as const,
-        offset: [0, 0] as const,
-        includesEnvironment: false,
-      };
-      const realtimePbr = pbr("Realtime PBR", scene);
-      const bakedPbr = pbr("Baked PBR", scene);
-      new BakedIrradiancePlugin(bakedPbr, pointSampling);
-      const realtimeCel = cel("Realtime CEL", scene);
-      const bakedCel = cel("Baked CEL", scene);
-      new BakedIrradiancePlugin(bakedCel, directionalSampling);
-      const captures = [] as Array<{ label: string; pixels: number[][] }>;
-      for (const [label, material, point, fill] of [
-        ["pbrRealtime", realtimePbr, true, false],
-        ["pbrBaked", bakedPbr, false, false],
-        ["celRealtime", realtimeCel, false, true],
-        ["celBaked", bakedCel, false, false],
-      ] as const) {
-        pointLight.excludedMeshes.length = 0;
-        if (!point) pointLight.excludedMeshes.push(mesh);
-        fillLight.excludedMeshes.length = 0;
-        if (!fill) fillLight.excludedMeshes.push(mesh);
-        mesh.material = material;
-        captures.push({ label, pixels: await row(engine, scene) });
+          diagnostics: Object.fromEntries(
+            captures.map((entry) => [
+              entry.label,
+              { slateBaked: entry.slateBaked },
+            ]),
+          ),
+          png: canvas.toDataURL("image/png"),
+        });
+      } finally {
+        for (const lease of atlasLeases) lease.release();
       }
-      result.push({
-        backend,
-        driver: "getGlInfo" in engine ? engine.getGlInfo() : engine.getInfo(),
-        caps: {
-          float: engine.getCaps().textureFloat,
-          linear: engine.getCaps().textureFloatLinearFiltering,
-        },
-        rows: Object.fromEntries(
-          captures.map((entry) => [entry.label, entry.pixels]),
-        ),
-        png: canvas.toDataURL("image/png"),
-      });
     } finally {
       scene.dispose();
       engine.dispose();
