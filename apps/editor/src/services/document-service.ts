@@ -54,6 +54,17 @@ export interface DocumentLoadOptions {
 }
 
 export class DocumentService {
+  private readonly contentRevisions = new WeakMap<OpenDocument, number>();
+
+  /** Changes even when Undo returns to a previously held content object. */
+  contentRevision(id: string): number {
+    const document = this.state.openDocuments.get(id);
+    return document ? (this.contentRevisions.get(document) ?? 0) : -1;
+  }
+
+  private advanceContentRevision(document: OpenDocument): void {
+    this.contentRevisions.set(document, (this.contentRevisions.get(document) ?? 0) + 1);
+  }
   private state: DocumentRegistryState = {
     openDocuments: new Map(),
     tabOrder: [],
@@ -368,6 +379,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || !isSceneWorkspaceKind(doc.ref.kind)) return;
     doc.content = scene;
+    this.advanceContentRevision(doc);
     doc.dirty = true;
     recordDocumentDirty(doc.ref.kind, id);
     doc.ref = {
@@ -380,6 +392,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind !== "graph") return;
     doc.content = graph;
+    this.advanceContentRevision(doc);
     doc.dirty = true;
     recordDocumentDirty(doc.ref.kind, id);
   }
@@ -395,6 +408,7 @@ export class DocumentService {
       return;
     }
     doc.content = content;
+    this.advanceContentRevision(doc);
     doc.dirty = true;
     recordDocumentDirty(doc.ref.kind, id);
     if (typeof content.name === "string" && content.name.trim() !== "") {
@@ -451,6 +465,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
+    this.advanceContentRevision(doc);
     doc.dirty = false;
   }
 
@@ -459,6 +474,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
+    this.advanceContentRevision(doc);
   }
 
   buildLayouts(): ProjectLayouts {

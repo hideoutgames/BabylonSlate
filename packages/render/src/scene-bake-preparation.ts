@@ -5,6 +5,7 @@ import {
   meshBakeParticipation,
   resolveEnvironmentLightingSettings,
   type BakeGeometrySource,
+  type BakeAuthoringSettings,
   type BakeInputHashes,
   type BakedLightingSource,
   type BakedReceiverIdentity,
@@ -33,12 +34,7 @@ import type {
 } from "./bake-prototype-input";
 import { snapshotBakeMesh } from "./bake-mesh-snapshot";
 
-export interface SceneBakeSettings {
-  resolution: number;
-  paddingTexels: number;
-  samples: number;
-  bounces: number;
-}
+export type SceneBakeSettings = BakeAuthoringSettings;
 export interface SceneBakeOwner {
   sceneGuid: string;
   generation: number;
@@ -233,7 +229,12 @@ export async function prepareSceneBake(options: {
   settings: SceneBakeSettings;
   signal?: AbortSignal;
 }): Promise<PreparedSceneBake> {
-  const owner = { ...options.owner };
+  // Callers may carry live editor methods beside this structural value type.
+  // Only stable serializable ownership belongs in the prepared/persisted data.
+  const owner: SceneBakeOwner = {
+    sceneGuid: options.owner.sceneGuid,
+    generation: options.owner.generation,
+  };
   const signal = options.signal;
   const current = options.current;
   const check = () => {
@@ -544,6 +545,7 @@ export async function prepareSceneBake(options: {
       id: "three-gpu-pathtracer",
       version: "0.0.24",
       adapterVersion: "scene-preparation-1",
+      jobAdapterVersion: "scene-job-1",
       uv: "xatlasjs-0.2.0-adapter1",
       quantity: "physical-E",
       transport: "two-sided-diffuse-only",

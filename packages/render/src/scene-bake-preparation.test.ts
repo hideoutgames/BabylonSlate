@@ -80,7 +80,7 @@ function fixture() {
     owner,
     current: () => owner,
     document,
-    meshForComponent: (actorId: string) => sync.meshForActor(actorId),
+    meshForComponent: (actorId: string, componentId: string) => sync.meshForComponent(actorId, componentId),
     materials: new Map([["material-1", material]]),
     settings: { resolution: 32, paddingTexels: 2, samples: 1, bounces: 2 },
   };
@@ -88,12 +88,25 @@ function fixture() {
 }
 
 describe("authored Scene bake preparation", () => {
+  it("resolves multiple primitive visuals by authored component identity instead of their renderer order", async () => {
+    const { document, sync, options } = fixture();
+    const second = createMeshComponent("second-mesh", "box");
+    second.properties = { ...second.properties, materialGuid: "material-1", bakeParticipation: "staticReceiver" };
+    document.actors[0].components.push(second);
+    sync.apply(document);
+    const prepared = await prepareSceneBake(options);
+    expect(prepared.meshes.map((mesh) => [mesh.identity.componentId, mesh.source.indices.length])).toEqual([["mesh", 6], ["second-mesh", 36]]);
+    expect(sync.meshForComponent("receiver", "missing")).toBeNull();
+    expect(sync.meshForComponent("lamp", "light")).toBeNull();
+  });
   it("captures actual authored primitive identity and calibrated Static/Stationary point inputs without changing realtime lights", async () => {
     expect(lightMobility({})).toBe("dynamic");
     expect(meshBakeParticipation({})).toBe("none");
     const { options, scene } = fixture();
     const count = scene.lights.filter((light) => light.isEnabled()).length;
-    const prepared = await prepareSceneBake(options);
+    const editorOwner = { ...options.owner, isCurrent: () => true, commit: () => true };
+    const prepared = await prepareSceneBake({ ...options, owner: editorOwner });
+    expect(structuredClone(prepared.owner)).toEqual(options.owner);
     expect(prepared.meshes[0].identity).toEqual({
       actorId: "receiver",
       componentId: "mesh",

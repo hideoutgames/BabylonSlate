@@ -3,6 +3,35 @@ export type LightMobility = "static" | "stationary" | "dynamic";
 export type MeshBakeParticipation =
   "none" | "staticReceiver" | "staticOccluder";
 
+export interface BakeAuthoringSettings {
+  resolution: number;
+  paddingTexels: number;
+  samples: number;
+  bounces: number;
+}
+
+/** Persisted authoring controls, independent of runtime scalability. */
+export function normalizeBakeAuthoringSettings(
+  value?: unknown,
+): BakeAuthoringSettings {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+  const integer = (key: string, fallback: number, min: number, max: number) => {
+    const value = source[key];
+    return typeof value === "number" && Number.isFinite(value)
+      ? Math.max(min, Math.min(max, Math.round(value)))
+      : fallback;
+  };
+  return {
+    resolution: integer("resolution", 32, 32, 128),
+    paddingTexels: integer("paddingTexels", 2, 1, 4),
+    samples: integer("samples", 16, 1, 4096),
+    bounces: integer("bounces", 3, 2, 8),
+  };
+}
+
 export function lightMobility(
   properties: Readonly<Record<string, unknown>>,
 ): LightMobility {
