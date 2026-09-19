@@ -7,6 +7,7 @@ import {
   attachSkeletonPreview,
   createMaterialPreviewPresenter,
   createModelPreviewScene,
+  installPreviewEnvironment,
   setSceneRenderSettings,
   loadModelPreviewSource,
   previewRigRoot,
@@ -68,6 +69,7 @@ export function AnimationPreviewCanvas({
     void (async () => {
       try {
         host = createModelPreviewScene(engine);
+        installPreviewEnvironment(host.scene);
         loaded = await loadModelPreviewSource(host, sourceBytes);
         if (cancelled || !host || !loaded) {
           host?.dispose();

@@ -5,6 +5,7 @@ import {
   Constants,
   MeshBuilder,
   NodeMaterialModes,
+  NullEngine,
   RenderTargetTexture,
   Scene,
   Vector3,
@@ -511,16 +512,24 @@ export function createMaterialPreviewPresenter(
   const now = options.now ?? (() => performance.now());
   let frozen = false;
   let rtt: RenderTargetTexture | null = null;
+  let rttGeneration = 0;
   let blitInFlight = false;
   let lastPresentMs = Number.NEGATIVE_INFINITY;
   let pendingForce = false;
   let disposed = false;
   let renderError: string | null = null;
+  let readbackError: string | null = null;
 
   const releaseRtt = () => {
+    rttGeneration += 1;
     host.camera.outputRenderTarget = null;
     rtt?.dispose();
     rtt = null;
+  };
+
+  const reportReadback = (message: string) => {
+    if (message !== readbackError) options.onError?.(message);
+    readbackError = message;
   };
 
   const ensureRtt = (width: number, height: number): RenderTargetTexture => {
@@ -547,13 +556,24 @@ export function createMaterialPreviewPresenter(
   const blit = (texture: RenderTargetTexture) => {
     if (blitInFlight) return;
     blitInFlight = true;
+    const generation = rttGeneration;
     void (async () => {
       try {
         const buffer = await texture.readPixels();
-        if (disposed || !buffer || !canvas.getContext) return;
+        // An RTT recreation supersedes in-flight readbacks: pixels from an
+        // older generation must never reach the canvas.
+        if (disposed || generation !== rttGeneration || !canvas.getContext)
+          return;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         const { width, height } = texture.getSize();
+        if (!buffer || buffer.byteLength < width * height * 4) {
+          // NullEngine has no GPU readback; its null result is expected.
+          if (!(host.scene.getEngine() instanceof NullEngine)) {
+            reportReadback("The material preview readback returned no pixels.");
+          }
+          return;
+        }
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
         ctx.putImageData(
@@ -565,8 +585,14 @@ export function createMaterialPreviewPresenter(
           0,
           0,
         );
-      } catch {
-        // NullEngine / missing GPU readback is fine — tests assert the RTT.
+        if (readbackError) {
+          readbackError = null;
+          options.onError?.(null);
+        }
+      } catch (error) {
+        reportReadback(
+          error instanceof Error ? error.message : String(error),
+        );
       } finally {
         blitInFlight = false;
       }
