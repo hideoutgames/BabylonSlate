@@ -122,6 +122,13 @@ if (
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("sceneBakeProof")
+) {
+  void import("./testing/scene-bake-proof").then(({ runSceneBakeProof }) => {
+    Object.assign(window, { __sceneBakeProof: runSceneBakeProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("bakeUvProof")
 ) {
   void import("./testing/bake-uv-proof").then(({ runBakeUvProof }) => {

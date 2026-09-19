@@ -17,7 +17,8 @@
     "./scene-render-coordinator": "./src/scene-render-coordinator.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts",
-    "./bake-uv-atlas": "./src/bake-uv-atlas.ts"
+    "./bake-uv-atlas": "./src/bake-uv-atlas.ts",
+    "./scene-bake-preparation": "./src/scene-bake-preparation.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
