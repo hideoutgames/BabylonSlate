@@ -1,6 +1,19 @@
 import type { ResolutionQuality } from "@babylonslate/core";
 import type { AbstractEngine } from "@babylonjs/core";
 
+/**
+ * Per-view frame cost, measured across one rendered (non-loading) frame.
+ * `presentationMs` is the interval since the view's previous presented frame —
+ * `null` when that interval is unknown (skipped/capped/hidden/loading frames
+ * break the chain). `gpuMs` is the engine GPU frame time — `null` whenever it
+ * is unavailable or shared with sibling registered views. Unknown is never 0.
+ */
+export interface FramePressureSample {
+  presentationMs: number | null;
+  cpuMs: number;
+  gpuMs: number | null;
+}
+
 export interface HardwareScalingOptions {
   minLevel?: number;
   maxLevel?: number;
@@ -22,7 +35,7 @@ export class HardwareScalingController {
   private level: number;
   private cooldown = 0;
   private dynamic = true;
-  private samples: number[] = [];
+  private samples: FramePressureSample[] = [];
 
   constructor(engine: AbstractEngine, options: HardwareScalingOptions = {}) {
     this.engine = engine;
@@ -80,26 +93,52 @@ export class HardwareScalingController {
     this.setLevel(this.minLevel);
   }
 
-  noteFrameTime(frameMs: number): void {
+  noteFramePressure(sample: FramePressureSample): void {
     if (!this.dynamic) return;
-    this.samples.push(frameMs);
+    this.samples.push(sample);
     if (this.samples.length > 15) this.samples.shift();
     if (this.cooldown > 0) {
       this.cooldown -= 1;
       return;
     }
     if (this.samples.length < 5) return;
-    const sorted = [...this.samples].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)]!;
-    if (median > this.targetFrameMs * 1.15 && this.level < this.maxLevel) {
+    const medianPressure = medianOf(
+      this.samples.map((entry) =>
+        Math.max(entry.presentationMs ?? 0, entry.cpuMs, entry.gpuMs ?? 0),
+      ),
+    );
+    if (medianPressure > this.targetFrameMs * 1.15 && this.level < this.maxLevel) {
       this.setLevel(this.level + 0.25);
       this.cooldown = this.cooldownFrames;
-    } else if (
-      median < this.targetFrameMs * 0.7 &&
+      return;
+    }
+    // Quality only climbs back when every signal proves headroom: real
+    // presentation intervals at the target cadence for the whole window plus
+    // CPU (and GPU when it is attributable) inside the headroom margin. An
+    // unknown GPU is never read as free time.
+    const presentationAtTarget = this.samples.every(
+      (entry) =>
+        entry.presentationMs != null &&
+        entry.presentationMs <= this.targetFrameMs * 1.05,
+    );
+    if (!presentationAtTarget) return;
+    const gpuSamples = this.samples.flatMap((entry) =>
+      entry.gpuMs != null ? [entry.gpuMs] : [],
+    );
+    if (
+      medianOf(this.samples.map((entry) => entry.cpuMs)) <
+        this.targetFrameMs * 0.7 &&
+      (gpuSamples.length === 0 ||
+        medianOf(gpuSamples) < this.targetFrameMs * 0.7) &&
       this.level > this.minLevel
     ) {
       this.setLevel(this.level - 0.25);
       this.cooldown = this.cooldownFrames;
     }
   }
+}
+
+function medianOf(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]!;
 }

@@ -1,5 +1,6 @@
 import { clusteredLocalContributionCount } from "./clustered-light-policy";
 import { sceneRenderPathStatus } from "./scene-render-path";
+import type { FramePressureSample } from "./hardware-scaling";
 import type { ResolvedRenderingPipeline } from "@babylonslate/core";
 import {
   EngineInstrumentation,
@@ -12,10 +13,20 @@ import { sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
 
 const instruments = new WeakMap<AbstractEngine, EngineInstrumentation>();
+export type GpuAttribution = "view" | "shared-engine" | "unavailable";
+
 export type RenderDiagnostics = {
   cpuMs: number;
   gpuMs: number | null;
   gpuStatus: "available" | "pending" | "unsupported";
+  /**
+   * Last per-view pressure sample feeding the dynamic scaling valve (null
+   * before the first presented frame). `gpuMs` there is only attributed when
+   * this view is the Engine's sole rendering view.
+   */
+  pressure: FramePressureSample | null;
+  /** Why `gpuMs` is this view's own cost, shared with siblings, or missing. */
+  gpuAttribution: GpuAttribution;
   width: number;
   height: number;
   samples: number;
@@ -36,6 +47,10 @@ export function createRenderDiagnostics(
   scene: Scene,
   cpuMs: () => number,
   readbackMs: () => number | null = () => null,
+  pressure: () => { sample: FramePressureSample | null; gpuAttribution: GpuAttribution } = () => ({
+    sample: null,
+    gpuAttribution: "unavailable",
+  }),
 ): () => RenderDiagnostics {
   const engine = scene.getEngine();
   let instrument = instruments.get(engine);
@@ -70,6 +85,8 @@ export function createRenderDiagnostics(
         : supported
           ? "pending"
           : "unsupported",
+      pressure: pressure().sample,
+      gpuAttribution: pressure().gpuAttribution,
       width: size?.width ?? engine.getRenderWidth(),
       height: size?.height ?? engine.getRenderHeight(),
       samples: target?.samples ?? 1,
