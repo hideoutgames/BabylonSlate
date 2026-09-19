@@ -7,7 +7,7 @@ import type { BaseTexture } from "@babylonjs/core";
  * irradiance — before diffuse albedo, CEL bands, or output conversion — and
  * matches the provider calibration (`unit-albedo radiance = E / PI`).
  */
-export const BAKED_IRRADIANCE_INV_PI = 0.31830988618379067154;
+export const BAKED_IRRADIANCE_INV_PI = 0.3183098861837907;
 
 export interface BakedIrradianceSampling {
   /** Shared rgba32float atlas texture; alpha is receiver coverage. */
