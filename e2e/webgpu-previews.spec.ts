@@ -619,11 +619,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
           `prefab top corner ${index} must stay pitch black on ${backend}/${mode}`,
         ).toBeLessThan(24);
 
-      // A render-mode switch rebuilds the viewport handle; while the new scene
-      // is still loading the diagnostics API has no handle and returns null.
-      // Preview scenes persist on the shared Engine across that rebuild, so
-      // re-query until the API reports a preview scene instead of racing the
-      // reload (or a mid-recreation preview Scene).
+      // A render-mode switch rebuilds the viewport handle; while the Scene
+      // document tab is hidden the remount can stay parked in
+      // waitForCanvasSize, so the shared Engine may briefly report no world
+      // scene at all. Preview scenes persist on that Engine across the
+      // rebuild — re-query until the API reports a preview scene instead of
+      // racing the reload (or a mid-recreation preview Scene).
       let diagnostics: {
         scenes: {
           kind: string;

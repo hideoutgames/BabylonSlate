@@ -928,9 +928,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       },
       engineSceneDiagnostics: async () => {
         if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Scene diagnostics require a test build.");
-        const handle = engineRef.current;
-        if (!handle) return null;
-        return (await import("../testing/webgpu-previews-proof")).collectEngineSceneDiagnostics(handle.engine, handle.scene);
+        // Preview Scenes live on the shared Engine, which outlives viewport
+        // remounts. While the Scene document tab is hidden the viewport handle
+        // can be absent (waitForCanvasSize blocks the remount), so read the
+        // session engine rather than engineRef.
+        const engine = ensureSharedEngine();
+        if (!engine) return null;
+        return (await import("../testing/webgpu-previews-proof")).collectEngineSceneDiagnostics(engine, engineRef.current?.scene ?? null);
       },
       environmentTextureSamples: async () => {
         const handle = engineRef.current;
@@ -1156,7 +1160,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       unsubscribeSettings();
       delete host.__babylonslateViewportTest;
     };
-  }, [commitGizmoTransform]);
+  }, [commitGizmoTransform, ensureSharedEngine]);
 
   return (
     <div
