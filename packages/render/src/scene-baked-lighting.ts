@@ -27,6 +27,7 @@ import {
   beginBakedUpload,
   reserveBakedGpuBytes,
 } from "./baked-lighting-resources";
+import { markSceneReadinessDirty } from "./scene-perf";
 
 export interface BakedRuntimeReceiver {
   identity: BakedReceiverIdentity;
@@ -552,6 +553,9 @@ export class SceneBakedLighting {
       }
     }
     candidates.length = 0;
+    // Receiver geometry/materialIndex may have been restored or a new bake
+    // applied; the cached strict-readiness result is stale either way.
+    markSceneReadinessDirty(this.scene);
     if (failures.length)
       throw new AggregateError(failures, "Baked receiver cleanup failed.");
   }
