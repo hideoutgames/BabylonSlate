@@ -25,7 +25,8 @@ import { setPreviewScene } from "./preview-parity";
  *
  * Env: BL_PERF_QUALITY (low|medium|high|ultra, default low),
  *      BL_PERF_WARMUP_MS (default 10000), BL_PERF_SAMPLE_MS (default 30000),
- *      BL_PERF_SAMPLES (default 2), BL_PERF_LABEL (free text recorded in output).
+ *      BL_PERF_SAMPLES (default 2), BL_PERF_LABEL (free text recorded in output),
+ *      BL_PERF_RENDER_MODE (cel) sets project.settings.render.mode for a CEL run.
  */
 const ROUTE_ENABLED = process.env.BL_PERF_ROUTE === "1";
 const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.BL_PERF_QUALITY ?? "")
@@ -135,6 +136,12 @@ async function projectFilesWithQuality(level: QualityLevel) {
     settings: Record<string, unknown>;
   };
   project.settings.quality = RENDER_QUALITY_PROFILES[level];
+  if (process.env.BL_PERF_RENDER_MODE === "cel") {
+    project.settings.render = {
+      ...(project.settings.render as Record<string, unknown> | undefined),
+      mode: "cel",
+    };
+  }
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   return files;
 }
