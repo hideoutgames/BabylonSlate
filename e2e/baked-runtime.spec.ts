@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { bakedAtlasGpuBytes } from "../packages/render/src/baked-gpu-cost.ts";
 import type { runBakedRuntimeProof } from "../apps/editor/src/testing/baked-runtime-proof";
 
 test.use({
@@ -45,13 +46,29 @@ test("uploads physical irradiance with receiver-local UV2 and releases shared at
       });
     expect(entry.shared).toBe(true);
     expect(entry.restored).toBe(true);
+    // The budget scene shares the atlas (same sha), so its rejection lands
+    // at the geometry reserve; 150 bytes of headroom is below the 176-byte
+    // WebGPU geometry reservation either way.
     expect(entry.alignmentRejected).toBe(entry.backend === "webgpu");
+    // RGBA16F upload: 32×32×8 bytes; WebGPU retains a same-size staging
+    // buffer because 32·8 lands on its 256-byte row alignment.
+    const atlasGpuBytes = bakedAtlasGpuBytes(
+      32,
+      32,
+      entry.backend === "webgpu",
+    );
+    // Per-scene remapped geometry: indices 24 + position 72 + packed 6
+    // (WebGPU 4-byte-aligns to 8) + uv2 48, plus WebGPU's 24-byte aligned
+    // copy of the 1-byte packed stride — 150 on WebGL2, 176 on WebGPU.
+    const geometryBytes = entry.backend === "webgpu" ? 176 : 150;
     expect(entry.bytesBefore).toEqual({
-      managedBytes: entry.backend === "webgpu" ? 8544 : 4396,
+      managedBytes: atlasGpuBytes + geometryBytes * 2,
       quarantined: false,
     });
     expect(entry.bytesAwaitingRelease).toBe(
-      entry.backend === "webgpu" ? 8368 : 0,
+      // WebGPU defers releases to the next endFrame; the remaining capture's
+      // endFrame already flushed the first scene's geometry.
+      entry.backend === "webgpu" ? atlasGpuBytes + geometryBytes : 0,
     );
     expect(entry.bytesAfter).toEqual({ managedBytes: 0, quarantined: false });
     expect(entry.atlasReleased).toBe(true);

@@ -6,6 +6,7 @@ import {
 } from "@babylonjs/core";
 import type { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import type { BakedIrradianceAtlas } from "@babylonslate/core";
+import { bakedAtlasGpuBytes } from "./baked-gpu-cost";
 
 /** Only managed bake atlas/geometry allocations, not total Engine or driver memory. */
 const MAX_BYTES = 64 * 1024 * 1024;
@@ -204,14 +205,9 @@ export async function acquireBakedAtlas(
     );
   let entry = pool.atlases.get(key);
   if (!entry) {
-    const atlasBytes = atlas.width * atlas.height * 8;
-    // WebGPUTextureManager uses a same-size mapped staging buffer for aligned rows.
-    // Conservatively retain that allowance for the atlas lease; no private buffer ownership is changed.
-    const stagingBytes =
-      engine.isWebGPU && (atlas.width * 8) % 256 === 0 ? atlasBytes : 0;
     const reservation = reserveBakedGpuBytes(
       engine,
-      atlasBytes + stagingBytes,
+      bakedAtlasGpuBytes(atlas.width, atlas.height, engine.isWebGPU),
       ceiling,
     );
     let texture: RawTexture | undefined;
