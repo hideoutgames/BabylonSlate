@@ -66,3 +66,4 @@ export * from "./baked-lighting-store";
 export * from "./bake-geometry";
 export * from "./baked-geometry";
 export * from "./baked-geometry-store";
+export * from "./baked-lighting-runtime";

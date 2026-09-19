@@ -5,6 +5,8 @@ import {
   type DecodedBakedGeometry,
 } from "./baked-geometry";
 import type { AssetRegistry } from "./registry";
+import type { BakeRuntimeAssetReader } from "./baked-lighting-runtime";
+import { awaitBakeRuntimeRead } from "./bake-runtime-read";
 
 export class StaleBakedGeometryError extends Error {}
 
@@ -13,24 +15,43 @@ export async function loadBakedGeometryBindings(
   registry: AssetRegistry,
   manifest: BakedLightingManifest,
 ): Promise<ReadonlyMap<string, DecodedBakedGeometry>> {
+  return loadBakedGeometryArtifacts(async (guid) => {
+    const asset = registry.getByGuid(guid);
+    if (!asset || asset.placeholder) return undefined;
+    return {
+      bytes: await registry.storageFor(asset.rootId).readBinary(asset.path),
+      readBlob: (hash) => registry.blobsFor(asset.rootId).readBlob(hash),
+    };
+  }, manifest);
+}
+
+/** The same strict identity checks apply to editor storage and exported runtime payloads. */
+export async function loadBakedGeometryArtifacts(
+  readAsset: BakeRuntimeAssetReader,
+  manifest: BakedLightingManifest,
+  signal?: AbortSignal,
+): Promise<ReadonlyMap<string, DecodedBakedGeometry>> {
   const sceneGuid = manifest.sceneGuid;
   const receivers = structuredClone(manifest.receivers);
   const result = new Map<string, DecodedBakedGeometry>();
   let bytes = 0;
   for (const receiver of receivers) {
+    signal?.throwIfAborted();
     const reference = receiver.generatedGeometry;
     if (!reference) continue;
     if (result.size >= 64)
       throw new Error("Too many generated receiver geometries.");
-    const asset = registry.getByGuid(reference.assetGuid);
-    if (!asset || asset.placeholder)
-      throw new Error("Generated receiver geometry is unavailable.");
-    const container = await registry
-      .storageFor(asset.rootId)
-      .readBinary(asset.path);
-    const geometry = await decodeBakedGeometryAsset(container, (hash) =>
-      registry.blobsFor(asset.rootId).readBlob(hash),
+    const asset = await awaitBakeRuntimeRead(signal, () =>
+      readAsset(reference.assetGuid, signal),
     );
+    signal?.throwIfAborted();
+    if (!asset) throw new Error("Generated receiver geometry is unavailable.");
+    const geometry = await decodeBakedGeometryAsset(
+      asset.bytes,
+      asset.readBlob &&
+        ((hash) => awaitBakeRuntimeRead(signal, () => asset.readBlob!(hash))),
+    );
+    signal?.throwIfAborted();
     if (
       geometry.guid !== reference.assetGuid ||
       geometry.manifest.contentHash !== reference.contentHash ||
