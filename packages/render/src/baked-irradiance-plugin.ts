@@ -1,13 +1,10 @@
 import {
   MaterialPluginBase,
   ShaderLanguage,
-  type AbstractEngine,
-  type AbstractMesh,
   type BaseTexture,
   type Material,
   type MaterialDefines,
   type Scene,
-  type SubMesh,
   type UniformBuffer,
 } from "@babylonjs/core";
 import {
@@ -55,12 +52,7 @@ export class BakedIrradiancePlugin extends MaterialPluginBase {
     defines.SLATE_BAKED_ENV = this.sampling.includesEnvironment;
   }
 
-  override isReadyForSubMesh(
-    _defines: MaterialDefines,
-    _scene: Scene,
-    _engine: AbstractEngine,
-    _subMesh: SubMesh,
-  ): boolean {
+  override isReadyForSubMesh(): boolean {
     return this.sampling.texture.isReady();
   }
 

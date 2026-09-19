@@ -101,6 +101,14 @@ export class BakedSceneSession {
    * update; superseded work aborts and releases before the new bake applies.
    */
   apply(sceneData: SerializedScene, host: BakedSceneHost | null): void {
+    // `loadScene`/`applySceneEnvironment` pairs hand the same document through
+    // twice; only a new document or a stale release needs another pass.
+    if (
+      sceneData === this.sceneData &&
+      (host?.sceneAssetGuid ?? null) === (this.host?.sceneAssetGuid ?? null) &&
+      this.state !== "idle"
+    )
+      return;
     const epoch = ++this.epoch;
     this.abort?.abort();
     this.abort = new AbortController();

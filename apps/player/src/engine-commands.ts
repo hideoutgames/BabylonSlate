@@ -14,7 +14,10 @@ export function applyPlayerEngineCommand(
 
 export function applyPlayerActiveScene(
   handle: {
-    loadScene: (scene: SerializedScene) => void;
+    loadScene: (
+      scene: SerializedScene,
+      options?: { sceneAssetGuid?: string },
+    ) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
     resetAudioSession?: () => void;
     resetParticleSession?: () => void;
@@ -30,7 +33,7 @@ export function applyPlayerActiveScene(
   if (!forceReload && command.sceneAssetGuid === currentSceneGuid) return true;
   const scene = scenes.get(command.sceneAssetGuid);
   if (!scene) return false;
-  handle.loadScene(scene);
+  handle.loadScene(scene, { sceneAssetGuid: command.sceneAssetGuid });
   handle.applySceneEnvironment(scene);
   handle.resetAudioSession?.();
   handle.resetParticleSession?.();
