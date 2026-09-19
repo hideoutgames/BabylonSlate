@@ -58,6 +58,19 @@ test("baked irradiance receiver matches realtime point-light shading within 3/25
         entry.diagnostics[label].slateBaked,
         `${entry.backend} ${label} compiled without SLATE_BAKED`,
       ).toBe(true);
+    for (const label of ["pbrRealtime", "celRealtime"] as const)
+      expect(
+        entry.diagnostics[label].lightDefines,
+        `${entry.backend} ${label} compiled without a realtime light`,
+      ).toBeGreaterThanOrEqual(1);
+    expect(
+      entry.diagnostics.pbrBaked.bakedInjection,
+      `${entry.backend} pbrBaked missing the diffuseBase injection`,
+    ).toBe(true);
+    expect(
+      entry.diagnostics.celBaked.bakedTexelSamples,
+      `${entry.backend} celBaked missing the baked texel sample`,
+    ).toBeGreaterThan(0);
     for (const [realtime, baked, label] of [
       [entry.rows.pbrRealtime, entry.rows.pbrBaked, "PBR"],
       [entry.rows.celRealtime, entry.rows.celBaked, "CEL"],

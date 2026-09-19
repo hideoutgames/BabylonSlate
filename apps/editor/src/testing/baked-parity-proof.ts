@@ -232,6 +232,9 @@ export async function runBakedParityProof() {
           label: string;
           pixels: number[][];
           slateBaked: boolean;
+          lightDefines: number;
+          bakedTexelSamples: number;
+          bakedInjection: boolean;
         }>;
         for (const [label, material, point, fill] of [
           ["pbrRealtime", realtimePbr, true, false],
@@ -239,17 +242,30 @@ export async function runBakedParityProof() {
           ["celRealtime", realtimeCel, false, true],
           ["celBaked", bakedCel, false, false],
         ] as const) {
-          pointLight.excludedMeshes.length = 0;
-          if (!point) pointLight.excludedMeshes.push(mesh);
-          fillLight.excludedMeshes.length = 0;
-          if (!fill) fillLight.excludedMeshes.push(mesh);
+          // `mesh.lightSources` — the list material defines compile from — is
+          // resynced only through Babylon's patched `push`/`splice` hooks on
+          // `excludedMeshes`; `length = 0` clears the array without firing
+          // them, so a re-included light would silently stay out of the
+          // compiled effect. `setEnabled` resyncs every mesh explicitly.
+          pointLight.setEnabled(point);
+          fillLight.setEnabled(fill);
           mesh.material = material;
           const pixels = await row(engine, scene);
-          const defines = mesh.subMeshes[0]?.effect?.defines ?? "";
+          const effect = mesh.subMeshes[0]?.effect;
+          const defines = effect?.defines ?? "";
+          const fragment = effect?.fragmentSourceCode ?? "";
           captures.push({
             label,
             pixels,
             slateBaked: defines.split("\n").includes("#define SLATE_BAKED"),
+            lightDefines:
+              defines.match(/#define (?:DIR|POINT|SPOT|HEMI)LIGHT\d+/g)
+                ?.length ?? 0,
+            bakedTexelSamples: (fragment.match(/slateBakedTexel/g) ?? [])
+              .length,
+            bakedInjection: fragment.includes(
+              "diffuseBase+=slateBakedIrradianceSample",
+            ),
           });
         }
         result.push({
@@ -275,7 +291,12 @@ export async function runBakedParityProof() {
           diagnostics: Object.fromEntries(
             captures.map((entry) => [
               entry.label,
-              { slateBaked: entry.slateBaked },
+              {
+                slateBaked: entry.slateBaked,
+                lightDefines: entry.lightDefines,
+                bakedTexelSamples: entry.bakedTexelSamples,
+                bakedInjection: entry.bakedInjection,
+              },
             ]),
           ),
           png: canvas.toDataURL("image/png"),
