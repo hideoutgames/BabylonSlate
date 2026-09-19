@@ -68,6 +68,8 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   fogStart: "independent",
   fogEnd: "independent",
   environmentTextureGuid: "independent",
+  bakedLightingAssetGuid: "independent",
+  bakeSettings: "non-rendering",
   environmentLighting: "independent",
   mainCameraActorId: "independent",
   mainCameraComponentId: "independent",
