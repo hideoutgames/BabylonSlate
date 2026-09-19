@@ -86,6 +86,7 @@ const harness = vi.hoisted(() => ({
     setFrozen: vi.fn(),
     dispose: vi.fn(),
   },
+  installPreviewEnvironment: vi.fn(),
   gestures: { dispose: vi.fn() },
   libraryOptions: null as {
     resolveTexture?: (guid: string) => unknown;
@@ -194,6 +195,8 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
       harness.createScene(...args),
     createMaterialPreviewPresenter: (...args: unknown[]) =>
       harness.createPresenter(...args),
+    installPreviewEnvironment: (...args: unknown[]) =>
+      harness.installPreviewEnvironment(...args),
     attachMaterialPreviewGestures: (...args: unknown[]) =>
       harness.attachGestures(...args),
   };
@@ -257,6 +260,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.presenter.present.mockReset();
     harness.presenter.setFrozen.mockReset();
     harness.presenter.dispose.mockReset();
+    harness.installPreviewEnvironment.mockReset();
     harness.gestures.dispose.mockReset();
     harness.libraryOptions = null;
     harness.acquireCalls = 0;
@@ -293,6 +297,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     expect(harness.host.camera.attachControl).not.toHaveBeenCalled();
     expect(harness.engine.resize).not.toHaveBeenCalled();
     expect(harness.engine.runRenderLoop).not.toHaveBeenCalled();
+    expect(harness.installPreviewEnvironment).toHaveBeenCalledWith(harness.host.scene);
     expect(harness.createPresenter).toHaveBeenCalled();
     expect(harness.attachGestures).toHaveBeenCalled();
   });

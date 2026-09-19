@@ -257,3 +257,15 @@
              this._vertexSourceCode = migratedVertexCode;
              this._fragmentSourceCode = migratedFragmentCode;
              this._prepareEffect(keepExistingPipelineContext);
+--- a/Engines/WebGPU/webgpuCacheRenderPipeline.js
++++ b/Engines/WebGPU/webgpuCacheRenderPipeline.js
+@@ -939,6 +939,8 @@
+                     stencilReadMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilReadMask : 0xffffffff,
+                     stencilWriteMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilWriteMask : 0xffffffff,
+-                    depthBias: this._depthBias,
++                    // WebGPU requires a zero depth bias for non-triangle
++                    // topologies (line/point draws fail pipeline creation).
++                    depthBias: topologyIsTriangle ? this._depthBias : 0,
+                     depthBiasClamp: topologyIsTriangle ? this._depthBiasClamp : 0,
+                     depthBiasSlopeScale: topologyIsTriangle ? this._depthBiasSlopeScale : 0,
+                 },

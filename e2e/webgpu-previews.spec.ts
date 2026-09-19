@@ -611,13 +611,53 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       await prefabCanvas.screenshot({
         path: testInfo.outputPath(`prefab-${mode}-${backend}.png`),
       });
-      for (const [index, corner] of prefab.corners.entries())
+      // The Prefab preview keeps its editor grid across the lower half; only the
+      // sky region above it must stay pitch black (no preview skybox).
+      for (const [index, corner] of prefab.corners.slice(0, 2).entries())
         expect(
           Math.max(corner[0]!, corner[1]!, corner[2]!),
-          `prefab corner ${index} must stay pitch black on ${backend}/${mode}`,
+          `prefab top corner ${index} must stay pitch black on ${backend}/${mode}`,
         ).toBeLessThan(24);
 
-      const diagnostics = await engineSceneDiagnostics(page);
+      // A render-mode switch rebuilds the viewport handle; while the Scene
+      // document tab is hidden the remount can stay parked in
+      // waitForCanvasSize, so the shared Engine may briefly report no world
+      // scene at all. Preview scenes persist on that Engine across the
+      // rebuild — re-query until the API reports a preview scene instead of
+      // racing the reload (or a mid-recreation preview Scene).
+      let diagnostics: {
+        scenes: {
+          kind: string;
+          skyboxMesh: boolean;
+          shadowGeneratorCount: number;
+          lights: { name: string }[];
+          materials: { className: string }[];
+        }[];
+      } | null = null;
+      let previewScenes: {
+        kind: string;
+        skyboxMesh: boolean;
+        shadowGeneratorCount: number;
+        lights: { name: string }[];
+        materials: { className: string }[];
+      }[] = [];
+      await expect
+        .poll(
+          async () => {
+            diagnostics = (await engineSceneDiagnostics(page)) as
+              | typeof diagnostics
+              | null;
+            previewScenes = (diagnostics?.scenes ?? []).filter(
+              (scene) => scene.kind === "preview",
+            );
+            return previewScenes.length;
+          },
+          {
+            timeout: 60_000,
+            message: `no preview scene found on ${backend}/${mode}`,
+          },
+        )
+        .toBeGreaterThan(0);
       await testInfo.attach(`preview-scenes-${mode}-${backend}`, {
         body: JSON.stringify({
           material,
@@ -627,22 +667,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         }),
         contentType: "application/json",
       });
-      const scenes = (
-        diagnostics as {
-          scenes: {
-            kind: string;
-            skyboxMesh: boolean;
-            shadowGeneratorCount: number;
-            lights: { name: string }[];
-            materials: { className: string }[];
-          }[];
-        } | null
-      )?.scenes ?? [];
-      const previewScenes = scenes.filter((scene) => scene.kind === "preview");
-      expect(
-        previewScenes.length,
-        `no preview scene found on ${backend}/${mode}`,
-      ).toBeGreaterThan(0);
+      const scenes = diagnostics?.scenes ?? [];
       for (const scene of previewScenes) {
         // Interactive previews share the engine default skybox.
         expect(
