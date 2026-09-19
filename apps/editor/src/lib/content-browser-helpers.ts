@@ -1760,6 +1760,8 @@ export function assetHeaderDependencies(
     const settings = payload.settings as Record<string, unknown> | undefined;
     const environment = settings?.environmentTextureGuid;
     if (typeof environment === "string" && environment.length > 0) unique.add(environment);
+    const bake = settings?.bakedLightingAssetGuid;
+    if (typeof bake === "string" && bake.length > 0) unique.add(bake);
   }
   if (["Scene", "SceneLayer", "Class", "Graph"].includes(assetType)) {
     const addClass = (classId: unknown) => {

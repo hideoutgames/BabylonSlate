@@ -38,3 +38,5 @@ export * from "./render-path";
 export * from "./environment-lighting";
 
 export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";
+export * from "./baked-lighting";
+export * from "./baked-geometry";

@@ -36,9 +36,9 @@ describe("Project Picture Import", () => {
     }
     vi.stubGlobal("Image", DecodedImage);
     const drawImage = vi.fn();
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-      drawImage,
-    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(((kind: string) =>
+      kind === "2d" ? { drawImage } as unknown as CanvasRenderingContext2D : null
+    ) as HTMLCanvasElement["getContext"]);
     const dataUrl = "data:image/webp;base64,AAAA";
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(dataUrl);
 

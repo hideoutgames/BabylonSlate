@@ -113,6 +113,20 @@ if (
       });
     },
   );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bake-provider-proof")
+) {
+  void import("@babylonslate/render/bake-provider-prototype").then((provider) => {
+    Object.assign(globalThis, { __bakePrototype: provider });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bakeUvProof")
+) {
+  void import("./testing/bake-uv-proof").then(({ runBakeUvProof }) => {
+    Object.assign(globalThis, { __bakeUvProof: runBakeUvProof });
+  });
 } else {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

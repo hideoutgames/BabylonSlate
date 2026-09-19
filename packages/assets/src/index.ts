@@ -61,3 +61,8 @@ export * from "./model-animation-duration";
 export * from "./environment-texture";
 
 export { materialParameterTextureAssetGuids } from "./material-parameter-textures";
+export * from "./baked-lighting";
+export * from "./baked-lighting-store";
+export * from "./bake-geometry";
+export * from "./baked-geometry";
+export * from "./baked-geometry-store";
