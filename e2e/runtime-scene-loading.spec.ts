@@ -130,13 +130,22 @@ for (const mode of ["Play", "Preview Build"] as const) {
     if (mode === "Play") await page.getByTestId("play-console-open").click();
     else await page.getByRole("button", { name: "Console", exact: true }).click();
     await trackLoading(host, mode, true);
+    const previousLoadId =
+      mode === "Preview Build"
+        ? await host.getAttribute("data-scene-load-id")
+        : null;
     await page.getByTestId("debug-console-input").fill(`changescene ${SCENE_GUID}`);
     await page.getByTestId("debug-console-submit").click();
     if (mode === "Play") await expect(host).toHaveCount(0);
     else {
       // The player owns no Stop control; the host chrome is the only stop path.
       await expect.poll(() => observedPhases(host)).toContain("Preparing Scene");
-      await expect(host).toHaveAttribute("data-scene-loading", "true");
+      // A cached reload can finish before the poll observes it, so the live
+      // data-scene-loading flag may already be false again. The mirrored
+      // transaction id advancing proves this reload actually ran.
+      await expect
+        .poll(async () => host.getAttribute("data-scene-load-id"))
+        .not.toBe(previousLoadId);
       expect(await observedDialogSeen(host)).toBe(false);
       await page.getByTestId("preview-build-close").click();
       await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
