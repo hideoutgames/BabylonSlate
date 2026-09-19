@@ -66,12 +66,27 @@ describe("frame pressure scaling", () => {
     expect(scaling.getLevel()).toBe(1);
   });
 
-  it("never climbs while presentation intervals are unknown", () => {
-    // Skipped/capped frames report null — CPU headroom alone cannot prove the
-    // display is keeping up.
+  it("never climbs while presentation intervals are partially unknown", () => {
+    // Skipped/capped frames report null — a window mixing known and unknown
+    // intervals cannot prove the display kept up.
     const scaling = controller({ initialLevel: 2 });
-    for (let i = 0; i < 20; i++) scaling.noteFramePressure(sample(null, 4));
+    for (let i = 0; i < 20; i++)
+      scaling.noteFramePressure(sample(i % 3 === 0 ? null : 16.7, 4));
     expect(scaling.getLevel()).toBe(2);
+  });
+
+  it("falls back to cost headroom for views that never report presentation", () => {
+    // Free-running editor viewports feed cpuMs only: an all-unknown window is
+    // the cpu-only input contract, not missing evidence, so headroom can climb.
+    const scaling = controller({ initialLevel: 2 });
+    for (let i = 0; i < 5; i++) scaling.noteFramePressure(sample(null, 4));
+    expect(scaling.getLevel()).toBe(1.75);
+  });
+
+  it("still scales down on cpu-bound frames without presentation evidence", () => {
+    const scaling = controller();
+    for (let i = 0; i < 5; i++) scaling.noteFramePressure(sample(null, 25));
+    expect(scaling.getLevel()).toBe(1.25);
   });
 
   it("never climbs while presentation runs below the target cadence", () => {
