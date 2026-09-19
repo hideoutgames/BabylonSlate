@@ -278,6 +278,7 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
+import { captureSceneBakeDocument, type SceneBakeDocumentOwner } from "../services/scene-bake-document";
 export type AppRoute = "home" | "editor";
 
 interface DocumentContextValue {
@@ -389,6 +390,7 @@ interface DocumentContextValue {
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
   updateScene: (id: string, scene: SerializedScene) => void;
+  captureSceneBakeOwner: (id: string) => SceneBakeDocumentOwner;
   updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
@@ -2361,6 +2363,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  const captureSceneBakeOwner = useCallback((id: string) => {
+    const registry = projectService.registry;
+    if (!registry) throw new Error("Open a project before baking lighting.");
+    return captureSceneBakeDocument({
+      documents: documentService, edits: editSessionRef.current, registry, documentId: id,
+      projectIdentity: () => ({ guid: projectService.guid, registryCurrent: projectService.registry === registry,
+        environment: projectDocumentRef.current?.settings.render.environmentLighting }),
+      canWrite: () => {
+        const doc = documentService.getDocument(id);
+        return !!doc && !isMutatingApplyBlocked(sourceControlRef.current, doc.ref.path,
+          isPluginDocumentReadOnly(projectService.plugins, doc.ref.path));
+      },
+      onApplied: (command) => {
+        void notifyAppliedCommand(id, command);
+        const doc = documentService.getDocument(id);
+        if (doc) void afterMutatingApply(sourceControlRef.current, doc.ref.path);
+      },
+    });
+  }, [documentService, notifyAppliedCommand, projectService]);
+
   applySceneChangeRef.current = applySceneChange;
   syncPrefabInstancesRef.current = async (options) => {
     const open = [...documentService.getState().openDocuments.values()];
@@ -3461,6 +3483,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           components: SerializedGraph["components"],
         ) => Promise<boolean>;
         setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
+        activeSceneContent: () => SerializedScene | null;
         advanceIdleClock: (ms: number) => void;
         guidForPath: (path: string) => string | null;
         readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
@@ -3676,6 +3699,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const graph = structuredClone(openGraph.content as SerializedGraph);
         graph.components = structuredClone(components);
         return applyGraphChange(openGraph.id, graph);
+      },
+      activeSceneContent: () => {
+        const scene = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "scene",
+        )?.content;
+        return scene ? structuredClone(scene as SerializedScene) : null;
       },
       setActiveSceneContent: async (scene) => {
         const openScene = [...documentService.getState().openDocuments.values()].find(
@@ -4186,6 +4215,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyGraphChange,
       reparentClassDocument,
       applySceneChange,
+      captureSceneBakeOwner,
       applyAssetDocumentChange,
       readAssetChunk,
       writeAudioClipChunk,
@@ -4398,6 +4428,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyGraphChange,
       reparentClassDocument,
       applySceneChange,
+      captureSceneBakeOwner,
       applyAssetDocumentChange,
       readAssetChunk,
       writeAudioClipChunk,

@@ -68,6 +68,25 @@ function rowsFor(
 }
 
 describe("componentPropertyRows", () => {
+  it.each(["LightComponent", "HemisphericFillLightComponent"])("exposes authored mobility for %s without changing Enabled", (classId) => {
+    const component = { id: "light", classId, properties: { enabled: true } };
+    const { rows, update } = rowsFor(component);
+    const row = rows.find((entry) => entry.id.endsWith("-mobility"));
+    expect(row).toMatchObject({ kind: "enum", value: "dynamic", defaultValue: "dynamic" });
+    if (row?.kind !== "enum") throw new Error("Missing Mobility control");
+    row.onChange("static");
+    expect(update).toHaveBeenCalledExactlyOnceWith("mobility", "static");
+    expect(component.properties.enabled).toBe(true);
+  });
+  it("keeps mesh bake participation separate from shadow receiver flags", () => {
+    const { rows, update } = rowsFor({ id: "mesh", classId: "MeshComponent", properties: { receiveShadows: false } });
+    const row = rows.find((entry) => entry.id.endsWith("-bakeParticipation"));
+    expect(row).toMatchObject({ kind: "enum", value: "none", defaultValue: "none" });
+    if (row?.kind !== "enum") throw new Error("Missing Bake Participation control");
+    row.onChange("staticReceiver");
+    expect(update).toHaveBeenCalledExactlyOnceWith("bakeParticipation", "staticReceiver");
+    expect(rows.find((entry) => entry.id.endsWith("-receiveShadows"))).toMatchObject({ value: false });
+  });
   it("shows the imported model material and persists None and model-default reset independently", () => {
     let component: SerializedComponent = {
       id: "mesh", classId: "MeshComponent",

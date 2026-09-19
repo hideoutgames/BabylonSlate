@@ -268,6 +268,15 @@ function asRgb(value: unknown): [number, number, number] | null {
   return [r, g, b];
 }
 
+function lightMobilityRow(actorId: string, component: SerializedComponent,
+  update: (property: string, value: unknown) => void): PropertyRow {
+  return { kind: "enum", id: rowId(actorId, component.id, "mobility"), label: "Mobility",
+    value: String(component.properties.mobility ?? "dynamic"), defaultValue: "dynamic",
+    description: "Static bakes direct and indirect light. Stationary bakes indirect light. Realtime lighting remains active until runtime bake application is available.",
+    options: [{ value: "dynamic", label: "Dynamic" }, { value: "stationary", label: "Stationary" }, { value: "static", label: "Static" }],
+    onChange: (value) => update("mobility", value) };
+}
+
 function colliderShapeRows(
   actorId: string,
   component: SerializedComponent,
@@ -522,6 +531,11 @@ export function componentPropertyRows(
           "Pick Mesh",
         ),
         materialRow,
+        { kind: "enum", id: rowId(actorId, component.id, "bakeParticipation"), label: "Bake Participation",
+          value: String(component.properties.bakeParticipation ?? "none"), defaultValue: "none",
+          options: [{ value: "none", label: "None" }, { value: "staticReceiver", label: "Static Receiver" }, { value: "staticOccluder", label: "Static Occluder" }],
+          description: "Static Receivers also block and bounce baked light. Static Occluders receive no atlas.",
+          onChange: (value) => update("bakeParticipation", value) },
         ...meshCollisionRows(actorId, component, update, context),
         ...(["castShadows", "receiveShadows"] as const).map((key) => ({
           kind: "boolean" as const,
@@ -536,6 +550,7 @@ export function componentPropertyRows(
           update,
           new Set([
             "meshKind",
+            "bakeParticipation",
             "castShadows",
             "receiveShadows",
             "assetGuid",
@@ -1167,10 +1182,11 @@ export function componentPropertyRows(
       );
       return rows;
     }
-    case "LightComponent": {
+      case "LightComponent": {
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
       const lightKind = String(component.properties.lightKind ?? "point");
-      const rows: PropertyRow[] = [
+        const rows: PropertyRow[] = [
+          lightMobilityRow(actorId, component, update),
         {
           kind: "boolean",
           id: rowId(actorId, component.id, "enabled"),
@@ -1263,7 +1279,8 @@ export function componentPropertyRows(
           new Set([
             "color",
             "intensity",
-            "lightKind",
+              "lightKind",
+              "mobility",
             "range",
             "outerAngle",
             "innerAngle",
@@ -1278,6 +1295,7 @@ export function componentPropertyRows(
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
       const groundColor = asRgb(component.properties.groundColor) ?? [0, 0, 0];
       return [
+        lightMobilityRow(actorId, component, update),
         {
           kind: "boolean",
           id: rowId(actorId, component.id, "enabled"),
@@ -1313,7 +1331,7 @@ export function componentPropertyRows(
           actorId,
           component,
           update,
-          new Set(["enabled", "color", "groundColor", "intensity"]),
+          new Set(["enabled", "color", "groundColor", "intensity", "mobility"]),
         ),
       ];
     }

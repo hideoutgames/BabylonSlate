@@ -79,6 +79,7 @@ import {
   selectionAfterLockChange,
 } from "../context/scene-editing-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
+import { useOptionalSceneBake } from "../context/scene-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { AddComponentDialog } from "../components/add-component-dialog";
@@ -152,6 +153,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     useDocuments();
   const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
   const navBake = useOptionalNavBake();
+  const sceneBake = useOptionalSceneBake();
   const [propertyQuery, setPropertyQuery] = useState("");
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(() => new Set());
   const [filterCollapsedOverrides, setFilterCollapsedOverrides] = useState<Set<string>>(() => new Set());
@@ -754,6 +756,17 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           <div className="px-2 pb-3">
             <DisclosureSection title="Shadows" open={overrideOpen("shadows")} onOpenChange={(open) => setOverrideOpen("shadows", open)}>
               <ShadowSettingsFields hideTitle project={projectDocument?.settings.render.shadows} overrides={scene.settings.shadowOverrides ?? {}} onChange={(shadowOverrides) => mutate({ ...scene, settings: { ...scene.settings, shadowOverrides } })} />
+            </DisclosureSection>
+          </div>
+        ) : null}
+        {doc?.ref.kind === "scene" && sceneBake && matches("Baked Lighting Bake Lighting Static Stationary Dynamic Receiver Occluder") ? (
+          <div className="px-2 pb-3">
+            <DisclosureSection title="Baked Lighting" open={overrideOpen("bakedLighting")} onOpenChange={(open) => setOverrideOpen("bakedLighting", open)}>
+              <div className="flex flex-col gap-2">
+                <p role="status" data-testid="scene-bake-validity" className="text-sm">{sceneBake.status}</p>
+                {sceneBake.detail ? <p className="text-sm text-muted-foreground">{sceneBake.detail}</p> : null}
+                <div className="flex"><Button size="sm" className="pointer-coarse:min-h-11" variant="outline" disabled={!sceneBake.ready || sceneBake.busy} onClick={sceneBake.open}>Bake Lighting</Button></div>
+              </div>
             </DisclosureSection>
           </div>
         ) : null}

@@ -113,6 +113,39 @@ if (
       });
     },
   );
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bake-provider-proof")
+) {
+  void import("@babylonslate/render/bake-provider-prototype").then((provider) => {
+    Object.assign(globalThis, { __bakePrototype: provider });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bakedRuntimeProof")
+) {
+  void import("./testing/baked-runtime-proof").then(({ runBakedRuntimeProof }) => {
+    Object.assign(window, { __bakedRuntimeProof: runBakedRuntimeProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("sceneBakeProof")
+) {
+  void import("./testing/scene-bake-proof").then(({ runSceneBakeProof }) => {
+    Object.assign(window, { __sceneBakeProof: runSceneBakeProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bakeUvProof")
+) {
+  void import("./testing/bake-uv-proof").then(
+    ({ runBakeUvProof, runBakeUvProviderProof }) => {
+      Object.assign(globalThis, {
+        __bakeUvProof: runBakeUvProof,
+        __bakeUvProviderProof: runBakeUvProviderProof,
+      });
+    },
+  );
 } else {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
