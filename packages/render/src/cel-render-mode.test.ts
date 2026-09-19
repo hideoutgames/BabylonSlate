@@ -24,6 +24,7 @@ import { CelMaterial } from "./cel-material";
 import { celFunctions } from "./cel-shader";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings } from "./render-settings";
+import { onSceneReadinessDirty } from "./scene-perf";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { ResourceCache } from "./resource-cache";
@@ -165,6 +166,85 @@ describe("native CEL render mode", () => {
     expect(late.material).toBe(pbr);
     expect(pbr.albedoColor.asArray()).toEqual([0.25, 0.5, 0.75]);
     expect(isDisposedGpuTexture(pbr.albedoTexture)).toBe(false);
+  });
+
+  it("stays idle on unchanged frames: no readiness invalidation or material churn", () => {
+    const scene = host();
+    const pbr = new PBRMaterial("imported", scene);
+    const mesh = MeshBuilder.CreateBox("model", {}, scene);
+    mesh.material = pbr;
+    setSceneRenderSettings(scene, { mode: "cel" });
+    const cel = mesh.material;
+    expect(cel).toBeInstanceOf(CelMaterial);
+    // The CEL sync is event-driven: clean frames must not re-resolve materials,
+    // invalidate the strict readiness cache, or churn mesh.material.
+    let marks = 0;
+    const off = onSceneReadinessDirty(scene, () => {
+      marks += 1;
+    });
+    for (let frame = 0; frame < 20; frame += 1) {
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      expect(mesh.material).toBe(cel);
+    }
+    expect(marks).toBe(0);
+    off();
+  });
+
+  it("replaces the material of a mesh added while CEL is active exactly once", () => {
+    const scene = host();
+    const pbr = new PBRMaterial("imported", scene);
+    setSceneRenderSettings(scene, { mode: "cel" });
+    const mesh = MeshBuilder.CreateBox("late", {}, scene);
+    const assigned = vi.spyOn(mesh, "material", "set");
+    mesh.material = pbr;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    const cel = mesh.material;
+    expect(cel).toBeInstanceOf(CelMaterial);
+    // The explicit assignment plus exactly one CEL replacement; scene-lighting
+    // separately invalidates readiness for the new material's light defines.
+    expect(assigned).toHaveBeenCalledTimes(2);
+    for (let frame = 0; frame < 5; frame += 1)
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(assigned).toHaveBeenCalledTimes(2);
+    expect(mesh.material).toBe(cel);
+    assigned.mockRestore();
+  });
+
+  it("replaces and restores materials once per PBR ⇄ CEL switch", () => {
+    const scene = host();
+    const pbr = new PBRMaterial("imported", scene);
+    const mesh = MeshBuilder.CreateBox("model", {}, scene);
+    mesh.material = pbr;
+    const assigned = vi.spyOn(mesh, "material", "set");
+    setSceneRenderSettings(scene, { mode: "cel" });
+    expect(assigned).toHaveBeenCalledTimes(1);
+    const cel = mesh.material;
+    expect(cel).toBeInstanceOf(CelMaterial);
+    setSceneRenderSettings(scene, { mode: "pbr" });
+    expect(assigned).toHaveBeenCalledTimes(2);
+    expect(mesh.material).toBe(pbr);
+    // The owned replacement is reused rather than rebuilt.
+    setSceneRenderSettings(scene, { mode: "cel" });
+    expect(assigned).toHaveBeenCalledTimes(3);
+    expect(mesh.material).toBe(cel);
+    assigned.mockRestore();
+  });
+
+  it("replaces a material assigned after CEL was applied on the next frame", () => {
+    const scene = host();
+    const first = new PBRMaterial("first", scene);
+    const other = new PBRMaterial("other", scene);
+    const mesh = MeshBuilder.CreateBox("model", {}, scene);
+    mesh.material = first;
+    setSceneRenderSettings(scene, { mode: "cel" });
+    expect(mesh.material).toBeInstanceOf(CelMaterial);
+    mesh.material = other;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(mesh.material).toBeInstanceOf(CelMaterial);
+    expect(mesh.material).not.toBe(other);
+    for (let frame = 0; frame < 5; frame += 1)
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(mesh.material).not.toBe(other);
   });
 
   it("switches authored graphs in place and preserves frozen materials and live parameters", async () => {

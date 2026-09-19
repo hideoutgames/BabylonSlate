@@ -88,6 +88,7 @@ export type MaterialPreviewEvent =
       durationMs?: number;
       error?: string;
     }
+  | { type: "previewError"; error: string | null }
   | { type: "dispose" };
 
 export function createMaterialPreviewState(): MaterialPreviewState {
@@ -201,6 +202,10 @@ export function materialPreviewReducer(
         compileSamplesMs: samples,
       };
     }
+    case "previewError":
+      // Render/readback failures surface through the same lastError slot as
+      // compile failures but never mark the compile itself failed.
+      return { ...state, lastError: event.error };
     case "dispose":
       return { ...createMaterialPreviewState(), compileSamplesMs: state.compileSamplesMs };
   }

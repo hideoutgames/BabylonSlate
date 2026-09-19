@@ -30,7 +30,9 @@ async function previewPixels(surface: Locator) {
       for (let index = 0; index < data.length; index += 4) {
         const [r, g, b] = [data[index]!, data[index + 1]!, data[index + 2]!];
         if (r > 70 && g > 30 && r > g * 1.12 && g > b * 1.1) model++;
-        if (g > 100 && b > 100 && r < g * 0.75 && r < b * 0.75) bones++;
+        // Bone connectors are emissive cyan (0.05, 0.8, 1); the preview skybox sky is
+        // a lighter blue with far more red, so require a near-zero red channel.
+        if (r < 60 && g > 150 && b > 200) bones++;
       }
       return { model, bones };
     },

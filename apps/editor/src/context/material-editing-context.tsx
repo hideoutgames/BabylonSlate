@@ -17,6 +17,7 @@ import {
   createMaterialPreviewScene,
   setSceneRenderSettings,
   getMaterialTexture,
+  installPreviewEnvironment,
   materialUnavailable,
   resourceCacheForEngine,
   type MaterialPreviewPresenter,
@@ -234,7 +235,15 @@ export function MaterialEditingProvider({
       host = createMaterialPreviewScene(sharedEngine, {
         mesh: document?.preview.mesh ?? "cube",
       });
-      presenter = createMaterialPreviewPresenter(host, canvas);
+      installPreviewEnvironment(host.scene);
+      presenter = createMaterialPreviewPresenter(host, canvas, {
+        onError: (message) => {
+          dispatch({ type: "previewError", error: message });
+          if (message) {
+            console.warn(`[render] Material preview presentation failed: ${message}`);
+          }
+        },
+      });
       presenter.setFrozen(frozen);
       gestures = attachMaterialPreviewGestures(canvas, host.camera);
     } catch {
