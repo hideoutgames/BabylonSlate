@@ -73,6 +73,31 @@ function cubeChartGaps(
   return { chartCount: charts.size, minimumChartGap: minimum };
 }
 
+/** Builds the provider's per-corner position/uv2 input from preserved geometry. */
+async function bakeProviderInput(source: BakeGeometrySource) {
+  const generated = await unwrapBakeGeometry(source, {
+    resolution: 32,
+    paddingTexels: 2,
+  });
+  const remapped = remapBakeGeometry(source, generated.topology);
+  const position = remapped.attributes.find(
+    (attribute) => attribute.name === "position",
+  )!;
+  const positions = new Float32Array(generated.topology.indices.length * 3);
+  const uv2 = new Float32Array(generated.topology.indices.length * 2);
+  const view = new DataView(position.data.buffer);
+  generated.topology.indices.forEach((vertex, corner) => {
+    for (let axis = 0; axis < 3; axis++)
+      positions[corner * 3 + axis] = view.getFloat32(
+        (vertex * 3 + axis) * 4,
+        true,
+      );
+    for (let axis = 0; axis < 2; axis++)
+      uv2[corner * 2 + axis] = generated.topology.uv2[vertex * 2 + axis]!;
+  });
+  return { generated, remapped, positions, uv2 };
+}
+
 /** Real worker/WASM and numeric transport, loaded only by the test-build entry. */
 export async function runBakeUvProof() {
   const { source } = bakeGeometryFixture();
@@ -93,10 +118,8 @@ export async function runBakeUvProof() {
   } catch (error) {
     cancelled = error instanceof Error && error.name === "AbortError";
   }
-  const generated = await unwrapBakeGeometry(source, {
-    resolution: 32,
-    paddingTexels: 2,
-  });
+  const { generated, remapped, positions, uv2 } =
+    await bakeProviderInput(source);
   const cube = await unwrapBakeGeometry(cubeSource(), {
     resolution: 64,
     paddingTexels: 2,
@@ -107,22 +130,51 @@ export async function runBakeUvProof() {
     cube.width,
     cube.height,
   );
-  const remapped = remapBakeGeometry(source, generated.topology);
-  const position = remapped.attributes.find(
+  // Deterministic wiring proof: every provider position must be a preserved
+  // source vertex, so the unwrap/remap path cannot feed zeros or NaNs.
+  const sourcePosition = source.attributes.find(
     (attribute) => attribute.name === "position",
   )!;
-  const positions = new Float32Array(generated.topology.indices.length * 3);
-  const uv2 = new Float32Array(generated.topology.indices.length * 2);
-  const view = new DataView(position.data.buffer);
-  generated.topology.indices.forEach((vertex, corner) => {
-    for (let axis = 0; axis < 3; axis++)
-      positions[corner * 3 + axis] = view.getFloat32(
-        (vertex * 3 + axis) * 4,
-        true,
-      );
-    for (let axis = 0; axis < 2; axis++)
-      uv2[corner * 2 + axis] = generated.topology.uv2[vertex * 2 + axis]!;
-  });
+  const sourceView = new DataView(sourcePosition.data.buffer);
+  const sourceVertices = new Set<string>();
+  for (let vertex = 0; vertex < source.vertexCount; vertex++)
+    sourceVertices.add(
+      [0, 1, 2]
+        .map((axis) => sourceView.getFloat32((vertex * 3 + axis) * 4, true))
+        .join(","),
+    );
+  let providerPositionsPreserved =
+    positions.length === generated.topology.indices.length * 3;
+  for (let corner = 0; corner < positions.length; corner += 3)
+    providerPositionsPreserved &&= sourceVertices.has(
+      `${positions[corner]},${positions[corner + 1]},${positions[corner + 2]}`,
+    );
+  return {
+    cancelled,
+    phases,
+    width: generated.width,
+    height: generated.height,
+    ...gaps,
+    cubeVertices: cube.topology.originalVertices.length,
+    indices: [...generated.topology.indices],
+    originalVertices: [...generated.topology.originalVertices],
+    uv2: [...generated.topology.uv2],
+    sourceUnchanged: source.vertexCount === 4 && source.attributes.length === 3,
+    preservedCustom: [
+      ...remapped.attributes.find((attribute) => attribute.name === "custom")!
+        .data,
+    ],
+    providerPositions: [...positions],
+    providerUv2: [...uv2],
+    providerPositionsPreserved,
+  };
+}
+
+/** Real path-traced feed; too slow for software-GL CI (BL_BAKE_QUALITY_E2E). */
+export async function runBakeUvProviderProof() {
+  const { positions, uv2 } = await bakeProviderInput(
+    bakeGeometryFixture().source,
+  );
   const baked = await bakeLightingPrototype({
     meshes: [
       {
@@ -151,24 +203,5 @@ export async function runBakeUvProof() {
     minimum = Math.min(minimum, value);
     maximum = Math.max(maximum, value);
   }
-  return {
-    cancelled,
-    phases,
-    width: generated.width,
-    height: generated.height,
-    ...gaps,
-    cubeVertices: cube.topology.originalVertices.length,
-    indices: [...generated.topology.indices],
-    originalVertices: [...generated.topology.originalVertices],
-    uv2: [...generated.topology.uv2],
-    sourceUnchanged: source.vertexCount === 4 && source.attributes.length === 3,
-    preservedCustom: [
-      ...remapped.attributes.find((attribute) => attribute.name === "custom")!
-        .data,
-    ],
-    covered,
-    finite,
-    minimum,
-    maximum,
-  };
+  return { covered, finite, minimum, maximum };
 }

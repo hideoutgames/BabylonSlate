@@ -138,9 +138,14 @@ if (
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("bakeUvProof")
 ) {
-  void import("./testing/bake-uv-proof").then(({ runBakeUvProof }) => {
-    Object.assign(globalThis, { __bakeUvProof: runBakeUvProof });
-  });
+  void import("./testing/bake-uv-proof").then(
+    ({ runBakeUvProof, runBakeUvProviderProof }) => {
+      Object.assign(globalThis, {
+        __bakeUvProof: runBakeUvProof,
+        __bakeUvProviderProof: runBakeUvProviderProof,
+      });
+    },
+  );
 } else {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
