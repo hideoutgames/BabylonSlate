@@ -2,6 +2,7 @@ import type {
   BakeInputHashes,
   BakedLightingValidity,
 } from "@babylonslate/core";
+import type { AssetRegistry } from "./registry";
 import {
   bakedLightingValidity,
   decodeBakedLightingAsset,
@@ -20,6 +21,25 @@ export type BakeRuntimeAssetReader = (
   guid: string,
   signal?: AbortSignal,
 ) => Promise<BakeRuntimeAsset | undefined>;
+
+/**
+ * Reads bake assets straight from a project registry: the `.babasset` package
+ * bytes plus that root's CAS blob store for deferred atlas/topology chunks.
+ */
+export function bakeRuntimeAssetReader(
+  registry: Pick<AssetRegistry, "getByGuid" | "storageFor" | "blobsFor">,
+): BakeRuntimeAssetReader {
+  return async (guid) => {
+    const asset = registry.getByGuid(guid);
+    if (!asset || asset.placeholder) return undefined;
+    const storage = registry.storageFor(asset.rootId);
+    const blobs = registry.blobsFor(asset.rootId);
+    return {
+      bytes: await storage.readBinary(asset.path),
+      readBlob: (hash) => blobs.readBlob(hash),
+    };
+  };
+}
 
 export type LoadedRuntimeBake =
   | { validity: Exclude<BakedLightingValidity, { status: "valid" }> }

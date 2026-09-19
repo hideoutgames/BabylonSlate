@@ -223,6 +223,11 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
+    // Baked lighting/geometry pack as self-contained babasset containers.
+    bakeAssetReader: async (guid) => {
+      const bytes = game.payloads.get(guid);
+      return bytes ? { bytes } : undefined;
+    },
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,

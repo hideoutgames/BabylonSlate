@@ -149,7 +149,10 @@ export function overlayLogForCommand(command: CommandMessage): string | null {
 
 export function applyPlayActiveScene(options: {
   handle: {
-    loadScene: (scene: SerializedScene) => void;
+    loadScene: (
+      scene: SerializedScene,
+      options?: { sceneAssetGuid?: string },
+    ) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
     resetAudioSession: () => void;
     resetParticleSession: () => void;
@@ -170,7 +173,7 @@ export function applyPlayActiveScene(options: {
   if (!options.forceReload && guid === options.currentSceneGuid) return options.currentSceneGuid;
   const scene = playSceneByGuid(guid, options.scenes, options.boot);
   if (!scene) throw new Error("The requested scene is not available in this Play session.");
-  options.handle.loadScene(scene);
+  options.handle.loadScene(scene, { sceneAssetGuid: guid });
   options.handle.applySceneEnvironment(scene);
   options.handle.resetAudioSession();
   options.handle.resetParticleSession();
@@ -507,6 +510,8 @@ export function startPlaySession(options: {
   >;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  /** Reads bake assets (project registry or packed container). */
+  bakeAssetReader?: import("@babylonslate/assets").BakeRuntimeAssetReader;
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
@@ -595,6 +600,7 @@ export function startPlaySession(options: {
     audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
+    bakeAssetReader: options.bakeAssetReader,
     postProcessStack: options.scene?.settings.postProcessStack,
     postProcessingEnabled: options.postProcessingEnabled,
     hardwareScalingLevel: options.hardwareScalingLevel,
