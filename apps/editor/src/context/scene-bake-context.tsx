@@ -18,7 +18,10 @@ import type {
   PreparedSceneBake,
   SceneBakeOwner,
 } from "@babylonslate/render/scene-bake-preparation";
-import type { SceneBakeProgress } from "@babylonslate/render/scene-bake-job";
+import type {
+  SceneBakeJobAdapter,
+  SceneBakeProgress,
+} from "@babylonslate/render/scene-bake-job";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { SceneBakeDialog } from "../components/scene-bake-dialog";
@@ -182,6 +185,13 @@ export function SceneBakeProvider({ children }: { children: ReactNode }) {
         registry,
         rootId: owner.rootId,
         name: `${owner.scene.name} Lighting`,
+        // Browser specs install a deterministic provider here; production
+        // leaves the slot empty so the job uses its path-tracing default.
+        adapter: (
+          globalThis as {
+            __babylonslateSceneBakeAdapter?: Partial<SceneBakeJobAdapter>;
+          }
+        ).__babylonslateSceneBakeAdapter,
         signal: abort.signal,
         isCurrent: current,
         commit: owner.commit,

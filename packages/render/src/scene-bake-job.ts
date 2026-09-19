@@ -137,7 +137,7 @@ export async function runSceneBakeJob(options: {
   signal?: AbortSignal;
   onProgress?: (value: SceneBakeProgress) => void;
   /** Worker/GPU boundary only; production callers use the default adapter. */
-  adapter?: SceneBakeJobAdapter;
+  adapter?: Partial<SceneBakeJobAdapter>;
 }): Promise<{
   guid: string;
   manifest: BakedLightingManifest;
@@ -179,9 +179,9 @@ export async function runSceneBakeJob(options: {
     });
     check();
   };
-  const adapter = options.adapter ?? {
-    unwrap: unwrapBakeGeometry,
-    bake: bakeLightingPrototype,
+  const adapter: SceneBakeJobAdapter = {
+    unwrap: options.adapter?.unwrap ?? unwrapBakeGeometry,
+    bake: options.adapter?.bake ?? bakeLightingPrototype,
   };
   try {
     progress("preparing", 0);

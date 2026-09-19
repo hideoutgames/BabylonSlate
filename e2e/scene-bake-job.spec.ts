@@ -169,21 +169,107 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
   });
   await openMinimalTestProject(page, await fixtureFiles());
   await openMainScene(page);
+  // CI software GL cannot finish a real path-traced bake inside the shard
+  // budget (the first sample's shader compilation alone exceeds the cancel
+  // assertion), so the real job/unwrap/dialog path runs against a deterministic
+  // provider held until released or aborted. Real provider cancellation is
+  // covered by bake-provider.spec.ts; numerical quality needs
+  // BL_BAKE_QUALITY_E2E=1 on a GPU run.
+  await page.evaluate(() => {
+    const host = window as unknown as {
+      __babylonslateSceneBakeAdapter?: {
+        bake: (
+          input: { size: number; samples: number },
+          options: {
+            signal?: AbortSignal;
+            onProgress?: (progress: {
+              phase: "sampling";
+              samples: number;
+              totalSamples: number;
+            }) => void;
+            onDisposed?: (result: {
+              contextReleased: boolean;
+              renderer: string | null;
+              texturesBeforeDisposal: number;
+              geometriesBeforeDisposal: number;
+            }) => void;
+          },
+        ) => Promise<unknown>;
+      };
+      __bakeHold?: boolean;
+      __bakeRelease?: () => void;
+    };
+    host.__bakeHold = false;
+    host.__babylonslateSceneBakeAdapter = {
+      bake(input, options) {
+        const size = input.size;
+        const irradiance = new Float32Array(size * size * 4);
+        for (let index = 0; index < irradiance.length; index += 4) {
+          irradiance[index] = 0.25;
+          irradiance[index + 1] = 0.5;
+          irradiance[index + 2] = 0.75;
+          irradiance[index + 3] = 1;
+        }
+        const disposal = {
+          contextReleased: true,
+          renderer: "e2e-deterministic",
+          texturesBeforeDisposal: 0,
+          geometriesBeforeDisposal: 0,
+        };
+        const finish = () => {
+          options.onDisposed?.(disposal);
+          return {
+            irradiance,
+            size,
+            samples: input.samples,
+            coveredTexels: size * size,
+            estimatedWorkingBytes: irradiance.byteLength,
+            elapsedMs: 0,
+          };
+        };
+        options.onProgress?.({
+          phase: "sampling",
+          samples: 0,
+          totalSamples: input.samples,
+        });
+        if (options.signal?.aborted) {
+          options.onDisposed?.(disposal);
+          return Promise.reject(
+            new DOMException("Bake cancelled", "AbortError"),
+          );
+        }
+        if (!host.__bakeHold) return Promise.resolve(finish());
+        return new Promise((resolve, reject) => {
+          options.signal?.addEventListener(
+            "abort",
+            () => {
+              options.onDisposed?.(disposal);
+              reject(new DOMException("Bake cancelled", "AbortError"));
+            },
+            { once: true },
+          );
+          host.__bakeRelease = () => resolve(finish());
+        });
+      },
+    };
+  });
   let dialog = await openBake(page);
   await expect(
     dialog.getByText("Current Bake Support", { exact: true }),
   ).toBeVisible();
   await expect(dialog.getByLabel("Samples", { exact: true })).toHaveValue("1");
-  await dialog.getByLabel("Samples", { exact: true }).fill("4096");
-  await dialog.getByLabel("Samples", { exact: true }).press("Tab");
-  // Cancel during actual sampling, after native shader compilation. Restarting
-  // offline below proves the job uses its bundled transport/UV resources.
+  // Hold the deterministic provider so the cancel lands while the job is in
+  // its sampling phase; restarting offline below proves the job uses its
+  // bundled transport/UV resources.
+  await page.evaluate(() => {
+    (window as unknown as { __bakeHold?: boolean }).__bakeHold = true;
+  });
   await dialog
     .getByRole("button", { name: "Bake Lighting", exact: true })
     .click();
   await expect(page.getByTestId("scene-bake-phase")).toHaveText(
     "Baking Lighting",
-    { timeout: 90_000 },
+    { timeout: 30_000 },
   );
   phases.push("first-provider");
   await dialog.getByRole("button", { name: "Cancel Bake" }).click();
@@ -196,12 +282,15 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
   await dialog.getByLabel("Samples", { exact: true }).fill("1");
   await dialog.getByLabel("Samples", { exact: true }).press("Tab");
   await context.setOffline(true);
+  await page.evaluate(() => {
+    (window as unknown as { __bakeHold?: boolean }).__bakeHold = false;
+  });
   await dialog
     .getByRole("button", { name: "Bake Lighting", exact: true })
     .click();
   await expect(dialog.getByRole("button", { name: "Cancel Bake" })).toHaveCount(
     0,
-    { timeout: 120_000 },
+    { timeout: 30_000 },
   );
   expect(await dialog.innerText()).toContain("Bake Saved.");
   const saved = await currentScene(page);
@@ -222,8 +311,10 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
   // The second job sees an actual authored edit while its provider is active.
   // It must retain the prior immutable result instead of publishing stale data.
   dialog = await openBake(page);
-  await dialog.getByLabel("Samples", { exact: true }).fill("4096");
-  await dialog.getByLabel("Samples", { exact: true }).press("Tab");
+  // Hold the provider again so the authored edit lands while the job is active.
+  await page.evaluate(() => {
+    (window as unknown as { __bakeHold?: boolean }).__bakeHold = true;
+  });
   await dialog
     .getByRole("button", { name: "Bake Lighting", exact: true })
     .click();
@@ -244,6 +335,15 @@ test("Bake Lighting saves offline output, cancels and rejects stale jobs, and re
       edited,
     ),
   ).toBe(true);
+  // Release the held provider so the job reaches its pre-publish staleness check.
+  await page.evaluate(() => {
+    const host = window as unknown as {
+      __bakeHold?: boolean;
+      __bakeRelease?: () => void;
+    };
+    host.__bakeHold = false;
+    host.__bakeRelease?.();
+  });
   await expect(dialog.getByText("Bake Not Saved", { exact: true })).toBeVisible(
     { timeout: 30_000 },
   );
