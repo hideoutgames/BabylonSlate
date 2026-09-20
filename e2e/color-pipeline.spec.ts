@@ -212,11 +212,12 @@ function bloomRingMean(
   width: number,
   height: number,
   box: Box,
+  pad = 14,
 ): number {
   let sum = 0;
   let count = 0;
-  for (let y = Math.max(0, box.y0 - 14); y < Math.min(height, box.y1 + 14); y++) {
-    for (let x = Math.max(0, box.x0 - 14); x < Math.min(width, box.x1 + 14); x++) {
+  for (let y = Math.max(0, box.y0 - pad); y < Math.min(height, box.y1 + pad); y++) {
+    for (let x = Math.max(0, box.x0 - pad); x < Math.min(width, box.x1 + pad); x++) {
       const inside =
         x >= box.x0 - 1 && x <= box.x1 + 1 && y >= box.y0 - 1 && y <= box.y1 + 1;
       if (inside) continue;
@@ -681,11 +682,18 @@ test("editor viewport applies project bloom through Post Processing settings", a
   }));
   const blob = hotBlob(baseline, probe.width, probe.height);
   expect(blob.count, "over-bright quad must be visible").toBeGreaterThan(50);
+  // The editor canvas is far larger than the packed player's 320×180, so the
+  // band scales with the quad's projected size to stay inside the halo.
+  const ringPad = Math.max(
+    14,
+    Math.round(Math.min(blob.x1 - blob.x0, blob.y1 - blob.y0) / 6),
+  );
   const baseRing = bloomRingMean(
     baseline,
     probe.width,
     probe.height,
     blob,
+    ringPad,
   );
 
   await page.getByTestId("settings-menu").click();
@@ -693,16 +701,29 @@ test("editor viewport applies project bloom through Post Processing settings", a
   await page.getByTestId("settings-modal-category-rendering").click();
   await page.getByRole("button", { name: "Post Processing" }).click();
   await page.getByTestId("project-effects-bloom").click();
+  // Match the packed spec's bloom signature; the default weight is tuned for
+  // a subtle look and cannot lift the ring on a viewport this size.
+  await page.getByTestId("project-effects-bloom-weight").fill("2");
+  await page.getByTestId("project-effects-bloom-kernel").fill("48");
   await page
     .getByTestId("settings-modal")
     .getByRole("button", { name: "Done", exact: true })
     .click();
 
   try {
+    // The owned passes compile asynchronously; let the post-settings frame
+    // settle so the first presented frame cannot pass for the bloomed one.
+    await settledFrame(page, canvas);
     await expect
       .poll(
         async () =>
-          bloomRingMean(await framePixels(canvas), probe.width, probe.height, blob),
+          bloomRingMean(
+            await framePixels(canvas),
+            probe.width,
+            probe.height,
+            blob,
+            ringPad,
+          ),
         { timeout: 30_000 },
       )
       .toBeGreaterThan(baseRing + 8);
@@ -714,9 +735,10 @@ test("editor viewport applies project bloom through Post Processing settings", a
       .attach("viewport-bloom", {
         body: JSON.stringify({
           baseline: baseRing,
+          ringPad,
           bloomed: await framePixels(canvas)
             .then((pixels) =>
-              bloomRingMean(pixels, probe.width, probe.height, blob),
+              bloomRingMean(pixels, probe.width, probe.height, blob, ringPad),
             )
             .catch(() => null),
           errors,
@@ -726,8 +748,8 @@ test("editor viewport applies project bloom through Post Processing settings", a
       .catch(() => {});
     await testInfo
       .attach("viewport-canvas", {
-        body: await canvas.screenshot().catch(() => Buffer.alloc(0)),
-        contentType: "image/png",
+        body: await framePixels(canvas).catch(() => Buffer.alloc(0)),
+        contentType: "application/octet-stream",
       })
       .catch(() => {});
   }
