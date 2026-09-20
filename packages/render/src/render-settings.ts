@@ -16,10 +16,12 @@ import {
   resolveEnvironmentLightingSettings,
   type EnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
+  normalizeRenderEffectsSettings,
+  type RenderEffectsSettings,
 } from "@babylonslate/core";
 
 export type RenderShadingSettings = Partial<
-  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "renderPath" | "gpuBackend">
+  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "renderPath" | "gpuBackend" | "effects">
 >;
 type SceneRendering = {
   mode: RenderMode;
@@ -36,6 +38,9 @@ type SceneRendering = {
   shadowOverrides: ShadowOverrides;
   environmentLighting: EnvironmentLightingSettings;
   environmentOverrides: EnvironmentLightingOverrides;
+  effects: RenderEffectsSettings;
+  /** Session post-processing toggle; off also restores per-material display. */
+  effectsEnabled: boolean;
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
@@ -58,6 +63,8 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       shadowOverrides: {},
       environmentLighting: normalizeEnvironmentLightingSettings(undefined),
       environmentOverrides: {},
+      effects: normalizeRenderEffectsSettings(undefined),
+      effectsEnabled: true,
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -91,9 +98,37 @@ export function updateSceneRenderingSettings(
   for (const texture of scene.textures) texture.anisotropicFilteringLevel = state.textureAnisotropy;
   const mode = state.project.mode === "cel" ? "cel" : "pbr";
   state.cel = resolveCelShadingSettings(state.project.cel, state.overrides);
-  if (mode === state.mode) return;
-  state.mode = mode;
-  for (const listener of state.listeners) listener(mode);
+  state.effects = normalizeRenderEffectsSettings(state.project.effects);
+  if (mode !== state.mode) {
+    state.mode = mode;
+    for (const listener of state.listeners) listener(mode);
+  }
+  syncImageProcessingMode(scene, state);
+}
+
+/**
+ * Session post-processing toggle. Disabling also restores per-material image
+ * processing so the Scene Linear pipeline never leaves materials emitting
+ * linear color without a display stage to convert it.
+ */
+export function setSceneEffectsEnabled(scene: Scene, enabled: boolean): void {
+  const state = sceneRenderingSettings(scene);
+  if (state.effectsEnabled === enabled) return;
+  state.effectsEnabled = enabled;
+  updateSceneRenderingSettings(scene);
+}
+
+/** Materials emit linear HDR only while a Scene Linear display stage exists. */
+function syncImageProcessingMode(
+  scene: Scene,
+  state: SceneRendering,
+): void {
+  const linear =
+    state.effectsEnabled &&
+    state.effects.colorPipeline.mode === "sceneLinear" &&
+    state.mode === "pbr";
+  if (scene.imageProcessingConfiguration.applyByPostProcess !== linear)
+    scene.imageProcessingConfiguration.applyByPostProcess = linear;
 }
 
 /** Explicit editor preferences precede session commands and never change authored settings. */
