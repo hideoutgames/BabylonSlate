@@ -89,6 +89,7 @@ export class BakedSceneSession {
   private readonly owner: SceneBakedLighting;
   private receivers: BakedReceiverMaterials;
   private readonly readiness = { isReady: () => this.probe() };
+  private readinessRegistered = false;
   private readonly pendingReadinessBudgetMs: number;
   private epoch = 0;
   private inFlight = 0;
@@ -110,8 +111,25 @@ export class BakedSceneSession {
     this.owner = new SceneBakedLighting(scene, managedByteCeiling);
     this.receivers = new BakedReceiverMaterials(scene);
     this.pendingReadinessBudgetMs = pendingReadinessBudgetMs;
-    scene.addIsReadyCheck(this.readiness);
-    markSceneReadinessDirty(scene);
+    // The readiness check registers only while a bake binds: an idle session
+    // must not alter readiness membership or probe cadence for scenes that
+    // never assign baked lighting.
+  }
+
+  private registerReadiness(): void {
+    if (this.readinessRegistered) return;
+    this.readinessRegistered = true;
+    this.scene.addIsReadyCheck(this.readiness);
+  }
+
+  private unregisterReadiness(): void {
+    if (!this.readinessRegistered) return;
+    this.readinessRegistered = false;
+    try {
+      this.scene.removeIsReadyCheck(this.readiness);
+    } catch {
+      // A disposing scene may already have dropped its check list.
+    }
   }
 
   get sessionState(): BakedSceneSessionState {
@@ -166,13 +184,22 @@ export class BakedSceneSession {
     this.abort = new AbortController();
     this.sceneData = sceneData;
     this.host = host ?? undefined;
-    this.receivers.release();
-    this.receivers = new BakedReceiverMaterials(this.scene);
-    this.owner.invalidate("Scene loading superseded the applied bake.");
     if (!sceneData.settings.bakedLightingAssetGuid || !host) {
+      // Nothing was ever bound: receivers and owner are already empty, so
+      // releasing them would only dirty strict readiness for no reason.
+      if (this.state !== "idle") {
+        this.receivers.release();
+        this.receivers = new BakedReceiverMaterials(this.scene);
+        this.owner.invalidate("Scene loading superseded the applied bake.");
+        this.unregisterReadiness();
+      }
       this.state = "idle";
       return;
     }
+    this.receivers.release();
+    this.receivers = new BakedReceiverMaterials(this.scene);
+    this.owner.invalidate("Scene loading superseded the applied bake.");
+    this.registerReadiness();
     this.state = "pending";
     this.pendingSince = performance.now();
     markSceneReadinessDirty(this.scene);
@@ -322,11 +349,14 @@ export class BakedSceneSession {
   release(): void {
     this.epoch++;
     this.abort?.abort();
-    this.receivers.release();
-    this.receivers = new BakedReceiverMaterials(this.scene);
-    this.owner.invalidate("Baked lighting was released.");
+    if (this.state !== "idle") {
+      this.receivers.release();
+      this.receivers = new BakedReceiverMaterials(this.scene);
+      this.owner.invalidate("Baked lighting was released.");
+      this.unregisterReadiness();
+      markSceneReadinessDirty(this.scene);
+    }
     this.state = "idle";
-    markSceneReadinessDirty(this.scene);
   }
 
   dispose(): void {
@@ -334,11 +364,7 @@ export class BakedSceneSession {
     this.disposed = true;
     this.epoch++;
     this.abort?.abort();
-    try {
-      this.scene.removeIsReadyCheck(this.readiness);
-    } catch {
-      // A disposing scene may already have dropped its check list.
-    }
+    this.unregisterReadiness();
     this.receivers.release();
     this.owner.dispose();
     this.state = "idle";

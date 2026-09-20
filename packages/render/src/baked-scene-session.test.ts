@@ -23,6 +23,7 @@ import {
   BakedSceneSession,
   type BakedSceneHost,
 } from "./baked-scene-session";
+import { onSceneReadinessDirty } from "./scene-perf";
 
 const disposers: Array<() => void> = [];
 afterEach(() => {
@@ -201,6 +202,28 @@ describe("per-Scene baked lighting session", () => {
     withoutBake.settings.bakedLightingAssetGuid = null;
     session.apply(withoutBake, null);
     expect(session.sessionState).toBe("idle");
+  });
+
+  it("never registers a readiness check or dirties readiness while no bake binds", () => {
+    const { scene } = engineScene();
+    const checks = (scene as unknown as { _isReadyChecks: unknown[] })
+      ._isReadyChecks;
+    const baselineChecks = checks.length;
+    let dirty = 0;
+    disposers.push(onSceneReadinessDirty(scene, () => dirty++));
+    const session = new BakedSceneSession(scene);
+    disposers.push(() => session.dispose());
+    const document = bakeDocument();
+    // A bake guid without a host and a host-less document with no guid both
+    // leave the session idle: no check may register and readiness stays clean.
+    session.apply(document, null);
+    const withoutBake = structuredClone(document);
+    withoutBake.settings.bakedLightingAssetGuid = null;
+    session.apply(withoutBake, null);
+    session.release();
+    expect(session.sessionState).toBe("idle");
+    expect(checks.length).toBe(baselineChecks);
+    expect(dirty).toBe(0);
   });
 
   it("gates first-frame admission until the bake applies receiver materials and light exclusions", async () => {
