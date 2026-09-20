@@ -67,8 +67,6 @@ export type RenderDiagnostics = {
   };
   /** Accounted managed GPU reservations for the owning Engine. */
   gpuReservations: ReturnType<typeof managedRenderReservations>;
-  /** Current hardware-scaling level; 1 renders at native resolution. */
-  scalingLevel: number;
 };
 
 export function createRenderDiagnostics(
@@ -143,7 +141,6 @@ export function createRenderDiagnostics(
         cachedTextures: engine.getLoadedTexturesCache().length,
       },
       gpuReservations: managedRenderReservations(engine),
-      scalingLevel: engine.getHardwareScalingLevel(),
     };
   };
 }
