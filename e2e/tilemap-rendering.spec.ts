@@ -18,6 +18,10 @@ async function fixture(page: Page, animated: boolean) {
   project.settings.twoD.pixelsPerUnit = 16;
   project.settings.twoD.pixelPerfect = false;
   project.settings.twoD.sortingLayers = ["Default", "Decals", "Props"];
+  // The paused-step check compares exact color counts across a 500 ms wait on
+  // the Play and Preview canvases; pin a fixed raster so the dynamic-
+  // resolution valve cannot step the backbuffer down between them.
+  project.settings.render.quality.resolution.dynamic = false;
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const png = async (colors: string[]) => new Uint8Array(await page.evaluate(async (colors) => {
     const canvas = document.createElement("canvas"); canvas.width = colors.length * 16; canvas.height = 16;
