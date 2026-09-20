@@ -20,7 +20,11 @@ test("Preview Build hydrates packed bake assets and shades the receiver with the
     entries.map(([path, bytes]) => [path, Uint8Array.from(bytes)]),
   );
   await openMinimalTestProject(page, files);
+  // Preview Build is a Debug-menu toggle followed by the Play button, same as
+  // the P14 specs: the toggle only exists inside the open dropdown.
+  await page.getByTestId("debug-menu").click();
   await page.getByTestId("preview-build-toggle").click();
+  await page.getByTestId("play-preview").click();
   await waitForPreviewBuildBoot(page);
   const canvas = page
     .frameLocator('[data-testid="preview-build-iframe"]')
@@ -56,4 +60,5 @@ test("Preview Build hydrates packed bake assets and shades the receiver with the
       { timeout: 30_000 },
     )
     .toBeGreaterThan(100);
+  await page.getByTestId("preview-build-close").click();
 });

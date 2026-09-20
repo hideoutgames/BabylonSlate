@@ -47,18 +47,28 @@ export type BakedSceneSessionState = "idle" | "pending" | "applied" | "stale";
 const NOT_READY = /is not ready\./;
 
 /**
+ * Longest a pending session may withhold first-frame admission while receiver
+ * meshes realize (Play command delivery) or bake IO stalls. Past the budget
+ * the session fails stale and re-admits realtime lighting: a missing or
+ * failed bake must never block the host indefinitely.
+ */
+const PENDING_READINESS_BUDGET_MS = 30_000;
+
+/**
  * One per-Scene owner wiring `SceneBakedLighting` into scene loading and
  * readiness. `apply` supersedes any in-flight or bound bake (releasing
  * receiver materials, exclusions, geometry and atlas references first); while
  * receivers are unrealized the session stays pending and blocks strict
  * first-frame admission so no realtime-lit frame is admitted ahead of the
- * bake. A stale or missing bake admits realtime lighting again.
+ * bake, up to a bounded budget. A stale or missing bake admits realtime
+ * lighting again.
  */
 export class BakedSceneSession {
   private readonly scene: Scene;
   private readonly owner: SceneBakedLighting;
   private receivers: BakedReceiverMaterials;
   private readonly readiness = { isReady: () => this.probe() };
+  private readonly pendingReadinessBudgetMs: number;
   private epoch = 0;
   private inFlight = 0;
   private state: BakedSceneSessionState = "idle";
@@ -67,12 +77,18 @@ export class BakedSceneSession {
   private abort?: AbortController;
   private sources = new Map<string, BakedLightingSource>();
   private staleReasons: string[] = [];
+  private pendingSince = 0;
   private disposed = false;
 
-  constructor(scene: Scene, managedByteCeiling?: number) {
+  constructor(
+    scene: Scene,
+    managedByteCeiling?: number,
+    pendingReadinessBudgetMs = PENDING_READINESS_BUDGET_MS,
+  ) {
     this.scene = scene;
     this.owner = new SceneBakedLighting(scene, managedByteCeiling);
     this.receivers = new BakedReceiverMaterials(scene);
+    this.pendingReadinessBudgetMs = pendingReadinessBudgetMs;
     scene.addIsReadyCheck(this.readiness);
     markSceneReadinessDirty(scene);
   }
@@ -122,6 +138,7 @@ export class BakedSceneSession {
       return;
     }
     this.state = "pending";
+    this.pendingSince = performance.now();
     markSceneReadinessDirty(this.scene);
     void this.progress(epoch);
   }
@@ -141,6 +158,18 @@ export class BakedSceneSession {
       return this.owner.isReady();
     }
     if (this.state === "pending") {
+      if (
+        performance.now() - this.pendingSince >
+        this.pendingReadinessBudgetMs
+      ) {
+        this.staleReasons = [
+          "Baked lighting receivers were not realized in time; rendering unbaked.",
+        ];
+        console.warn(`[render] ${this.staleReasons[0]}`);
+        this.state = "stale";
+        markSceneReadinessDirty(this.scene);
+        return true;
+      }
       if (!this.inFlight) void this.progress(this.epoch);
       return false;
     }
@@ -211,6 +240,9 @@ export class BakedSceneSession {
             : validity.status === "missing"
               ? [validity.reason]
               : ["The bake did not apply."];
+        console.warn(
+          `[render] Baked lighting did not apply: ${this.staleReasons.join(" ")}`,
+        );
         this.state = "stale";
         markSceneReadinessDirty(this.scene);
         return;
@@ -241,6 +273,7 @@ export class BakedSceneSession {
       if (error instanceof DOMException && error.name === "AbortError") return;
       if (this.state === "pending") {
         this.staleReasons = [message];
+        console.warn(`[render] Baked lighting session failed: ${message}`);
         this.state = "stale";
         markSceneReadinessDirty(this.scene);
       }

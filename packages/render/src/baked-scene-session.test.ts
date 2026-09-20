@@ -276,11 +276,65 @@ describe("per-Scene baked lighting session", () => {
     const mesh = sync.meshForComponent("receiver", "mesh")!;
     const original = mesh.material;
     const baselineReady = scene.isReady();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     session.apply(document, { ...host, readAsset: async () => undefined });
     await waitForState(session, "stale");
     expect(session.staleReason).toBeTruthy();
     expect(mesh.material).toBe(original);
     expect(scene.isReady()).toBe(baselineReady);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[render]"));
+  });
+
+  it("marks a rejected bake read stale and renders the scene unbaked", async () => {
+    const { scene, document, sync, host } = await fixture();
+    const session = new BakedSceneSession(scene);
+    disposers.push(() => session.dispose());
+    const mesh = sync.meshForComponent("receiver", "mesh")!;
+    const original = mesh.material;
+    const baselineReady = scene.isReady();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    session.apply(document, {
+      ...host,
+      readAsset: async () => {
+        throw new Error("packed payload missing");
+      },
+    });
+    await waitForState(session, "stale");
+    expect(session.staleReason).toBeTruthy();
+    expect(mesh.material).toBe(original);
+    expect(scene.isReady()).toBe(baselineReady);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[render]"));
+  });
+
+  it("fails stale within the pending budget when receivers never realize", async () => {
+    const { document, host } = await fixture();
+    const { scene } = engineScene();
+    const sync = new EditorSceneSync(scene);
+    disposers.push(() => sync.dispose());
+    const freshHost: BakedSceneHost = {
+      ...host,
+      meshForComponent: (actorId, componentId) =>
+        sync.meshForComponent(actorId, componentId),
+      lightForComponent: (actorId) =>
+        scene.getLightByName(`authoredLight:${actorId}`),
+    };
+    const session = new BakedSceneSession(scene, undefined, 50);
+    disposers.push(() => session.dispose());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // The document is never applied, so the receiver mesh never exists.
+    session.apply(document, freshHost);
+    expect(session.sessionState).toBe("pending");
+    expect(scene.isReady()).toBe(false);
+    // The stale transition is driven by the readiness probe; poll isReady.
+    await vi.waitFor(
+      () => {
+        expect(scene.isReady()).toBe(true);
+      },
+      { timeout: 5000, interval: 10 },
+    );
+    expect(session.sessionState).toBe("stale");
+    expect(session.staleReason).toBeTruthy();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[render]"));
   });
 
   it("restores realtime lighting when the session is disposed mid-flight", async () => {
