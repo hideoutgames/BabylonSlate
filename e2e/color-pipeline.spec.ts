@@ -614,16 +614,25 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(maxChannelDiff(celLinearA, celBaseline).max).toBeLessThanOrEqual(1);
       expect(maxChannelDiff(celLinearB, celBaseline).max).toBeLessThanOrEqual(1);
 
-      await testInfo.attach("color-pipeline", {
-        body: JSON.stringify({ summary, errors }),
-        contentType: "application/json",
-      });
-      await testInfo.attach("final-canvas", {
-        body: await canvas.screenshot(),
-        contentType: "image/png",
-      });
       expect(errors).toEqual([]);
     } finally {
+      // Partial readouts diagnose mid-test failures: attach whatever the
+      // summary captured before the assertion stopped the run.
+      await testInfo
+        .attach("color-pipeline", {
+          body: JSON.stringify({ summary, errors }),
+          contentType: "application/json",
+        })
+        .catch(() => {});
+      await testInfo
+        .attach("final-canvas", {
+          body: await page
+            .getByTestId("player-canvas")
+            .screenshot()
+            .catch(() => Buffer.alloc(0)),
+          contentType: "image/png",
+        })
+        .catch(() => {});
       await page.evaluate(
         (type) => window.postMessage({ type }, window.location.origin),
         PREVIEW_STOP_MESSAGE,
