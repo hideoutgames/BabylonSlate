@@ -249,7 +249,9 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-rendering").click();
-  const dynamicResolution = page.getByLabel("Dynamic Resolution", {
+  // The label also targets the hidden native checkbox; address the switch role.
+  const dynamicResolution = page.getByRole("switch", {
+    name: "Dynamic Resolution",
     exact: true,
   });
   if ((await dynamicResolution.getAttribute("aria-checked")) !== "false")
