@@ -698,29 +698,37 @@ test("editor viewport applies project bloom through Post Processing settings", a
     .getByRole("button", { name: "Done", exact: true })
     .click();
 
-  await expect
-    .poll(
-      async () =>
-        bloomRingMean(await framePixels(canvas), probe.width, probe.height, blob),
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThan(baseRing + 8);
-  await testInfo.attach("viewport-bloom", {
-    body: JSON.stringify({
-      baseline: baseRing,
-      bloomed: bloomRingMean(
-        await framePixels(canvas),
-        probe.width,
-        probe.height,
-        blob,
-      ),
-      errors,
-    }),
-    contentType: "application/json",
-  });
-  await testInfo.attach("viewport-canvas", {
-    body: await canvas.screenshot(),
-    contentType: "image/png",
-  });
-  expect(errors).toEqual([]);
+  try {
+    await expect
+      .poll(
+        async () =>
+          bloomRingMean(await framePixels(canvas), probe.width, probe.height, blob),
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThan(baseRing + 8);
+    expect(errors).toEqual([]);
+  } finally {
+    // The ring readout diagnoses a failed rise the same way the packed
+    // spec's summary does; attach it even when the poll times out.
+    await testInfo
+      .attach("viewport-bloom", {
+        body: JSON.stringify({
+          baseline: baseRing,
+          bloomed: await framePixels(canvas)
+            .then((pixels) =>
+              bloomRingMean(pixels, probe.width, probe.height, blob),
+            )
+            .catch(() => null),
+          errors,
+        }),
+        contentType: "application/json",
+      })
+      .catch(() => {});
+    await testInfo
+      .attach("viewport-canvas", {
+        body: await canvas.screenshot().catch(() => Buffer.alloc(0)),
+        contentType: "image/png",
+      })
+      .catch(() => {});
+  }
 });

@@ -93,6 +93,9 @@ export class SceneEffectsOwner {
     try {
       if (plan.bloom) {
         const scale = plan.bloom.scale;
+        // Every owned pass compiles at attach: camera.isReady gates first-frame
+        // admission, and a blocked pass only compiles inside a drawn frame the
+        // gate itself withholds, deadlocking presentation.
         const extract = new ExtractHighlightsPostProcess(
           "Scene Effects Bloom Extract",
           scale,
@@ -101,7 +104,6 @@ export class SceneEffectsOwner {
           engine,
           false,
           type,
-          true,
         );
         extract.threshold = plan.bloom.threshold;
         // The kernel is relative to the full output size; blur passes run on
@@ -117,8 +119,6 @@ export class SceneEffectsOwner {
           engine,
           false,
           type,
-          undefined,
-          true,
         );
         const blurY = new BlurPostProcess(
           "Scene Effects Bloom Blur Y",
@@ -130,8 +130,6 @@ export class SceneEffectsOwner {
           engine,
           false,
           type,
-          undefined,
-          true,
         );
         passes.push(extract, blurX, blurY);
         passes.push(
@@ -146,7 +144,6 @@ export class SceneEffectsOwner {
             engine,
             false,
             type,
-            true,
           ),
         );
       }

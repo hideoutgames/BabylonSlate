@@ -73,6 +73,11 @@ it("composes bloom, the display stage and FXAA in order for Scene Linear", () =>
       "FxaaPostProcess",
     ]);
     expect(owner.passes).toHaveLength(6);
+    // Camera readiness gates first-frame admission: a deferred-compile pass
+    // only builds its effect inside a drawn frame the gate itself withholds,
+    // so every owned pass must already have a live effect.
+    for (const pass of owner.passes)
+      expect(pass.getEffect(), pass.name).toBeTruthy();
     const display = owner.passes[4] as ImageProcessingPostProcess;
     expect(display.fromLinearSpace).toBe(true);
     expect(display.imageProcessingConfiguration).not.toBe(
