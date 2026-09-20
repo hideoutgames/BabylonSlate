@@ -211,6 +211,9 @@ async function launchLoaded(
           meshMaterialNames: () => string[];
           rendering: typeof session.rendering;
           bakedSession: typeof session.bakedSession;
+          postProcessPassCount: typeof session.postProcessPassCount;
+          renderTasks: typeof session.renderTasks;
+          setRenderSettings: typeof session.setRenderSettings;
         };
       }
     ).__babylonslatePlayerTest = {
@@ -218,6 +221,9 @@ async function launchLoaded(
       rendering: () => session.rendering(),
       meshMaterialNames: () => session.meshMaterialNames(),
       bakedSession: () => session.bakedSession(),
+      postProcessPassCount: () => session.postProcessPassCount(),
+      renderTasks: () => session.renderTasks(),
+      setRenderSettings: (settings) => session.setRenderSettings(settings),
     };
   }
   if (window.parent !== window) {

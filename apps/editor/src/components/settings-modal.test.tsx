@@ -251,6 +251,18 @@ describe("SettingsModal project authoring", () => {
     await waitFor(() => expect(document.activeElement).toBe(field));
     expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("true");
   });
+  it("starts post processing closed and stages its settings until Done", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.getByRole("button", { name: "Post Processing" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("project-render-effects")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Post Processing" }));
+    expect(screen.getByTestId("project-render-effects")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("project-effects-fxaa"));
+    expect(lastProjectRender.current).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true } });
+  });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     expect(screen.queryByTestId("settings-modal-category-input")).toBeNull();

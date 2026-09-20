@@ -11,6 +11,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  DEFAULT_RENDER_EFFECTS,
   engineCommandBus,
   requestEditorDrop,
 } from "@babylonslate/core";
@@ -2278,6 +2279,36 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
     handle.setPostProcessingEnabled(false);
     expect(handle.postProcessPassCount()).toBe(0);
+  });
+
+  it("applies project effects settings on the editor viewport's native chain", () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    // The viewport applies settings through the before-render quality pass;
+    // the first pass only records the baseline key, matching a rendered frame
+    // before Project Settings commits.
+    handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
+    handle.setRenderSettings({
+      effects: {
+        ...DEFAULT_RENDER_EFFECTS,
+        bloom: { enabled: true, threshold: 0.9, weight: 0.5, kernel: 32, scale: 0.5 },
+      },
+    });
+    handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
+    const camera = handle.scene.activeCamera!;
+    const passes = camera._postProcesses.filter(Boolean);
+    expect(passes.map((pass) => pass!.getClassName())).toEqual([
+      "ExtractHighlightsPostProcess",
+      "BlurPostProcess",
+      "BlurPostProcess",
+      "BloomMergePostProcess",
+    ]);
+    expect(handle.postProcessPassCount()).toBe(4);
+    // Admission gates on camera.isReady: a deferred-compile pass can never
+    // become ready while the gate withholds the frame that would compile it.
+    for (const pass of passes)
+      expect(pass!.getEffect(), pass!.name).toBeTruthy();
   });
 
   it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile", () => {

@@ -813,7 +813,7 @@ The coordinator's Post Process attachment facade owns one normalized entry stack
 `SceneRenderCoordinator.retire()` cancels preparation and settles task cleanup before hosts dispose borrowed output textures. Cancellation alone is not permission to destroy a target still referenced by asynchronous graph initialization. Cleanup failures reject retirement so the host can retain uncertain resources; GPU ledger release remains tied to the Engine's natural destruction boundary.
 
 
-Post-process graph resources reserve declared capacity before construction and reconcile unique allocated native textures before presentation. Empty or fully disabled stacks allocate no auxiliary targets. Geometry uses its own depth attachment so its extra pass cannot change the forward transparency/depth queue. Scene color retains the existing display-encoded RGBA8 contract; linear HDR stage migration is separate. Target resize replaces the immutable allocation, and parameter replay survives resize and explicit native fallback. Graph task cleanup precedes graph texture disposal and deferred ledger release.
+Post-process graph resources reserve declared capacity before construction and reconcile unique allocated native textures before presentation. Empty or fully disabled stacks allocate no auxiliary targets. Geometry uses its own depth attachment so its extra pass cannot change the forward transparency/depth queue. Scene color retains the display-encoded RGBA8 contract under Legacy Display and CEL; Scene Linear replaces it with a half-float HDR contract (see Color pipeline). Target resize replaces the immutable allocation, and parameter replay survives resize and explicit native fallback. Graph task cleanup precedes graph texture disposal and deferred ledger release.
 
 
 Replacing or detaching a prepared stack releases its old graph tasks immediately, including while the view is paused. Pending preparation is cancelled at the owning generation boundary before cleanup. A stale attachment facade cannot detach its replacement. Cleanup failures remain recorded so later retirement cannot incorrectly permit host-owned target destruction.
@@ -828,3 +828,35 @@ Texture Sample RGBA color decoding uses the vector WGSL conversion helper on Bab
 Environment Sample uses the corresponding WGSL vec3 color decoder for gamma-encoded cube data. A numeric cube fixture checks native and graph post-process sampling on both backends independently of diffuse IBL preparation.
 
 Post-process retirement tracks every detached generation with separate bounded cleanup reports and actual CPU/native release. A timeout remains reportable but does not authorize freeing a Scene or Material library; confirmed late release can complete ownership cleanup. Failed actual release remains quarantined. Settled promises are removed while failures remain recorded.
+
+### Color pipeline
+
+Project render settings carry a versioned color pipeline (`render.effects.colorPipeline.version = 1`) with two modes that share one ordered effect chain. `legacyDisplay` is the default for existing and new projects until Scene Linear is qualified; `sceneLinear` renders PBR output as linear HDR and resolves display color in a post-process stage. The normalized `RenderEffectsSettings` block lives in `packages/core/src/render-effects.ts`, persists with project settings and the exported player manifest, and is classified `independent` in the ownership map.
+
+**Stages.** Under Scene Linear the object renderer writes linear HDR into a half-float scene color and per-material image processing is moved to the post-process stage (`scene.imageProcessingConfiguration.applyByPostProcess = true`); authored Scene `postProcessStack` passes run in that stage as scene-linear custom passes whose intermediates stay half-float so HDR reaches the display stage. The Display Color stage then applies exposure, contrast, tone mapping (`none | standard | aces | neutral`) and the vignette, and converts linear to display through Babylon's image-processing pass (`fromLinearSpace`). Under Legacy Display everything stays display-space end to end — per-material image processing and the authored stack behave exactly as they always have — while the same bloom, vignette and FXAA effects remain available to authors without switching mode.
+
+**CEL identity rule.** CEL renders display-space by construction, so `planSceneEffects` only honors `sceneLinear` for `mode === "pbr"`; under CEL the Display Color stage runs with tone mapping, exposure and contrast at identity while bloom, vignette and FXAA still apply. The session post-processing toggle (`setSceneEffectsEnabled`) also restores per-material image processing so Scene Linear never leaves materials emitting linear color without a display stage to convert it.
+
+**One output owner.** The "Scene post-process output" copy task in `framegraph-forward-scene.ts` is the only writer of the view's output: every chain — authored stack output, settings effects, or both — feeds that copy, and SceneLayers composite after it unchanged.
+
+**Graph path.** `SceneEffectsGraph` composes Babylon's FrameGraph tasks between the object renderer and the output copy in stage order: [authored stack output | its own scene color] → `FrameGraphBloomTask` → `FrameGraphImageProcessingTask` (Display Color) → `FrameGraphFXAATask` → output copy. The chain's scene color is declared only when no authored stack exists (the object renderer draws it directly); it is half-float under Scene Linear and unsigned byte otherwise. Tasks run at view output resolution; `bloom.scale` sizes bloom's internal targets relative to the chain input, and authored stack intermediates honor `postprocessing.resolutionScale`. Each Display Color task owns a dedicated `ImageProcessingConfiguration` — sharing the Scene's configuration would let the pass's `applyByPostProcess` reset corrupt per-material processing.
+
+**Native path.** `SceneEffectsOwner` mirrors the same plan and order with owned camera passes — extract-highlights + separable blur + `BloomMergePostProcess`, `ImageProcessingPostProcess`, `FxaaPostProcess` — retired through the shared compile-guarded `PostProcessRetirement`. The native and graph consumers are mutually exclusive through `useGraph()`, exactly like the authored stack owner, and the coordinator whitelist counts `passes` as live native attachments.
+
+**Rebuild and readiness.** `sceneEffectsKey` (render mode plus serialized settings) is baked into pass defines and texture types, so a settings change invalidates every compiled effect instance: the prepared-graph key re-keys like a post-process stack change, only the effect tasks rebuild, and a view whose settings are stale renders the classic/unrendered fallback instead of stale output until preparation completes. The thin image-processing pass compiles a linear default before its `fromLinearSpace` assignment recompiles; each owner retires the orphaned first `Effect` through the bounded `whenDisposed` / confirmed `whenReleased` split so a pending parallel compile can never release its program early.
+
+**Settings.** Project Settings → Rendering → "Post Processing" edits the block; it propagates through `RenderProjectSettings.effects` to the editor viewport, Play, Preview Build and `manifest.render` in the packed player.
+
+| Setting | Type / range | Default |
+| --- | --- | --- |
+| `colorPipeline.mode` | `legacyDisplay` \| `sceneLinear` | `legacyDisplay` |
+| `toneMapping` | `none` \| `standard` \| `aces` \| `neutral` | `none` |
+| `exposure` | 0.01–100 | 1 |
+| `contrast` | 0–10 | 1 |
+| `vignette.enabled` / `weight` / `color` | boolean / 0–10 / RGB 0–1 | off / 1.5 / black |
+| `bloom.enabled` / `threshold` / `weight` / `kernel` / `scale` | boolean / 0–100 / 0–10 / 1–512 / 0.05–1 | off / 0.9 / 0.15 / 64 / 0.5 |
+| `fxaa` | boolean | off |
+
+Defaults reproduce prior output exactly, so legacy projects without the block load unchanged. Missing or invalid fields normalize to the display-identical defaults above.
+
+**D2 (not implemented).** SSAO, TAA, SSR, LUT and capture stages remain out of scope; the versioned stage contract reserves `colorPipeline.version` for their addition.

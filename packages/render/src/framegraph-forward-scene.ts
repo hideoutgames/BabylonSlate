@@ -3,7 +3,11 @@ import { createScenePostProcessGraph, type ScenePostProcessGraph } from "./scene
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
+import { SceneEffectsOwner } from "./scene-effects-owner";
+import { SceneEffectsGraph } from "./scene-effects-graph";
+import { sceneRenderingSettings } from "./render-settings";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
+import { Constants } from "@babylonjs/core";
 import type { AbstractMesh, Camera, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
@@ -58,9 +62,11 @@ export class ForwardSceneFrameGraph {
   private graph: FrameGraph | undefined;
   private postProcessOwner: ScenePostProcessOwner | undefined;
   private postProcessGraph: ScenePostProcessGraph | undefined;
+  private effectsGraph: SceneEffectsGraph | undefined;
   private outputCopy: FrameGraphTask | undefined;
   private postProcessRevision = 0;
   private preparedPostProcessRevision = -1;
+  private preparedEffectsKey: string | undefined;
   private retirement: Promise<void> | undefined;
   private released: Promise<void> | undefined;
   private readonly postProcessRetirement = new PostProcessRetirement();
@@ -89,9 +95,11 @@ export class ForwardSceneFrameGraph {
   private readonly beforeRender: Observer<Scene>;
   private readonly onDispose: Observer<Scene>;
   private readonly scene: Scene;
+  private readonly effectsOwner: SceneEffectsOwner;
 
   constructor(scene: Scene) {
     this.scene = scene;
+    this.effectsOwner = new SceneEffectsOwner(scene);
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = () => this.markReadinessDirty();
@@ -162,9 +170,17 @@ export class ForwardSceneFrameGraph {
 
   postProcessPassCount(): number {
     if (this.disposed) return 0;
-    return this.postProcessGraph
+    const stackPasses = this.postProcessGraph
       ? this.postProcessGraph.postProcessTasks.filter((task) => task.isActive).length
       : this.postProcessOwner?.passes.length ?? 0;
+    const graphEffects =
+      this.effectsGraph?.tasks.filter((task) => !task.disabled).length ?? 0;
+    return stackPasses + graphEffects + this.effectsOwner.passes.length;
+  }
+
+  /** Prepared graph task names in record order, for diagnostics and tests. */
+  taskNames(): string[] {
+    return this.graph?.tasks.map((task) => task.name) ?? [];
   }
 
   /** Settle CPU ownership before a host releases a borrowed output target. */
@@ -273,10 +289,15 @@ export class ForwardSceneFrameGraph {
   sceneStrictlyReady(camera: Camera): boolean {
     if (this.unavailable(camera)) return false;
     this.syncMembership();
-    if (!this.readinessDirtyFlag) return true;
+    // A settings change stales a prepared graph like a stack revision; a
+    // graphless classic path has no baked chain to re-key.
+    if (!this.readinessDirtyFlag &&
+      (!this.graph || this.preparedEffectsKey === this.effectsKey()))
+      return true;
     if (
       this.graph && !this.pending &&
-      this.preparedPostProcessRevision === this.postProcessRevision
+      this.preparedPostProcessRevision === this.postProcessRevision &&
+      this.preparedEffectsKey === this.effectsKey()
     ) {
       this.objects!.camera = camera;
       this.cull!.camera = camera;
@@ -339,6 +360,7 @@ export class ForwardSceneFrameGraph {
     if (reason) {
       this.releaseGraph();
       this.postProcessOwner?.useNative(camera);
+      this.effectsOwner.useNative(camera);
       return Promise.resolve({ path: "classic", reason });
     }
     const work = this.prepareGraph(camera, assertCurrent);
@@ -364,15 +386,21 @@ export class ForwardSceneFrameGraph {
     const reason = this.unsupported(camera) ?? this.failure;
     if (reason) {
       // Native stack creation belongs to preparation, never a readiness probe.
-      return { path: "classic", reason, ready: !this.postProcessOwner?.hasEnabledEntries ||
-        this.postProcessOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera) };
+      // The strict scene probe only gates while an enabled chain must draw;
+      // with no enabled effects the classic path admits exactly as before.
+      return { path: "classic", reason, ready:
+        (!this.postProcessOwner?.hasEnabledEntries ||
+          (this.postProcessOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera))) &&
+        (!this.effectsOwner.hasEnabledEntries ||
+          (this.effectsOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera))) };
     }
     const output = this.output(camera);
     if (this.graph &&
       (this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
         this.outputColor !== output.color || this.outputDepth !== output.depth))
       this.markReadinessDirty();
-    if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision || this.shadows?.needsPreparation() ||
+    if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
+      this.preparedEffectsKey !== this.effectsKey() || this.shadows?.needsPreparation() ||
       this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
       this.outputColor !== output.color || this.outputDepth !== output.depth)
       return { path: "frameGraph", ready: false };
@@ -404,6 +432,7 @@ export class ForwardSceneFrameGraph {
         : undefined) ??
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
+      this.preparedEffectsKey !== this.effectsKey() ||
       this.preparedWidth !== output.width ||
       this.preparedHeight !== output.height ||
       this.outputColor !== output.color ||
@@ -416,8 +445,14 @@ export class ForwardSceneFrameGraph {
       this.markReadinessDirty();
     this.setActiveCamera(camera);
     if (reason) {
-      if (this.postProcessOwner?.hasEnabledEntries &&
-        (this.pending || !this.postProcessOwner.nativeReadyFor(camera) || !this.sceneStrictlyReady(camera)))
+      const blocked =
+        (this.postProcessOwner?.hasEnabledEntries &&
+          (this.pending || !this.postProcessOwner.nativeReadyFor(camera) ||
+            !this.sceneStrictlyReady(camera))) ||
+        (this.effectsOwner.hasEnabledEntries &&
+          (this.pending || !this.effectsOwner.nativeReadyFor(camera) ||
+            !this.sceneStrictlyReady(camera)));
+      if (blocked)
         return { path: "classic", reason, rendered: false };
       if (!this.disposed && !this.scene.isDisposed)
         this.scene.render(updateCameras);
@@ -430,7 +465,7 @@ export class ForwardSceneFrameGraph {
     this.syncSceneInputs();
     if (this.readinessDirty) {
       if (!this.isReady()) {
-        if (this.postProcessOwner?.hasEnabledEntries)
+        if (this.postProcessOwner?.hasEnabledEntries || this.effectsOwner.hasEnabledEntries)
           return { path: "classic", reason: "FrameGraph effects are not ready.", rendered: false };
         this.scene.render(updateCameras);
         return { path: "classic", reason: "FrameGraph effects are not ready." };
@@ -474,6 +509,13 @@ export class ForwardSceneFrameGraph {
     if (this.disposed) return;
     this.disposed = true;
     this.releasePostProcessOwner();
+    try {
+      this.effectsOwner.dispose();
+      this.postProcessRetirement.add(this.effectsOwner);
+    } catch (error) {
+      this.cleanupFailure = error;
+      throw error;
+    }
     for (const detach of this.readinessDetach) detach();
     this.readinessDetach.length = 0;
     for (const [mesh, observer] of this.meshMaterialObservers)
@@ -534,7 +576,10 @@ export class ForwardSceneFrameGraph {
         !target.depthStencilTexture)
     )
       return "FrameGraph output requires a single-sample 2D color/depth texture.";
-    const ownedPasses = this.postProcessOwner?.passes ?? [];
+    const ownedPasses = [
+      ...(this.postProcessOwner?.passes ?? []),
+      ...this.effectsOwner.passes,
+    ];
     if (camera._postProcesses.some((pass) => pass && !ownedPasses.includes(pass)) ||
       scene.postProcesses.some((pass) => !ownedPasses.includes(pass)))
       return "Scene post-processing requires classic rendering.";
@@ -564,6 +609,7 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       const output = this.output(camera);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
+        this.preparedEffectsKey !== this.effectsKey() ||
         this.shadows?.needsPreparation() || this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         this.postProcessGraph && (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
@@ -596,6 +642,8 @@ export class ForwardSceneFrameGraph {
             return target;
           };
         }
+        const effectsState = sceneRenderingSettings(scene);
+        const effectsPlan = effectsState.effectsPlan;
         const postProcessOwner = this.postProcessOwner;
         if (postProcessOwner) {
           postProcessOwner.useGraph();
@@ -605,17 +653,37 @@ export class ForwardSceneFrameGraph {
             frameGraph: this.graph, plan, library: postProcessOwner.options.library,
             camera, width: output.width, height: output.height,
             resolutionScale: postProcessOwner.options.resolutionScale,
+            // Authored passes run inside the Scene Linear stage; their
+            // intermediates stay half-float so HDR reaches the display stage.
+            sceneColorType: effectsPlan?.sceneLinear
+              ? Constants.TEXTURETYPE_HALF_FLOAT
+              : undefined,
             onDiagnostic: postProcessOwner.options.onDiagnostic,
           });
           this.postProcessGraph = result.owner ?? undefined;
           if (result.ok === false) throw new Error(result.reason);
           if (this.postProcessGraph) postProcessOwner.useGraph(this.postProcessGraph);
         }
+        // The graph owns all processing for the frames it renders.
+        this.effectsOwner.useGraph();
+        if (effectsPlan) {
+          this.effectsGraph = new SceneEffectsGraph({
+            frameGraph: this.graph,
+            plan: effectsPlan,
+            effects: effectsState.effects,
+            authoredOutputTexture: this.postProcessGraph?.outputTexture,
+            width: output.width,
+            height: output.height,
+          });
+        }
         this.clear = new FrameGraphClearTextureTask(
           "Forward clear",
           this.graph,
         );
-        this.clear.targetTexture = this.postProcessGraph?.sceneColorTexture ?? color;
+        this.clear.targetTexture =
+          this.postProcessGraph?.sceneColorTexture ??
+          this.effectsGraph?.sceneColorTexture ??
+          color;
         this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? depth;
         this.cull = new CameraOutputCullTask(
           "Forward cull",
@@ -645,16 +713,21 @@ export class ForwardSceneFrameGraph {
         this.graph.addTask(this.cull);
         for (const task of this.postProcessGraph?.geometryTasks ?? []) this.graph.addTask(task);
         this.graph.addTask(this.objects);
-        if (this.postProcessGraph) {
-          for (const task of this.postProcessGraph.postProcessTasks) this.graph.addTask(task);
+        for (const task of this.postProcessGraph?.postProcessTasks ?? []) this.graph.addTask(task);
+        for (const task of this.effectsGraph?.tasks ?? []) this.graph.addTask(task);
+        // The single output owner: every authored or settings-driven chain
+        // feeds this copy; nothing else writes the view's output.
+        const chainOutput =
+          this.effectsGraph?.outputTexture ?? this.postProcessGraph?.outputTexture;
+        if (chainOutput) {
           if (output.color) {
             const copy = new FrameGraphCopyToTextureTask("Scene post-process output", this.graph);
-            copy.sourceTexture = this.postProcessGraph.outputTexture;
+            copy.sourceTexture = chainOutput;
             copy.targetTexture = color;
             this.outputCopy = copy;
           } else {
             const copy = new FrameGraphCopyToBackbufferColorTask("Scene post-process output", this.graph);
-            copy.sourceTexture = this.postProcessGraph.outputTexture;
+            copy.sourceTexture = chainOutput;
             this.outputCopy = copy;
           }
           this.graph.addTask(this.outputCopy);
@@ -703,6 +776,7 @@ export class ForwardSceneFrameGraph {
       this.readinessDirtyFlag = false;
       assertCurrent();
       this.preparedPostProcessRevision = this.postProcessRevision;
+      this.preparedEffectsKey = this.effectsKey();
       this.preparedWidth = width;
       this.preparedHeight = height;
       this.failure = undefined;
@@ -714,9 +788,19 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       this.failure = error instanceof Error ? error.message : String(error);
       this.failedOutput = { ...this.output(camera), camera };
-      if (!this.disposed && !scene.isDisposed) this.postProcessOwner?.useNative(camera);
+      if (!this.disposed && !scene.isDisposed) {
+        this.postProcessOwner?.useNative(camera);
+        this.effectsOwner.useNative(camera);
+      }
       return { path: "classic", reason: this.failure };
     }
+  }
+
+  /** The live settings key baked into the prepared graph's effect tasks. The
+   * cached value only changes when updateSceneRenderingSettings runs, so a
+   * steady-state frame compares strings without serializing the block. */
+  private effectsKey(): string {
+    return sceneRenderingSettings(this.scene).effectsKey;
   }
 
   private output(camera: Camera) {
@@ -804,6 +888,7 @@ export class ForwardSceneFrameGraph {
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
     this.postProcessGraph?.disposeTasks();
+    this.effectsGraph?.disposeTasks();
     this.outputCopy?.dispose();
     this.objects?.dispose();
     this.shadows?.dispose();
@@ -812,10 +897,13 @@ export class ForwardSceneFrameGraph {
     this.cull?.dispose();
     this.graph?.dispose();
     if (this.postProcessGraph) this.postProcessRetirement.add(this.postProcessGraph);
+    if (this.effectsGraph) this.postProcessRetirement.add(this.effectsGraph);
     void this.postProcessGraph?.releaseAfterGraphDisposal().catch((error: unknown) => {
       this.cleanupFailure = error;
     });
     this.postProcessGraph = undefined;
+    this.effectsGraph = undefined;
+    this.preparedEffectsKey = undefined;
     this.outputCopy = undefined;
     this.objects = undefined;
     this.shadows = undefined;

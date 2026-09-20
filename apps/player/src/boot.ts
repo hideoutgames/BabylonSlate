@@ -24,6 +24,7 @@ import {
   navDebugBlockersFromActors,
   particleStats,
   type EngineHandle,
+  type RenderShadingSettings,
   type SceneLoadProgress,
 } from "@babylonslate/render";
 import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@babylonslate/core";
@@ -92,6 +93,12 @@ export type PlayerBootHandle = {
   bakedSession: () => ReturnType<
     EngineHandle["bakedSessionDiagnostics"]
   > | null;
+  /** Active owned post-process/effect passes, or null once halted. */
+  postProcessPassCount: () => number | null;
+  /** Prepared FrameGraph task names, or null once halted. */
+  renderTasks: () => string[] | null;
+  /** Applies project render settings to the running scene (test hooks). */
+  setRenderSettings: (settings: RenderShadingSettings) => void;
   executeConsoleCommand: (
     line: string,
   ) => Promise<{ success: boolean; output: string }>;
@@ -730,6 +737,12 @@ function initializePlayer(
       meshMaterialNames: () => handle.playMeshMaterialNames(),
       bakedSession: () =>
         halted ? null : handle.bakedSessionDiagnostics(),
+      postProcessPassCount: () =>
+        halted ? null : handle.postProcessPassCount(),
+      renderTasks: () => (halted ? null : handle.renderTaskNames()),
+      setRenderSettings: (settings) => {
+        if (!halted) handle.setRenderSettings(settings);
+      },
       executeConsoleCommand: (line) => consoleHost.execute(line),
       inspectWorld: () => consoleHost.inspectWorld(),
       stop: stopPlayer,

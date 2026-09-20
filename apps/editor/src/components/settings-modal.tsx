@@ -4,6 +4,7 @@ import { RenderPipelineFields } from "./render-pipeline-fields";
 import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 import { EnvironmentLightingFields } from "./environment-lighting-fields";
+import { RenderEffectsFields } from "./render-effects-fields";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CelShadingFields } from "./cel-shading-fields";
@@ -27,6 +28,7 @@ import {
   MAX_COLLISION_LAYERS,
   normalizeCelShadingSettings,
   normalizeEnvironmentLightingSettings,
+  normalizeRenderEffectsSettings,
 } from "@babylonslate/core";
 import {
   Empty,
@@ -330,6 +332,7 @@ export function SettingsModal({
   }, [open, scope, projectGuid, commitRendering]);
   const [search, setSearch] = useState("");
   const [environmentOpen, setEnvironmentOpen] = useState(false);
+  const [postProcessingOpen, setPostProcessingOpen] = useState(false);
   const settingsBodyRef = useRef<HTMLDivElement>(null);
   const [pendingFocus, setPendingFocus] = useState<{ targetId?: string } | null>(null);
   const [tokenDraft, setTokenDraft] = useState("");
@@ -563,6 +566,7 @@ export function SettingsModal({
                   setActiveCategoryId(result.categoryId);
                   setSearch("");
                   if (result.targetId?.startsWith("project-environment-")) setEnvironmentOpen(true);
+                  if (result.targetId?.startsWith("project-effects-")) setPostProcessingOpen(true);
                   setPendingFocus({ targetId: result.targetId });
                 }}
               >
@@ -1062,6 +1066,9 @@ export function SettingsModal({
 <ShadowSettingsFields project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
             <DisclosureSection title="Environment Lighting" open={environmentOpen} onOpenChange={setEnvironmentOpen}>
               <EnvironmentLightingFields hideTitle cel={projectDocument.settings.render.mode === "cel"} project={projectDocument.settings.render.environmentLighting} onChange={(environmentLighting) => updateProjectSettings({ render: { ...projectDocument.settings.render, environmentLighting: normalizeEnvironmentLightingSettings(environmentLighting) } })} />
+            </DisclosureSection>
+            <DisclosureSection title="Post Processing" open={postProcessingOpen} onOpenChange={setPostProcessingOpen}>
+              <RenderEffectsFields hideTitle project={normalizeRenderEffectsSettings(projectDocument.settings.render.effects)} onChange={(effects) => updateProjectSettings({ render: { ...projectDocument.settings.render, effects: normalizeRenderEffectsSettings(effects) } })} />
             </DisclosureSection>
             {projectDocument.settings.render.mode === "cel" ? (
               <CelShadingFields

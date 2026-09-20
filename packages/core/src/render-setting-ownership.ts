@@ -49,6 +49,7 @@ export const PROJECT_RENDER_SETTING_OWNERS = {
   mode: "independent",
   cel: "independent",
   environmentLighting: "independent",
+  effects: "independent",
   customResolution: "independent",
   width: "independent",
   height: "independent",

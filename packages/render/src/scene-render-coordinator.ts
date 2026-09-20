@@ -37,6 +37,9 @@ export class SceneRenderCoordinator {
 
   postProcessPassCount(): number { return this.graph.postProcessPassCount(); }
 
+  /** Prepared graph task names in record order; [] on the classic path. */
+  taskNames(): string[] { return this.graph.taskNames(); }
+
   async retire(): Promise<void> {
     this.dispose();
     await this.graph.retire();

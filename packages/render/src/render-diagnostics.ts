@@ -31,6 +31,8 @@ export type RenderDiagnostics = {
   gpuAttribution: GpuAttribution;
   width: number;
   height: number;
+  /** Dynamic-resolution valve level; raster size is `width / scalingLevel`. */
+  scalingLevel: number;
   samples: number;
   shadowPasses: number;
   shadowMapBytes: number;
@@ -65,8 +67,6 @@ export type RenderDiagnostics = {
   };
   /** Accounted managed GPU reservations for the owning Engine. */
   gpuReservations: ReturnType<typeof managedRenderReservations>;
-  /** Current hardware-scaling level; 1 renders at native resolution. */
-  scalingLevel: number;
 };
 
 export function createRenderDiagnostics(
@@ -115,6 +115,7 @@ export function createRenderDiagnostics(
       gpuAttribution: pressure().gpuAttribution,
       width: size?.width ?? engine.getRenderWidth(),
       height: size?.height ?? engine.getRenderHeight(),
+      scalingLevel: engine.getHardwareScalingLevel(),
       samples: target?.samples ?? 1,
       shadowPasses: metrics.passes,
       shadowMapBytes: metrics.bytes,
@@ -140,7 +141,6 @@ export function createRenderDiagnostics(
         cachedTextures: engine.getLoadedTexturesCache().length,
       },
       gpuReservations: managedRenderReservations(engine),
-      scalingLevel: engine.getHardwareScalingLevel(),
     };
   };
 }

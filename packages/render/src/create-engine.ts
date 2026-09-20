@@ -26,7 +26,8 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { sceneRenderingSettings, resolveSceneRenderingQuality, type RenderShadingSettings } from "./render-settings";
+import { sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
+import { SceneEffectsOwner } from "./scene-effects-owner";
 import type {
   BakeRuntimeAssetReader,
   SpriteAnimationPayload,
@@ -319,6 +320,8 @@ export interface EngineHandle {
   }>;
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
+  /** Prepared FrameGraph task names in record order, or [] on classic. */
+  renderTaskNames: () => string[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];
   /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
@@ -1141,14 +1144,30 @@ function initializeEngine(
     }
   };
   onRollback(retireAttachedStack);
+  // Native mirror of the settings-driven effect chain for hosts without a
+  // SceneRenderCoordinator; coordinator hosts drive their own copy.
+  const sceneEffectsOwner = new SceneEffectsOwner(scene);
+  onRollback(() => {
+    try {
+      sceneEffectsOwner.dispose();
+    } finally {
+      nativeRetirement.add(sceneEffectsOwner);
+    }
+  });
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
     retireAttachedStack();
     lastPostProcessDiagnostics = [];
-    if (!postProcessingEnabled) return;
+    if (!postProcessingEnabled) {
+      if (!worldRenderer) sceneEffectsOwner.useGraph();
+      return;
+    }
     const camera = scene.activeCamera;
-    if (!camera) return;
+    if (!camera) {
+      if (!worldRenderer) sceneEffectsOwner.useGraph();
+      return;
+    }
     const attach = worldRenderer
       ? worldRenderer.attachPostProcess.bind(worldRenderer)
       : attachPostProcessStack;
@@ -1165,9 +1184,13 @@ function initializeEngine(
         options.onPostProcessDiagnostic?.(diagnostic);
       },
     });
+    // Coordinator hosts own effects inside the graph/classic decision; the
+    // pure-native path mirrors the same settings through this owner.
+    if (!worldRenderer) sceneEffectsOwner.useNative(camera);
   };
 
   let appliedQuality: ReturnType<typeof resolveRenderingQuality> | undefined;
+  let appliedEffectsKey: string | undefined;
   let appliedProject: unknown;
   let appliedSceneOverrides: unknown;
   let appliedSessionOverrides: unknown;
@@ -1196,6 +1219,12 @@ function initializeEngine(
       rebuildPostProcessStack();
       sceneLayerCompositor?.refreshPostProcess();
     }
+    const effectsKey = state.effectsKey;
+    if (appliedEffectsKey !== undefined && appliedEffectsKey !== effectsKey) {
+      rebuildPostProcessStack();
+      worldRenderer?.invalidate();
+    }
+    appliedEffectsKey = effectsKey;
   };
   scene.onBeforeRenderObservable.add(applyRenderingQuality);
   scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
@@ -2707,7 +2736,10 @@ function initializeEngine(
         freezeEditorActiveMeshes(scene);
       scheduler.invalidate("asset");
     },
-    postProcessPassCount: () => worldRenderer?.postProcessPassCount() ?? attachedStack?.passes.length ?? 0,
+    postProcessPassCount: () =>
+      worldRenderer?.postProcessPassCount() ??
+      (attachedStack?.passes.length ?? 0) + sceneEffectsOwner.passes.length,
+    renderTaskNames: () => worldRenderer?.taskNames() ?? [],
     sceneLayerScenes: () =>
       (sceneLayerCompositor?.sortedLayers() ?? []).map((layer) => ({
         layerId: layer.layerId,
@@ -2718,6 +2750,7 @@ function initializeEngine(
     postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;
+      setSceneEffectsEnabled(scene, enabled);
       rebuildPostProcessStack();
       sceneLayerCompositor?.refreshPostProcess();
       scheduler.invalidate("asset");

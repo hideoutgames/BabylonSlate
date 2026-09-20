@@ -32,7 +32,7 @@ type TestHost = {
       material: string | null;
       defines: string;
     }>;
-    rendering?(): unknown;
+    rendering?(): { scalingLevel?: number } | null;
   };
 };
 
@@ -242,6 +242,24 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     ),
   ).toBe(true);
   await openMainScene(page);
+  // H16 verifies animation poses, not the resolution valve: on SwiftShader the
+  // presentation-pressure valve eventually steps the raster down mid-session
+  // (CI: 1024x576 at the baseline, 960x540 later), which changes the tan-pixel
+  // signature. Pin a fixed raster so the captures stay comparable.
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  await page.getByTestId("settings-modal-category-rendering").click();
+  // The label also targets the hidden native checkbox; address the switch role.
+  const dynamicResolution = page.getByRole("switch", {
+    name: "Dynamic Resolution",
+    exact: true,
+  });
+  if ((await dynamicResolution.getAttribute("aria-checked")) !== "false")
+    await dynamicResolution.click();
+  await page
+    .getByTestId("settings-modal")
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await clickPlayAndWaitForOverlay(page);
   await page.evaluate(() =>
     (
@@ -305,6 +323,12 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     });
     throw error;
   }
+  // With the valve pinned the raster cannot drift between captures; a changed
+  // level means the project setting never reached the Play session.
+  const finalDebug = await playDebugReadout(page);
+  expect(finalDebug.rendering?.scalingLevel).toBe(
+    idleDebug.rendering?.scalingLevel,
+  );
   await canvas.screenshot({ path: testInfo.outputPath("h16-return-idle.png") });
   await page.getByTestId("play-overlay-close").click();
 });
