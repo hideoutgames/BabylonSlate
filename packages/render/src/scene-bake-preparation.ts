@@ -32,7 +32,7 @@ import type {
   BakePrototypeInput,
   BakePrototypeMesh,
 } from "./bake-prototype-input";
-import { snapshotBakeMesh } from "./bake-mesh-snapshot";
+import { snapshotBakeSourceMesh } from "./bake-mesh-snapshot";
 
 export type SceneBakeSettings = BakeAuthoringSettings;
 export interface SceneBakeOwner {
@@ -441,7 +441,9 @@ export async function prepareSceneBake(options: {
           throw new Error(
             "Bake authored primitive extraction currently requires the editor's left-handed Scene.",
           );
-        const source = snapshotBakeMesh(mesh);
+        // A receiver whose authored geometry is retained under an applied bake
+        // is fingerprinted and transported from that authored source.
+        const source = snapshotBakeSourceMesh(mesh);
         geometryBytes +=
           source.indices.byteLength +
           source.attributes.reduce(

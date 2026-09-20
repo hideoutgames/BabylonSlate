@@ -72,7 +72,8 @@ async function fixture() {
   const handle = {
     engine: { onEndFrameObservable: { add: (callback: () => void) => (endFrame.add(callback), callback), remove: (callback: () => void) => { endFrame.delete(callback); } } },
     loadScene: vi.fn(),
-    applySceneEnvironment: vi.fn(), resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
+    applySceneEnvironment: vi.fn(), applyBakedSession: vi.fn(),
+    resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
     playVisualStates: () => [], playMeshMaterialNames: () => [], isFreeCamEnabled: () => false,
     renderPathStatus: () => resolveRenderingPipeline(game.manifest.render),

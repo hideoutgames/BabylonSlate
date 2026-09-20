@@ -210,12 +210,14 @@ async function launchLoaded(
           visuals: () => ReturnType<typeof session.visuals>;
           meshMaterialNames: () => string[];
           rendering: typeof session.rendering;
+          bakedSession: typeof session.bakedSession;
         };
       }
     ).__babylonslatePlayerTest = {
       visuals: () => session.visuals(),
       rendering: () => session.rendering(),
       meshMaterialNames: () => session.meshMaterialNames(),
+      bakedSession: () => session.bakedSession(),
     };
   }
   if (window.parent !== window) {

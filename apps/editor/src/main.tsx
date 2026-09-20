@@ -129,6 +129,20 @@ if (
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bakedParityProof")
+) {
+  void import("./testing/baked-parity-proof").then(({ runBakedParityProof }) => {
+    Object.assign(window, { __bakedParityProof: runBakedParityProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("bakedPlayerFixture")
+) {
+  void import("./testing/baked-player-fixture").then(({ runBakedPlayerFixture }) => {
+    Object.assign(window, { __bakedPlayerFixture: runBakedPlayerFixture });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("sceneBakeProof")
 ) {
   void import("./testing/scene-bake-proof").then(({ runSceneBakeProof }) => {

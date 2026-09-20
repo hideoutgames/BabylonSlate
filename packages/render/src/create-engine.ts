@@ -30,6 +30,7 @@ import { sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEn
 import { SceneEffectsOwner } from "./scene-effects-owner";
 import { sceneEffectsKey } from "./scene-effects";
 import type {
+  BakeRuntimeAssetReader,
   SpriteAnimationPayload,
   SpritePayload,
   TilemapPayload,
@@ -88,6 +89,7 @@ import {
 } from "./editor-clear-color";
 import {
   applySceneToBabylonScene,
+  editorComponentMeshName,
   unfreezeActorWorldMatrix,
   freezeStaticActorWorldMatrix,
 } from "./scene-loader";
@@ -104,6 +106,7 @@ import {
 } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
+  AUTHORED_LIGHT_PREFIX,
   refreshAuthoredCameraLenses,
   syncAuthoredCamerasFromMeshes,
 } from "./scene-illumination";
@@ -155,11 +158,17 @@ import {
   retirePlaySlot,
   retirePlayWorldSlots,
   migratePlaySlotVisual,
+  playComponentMeshName,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
+import {
+  BakedSceneSession,
+  type BakedSceneHost,
+  type BakedSessionDiagnostics,
+} from "./baked-scene-session";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -215,6 +224,8 @@ export interface EditorSceneLoadOptions {
   assets?: MeshAssetContext;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  /** Project asset guid of the loaded Scene document (bake manifest `sceneGuid`). */
+  sceneAssetGuid?: string;
   onProgress?: (progress: number) => void;
 }
 
@@ -234,7 +245,10 @@ export interface EngineHandle {
   whenReleased: () => Promise<void>;
   resize: () => void;
   setSize: (width: number, height: number) => void;
-  loadScene: (sceneData: SerializedScene) => void;
+  loadScene: (
+    sceneData: SerializedScene,
+    options?: { sceneAssetGuid?: string },
+  ) => void;
   /** Blocking editor realization; callers keep the view obstructed until readiness. */
   loadSceneAsync: (sceneData: SerializedScene, options: EditorSceneLoadOptions) => Promise<void>;
   /** Push a worker snapshot and invalidate the viewport. */
@@ -274,6 +288,23 @@ export interface EngineHandle {
   }>;
   /** Material names on Play meshes and GLB descendants (Preview e2e). */
   playMeshMaterialNames: () => string[];
+  /** Baked-lighting session state for player/editor diagnostics. */
+  bakedSessionDiagnostics: () => BakedSessionDiagnostics;
+  /**
+   * Bind the baked-lighting session for an already-realized scene. Scene
+   * switches go through `loadScene`; hosts whose boot scene never reloads
+   * (the active-scene early return) call this so the bake still applies.
+   */
+  applyBakedSession: (
+    sceneData: SerializedScene,
+    sceneAssetGuid?: string,
+  ) => void;
+  /** Compiled effect defines per Play mesh (e2e shader-state readout). */
+  playMeshMaterialDefines: () => Array<{
+    mesh: string;
+    material: string | null;
+    defines: string;
+  }>;
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Project render mode and defaults; scene overrides remain independent. */
@@ -444,6 +475,12 @@ export interface CreateEngineOptions {
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   /** Material Function documents keyed by asset guid. */
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  /**
+   * Reads BakedLighting / BakedGeometry assets from this host's asset source
+   * (project registry, packed game container). Without it, assigned baked
+   * lighting releases instead of applying.
+   */
+  bakeAssetReader?: BakeRuntimeAssetReader;
   /** Authored scene post-process stack. */
   postProcessStack?: readonly PostProcessStackInput[];
   /**
@@ -1307,6 +1344,70 @@ function initializeEngine(
     : null;
   onRollback(() => editorSync?.dispose());
 
+  // One bake owner per world Scene. `apply` runs at the end of every scene
+  // load; receivers that have not spawned yet (Play command realization) keep
+  // the session pending, which withholds strict first-frame admission until
+  // the atlas and bindings are confirmed or the bake proves stale.
+  const bakedSession = new BakedSceneSession(scene);
+  onRollback(() => bakedSession.dispose());
+  let lastBakedSceneGuid: string | undefined;
+  const playSlotForActor = (actorId: string): number | null => {
+    for (const [slotId, sorting] of binding.meshSorting) {
+      if (sorting.actorGuid === actorId) return slotId;
+    }
+    return null;
+  };
+  const playMeshForComponent = (
+    actorId: string,
+    componentId: string,
+  ): Mesh | null => {
+    const slotId = playSlotForActor(actorId);
+    if (slotId === null) return null;
+    const root = binding.meshes.get(slotId);
+    if (!root || root.isDisposed()) return null;
+    const named = playComponentMeshName(slotId, componentId);
+    const target = [root, ...root.getChildMeshes()].find(
+      (mesh) => mesh.name === named,
+    );
+    if (target instanceof Mesh) return target;
+    return binding.primaryComponentIds.get(slotId) === componentId
+      ? root
+      : null;
+  };
+  const playLightForComponent = (actorId: string) => {
+    const slotId = playSlotForActor(actorId);
+    return slotId === null ? null : (binding.lights.get(slotId) ?? null);
+  };
+  const bakeHost = (
+    sceneAssetGuid: string | undefined,
+    signal?: AbortSignal,
+  ): BakedSceneHost | null => {
+    if (!sceneAssetGuid || !options.bakeAssetReader) return null;
+    return {
+      sceneAssetGuid,
+      readAsset: options.bakeAssetReader,
+      materials: materialDocuments,
+      functions: Object.fromEntries(materialFunctions),
+      projectEnvironment:
+        sceneRenderingSettings(scene).project.environmentLighting,
+      meshForComponent: editorSync
+        ? (actorId, componentId) =>
+            editorSync.meshForComponent(actorId, componentId)
+        : options.playMode
+          ? playMeshForComponent
+          : (actorId, componentId) =>
+              scene.getMeshByName(
+                editorComponentMeshName(actorId, componentId),
+              ) as Mesh | null,
+      lightForComponent: options.playMode
+        ? playLightForComponent
+        : (actorId) =>
+            scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}${actorId}`),
+      isCurrent: () => !disposed && !scene.isDisposed,
+      signal,
+    };
+  };
+
   const pinClientTextures = () => {
     const guids = new Set<string>(binding.textureBytes?.keys() ?? []);
     for (const props of binding.skyboxProps.values()) {
@@ -1384,10 +1485,15 @@ function initializeEngine(
     freezeLibraryMaterials();
     rebuildPostProcessStack();
     pinClientTextures();
+    lastBakedSceneGuid = load.sceneAssetGuid;
+    bakedSession.apply(sceneData, bakeHost(load.sceneAssetGuid, load.signal));
     if (lastSelectedActorIds.length > 0) editor?.setSelectedActors(lastSelectedActorIds);
   };
 
-  const loadScene = (sceneData: SerializedScene) => {
+  const loadScene = (
+    sceneData: SerializedScene,
+    loadOptions?: { sceneAssetGuid?: string },
+  ) => {
     assertCurrent(loadGeneration);
     loadGeneration += 1;
     worldRenderer?.invalidate();
@@ -1397,11 +1503,13 @@ function initializeEngine(
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
+    lastBakedSceneGuid = loadOptions?.sceneAssetGuid;
     if (editorSync) {
       editorSync.apply(sceneData);
       freezeLibraryMaterials();
       rebuildPostProcessStack();
       pinClientTextures();
+      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
     if (options.playMode) {
@@ -1422,12 +1530,14 @@ function initializeEngine(
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
       pinClientTextures();
+      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
     applySceneToBabylonScene(scene, sceneData, binding);
     rebuildPostProcessStack();
     scheduler.invalidate("asset");
     pinClientTextures();
+    bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
   };
 
   let editor: EditorTools | null = null;
@@ -2567,6 +2677,34 @@ function initializeEngine(
       }
       return [...names].sort();
     },
+    bakedSessionDiagnostics: () => bakedSession.diagnostics(),
+    applyBakedSession: (sceneData, sceneAssetGuid) => {
+      if (sceneAssetGuid !== undefined) lastBakedSceneGuid = sceneAssetGuid;
+      bakedSession.apply(sceneData, bakeHost(lastBakedSceneGuid));
+    },
+    playMeshMaterialDefines: () => {
+      const rows: Array<{
+        mesh: string;
+        material: string | null;
+        defines: string;
+      }> = [];
+      for (const root of binding.meshes.values()) {
+        for (const mesh of [root, ...root.getChildMeshes()]) {
+          const defines =
+            mesh.subMeshes
+              ?.map((sub) => String(sub.effect?.defines ?? ""))
+              .filter((entry) => entry.length)
+              .join("\n") ?? "";
+          if (mesh.material || defines)
+            rows.push({
+              mesh: mesh.name,
+              material: mesh.material?.name ?? null,
+              defines,
+            });
+        }
+      }
+      return rows;
+    },
     registerFonts: async (entries) => {
       await fontRegistry.registerAll(entries);
       if (fontRegistry.consumeDirty()) scheduler.invalidate("asset");
@@ -2585,6 +2723,8 @@ function initializeEngine(
         applyClearColor: true,
         assets: binding,
       });
+      // Environment inputs are part of the bake's validity hash; revalidate.
+      bakedSession.apply(sceneData, bakeHost(lastBakedSceneGuid));
       scheduler.invalidate("asset");
     },
     setRenderSettings: (settings) => {

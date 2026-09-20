@@ -19,9 +19,17 @@ import {
   celEnvironmentAccumulation,
   CEL_UNIFORMS,
 } from "./cel-shader";
+import type { BakedIrradianceSampling } from "./baked-irradiance";
 
 /** Native CEL light evaluation inside authored surface graphs. */
 export class CelLightBlock extends LightBlock {
+  /**
+   * Per-receiver baked atlas sampling for one cloned graph. The clone's
+   * `SLATE_BAKED` sample joins the environment accumulation; the authored
+   * material and every other receiver keep the realtime-only path.
+   */
+  bakedIrradiance: BakedIrradianceSampling | null = null;
+
   constructor(name: string) {
     super(name);
     this.registerInput("environmentInfluence", NodeMaterialBlockConnectionPointTypes.Float, true, NodeMaterialBlockTargets.Fragment);
@@ -42,11 +50,27 @@ export class CelLightBlock extends LightBlock {
   ): void {
     super.prepareDefines(defines, material, mesh);
     defines.setValue("SLATE_CEL_TWO_SIDED", !material.backFaceCulling, true);
+    defines.setValue("SLATE_BAKED", !!this.bakedIrradiance, true);
+    defines.setValue(
+      "SLATE_BAKED_ENV",
+      !!this.bakedIrradiance?.includesEnvironment,
+      true,
+    );
   }
 
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     super.bind(effect, material, mesh);
     bindCelSettings(effect, material.getScene());
+    if (this.bakedIrradiance) {
+      effect.setTexture("slateBakedIrradiance", this.bakedIrradiance.texture);
+      effect.setFloat4(
+        "slateBakedRect",
+        this.bakedIrradiance.scale[0],
+        this.bakedIrradiance.scale[1],
+        this.bakedIrradiance.offset[0],
+        this.bakedIrradiance.offset[1],
+      );
+    }
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -65,6 +89,32 @@ export class CelLightBlock extends LightBlock {
     const start = state.compilationString.length;
     super._buildBlock(state);
     bindNodeShadowView(state, start, this.view.associatedVariableName);
+    if (this.bakedIrradiance) {
+      const wgsl = state.shaderLanguage === 1;
+      if (state.target === NodeMaterialBlockTargets.Vertex) {
+        state._emitVaryingFromString(
+          "vSlateBakedUV",
+          NodeMaterialBlockConnectionPointTypes.Vector2,
+          "SLATE_BAKED",
+        );
+        if (!state.attributes.includes("uv2")) state.attributes.push("uv2");
+        state.compilationString += wgsl
+          ? "\nvertexOutputs.vSlateBakedUV=vertexInputs.uv2;"
+          : "\nvSlateBakedUV=uv2;";
+      } else if (state.target === NodeMaterialBlockTargets.Fragment) {
+        state._emitVaryingFromString(
+          "vSlateBakedUV",
+          NodeMaterialBlockConnectionPointTypes.Vector2,
+          "SLATE_BAKED",
+        );
+        state._emitUniformFromString(
+          "slateBakedRect",
+          NodeMaterialBlockConnectionPointTypes.Vector4,
+          "SLATE_BAKED",
+        );
+        state._emit2DSampler("slateBakedIrradiance", "SLATE_BAKED");
+      }
+    }
     if (state.target === NodeMaterialBlockTargets.Fragment) {
       const key = Object.keys(state.functions).find((name) =>
         name.startsWith("lightsFragmentFunctions"),

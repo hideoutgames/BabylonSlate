@@ -149,8 +149,12 @@ export function overlayLogForCommand(command: CommandMessage): string | null {
 
 export function applyPlayActiveScene(options: {
   handle: {
-    loadScene: (scene: SerializedScene) => void;
+    loadScene: (
+      scene: SerializedScene,
+      options?: { sceneAssetGuid?: string },
+    ) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
+    applyBakedSession: (scene: SerializedScene, sceneAssetGuid?: string) => void;
     resetAudioSession: () => void;
     resetParticleSession: () => void;
   };
@@ -167,10 +171,16 @@ export function applyPlayActiveScene(options: {
     return options.currentSceneGuid;
   }
   const guid = options.command.sceneAssetGuid;
-  if (!options.forceReload && guid === options.currentSceneGuid) return options.currentSceneGuid;
+  if (!options.forceReload && guid === options.currentSceneGuid) {
+    // The already-active scene skips the reload; its baked-lighting session
+    // still has to bind because nothing else applies it on this path.
+    const scene = playSceneByGuid(guid, options.scenes, options.boot);
+    if (scene) options.handle.applyBakedSession(scene, guid);
+    return options.currentSceneGuid;
+  }
   const scene = playSceneByGuid(guid, options.scenes, options.boot);
   if (!scene) throw new Error("The requested scene is not available in this Play session.");
-  options.handle.loadScene(scene);
+  options.handle.loadScene(scene, { sceneAssetGuid: guid });
   options.handle.applySceneEnvironment(scene);
   options.handle.resetAudioSession();
   options.handle.resetParticleSession();
@@ -507,6 +517,8 @@ export function startPlaySession(options: {
   >;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  /** Reads bake assets (project registry or packed container). */
+  bakeAssetReader?: import("@babylonslate/assets").BakeRuntimeAssetReader;
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
@@ -595,6 +607,7 @@ export function startPlaySession(options: {
     audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
+    bakeAssetReader: options.bakeAssetReader,
     postProcessStack: options.scene?.settings.postProcessStack,
     postProcessingEnabled: options.postProcessingEnabled,
     hardwareScalingLevel: options.hardwareScalingLevel,
@@ -651,6 +664,7 @@ export function startPlaySession(options: {
   });
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);
+    handle.applyBakedSession(options.scene, options.sceneAssetGuid);
   }
   handle.scheduler.invalidate("play");
   const releaseConsoleCapture = captureConsoleLogs(

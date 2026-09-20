@@ -76,20 +76,22 @@ async function assets(sceneGuid: string, offset: number) {
     primitive: { kind: "mesh" as const },
   };
   const contentHash = await sha256Hex(encodeBakeTopology(topology, 4));
-  const atlas = new Uint8Array(16 * 16 * 16);
+  // A 32-wide atlas keeps the WebGPU staging reservation exercised: the
+  // 8-byte row pitch lands exactly on the 256-byte alignment boundary.
+  const atlas = new Uint8Array(32 * 32 * 16);
   const values = new DataView(atlas.buffer);
-  for (let y = 0; y < 16; y++)
-    for (let x = 0; x < 16; x++) {
+  for (let y = 0; y < 32; y++)
+    for (let x = 0; x < 32; x++) {
       const color =
-        y < 8
-          ? x < 8
+        y < 16
+          ? x < 16
             ? [0.2, 0, 0, 1]
             : [0, 0.4, 0, 1]
-          : x < 8
+          : x < 16
             ? [0, 0, 0.6, 1]
             : [0.8, 0.8, 0, 1];
       color.forEach((value, channel) =>
-        values.setFloat32((y * 16 + x) * 16 + channel * 4, value, true),
+        values.setFloat32((y * 32 + x) * 16 + channel * 4, value, true),
       );
     }
   const geometryGuid = `geometry-${sceneGuid}`,
@@ -131,8 +133,8 @@ async function assets(sceneGuid: string, offset: number) {
       {
         guid: "atlas",
         chunkId: "atlas",
-        width: 16,
-        height: 16,
+        width: 32,
+        height: 32,
         sha256: await sha256Hex(atlas),
         encoding: "rgba32float-le",
         colorSpace: "linear",
@@ -162,8 +164,8 @@ async function assets(sceneGuid: string, offset: number) {
         contentHash,
         provider: manifest.provider,
         layout: {
-          width: 16,
-          height: 16,
+          width: 32,
+          height: 32,
           paddingTexels: 0,
           uvSet: 1,
           coordinates: "normalized-bottom-first",
