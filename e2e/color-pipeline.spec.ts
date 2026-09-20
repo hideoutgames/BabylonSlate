@@ -117,6 +117,21 @@ function fixtureMaterials(): Array<{
   ];
 }
 
+/**
+ * The editor check only needs the bloom quad: the FXAA slab saturates in
+ * display space like the quad and is far larger in the editor camera's
+ * framing, so keeping it would merge both into one hot blob whose ring band
+ * reaches far beyond the halo. The lit sphere is unused here.
+ */
+function editorBloomScene(): SerializedScene {
+  const scene = colorPipelineScene();
+  scene.name = "Editor Bloom";
+  scene.actors = scene.actors.filter(
+    (actor) => actor.id !== "edge" && actor.id !== "sphere",
+  );
+  return scene;
+}
+
 async function framePixels(canvas: Locator): Promise<Buffer> {
   const encoded = await canvas.evaluate((node: HTMLCanvasElement) => {
     const copy = document.createElement("canvas");
@@ -659,7 +674,9 @@ test("editor viewport applies project bloom through Post Processing settings", a
       errors.push(message.text());
   });
   const files = await minimalProjectFiles();
-  for (const material of fixtureMaterials()) {
+  for (const material of fixtureMaterials().filter(
+    (material) => material.guid !== MAT_EDGE,
+  )) {
     files.set(
       `assets/${material.name}.material.babasset`,
       await encodeAssetDocument({
@@ -673,7 +690,7 @@ test("editor viewport applies project bloom through Post Processing settings", a
   }
   await openMinimalTestProject(page, files);
   await openMainScene(page);
-  await setPreviewScene(page, colorPipelineScene());
+  await setPreviewScene(page, editorBloomScene());
   const canvas = page.getByTestId("viewport-canvas");
   const baseline = (await settledFrame(page, canvas)).pixels;
   const probe = await canvas.evaluate((node: HTMLCanvasElement) => ({
