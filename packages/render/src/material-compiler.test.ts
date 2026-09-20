@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -301,7 +301,7 @@ describe("material compiler", () => {
     expect(result.material.mode).toBe(2);
     expect(
       result.material.attachedBlocks.some(
-        (block) => block.getClassName() === "PBRMetallicRoughnessBlock",
+        (block) => block instanceof PBRMetallicRoughnessBlock,
       ),
     ).toBe(false);
     expect(
@@ -643,7 +643,7 @@ describe("material compiler", () => {
     disposers.push(() => result.material.dispose());
     expect(
       result.material.attachedBlocks.some(
-        (block) => block.getClassName() === "PBRMetallicRoughnessBlock",
+        (block) => block instanceof PBRMetallicRoughnessBlock,
       ),
     ).toBe(true);
   });
@@ -658,7 +658,7 @@ describe("material compiler", () => {
     disposers.push(() => result.material.dispose());
     expect(
       result.material.attachedBlocks.some(
-        (block) => block.getClassName() === "PBRMetallicRoughnessBlock",
+        (block) => block instanceof PBRMetallicRoughnessBlock,
       ),
     ).toBe(false);
   });

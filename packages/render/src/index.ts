@@ -98,3 +98,7 @@ export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibil
 
 export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
 export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
+export * from "./baked-irradiance";
+export * from "./baked-irradiance-plugin";
+export * from "./baked-receiver-materials";
+export * from "./baked-scene-session";

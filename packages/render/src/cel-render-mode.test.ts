@@ -20,7 +20,11 @@ import {
   lowerMaterialDocument,
 } from "@babylonslate/shader-graph";
 import { normalizeCelShadingSettings, normalizeEnvironmentLightingSettings } from "@babylonslate/core";
+import { NodeMaterial, NodeMaterialDefines, type Effect } from "@babylonjs/core";
 import { CelMaterial } from "./cel-material";
+import { CelLightBlock } from "./cel-light-block";
+import { BakedIrradiancePlugin } from "./baked-irradiance-plugin";
+import type { BakedIrradianceSampling } from "./baked-irradiance";
 import { celFunctions } from "./cel-shader";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings } from "./render-settings";
@@ -42,6 +46,78 @@ function host() {
 }
 
 describe("native CEL render mode", () => {
+  it("binds baked irradiance through the same CEL ramp on native and graph CEL", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const atlas = RawTexture.CreateRGBATexture(
+      new Uint8Array(16).fill(255),
+      1,
+      1,
+      scene,
+      false,
+    );
+    vi.spyOn(atlas, "isReady").mockReturnValue(true);
+    const sampling: BakedIrradianceSampling = {
+      texture: atlas,
+      scale: [0.5, 0.25],
+      offset: [0.1, 0.2],
+      includesEnvironment: false,
+    };
+    const native = new CelMaterial(new PBRMaterial("source", scene), scene);
+    new BakedIrradiancePlugin(native, sampling);
+    const mesh = MeshBuilder.CreateBox("cel-baked", {}, scene);
+    mesh.material = native;
+    await native.forceCompilationAsync(mesh);
+    const subMesh = mesh.subMeshes[0]!;
+    expect(native.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+    const effect = subMesh.effect!;
+    const float4 = vi.spyOn(effect, "setFloat4");
+    const textures = vi.spyOn(effect, "setTexture");
+    native.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+    expect(
+      float4.mock.calls.filter(([name]) => name === "slateBakedRect").at(-1),
+    ).toEqual(["slateBakedRect", 0.5, 0.25, 0.1, 0.2]);
+    expect(
+      textures.mock.calls
+        .filter(([name]) => name === "slateBakedIrradiance")
+        .at(-1),
+    ).toEqual(["slateBakedIrradiance", atlas]);
+    // The plugin's readiness gate follows the atlas: a receiver whose atlas
+    // has not finished uploading does not report ready.
+    const pending = new CelMaterial(new PBRMaterial("pending", scene), scene);
+    const notReady = RawTexture.CreateRGBATexture(
+      new Uint8Array(16).fill(255),
+      1,
+      1,
+      scene,
+      false,
+    );
+    new BakedIrradiancePlugin(pending, { ...sampling, texture: notReady });
+    const second = MeshBuilder.CreateBox("cel-pending", {}, scene);
+    second.material = pending;
+    expect(pending.isReadyForSubMesh(second, second.subMeshes[0]!)).toBe(false);
+    // Authored graphs carry the same sample: the block emits the baked
+    // defines and binds rect + atlas through its own effect.
+    const block = new CelLightBlock("cel");
+    block.bakedIrradiance = { ...sampling, includesEnvironment: true };
+    const defines = new NodeMaterialDefines();
+    const graph = new NodeMaterial("graph", scene);
+    block.prepareDefines(defines, graph);
+    expect(defines.SLATE_BAKED).toBe(true);
+    expect(defines.SLATE_BAKED_ENV).toBe(true);
+    const bound: string[] = [];
+    const fakeEffect = new Proxy({} as Effect, {
+      get: (_target, key) =>
+        (name: string) => {
+          bound.push(`${String(key)}:${name}`);
+          return null;
+        },
+    });
+    block.bind(fakeEffect, graph, mesh);
+    expect(bound).toContain("setTexture:slateBakedIrradiance");
+    expect(bound).toContain("setFloat4:slateBakedRect");
+  });
+
   it("binds opted-in diffuse irradiance for frozen native and graph CEL without changing the default contribution", async () => {
     const scene = host();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());

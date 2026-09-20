@@ -20,6 +20,7 @@ import {
   type EditorSceneLoadOptions,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
+import { bakeRuntimeAssetReader } from "@babylonslate/assets";
 import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { subscribeAppSettings } from "../context/app-settings-context";
@@ -235,6 +236,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  // Late-arriving registry updates resolve lazily so a baked-lighting asset
+  // saved after engine creation still applies on the next scene load.
+  const assetRegistryRef = useRef(assetRegistry);
+  assetRegistryRef.current = assetRegistry;
+  const sceneAssetGuidRef = useRef<string | undefined>(undefined);
+  sceneAssetGuidRef.current = doc?.ref.path
+    ? assetRegistry?.list().find((asset) => asset.path === doc.ref.path)?.header.guid
+    : undefined;
   const audioLibrary = useEditorAudioDebug(Boolean(scene?.actors.some((actor) =>
     selectedActorIds.includes(actor.id) &&
     actor.components.some((component) => component.classId === "AudioComponent"),
@@ -443,6 +452,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           onGizmoDragEnd: () => commitGizmoTransformRef.current(),
           editorFlyEnabled: () => !playingRef.current,
           editorFlySpeed: () => flySpeedRef.current,
+          bakeAssetReader: (guid, signal) => {
+            const registry = assetRegistryRef.current;
+            return registry
+              ? bakeRuntimeAssetReader(registry)(guid, signal)
+              : Promise.resolve(undefined);
+          },
         });
         engineRef.current = handle;
         appliedRenderSettingsRef.current = renderSettingsKey;
@@ -637,11 +652,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         // Saved Material refreshes must not realize or re-dirty scene structure.
         if (blocking) {
           if (!collected) throw new Error("Scene assets were not collected before realization.");
-          await handle.loadSceneAsync(scene, collected);
+          await handle.loadSceneAsync(scene, {
+            ...collected,
+            sceneAssetGuid: sceneAssetGuidRef.current,
+          });
           if (!isCurrent()) return;
         } else {
           if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
-          handle.loadScene(scene);
+          handle.loadScene(scene, { sceneAssetGuid: sceneAssetGuidRef.current });
         }
         appliedSceneRef.current = { scene, handle };
       };

@@ -89,6 +89,9 @@ export type PlayerBootHandle = {
   rendering: () => ReturnType<EngineHandle["renderDiagnostics"]> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
+  bakedSession: () => ReturnType<
+    EngineHandle["bakedSessionDiagnostics"]
+  > | null;
   executeConsoleCommand: (
     line: string,
   ) => Promise<{ success: boolean; output: string }>;
@@ -223,6 +226,11 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
+    // Baked lighting/geometry pack as self-contained babasset containers.
+    bakeAssetReader: async (guid) => {
+      const bytes = game.payloads.get(guid);
+      return bytes ? { bytes } : undefined;
+    },
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
@@ -720,6 +728,8 @@ function initializePlayer(
       rendering: () => halted ? null : handle.renderDiagnostics(),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
+      bakedSession: () =>
+        halted ? null : handle.bakedSessionDiagnostics(),
       executeConsoleCommand: (line) => consoleHost.execute(line),
       inspectWorld: () => consoleHost.inspectWorld(),
       stop: stopPlayer,

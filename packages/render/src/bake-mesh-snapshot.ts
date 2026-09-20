@@ -100,3 +100,27 @@ export function snapshotBakeMesh(mesh: Mesh): BakeGeometrySource {
     attributes,
   });
 }
+
+/**
+ * Receiver meshes whose live geometry was swapped for the generated bake
+ * topology keep their authored source on a hidden retention mesh owned by
+ * `SceneBakedLighting`. Source fingerprinting and re-bake transport must read
+ * that authored source, not the remapped runtime geometry.
+ */
+const retentionHolders = new WeakMap<Mesh, Mesh>();
+
+/** Record the hidden mesh carrying a receiver's authored source geometry. */
+export function registerBakeSourceMesh(receiver: Mesh, holder: Mesh): void {
+  retentionHolders.set(receiver, holder);
+}
+
+/** Drop a receiver's retention record once its holder leaves service. */
+export function unregisterBakeSourceMesh(receiver: Mesh, holder: Mesh): void {
+  if (retentionHolders.get(receiver) === holder)
+    retentionHolders.delete(receiver);
+}
+
+/** Snapshot the authored source geometry, following bake retention swaps. */
+export function snapshotBakeSourceMesh(mesh: Mesh): BakeGeometrySource {
+  return snapshotBakeMesh(retentionHolders.get(mesh) ?? mesh);
+}

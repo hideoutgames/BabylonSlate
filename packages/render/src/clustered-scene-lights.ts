@@ -4,6 +4,7 @@ import {
   HemisphericLight,
   NodeMaterial,
   PBRMaterial,
+  PBRMetallicRoughnessBlock,
   PointLight,
   SpotLight,
   Camera,
@@ -675,8 +676,7 @@ export class ClusteredSceneLights {
         (material instanceof NodeMaterial &&
           material.attachedBlocks.some(
             (block) =>
-              block.getClassName() === "PBRMetallicRoughnessBlock" &&
-              "lightFalloff" in block &&
+              block instanceof PBRMetallicRoughnessBlock &&
               block.lightFalloff === 0,
           )),
     );

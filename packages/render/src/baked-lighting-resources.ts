@@ -6,6 +6,7 @@ import {
 } from "@babylonjs/core";
 import type { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import type { BakedIrradianceAtlas } from "@babylonslate/core";
+import { bakedAtlasGpuBytes } from "./baked-gpu-cost";
 
 /** Only managed bake atlas/geometry allocations, not total Engine or driver memory. */
 const MAX_BYTES = 64 * 1024 * 1024;
@@ -140,7 +141,46 @@ export function beginBakedUpload(engine: AbstractEngine): () => Promise<void> {
   };
 }
 
-/** One Engine-owned linear RGBA32F allocation for each validated content generation. */
+const f32View = new Float32Array(1);
+const u32View = new Uint32Array(f32View.buffer);
+
+/**
+ * Decodes the source rgba32float texels into binary16 bits for the RGBA16F
+ * upload. Results too small for a normal half flush to signed zero and
+ * overflow collapses to Infinity; diffuse irradiance stays far inside the
+ * finite half range, so the conversion loses no visible precision.
+ */
+function irradianceTexelsToHalfBits(values: Float32Array): Uint16Array {
+  const out = new Uint16Array(values.length);
+  for (let index = 0; index < values.length; index++) {
+    f32View[0] = values[index]!;
+    const bits = u32View[0]!;
+    const sign = (bits >>> 16) & 0x8000;
+    const exponent = ((bits >>> 23) & 0xff) - 127;
+    const mantissa = bits & 0x7fffff;
+    if (exponent < -14) {
+      out[index] = sign;
+      continue;
+    }
+    if (exponent > 15) {
+      out[index] = sign | 0x7c00;
+      continue;
+    }
+    // Rebiased exponent with round-to-nearest on the discarded 13 bits; a
+    // mantissa carry correctly increments the exponent field.
+    out[index] = sign | ((exponent + 15) << 10) | ((mantissa + 0x1000) >>> 13);
+  }
+  return out;
+}
+
+/**
+ * One Engine-owned linear RGBA16F allocation for each validated content
+ * generation. The source asset stays rgba32float; the upload narrows to half
+ * because RGBA16F is filterable on every supported backend — WebGL2 filters
+ * 16F in core while 32F needs OES_texture_float_linear, and WebGPU's
+ * rgba16float is always filterable while rgba32float needs the
+ * float32-filterable feature.
+ */
 export async function acquireBakedAtlas(
   engine: AbstractEngine,
   atlas: BakedIrradianceAtlas,
@@ -149,8 +189,8 @@ export async function acquireBakedAtlas(
 ): Promise<{ texture: RawTexture; release(): void }> {
   const caps = engine.getCaps();
   if (
-    !caps.textureFloat ||
-    !caps.textureFloatLinearFiltering ||
+    !caps.textureHalfFloat ||
+    !caps.textureHalfFloatLinearFiltering ||
     atlas.width > caps.maxTextureSize ||
     atlas.height > caps.maxTextureSize
   )
@@ -165,14 +205,9 @@ export async function acquireBakedAtlas(
     );
   let entry = pool.atlases.get(key);
   if (!entry) {
-    const atlasBytes = atlas.width * atlas.height * 16;
-    // WebGPUTextureManager uses a same-size mapped staging buffer for aligned rows.
-    // Conservatively retain that allowance for the atlas lease; no private buffer ownership is changed.
-    const stagingBytes =
-      engine.isWebGPU && (atlas.width * 16) % 256 === 0 ? atlasBytes : 0;
     const reservation = reserveBakedGpuBytes(
       engine,
-      atlasBytes + stagingBytes,
+      bakedAtlasGpuBytes(atlas.width, atlas.height, engine.isWebGPU),
       ceiling,
     );
     let texture: RawTexture | undefined;
@@ -191,12 +226,13 @@ export async function acquireBakedAtlas(
         );
         for (let index = 0; index < values.length; index++)
           values[index] = view.getFloat32(index * 4, true);
+        const halves = irradianceTexelsToHalfBits(values);
         const complete = beginBakedUpload(engine);
         let failure: unknown;
         try {
           constructorStarted = true;
           texture = new RawTexture(
-            values,
+            halves,
             atlas.width,
             atlas.height,
             Constants.TEXTUREFORMAT_RGBA,
@@ -204,7 +240,7 @@ export async function acquireBakedAtlas(
             false,
             false,
             Texture.BILINEAR_SAMPLINGMODE,
-            Constants.TEXTURETYPE_FLOAT,
+            Constants.TEXTURETYPE_HALF_FLOAT,
             0,
             false,
           );
@@ -218,7 +254,8 @@ export async function acquireBakedAtlas(
         if (failure) throw failure;
         if (
           !texture?.isReady() ||
-          texture.getInternalTexture()?.type !== Constants.TEXTURETYPE_FLOAT
+          texture.getInternalTexture()?.type !==
+            Constants.TEXTURETYPE_HALF_FLOAT
         )
           throw new Error(
             "The baked irradiance upload is not ready in its required format.",

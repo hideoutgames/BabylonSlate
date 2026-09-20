@@ -26,8 +26,8 @@ afterEach(() => {
 
 async function fixture() {
   const { engine, scene } = createTestEngine();
-  engine.getCaps().textureFloat = true;
-  engine.getCaps().textureFloatLinearFiltering = true;
+  engine.getCaps().textureHalfFloat = true;
+  engine.getCaps().textureHalfFloatLinearFiltering = true;
   // Pinned NullEngine omits the upload completion flag set by both real backends.
   // Keep its actual InternalTexture allocation, type and lifetime behavior.
   const createRawTexture = engine.createRawTexture.bind(engine);
@@ -179,14 +179,14 @@ it("shares only the immutable atlas across Scenes and releases it after the last
   await b.load(f.optionsFor(otherMesh));
   const texture = a.bindingFor(f.mesh)!.texture;
   expect(b.bindingFor(otherMesh)!.texture).toBe(texture);
-  expect(bakedGpuAllocationStatus(f.engine).managedBytes).toBe(424); // 64 atlas + 180 bytes for each remapped geometry.
+  expect(bakedGpuAllocationStatus(f.engine).managedBytes).toBe(392); // 32 half-float atlas + 180 bytes for each remapped geometry.
   const later = vi.fn();
   f.scene.onDisposeObservable.add(later);
   f.scene.dispose();
   expect(later).toHaveBeenCalledOnce();
   expect(b.isReady()).toBe(true);
   expect(texture.isReady()).toBe(true);
-  expect(bakedGpuAllocationStatus(f.engine).managedBytes).toBe(244);
+  expect(bakedGpuAllocationStatus(f.engine).managedBytes).toBe(212);
   other.dispose();
   expect(bakedGpuAllocationStatus(f.engine).managedBytes).toBe(0);
 });
@@ -202,7 +202,7 @@ it("keeps a still-valid previous binding when the replacement peak exceeds admis
   expect(owner.isReady()).toBe(true);
   expect(f.mesh.geometry).toBe(previous);
   expect(bakedGpuAllocationStatus(f.engine)).toEqual({
-    managedBytes: 244,
+    managedBytes: 212,
     quarantined: false,
   });
   expect(
@@ -322,16 +322,16 @@ it("blocks readiness for pending IO and never applies a cancelled owner after la
   release();
 });
 
-it("rejects unsupported float filtering before allocation and quarantines hidden constructor failures", async () => {
+it("rejects unsupported half-float filtering before allocation and quarantines hidden constructor failures", async () => {
   const f = await fixture();
   const owner = new SceneBakedLighting(f.scene);
-  f.engine.getCaps().textureFloatLinearFiltering = false;
+  f.engine.getCaps().textureHalfFloatLinearFiltering = false;
   const create = vi.spyOn(f.engine, "createRawTexture");
   await expect(owner.load(f.optionsFor(f.mesh))).rejects.toThrow(
     /cannot sample/,
   );
   expect(create).not.toHaveBeenCalled();
-  f.engine.getCaps().textureFloatLinearFiltering = true;
+  f.engine.getCaps().textureHalfFloatLinearFiltering = true;
   create.mockImplementation(() => {
     throw new Error("Native allocation failed");
   });
@@ -339,7 +339,7 @@ it("rejects unsupported float filtering before allocation and quarantines hidden
     /Native allocation/,
   );
   expect(bakedGpuAllocationStatus(f.engine)).toEqual({
-    managedBytes: 64,
+    managedBytes: 32,
     quarantined: true,
   });
   await expect(owner.load(f.optionsFor(f.mesh))).rejects.toThrow(/quarantined/);
