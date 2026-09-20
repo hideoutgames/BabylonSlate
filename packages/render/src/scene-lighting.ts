@@ -10,13 +10,16 @@ import {
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-perf";
 import {
+  LightBlock,
   Material,
   NodeMaterial,
   NodeMaterialModes,
+  PBRMetallicRoughnessBlock,
   type Light,
   type Observer,
   type Scene,
 } from "@babylonjs/core";
+import { CelLightBlock } from "./cel-light-block";
 
 type LitMaterial = Material & { maxSimultaneousLights: number };
 
@@ -30,9 +33,11 @@ function isLitMaterial(material: Material): material is LitMaterial {
       material.mode === NodeMaterialModes.Material &&
       material.attachedBlocks.some(
         (block) =>
-          block.getClassName() === "PBRMetallicRoughnessBlock" ||
-          block.getClassName() === "CelLightBlock" ||
-          block.getClassName() === "LightBlock",
+          // instanceof, not class name: app subclasses (ScenePbrLightingBlock)
+          // report their own name for NodeMaterial clone round-trips.
+          block instanceof PBRMetallicRoughnessBlock ||
+          block instanceof CelLightBlock ||
+          block instanceof LightBlock,
       )
     );
   }
