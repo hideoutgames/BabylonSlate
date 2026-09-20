@@ -288,6 +288,12 @@ export interface EngineHandle {
   playMeshMaterialNames: () => string[];
   /** Baked-lighting session state for player/editor diagnostics. */
   bakedSessionDiagnostics: () => BakedSessionDiagnostics;
+  /** Compiled effect defines per Play mesh (e2e shader-state readout). */
+  playMeshMaterialDefines: () => Array<{
+    mesh: string;
+    material: string | null;
+    defines: string;
+  }>;
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Project render mode and defaults; scene overrides remain independent. */
@@ -2635,6 +2641,29 @@ function initializeEngine(
       return [...names].sort();
     },
     bakedSessionDiagnostics: () => bakedSession.diagnostics(),
+    playMeshMaterialDefines: () => {
+      const rows: Array<{
+        mesh: string;
+        material: string | null;
+        defines: string;
+      }> = [];
+      for (const root of binding.meshes.values()) {
+        for (const mesh of [root, ...root.getChildMeshes()]) {
+          const defines =
+            mesh.subMeshes
+              ?.map((sub) => String(sub.effect?.defines ?? ""))
+              .filter((entry) => entry.length)
+              .join("\n") ?? "";
+          if (mesh.material || defines)
+            rows.push({
+              mesh: mesh.name,
+              material: mesh.material?.name ?? null,
+              defines,
+            });
+        }
+      }
+      return rows;
+    },
     registerFonts: async (entries) => {
       await fontRegistry.registerAll(entries);
       if (fontRegistry.consumeDirty()) scheduler.invalidate("asset");

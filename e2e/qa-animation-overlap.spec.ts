@@ -24,8 +24,29 @@ type TestHost = {
     setMainGraphContent(graph: SerializedGraph): Promise<boolean>;
     setActiveSceneContent(scene: SerializedScene): Promise<boolean>;
   };
-  __babylonslatePlayTest: { whenModelsReady(): Promise<void> };
+  __babylonslatePlayTest: {
+    whenModelsReady(): Promise<void>;
+    bakedSession?(): unknown;
+    materialDefines?(): Array<{
+      mesh: string;
+      material: string | null;
+      defines: string;
+    }>;
+    rendering?(): unknown;
+  };
 };
+
+/** Shader/session/shadow state beside a pixel capture, for CI readouts. */
+async function playDebugReadout(page: Page) {
+  return page.evaluate(() => {
+    const host = (globalThis as unknown as TestHost).__babylonslatePlayTest;
+    return {
+      bakedSession: host.bakedSession?.() ?? null,
+      rendering: host.rendering?.() ?? null,
+      defines: host.materialDefines?.() ?? [],
+    };
+  });
+}
 
 async function documentPayload<T>(page: Page, path: string): Promise<T> {
   return page.evaluate(async (assetPath) => {
@@ -234,6 +255,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     .poll(async () => (await mannequinPixels(canvas)).pixels)
     .toBeGreaterThan(50);
   const idle = await mannequinPixels(canvas);
+  const idleDebug = await playDebugReadout(page);
   await canvas.screenshot({ path: testInfo.outputPath("h16-idle.png") });
   await canvas.click();
   await page.keyboard.press("Space");
@@ -247,7 +269,26 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   await canvas.screenshot({ path: testInfo.outputPath("h16-walk.png") });
   await page.keyboard.press("Enter");
   await expect(prints).toContainText("Idle");
-  await expect.poll(() => mannequinPixels(canvas)).toEqual(idle);
+  try {
+    await expect.poll(() => mannequinPixels(canvas)).toEqual(idle);
+  } catch (error) {
+    // The returned Idle diverged from the first capture: attach the shader,
+    // bake-session and shadow readout so CI shows which layer moved.
+    const readout = {
+      idle,
+      idleDebug,
+      final: await mannequinPixels(canvas),
+      finalDebug: await playDebugReadout(page),
+    };
+    await testInfo.attach("h16-readout.json", {
+      body: JSON.stringify(readout, null, 2),
+      contentType: "application/json",
+    });
+    await canvas.screenshot({
+      path: testInfo.outputPath("h16-return-idle.png"),
+    });
+    throw error;
+  }
   await canvas.screenshot({ path: testInfo.outputPath("h16-return-idle.png") });
   await page.getByTestId("play-overlay-close").click();
 });
