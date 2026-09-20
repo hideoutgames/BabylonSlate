@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultSceneLayer,
+  DEFAULT_RENDER_EFFECTS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   normalizeCelShadingSettings,
   normalizeShadowSettings,
@@ -100,6 +101,7 @@ describe("exportGame", () => {
       width: 1280,
       height: 720,
       blackBars: true,
+      effects: DEFAULT_RENDER_EFFECTS,
     });
     expect(result.value.manifest.bundleDebugger).toBe(false);
     expect(result.value.fileCount).toBeLessThan(800);

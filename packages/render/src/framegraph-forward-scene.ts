@@ -387,12 +387,13 @@ export class ForwardSceneFrameGraph {
     const reason = this.unsupported(camera) ?? this.failure;
     if (reason) {
       // Native stack creation belongs to preparation, never a readiness probe.
+      // The strict scene probe only gates while an enabled chain must draw;
+      // with no enabled effects the classic path admits exactly as before.
       return { path: "classic", reason, ready:
         (!this.postProcessOwner?.hasEnabledEntries ||
-          this.postProcessOwner.nativeReadyFor(camera)) &&
+          (this.postProcessOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera))) &&
         (!this.effectsOwner.hasEnabledEntries ||
-          this.effectsOwner.nativeReadyFor(camera)) &&
-        this.sceneStrictlyReady(camera) };
+          (this.effectsOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera))) };
     }
     const output = this.output(camera);
     if (this.graph &&
