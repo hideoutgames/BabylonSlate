@@ -482,6 +482,28 @@ it("keeps probing every frame while unready, then caches once admitted", async (
   graph.dispose();
 });
 
+it("keeps the default graph free of effect tasks, copies and owned passes", async () => {
+  const { scene, camera } = host();
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // The pre-D1 task list: defaults must add no effect task, output copy or
+  // extra render target so Play costs exactly what it always has.
+  expect(graph.taskNames()).toEqual([
+    "Forward admitted shadows",
+    "Clustered light mask",
+    "Forward clear",
+    "Forward cull",
+    "Forward objects",
+  ]);
+  expect(graph.postProcessPassCount()).toBe(0);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  const checks = graph.strictReadinessChecks;
+  for (let frame = 0; frame < 20; frame += 1)
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.strictReadinessChecks).toBe(checks);
+  graph.dispose();
+});
+
 it("composes the settings effect chain before the single output copy in Scene Linear", async () => {
   const { scene, camera } = host();
   updateSceneRenderingSettings(scene, {

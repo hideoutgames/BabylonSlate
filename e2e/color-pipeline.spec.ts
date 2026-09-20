@@ -287,15 +287,25 @@ function playerTest(page: Page) {
     const host = window as typeof window & {
       __babylonslatePlayerTest?: {
         postProcessPassCount: () => number | null;
+        renderTasks: () => string[] | null;
         setRenderSettings: (settings: unknown) => void;
-        rendering: () => { pipeline?: { effective?: unknown } } | null;
+        rendering: () => {
+          pipeline?: { effective?: unknown };
+          width?: number;
+          height?: number;
+        } | null;
       };
     };
     const api = host.__babylonslatePlayerTest;
     return api
       ? {
           passes: api.postProcessPassCount(),
+          tasks: api.renderTasks(),
           pipeline: api.rendering()?.pipeline?.effective ?? null,
+          size: {
+            width: api.rendering()?.width ?? 0,
+            height: api.rendering()?.height ?? 0,
+          },
         }
       : null;
   });
@@ -391,6 +401,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       // Defaults baseline: the omitted effects block renders exactly as the
       // pre-settings pipeline did.
       const baseline = await settledPixels(canvas);
+      const baselineState = await playerTest(page);
+      summary.baselineState = baselineState;
       summary.baseline = await testInfo
         .attach("baseline-canvas", {
           body: baseline,
@@ -423,6 +435,14 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         )
         .toBeLessThanOrEqual(1);
       const identical = await framePixels(canvas);
+      const defaultsState = await playerTest(page);
+      summary.defaultsState = defaultsState;
+      // A pixel diff is only meaningful at the same backbuffer size: dynamic
+      // scaling stepping down mid-check must fail as a size change, not a diff.
+      expect(
+        defaultsState?.size,
+        "backbuffer size changed between captures (dynamic scaling); the defaults-identical comparison is invalid",
+      ).toEqual(baselineState?.size);
       const diff = maxChannelDiff(identical, baseline);
       summary.defaultsDiff = diff;
       expect(diff.count, "explicit defaults must match the baseline within ±1/255").toBeLessThanOrEqual(

@@ -19,6 +19,11 @@ import {
   normalizeRenderEffectsSettings,
   type RenderEffectsSettings,
 } from "@babylonslate/core";
+import {
+  planSceneEffects,
+  sceneEffectsKey,
+  type SceneEffectsPlan,
+} from "./scene-effects";
 
 export type RenderShadingSettings = Partial<
   Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "renderPath" | "gpuBackend" | "effects">
@@ -41,6 +46,11 @@ type SceneRendering = {
   effects: RenderEffectsSettings;
   /** Session post-processing toggle; off also restores per-material display. */
   effectsEnabled: boolean;
+  /** Baked identity of the live effects settings; rebuilt only on a settings
+   * change so per-frame readiness probes never serialize the block again. */
+  effectsKey: string;
+  /** Renderable chain for the live settings; null means no owned passes. */
+  effectsPlan: SceneEffectsPlan | null;
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
@@ -48,6 +58,7 @@ const scenes = new WeakMap<Scene, SceneRendering>();
 export function sceneRenderingSettings(scene: Scene): SceneRendering {
   let state = scenes.get(scene);
   if (!state) {
+    const effects = normalizeRenderEffectsSettings(undefined);
     state = {
       mode: "pbr",
       qualityOverrides: {},
@@ -63,8 +74,10 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       shadowOverrides: {},
       environmentLighting: normalizeEnvironmentLightingSettings(undefined),
       environmentOverrides: {},
-      effects: normalizeRenderEffectsSettings(undefined),
+      effects,
       effectsEnabled: true,
+      effectsKey: sceneEffectsKey(effects, "pbr", true),
+      effectsPlan: planSceneEffects(effects, "pbr", true),
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -103,6 +116,16 @@ export function updateSceneRenderingSettings(
     state.mode = mode;
     for (const listener of state.listeners) listener(mode);
   }
+  state.effectsKey = sceneEffectsKey(
+    state.effects,
+    state.mode,
+    state.effectsEnabled,
+  );
+  state.effectsPlan = planSceneEffects(
+    state.effects,
+    state.mode,
+    state.effectsEnabled,
+  );
   syncImageProcessingMode(scene, state);
 }
 

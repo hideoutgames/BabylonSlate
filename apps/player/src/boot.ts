@@ -95,6 +95,8 @@ export type PlayerBootHandle = {
   > | null;
   /** Active owned post-process/effect passes, or null once halted. */
   postProcessPassCount: () => number | null;
+  /** Prepared FrameGraph task names, or null once halted. */
+  renderTasks: () => string[] | null;
   /** Applies project render settings to the running scene (test hooks). */
   setRenderSettings: (settings: RenderShadingSettings) => void;
   executeConsoleCommand: (
@@ -737,6 +739,7 @@ function initializePlayer(
         halted ? null : handle.bakedSessionDiagnostics(),
       postProcessPassCount: () =>
         halted ? null : handle.postProcessPassCount(),
+      renderTasks: () => (halted ? null : handle.renderTaskNames()),
       setRenderSettings: (settings) => {
         if (!halted) handle.setRenderSettings(settings);
       },

@@ -14,21 +14,17 @@ import {
 import { PostProcessRetirement } from "./post-process-retirement";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import {
-  planSceneEffects,
   sceneEffectsImageProcessingConfiguration,
-  sceneEffectsKey,
   type SceneEffectsPlan,
 } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
 
 function planFor(scene: Scene): SceneEffectsPlan | null {
-  const state = sceneRenderingSettings(scene);
-  return planSceneEffects(state.effects, state.mode, state.effectsEnabled);
+  return sceneRenderingSettings(scene).effectsPlan;
 }
 
 function keyFor(scene: Scene): string {
-  const state = sceneRenderingSettings(scene);
-  return sceneEffectsKey(state.effects, state.mode, state.effectsEnabled);
+  return sceneRenderingSettings(scene).effectsKey;
 }
 
 /**
@@ -85,7 +81,7 @@ export class SceneEffectsOwner {
     this.nativeCamera = camera;
     this.nativeKey = key;
     const state = sceneRenderingSettings(this.scene);
-    const plan = planSceneEffects(state.effects, state.mode, state.effectsEnabled);
+    const plan = state.effectsPlan;
     if (!plan) return;
     const engine = this.scene.getEngine();
     const passes: PostProcess[] = [];

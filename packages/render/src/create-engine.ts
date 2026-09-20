@@ -28,7 +28,6 @@ import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
 import { SceneEffectsOwner } from "./scene-effects-owner";
-import { sceneEffectsKey } from "./scene-effects";
 import type {
   BakeRuntimeAssetReader,
   SpriteAnimationPayload,
@@ -321,6 +320,8 @@ export interface EngineHandle {
   }>;
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
+  /** Prepared FrameGraph task names in record order, or [] on classic. */
+  renderTaskNames: () => string[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];
   /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
@@ -1218,7 +1219,7 @@ function initializeEngine(
       rebuildPostProcessStack();
       sceneLayerCompositor?.refreshPostProcess();
     }
-    const effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled);
+    const effectsKey = state.effectsKey;
     if (appliedEffectsKey !== undefined && appliedEffectsKey !== effectsKey) {
       rebuildPostProcessStack();
       worldRenderer?.invalidate();
@@ -2738,6 +2739,7 @@ function initializeEngine(
     postProcessPassCount: () =>
       worldRenderer?.postProcessPassCount() ??
       (attachedStack?.passes.length ?? 0) + sceneEffectsOwner.passes.length,
+    renderTaskNames: () => worldRenderer?.taskNames() ?? [],
     sceneLayerScenes: () =>
       (sceneLayerCompositor?.sortedLayers() ?? []).map((layer) => ({
         layerId: layer.layerId,

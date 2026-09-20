@@ -5,7 +5,6 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsOwner } from "./scene-effects-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
-import { planSceneEffects, sceneEffectsKey } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
@@ -644,11 +643,7 @@ export class ForwardSceneFrameGraph {
           };
         }
         const effectsState = sceneRenderingSettings(scene);
-        const effectsPlan = planSceneEffects(
-          effectsState.effects,
-          effectsState.mode,
-          effectsState.effectsEnabled,
-        );
+        const effectsPlan = effectsState.effectsPlan;
         const postProcessOwner = this.postProcessOwner;
         if (postProcessOwner) {
           postProcessOwner.useGraph();
@@ -801,14 +796,11 @@ export class ForwardSceneFrameGraph {
     }
   }
 
-  /** The live settings key baked into the prepared graph's effect tasks. */
+  /** The live settings key baked into the prepared graph's effect tasks. The
+   * cached value only changes when updateSceneRenderingSettings runs, so a
+   * steady-state frame compares strings without serializing the block. */
   private effectsKey(): string {
-    const state = sceneRenderingSettings(this.scene);
-    return sceneEffectsKey(
-      state.effects,
-      state.mode,
-      state.effectsEnabled,
-    );
+    return sceneRenderingSettings(this.scene).effectsKey;
   }
 
   private output(camera: Camera) {
