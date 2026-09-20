@@ -20,10 +20,10 @@ export function kenneyMannequinVitePlugin(options: {
   }
   return {
     name: "babylonslate-kenney-mannequin",
-    // Vite 8 dev serves publicDir through a whitelist snapshot taken before
-    // configureServer runs; copying during config resolution keeps the bundled
-    // GLB/PNG servable on the first dev-server start.
-    configResolved() {
+    buildStart() {
+      copy();
+    },
+    configureServer() {
       copy();
     },
   };

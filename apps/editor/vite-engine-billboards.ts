@@ -25,8 +25,7 @@ export function engineBillboardsVitePlugin(
   const copy = () => copyEngineBillboards(repoRoot, destPublicDir);
   return {
     name: "copy-engine-billboards",
-    // Copy during config resolution so the dev server's publicDir whitelist
-    // snapshot (built before configureServer) includes the billboards.
-    configResolved: copy,
+    buildStart: copy,
+    configureServer: copy,
   };
 }

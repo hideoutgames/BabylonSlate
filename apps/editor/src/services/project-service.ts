@@ -592,7 +592,10 @@ export class ProjectService {
     if (await this.storage.exists(PROJECT_FILE)) {
       throw new Error("Name already exists.");
     }
-    return this.scaffoldNewProject(projectName, options?.kind, options);
+    return this.scaffoldOwnedProject(
+      () => this.scaffoldNewProject(projectName, options?.kind, options),
+      !options?.pickFolder,
+    );
   }
 
   async createFromTemplate(options: {
@@ -611,27 +614,59 @@ export class ProjectService {
       throw new Error("A project already exists in this folder.");
     }
     const guid = newGuid();
-    await createProjectFromTemplate({
-      templateFiles: options.templateFiles,
-      destination: this.storage,
-      guid,
-      name: projectName,
-    });
-    const appearance = normalizeProjectAppearance(options.appearance);
-    if (appearance) {
-      const manifest = JSON.parse(await this.storage.readText(PROJECT_FILE)) as {
-        metadata?: Partial<ProjectMetadata>;
-      };
-      manifest.metadata = {
-        ...createEmptyProject(projectName).metadata,
-        ...manifest.metadata,
-        appearance,
-      };
-      await this.storage.writeText(PROJECT_FILE, JSON.stringify(manifest, null, 2));
+    return this.scaffoldOwnedProject(
+      async () => {
+        await createProjectFromTemplate({
+          templateFiles: options.templateFiles,
+          destination: this.storage,
+          guid,
+          name: projectName,
+        });
+        const appearance = normalizeProjectAppearance(options.appearance);
+        if (appearance) {
+          const manifest = JSON.parse(
+            await this.storage.readText(PROJECT_FILE),
+          ) as {
+            metadata?: Partial<ProjectMetadata>;
+          };
+          manifest.metadata = {
+            ...createEmptyProject(projectName).metadata,
+            ...manifest.metadata,
+            appearance,
+          };
+          await this.storage.writeText(
+            PROJECT_FILE,
+            JSON.stringify(manifest, null, 2),
+          );
+        }
+        this.projectGuid = guid;
+        await this.installEnginePluginDefaultsIfNeeded();
+        return this.loadCurrentProject();
+      },
+      !options.pickFolder,
+    );
+  }
+
+  private async scaffoldOwnedProject<T>(
+    scaffold: () => Promise<T>,
+    cleanup: boolean,
+  ): Promise<T> {
+    try {
+      return await scaffold();
+    } catch (cause) {
+      // A failed scaffold leaves a registered folder that never reaches the
+      // recents list but still blocks the name via the project-file check.
+      // Drop folders this flow created itself; user-picked folders stay.
+      const handle = this.storage.getCurrentFolder();
+      if (cleanup && handle && this.storage.deleteProject) {
+        try {
+          await this.storage.deleteProject(handle);
+        } catch {
+          /* best effort */
+        }
+      }
+      throw cause;
     }
-    this.projectGuid = guid;
-    await this.installEnginePluginDefaultsIfNeeded();
-    return this.loadCurrentProject();
   }
 
   async openListedProject(handle: ProjectFolderHandle): Promise<ProjectLoadResult> {

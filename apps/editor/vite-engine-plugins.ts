@@ -116,13 +116,11 @@ export function enginePluginsVitePlugin(options: {
 
   return {
     name: "babylonslate-engine-plugins",
-    // Pack during config resolution so the dev server's publicDir whitelist
-    // snapshot (built before configureServer) includes the generated
-    // index.json and *.babplugin files.
-    async configResolved() {
+    async buildStart() {
       await packAll();
     },
     configureServer(server) {
+      void packAll();
       server.watcher.add(options.sourceDir);
     },
   };

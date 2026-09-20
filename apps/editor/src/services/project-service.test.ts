@@ -3,8 +3,15 @@ import { createEmptyProject, PROJECT_FILE } from "@babylonslate/core";
 import { WebStorageAdapter } from "@babylonslate/vfs";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "@babylonslate/assets";
+import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
+
+vi.mock("../lib/kenney-mannequin", async (importOriginal) => {
+  const mod =
+    await importOriginal<typeof import("../lib/kenney-mannequin")>();
+  return { ...mod, loadKenneyMannequinGlb: vi.fn(mod.loadKenneyMannequinGlb) };
+});
 
 function workerFactory() {
   const workers: Array<{
@@ -267,6 +274,21 @@ describe("project round-trip", () => {
     expect(created.document.metadata.name).toBe("New Project");
     expect(created.document.metadata.createdAt).toBeTruthy();
     expect(created.document.metadata.appearance).toEqual({ icon: "box", color: "mint" });
+  });
+
+  it("removes the registered folder when project scaffolding fails", async () => {
+    localStorage.clear();
+    const storage = new WebStorageAdapter();
+    const service = new ProjectService(storage);
+    vi.mocked(loadKenneyMannequinGlb).mockRejectedValueOnce(
+      new Error("Invalid bundled Mannequin GLB"),
+    );
+    await expect(service.createEmptyProject("Broken")).rejects.toThrow(
+      "Invalid bundled Mannequin GLB",
+    );
+    expect(await service.listProjects()).toEqual([]);
+    await service.createEmptyProject("Broken");
+    expect(storage.getCurrentFolder()?.name).toBe("Broken");
   });
 
   it("deleteListedProject removes OPFS files so the same name is empty", async () => {
